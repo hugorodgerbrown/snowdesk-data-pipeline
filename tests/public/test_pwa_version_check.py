@@ -152,6 +152,34 @@ def test_blocking_modal_ships_hidden_on_home_page() -> None:
 
 
 @pytest.mark.django_db
+def test_blocking_modal_says_nothing_about_local_state() -> None:
+    """The modal neither announces a wipe nor reassures against one (SNOW-869).
+
+    Its copy used to say the reload "refreshes the offline copy of the
+    app" and then add that downloaded maps and saved data were kept. The
+    second half only existed because the first half raised the alarm —
+    "clears" on a mostly-offline app reads as "deletes my 500 MB of
+    downloaded maps" — so both halves went together. The click clears
+    ``snowdesk-shell-*`` / ``map-shell-*`` only, which is code rather
+    than anything the user owns.
+
+    Asserted as an absence across the rendered page, matching the banner's
+    equivalent test, so reintroducing either half anywhere in the modal
+    fails here.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    modal = body[body.index('id="pwa-update-modal"') :]
+    modal = modal[: modal.index("</div>", modal.index("Reload now"))]
+
+    assert "are kept" not in modal
+    assert "downloaded maps" not in modal
+    assert "offline copy" not in modal
+    # The half that must stay: what is wrong, and what to do about it.
+    assert "no longer supported" in modal
+    assert "Reload to continue" in modal
+
+
+@pytest.mark.django_db
 def test_version_check_script_loaded_on_home_page() -> None:
     """The version-check JS is referenced from the home page shell."""
     response = Client().get("/")

@@ -1201,7 +1201,12 @@ OVERLAY_MODAL_VARIANTS: tuple[dict[str, Any], ...] = (
             "title_id": "component-library-overlay-modal-title",
             "body_id": "component-library-overlay-modal-body",
             "title": "Update required",
-            "body": "A new version of Snowdesk is available. Reload to continue.",
+            # SNOW-869: the real copy from includes/_pwa_update_modal.html.
+            # The library had drifted to a paraphrase, which is the one thing
+            # a component library must not do with the surface it documents.
+            "body": (
+                "This version of Snowdesk is no longer supported. Reload to continue."
+            ),
             "cta_id": "component-library-overlay-modal-cta",
             "cta_label": "Reload",
             "static": True,

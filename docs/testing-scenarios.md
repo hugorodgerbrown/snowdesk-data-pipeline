@@ -661,7 +661,7 @@ APP_VERSION=test-newer-build APP_BLOCKED_VERSIONS=dev uv run python manage.py ru
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In the still-open tab, trigger any request (scroll the timeline, tap a region) | DevTools → Network: one `no-store` request to `/api/version` whose body reads `"update_required": true`; `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy naming what the reload keeps, and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
+| 1 | In the still-open tab, trigger any request (scroll the timeline, tap a region) | DevTools → Network: one `no-store` request to `/api/version` whose body reads `"update_required": true`; `#pwa-update-modal` opens as a full-viewport overlay reading "Update required" / "This version of Snowdesk is no longer supported. Reload to continue.", and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked. The copy says nothing about local state — the click clears shell caches only, so there is nothing to disclose (SNOW-869) |
 | 2 | Wait 30 seconds without touching anything | The modal is still open and the page has not reloaded. Application → Cache storage still shows every bucket, including `snowdesk-basemap-*` |
 | 3 | Click "Reload now" | The `snowdesk-shell-*` / `map-shell-*` buckets are cleared and the page reloads once. The `snowdesk-basemap-*` buckets, IndexedDB (`snowdesk-pwa-v1`) and `localStorage` are all still there — the downloaded region is still available offline |
 | 4 | Restart the server without `APP_BLOCKED_VERSIONS` and reload | `/api/version` reads `"update_required": false`; no modal; the app operates normally |
