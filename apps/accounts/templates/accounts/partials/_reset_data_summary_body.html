@@ -85,7 +85,10 @@ already exists, in the map's Manage downloads sheet.
         {% endblocktrans %}
     </span>
     <span data-string="preferences-value">{% trans "Back to defaults" %}</span>
-    <span data-string="total">{% blocktrans %}Total on this device: %(size)s{% endblocktrans %}</span>
+    {# The sentence ends here: renderSummary joins this to "total-approx" #}
+    {# with a space, so without the stop the two run together as          #}
+    {# "0.5 MB Approximate — …".                                          #}
+    <span data-string="total">{% blocktrans %}Total on this device: %(size)s.{% endblocktrans %}</span>
     <span data-string="total-approx">
         {% blocktrans trimmed %}
             Approximate — the browser reports one figure for everything this site has stored.

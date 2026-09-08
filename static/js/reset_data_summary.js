@@ -64,7 +64,9 @@
       'Your basemap choice, where the map was left, which panels were open, ' +
       'and your usage-data choice.',
     'preferences-value': 'Back to defaults',
-    total: 'Total on this device: %(size)s',
+    // Ends in a full stop: renderSummary joins it to 'total-approx' with a
+    // space, and without one the two sentences run together.
+    total: 'Total on this device: %(size)s.',
     'total-approx': 'Approximate — the browser reports one figure for everything this site has stored.',
     'total-partial':
       'At least %(size)s — this browser will not report how much the site is storing in total.',

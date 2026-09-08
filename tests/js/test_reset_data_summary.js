@@ -188,7 +188,11 @@ describe('painting the four categories', () => {
 
   it('totals the lot for the line pwa_reset.js quotes', async () => {
     await renderPanel();
-    expect(totalEl.textContent).toContain('Total on this device: 130 MB');
+    // The full stop is the assertion, not decoration: the total and the
+    // "approximate" caveat are two strings joined by a space, and without
+    // it they painted as "130 MB Approximate — the browser reports ...".
+    expect(totalEl.textContent).toContain('Total on this device: 130 MB.');
+    expect(totalEl.textContent).not.toMatch(/\d\s*MB\s+Approximate/);
     expect(window.pwaResetDataSummary.confirmLines()).toEqual([
       'This deletes about 130 MB from this device.',
       '2 changes have not reached the server yet, and will be lost.',
