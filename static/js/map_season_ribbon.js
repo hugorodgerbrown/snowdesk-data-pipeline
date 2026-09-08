@@ -107,9 +107,21 @@
   // on snowdesk:overlays-changed. The leaf is the region name; it remains in
   // the breadcrumb regardless of the L4 map-layer visibility because it is a
   // text readout, not the polygon layer.
+  //
+  // SNOW-872: the keys and the defaults both come from map_state.js —
+  // ``OVERLAY_STORAGE_KEY`` and ``mapDefaults()`` — rather than the bare
+  // literals that used to sit here. This was a third copy of the opening
+  // view, and a breadcrumb that disagreed with the layers menu about which
+  // tiers are on would contradict the map beside it.
+  //
+  // The ``typeof`` guards are the same ones ``readDisplayDate`` above needs,
+  // and for the same reason: the unit tests load this module on its own
+  // against a stubbed scope, where neither binding exists.
+  const overlayKeys = typeof OVERLAY_STORAGE_KEY === 'object' ? OVERLAY_STORAGE_KEY : {};
+  const overlayDefaults = typeof mapDefaults === 'function' ? mapDefaults() : { boundary: '' };
   const overlayVisible = {
-    l1: readBoolStorage('snowdesk.map.overlay.l1', false),
-    l2: readBoolStorage('snowdesk.map.overlay.l2', false),
+    l1: readBoolStorage(overlayKeys.l1, overlayDefaults.boundary === 'l1'),
+    l2: readBoolStorage(overlayKeys.l2, overlayDefaults.boundary === 'l2'),
   };
 
   // Paint one decorative cell per CALENDAR DAY across [seasonStart, seasonEnd]

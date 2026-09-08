@@ -1,4 +1,4 @@
-{% load i18n static %}
+{% load i18n l10n static %}
 {% load weather_icons %}
 {% comment %}
 public/partials/_map_embed.html — Shared map surface partial.
@@ -11,6 +11,18 @@ shared surface.
 
 Context expected from the including template:
   default_basemap_key — str: settings.BASEMAP fallback key.
+  map_default_overlays — list[str]: SNOW-872. The overlay keys switched on
+                        for a visitor with no stored preference, derived
+                        from settings.MAP_DEFAULT_PROVIDERS. Emitted as
+                        data-default-overlays AND as the Bulletins rows'
+                        aria-checked.
+  map_default_boundary — str: settings.MAP_DEFAULT_BOUNDARY. The EAWS tier
+                        ('l1'/'l2'/'l4', or '' for none) those same rules
+                        apply to under Boundaries.
+  map_default_opacity_step
+                      — float: settings.MAP_DEFAULT_OPACITY_STEP. The
+                        choropleth's opening strength. Rendered with
+                        localisation off — see the attribute's own comment.
   season_start        — datetime.date: first day of the avalanche season.
   season_end          — datetime.date: last day of it. The pair is drawn as
                         a band on the scrubber track and tinted in the
@@ -95,6 +107,25 @@ Optional context:
     data-resort-popup-url="{% url 'api:resort_popup' slug='__SLUG__' %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
+    {# SNOW-872: the map's opening view — which providers' bulletins are      #}
+    {# painted, which EAWS boundary tier is drawn, and how strongly the       #}
+    {# choropleth is painted on a FIRST visit. Resolved from the environment  #}
+    {# (settings.MAP_DEFAULT_*) and read here by map_state.js's mapDefaults(),#}
+    {# which is the one owner of them on the client. A device with a stored   #}
+    {# preference under the matching snowdesk.map.overlay.* key never reaches #}
+    {# these — a default is a starting point, never an override.              #}
+    {#                                                                        #}
+    {# Overlay keys, space-separated, because that is what the DOM already    #}
+    {# keys off (data-overlay-key). The overlay-key → country-code routing    #}
+    {# stays in COUNTRY_GROUPS (static/js/map_state.js) and is deliberately   #}
+    {# NOT restated server-side.                                              #}
+    data-default-overlays="{{ map_default_overlays|join:' ' }}"
+    data-default-boundary="{{ map_default_boundary }}"
+    {# ``localize off`` is load-bearing, not decoration: Django localises     #}
+    {# floats, so under a comma-decimal locale 0.5 renders as "0,5",          #}
+    {# Number() returns NaN and the configured default silently reverts —     #}
+    {# with no error anywhere to say so.                                      #}
+    {% localize off %}data-default-opacity-step="{{ map_default_opacity_step }}"{% endlocalize %}
     {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}
     {% if favourites_eligible %}data-resort-create-url="{% url 'favourites:resort_create' %}"{% endif %}
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
@@ -564,9 +595,16 @@ Optional context:
         {# pill. See positionMenu in static/js/map_basemap_picker.js.           #}
         <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
             {# SNOW-172: country toggles — show/hide each country's region     #}
-            {# outlines. CH is on by default. The rest are off; their          #}
-            {# GeoJSON is lazy-fetched on first toggle-on. State persists in   #}
+            {# outlines. A row not switched on at boot has its GeoJSON         #}
+            {# lazy-fetched on first toggle-on. State persists in              #}
             {# localStorage under snowdesk.map.overlay.country.<code>.         #}
+            {#                                                                 #}
+            {# SNOW-872: which rows open checked is CONFIGURED, not literal —  #}
+            {# settings.MAP_DEFAULT_PROVIDERS, reaching this partial as        #}
+            {# ``map_default_overlays`` (default: SLF alone, as before). The   #}
+            {# same values ride on #map's data-default-overlays, which is what #}
+            {# map.js seeds countryState from, so the rendered tick and the    #}
+            {# painted map cannot disagree on first paint.                     #}
             {#                                                                 #}
             {# SNOW-658: the section is "Bulletins" and each row names its     #}
             {# PROVIDER, because that is what the row actually switches on —   #}
@@ -593,7 +631,7 @@ Optional context:
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="country.ch"
                     data-country-codes="ch"
-                    aria-checked="true"
+                    aria-checked="{% if 'country.ch' in map_default_overlays %}true{% else %}false{% endif %}"
                 >
                     {# SNOW-524: per-row sync dot — green only when all four #}
                     {# feeds are cached, for every country the row switches.  #}
@@ -608,7 +646,7 @@ Optional context:
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="country.fr"
                     data-country-codes="fr"
-                    aria-checked="false"
+                    aria-checked="{% if 'country.fr' in map_default_overlays %}true{% else %}false{% endif %}"
                 >
                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                     {% trans "MétéoFrance (FR)" %}
@@ -621,7 +659,7 @@ Optional context:
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="country.albina"
                     data-country-codes="at it"
-                    aria-checked="false"
+                    aria-checked="{% if 'country.albina' in map_default_overlays %}true{% else %}false{% endif %}"
                 >
                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                     {% trans "ALBINA (AT, IT)" %}
@@ -630,8 +668,13 @@ Optional context:
             {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
             {# add/remove visibility on outline-only line layers stacked  #}
             {# above the L4 choropleth. State persists in localStorage    #}
-            {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
-            {# defaults to visible, like the other overlay tiers.         #}
+            {# under snowdesk.map.overlay.l1 / .l2 / .l4.                 #}
+            {# SNOW-872: which tier opens checked is CONFIGURED —              #}
+            {# settings.MAP_DEFAULT_BOUNDARY, reaching this partial as         #}
+            {# ``map_default_boundary`` (default: l4, the micro regions the    #}
+            {# choropleth is painted onto, as before). One tier at a time: the #}
+            {# rows stay independent once the visitor touches them, but the    #}
+            {# opening view names a single tier.                               #}
             {# SNOW-658: "Overlays" → "Boundaries", and each tier names its    #}
             {# EAWS level. "Major / Minor / Micro" is this app's own shorthand  #}
             {# for a published hierarchy, and the levels are what the data      #}
@@ -648,7 +691,7 @@ Optional context:
                     role="menuitemcheckbox"
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="l1"
-                    aria-checked="false"
+                    aria-checked="{% if map_default_boundary == 'l1' %}true{% else %}false{% endif %}"
                 >
                     {# SNOW-505: sync-status dot — hidden (unknown) until #}
                     {# map_layer_sync_status.js resolves it on menu-open. #}
@@ -662,7 +705,7 @@ Optional context:
                     role="menuitemcheckbox"
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="l2"
-                    aria-checked="false"
+                    aria-checked="{% if map_default_boundary == 'l2' %}true{% else %}false{% endif %}"
                 >
                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                     {% trans "Minor (EAWS L2)" %}
@@ -674,7 +717,7 @@ Optional context:
                     role="menuitemcheckbox"
                     class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
                     data-overlay-key="l4"
-                    aria-checked="true"
+                    aria-checked="{% if map_default_boundary == 'l4' %}true{% else %}false{% endif %}"
                 >
                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                     {% trans "Micro (EAWS L4)" %}
@@ -851,6 +894,13 @@ Optional context:
         {# The flyout. Opens LEFT of the roundel column, the same     #}
         {# side and offset the basemap menu uses, so every panel      #}
         {# in this stack appears from the same edge.                  #}
+        {# SNOW-872: the segment that opens checked follows                    #}
+        {# settings.MAP_DEFAULT_OPACITY_STEP (default: 0.5, as before) rather  #}
+        {# than a literal. map.js's applyBulletinsVisibility rewrites these    #}
+        {# from the effective step the moment it runs, so the rendered value   #}
+        {# only has to be true for first paint — but a first paint that ticks  #}
+        {# a step the map is not painting is still a lie, and the same         #}
+        {# configured value is what #map's data-default-opacity-step carries.  #}
         {% trans "Bulletins off" as step_label_0 %}
         {% trans "Bulletins at 25%" as step_label_25 %}
         {% trans "Bulletins at 50%" as step_label_50 %}
@@ -866,7 +916,7 @@ Optional context:
             <button
                 type="button"
                 role="radio"
-                aria-checked="false"
+                aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
                 aria-label="{{ step_label_0 }}"
                 class="map-fill-step hover-affordance"
                 data-bulletins-step="0"
@@ -876,7 +926,7 @@ Optional context:
             <button
                 type="button"
                 role="radio"
-                aria-checked="false"
+                aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
                 aria-label="{{ step_label_25 }}"
                 class="map-fill-step hover-affordance"
                 data-bulletins-step="0.25"
@@ -886,7 +936,7 @@ Optional context:
             <button
                 type="button"
                 role="radio"
-                aria-checked="true"
+                aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
                 aria-label="{{ step_label_50 }}"
                 class="map-fill-step hover-affordance"
                 data-bulletins-step="0.5"
@@ -896,7 +946,7 @@ Optional context:
             <button
                 type="button"
                 role="radio"
-                aria-checked="false"
+                aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
                 aria-label="{{ step_label_75 }}"
                 class="map-fill-step hover-affordance"
                 data-bulletins-step="0.75"
@@ -906,7 +956,7 @@ Optional context:
             <button
                 type="button"
                 role="radio"
-                aria-checked="false"
+                aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
                 aria-label="{{ step_label_100 }}"
                 class="map-fill-step hover-affordance"
                 data-bulletins-step="1"

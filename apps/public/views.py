@@ -1487,10 +1487,13 @@ def _base_map_context(
             stands in, since that is the day the scrubber would rest on.
 
     Returns:
-        A dict with ``basemaps``, ``default_basemap_key``, ``season_start``,
-        ``season_end``, ``today``, ``today_pct``, ``scrubber_in_season``, and
-        ``data_end`` (the latest ``RegionDayRating.date`` in the window, or
-        ``None`` when the season has not started or the DB is empty).
+        A dict with ``basemaps``, ``default_basemap_key``,
+        ``map_default_overlays`` / ``map_default_boundary`` /
+        ``map_default_opacity_step`` (SNOW-872's configurable opening view),
+        ``season_start``, ``season_end``, ``today``, ``today_pct``,
+        ``scrubber_in_season``, and ``data_end`` (the latest
+        ``RegionDayRating.date`` in the window, or ``None`` when the season
+        has not started or the DB is empty).
 
     """
     season_start, season_end = _season_date_range(today)
@@ -1514,6 +1517,15 @@ def _base_map_context(
         # without this the DNS, TCP and TLS round trips start late and land
         # squarely on the critical path for a mobile connection.
         "basemap_origin": settings.BASEMAP_ORIGIN,
+        # SNOW-872: the map's opening view, resolved from the environment the
+        # same way the basemap key above is. Rendered as data- attributes on
+        # #map and read by static/js/map_state.js's ``mapDefaults()``, which
+        # is the one owner of these values on the client. They are DEFAULTS: a
+        # device with a stored preference under the matching
+        # ``snowdesk.map.overlay.*`` key never reaches them.
+        "map_default_overlays": settings.MAP_DEFAULT_OVERLAYS,
+        "map_default_boundary": settings.MAP_DEFAULT_BOUNDARY,
+        "map_default_opacity_step": settings.MAP_DEFAULT_OPACITY_STEP,
         "season_start": season_start,
         "season_end": season_end,
         "today": today,

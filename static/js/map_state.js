@@ -184,6 +184,52 @@ function overlayKeyForCountry(code) {
   return `country.${code}`;
 }
 
+// SNOW-872: the map's OPENING VIEW — what a device with no stored
+// preference gets. Server-configured (settings.MAP_DEFAULT_PROVIDERS /
+// _BOUNDARY / _OPACITY_STEP), rendered onto `#map` by _map_embed.html, and
+// read back here.
+//
+// One owner, for the reason SNOW-615 gave OVERLAY_STORAGE_KEY one: the same
+// three literals used to be written out four times — map.js's boot IIFE, the
+// re-seed in its `styledata` handler after a basemap swap,
+// map_season_ribbon.js, and the template's aria-checked attributes — and a
+// copy missed is not a crash, it is an opening view that quietly reverts on
+// the next basemap swap.
+//
+// EVERY ATTRIBUTE IS OPTIONAL, and absence falls back to the literal that
+// shipped before this. That is a requirement rather than politeness: around
+// forty fixtures across tests/js hand-write a `#map` root and will never
+// carry these, and trip_map.js drives two map roots of its own (#trip-map,
+// #trip-meeting-picker) that know nothing about layers.
+//
+// Read fresh on each call rather than memoised. It is called about three
+// times at boot, so there is nothing to save, and a cached value would go
+// stale across the bundle re-boots tests/js performs between suites.
+/**
+ * The server-configured defaults for a first visit.
+ *
+ * @returns {{overlays: Set<string>, boundary: string, opacityStep: (number|undefined)}}
+ *   `overlays` holds layers-menu overlay keys (`country.ch`, …) — the
+ *   overlay-key → country-code routing stays in `COUNTRY_GROUPS` above and
+ *   is resolved through `countryCodesFor` / `overlayKeyForCountry`, never
+ *   restated. `boundary` is an EAWS tier key, or `''` for no boundary.
+ *   `opacityStep` is `undefined` when unset, which is what
+ *   `pwaLayerVisibilityCore.seedFromLegacy` reads as "use your own default".
+ */
+function mapDefaults() {
+  const el = document.getElementById('map');
+  const ds = (el && el.dataset) || {};
+  // `undefined` rather than falsy throughout: an EMPTY attribute is a
+  // configuration — no provider on, no boundary drawn — and `||` would read
+  // an operator's deliberate blank as "not set" and put SLF back.
+  const overlays = ds.defaultOverlays === undefined ? 'country.ch' : ds.defaultOverlays;
+  return {
+    overlays: new Set(overlays.split(/\s+/).filter(Boolean)),
+    boundary: ds.defaultBoundary === undefined ? 'l4' : ds.defaultBoundary,
+    opacityStep: ds.defaultOpacityStep === undefined ? undefined : Number(ds.defaultOpacityStep),
+  };
+}
+
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
 // SNOW-737: where the visitor last left the camera. ONE key holding a JSON
