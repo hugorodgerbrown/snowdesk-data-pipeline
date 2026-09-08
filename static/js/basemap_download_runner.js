@@ -85,7 +85,7 @@
    *   count?: number,
    *   loadBlob: function(): (Object|Promise<Object>),
    *   paint: function(string, number=, number=): void,
-   *   beforeWarm?: function(Object, string, string[][]): Promise<void>,
+   *   beforeWarm?: function(Object, string, string[][]): Promise<boolean|void>,
    *   finish: function(Object|null, Object, Object): Promise<void>,
    * }} options
    *   `areaId` — the pinned bucket this run writes into.
@@ -106,14 +106,28 @@
    *     percentage and, SNOW-632, the run's on-disk bytes so far
    *     (`paint(state, pct?, bytes?)`). The two controls' own `setState`
    *     differ in arity, so they adapt.
-   *   `beforeWarm` — optional last step after eviction, before the warm run
-   *     (the custom-area control clears its own bucket when the frame
-   *     moved; SNOW-632 widened this to the region control too, clearing a
-   *     bucket whose tiles belong to a DIFFERENT basemap than the one this
-   *     run is about to fetch). Called as `(blob, areaId, tileSources)` —
-   *     the same sources this run itself resolved and is about to build
-   *     tile URLs from, so a caller's eviction decision and the URLs that
-   *     follow it can never disagree about which basemap is active.
+   *   `beforeWarm` — optional last step after eviction, before the warm
+   *     run. Called as `(blob, areaId, tileSources)` — the same sources
+   *     this run itself resolved and is about to build tile URLs from, so
+   *     a caller's decision here and the URLs that follow it can never
+   *     disagree about which basemap is active.
+   *
+   *     Historically this is where a caller CLEARED the area's bucket: the
+   *     custom-area control did so when the frame moved (gone with
+   *     SNOW-635 — every confirmed custom download mints its own id now)
+   *     and SNOW-632 gave the region control the same shape for a bucket
+   *     whose tiles belong to a DIFFERENT basemap. SNOW-871 moved that
+   *     out: destroying the user's existing copy BEFORE fetching its
+   *     replacement means a run that then fails leaves them with neither,
+   *     so the region control now prunes in its `finish`, after a success.
+   *     What is left here is the question rather than the deletion — which
+   *     is why it may now refuse.
+   *
+   *     Resolving exactly `false` ABORTS the run before anything is
+   *     fetched: the roundel is repainted to rest and `finish` is never
+   *     called, the same treatment a declined eviction gets. Any other
+   *     value (including the `undefined` a void implementation returns)
+   *     carries on.
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
    *     `extras` carries `core`, `progressFill`, SNOW-632's `tileSources`
    *     (the same value handed to `beforeWarm`, so a caller recording what
@@ -227,7 +241,23 @@
       await deps.evict(budgetPlan.evict);
     }
 
-    if (beforeWarm) await beforeWarm(blob, areaId, tileSources);
+    // SNOW-871: `beforeWarm` can now REFUSE the run, by resolving exactly
+    // `false`. The region control asks the user before replacing the copy
+    // of this area they already hold under a different basemap, and a "no"
+    // there has to stop the run rather than merely skip a step. Handled
+    // identically to a declined eviction above — repaint to rest and
+    // return, writing nothing.
+    //
+    // `=== false`, not falsy: `beforeWarm` has always been a void hook and
+    // the custom-area control's implementations return `undefined`, which
+    // must keep meaning "carry on".
+    if (beforeWarm) {
+      const proceed = await beforeWarm(blob, areaId, tileSources);
+      if (proceed === false) {
+        paint(deps.isOnline() ? 'idle' : 'offline');
+        return;
+      }
+    }
 
     // Tile-grid rework: the tile list comes from the grid plan, not
     // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
