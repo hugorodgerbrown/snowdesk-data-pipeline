@@ -1,0 +1,768 @@
+#!/usr/bin/env python3
+# bin/render-churn — render the repository's own history as a churn chart.
+#
+# "How fast is this project moving, and is that changing?" is a question the
+# repository can answer about itself, but only by hand: `git log --numstat`
+# aggregated per week, releases counted off the date-stamped tags, and the
+# generated data separated from the authored code so one fixture import does
+# not flatten every real week against it.
+#
+# This renders exactly that — commits merged, releases cut, and lines added
+# and removed per ISO week, on one shared weekly axis — and it computes every
+# figure on the page from git rather than carrying any of them as prose. A
+# week that merges nothing shows up as a zero bar, not as a gap in the axis.
+#
+# Nothing here is authored, so nothing is committed: the page is a projection
+# of the history, and re-running it is how it is kept current. That is the
+# same reasoning as bin/render-day-summary-matrix, and the opposite of
+# docs/page-audits/, which commits dated files because an audit is judgement
+# that cannot be regenerated.
+#
+# The output is a self-contained HTML fragment — no <!doctype>, <html>,
+# <head> or <body> of its own — the same convention as
+# bin/render-day-summary-matrix and bin/render-testing-scenarios, so it
+# publishes as an Artifact and still renders opened straight from disk.
+#
+# Reads only. Prints to stdout unless --output names a file.
+#
+#     uv run python bin/render-churn --output /tmp/churn.html
+#
+# ruff: noqa: T201, E501
+# T201 — CLI script; print() is the intended output channel.
+# E501 — most of this file is an embedded HTML document. Rewrapping its
+#        markup and CSS to 88 columns to satisfy a Python line-length rule
+#        would damage the output for no reader's benefit, which is the same
+#        reasoning bin/render-day-summary-matrix's header gives.
+
+"""Weekly churn renderer — see the header block above for full behaviour."""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import datetime as dt
+import json
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Resolved once, so the subprocess call names an absolute executable.
+GIT = shutil.which("git") or "git"
+
+# Paths whose churn is data moving, not work being done. Counted, reported in
+# its own column, and kept out of the chart: without this, PR #153 (the EAWS
+# micro-region polygons for AT and IT) puts a 600k-line spike on one week and
+# every other week reads as flat against it.
+GENERATED = re.compile(
+    r"(^|/)fixtures/"
+    r"|(^|/)(uv\.lock|package-lock\.json|poetry\.lock)$"
+    r"|\.(po|mo)$"
+    r"|^sample_data/"
+    r"|^static/css/output\.css$"
+    r"|\.ndjson$"
+    r"|^docs/archive_pdfs/"
+)
+
+# A release is a date-stamped tag cut from `release` (2026.08.30, and .2 for a
+# second cut the same day). The spike and recovery tags carry names, not dates,
+# and are not releases.
+RELEASE_TAG = re.compile(r"^\d{4}\.\d{2}\.\d{2}(\.\d+)?$")
+
+# What counts as hand-written for the closing "how much of it survived"
+# comparison. Deliberately narrower than the churn set: this is a headline
+# figure, not an audit, and it should read as code, tests, templates and docs.
+SOURCE_GLOBS = ("*.py", "*.js", "*.html", "*.css", "*.md")
+
+
+def git(*args: str) -> str:
+    """Run a read-only git command in the repo and return its stdout.
+
+    Args:
+        *args: Arguments after `git` itself.
+
+    Returns:
+        Captured stdout, trailing newline stripped.
+
+    """
+    # S603 — the argument list is built from module constants, passed as a
+    # list with no shell. There is no injection surface.
+    result = subprocess.run(  # noqa: S603
+        [GIT, "-C", str(REPO_ROOT), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.rstrip("\n")
+
+
+def iso_week(day: dt.date) -> str:
+    """Return the ISO year-week key (e.g. ``2026-W35``) a date falls in.
+
+    Args:
+        day: The date to bucket.
+
+    Returns:
+        The ISO week key.
+
+    """
+    return day.strftime("%G-W%V")
+
+
+def _week_monday(key: str) -> dt.date:
+    """Return the Monday of an ISO week key such as ``2026-W35``.
+
+    Args:
+        key: The week key.
+
+    Returns:
+        That week's Monday.
+
+    """
+    return dt.date.fromisocalendar(int(key[:4]), int(key[6:]), 1)
+
+
+def release_weeks() -> dict[str, list[str]]:
+    """Map each ISO week to the release tags cut in it.
+
+    Returns:
+        Week key to sorted tag names. Weeks with no release are absent.
+
+    """
+    weeks: dict[str, list[str]] = collections.defaultdict(list)
+    raw = git(
+        "for-each-ref", "--format=%(refname:short)\t%(creatordate:short)", "refs/tags"
+    )
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        name, created = line.split("\t")
+        if RELEASE_TAG.match(name):
+            weeks[iso_week(dt.date.fromisoformat(created))].append(name)
+    return {week: sorted(tags) for week, tags in weeks.items()}
+
+
+def _empty_week() -> dict[str, object]:
+    """Return a zeroed accumulator for one week.
+
+    Returns:
+        A fresh bucket. `files` is a set so a file touched by three commits
+        in one week counts once.
+
+    """
+    return {"commits": 0, "add": 0, "dele": 0, "gen": 0, "files": set()}
+
+
+def _accumulate(raw: str) -> dict[str, dict[str, object]]:
+    """Fold `git log --numstat` output into one accumulator per ISO week.
+
+    Args:
+        raw: Output of the log command, commits introduced by a `C <date>`
+            line and followed by their numstat rows.
+
+    Returns:
+        Week key to accumulator. Weeks that merged nothing are absent — the
+        calendar walk in `weekly_history` fills them back in.
+
+    """
+    buckets: dict[str, dict[str, object]] = collections.defaultdict(_empty_week)
+    current: str | None = None
+
+    for line in raw.splitlines():
+        if line.startswith("C "):
+            current = iso_week(dt.date.fromisoformat(line[2:].strip()))
+            buckets[current]["commits"] += 1  # type: ignore[operator]
+            continue
+        parts = line.split("\t")
+        # A numstat row is added/removed/path; "-" in place of a count is
+        # git's marker for a binary file, which has no lines to attribute.
+        if current is None or len(parts) != 3 or parts[0] == "-":
+            continue
+        added, removed, path = parts
+        bucket = buckets[current]
+        if GENERATED.search(path):
+            bucket["gen"] += int(added) + int(removed)  # type: ignore[operator]
+        else:
+            bucket["add"] += int(added)  # type: ignore[operator]
+            bucket["dele"] += int(removed)  # type: ignore[operator]
+            bucket["files"].add(path)  # type: ignore[union-attr]
+    return buckets
+
+
+def weekly_history() -> list[dict[str, object]]:
+    """Aggregate the first-parent history into one record per ISO week.
+
+    Every commit on the default branch is a squash merge, so first-parent
+    history counts each merged pull request exactly once. Weeks between the
+    first and last commit that merged nothing are included with zero counts —
+    a gap in the timeline is part of the picture, not something to drop.
+
+    Returns:
+        One dict per week, oldest first, each carrying commits, releases,
+        lines added and removed, files touched, and generated-data churn.
+
+    """
+    buckets = _accumulate(
+        git("log", "--first-parent", "--format=C %ad", "--date=short", "--numstat")
+    )
+    if not buckets:
+        return []
+
+    releases = release_weeks()
+    monday = _week_monday(min(buckets))
+    end = _week_monday(max(buckets))
+
+    weeks: list[dict[str, object]] = []
+    while monday <= end:
+        key = iso_week(monday)
+        bucket = buckets.get(key, _empty_week())
+        weeks.append(
+            {
+                "w": key,
+                "start": monday.isoformat(),
+                "label": monday.strftime("%-d %b"),
+                "c": bucket["commits"],
+                "rel": len(releases.get(key, [])),
+                "a": bucket["add"],
+                "d": bucket["dele"],
+                "f": len(bucket["files"]),  # type: ignore[arg-type]
+                "g": bucket["gen"],
+                "tags": releases.get(key, []),
+            }
+        )
+        monday += dt.timedelta(days=7)
+    return weeks
+
+
+def source_lines() -> tuple[int, int]:
+    """Count the hand-written lines tracked in the working tree today.
+
+    Migrations and the compiled stylesheet are excluded: neither is written
+    by hand, and both would inflate a figure whose whole job is to be
+    compared against how much was typed.
+
+    Returns:
+        A (lines, files) pair.
+
+    """
+    paths = [
+        p
+        for p in git("ls-files", *SOURCE_GLOBS).splitlines()
+        if p and "/migrations/" not in p and not p.endswith("static/css/output.css")
+    ]
+    lines = 0
+    for path in paths:
+        full = REPO_ROOT / path
+        try:
+            lines += sum(1 for _ in full.open("rb"))
+        except OSError:  # a tracked file that is not on disk right now
+            continue
+    return lines, len(paths)
+
+
+def notes(weeks: list[dict[str, object]], loc: int, files: int) -> str:
+    """Render the "how this was counted" list, with every figure computed.
+
+    Args:
+        weeks: The weekly records.
+        loc: Hand-written lines tracked today.
+        files: How many files those lines are spread across.
+
+    Returns:
+        An HTML `<li>` sequence.
+
+    """
+    total_add = sum(int(w["a"]) for w in weeks)  # type: ignore[arg-type]
+    total_del = sum(int(w["d"]) for w in weeks)  # type: ignore[arg-type]
+    silent = [w for w in weeks if w["c"] == 0]
+    worst_gen = max(weeks, key=lambda w: int(w["g"]))  # type: ignore[arg-type]
+    first_release = next((w for w in weeks if w["rel"]), None)
+
+    items = [
+        "<b>Churn</b> is <code>git log --numstat</code> summed per ISO week over "
+        "first-parent history. Every commit on the default branch is a squash "
+        "merge, so one commit is one merged pull request and nothing is counted "
+        "twice.",
+        "<b>Excluded from churn</b> and reported in the last column: "
+        "<code>fixtures/</code>, <code>sample_data/</code>, <code>uv.lock</code>, "
+        "<code>package-lock.json</code>, <code>.po</code>/<code>.mo</code> "
+        "catalogues, <code>output.css</code>, <code>.ndjson</code> archives and "
+        "the archived bulletin PDFs. That is data moving, not work being done — "
+        f"the week of {worst_gen['label']} alone carries "
+        f"{int(worst_gen['g']):,} lines of it, "  # type: ignore[arg-type]
+        "which without the exclusion would flatten every other week on the chart.",
+    ]
+    if silent:
+        names = " and ".join(str(w["label"]) for w in silent)
+        items.append(
+            f"<b>{'Two silent weeks' if len(silent) == 2 else 'Silent weeks'}.</b> "
+            f"{names} carr{'y' if len(silent) != 1 else 'ies'} no commits at all; "
+            "the bars are drawn at zero rather than dropped, so the timeline stays "
+            "honest about the gaps."
+        )
+    if first_release is not None:
+        before = weeks.index(first_release)
+        items.append(
+            f"<b>Releases begin in week {before + 1}.</b> Everything before "
+            f"{first_release['label']} predates the release branch, so the release "
+            "panel is empty there by construction, not by inactivity."
+        )
+    items.append(
+        f"<b>Where it landed.</b> {total_add:,} lines added against {total_del:,} "
+        f"removed leaves ~{(total_add - total_del) // 1000:,}k net, against "
+        f"{loc:,} lines of code, tests, templates and docs tracked across {files:,} "
+        "files today — so a meaningful share of everything written has since been "
+        "rewritten or deleted."
+    )
+    return "\n      ".join(f"<li>{item}</li>" for item in items)
+
+
+# The page. Placeholders are substituted rather than formatted: the template
+# is mostly CSS and JavaScript, and doubling every brace to survive str.format
+# would make it unreadable and unmaintainable.
+PAGE = r"""<title>Snowdesk Churn Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --page:#f6f7f9; --card:#ffffff; --sunk:#edf0f3;
+  --ink-1:#12161b; --ink-2:#4b545f; --ink-3:#7f8893;
+  --rule:#dee3e9; --rule-soft:#e9edf1;
+  --add:#2a78d6; --del:#eb6834; --commit:#4d5b6a; --release:#4a3aa7;
+  --hi:rgba(18,22,27,.055);
+  --shadow:0 1px 2px rgba(18,22,27,.05), 0 8px 24px -16px rgba(18,22,27,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --page:#14171b; --card:#1b1f25; --sunk:#22272e;
+    --ink-1:#eef1f5; --ink-2:#aeb7c2; --ink-3:#7c8592;
+    --rule:#2b3138; --rule-soft:#242a31;
+    --add:#3987e5; --del:#e0682f; --commit:#93a0ae; --release:#9085e9;
+    --hi:rgba(238,241,245,.07);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --page:#14171b; --card:#1b1f25; --sunk:#22272e;
+  --ink-1:#eef1f5; --ink-2:#aeb7c2; --ink-3:#7c8592;
+  --rule:#2b3138; --rule-soft:#242a31;
+  --add:#3987e5; --del:#e0682f; --commit:#93a0ae; --release:#9085e9;
+  --hi:rgba(238,241,245,.07);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--page); color:var(--ink-1);
+  font-family:"Source Serif 4","Iowan Old Style",Georgia,serif;
+  font-size:16.5px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1040px; margin:0 auto; padding:40px 22px 72px; display:flex; flex-direction:column; gap:34px}
+
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); margin:0;
+}
+h1{
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-weight:700; font-size:clamp(30px,4.4vw,44px); line-height:1.06;
+  letter-spacing:-.021em; margin:10px 0 0; text-wrap:balance;
+}
+.lede{max-width:64ch; color:var(--ink-2); margin:14px 0 0; font-size:17px}
+.lede b{color:var(--ink-1); font-weight:600}
+.lede code{font-family:"IBM Plex Mono",monospace; font-size:.86em}
+
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:10px; overflow:hidden}
+.tile{background:var(--card); padding:16px 18px 18px; display:flex; flex-direction:column; gap:5px}
+.tile dt{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3)}
+.tile dd{margin:0; font-family:Archivo,sans-serif; font-weight:600; font-size:27px; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1}
+.tile .sub{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+
+.charts{background:var(--card); border:1px solid var(--rule); border-radius:12px; box-shadow:var(--shadow); padding:22px 20px 10px; position:relative}
+figure{margin:0}
+.panel + .panel{margin-top:22px; padding-top:20px; border-top:1px solid var(--rule-soft)}
+.panel-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 16px; margin-bottom:8px; padding-left:2px}
+.panel-head h2{font-family:Archivo,sans-serif; font-weight:600; font-size:15px; letter-spacing:-.006em; margin:0; color:var(--ink-1)}
+.panel-head p{margin:0; font-size:13.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
+.legend{display:flex; gap:14px; margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2)}
+.legend span{display:inline-flex; align-items:center; gap:6px}
+.swatch{width:11px; height:11px; border-radius:3px; display:inline-block}
+.plot{display:block; width:100%; height:auto; overflow:visible}
+.gridline{stroke:var(--rule-soft); stroke-width:1}
+.zeroline{stroke:var(--rule); stroke-width:1}
+.axtext{font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--ink-3)}
+.axtext.month{fill:var(--ink-2)}
+.col-hit{fill:transparent}
+.col-hi{fill:var(--hi); opacity:0}
+.col-hi.on{opacity:1}
+.mark{transition:opacity .1s}
+.dim .mark{opacity:.34}
+.dim .mark.on{opacity:1}
+.zero-note{font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--ink-3)}
+
+#tip{
+  position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-100%);
+  background:var(--card); border:1px solid var(--rule); border-radius:9px;
+  box-shadow:var(--shadow); padding:10px 12px; min-width:184px; z-index:5;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2);
+  transition:opacity .12s;
+}
+#tip.on{opacity:1}
+#tip h3{font-family:Archivo,sans-serif; font-size:13px; font-weight:600; margin:0 0 7px; color:var(--ink-1)}
+#tip dl{display:grid; grid-template-columns:auto auto; gap:3px 14px; margin:0}
+#tip dt{color:var(--ink-3)}
+#tip dd{margin:0; text-align:right; font-variant-numeric:tabular-nums; color:var(--ink-1)}
+#tip .tags{margin:7px 0 0; padding-top:7px; border-top:1px solid var(--rule-soft); color:var(--ink-2); font-size:10.5px; line-height:1.5; word-break:break-all}
+
+.tablewrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--card)}
+table{border-collapse:collapse; width:100%; font-family:"IBM Plex Mono",monospace; font-size:12.5px; min-width:660px}
+caption{text-align:left; padding:16px 18px 4px; font-family:Archivo,sans-serif; font-weight:600; font-size:15px; color:var(--ink-1)}
+caption span{display:block; font-family:"IBM Plex Mono",monospace; font-weight:400; font-size:12px; color:var(--ink-3); margin-top:4px}
+th,td{padding:7px 14px; text-align:right; font-variant-numeric:tabular-nums; border-top:1px solid var(--rule-soft)}
+th:first-child,td:first-child{text-align:left}
+thead th{font-weight:500; color:var(--ink-3); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; border-top:1px solid var(--rule)}
+tbody tr:hover{background:var(--sunk)}
+tbody tr.quiet td{color:var(--ink-3)}
+td.add{color:var(--add)} td.del{color:var(--del)}
+tfoot th,tfoot td{border-top:1px solid var(--rule); font-weight:600}
+
+.notes{border-top:1px solid var(--rule); padding-top:22px}
+.notes h2{font-family:Archivo,sans-serif; font-size:15px; font-weight:600; margin:0 0 12px}
+.notes ul{margin:0; padding-left:19px; max-width:70ch; color:var(--ink-2); font-size:15px}
+.notes li{margin-bottom:9px}
+.notes code{font-family:"IBM Plex Mono",monospace; font-size:12.5px; background:var(--sunk); padding:1px 5px; border-radius:4px; color:var(--ink-1)}
+.colophon{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin:18px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">__EYEBROW__</p>
+    <h1>Snowdesk Churn Ledger</h1>
+    <p class="lede">Every commit on the default branch since the first one, bucketed by ISO week. The repository squash-merges, so one commit is one merged pull request — which makes the commit count a count of shipped units of work, not of keystrokes. Releases are the date-stamped tags (<code>__SAMPLE_TAG__</code>) that cut production from <code>release</code>.</p>
+  </header>
+
+  <dl class="tiles" id="tiles"></dl>
+
+  <div class="charts" id="charts">
+    <figure class="panel">
+      <div class="panel-head">
+        <h2>Lines churned</h2>
+        <p>added above the line, removed below</p>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--add)"></i>added</span>
+          <span><i class="swatch" style="background:var(--del)"></i>removed</span>
+        </div>
+      </div>
+      <svg class="plot" id="p-churn" viewBox="0 0 960 268" role="img" aria-label="Lines added and removed per week. The table below carries every value."></svg>
+    </figure>
+
+    <figure class="panel">
+      <div class="panel-head">
+        <h2>Commits merged</h2>
+        <p>one commit = one squashed pull request</p>
+      </div>
+      <svg class="plot" id="p-commits" viewBox="0 0 960 132" role="img" aria-label="Commits merged per week. The table below carries every value."></svg>
+    </figure>
+
+    <figure class="panel">
+      <div class="panel-head">
+        <h2>Releases cut</h2>
+        <p>date-stamped production tags</p>
+      </div>
+      <svg class="plot" id="p-releases" viewBox="0 0 960 118" role="img" aria-label="Production releases per week. The table below carries every value."></svg>
+    </figure>
+    <div id="tip" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Week by week<span>Churn excludes generated and reference data; that column is reported separately.</span></caption>
+      <thead>
+        <tr>
+          <th scope="col">Week of</th><th scope="col">Commits</th><th scope="col">Releases</th>
+          <th scope="col">Added</th><th scope="col">Removed</th><th scope="col">Files touched</th><th scope="col">Data churn</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+      <tfoot id="tfoot"></tfoot>
+    </table>
+  </div>
+
+  <section class="notes">
+    <h2>How this was counted</h2>
+    <ul>
+      __NOTES__
+    </ul>
+    <p class="colophon">Rendered from git by <code>bin/render-churn</code> on __RENDERED__. Nothing on this page is authored — re-run the script to bring it forward.</p>
+  </section>
+</div>
+
+<script>
+const DATA = __DATA__;
+const fmt = n => n.toLocaleString('en-GB');
+const kfmt = n => Math.abs(n) >= 1000 ? (n / 1000) + 'k' : String(n);
+
+/* Round a maximum up to a readable axis top. */
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (p * m >= v) return p * m;
+  return p * 10;
+}
+
+const T = {
+  commits: DATA.reduce((s,d)=>s+d.c,0),
+  rel: DATA.reduce((s,d)=>s+d.rel,0),
+  add: DATA.reduce((s,d)=>s+d.a,0),
+  del: DATA.reduce((s,d)=>s+d.d,0),
+  gen: DATA.reduce((s,d)=>s+d.g,0),
+};
+const peakC = DATA.reduce((m,d)=>d.c>m.c?d:m);
+const peakK = DATA.reduce((m,d)=>(d.a+d.d)>(m.a+m.d)?d:m);
+const firstRel = DATA.find(d=>d.rel>0);
+
+document.getElementById('tiles').innerHTML = [
+  ['Commits merged', fmt(T.commits), (T.commits/DATA.length).toFixed(1) + ' / week average'],
+  ['Releases cut', fmt(T.rel), firstRel ? 'first on ' + firstRel.label : 'none yet'],
+  ['Lines added', fmt(T.add), 'peak ' + fmt(peakK.a) + ' · ' + peakK.label],
+  ['Lines removed', fmt(T.del), T.add ? Math.round(100*T.del/T.add) + '% of what was added' : '—'],
+  ['Busiest week', fmt(peakC.c) + ' commits', 'week of ' + peakC.label]
+].map(([k,v,s]) => `<div class="tile"><dt>${k}</dt><dd>${v}</dd><span class="sub">${s}</span></div>`).join('');
+
+/* Shared geometry — all three panels use the same x scale so the columns line up. */
+const W = 960, PADL = 56, PADR = 14;
+const PLOT = W - PADL - PADR;
+const BAND = PLOT / DATA.length;
+const BARW = Math.max(3, Math.min(28, BAND - 11));
+const cx = i => PADL + BAND * i + BAND / 2;
+const bx = i => cx(i) - BARW / 2;
+
+/* Rounded only at the far end from the baseline. */
+function bar(x, y, w, h, dir) {
+  if (h <= 0) return '';
+  const r = Math.min(4, h, w / 2);
+  return dir === 'up'
+    ? `M${x} ${y+h}V${y+r}A${r} ${r} 0 0 1 ${x+r} ${y}H${x+w-r}A${r} ${r} 0 0 1 ${x+w} ${y+r}V${y+h}Z`
+    : `M${x} ${y}V${y+h-r}A${r} ${r} 0 0 0 ${x+r} ${y+h}H${x+w-r}A${r} ${r} 0 0 0 ${x+w} ${y+h-r}V${y}Z`;
+}
+const monthStart = DATA.map((d,i) => i === 0 || d.start.slice(5,7) !== DATA[i-1].start.slice(5,7));
+
+function xAxis(y, labels) {
+  let s = `<line class="zeroline" x1="${PADL}" y1="${y}" x2="${W-PADR}" y2="${y}"/>`;
+  DATA.forEach((d,i) => {
+    const isM = monthStart[i];
+    s += `<line class="gridline" x1="${cx(i).toFixed(1)}" y1="${y}" x2="${cx(i).toFixed(1)}" y2="${y + (isM ? 7 : 4)}"/>`;
+    if (isM && labels) s += `<text class="axtext month" x="${cx(i).toFixed(1)}" y="${y+21}" text-anchor="middle">${d.label}</text>`;
+  });
+  return s;
+}
+function hits(top, bot) {
+  return DATA.map((d,i) =>
+    `<rect class="col-hi" data-hi="${i}" x="${(PADL+BAND*i).toFixed(1)}" y="${top}" width="${BAND.toFixed(1)}" height="${bot-top}" rx="3"/>` +
+    `<rect class="col-hit" data-i="${i}" x="${(PADL+BAND*i).toFixed(1)}" y="${top}" width="${BAND.toFixed(1)}" height="${bot-top}"/>`
+  ).join('');
+}
+function yTick(y, text) {
+  return `<text class="axtext" x="${PADL-10}" y="${(y+3.5).toFixed(1)}" text-anchor="end">${text}</text>`;
+}
+
+/* Panel 1 — churn, diverging from a zero line. */
+(function(){
+  const TOP = 12, H = 214;
+  const ADDMAX = niceMax(Math.max(...DATA.map(d=>d.a)));
+  const DELMAX = niceMax(Math.max(...DATA.map(d=>d.d)));
+  const k = H / (ADDMAX + DELMAX);
+  const ZERO = TOP + ADDMAX * k;
+  let s = '';
+  [ADDMAX, ADDMAX/2, 0, -DELMAX/2, -DELMAX].forEach(v => {
+    const y = ZERO - v * k;
+    s += `<line class="${v===0?'zeroline':'gridline'}" x1="${PADL}" y1="${y.toFixed(1)}" x2="${W-PADR}" y2="${y.toFixed(1)}"/>`;
+    s += yTick(y, kfmt(Math.abs(v)));
+  });
+  DATA.forEach((d,i) => {
+    s += `<path class="mark" data-m="${i}" fill="var(--add)" d="${bar(bx(i), ZERO - d.a*k, BARW, d.a*k, 'up')}"/>`;
+    s += `<path class="mark" data-m="${i}" fill="var(--del)" d="${bar(bx(i), ZERO + 2, BARW, d.d*k, 'down')}"/>`;
+  });
+  s += hits(TOP, ZERO + DELMAX*k);
+  document.getElementById('p-churn').innerHTML = s;
+})();
+
+/* Panel 2 — commits. */
+(function(){
+  const TOP = 12, H = 86, MAX = niceMax(Math.max(...DATA.map(d=>d.c))), BASE = TOP + H, k = H / MAX;
+  let s = '';
+  [MAX, MAX/2].forEach(v => {
+    const y = BASE - v*k;
+    s += `<line class="gridline" x1="${PADL}" y1="${y}" x2="${W-PADR}" y2="${y}"/>` + yTick(y, kfmt(v));
+  });
+  s += yTick(BASE, '0');
+  DATA.forEach((d,i) => {
+    s += `<path class="mark" data-m="${i}" fill="var(--commit)" d="${bar(bx(i), BASE - d.c*k, BARW, d.c*k, 'up')}"/>`;
+  });
+  s += xAxis(BASE, false) + hits(TOP, BASE);
+  document.getElementById('p-commits').innerHTML = s;
+})();
+
+/* Panel 3 — releases. */
+(function(){
+  const TOP = 12, H = 56, MAX = niceMax(Math.max(...DATA.map(d=>d.rel))), BASE = TOP + H, k = H / MAX;
+  let s = '';
+  [MAX, MAX/2].forEach(v => {
+    const y = BASE - v*k;
+    s += `<line class="gridline" x1="${PADL}" y1="${y}" x2="${W-PADR}" y2="${y}"/>` + yTick(y, kfmt(v));
+  });
+  s += yTick(BASE, '0');
+  DATA.forEach((d,i) => {
+    s += `<path class="mark" data-m="${i}" fill="var(--release)" d="${bar(bx(i), BASE - d.rel*k, BARW, d.rel*k, 'up')}"/>`;
+  });
+  if (firstRel) s += `<text class="zero-note" x="${PADL+4}" y="${BASE-6}">no release branch before ${firstRel.label}</text>`;
+  s += xAxis(BASE, true) + hits(TOP, BASE);
+  document.getElementById('p-releases').innerHTML = s;
+})();
+
+/* One crosshair across all three panels. */
+const charts = document.getElementById('charts');
+const tip = document.getElementById('tip');
+const svgs = [...charts.querySelectorAll('.plot')];
+let active = -1;
+
+function show(i, evt) {
+  if (i === active) { place(evt); return; }
+  active = i;
+  const d = DATA[i];
+  svgs.forEach(sv => {
+    sv.classList.add('dim');
+    sv.querySelectorAll('[data-hi]').forEach(e => e.classList.toggle('on', +e.dataset.hi === i));
+    sv.querySelectorAll('[data-m]').forEach(e => e.classList.toggle('on', +e.dataset.m === i));
+  });
+  const rows = [
+    ['commits', fmt(d.c)], ['releases', fmt(d.rel)],
+    ['added', '+' + fmt(d.a)], ['removed', '−' + fmt(d.d)],
+    ['files touched', fmt(d.f)]
+  ].map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  tip.innerHTML = `<h3>Week of ${d.label} <span style="color:var(--ink-3);font-weight:400">· ${d.w.split('-')[1]}</span></h3><dl>${rows}</dl>` +
+    (d.tags.length ? `<p class="tags">${d.tags.join(' · ')}</p>` : (d.c === 0 ? `<p class="tags">no commits this week</p>` : ''));
+  tip.classList.add('on');
+  place(evt);
+}
+function place(evt) {
+  const r = charts.getBoundingClientRect();
+  let x = evt.clientX - r.left, y = evt.clientY - r.top - 14;
+  const w = tip.offsetWidth;
+  x = Math.max(w/2 + 6, Math.min(r.width - w/2 - 6, x));
+  if (y < tip.offsetHeight + 8) y = evt.clientY - r.top + tip.offsetHeight + 22;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function clear() {
+  active = -1;
+  svgs.forEach(sv => {
+    sv.classList.remove('dim');
+    sv.querySelectorAll('.on').forEach(e => e.classList.remove('on'));
+  });
+  tip.classList.remove('on');
+}
+svgs.forEach(sv => {
+  sv.addEventListener('pointermove', e => {
+    const hit = e.target.closest('[data-i]');
+    if (hit) show(+hit.dataset.i, e); else clear();
+  });
+  sv.addEventListener('pointerleave', clear);
+});
+charts.addEventListener('pointerleave', clear);
+
+document.getElementById('tbody').innerHTML = DATA.map(d =>
+  `<tr class="${d.c === 0 ? 'quiet' : ''}"><th scope="row">${d.label}</th><td>${fmt(d.c)}</td><td>${d.rel || '—'}</td>` +
+  `<td class="add">${d.a ? '+' + fmt(d.a) : '—'}</td><td class="del">${d.d ? '−' + fmt(d.d) : '—'}</td>` +
+  `<td>${d.f || '—'}</td><td>${d.g ? fmt(d.g) : '—'}</td></tr>`).join('');
+document.getElementById('tfoot').innerHTML =
+  `<tr><th scope="row">Total</th><td>${fmt(T.commits)}</td><td>${fmt(T.rel)}</td>` +
+  `<td class="add">+${fmt(T.add)}</td><td class="del">−${fmt(T.del)}</td><td>—</td><td>${fmt(T.gen)}</td></tr>`;
+</script>"""
+
+
+def render(weeks: list[dict[str, object]], rendered_on: dt.date) -> str:
+    """Render the churn page for a set of weekly records.
+
+    Args:
+        weeks: The weekly records, oldest first.
+        rendered_on: Date stamped in the colophon.
+
+    Returns:
+        The complete HTML fragment.
+
+    """
+    loc, files = source_lines()
+    first, last = weeks[0], weeks[-1]
+    last_day = dt.date.fromisoformat(str(last["start"])) + dt.timedelta(days=6)
+    eyebrow = (
+        f"{pathlib.Path(REPO_ROOT).name} &nbsp;·&nbsp; "
+        f"{dt.date.fromisoformat(str(first['start'])).strftime('%-d %b')} – "
+        f"{min(last_day, rendered_on).strftime('%-d %b %Y')} &nbsp;·&nbsp; "
+        f"{len(weeks)} ISO weeks"
+    )
+    sample = next(
+        (str(w["tags"][0]) for w in weeks if w["tags"]),  # type: ignore[index]
+        rendered_on.strftime("%Y.%m.%d"),
+    )
+    return (
+        PAGE.replace("__DATA__", json.dumps(weeks, separators=(",", ":")))
+        .replace("__NOTES__", notes(weeks, loc, files))
+        .replace("__EYEBROW__", eyebrow)
+        .replace("__SAMPLE_TAG__", sample)
+        .replace("__RENDERED__", rendered_on.strftime("%-d %B %Y"))
+    )
+
+
+def main() -> int:
+    """Render the churn page to stdout or to --output.
+
+    Returns:
+        Process exit code.
+
+    """
+    parser = argparse.ArgumentParser(description="Render the weekly churn chart.")
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        help="write the page here instead of stdout",
+    )
+    parser.add_argument(
+        "--date",
+        type=dt.date.fromisoformat,
+        default=dt.date.today(),
+        help="date stamped on the page (default: today)",
+    )
+    args = parser.parse_args()
+
+    weeks = weekly_history()
+    if not weeks:
+        print("No commits found — run from inside the repository.", file=sys.stderr)
+        return 1
+
+    # Strip trailing whitespace per line, for the same reason
+    # bin/render-day-summary-matrix does: a generated file that disagrees with
+    # the pre-commit hook churns against its own generator forever.
+    page = "\n".join(line.rstrip() for line in render(weeks, args.date).split("\n"))
+    if args.output is None:
+        print(page)
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(page, encoding="utf-8")
+        print(
+            f"Wrote {args.output} — {len(weeks)} weeks, {len(page):,} bytes",
+            file=sys.stderr,
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

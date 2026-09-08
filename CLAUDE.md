@@ -611,6 +611,7 @@ Read these when working in the relevant area:
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
+| Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |

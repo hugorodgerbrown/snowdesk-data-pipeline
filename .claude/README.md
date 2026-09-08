@@ -17,6 +17,7 @@ updates).
 │   ├── audit-security/         ← security audit of the codebase
 │   ├── audit-code/             ← whole-codebase drift audit (SNOW-269)
 │   ├── post-project-update/    ← Linear project status update (used by Routine)
+│   ├── report-churn/           ← weekly churn chart (used by Routine)
 │   └── create-ticket/          ← make a Linear ticket (front of the lifecycle)
 └── agents/
     ├── scoper.md               ← used by scope
@@ -139,6 +140,7 @@ You don't need to remember slash commands — say what you want:
 - "run a security audit" → audit-security
 - "audit the code for drift" → audit-code
 - "post a daily update for Snowdesk" → post-project-update
+- "update the churn chart" / "how's throughput been" → report-churn
 
 A bare "audit the project" matches neither on purpose — say which audit you
 mean, or Claude will ask.
@@ -164,15 +166,23 @@ with no open questions; otherwise `Todo`, or `Backlog` if untriaged.
 
 Tickets in the wrong state cause the skill to stop and explain why.
 
-## post-project-update (special case)
+## Skills that run unattended
 
-`post-project-update` is the one skill that runs **unattended** — a scheduled
-Routine invokes it once a day and posts the resulting status update to Linear
-without an approval gate. The skill lives in this repo (not under `~/.claude/`)
-so the remote Routine environment can find it after cloning.
+Two skills are invoked by scheduled Routines and run without an approval gate.
+Both live in this repo (not under `~/.claude/`) so the remote Routine
+environment can find them after cloning, and neither carries
+`disable-model-invocation` — that flag would block the scheduled task.
 
-When you invoke it interactively (e.g. "post a project update for Snowdesk"),
-the approval gate is restored: draft → review → post.
+- **`post-project-update`** — once a day, posts a Linear project status update.
+- **`report-churn`** — once a week, re-renders the churn chart and republishes
+  its artifact. Publishes nothing else: no PR, no Linear write.
+
+`audit-code` and `audit-pages` also support Routine mode, invoked the same way.
+
+Invoked interactively (e.g. "post a project update for Snowdesk"),
+`post-project-update` restores its approval gate: draft → review → post.
+`report-churn` has no gate in either mode — republishing a generated page is
+reversible and touches nothing else.
 
 ## MCP permissions
 
