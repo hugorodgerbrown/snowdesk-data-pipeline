@@ -189,10 +189,7 @@ describe('the revealed banner', () => {
     window.pwaUpdateBanner.reveal();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
-    expect(bodyText()).toBe(
-      'You are on v29. Reload to update to v30. Your downloaded maps and ' +
-        'saved data are kept.',
-    );
+    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
   });
 
   it('names the short SHAs when the releases are equal', async () => {

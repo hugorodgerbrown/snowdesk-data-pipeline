@@ -117,16 +117,13 @@
   // See static/js/i18n_strings.js.
   const STRINGS = self.pwaStrings.read('sw-update-strings-template', {
     'update-title': 'Update available',
-    'update-body':
-      'A newer version of Snowdesk is ready. Your downloaded maps and ' +
-      'saved data are kept.',
+    'update-body': 'A newer version of Snowdesk is ready.',
     // SNOW-869: the versioned copy, used when /api/version confirms the
     // update AND something distinguishes the two builds. The unnumbered
     // pair above is the third state and stays the rendered default.
     'update-title-versioned': 'Update available (%(version)s)',
     'update-body-versioned':
-      'You are on %(current)s. Reload to update to %(next)s. Your ' +
-      'downloaded maps and saved data are kept.',
+      'You are on %(current)s. Reload to update to %(next)s.',
     reload: 'Reload',
     dismiss: 'Dismiss',
     updating: 'Updating…',

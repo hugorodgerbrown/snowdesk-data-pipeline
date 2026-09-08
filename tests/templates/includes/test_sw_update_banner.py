@@ -139,6 +139,26 @@ class TestRuntimeStrings:
         assert 'data-string="update-title"' in html
         assert 'data-string="update-body"' in html
 
+    def test_no_copy_reassures_about_what_survives(self) -> None:
+        """No string tells the user their downloads are safe (SNOW-869).
+
+        SNOW-609 added "your downloaded maps and saved data are kept" to
+        both the unnumbered and, later, the versioned body. It reads as
+        care and works as alarm: naming the thing that survives is what
+        raises the possibility that it might not, on a banner where
+        nothing the user owns is at risk in the first place.
+
+        The rule it was replaced with is a one-way door — warn before
+        deleting something, say nothing otherwise — so this asserts the
+        absence across the whole rendered partial rather than against the
+        two strings that happened to carry it. A third copy site
+        reintroducing the sentence fails here too.
+        """
+        html = render()
+
+        assert "are kept" not in html
+        assert "downloaded maps" not in html
+
     def test_keys_match_the_admin_fallback(self) -> None:
         """Both copies of this template feed the same ``pwaStrings.read``.
 

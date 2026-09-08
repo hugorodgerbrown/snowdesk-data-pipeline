@@ -1168,10 +1168,7 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
             # unnumbered variant above is the third state — kept, because
             # it is what an unreachable endpoint still shows.
             "title": "Update available (v30)",
-            "body": (
-                "You are on v29. Reload to update to v30. Your downloaded "
-                "maps and saved data are kept."
-            ),
+            "body": "You are on v29. Reload to update to v30.",
             "title_id": "component-library-banner-title-4",
             "body_id": "component-library-banner-body-4",
             "cta_id": "component-library-banner-cta-2",
