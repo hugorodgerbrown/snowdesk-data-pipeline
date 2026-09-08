@@ -382,10 +382,11 @@
    *
    * WHAT SURVIVES is anything this run also fetched. Tile urls between two
    * basemaps never collide — different origins entirely — but the
-   * documents can: two national styles served from one host can share a
-   * sprite, and a same-origin feed is in every run's list. Deleting a url
-   * the new copy needs would leave the area 'incomplete' the moment it
-   * finished downloading.
+   * documents can: two styles served from one host can share a sprite or a
+   * TileJSON, and each record's `deps` names its own copy of that url.
+   * Deleting one the new copy needs would leave the area 'incomplete' the
+   * moment it finished downloading — the state SNOW-844 added for exactly
+   * this class of missing document.
    *
    * @param {string} areaId The area's pinned bucket.
    * @param {Object | null} previous The record being replaced, captured in
@@ -431,9 +432,10 @@
    *   a record that names no urls at all, so SNOW-871's replacement path
    *   (`handleClick`'s `beforeWarm`) has nothing it could identify to
    *   prune and neither asks nor deletes; `_probeDone` reads the same
-   *   absence as "the active basemap's". `basemapKey` is absent (or `null`) on
-   *   a record written before SNOW-645 — `_probeDone` reads that the same
-   *   way, as "another basemap, unnamed" rather than a wrong one.
+   *   absence as "the active basemap's". `basemapKey` is absent (or
+   *   `null`) on a record written before SNOW-645 — `_probeDone` reads
+   *   that the same way, as "another basemap, unnamed" rather than a
+   *   wrong one.
    */
   async function _storedRegionRecord(regionId) {
     try {
