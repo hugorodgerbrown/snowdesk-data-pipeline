@@ -7,8 +7,8 @@ Covers:
   _card.html       — chrome classes present, padding forwarded, center flag,
                      extra classes, inner content preserved.
   _status_page.html — rendered via real child templates (manage_sent,
-                     manage_saved, link_expired, account_deleted) using the
-                     test client; asserts on structural chrome and content.
+                     link_expired, account_deleted) using the test client;
+                     asserts on structural chrome and content.
 
 Follows the pattern in tests/public/test_nav_partial.py: render_to_string
 for partials, test client for full-page templates.
@@ -383,13 +383,6 @@ class TestStatusPageChildren:
         status_card = html.split("max-w-md", 1)[1]
         assert "inline-block" not in status_card
 
-    def test_manage_saved_has_cta_button(self, anon_request: HttpRequest) -> None:
-        """manage_saved.html renders the 'Back to Snowdesk' primary anchor."""
-        html = render_to_string("accounts/manage_saved.html", {}, request=anon_request)
-        assert "Regions saved" in html
-        assert "Back to Snowdesk" in html
-        assert "inline-block" in html  # anchor button
-
     def test_link_expired_has_cta_button(self, anon_request: HttpRequest) -> None:
         """link_expired.html renders the 'Request a new link' primary anchor."""
         html = render_to_string("accounts/link_expired.html", {}, request=anon_request)
@@ -407,10 +400,14 @@ class TestStatusPageChildren:
         assert "inline-block" in html
 
     def test_all_status_pages_share_chrome(self, anon_request: HttpRequest) -> None:
-        """All four status pages share the same flex + card wrapper classes."""
+        """All three status pages share the same flex + card wrapper classes.
+
+        SNOW-707 removed a fourth, ``manage_saved.html`` — an orphan left
+        by SNOW-802 that no view rendered and that still announced
+        "Subscriptions saved".
+        """
         templates = [
             "accounts/manage_sent.html",
-            "accounts/manage_saved.html",
             "accounts/link_expired.html",
             "accounts/account_deleted.html",
         ]

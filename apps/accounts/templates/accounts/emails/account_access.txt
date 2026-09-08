@@ -1,7 +1,7 @@
 {% load i18n %}
 {% trans "Hi," %}
 
-{% trans "Click the link below to access your Snowdesk account and manage your avalanche bulletin subscriptions." %}
+{% trans "Click the link below to sign in to your Snowdesk account." %}
 
 {{ account_url }}
 

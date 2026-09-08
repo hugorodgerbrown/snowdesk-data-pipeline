@@ -39,7 +39,7 @@ Two rules for editing this file:
         {% trans "Privacy Policy" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="privacy-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 30 August 2026 &middot; Version 1.1" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 8 September 2026 &middot; Version 1.2" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
@@ -88,10 +88,10 @@ Two rules for editing this file:
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     An account stores what you choose to put in it: favourite places, which are map pins with
-                    coordinates; ski-touring routes you upload as GPX files, which describe where a route goes; regions
-                    you subscribe to for email notifications; offline map areas you download; and any field observations
-                    you submit. We store these because they are the feature — none of it is collected in the
-                    background, and deleting an item deletes the record.
+                    coordinates; pinned regions, which are saved the same way but without a coordinate; ski-touring
+                    routes you upload as GPX files, which describe where a route goes; offline map areas you download;
+                    and any field observations you submit. We store these because they are the feature — none of it is
+                    collected in the background, and deleting an item deletes the record.
                 {% endblocktrans %}
             </p>
 
@@ -121,12 +121,12 @@ Two rules for editing this file:
             <h3>{% trans "2e. Request records" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
-                    At a few specific moments — creating an account, signing in, subscribing to a region, and opening
-                    a shared link — we store a record of the request. It holds your IP address, an approximate
-                    country, region and city derived from it, your browser's user agent and language, the page
-                    requested, and your session identifier. We use it to understand how people find Snowdesk and to
-                    investigate abuse. It is not written on every page view, and the approximate location comes from
-                    your IP address rather than from your device's GPS.
+                    At a few specific moments — creating an account, signing in, and opening a shared link — we
+                    store a record of the request. It holds your IP address, an approximate country, region and city
+                    derived from it, your browser's user agent and language, the page requested, and your session
+                    identifier. We use it to understand how people find Snowdesk and to investigate abuse. It is not
+                    written on every page view, and the approximate location comes from your IP address rather than from
+                    your device's GPS.
                 {% endblocktrans %}
             </p>
 
@@ -147,12 +147,6 @@ Two rules for editing this file:
                     {% blocktrans trimmed %}
                         <strong>Email address and password</strong> — contract. We need them to give you an account
                         and to sign you in.
-                    {% endblocktrans %}
-                </li>
-                <li>
-                    {% blocktrans trimmed %}
-                        <strong>Bulletin notification emails</strong> — consent. You gave it when you subscribed to a
-                        region, and you can withdraw it at any time by unsubscribing.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -194,8 +188,8 @@ Two rules for editing this file:
                 <li>
                     {% blocktrans trimmed %}
                         <strong>Your account and everything in it</strong> — kept until you delete it. Deleting your
-                        account removes the account, your subscriptions, your saved items and the request records
-                        described in section 2e, in one operation and without delay.
+                        account removes the account, your saved items and the request records described in section 2e,
+                        in one operation and without delay.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -219,8 +213,8 @@ Two rules for editing this file:
             </ul>
             <p>
                 {% blocktrans trimmed %}
-                    An unsubscribe removes the subscription; it does not delete your account. Delete the account itself
-                    from your account settings if you want everything gone.
+                    Deleting a saved item removes that record; it does not delete your account. Delete the account
+                    itself from your account settings if you want everything gone.
                 {% endblocktrans %}
             </p>
         </section>
@@ -242,8 +236,9 @@ Two rules for editing this file:
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Resend</strong> (resend.com) — sends your bulletin notification emails. They receive
-                        your email address for this purpose only.
+                        <strong>Resend</strong> (resend.com) — sends the emails the account itself needs: your sign-in
+                        link, the message that verifies your address, a password reset, and the confirmation and notice
+                        sent when you change your email address. They receive your email address for this purpose only.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -349,8 +344,8 @@ Two rules for editing this file:
                 {% url 'accounts:settings' as settings_url %}
                 {% blocktrans trimmed %}
                     You can exercise the most important of these yourself and immediately: deleting your account from
-                    your <a class="underline" href="{{ settings_url }}">account settings</a> removes the account, your
-                    subscriptions, everything you saved to it, and the request records described in section 2e.
+                    your <a class="underline" href="{{ settings_url }}">account settings</a> removes the account,
+                    everything you saved to it, and the request records described in section 2e.
                 {% endblocktrans %}
             </p>
             <p class="mb-2">

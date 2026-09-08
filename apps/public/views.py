@@ -2454,7 +2454,7 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         "## Legal",
         "",
-        f"- [Privacy]({link('public:privacy')}): how subscriber data is handled.",
+        f"- [Privacy]({link('public:privacy')}): how account data is handled.",
         # SNOW-770: /terms/ now redirects here, so this one entry covers both.
         f"- [Terms of service]({link('public:terms_of_service')}): conditions "
         "of use, source-service attribution, each provider's own disclaimer, "

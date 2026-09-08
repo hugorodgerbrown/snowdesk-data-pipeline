@@ -246,7 +246,6 @@ class TestTermsOfServicePage:
             b'data-testid="tos-safety"',
             b'data-testid="tos-ip"',
             b'data-testid="tos-provider-disclaimers"',
-            b'data-testid="tos-subscriptions"',
             b'data-testid="tos-acceptable-use"',
             b'data-testid="tos-liability"',
             b'data-testid="tos-governing-law"',
@@ -258,17 +257,19 @@ class TestTermsOfServicePage:
         response = client.get(reverse("public:terms_of_service"))
         assert marker in response.content
 
-    def test_sections_are_numbered_one_to_twelve_in_order(self, client: Client) -> None:
+    def test_sections_are_numbered_one_to_eleven_in_order(self, client: Client) -> None:
         """SNOW-770 inserted a section mid-document and renumbered the rest.
 
         A merge that leaves two sections numbered 6, or jumps from 5 to 7,
         is the obvious way to get this wrong, and it reads as sloppy on a
-        legal page.
+        legal page. SNOW-707 deleted the email-subscriptions section — it
+        described a service that does not exist — which renumbered the
+        five sections below it.
         """
         content = client.get(reverse("public:terms_of_service")).content.decode()
         numbers = [int(n) for n in re.findall(r"<h2>(\d+)\.", content)]
 
-        assert numbers == list(range(1, 13)), f"section numbers were {numbers}"
+        assert numbers == list(range(1, 12)), f"section numbers were {numbers}"
 
     def test_carries_the_fidelity_claim(self, client: Client) -> None:
         """The SNOW-666 framing moved here from /terms/ and must not be lost.

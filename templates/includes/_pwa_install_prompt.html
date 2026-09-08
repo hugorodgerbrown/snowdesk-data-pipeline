@@ -24,7 +24,8 @@ rounded-card) and _button.html for the primary CTA.
 {% endcomment %}
 {% trans "Install Snowdesk" as pwa_install_title %}
 {% blocktrans asvar pwa_install_body trimmed %}
-    Add Snowdesk to your home screen for one-tap access and notifications when a new bulletin lands.
+    Add Snowdesk to your home screen for one-tap access and a full-screen map. Downloaded areas read without a signal
+    either way.
 {% endblocktrans %}
 {% trans "Install" as pwa_install_cta_label %}
 {% include "includes/_overlay_banner.html" with id="pwa-install-banner" variant="floating" role="dialog" title_id="pwa-install-title" title=pwa_install_title body=pwa_install_body cta_id="pwa-install-accept" cta_label=pwa_install_cta_label dismissible=True %}
@@ -53,8 +54,8 @@ rounded-card) and _button.html for the primary CTA.
         </div>
         <p class="text-xs text-text-2 mt-1">
             {% blocktrans trimmed %}
-                Tap the Share icon, then choose <b>Add to Home Screen</b>. Home-screen installs unlock notifications and
-                offline access.
+                Tap the Share icon, then choose <b>Add to Home Screen</b>. Snowdesk then opens full screen. Downloaded
+                areas read without a signal either way.
             {% endblocktrans %}
         </p>
         <div class="mt-3 flex items-center justify-center gap-3 text-text-2">
