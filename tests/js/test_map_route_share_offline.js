@@ -12,8 +12,16 @@
  * source event the map made.
  *
  * The load's own failure branch releases it now, which is what this pins: a
- * failed routes load leaves exactly the map's own permanent `sourcedata`
- * listener (the attribution updater) bound and nothing else.
+ * failed routes load adds nothing to the `sourcedata` listeners the map was
+ * already carrying.
+ *
+ * That baseline is SNAPSHOTTED rather than counted. map.js binds its
+ * permanent `sourcedata` listeners in its module body, and the deep link
+ * binds its one-shot inside the `load` handler, so recording the list
+ * between those two points names the leak by reference — and a later ticket
+ * binding a further lifetime listener does not fail a test about route
+ * sharing with a message that mentions neither. It was written as
+ * `length === 1`, and SNOW-870's tile-origin learner duly broke it.
  *
  * Its own file rather than a case in tests/js/test_map_route_share.js: that
  * suite boots with a SUCCESSFUL routes fetch, and map.js reads both the
@@ -148,6 +156,7 @@ function buildFixture() {
 }
 
 let mapStub;
+let permanentSourceDataListeners;
 
 beforeAll(async () => {
   localStorage.clear();
@@ -179,6 +188,10 @@ beforeAll(async () => {
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
   loadMapBundle();
+  // Every `sourcedata` listener bound for the life of the map — the module
+  // body has run, and `openRouteShareDeepLink` (which binds the one-shot
+  // this suite is about) is called from inside the `load` handler below.
+  permanentSourceDataListeners = [...(mapStub.handlers.sourcedata || [])];
   for (const handler of mapStub.handlers.load || []) await handler();
   // The deep link enables the overlay, which starts the load; its failure
   // lands several turns after the `load` handler returns.
@@ -199,10 +212,15 @@ describe('a shared-route deep link whose layer never loads', () => {
   });
 
   it('leaves no deep-link listener bound to sourcedata', () => {
-    // Two remain, both bound for the life of the map: SNOW-870's basemap
-    // tile-origin learner, and map.js's own attribution updater. A third is
-    // the leak — the deep link waiting for an install that has already
-    // failed, and which nothing will retry.
-    expect(mapStub.handlers.sourcedata.length).toBe(2);
+    // The scenario guard: a snapshot of nothing would make the assertion
+    // below vacuous, however many listeners leaked.
+    expect(permanentSourceDataListeners.length).toBeGreaterThan(0);
+    // Anything bound that was not there before the `load` handler ran is
+    // the leak — the deep link still waiting for an install that has
+    // already failed, and which nothing will retry.
+    const leaked = mapStub.handlers.sourcedata.filter(
+      (handler) => !permanentSourceDataListeners.includes(handler),
+    );
+    expect(leaked).toEqual([]);
   });
 });
