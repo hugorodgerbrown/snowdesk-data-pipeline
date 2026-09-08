@@ -1,0 +1,46 @@
+{% comment %}
+templates/includes/_icon_refresh.html — the "pick up the new version"
+glyph: two arrowheads on a two-arc cycle (SNOW-869).
+
+Its caller is includes/_overlay_banner.html's "refresh" icon variant,
+which is the service-worker update banner's roundel —
+static/js/sw_register.js spins this mark while the update it is offering
+applies.
+
+Why it is a partial. This was the one glyph in the tree that lived inline
+in a calling template rather than behind an _icon_*.html, and it was
+corrupt: it kept the top arrowhead and one arc, dropped the second
+subpath, and left the arc's `L23 10` running as a straight chord back
+across the circle. Nobody had a second copy to compare it against. One
+source per mark is how the other seventeen avoid that — see
+includes/_icon_chevron.html.
+
+The shape is Feather's `refresh-cw`: an arrowhead at each end of a
+two-subpath arc, so the cycle reads as continuous rather than as a circle
+with a line through it.
+
+Stroke width 2, matching every other glyph in this codebase — see
+includes/_icon_pencil.html's own note.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            banner roundel's glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <polyline points="23 4 23 10 17 10" />
+    <polyline points="1 20 1 14 7 14" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+    <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+</svg>

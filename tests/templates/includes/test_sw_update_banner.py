@@ -15,7 +15,10 @@ Covers:
     ``<button>`` the default arrow, so a control that does not say
     otherwise reads as inert under the mouse.
   * The strings ``<template>`` carries the runtime-only copy (the busy
-    state) with the same keys the admin fallback declares.
+    state, and the versioned copy naming both builds) with the same keys
+    the admin fallback declares.
+  * The roundel draws ``includes/_icon_refresh.html`` — both arrowheads
+    and both arcs — rather than the corrupted inline path it replaced.
   * The rendered surface uses design tokens (``bg-card``, ``rounded-card``,
     ``border-border``, ``shadow-glass``) and avoids raw palette utilities.
   * The banner is embedded in the public base template on every page.
@@ -131,6 +134,37 @@ class TestRuntimeStrings:
         )
 
         assert public_keys == admin_keys
+
+
+class TestIcon:
+    """The roundel draws the house refresh glyph, not an inline copy."""
+
+    def test_draws_the_two_arc_cycle(self) -> None:
+        """Both arrowheads and both arcs reach the page (SNOW-869).
+
+        The inline SVG this replaced kept one arrowhead and one arc, and
+        its ``L23 10`` ran as a straight chord back across the circle. All
+        four subpaths of ``includes/_icon_refresh.html`` are asserted
+        because it is the missing half that made the old mark unreadable.
+        """
+        html = render()
+        assert '<polyline points="23 4 23 10 17 10"' in html
+        assert '<polyline points="1 20 1 14 7 14"' in html
+        assert 'd="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"' in html
+        assert 'd="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"' in html
+
+    def test_the_corrupted_inline_path_is_gone(self) -> None:
+        """The single-subpath arc must not come back.
+
+        Named explicitly rather than left to the positive assertions
+        above: it drew, it was wrong, and it survived for a year because
+        nothing said what it should have been.
+        """
+        assert "M20.49 15A9 9 0 1 1 5.64 5.64L23 10" not in render()
+
+    def test_icon_sits_in_the_spinnable_hook(self) -> None:
+        """``data-overlay-icon`` is what ``sw_register.js`` spins."""
+        assert "data-overlay-icon" in render()
 
 
 class TestDesignTokens:
