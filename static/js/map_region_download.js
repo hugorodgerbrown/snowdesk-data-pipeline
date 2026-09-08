@@ -290,6 +290,16 @@
    *   the run fetched, resolved by the runner at run start and handed back
    *   through `finish`'s `extras`. A record with none is UNKNOWN, never
    *   incomplete — see `_probeDone` for the three-row resolution rule.
+   * @param {string} glyphPrefix SNOW-871: the prefix this run's glyph
+   *   promotion used, from the same `extras` and resolved at the same
+   *   moment as `renderDeps`, for the same mid-download-switch reason.
+   *   Stored because glyph entries are the one thing in the bucket that
+   *   no list names — `renderDeps` deliberately excludes them (see
+   *   `missingRenderDependencies`), so without a recorded prefix a LATER
+   *   run replacing this basemap has no handle on the entries this one
+   *   promoted and orphans them in the bucket permanently. `''` for a
+   *   style with no `glyphs`, which reads as UNKNOWN, never as "no
+   *   glyphs" — the same rule `deps` follows.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -300,6 +310,7 @@
     bytes,
     basemapKey,
     renderDeps,
+    glyphPrefix,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -322,6 +333,12 @@
         // and a style that is not loaded cannot be asked what its sprite
         // is. Exactly the reason `template` and `basemapKey` are stored.
         deps: Array.isArray(renderDeps) ? renderDeps : [],
+        // SNOW-871: the glyph prefix this run promoted under. Not a url
+        // and not a dependency — a HANDLE, and the only one there is on
+        // entries MapLibre asked for by unicode range and sw.js copied in
+        // without anything enumerating them. A later run replacing this
+        // basemap sweeps it; see `_pruneReplacedBasemap`.
+        glyphPrefix: typeof glyphPrefix === 'string' ? glyphPrefix : '',
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -380,13 +397,33 @@
    * "looks old" would be guesswork over urls nothing on the device
    * describes.
    *
-   * WHAT SURVIVES is anything this run also fetched. Tile urls between two
-   * basemaps never collide — different origins entirely — but the
-   * documents can: two styles served from one host can share a sprite or a
-   * TileJSON, and each record's `deps` names its own copy of that url.
-   * Deleting one the new copy needs would leave the area 'incomplete' the
-   * moment it finished downloading — the state SNOW-844 added for exactly
-   * this class of missing document.
+   * GLYPHS are the one exception, and they are the exception because they
+   * are the one thing in the bucket that no list names. A download does
+   * not fetch glyph PBFs; sw.js's `_promoteGlyphs` copies whatever was
+   * already in the passive cache under the style's glyph prefix
+   * (SNOW-742), so the set is partial and unpredictable and
+   * `missingRenderDependencies` excludes it outright — which means it can
+   * never appear in `deps` and a url-list prune cannot reach it. On the
+   * whole-bucket delete this ticket removed they went for free. So the
+   * record stores the PREFIX its run promoted under, and this hands it to
+   * `prunePinnedBasemapURLs` as a sweep. A previous record with no stored
+   * prefix (written before SNOW-871) is UNKNOWN, not "no glyphs": nothing
+   * is swept for it, because the active style's prefix belongs to a
+   * DIFFERENT basemap and guessing with it would be a deletion nothing
+   * proved — the same reasoning as `areaRenderDependencyURLs`'s third
+   * resolution row.
+   *
+   * WHAT SURVIVES is anything this run also fetched or promoted. Tile urls
+   * between two basemaps never collide — different origins entirely — but
+   * the documents can: two styles served from one host can share a sprite
+   * or a TileJSON, and each record's `deps` names its own copy of that
+   * url. Deleting one the new copy needs would leave the area 'incomplete'
+   * the moment it finished downloading — the state SNOW-844 added for
+   * exactly this class of missing document. Glyphs collide the same way
+   * and worse, since a shared host means a shared PREFIX: this run's own
+   * prefix is passed as the sweep's `spare` so nothing under it is ever
+   * taken, and two basemaps that share a glyph host therefore keep their
+   * labels through the replacement.
    *
    * @param {string} areaId The area's pinned bucket.
    * @param {Object | null} previous The record being replaced, captured in
@@ -396,9 +433,18 @@
    *   the new tile urls are built from.
    * @param {string[][]} tileSources The sources this run fetched.
    * @param {string[]} renderDeps The style/sprite/TileJSON urls it fetched.
+   * @param {string} glyphPrefix The prefix THIS run promoted glyphs under,
+   *   spared from the sweep.
    * @returns {Promise<void>} Always resolves; the prune is best-effort.
    */
-  async function _pruneReplacedBasemap(areaId, previous, blob, tileSources, renderDeps) {
+  async function _pruneReplacedBasemap(
+    areaId,
+    previous,
+    blob,
+    tileSources,
+    renderDeps,
+    glyphPrefix,
+  ) {
     const core = self.pwaBasemapDownloadCore;
     if (!core || !areaId || !previous || !previous.template) return;
     const stale = new Set([
@@ -407,8 +453,16 @@
     ]);
     for (const url of core.rangesToTileURLs(tileSources, blob)) stale.delete(url);
     for (const url of Array.isArray(renderDeps) ? renderDeps : []) stale.delete(url);
-    if (!stale.size) return;
-    await prunePinnedBasemapURLs(areaId, [...stale]);
+    // Absent (pre-SNOW-871 record) or `''` (a style with no `glyphs`) both
+    // mean "sweep nothing" — see the docstring for why the second is not
+    // worth distinguishing from the first: neither names entries this can
+    // safely delete.
+    const spare = typeof glyphPrefix === 'string' ? glyphPrefix : '';
+    const glyphs = previous.glyphPrefix
+      ? { prefix: previous.glyphPrefix, spare: spare }
+      : null;
+    if (!stale.size && !glyphs) return;
+    await prunePinnedBasemapURLs(areaId, [...stale], glyphs);
   }
 
   /**
@@ -427,7 +481,7 @@
    * @param {string} regionId
    * @returns {Promise<{region_id: string, band: number[], z: Object,
    *   template?: string | string[][], basemapKey?: string | null,
-   *   savedAt: string} |
+   *   glyphPrefix?: string, savedAt: string} |
    *   null>} `template` is absent on a record written before SNOW-632 —
    *   a record that names no urls at all, so SNOW-871's replacement path
    *   (`handleClick`'s `beforeWarm`) has nothing it could identify to
@@ -435,7 +489,11 @@
    *   absence as "the active basemap's". `basemapKey` is absent (or
    *   `null`) on a record written before SNOW-645 — `_probeDone` reads
    *   that the same way, as "another basemap, unnamed" rather than a
-   *   wrong one.
+   *   wrong one. `glyphPrefix` is absent on a record written before
+   *   SNOW-871, and that absence is UNKNOWN rather than "no glyphs":
+   *   `_pruneReplacedBasemap` sweeps nothing for it, since the active
+   *   style's prefix belongs to another basemap entirely. `_probeDone`
+   *   heals it once this area's own bucket proves it.
    */
   async function _storedRegionRecord(regionId) {
     try {
@@ -486,9 +544,10 @@
   }
 
   /**
-   * Backfill absent `template` / `basemapKey` / (SNOW-844) `deps` on
-   * `regionId`'s stored record, from values the caller has just PROVEN by
-   * probing real cache contents. Never overwrites a value that is already there.
+   * Backfill absent `template` / `basemapKey` / (SNOW-844) `deps` /
+   * (SNOW-871) `glyphPrefix` on `regionId`'s stored record, from values the
+   * caller has just PROVEN by probing real cache contents. Never overwrites
+   * a value that is already there.
    *
    * A record written before SNOW-632 (no `template`) or SNOW-645 (no
    * `basemapKey`) is missing exactly the two fields every other surface
@@ -510,12 +569,17 @@
    *
    * @param {string} regionId
    * @param {{template?: string[][], basemapKey?: string | null,
-   *   deps?: string[]}} fields SNOW-844 adds `deps` — the same backfill,
-   *   one field further out. A record written before that ticket names no
-   *   render dependencies at all, so the probe cannot tell an area that is
-   *   missing its sprite from one that never listed it; healing from the
-   *   ACTIVE style's list, at the moment the cache has just been found to
-   *   hold every one of those URLs, records something verified.
+   *   deps?: string[], glyphPrefix?: string}} fields SNOW-844 adds `deps` —
+   *   the same backfill, one field further out. A record written before that
+   *   ticket names no render dependencies at all, so the probe cannot tell
+   *   an area that is missing its sprite from one that never listed it;
+   *   healing from the ACTIVE style's list, at the moment the cache has just
+   *   been found to hold every one of those URLs, records something
+   *   verified. SNOW-871 adds `glyphPrefix` on the same terms — the caller
+   *   passes it only once this area's own bucket has been found to hold an
+   *   entry under it. An empty string never arrives (`_isUsable` rejects
+   *   it), which is what keeps "the style has no glyphs" filed as unknown
+   *   rather than frozen in as a fact.
    * @returns {Promise<void>}
    */
   async function _healRegionRecord(regionId, fields) {
@@ -756,9 +820,26 @@
         // other two fields are held to. Healing an unverified list would
         // freeze a guess into the record and make the area permanently
         // 'incomplete' with nothing able to prove otherwise.
+        //
+        // SNOW-871: `glyphPrefix` is held to that same standard, and it
+        // is the reason this heal exists at all for a field the record
+        // has only carried since that ticket. Every region downloaded
+        // before it names no prefix, so the prune that replaces its
+        // basemap cannot reach the glyphs its run promoted and orphans
+        // them. The active style's prefix is only written once this
+        // area's OWN bucket has been found to hold an entry under it —
+        // which is the fact the prune acts on, proven rather than
+        // inferred. No hit means either the promotion never ran or the
+        // entries have gone; both leave the field absent, and both mean
+        // there is nothing for a later prune to take.
         if (tilesCached) {
           const fields = { template: tileSources, basemapKey: activeBasemapKey() };
           if (missingDeps.length === 0) fields.deps = depURLs;
+          if (!stored.glyphPrefix) {
+            const prefix = activeBasemapGlyphPrefix(MAP);
+            const areaId = core.areaIdForRegion(data.regionId);
+            if (await pinnedAreaCacheHasPrefix(areaId, prefix)) fields.glyphPrefix = prefix;
+          }
           await _healRegionRecord(data.regionId, fields);
         }
         return {
@@ -1340,9 +1421,13 @@
           bytes: previous.bytes || 0,
         });
         if (!proceed) {
-          // Declined: nothing has been fetched, nothing has been deleted,
+          // Declined: nothing has been CACHED, nothing has been deleted,
           // and nothing must be pruned by a `finish` that will now never
-          // run. `handleClick` re-renders once the runner has repainted.
+          // run. (One request has gone out — the runner calls `loadBlob`
+          // before this hook, so `/api/region-basemap-tiles/` has been
+          // read; that is a GET of the tile ranges this run WOULD fetch,
+          // it writes nothing, and its ordering predates this ticket.)
+          // `handleClick` re-renders once the runner has repainted.
           replacing = null;
           declinedReplace = true;
           return false;
@@ -1352,7 +1437,7 @@
       finish: async (
         result,
         blob,
-        { core: runCore, progressFill, tileSources, basemapKey, renderDeps },
+        { core: runCore, progressFill, tileSources, basemapKey, renderDeps, glyphPrefix },
       ) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
@@ -1398,13 +1483,26 @@
             result.bytes,
             basemapKey,
             renderDeps,
+            glyphPrefix,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
           // old basemap's tiles and the record naming them both survive
           // whole — which is what lets `_probeDone` go on reading
           // 'other-basemap' for a region whose replacement never landed.
-          await _pruneReplacedBasemap(areaId, replacing, blob, tileSources, renderDeps);
+          //
+          // This run's own `glyphPrefix` goes in as well as being recorded
+          // above: it is what the prune SPARES, so a device switching
+          // between two styles served from one glyph host keeps its
+          // labels.
+          await _pruneReplacedBasemap(
+            areaId,
+            replacing,
+            blob,
+            tileSources,
+            renderDeps,
+            glyphPrefix,
+          );
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the
         // two are one gesture, the region finishes filling, pulses, and only
@@ -1445,8 +1543,9 @@
     });
 
     // SNOW-871: the user declined the replacement, so the run stopped
-    // before fetching anything and the runner has just repainted the
-    // roundel to a generic 'idle'. Settle it back on what it was actually
+    // before caching anything (see `beforeWarm` for the one read-only
+    // request that does precede the question) and the runner has just
+    // repainted the roundel to a generic 'idle'. Settle it back on what it was actually
     // showing — 'other-basemap', in every case that can reach here, since
     // the confirm is only ever raised for a record whose tiles the probe
     // has just found on disk. Awaited rather than fired off, so a caller

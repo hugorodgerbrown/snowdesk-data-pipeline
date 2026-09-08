@@ -798,7 +798,12 @@ are fixed, and replacement semantics are unchanged otherwise:
   makes before painting `other-basemap` at all. Declining refuses the run
   (`beforeWarm` resolving `false` aborts it in
   `basemap_download_runner.js`, exactly as a declined eviction does),
-  writes nothing, and re-renders the roundel back to `other-basemap`.
+  caches nothing, and re-renders the roundel back to `other-basemap`. One
+  request does precede the question — the runner calls `loadBlob` before
+  `beforeWarm`, so `/api/region-basemap-tiles/` has been read by the time
+  the banner appears. That is a read-only GET of the ranges the run would
+  fetch, it writes nothing, and the ordering is unchanged from before this
+  ticket.
 - **The prune** is `_pruneReplacedBasemap`, called from `finish` and only
   when `downloadSucceeded(result)`. It deletes the OLD record's urls —
   its own `template`/`z` expanded through `rangesToTileURLs`, plus its
@@ -808,6 +813,22 @@ are fixed, and replacement semantics are unchanged otherwise:
   new copy is in it by then. A failed or cancelled run prunes NOTHING, so
   the old copy and the record naming it both survive and the roundel goes
   on reading `other-basemap`.
+- **The glyph sweep** is the one part of that prune that is not a url
+  list. Glyph PBFs are never fetched by a download — sw.js's
+  `_promoteGlyphs` copies whatever the passive cache already held under
+  the style's glyph prefix (SNOW-742) — so they appear in no `deps`, and
+  a prune built from the record's urls cannot reach them. Each run
+  therefore RECORDS the prefix it promoted under (`glyphPrefix`, from the
+  runner's `extras` alongside `renderDeps`), and the replacement sweeps
+  the old record's prefix out of the bucket, sparing anything under the
+  prefix the new run is using — two styles can share a glyph host, and
+  the incoming copy's labels must survive. A record with no stored prefix
+  is UNKNOWN, not "no glyphs": nothing is swept for it, because the
+  active style's prefix belongs to a different basemap. `_probeDone`
+  heals the field for such a record, but only once the area's own bucket
+  is found to hold an entry under the active prefix
+  (`pinnedAreaCacheHasPrefix`) — the same "heal only what has just been
+  proven" rule `deps` follows.
 
 **`incomplete`, and the repair (SNOW-844).** Tiles are half the answer. A
 pinned area renders offline only if its bucket ALSO holds the basemap's

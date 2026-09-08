@@ -31,6 +31,12 @@
  * successful one; and `seedPriorDownload` rewrites the record and the
  * bucket before each test, so the tests do not depend on each other's
  * leftovers.
+ *
+ * The stub style also carries a `glyphs` template, mutable per basemap.
+ * Glyph entries are the only thing in a bucket that no url list names, so
+ * they are the one part of a replacement the prune cannot be checked on by
+ * naming what should have gone — the last block below drives them through
+ * the recorded prefix instead.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,6 +74,28 @@ const SPRITE_URLS = [
   SPRITE_BASE + '@2x.png',
 ];
 const TILEJSON = 'https://tiles.example.invalid/source.json';
+
+// SNOW-871: the two basemaps' glyph templates, and one promoted PBF under
+// each. Glyphs are the case a url-list prune cannot reach: a download
+// never fetches them (sw.js's `_promoteGlyphs` copies whatever the passive
+// cache already held), so they appear in no record's `deps` and the only
+// handle on them is the PREFIX — everything before the first `{`. On the
+// whole-bucket delete this ticket removed they went for free; here they
+// have to be swept deliberately, which is what these fixtures drive.
+const GLYPHS_A = 'https://glyphs-a.example.invalid/fonts/{fontstack}/{range}.pbf';
+const GLYPHS_B = 'https://glyphs-b.example.invalid/fonts/{fontstack}/{range}.pbf';
+const PREFIX_A = 'https://glyphs-a.example.invalid/fonts/';
+const PREFIX_B = 'https://glyphs-b.example.invalid/fonts/';
+const GLYPH_A = PREFIX_A + 'Noto%20Sans%20Regular/0-255.pbf';
+const GLYPH_B = PREFIX_B + 'Noto%20Sans%20Regular/0-255.pbf';
+
+// One glyph host serving BOTH styles — a real arrangement (the project's
+// own tile origin serves every self-hosted style's fonts), and the reason
+// the sweep takes a `spare` prefix rather than deleting everything under
+// the outgoing one.
+const GLYPHS_SHARED = 'https://glyphs.example.invalid/fonts/{fontstack}/{range}.pbf';
+const PREFIX_SHARED = 'https://glyphs.example.invalid/fonts/';
+const GLYPH_SHARED = PREFIX_SHARED + 'Noto%20Sans%20Regular/0-255.pbf';
 
 // 12.4 MB, so the confirm's size reads as a real figure rather than a
 // rounded-away zero.
@@ -116,6 +144,10 @@ const REGION_BLOB = {
 function stubMapLibre() {
   const handlers = {};
   let activeTemplate = TEMPLATE_A;
+  // SNOW-871: mutable for the same reason the template is — `glyphPrefix`
+  // is read off the LIVE style, so a test switching basemaps has to move
+  // this with it or the run would record the outgoing style's prefix.
+  let activeGlyphs = GLYPHS_A;
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -146,6 +178,7 @@ function stubMapLibre() {
       layers: [],
       sources: { basemap: { type: 'vector', url: TILEJSON } },
       sprite: SPRITE_BASE,
+      glyphs: activeGlyphs,
     }),
     getCanvas: () => ({ style: {} }),
     getContainer: () => document.getElementById('map'),
@@ -173,6 +206,9 @@ function stubMapLibre() {
     handlers,
     setActiveTemplate: (template) => {
       activeTemplate = template;
+    },
+    setActiveGlyphs: (glyphs) => {
+      activeGlyphs = glyphs;
     },
   };
   globalThis.maplibregl = {
@@ -325,18 +361,23 @@ async function waitFor(predicate, timeoutMs = 2000) {
 }
 
 /**
- * Flip the picker's checked radio and the stub map's active template, then
- * fire the event a real basemap switch ends with.
+ * Flip the picker's checked radio and the stub map's active template and
+ * glyph template, then fire the event a real basemap switch ends with.
  *
  * @param {string} key
  * @param {string} template
+ * @param {string} [glyphs] SNOW-871: the style's `glyphs` template. Each
+ *   basemap gets its own host by default, which is the ordinary case; the
+ *   shared-host test passes the same value for both, which is the case the
+ *   sweep's `spare` prefix exists for.
  * @returns {void}
  */
-function switchBasemap(key, template) {
+function switchBasemap(key, template, glyphs) {
   for (const btn of document.querySelectorAll('#basemap-menu [data-basemap-key]')) {
     btn.setAttribute('aria-checked', btn.dataset.basemapKey === key ? 'true' : 'false');
   }
   mapStub.setActiveTemplate(template);
+  mapStub.setActiveGlyphs(glyphs || (key === 'swisstopo_winter' ? GLYPHS_B : GLYPHS_A));
   document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 }
 
@@ -348,28 +389,38 @@ function switchBasemap(key, template) {
  * bucket the browser has since reclaimed. It replaces nothing, and the
  * point of several tests below is that it is never dressed up as a loss.
  *
+ * SNOW-871: `glyphPrefix` and `glyphs` are seeded independently on
+ * purpose. The record's stored prefix and the entries actually in the
+ * bucket are two different facts, and the interesting cases are the ones
+ * where they disagree — a pre-SNOW-871 record holds glyphs it does not
+ * name, and nothing may be deleted on its behalf.
+ *
  * @param {{template: string, basemapKey: string, deps: string[],
- *   tiles: string[], onDisk?: boolean}} options
+ *   tiles: string[], onDisk?: boolean, glyphPrefix?: string,
+ *   glyphs?: string[]}} options
  * @returns {void}
  */
 function seedPriorDownload(options) {
   const onDisk = options.onDisk !== false;
-  dbRows.set('basemap.regions', [
-    {
-      region_id: REGION_ID,
-      name: REGION_NAME,
-      band: [10, 14],
-      z: REGION_BLOB.z,
-      template: options.template,
-      basemapKey: options.basemapKey,
-      deps: options.deps,
-      bytes: PRIOR_BYTES,
-      savedAt: '2026-08-01T10:00:00.000Z',
-    },
-  ]);
+  const glyphs = options.glyphs || [];
+  const record = {
+    region_id: REGION_ID,
+    name: REGION_NAME,
+    band: [10, 14],
+    z: REGION_BLOB.z,
+    template: options.template,
+    basemapKey: options.basemapKey,
+    deps: options.deps,
+    bytes: PRIOR_BYTES,
+    savedAt: '2026-08-01T10:00:00.000Z',
+  };
+  // Assigned rather than defaulted to '': a record written before this
+  // ticket has no such key at all, and "absent" is the state under test.
+  if (options.glyphPrefix) record.glyphPrefix = options.glyphPrefix;
+  dbRows.set('basemap.regions', [record]);
   cachesStub.buckets.set(
     BUCKET,
-    new Set(onDisk ? [...options.tiles, ...options.deps] : []),
+    new Set(onDisk ? [...options.tiles, ...options.deps, ...glyphs] : []),
   );
 }
 
@@ -696,5 +747,137 @@ describe('warm first, prune after (SNOW-871)', () => {
     expect(bucketURLs()).toContain(STYLE_A);
     expect(recordedRegion().template).toBe(TEMPLATE_A);
     expect(recordedRegion().basemapKey).toBe('openfreemap_liberty');
+  });
+});
+
+describe('the replaced basemap\'s glyphs (SNOW-871)', () => {
+  // The regression this block exists for: the prune above is built from
+  // the previous record's urls, and a glyph url is never in that list —
+  // `missingRenderDependencies` excludes glyph ranges deliberately,
+  // because a download PROMOTES whatever the passive cache happened to
+  // hold rather than enumerating MapLibre's ranges. The whole-bucket
+  // delete took them anyway; the surgical prune structurally cannot
+  // reach them, so without a recorded prefix every basemap switch would
+  // strand the previous style's PBFs in the bucket for good — outside
+  // the recorded `bytes`, and still charged against the quota.
+
+  it("sweeps the old basemap's glyph entries once the replacement has landed", async () => {
+    seedPriorDownload({
+      template: TEMPLATE_A,
+      basemapKey: 'openfreemap_liberty',
+      deps: [STYLE_A, ...SPRITE_URLS, TILEJSON],
+      tiles: [TILE_A],
+      glyphPrefix: PREFIX_A,
+      glyphs: [GLYPH_A],
+    });
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await selectRegion('other-basemap');
+
+    btn().click();
+    await waitFor(() => replaceShown());
+    document.getElementById('map-download-replace-confirm-cta').click();
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    // Gone with the tiles and the style document it was promoted
+    // alongside, rather than left behind as an orphan nothing describes.
+    expect(bucketURLs()).not.toContain(GLYPH_A);
+    expect(bucketURLs()).not.toContain(TILE_A);
+    // And this run recorded its OWN prefix, so the next switch can do to
+    // it what it has just done to OpenFreeMap's.
+    expect(recordedRegion().glyphPrefix).toBe(PREFIX_B);
+  });
+
+  it('sweeps NOTHING for a record that names no prefix — absent is unknown, not "no glyphs"', async () => {
+    // A record written before this ticket. Its bucket holds glyph
+    // entries; nothing on the device says which prefix they were
+    // promoted under, and the ACTIVE style's prefix is no answer —
+    // that belongs to the basemap replacing it. Deleting on that basis
+    // would be a guess, so the entries stay, exactly as
+    // `areaRenderDependencyURLs`'s third resolution row leaves an
+    // unnameable dependency unaccused.
+    seedPriorDownload({
+      template: TEMPLATE_A,
+      basemapKey: 'openfreemap_liberty',
+      deps: [STYLE_A, ...SPRITE_URLS, TILEJSON],
+      tiles: [TILE_A],
+      glyphs: [GLYPH_A],
+    });
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await selectRegion('other-basemap');
+
+    btn().click();
+    await waitFor(() => replaceShown());
+    document.getElementById('map-download-replace-confirm-cta').click();
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    // The tiles the record DID name are gone...
+    expect(bucketURLs()).not.toContain(TILE_A);
+    // ...and the glyphs it did not are still there.
+    expect(bucketURLs()).toContain(GLYPH_A);
+  });
+
+  it('spares glyphs whose prefix the two basemaps SHARE', async () => {
+    // Two styles served from one glyph host — the project's own tile
+    // origin does exactly this. The outgoing record's prefix and the
+    // incoming run's are the same string, so sweeping it would delete the
+    // labels the replacement is relying on and leave the area rendering
+    // as unlabelled geometry.
+    seedPriorDownload({
+      template: TEMPLATE_A,
+      basemapKey: 'openfreemap_liberty',
+      deps: [STYLE_A, ...SPRITE_URLS, TILEJSON],
+      tiles: [TILE_A],
+      glyphPrefix: PREFIX_SHARED,
+      glyphs: [GLYPH_SHARED],
+    });
+    switchBasemap('swisstopo_winter', TEMPLATE_B, GLYPHS_SHARED);
+    await selectRegion('other-basemap');
+
+    btn().click();
+    await waitFor(() => replaceShown());
+    document.getElementById('map-download-replace-confirm-cta').click();
+    await waitFor(() => btn().dataset.downloadState === 'done', 5000);
+
+    expect(bucketURLs()).toContain(GLYPH_SHARED);
+    expect(bucketURLs()).not.toContain(TILE_A);
+    expect(recordedRegion().glyphPrefix).toBe(PREFIX_SHARED);
+  });
+
+  it('heals a pre-ticket record from the prefix its OWN bucket proves', async () => {
+    // The heal that stops the case above being permanent. The record is
+    // for the ACTIVE basemap, its whole tile set and every dependency it
+    // names are in the bucket, and the bucket holds an entry under the
+    // active style's glyph prefix — so the prefix is a fact this area has
+    // just proven, not a value read off a style that might belong to
+    // another basemap. Same standard `deps` is healed to.
+    seedPriorDownload({
+      template: [[TEMPLATE_B]],
+      basemapKey: 'swisstopo_winter',
+      deps: [STYLE_B, ...SPRITE_URLS, TILEJSON],
+      tiles: [TILE_B],
+      glyphs: [GLYPH_B],
+    });
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await selectRegion('done');
+
+    expect(recordedRegion().glyphPrefix).toBe(PREFIX_B);
+  });
+
+  it('heals nothing when the bucket holds no glyphs to prove it', async () => {
+    // Same record, same basemap, no promoted entries — either the
+    // promotion never ran or the passive cache had nothing to give. There
+    // is no fact to record and, equally, nothing a later prune would have
+    // to take, so the field stays absent rather than being filled in from
+    // the style.
+    seedPriorDownload({
+      template: [[TEMPLATE_B]],
+      basemapKey: 'swisstopo_winter',
+      deps: [STYLE_B, ...SPRITE_URLS, TILEJSON],
+      tiles: [TILE_B],
+    });
+    switchBasemap('swisstopo_winter', TEMPLATE_B);
+    await selectRegion('done');
+
+    expect(recordedRegion().glyphPrefix).toBeUndefined();
   });
 });

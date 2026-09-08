@@ -124,10 +124,14 @@
    *     is why it may now refuse.
    *
    *     Resolving exactly `false` ABORTS the run before anything is
-   *     fetched: the roundel is repainted to rest and `finish` is never
-   *     called, the same treatment a declined eviction gets. Any other
-   *     value (including the `undefined` a void implementation returns)
-   *     carries on.
+   *     WRITTEN: no tile, document or glyph is fetched or cached, the
+   *     roundel is repainted to rest and `finish` is never called, the
+   *     same treatment a declined eviction gets. `loadBlob` has already
+   *     run by this point — the hook is handed the blob — so one
+   *     read-only GET for the area's tile ranges has been issued; that
+   *     ordering is what lets the hook see what the run would fetch, and
+   *     it caches nothing. Any other value (including the `undefined` a
+   *     void implementation returns) carries on.
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
    *     `extras` carries `core`, `progressFill`, SNOW-632's `tileSources`
    *     (the same value handed to `beforeWarm`, so a caller recording what
@@ -138,6 +142,12 @@
    *     the style/sprite/TileJSON URLs this run fetched, resolved at run
    *     start for the same reason `tileSources` is, and recorded so a later
    *     probe can check an area whose basemap is not the one on screen.
+   *     SNOW-871 adds `glyphPrefix` — the prefix this run's glyph
+   *     promotion used (`''` for a style with no `glyphs`), resolved at
+   *     the same moment and for the same reason. Glyph URLs are the one
+   *     thing a run writes that no list can name (see
+   *     `missingRenderDependencies`), so the prefix is the only handle a
+   *     later run has on the entries this one promoted.
    *     `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
@@ -295,20 +305,34 @@
     // as "unknown" rather than "complete".
     const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
 
+    // SNOW-742: `glyphPrefix` lets the worker promote this style's
+    // already-cached glyph entries into the pinned bucket once the tiles are
+    // down, so the area keeps its labels when the passive cache trims its own
+    // copies. Optional — a deps object without it (or a style with no
+    // `glyphs`) simply skips the promotion.
+    //
+    // SNOW-871: resolved HERE rather than at the `warmCache` call below,
+    // alongside `renderDeps` and for the same reason — it now goes to
+    // `finish` too, so a caller can RECORD which glyph prefix the run
+    // promoted under, and a basemap switched mid-download must not make
+    // the recorded prefix disagree with the entries actually promoted.
+    const glyphPrefix = typeof deps.glyphPrefix === 'function' ? deps.glyphPrefix() : '';
+
     const settle = (result) =>
-      finish(result, blob, { core, progressFill, tileSources, basemapKey, renderDeps });
+      finish(result, blob, {
+        core,
+        progressFill,
+        tileSources,
+        basemapKey,
+        renderDeps,
+        glyphPrefix,
+      });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —
     // a deliberate download can't be evicted by casual panning elsewhere.
     // SNOW-586: `areaId` selects WHICH bucket, so one area can never
     // perforate (or be perforated by) another.
-    // SNOW-742: `glyphPrefix` lets the worker promote this style's
-    // already-cached glyph entries into the pinned bucket once the tiles are
-    // down, so the area keeps its labels when the passive cache trims its own
-    // copies. Optional — a deps object without it (or a style with no
-    // `glyphs`) simply skips the promotion.
-    const glyphPrefix = typeof deps.glyphPrefix === 'function' ? deps.glyphPrefix() : '';
     const warming = deps.warmCache(urls, { pinned: true, areaId, onProgress, glyphPrefix });
     if (warming) {
       warming

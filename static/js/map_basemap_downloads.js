@@ -1447,8 +1447,9 @@ async function evictBasemapAreas(areaIds) {
 }
 
 /**
- * SNOW-871: delete NAMED urls from one area's pinned bucket, leaving the
- * bucket (and every other entry in it) alone.
+ * SNOW-871: delete NAMED urls — and, optionally, one PREFIX's worth of
+ * unnameable ones — from one area's pinned bucket, leaving the bucket (and
+ * every other entry in it) alone.
  *
  * `evictBasemapAreas` above is the whole-area instrument: bucket deleted,
  * record deleted, ring gone. This is the surgical one, and it exists for
@@ -1474,17 +1475,41 @@ async function evictBasemapAreas(areaIds) {
  * correctness: the record already names the new basemap, so nothing reads
  * a leftover entry as available.
  *
+ * GLYPHS are why the second argument is not the whole story. A download
+ * does not fetch glyph PBFs — sw.js's `_promoteGlyphs` copies whatever the
+ * passive cache already held under the style's glyph prefix into the
+ * bucket (SNOW-742) — so the set that landed is partial, unpredictable and
+ * named by nothing the device stores. `missingRenderDependencies` excludes
+ * them for exactly that reason, which means the replaced record's `deps`
+ * can never contain one and a url-list prune structurally cannot reach
+ * them. Until SNOW-871 they went with the whole-bucket delete; a
+ * PREFIX sweep is what replaces that, and it is the only place in this
+ * function that reads the bucket rather than being told what to remove.
+ *
  * @param {string} areaId The bucket, in `pwaBasemapDownloadCore`'s own
  *   `areaIdForRegion` form — never assembled by hand.
  * @param {string[]} urls Exactly the entries to remove.
+ * @param {{prefix: string, spare?: string} | null} glyphs SNOW-871: also
+ *   remove every entry starting with `prefix` — the replaced style's glyph
+ *   prefix, as `activeBasemapGlyphPrefix` derives it and the record stores
+ *   it. `spare` is the prefix the REPLACEMENT promotes under, and nothing
+ *   beginning with it is ever deleted: two styles can legitimately be
+ *   served from one glyph host, and the incoming copy's labels must
+ *   survive the outgoing copy's prune. An empty or absent `prefix` sweeps
+ *   nothing — a prefix of `''` matches every entry in the bucket, which is
+ *   the whole-bucket delete this function exists to avoid.
  * @returns {Promise<number>} How many entries were actually deleted —
  *   returned for the debug trace and the tests, not for control flow.
  */
-async function prunePinnedBasemapURLs(areaId, urls) {
+async function prunePinnedBasemapURLs(areaId, urls, glyphs) {
   const core = self.pwaBasemapDownloadCore;
   const list = Array.isArray(urls) ? urls : [];
-  if (!core || !areaId || !list.length || !('caches' in window)) return 0;
+  const prefix = (glyphs && glyphs.prefix) || '';
+  const spare = (glyphs && glyphs.spare) || '';
+  if (!core || !areaId || !('caches' in window)) return 0;
+  if (!list.length && !prefix) return 0;
   let deleted = 0;
+  let swept = 0;
   try {
     const cache = await caches.open(core.pinnedCacheName(areaId));
     for (const url of list) {
@@ -1492,6 +1517,25 @@ async function prunePinnedBasemapURLs(areaId, urls) {
         if (await cache.delete(url)) deleted += 1;
       } catch (_e) {
         // One entry refusing to go must not strand the rest.
+      }
+    }
+    if (prefix) {
+      // Enumerated AFTER the named deletions, so the sweep never
+      // reconsiders an entry that has already gone. `cache.keys()` answers
+      // with a snapshot array, so deleting while walking it is safe.
+      for (const request of await cache.keys()) {
+        const url = request.url;
+        if (!url.startsWith(prefix)) continue;
+        // The replacement's own glyphs, on a shared host — and the reason
+        // this is a `startsWith` rather than an inequality: one prefix can
+        // legitimately nest inside the other (`…/fonts/` and
+        // `…/fonts/noto/`), and the incoming one wins either way.
+        if (spare && url.startsWith(spare)) continue;
+        try {
+          if (await cache.delete(url)) swept += 1;
+        } catch (_e) {
+          // As above — best-effort, per entry.
+        }
       }
     }
   } catch (_e) {
@@ -1505,17 +1549,54 @@ async function prunePinnedBasemapURLs(areaId, urls) {
     areaId: areaId,
     asked: list.length,
     deleted: deleted,
+    // Separate counts: the named half is checkable against what was asked
+    // for, the glyph half is only ever discovered by the sweep itself.
+    glyphPrefix: prefix,
+    glyphsSwept: swept,
   });
-  return deleted;
+  return deleted + swept;
+}
+
+/**
+ * SNOW-871: whether ONE area's pinned bucket holds any entry beginning
+ * with `prefix`.
+ *
+ * Area-scoped on purpose, unlike `pinnedBasemapCacheURLs` above, which
+ * unions every bucket: the one caller (`_probeDone`'s glyph-prefix heal,
+ * map_region_download.js) is establishing a fact about THIS area's own
+ * record, and a hit in a sibling area's bucket would prove nothing about
+ * it.
+ *
+ * An empty `prefix` answers `false` rather than "everything matches" — a
+ * style with no `glyphs` yields `''` from `activeBasemapGlyphPrefix`, and
+ * treating that as a match would heal a record with a prefix that sweeps
+ * the whole bucket.
+ *
+ * @param {string} areaId
+ * @param {string} prefix
+ * @returns {Promise<boolean>} `false` for an unreadable or absent bucket —
+ *   the caller heals nothing on a `false`, which is the safe direction.
+ */
+async function pinnedAreaCacheHasPrefix(areaId, prefix) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId || !prefix || !('caches' in window)) return false;
+  try {
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    const requests = await cache.keys();
+    return requests.some((request) => request.url.startsWith(prefix));
+  } catch (_e) {
+    return false;
+  }
 }
 
 // SNOW-588: `basemapDownloadedAreas` and `evictBasemapAreas` above, for
 // modules OUTSIDE this file — the "Manage downloads" sheet
 // (static/js/map_downloads_manager.js), which lists every downloaded area
-// and deletes the ones the user picks. (SNOW-871 put a third function
+// and deletes the ones the user picks. (SNOW-871 put two more functions
 // between them and this comment, which used to say "the two functions
-// above"; `prunePinnedBasemapURLs` has one caller, in this file's own
-// lexical scope, and is not exposed here.)
+// above"; `prunePinnedBasemapURLs` and `pinnedAreaCacheHasPrefix` are both
+// reached from this file's own lexical scope by the region control, and
+// neither is exposed here.)
 //
 // Both are module scope, so the sheet cannot reach them directly, and
 // both are exactly what it needs — which is why it delegates rather than
