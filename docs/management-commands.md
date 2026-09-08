@@ -720,21 +720,6 @@ uv run python manage.py backfill_location_short_ids           # preview
 uv run python manage.py backfill_location_short_ids --commit  # apply
 ```
 
-### `backfill_subscriptions_to_region_pins` — turn Subscription rows into region pins
-
-One-shot backfill for SNOW-802. Every `Subscription` row becomes the
-account's region pin (`create_region_favourite`, with the favourites cap
-switched off so nobody's regions are dropped). The `Subscription` row is
-left in place: the table is dropped in its own deploy (SNOW-805), after this
-has run in production — `build.sh` auto-migrates, so a drop cannot travel
-with the backfill that empties it. Idempotent: an existing pin is reported,
-not duplicated.
-
-```bash
-uv run python manage.py backfill_subscriptions_to_region_pins           # preview
-uv run python manage.py backfill_subscriptions_to_region_pins --commit  # apply
-```
-
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
@@ -1014,13 +999,13 @@ incident that invalidates derived state:
   Flags: `--commit`.
 
 - `uppercase_account_choice_values --commit` — one-off post-deploy step for
-  SNOW-582: rewrites `Subscription.geo_match_kind` and
-  `PushSubscription.mechanism` from their legacy lower-case stored values
-  to their upper-case `TextChoices` members. Read-only by default;
-  idempotent by queryset per field.
+  SNOW-582: rewrites `PushSubscription.mechanism` from its legacy
+  lower-case stored values to its upper-case `TextChoices` members. It
+  covered `Subscription.geo_match_kind` too until SNOW-805 dropped that
+  model. Read-only by default; idempotent by queryset per field.
 
   ```bash
-  # Dry-run — breakdown of what would be converted, both fields.
+  # Dry-run — breakdown of what would be converted.
   uv run python manage.py uppercase_account_choice_values
 
   # Persist.

@@ -14,23 +14,21 @@ true. The retention period is now twelve months, stated on the page and
 enforced here.
 
 Twelve months rather than fourteen days because the table is not an access
-log. Rows exist to give ``Account.acquisition_request`` and
-``Subscription.subscribed_via`` their geo and language context, so a
-two-week window would blank that for every account older than a fortnight
-and defeat the reason the rows are kept at all. A year keeps a full season
-of acquisition history and still means no IP address or coordinate pair
-outlives it.
+log. Rows exist to give ``Account.acquisition_request`` its geo and
+language context, so a two-week window would blank that for every account
+older than a fortnight and defeat the reason the rows are kept at all. A
+year keeps a full season of acquisition history and still means no IP
+address or coordinate pair outlives it.
 
 This is a hard delete, matching the erasure decision in SNOW-774: an
 account deletion removes its rows outright rather than anonymising them,
 and a retention sweep that only blanked columns would leave the two paths
 disagreeing about what a spent row looks like.
 
-Rows still referenced by ``Account.acquisition_request`` or
-``Subscription.subscribed_via`` are deleted like any other — both FKs are
-``SET_NULL``, so the referring row survives with the pointer cleared. That
-is the intended outcome: the account keeps its history, the identifiers
-behind it expire.
+Rows still referenced by ``Account.acquisition_request`` are deleted like
+any other — the FK is ``SET_NULL``, so the referring row survives with the
+pointer cleared. That is the intended outcome: the account keeps its
+history, the identifiers behind it expire.
 
 Read-only by default — pass ``--commit`` to persist deletions (per the
 project-wide management command convention; see

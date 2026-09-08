@@ -4,13 +4,8 @@ tests/regions/services/test_point_match.py — Tests for point_match service.
 Covers:
   point_in_polygon  — inside / outside / on-boundary / inside-a-hole;
                       None and malformed geometry → False; MultiPolygon.
-  classify_match    — four outcomes: in_region, in_neighbour, elsewhere,
-                      unknown (no coords).
   region_for_point  — inside / outside / null (no regions with boundary) /
                       nearest-centre short-circuit ordering.
-  Drift guard       — asserts that module-level constants equal the
-                      Subscription.GeoMatchKind choice values so the two
-                      representations never diverge silently.
 """
 
 from __future__ import annotations
@@ -19,16 +14,7 @@ from typing import Any
 
 import pytest
 
-from apps.accounts.models import Subscription
-from apps.regions.services.point_match import (
-    ELSEWHERE,
-    IN_NEIGHBOUR,
-    IN_REGION,
-    UNKNOWN,
-    classify_match,
-    point_in_polygon,
-    region_for_point,
-)
+from apps.regions.services.point_match import point_in_polygon, region_for_point
 from tests.factories import LocationFactory, MicroRegionFactory
 
 # ---------------------------------------------------------------------------
@@ -256,100 +242,6 @@ class TestPointInPolygonMultiPolygon:
 
 
 # ---------------------------------------------------------------------------
-# classify_match
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestClassifyMatch:
-    """Tests for classify_match — four outcome paths."""
-
-    def _make_region_with_boundary(
-        self, x0: float, y0: float, x1: float, y1: float
-    ) -> Any:
-        """Create a MicroRegion with a square boundary polygon.
-
-        Args:
-            x0, y0: Bottom-left corner (lon, lat).
-            x1, y1: Top-right corner (lon, lat).
-
-        Returns:
-            A saved MicroRegion instance.
-
-        """
-        return MicroRegionFactory.create(boundary=_square_polygon(x0, y0, x1, y1))
-
-    def test_returns_unknown_when_coords_are_none(self) -> None:
-        """Returns (UNKNOWN, None) when both lon and lat are None."""
-        target = self._make_region_with_boundary(0, 0, 10, 10)
-        kind, matched = classify_match(None, None, target)
-        assert kind == UNKNOWN
-        assert matched is None
-
-    def test_returns_unknown_when_lon_only_is_none(self) -> None:
-        """Returns (UNKNOWN, None) when lon is None (lat provided)."""
-        target = self._make_region_with_boundary(0, 0, 10, 10)
-        kind, matched = classify_match(None, 5.0, target)
-        assert kind == UNKNOWN
-        assert matched is None
-
-    def test_returns_unknown_when_lat_only_is_none(self) -> None:
-        """Returns (UNKNOWN, None) when lat is None (lon provided)."""
-        target = self._make_region_with_boundary(0, 0, 10, 10)
-        kind, matched = classify_match(5.0, None, target)
-        assert kind == UNKNOWN
-        assert matched is None
-
-    def test_returns_in_region_when_inside_target(self) -> None:
-        """Returns (IN_REGION, target) when the point is inside target.boundary."""
-        target = self._make_region_with_boundary(0, 0, 10, 10)
-        kind, matched = classify_match(5.0, 5.0, target)
-        assert kind == IN_REGION
-        assert matched == target
-
-    def test_returns_in_neighbour_when_inside_neighbour(self) -> None:
-        """Returns (IN_NEIGHBOUR, neighbour) when point is inside a neighbour's boundary."""
-        target = self._make_region_with_boundary(0, 0, 5, 5)
-        neighbour = self._make_region_with_boundary(10, 0, 15, 5)
-        target.neighbours.add(neighbour)
-
-        # Point inside neighbour (12, 2), outside target.
-        kind, matched = classify_match(12.0, 2.0, target)
-        assert kind == IN_NEIGHBOUR
-        assert matched == neighbour
-
-    def test_returns_elsewhere_when_outside_all(self) -> None:
-        """Returns (ELSEWHERE, None) when point is outside target and all neighbours."""
-        target = self._make_region_with_boundary(0, 0, 5, 5)
-        neighbour = self._make_region_with_boundary(10, 0, 15, 5)
-        target.neighbours.add(neighbour)
-
-        # Point at (50, 50) — outside everything.
-        kind, matched = classify_match(50.0, 50.0, target)
-        assert kind == ELSEWHERE
-        assert matched is None
-
-    def test_returns_elsewhere_with_no_neighbours(self) -> None:
-        """Returns (ELSEWHERE, None) when the region has no neighbours and point is outside."""
-        target = self._make_region_with_boundary(0, 0, 5, 5)
-        # No neighbours added.
-        kind, matched = classify_match(50.0, 50.0, target)
-        assert kind == ELSEWHERE
-        assert matched is None
-
-    def test_in_region_takes_precedence_over_neighbours(self) -> None:
-        """When point is inside target, IN_REGION is returned even if a neighbour also contains it."""
-        target = self._make_region_with_boundary(0, 0, 10, 10)
-        # Overlapping neighbour — same bounding box.
-        neighbour = self._make_region_with_boundary(0, 0, 10, 10)
-        target.neighbours.add(neighbour)
-
-        kind, matched = classify_match(5.0, 5.0, target)
-        assert kind == IN_REGION
-        assert matched == target
-
-
-# ---------------------------------------------------------------------------
 # region_for_point — global point→MicroRegion resolver (SNOW-324)
 # ---------------------------------------------------------------------------
 
@@ -466,31 +358,6 @@ class TestRegionForPoint:
         region = self._make_region_with_boundary(6, 0, 10, 4)
         result = region_for_point(lat=2.0, lon=8.0)
         assert result == region
-
-
-# ---------------------------------------------------------------------------
-# Drift guard — point_match constants must equal GeoMatchKind choice values
-# ---------------------------------------------------------------------------
-
-
-class TestConstantsDriftGuard:
-    """Assert that point_match module constants match Subscription.GeoMatchKind.
-
-    If a developer renames a constant in one place but not the other, this
-    test will catch the drift before it reaches production.
-    """
-
-    def test_in_region_matches_geomatchkind(self) -> None:
-        assert IN_REGION == Subscription.GeoMatchKind.IN_REGION
-
-    def test_in_neighbour_matches_geomatchkind(self) -> None:
-        assert IN_NEIGHBOUR == Subscription.GeoMatchKind.IN_NEIGHBOUR
-
-    def test_elsewhere_matches_geomatchkind(self) -> None:
-        assert ELSEWHERE == Subscription.GeoMatchKind.ELSEWHERE
-
-    def test_unknown_matches_geomatchkind(self) -> None:
-        assert UNKNOWN == Subscription.GeoMatchKind.UNKNOWN
 
 
 @pytest.mark.django_db

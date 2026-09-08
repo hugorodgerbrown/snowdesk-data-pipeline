@@ -9,8 +9,6 @@ Defines the following concrete models:
   ``is_verified`` is the sole "email proven reachable" gate, set by every
   email-proving link.  Email is stored exclusively on User.email; ``Account``
   carries only domain-specific fields.
-- Subscription: links an Account to a specific MicroRegion so that
-  notifications can be scoped to the regions the account cares about.
 - PasskeyCredential: a WebAuthn platform passkey registered by a User,
   storing the FIDO2 public key and metadata needed to verify future sign-ins.
 - PushSubscription: a Web Push (VAPID) subscription for an Account.
@@ -145,10 +143,9 @@ class Account(BaseModel):
     """
     Identity profile linked to Django's built-in User via OneToOneField.
 
-    Registration (SNOW-430) treats users as first-class objects independent of
-    any bulletin subscription: an ``Account`` may exist with no
-    ``Subscription`` rows.  Access it via ``request.user.account``
-    (related_name="account").
+    Registration (SNOW-430) treats users as first-class objects: an
+    ``Account`` needs nothing saved against it to exist.  Access it via
+    ``request.user.account`` (related_name="account").
 
     ``is_verified`` records that the *current* email address has been proven
     reachable via a verification link.  It is deliberately distinct from
@@ -294,111 +291,6 @@ def user_is_verified(user: AbstractBaseUser | AnonymousUser) -> bool:
     except Account.DoesNotExist:
         return False
     return bool(account.is_verified)
-
-
-# ---------------------------------------------------------------------------
-# Subscription
-# ---------------------------------------------------------------------------
-
-
-class SubscriptionQuerySet(models.QuerySet["Subscription"]):
-    """Custom queryset for Subscription."""
-
-
-class Subscription(models.Model):
-    """
-    Links an Account to an SLF warning Region.
-
-    An account may have many subscriptions, one per region of interest.
-    The unique_together constraint prevents duplicate account/region pairs.
-
-    ``geo_match_kind`` and ``geo_matched_region`` record how the account's
-    geolocation (read from ``subscribed_via``) relates to the subscribed region
-    at the moment of sign-up.  These fields are frozen on INSERT; they are
-    never updated after the row is created.  Raw geo and language fields live
-    on ``subscribed_via`` (a ``RequestLog``); only the region-relative
-    classification is stored here because ``RequestLog`` is region-agnostic.
-    """
-
-    class GeoMatchKind(models.TextChoices):
-        """Region-relative classification of the account's geolocation.
-
-        Literal values must stay in sync with the constants in
-        ``apps.regions.services.point_match``.  A unit test in
-        ``tests/regions/services/test_point_match.py`` guards against drift.
-        """
-
-        IN_REGION = "IN_REGION", "In region"
-        IN_NEIGHBOUR = "IN_NEIGHBOUR", "In neighbouring region"
-        ELSEWHERE = "ELSEWHERE", "Elsewhere"
-        UNKNOWN = "UNKNOWN", "Unknown"
-
-    id = models.BigAutoField(primary_key=True)
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    account = models.ForeignKey(
-        Account,
-        on_delete=models.CASCADE,
-        related_name="subscriptions",
-    )
-    region = models.ForeignKey(
-        "regions.MicroRegion",
-        on_delete=models.CASCADE,
-        related_name="subscriptions",
-    )
-    subscribed_via = models.ForeignKey(
-        "core.RequestLog",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="initiated_subscriptions",
-        help_text=(
-            "Request that created this subscription. "
-            "First-observation wins on the (account, region) pair."
-        ),
-    )
-    geo_match_kind = models.CharField(
-        max_length=16,
-        choices=GeoMatchKind.choices,
-        default=GeoMatchKind.UNKNOWN,
-        db_index=True,
-        help_text=(
-            "How the account's geolocation (from subscribed_via) relates to "
-            "the subscribed region at sign-up time. Frozen on INSERT; never "
-            "updated. Raw geo fields live on subscribed_via (RequestLog)."
-        ),
-    )
-    geo_matched_region = models.ForeignKey(
-        "regions.MicroRegion",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="+",
-        help_text=(
-            "The specific MicroRegion the account's geolocation fell inside "
-            "(target region itself, or the first matching neighbour). Null when "
-            "geo_match_kind is elsewhere or unknown. Analytics-only; not surfaced "
-            "on the public region API."
-        ),
-    )
-
-    objects: SubscriptionQuerySet = SubscriptionQuerySet.as_manager()  # type: ignore[assignment]
-
-    class Meta:
-        """Model metadata."""
-
-        unique_together = [("account", "region")]
-        ordering = ["region__region_id"]
-
-    def to_string(self) -> str:
-        """Return a human-readable representation."""
-        return f"{self.account.user.email} → {self.region.region_id}"
-
-    def __str__(self) -> str:
-        """Return a human-readable representation."""
-        return self.to_string()
 
 
 # ---------------------------------------------------------------------------

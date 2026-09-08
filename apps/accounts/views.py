@@ -330,8 +330,8 @@ def register_view(request: HttpRequest) -> HttpResponse:
     """
     Standalone registration page: email required, name optional.
 
-    Creates (or reuses) an ``auth.User`` and an ``Account`` profile — no
-    ``Subscription`` rows.  Submitting sends an email-verification link
+    Creates (or reuses) an ``auth.User`` and an ``Account`` profile, and
+    nothing else.  Submitting sends an email-verification link
     asynchronously; the account only becomes verified when that link is
     confirmed (``verify_view``).
 

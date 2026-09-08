@@ -6,17 +6,16 @@ Provides ``erase_account``: delete a person's ``auth.User``, their
 reach.
 
 The Privacy Policy promises that deleting an account removes the account,
-the subscriptions, the saved items and the request records "in one
-operation and without delay". Two things stand between the ``CASCADE`` and
-that promise, and both need Python to run:
+the saved items and the request records "in one operation and without
+delay". Two things stand between the ``CASCADE`` and that promise, and both
+need Python to run:
 
 * **Request records written before the account existed.** Sign-up happens
   anonymously, so that ``RequestLog`` row has ``account=None``; the link
-  runs the other way, from ``Account.acquisition_request`` and
-  ``Subscription.subscribed_via``. Both are ``SET_NULL``, so the cascade
-  drops the pointer and strands the row — still holding the IP address,
-  city, coordinates, user agent and session key captured at sign-up
-  (SNOW-774).
+  runs the other way, from ``Account.acquisition_request``. It is
+  ``SET_NULL``, so the cascade drops the pointer and strands the row —
+  still holding the IP address, city, coordinates, user agent and session
+  key captured at sign-up (SNOW-774).
 * **The anonymous ``Location`` each favourite minted.** ``Favourite.user``
   is ``CASCADE`` and ``Favourite.location`` is ``PROTECT``, so the cascade
   deletes the favourites in bulk and leaves the locations behind, holding
@@ -57,11 +56,11 @@ def _referenced_request_log_ids(account: "Account | None") -> list[int]:
     These are the rows a ``CASCADE`` on ``RequestLog.account`` cannot reach:
     the sign-up request happens before the account exists, so that row is
     written anonymously with ``account=None`` and the association is
-    recorded the other way round, by ``Account.acquisition_request`` and
-    ``Subscription.subscribed_via`` pointing *at* the log row.
+    recorded the other way round, by ``Account.acquisition_request``
+    pointing *at* the log row.
 
-    Collect them before the delete, not after: once the account and its
-    subscriptions are gone there is nothing left to read the FKs from.
+    Collect them before the delete, not after: once the account is gone
+    there is nothing left to read the FK from.
 
     Args:
         account: The account being deleted, or None for an authenticated
@@ -72,17 +71,9 @@ def _referenced_request_log_ids(account: "Account | None") -> list[int]:
         Distinct RequestLog primary keys, empty when there are none.
 
     """
-    if account is None:
+    if account is None or account.acquisition_request_id is None:
         return []
-
-    ids = {
-        pk
-        for pk in account.subscriptions.values_list("subscribed_via_id", flat=True)
-        if pk is not None
-    }
-    if account.acquisition_request_id is not None:
-        ids.add(account.acquisition_request_id)
-    return list(ids)
+    return [account.acquisition_request_id]
 
 
 def erase_account(user: "UserType", account: "Account | None") -> None:
@@ -90,15 +81,15 @@ def erase_account(user: "UserType", account: "Account | None") -> None:
 
     Runs in this order, and the order is load-bearing:
 
-    1. Collect the referenced ``RequestLog`` ids while the FKs pointing at
-       them still exist.
+    1. Collect the referenced ``RequestLog`` ids while the FK pointing at
+       them still exists.
     2. Delete the favourites one row at a time, so each minted anonymous
        ``Location`` is swept as its last referent goes.
     3. Delete the organised trips the same way and for the same reason —
        a trip's meeting point is a minted anonymous ``Location`` too.
-    4. Delete the user — the ``CASCADE`` takes the account, subscriptions,
-       signed-in request rows, observations, routes, trip participations,
-       passkeys and clicks.
+    4. Delete the user — the ``CASCADE`` takes the account, the signed-in
+       request rows, observations, routes, trip participations, passkeys,
+       push subscriptions and clicks.
     5. Delete the collected request rows, now that nothing points at them.
 
     All five commit together or none of them do. Erasure that half succeeds
