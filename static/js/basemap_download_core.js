@@ -344,6 +344,14 @@
     openfreemap_liberty: 50 * 1024,
     // Measured, see above: 60.8 KB per source over two sources, worst-region
     // p99 85.5 KB per source. Charged per source by ``sourceScaledMb``.
+    //
+    // 96 KB clears that p99 by 12%, and the margin is DELIBERATE, not a
+    // rounded measurement: the readout promises an upper bound, and a
+    // re-measurement is free to nudge p99 up a little. Anything that
+    // re-measures should move this constant to keep a comparable margin
+    // rather than shave it to the new p99 — the test asserts only
+    // ``> 85.5 * 1024``, so eroding the headroom to nothing stays green
+    // right up until the promise is false again.
     swisstopo_winter: 96 * 1024,
     // Same tile sources as winter — the two styles differ only in paint.
     swisstopo_light: 96 * 1024,

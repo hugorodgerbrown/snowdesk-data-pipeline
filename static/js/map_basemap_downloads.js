@@ -79,8 +79,11 @@ function activeBasemapTileSources(map) {
 // template. A download triggered in that narrow window would therefore
 // record the new key against tiles that were actually fetched from the
 // OLD basemap — display-only is what keeps that mismatch harmless: nothing
-// here feeds the eviction decision, which stays template-only. Returns
-// null with no menu, or no checked row (nothing has resolved yet).
+// here feeds the eviction decision, which stays template-only. SNOW-868's
+// per-basemap zoom band is template-only for the same reason (see
+// `resolveBaseLayerPlan`'s `bandKey`); anything else that comes to depend
+// on which basemap is on screen has to make that choice consciously.
+// Returns null with no menu, or no checked row (nothing has resolved yet).
 function activeBasemapKey() {
   const basemapMenu = document.getElementById('basemap-menu');
   if (!basemapMenu) return null;
@@ -737,9 +740,12 @@ function mapCameraBBox(map) {
  * second bucket would spend bytes to store a duplicate.
  *
  * @returns {Promise<{areaId: string, basemapKey: string|null,
- *   bbox: number[], urls: string[]}|null>} `null` when the style has not
- *   settled, when there is no basemap key to file it under, or when the
- *   style's coverage does not meet the map's own extent.
+ *   bandKey: string, bbox: number[], urls: string[]}|null>} `null` when
+ *   the style has not settled, when there is no basemap key to file it
+ *   under, or when the style's coverage does not meet the map's own
+ *   extent. `basemapKey` is the picker's (bucket identity); `bandKey` is
+ *   the rendered style's (which band was fetched) — see the inline
+ *   comment for why those are two values and not one.
  */
 
 async function resolveBaseLayerPlan() {
@@ -760,10 +766,39 @@ async function resolveBaseLayerPlan() {
   if (!bbox) return null;
   // SNOW-868: the band is the BASEMAP's, not one global constant — a
   // national style closes the seam to z9 for 4.4 MB, which the global
-  // default cannot do for 121. Threading the key here is also what makes
+  // default cannot do for 121. Threading a key here is also what makes
   // the migration below per-basemap, with no second lookup to keep in
   // step.
-  const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds, basemapKey);
+  //
+  // TWO keys, deliberately, and they must not be tidied into one:
+  //
+  //   - `bandKey` — which BAND to fetch — is derived from the tile
+  //     TEMPLATES of the style that is actually rendered.
+  //     `activeBasemapKey()` cannot be used for it: that reads the picker
+  //     DOM, which `map_basemap_picker.js` updates synchronously on
+  //     click, while `activeBasemapTileSources` above still returns the
+  //     OUTGOING style's templates until MapLibre's asynchronous
+  //     `setStyle()` has landed. `activeBasemapKey`'s own comment calls
+  //     that mismatch harmless precisely because it is display-only and
+  //     feeds no decision — selecting the band with it would end that. In
+  //     the race window an OpenFreeMap style would be asked for a
+  //     national z0-9 band, which is the 121 MB this ticket exists to
+  //     avoid, or a national style asked for z0-7.
+  //   - `basemapKey` — the BUCKET IDENTITY — stays the picker's. It names
+  //     the areaId, the `basemap.baseLayers` entry filed under it, and
+  //     the eviction that reads both. `basemapKeyForTileSources` matches
+  //     on the template's HOST, and `swisstopo_winter` and
+  //     `swisstopo_light` share hosts, so deriving identity from it would
+  //     collapse two buckets into one — a behaviour change nobody asked
+  //     for.
+  //
+  // The band is safe on the ambiguous key for exactly the reason identity
+  // is not: those two swisstopo styles share a band ([0, 9]) AND a
+  // bytes-per-tile figure (96 KB), so the host's inability to tell them
+  // apart cannot change the answer. Give them different bands and this
+  // stops being true.
+  const bandKey = core.basemapKeyForTileSources(tileSources);
+  const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds, bandKey);
   const areaId = core.areaIdForBaseLayer(basemapKey);
   // SNOW-863: a bucket holding anything the CURRENT band does not ask for
   // is from an older one, and is dropped whole before planning.
@@ -784,7 +819,7 @@ async function resolveBaseLayerPlan() {
   // SNOW-868 made the band per basemap and needed nothing added here.
   // Two things follow, and both are the reason:
   //
-  //   - `all` is already this basemap's own url set, because the key is
+  //   - `all` is already this basemap's own url set, because `bandKey` is
   //     threaded into `baseLayerTileURLs` above. The comparison is
   //     therefore per-basemap by construction, not by a second lookup
   //     that could drift out of step with the first.
@@ -804,12 +839,15 @@ async function resolveBaseLayerPlan() {
   const urls = all.filter((url) => !cached.has(url));
   window.pwaDebugLog?.record('cache', 'baselayer.plan', {
     basemapKey: basemapKey,
+    // Logged beside it because the two disagreeing is the race above, and
+    // a trace that showed only one of them could not tell you it happened.
+    bandKey: bandKey,
     bbox: bbox,
     total: all.length,
     missing: urls.length,
     rebanded: stale,
   });
-  return { areaId: areaId, basemapKey, bbox, urls };
+  return { areaId: areaId, basemapKey, bandKey, bbox, urls };
 }
 
 /**
@@ -993,7 +1031,13 @@ async function recordBaseLayer(result, plan) {
       // bucket holding z0-9, which is the read `_baseLayerBucketIsStale`
       // deliberately does not trust — but a wrong number in a stored
       // record is a trap for the next reader either way.
-      band: core.baseLayerBand(plan.basemapKey),
+      //
+      // `plan.bandKey`, NOT `plan.basemapKey`: the record has to state the
+      // band that was FETCHED, and the fetch was planned off the rendered
+      // style's templates. Those two keys differ inside the basemap-switch
+      // race `resolveBaseLayerPlan` documents, and recording the picker's
+      // band there would write the number the run did not use.
+      band: core.baseLayerBand(plan.bandKey),
       bbox: plan.bbox,
       bytes: (Number(previous && previous.bytes) || 0) + (Number(result.bytes) || 0),
       savedAt: new Date().toISOString(),
