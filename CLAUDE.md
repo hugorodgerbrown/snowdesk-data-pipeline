@@ -617,6 +617,7 @@ Read these when working in the relevant area:
 | SLF API historical-depth probe (2026-05-01) | [`docs/slf-api-history.md`](docs/slf-api-history.md) |
 | Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
+| Why UI icons are `_icon_*.html` stroke partials (24×24, stroke-2, currentColor; the three Font Awesome filled glyphs are the named exception) | [`docs/decisions/ui-icons-are-house-stroke-partials.md`](docs/decisions/ui-icons-are-house-stroke-partials.md) |
 | Account-area navigation (no sub-nav; menu is the navigation) | [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](docs/decisions/account-area-navigation-lives-in-the-nav-menu.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Which test layer to use; the e2e cap; Playwright + Vitest harnesses | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
