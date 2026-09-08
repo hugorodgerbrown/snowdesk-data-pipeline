@@ -58,10 +58,12 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("account/", include("apps.accounts.urls")),
     # SNOW-430: the accounts app moved from /subscribe/ to /account/. Redirect
-    # the legacy prefix permanently so in-flight account-access and unsubscribe
-    # email links keep working. The account-access token route was also renamed
+    # the legacy prefix permanently so in-flight account-access email links
+    # keep working. The account-access token route was also renamed
     # (account/<token>/ -> access/<token>/), so it needs its own mapping ahead
-    # of the generic catch-all.
+    # of the generic catch-all. SNOW-875 deleted the unsubscribe routes, so a
+    # legacy /subscribe/unsubscribe/<token>/ link still 301s here and then
+    # 404s — correct, since there is nothing left to unsubscribe from.
     re_path(
         r"^subscribe/account/(?P<token>[^/]+)/?$",
         RedirectView.as_view(url="/account/access/%(token)s/", permanent=True),
