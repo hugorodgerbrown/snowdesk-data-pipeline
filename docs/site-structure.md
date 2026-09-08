@@ -69,7 +69,7 @@ lists of MAP OBJECTS, and a trip is not one — see the amendment in
 [two-documents-and-a-map](decisions/two-documents-and-a-map.md).
 
 Account routes (`/account/…` — settings, register, verify, setup, sign-in,
-change-email, unsubscribe, WebAuthn, push) are documented in
+change-email, WebAuthn, push) are documented in
 [`docs/accounts.md`](accounts.md). `/account/`, `/account/favourites/`,
 `/account/observations/` and `/account/routes/` are permanent redirects into
 the map's sheets (SNOW-802/803); `/account/settings/` is the one account

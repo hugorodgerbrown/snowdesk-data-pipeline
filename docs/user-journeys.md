@@ -57,9 +57,9 @@ two modes, and a single feature often has to work in both:
   holds email, passkeys, telemetry and account deletion.
 - **Token-authenticated** — arrived via a signed token in an email, with
   no active session. The surface is intentionally narrow: confirm the
-  account, or unpin one region from a historical unsubscribe link. Tokens
-  encode the account identity, so we can act on their behalf without a
-  login round-trip.
+  account, verify a new address, or set a new password. Tokens encode the
+  account identity, so we can act on their behalf without a login
+  round-trip.
 
 Defining traits:
 - Identified by email. Email is the lookup key and the lowercased,
@@ -169,7 +169,7 @@ account-access link, and comes back to a map that remembers the region.
   before storage and before lookup.
 - Email sends are async (no blocking the request cycle from a web view).
 - Token verification is salt-scoped: account-access tokens cannot be
-  replayed as unsubscribe tokens, and vice versa.
+  replayed as email-verification tokens, and vice versa.
 - A region pin has no coordinate and never appears in
   `favourites.geojson`; it is a row in the region + date panel the map's
   readout chip opens (SNOW-814 — it was in the pins sheet until then, where
@@ -228,35 +228,37 @@ account-access link, and comes back to a map that remembers the region.
 
 ### J4 — Act on an email link (token)
 
-> "I got an email. I'll click through, or I'll one-click unsubscribe."
+> "I got an email. I'll click the link in it."
 
 This journey deliberately runs **without a session**. The signed token in
 the email is the entire authentication mechanism. No scheduled job sends
-a bulletin — every email is transactional — but the per-region
-unsubscribe links in historical emails have no expiry, so the path stays.
+a bulletin — every email is transactional: an account link, a
+verification, a password reset, an email change. SNOW-875 removed the
+per-region unsubscribe link, which nothing had minted since SNOW-802
+retired `Subscription` and which the cancelled SNOW-7 digest was the last
+prospective sender for.
 
 **Entry points:**
 - An email in the user's inbox.
 
 **URL surface:**
 - Click-through to a current bulletin — re-enters J1 from the URL on.
-- `GET /account/unsubscribe/<token>/` — confirm page.
-- `POST /account/unsubscribe/<token>/` — removes the region pin the
-  subscription became (SNOW-802).
-- `/account/unsubscribe-done/` — confirmation page.
+- `GET/POST /account/access/<token>/` — confirm page, then sign-in.
+- `GET/POST /account/verify/<token>/` — confirm a new registration.
+- `GET/POST /account/reset-password/<token>/` — set a new password.
+- `GET/POST /account/change-email/<token>/` — confirm a new address.
 
 **Key invariants:**
-- Unsubscribe tokens have **no expiry**. A reader must be able to act on
-  any historical email, no matter how old, and the action must still be
-  the one the link promised — the region goes.
-- The token encodes `{email}|{region_id}` so the action is unambiguous
-  even when the recipient holds many pins.
-- One-click unsubscribe never requires sign-in. Friction here is a
-  legal compliance risk, not a UX choice.
+- Every one of these tokens **expires** (24h, `ACCOUNT_TOKEN_MAX_AGE`),
+  and an expired one renders `link_expired` rather than failing silently.
+- GET never changes state. The confirm page's POST button is the action,
+  so a link-prefetch scanner cannot act on the recipient's behalf.
+- The token encodes the account identity, so the action is unambiguous
+  without a session.
 
 **Adding functionality here:**
 - Any new token surface goes through `apps/accounts/services/token.py`
-  and uses a fresh salt — never overload `SALT_UNSUBSCRIBE`.
+  and uses a fresh salt — never overload an existing one.
 
 ### J5 — Read historically or learn (either persona)
 
