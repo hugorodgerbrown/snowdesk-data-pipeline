@@ -285,6 +285,14 @@ class TestValidation:
         exercising it means importing the module again under a patched
         environment.
 
+        Reloading a settings module mid-session looks reckless and is not:
+        ``django.conf.settings`` wraps a ``Settings`` object populated once at
+        first access, and reloading the module it read from does not rebind
+        it. So no other test sees these values, and ``teardown_method``
+        re-imports cleanly anyway. ``mock.patch.dict`` is enough to steer the
+        re-import because ``decouple.Config.get`` consults ``os.environ``
+        before the ``.env`` repository.
+
         Args:
             env: Environment variables to set for the re-import.
 
