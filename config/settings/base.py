@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from decouple import config
+from decouple import Csv, config
 from django.core.exceptions import ImproperlyConfigured
 
 # ---------------------------------------------------------------------------
@@ -1280,6 +1280,95 @@ except KeyError as exc:
 # in localStorage and cannot be known server-side — which costs one unused
 # socket, not correctness.
 BASEMAP_ORIGIN = basemap_origin(BASEMAP_STYLE_URL)
+
+# ---------------------------------------------------------------------------
+# Map — what a first-time visitor sees on the map page (SNOW-872)
+# ---------------------------------------------------------------------------
+# Three more opening-view defaults, following ``BASEMAP`` above exactly: a
+# catalogue in code, an env var that picks from it, a hard failure at import
+# on anything the catalogue does not name, and the resolved value rendered as
+# a ``data-`` attribute on ``#map`` for ``static/js/map.js`` to read.
+#
+# Before this they were hardcoded in FOUR places that had to agree by hand —
+# ``map.js``'s boot IIFE, the same seed repeated in its ``styledata`` handler
+# after a basemap swap, ``map_season_ribbon.js``, and the ``aria-checked``
+# literals in ``_map_embed.html`` — so the opening view could not vary by
+# environment and changing it meant editing three JavaScript files and a
+# template. TODAY'S VALUES ARE THE DEFAULTS here, so nothing changed on
+# merge; only the ability to override did.
+#
+# A default is a starting point, never an override: every one of these is
+# read only when the device has no stored preference under the matching
+# ``snowdesk.map.overlay.*`` key, so a returning visitor keeps whatever they
+# last chose.
+
+# The layers menu's "Bulletins" section lists PROVIDERS, so the env names
+# providers too — ``MAP_DEFAULT_PROVIDERS=slf,albina`` is what an operator
+# means. Each maps to the overlay key the DOM already keys off; the
+# overlay-key → country-code routing stays where it already lives, in
+# ``COUNTRY_GROUPS`` (static/js/map_state.js), because ALBINA publishes for
+# two countries and a second copy of that mapping here would be the drift
+# tests/public/test_map_country_groups.py exists to prevent.
+MAP_BULLETIN_PROVIDERS = {
+    "slf": "country.ch",
+    "meteofrance": "country.fr",
+    "albina": "country.albina",
+}
+
+# Which providers' bulletins are painted on a first visit. Default: SLF
+# alone, the map's opening view since SNOW-172. Empty is legal and means an
+# uncoloured map — a deliberate configuration, not a mistake, for an
+# environment that wants the visitor to choose first.
+MAP_DEFAULT_PROVIDERS = config("MAP_DEFAULT_PROVIDERS", default="slf", cast=Csv())
+
+_unknown_providers = sorted(set(MAP_DEFAULT_PROVIDERS) - set(MAP_BULLETIN_PROVIDERS))
+if _unknown_providers:
+    raise ImproperlyConfigured(
+        f"MAP_DEFAULT_PROVIDERS names {_unknown_providers}, which are not "
+        f"known bulletin providers. Valid keys: {sorted(MAP_BULLETIN_PROVIDERS)} "
+        f"(or empty for no bulletins)."
+    )
+
+# The overlay keys the page renders, derived from the provider names the way
+# ``BASEMAP_STYLE_URL`` is derived from ``BASEMAP``.
+MAP_DEFAULT_OVERLAYS = [MAP_BULLETIN_PROVIDERS[p] for p in MAP_DEFAULT_PROVIDERS]
+
+# The EAWS boundary tiers, by the keys every consumer of the DOM contract
+# uses: l1 = Major, l2 = Minor, l4 = Micro. At most ONE is on at a time
+# (the menu's rows are independent, but the opening view names a single
+# tier), so this is a single value rather than a list.
+MAP_BOUNDARY_TIERS = ("l1", "l2", "l4")
+
+# Which boundary tier is drawn on a first visit. Default: ``l4``, the micro
+# regions the choropleth is painted onto. Empty is legal and means no
+# boundary at all.
+MAP_DEFAULT_BOUNDARY = config("MAP_DEFAULT_BOUNDARY", default="l4")
+
+if MAP_DEFAULT_BOUNDARY and MAP_DEFAULT_BOUNDARY not in MAP_BOUNDARY_TIERS:
+    raise ImproperlyConfigured(
+        f"MAP_DEFAULT_BOUNDARY={MAP_DEFAULT_BOUNDARY!r} is not a known "
+        f"boundary tier. Valid keys: {sorted(MAP_BOUNDARY_TIERS)} "
+        f"(or empty for no boundary)."
+    )
+
+# The five opacity steps the Bulletins control offers. A deliberate second
+# copy of ``STEPS`` in static/js/layer_visibility_core.js, and it earns its
+# place by failing the deploy on a value off the scale rather than letting
+# ``nearestStep`` silently snap 0.37 to 0.25 — an operator who set a value
+# the map then ignored would have no way to tell. The copy is guarded by a
+# parity test (tests/public/test_map_defaults.py).
+MAP_OPACITY_STEPS = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+# How strongly the danger choropleth is painted on a first visit. Default:
+# 0.5, the middle step. 0.0 is the off position — the map draws boundaries
+# with no danger colour in them.
+MAP_DEFAULT_OPACITY_STEP = config("MAP_DEFAULT_OPACITY_STEP", default=0.5, cast=float)
+
+if MAP_DEFAULT_OPACITY_STEP not in MAP_OPACITY_STEPS:
+    raise ImproperlyConfigured(
+        f"MAP_DEFAULT_OPACITY_STEP={MAP_DEFAULT_OPACITY_STEP!r} is not one of "
+        f"the map's opacity steps. Valid values: {list(MAP_OPACITY_STEPS)}"
+    )
 
 # ---------------------------------------------------------------------------
 # Logging
