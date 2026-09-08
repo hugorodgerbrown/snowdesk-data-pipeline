@@ -170,6 +170,19 @@ function buildFixture(defaults = {}) {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
+    <div id="season-ribbon"
+         data-season-start="2026-02-09"
+         data-season-end="2026-05-31"></div>
+    <div id="region-readout" class="region-readout">
+      <span class="region-readout-swatch"></span>
+      <span class="region-readout-name">
+        <span class="region-readout-crumbs"></span>
+        <span class="region-readout-leaf"></span>
+      </span>
+    </div>
+    <div class="season-scrubber">
+      <div class="season-scrubber-track"><div class="scrubber-ribbon"></div></div>
+    </div>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
       <div id="basemap-pill" data-state="collapsed">
         <button id="basemap-toggle" aria-expanded="false"></button>
@@ -421,6 +434,45 @@ describe('the styledata re-seed after a basemap swap', () => {
 
     expect(microBoundaryVisible()).toBe(true);
     expect(fillOpacity()).toBe(0.75);
+  });
+});
+
+describe('the region readout breadcrumb', () => {
+  // map_season_ribbon.js held the third copy of these literals, and its
+  // breadcrumb names exactly the tiers the map is drawing. A ribbon reading
+  // its own defaults would contradict the map beside it the moment the
+  // configured tier stopped being l4.
+
+  /** Tap a region, the way every real selection route ends. */
+  function selectRegion() {
+    document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
+      detail: {
+        region_id: 'CH-4115',
+        region_name: 'Martigny-Verbier',
+        region_slug: 'martigny-verbier',
+        major_name: 'Valais',
+        subregion_name: 'Bas-Valais',
+      },
+    }));
+  }
+
+  /** The crumbs above the region name, as rendered. */
+  function crumbs() {
+    return document.querySelector('.region-readout-crumbs').textContent;
+  }
+
+  it('names the configured tier', async () => {
+    await boot({ boundary: 'l1' });
+    selectRegion();
+
+    expect(crumbs()).toBe('Valais › ');
+  });
+
+  it('names none when no tier is configured on', async () => {
+    await boot({ boundary: '' });
+    selectRegion();
+
+    expect(crumbs()).toBe('');
   });
 });
 
