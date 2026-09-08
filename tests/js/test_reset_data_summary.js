@@ -60,7 +60,7 @@ function category(name) {
   return {
     label: li.querySelector('span').textContent,
     value: li.querySelector('[data-role="reset-data-summary-value"]').textContent,
-    note: li.querySelector('p').textContent,
+    note: li.querySelector('p') ? li.querySelector('p').textContent : null,
     warned: li
       .querySelector('[data-role="reset-data-summary-value"]')
       .className.includes('status-warning'),
@@ -150,18 +150,29 @@ describe('painting the four categories', () => {
     expect(category('maps').value).toBe('120 MB');
   });
 
-  it('names the shared overview map, which nothing else lists', async () => {
-    // SNOW-867 took it off the Manage downloads sheet — it is the app's own
-    // map data, not one of the user's downloads, and not in their budget.
-    // This panel is where that decision points, so the row has to be here
-    // AND has to be marked as shared rather than passed off as a download.
+  it('names the shared basemap tiles, which nothing else lists', async () => {
+    // SNOW-867 took them off the Manage downloads sheet — the app's own map
+    // data, not the user's downloads, and not in their budget. This panel
+    // is where that decision points, so the row has to be here.
+    //
+    // One row, and no "Shared" pill: the label says what they are, and the
+    // pill next to a row reading "Overview map" said nothing extra while
+    // repeating once per basemap.
     await renderPanel();
     const rows = [...list.querySelectorAll('[data-testid="reset-data-summary-map"]')];
     expect(rows.map((row) => row.firstChild.textContent)).toEqual([
       'Martigny',
-      'Overview mapShared',
+      'Shared basemap tiles',
     ]);
     expect(rows[1].getAttribute('data-shared')).toBe('true');
+    expect(list.textContent).not.toContain('Overview map');
+  });
+
+  it('carries no note on the maps row once there is a list under it', async () => {
+    // The list IS the disclosure; a sentence above it saying these are
+    // areas you downloaded restated the heading.
+    await renderPanel();
+    expect(category('maps').note).toBeNull();
   });
 
   it('warns on the unsent changes, and only on those', async () => {

@@ -30,21 +30,52 @@ beforeAll(async () => {
 });
 
 describe('the downloaded-maps category', () => {
-  it('lists the user areas first and the shared overview maps after them', () => {
+  it('lists the user areas first and the shared tiles as one row after', () => {
     const summary = core.summarise({
       rows: [
         { id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB },
         { id: 'custom-a1', label: 'Custom area 1', bytes: 5 * MB },
       ],
       baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2 * MB }],
+      sharedLabel: 'Shared basemap tiles',
     });
 
     expect(summary.maps.items.map((item) => item.label)).toEqual([
       'Martigny',
       'Custom area 1',
-      'Overview map',
+      'Shared basemap tiles',
     ]);
     expect(summary.maps.items.map((item) => item.shared)).toEqual([false, false, true]);
+  });
+
+  it('combines every base layer into that one row, summed', () => {
+    // One per basemap is how they are STORED; a device with two basemaps
+    // painted two rows reading "Overview map" and differing only in size,
+    // which names the app's internals and answers nothing the user asked.
+    // The reset takes all or none, so one row is the whole truth.
+    const summary = core.summarise({
+      rows: [],
+      baseLayers: [
+        { id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2.7 * MB },
+        { id: 'base-openfreemap', name: 'Overview map', bytes: 12.6 * MB },
+      ],
+      sharedLabel: 'Shared basemap tiles',
+    });
+
+    expect(summary.maps.items).toHaveLength(1);
+    expect(summary.maps.items[0].label).toBe('Shared basemap tiles');
+    expect(summary.maps.items[0].bytes).toBeCloseTo(15.3 * MB);
+    expect(summary.maps.bytes).toBeCloseTo(15.3 * MB);
+  });
+
+  it('omits the shared row entirely when there are no base layers', () => {
+    const summary = core.summarise({
+      rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB }],
+      baseLayers: [],
+      sharedLabel: 'Shared basemap tiles',
+    });
+
+    expect(summary.maps.items.map((item) => item.shared)).toEqual([false]);
   });
 
   it('totals every item, the shared ones included', () => {

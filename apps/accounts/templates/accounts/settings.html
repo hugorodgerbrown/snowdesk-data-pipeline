@@ -435,14 +435,19 @@ because the repository is the authority and the mock is a drawing:
                         {% comment %}
                             The breakdown, painted by reset_data_summary.js
                             from the same reader the map's Manage downloads
-                            sheet uses. Collapsed by default and ``bare`` for
-                            the same reason the sync log below is: this is a
-                            panel nested inside a card, and the full chrome
-                            would read as a card within a card.
+                            sheet uses.
+
+                            SNOW-860: shown outright, not behind a
+                            disclosure. It was a _collapsible_panel titled
+                            "What this will delete", which put the one thing
+                            this row exists to say behind a click — and a
+                            disclosure the user has to open before the
+                            warning is visible is not a disclosure. Four
+                            short rows do not need hiding, and the reset is
+                            rare enough that the space costs nothing.
                         {% endcomment %}
-                        <div class="mt-3">
-                            {% translate "What this will delete" as t_reset_summary %}
-                            {% include "includes/_collapsible_panel.html" with title=t_reset_summary data_testid="reset-data-summary-panel" body_template="accounts/partials/_reset_data_summary_body.html" bare=True %}
+                        <div class="mt-3" data-testid="reset-data-summary-panel">
+                            {% include "accounts/partials/_reset_data_summary_body.html" %}
                         </div>
                     </div>
 

@@ -316,6 +316,13 @@ class TestSettingsCardLayout:
         )[0]
         assert 'data-testid="reset-data-summary-panel"' in device
         assert 'data-role="reset-data-summary-placeholder"' in device
+        # SNOW-860: shown outright, not behind a disclosure. It was a
+        # collapsible titled "What this will delete", which put the one
+        # thing this row exists to say behind a click.
+        assert "What this will delete" not in device
+        assert (
+            "<details" not in device.split('data-testid="reset-data-summary-panel"')[1]
+        )
         # The trigger keeps pwa_reset.js's binding contract, in the same row.
         assert "data-pwa-reset-trigger" in device
         # Every string the panel paints is server-translated and read back

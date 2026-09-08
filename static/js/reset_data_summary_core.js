@@ -73,12 +73,18 @@
   /**
    * The downloaded-map items, in the order the panel lists them.
    *
-   * The user's own areas first, the shared overview maps last. They are
-   * different in kind — one set was chosen, the other was fetched by the
-   * app for itself and is neither listed nor budgeted for by the Manage
-   * downloads sheet (SNOW-867) — and the shared ones are the surprise, so
-   * they read better as an addition to a list the user recognises than
-   * interleaved into it.
+   * The user's own areas first, then ONE row for every shared overview
+   * map together. They are different in kind — one set was chosen, the
+   * other was fetched by the app for itself and is neither listed nor
+   * budgeted for by the Manage downloads sheet (SNOW-867) — and the
+   * shared ones are the surprise, so they read better as an addition to a
+   * list the user recognises than interleaved into it.
+   *
+   * Collapsed rather than listed one per basemap: they were painted as
+   * repeated "Overview map" rows differing only in size, which names the
+   * app's internals ("you have two of a thing you never asked for") and
+   * answers no question the user has. One row, one number, and the label
+   * says what they are instead of what they are called internally.
    *
    * @param {Array<{id: string, label?: string, bytes?: number,
    *   onDevice?: boolean}>} rows `pwaBasemapManageCore.manageRows` output.
@@ -90,10 +96,13 @@
    *   them. `bytes` is 0 when the record has not landed yet (SNOW-863);
    *   the row still appears, because the tiles are on the device whether
    *   or not their size was recorded.
+   * @param {string} sharedLabel The label for the single combined shared
+   *   row. Passed in rather than known here, so the copy stays
+   *   server-translated.
    * @returns {Array<{id: string, label: string, bytes: number,
    *   shared: boolean}>}
    */
-  function mapItems(rows, baseLayers) {
+  function mapItems(rows, baseLayers, sharedLabel) {
     var items = [];
     (Array.isArray(rows) ? rows : []).forEach(function (row) {
       if (!row || !row.id || row.onDevice === false) return;
@@ -104,15 +113,26 @@
         shared: false,
       });
     });
+
+    // One row for all of them, summed. A device with two basemaps holds
+    // two of these buckets, but that is the app's business, not a
+    // distinction the user can act on: the reset takes all of them or
+    // none, and there is no per-basemap control anywhere to pair it with.
+    var sharedBytes = 0;
+    var sharedCount = 0;
     (Array.isArray(baseLayers) ? baseLayers : []).forEach(function (layer) {
       if (!layer || !layer.id) return;
+      sharedBytes += bytesOf(layer.bytes);
+      sharedCount += 1;
+    });
+    if (sharedCount > 0) {
       items.push({
-        id: String(layer.id),
-        label: String(layer.name || layer.id),
-        bytes: bytesOf(layer.bytes),
+        id: 'shared-basemap-tiles',
+        label: String(sharedLabel || 'Shared basemap tiles'),
+        bytes: sharedBytes,
         shared: true,
       });
-    });
+    }
     return items;
   }
 
@@ -132,7 +152,8 @@
    *   SNOW-385 telemetry buffer and would put a count of analytics
    *   payloads under a heading reading "unsent changes".
    *   `storageEstimate` is `navigator.storage.estimate()`'s result, or
-   *   null where the browser has no such method.
+   *   null where the browser has no such method. `sharedLabel` is the
+   *   translated label for the one combined shared-tiles row.
    * @returns {{maps: {items: Array<Object>, bytes: number},
    *   unsent: {count: number, warn: boolean},
    *   cached: {bytes: number|null, known: boolean},
@@ -143,7 +164,7 @@
    */
   function summarise(input) {
     var source = input || {};
-    var items = mapItems(source.rows, source.baseLayers);
+    var items = mapItems(source.rows, source.baseLayers, source.sharedLabel);
     var mapBytes = items.reduce(function (sum, item) {
       return sum + item.bytes;
     }, 0);

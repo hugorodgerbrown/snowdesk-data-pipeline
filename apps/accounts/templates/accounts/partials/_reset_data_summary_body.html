@@ -2,9 +2,11 @@
 apps/accounts/templates/accounts/partials/_reset_data_summary_body.html —
 "Reset local data" breakdown panel body (SNOW-860).
 
-Content partial for the settings page; included via the ``body_template``
-parameter of includes/_collapsible_panel.html, beside the reset control it
-describes. Rows are painted client-side by static/js/reset_data_summary.js,
+Content partial for the settings page, included directly beneath the reset
+control it describes. It sat behind a collapsible titled "What this will
+delete" until SNOW-860 took the disclosure off: the rows are the whole
+point of the row, and putting them behind a click meant the warning was
+invisible by default. Rows are painted client-side by static/js/reset_data_summary.js,
 which reads the SAME downloaded-area list the Manage downloads sheet does
 (static/js/basemap_downloaded_areas.js) plus the ``queue:mutations`` depth
 and ``navigator.storage.estimate()`` — nothing server-side to query, so
@@ -19,11 +21,6 @@ already exists, in the map's Manage downloads sheet.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm text-text-2" data-testid="reset-data-summary">
-    <p class="text-xs text-text-3 mb-3">
-        {% blocktrans trimmed %}
-            Resetting local data frees up space on your current device. It does not delete anything from your account.
-        {% endblocktrans %}
-    </p>
     <ul
         id="reset-data-summary-list"
         class="divide-y divide-border rounded-card border border-border bg-card text-sm"
@@ -49,13 +46,8 @@ already exists, in the map's Manage downloads sheet.
     <span data-string="unavailable">{% trans "Storage details unavailable on this device." %}</span>
     <span data-string="failed">{% trans "Could not read what is stored on this device." %}</span>
     <span data-string="maps">{% trans "Downloaded maps" %}</span>
-    <span data-string="maps-note">
-        {% blocktrans trimmed %}
-            Areas you have downloaded on this device. Restoring them needs a connection.
-        {% endblocktrans %}
-    </span>
     <span data-string="maps-none">{% trans "Nothing downloaded on this device." %}</span>
-    <span data-string="shared-tag">{% trans "Shared" %}</span>
+    <span data-string="shared-basemap-tiles">{% trans "Shared basemap tiles" %}</span>
     <span data-string="unsent">{% trans "Unsent changes" %}</span>
     <span data-string="unsent-none">{% trans "Nothing is waiting to be sent." %}</span>
     <span data-string="unsent-one">{% trans "1 change has not reached the server yet. Resetting deletes it." %}</span>

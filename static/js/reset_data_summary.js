@@ -45,10 +45,8 @@
     unavailable: 'Storage details unavailable on this device.',
     failed: 'Could not read what is stored on this device.',
     maps: 'Downloaded maps',
-    'maps-note':
-      'Areas you have downloaded on this device. Restoring them needs a connection.',
     'maps-none': 'Nothing downloaded on this device.',
-    'shared-tag': 'Shared',
+    'shared-basemap-tiles': 'Shared basemap tiles',
     unsent: 'Unsent changes',
     'unsent-none': 'Nothing is waiting to be sent.',
     'unsent-one': '1 change has not reached the server yet. Resetting deletes it.',
@@ -144,10 +142,14 @@
     head.appendChild(value);
     li.appendChild(head);
 
-    const note = document.createElement('p');
-    note.className = 'mt-1 text-xs text-text-3';
-    note.textContent = spec.note;
-    li.appendChild(note);
+    // Omitted, not emptied: an empty <p> still carries mt-1, which reads
+    // as a gap the row did not ask for.
+    if (spec.note) {
+      const note = document.createElement('p');
+      note.className = 'mt-1 text-xs text-text-3';
+      note.textContent = spec.note;
+      li.appendChild(note);
+    }
 
     return li;
   }
@@ -157,8 +159,9 @@
    *
    * Named one by one rather than counted, because "3 areas" does not
    * answer the question the user is actually asking, which is whether the
-   * one they need for the weekend is among them. The shared overview maps
-   * carry a tag: they are the app's own map data, listed nowhere else.
+   * one they need for the weekend is among them. The shared basemap
+   * tiles arrive as one already-summed row from the core; they carried a
+   * "Shared" pill until it turned out to say nothing the label did not.
    *
    * @param {Array<{id: string, label: string, bytes: number,
    *   shared: boolean}>} items
@@ -177,12 +180,6 @@
       const name = document.createElement('span');
       name.className = 'min-w-0 truncate';
       name.textContent = item.label;
-      if (item.shared) {
-        const tag = document.createElement('span');
-        tag.className = 'ml-2 rounded-tag bg-tag px-1.5 py-0.5 text-caption text-text-3';
-        tag.textContent = STRINGS['shared-tag'];
-        name.appendChild(tag);
-      }
 
       const size = document.createElement('span');
       size.className = 'shrink-0 font-mono';
@@ -209,7 +206,7 @@
       category: 'maps',
       label: STRINGS.maps,
       value: formatBytes(summary.maps.bytes),
-      note: summary.maps.items.length ? STRINGS['maps-note'] : STRINGS['maps-none'],
+      note: summary.maps.items.length ? '' : STRINGS['maps-none'],
     });
     if (summary.maps.items.length) maps.appendChild(buildMapList(summary.maps.items));
     list.appendChild(maps);
@@ -314,6 +311,7 @@
       baseLayers: baseLayers,
       mutationCount: mutationCount,
       storageEstimate: storageEstimate,
+      sharedLabel: STRINGS['shared-basemap-tiles'],
     });
   }
 
