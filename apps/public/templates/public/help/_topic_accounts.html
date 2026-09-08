@@ -1,8 +1,14 @@
 {% comment %}
-apps/public/templates/public/help/_topic_accounts.html — "Accounts & subscriptions" panel body.
+apps/public/templates/public/help/_topic_accounts.html — "Accounts" panel body.
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+SNOW-707 replaced the second paragraph. It described subscribing to a
+region for an email on every new bulletin — a service Snowdesk has never
+run and, since SNOW-7 was cancelled, never will. The RSS feeds are the
+one thing here that does tell a reader when a bulletin lands, so they
+take its place.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -15,9 +21,17 @@ body_template parameter of includes/_collapsible_panel.html.
     </p>
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            Once signed in, subscribe to a region from its bulletin page to get an email whenever a new bulletin is
-            published for it. Manage or remove your subscribed regions at any time from the account menu, or unsubscribe
-            with one click from any alert email.
+            An account holds the things you save: the places and regions you pin, the routes you upload, the trips you
+            plan, and the map areas you download to read offline. All of it is private to you, and everything except a
+            field observation stays that way. Snowdesk sends no bulletin alerts &mdash; the only email it will send you
+            is a sign-in link, a password reset, or a confirmation that you changed your address.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-accounts-feeds">
+        {% blocktrans trimmed %}
+            To hear about a new bulletin, subscribe a feed reader to the RSS feed for the country you follow:
+            snowdesk.info/ch/feed.rss for Switzerland, and the same address with at, it or fr for Austria, Italy and
+            France. The feeds need no account and list each bulletin as it is published.
         {% endblocktrans %}
     </p>
 </div>
