@@ -24,24 +24,16 @@ from apps.accounts.admin import (
     AccountAdmin,
     PasskeyCredentialAdmin,
     PushSubscriptionAdmin,
-    SubscriptionAdmin,
 )
-from apps.accounts.models import (
-    Account,
-    PasskeyCredential,
-    PushSubscription,
-    Subscription,
-)
+from apps.accounts.models import Account, PasskeyCredential, PushSubscription
 from apps.core.models import RequestLog
 from apps.locations.models import Location
 from tests.factories import (
     AccountFactory,
     FavouriteFactory,
     LocationFactory,
-    MicroRegionFactory,
     PasskeyCredentialFactory,
     RequestLogFactory,
-    SubscriptionFactory,
     UserFactory,
 )
 
@@ -58,12 +50,6 @@ class TestAdminSearchFieldsConfig:
         """AccountAdmin.search_fields includes 'user__email'."""
         admin = AccountAdmin(Account, AdminSite())
         assert "user__email" in admin.search_fields
-
-    def test_subscription_admin_search_fields(self) -> None:
-        """SubscriptionAdmin.search_fields includes 'account__user__email' and 'region__region_id'."""
-        admin = SubscriptionAdmin(Subscription, AdminSite())
-        assert "account__user__email" in admin.search_fields
-        assert "region__region_id" in admin.search_fields
 
     def test_passkey_credential_admin_search_fields(self) -> None:
         """PasskeyCredentialAdmin.search_fields includes 'user__email' and 'name'."""
@@ -213,43 +199,6 @@ class TestAccountAdminDeletion:
         assert Account.objects.filter(pk=bystander.pk).exists()
         assert RequestLog.objects.filter(pk=bystander_log.pk).exists()
         assert Location.objects.filter(pk=bystander_location.pk).exists()
-
-
-@pytest.mark.django_db
-class TestSubscriptionAdminSearch:
-    """Tests for SubscriptionAdmin.get_search_results."""
-
-    def _admin(self) -> SubscriptionAdmin:
-        """Return a SubscriptionAdmin bound to the default admin site."""
-        return SubscriptionAdmin(Subscription, AdminSite())
-
-    def test_partial_account_email_finds_subscription(self) -> None:
-        """Partial email fragment finds subscriptions via account__user__email icontains."""
-        account = AccountFactory.create(user__email="alice@example.com")
-        subscription = SubscriptionFactory.create(account=account)
-        other = AccountFactory.create(user__email="bob@example.com")
-        SubscriptionFactory.create(account=other)
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscription.objects.all(),
-            "alice",
-        )
-        assert subscription in list(qs)
-
-    def test_region_id_search_still_works(self) -> None:
-        """A region_id fragment still matches via search_fields."""
-        region = MicroRegionFactory.create(region_id="CH-9999")
-        subscription = SubscriptionFactory.create(region=region)
-
-        admin = self._admin()
-        qs, _ = admin.get_search_results(
-            _get_request(),
-            Subscription.objects.all(),
-            "CH-9999",
-        )
-        assert subscription in list(qs)
 
 
 @pytest.mark.django_db

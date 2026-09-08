@@ -17,12 +17,7 @@ import factory
 from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
 
-from apps.accounts.models import (
-    Account,
-    PasskeyCredential,
-    PushSubscription,
-    Subscription,
-)
+from apps.accounts.models import Account, PasskeyCredential, PushSubscription
 from apps.bulletins.models import (
     Bulletin,
     BulletinGrouping,
@@ -392,21 +387,6 @@ class AccountFactory(factory.django.DjangoModelFactory[Account]):
         lambda obj: django_timezone.now() if obj.is_verified else None
     )
     display_name = ""
-
-
-class SubscriptionFactory(factory.django.DjangoModelFactory[Subscription]):
-    """Factory for Subscription instances."""
-
-    class Meta:
-        """Factory metadata."""
-
-        model = Subscription
-
-    account = factory.SubFactory(AccountFactory)
-    region = factory.SubFactory(MicroRegionFactory)
-    subscribed_via = None  # nullable — not always set
-    geo_match_kind = Subscription.GeoMatchKind.UNKNOWN
-    geo_matched_region = None  # nullable — not set for unknown / elsewhere
 
 
 class PasskeyCredentialFactory(factory.django.DjangoModelFactory[PasskeyCredential]):

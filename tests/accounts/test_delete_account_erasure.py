@@ -14,8 +14,8 @@ Two halves have to hold together, and each has its own failure mode:
 * ``_referenced_request_log_ids`` removes the rows written *before* the
   account existed. Sign-up is anonymous, so that row has ``account=None``
   and no cascade can reach it; it is tied to the account only by
-  ``Account.acquisition_request`` and ``Subscription.subscribed_via``
-  pointing at it, both ``SET_NULL``.
+  ``Account.acquisition_request`` pointing at it, and that FK is
+  ``SET_NULL``.
 
 The second is the half that was missing and the half a future refactor is
 most likely to drop, because the row it targets looks unrelated to the
@@ -40,12 +40,10 @@ from tests.factories import (
     DownloadAreaFactory,
     FavouriteFactory,
     FieldObservationFactory,
-    MicroRegionFactory,
     PasskeyCredentialFactory,
     PushSubscriptionFactory,
     RequestLogFactory,
     RouteFactory,
-    SubscriptionFactory,
 )
 
 # Every column that could identify the person behind a row. A test that
@@ -121,9 +119,9 @@ class TestSignedInRowsAreDeleted:
 class TestReferencedRowsAreDeleted:
     """The half a cascade cannot reach — rows written before the account.
 
-    This is the gap SNOW-774 closed. Each row here has ``account=None``, so
-    it looks anonymous; it is tied to the person only by the account or
-    subscription pointing at it.
+    This is the gap SNOW-774 closed. The row has ``account=None``, so it
+    looks anonymous; it is tied to the person only by the account pointing
+    at it.
     """
 
     def test_the_sign_up_row_goes(self) -> None:
@@ -135,42 +133,13 @@ class TestReferencedRowsAreDeleted:
 
         assert not RequestLog.objects.filter(pk=signup.pk).exists()
 
-    def test_the_subscribe_row_goes(self) -> None:
-        """``Subscription.subscribed_via`` — one per subscribed region."""
-        via = RequestLogFactory.create(account=None, ip_address="203.0.113.10")
-        account = AccountFactory.create()
-        SubscriptionFactory.create(
-            account=account,
-            region=MicroRegionFactory.create(),
-            subscribed_via=via,
-        )
-
-        _delete(account)
-
-        assert not RequestLog.objects.filter(pk=via.pk).exists()
-
-    def test_every_subscribed_region_is_covered(self) -> None:
-        """Several subscriptions mean several rows, not just the first."""
-        account = AccountFactory.create()
-        vias = [RequestLogFactory.create(account=None) for _ in range(3)]
-        for via in vias:
-            SubscriptionFactory.create(
-                account=account,
-                region=MicroRegionFactory.create(),
-                subscribed_via=via,
-            )
-
-        _delete(account)
-
-        assert not RequestLog.objects.filter(pk__in=[v.pk for v in vias]).exists()
-
 
 @pytest.mark.django_db
 class TestNoIdentifierSurvives:
     """The end-to-end promise, stated the way the Privacy Policy states it."""
 
     def test_a_full_account_lifecycle_leaves_nothing(self) -> None:
-        """Sign-up, subscribe and signed-in activity — all of it erased.
+        """Sign-up and signed-in activity — both halves erased.
 
         Asserts on the columns rather than on row counts: a future change
         that blanked rows instead of deleting them should fail here unless
@@ -180,14 +149,6 @@ class TestNoIdentifierSurvives:
             account=None, ip_address="203.0.113.11", city="Zurich", latitude=47.4
         )
         account = AccountFactory.create(acquisition_request=signup)
-        via = RequestLogFactory.create(
-            account=None, ip_address="203.0.113.12", city="Bern", latitude=46.9
-        )
-        SubscriptionFactory.create(
-            account=account,
-            region=MicroRegionFactory.create(),
-            subscribed_via=via,
-        )
         signed_in = RequestLogFactory.create(
             account=account, ip_address="203.0.113.13", city="Sion", latitude=46.2
         )
@@ -198,7 +159,7 @@ class TestNoIdentifierSurvives:
         assert not User.objects.filter(pk=user_pk).exists()
         assert not Account.objects.filter(pk=account.pk).exists()
 
-        survivors = RequestLog.objects.filter(pk__in=[signup.pk, via.pk, signed_in.pk])
+        survivors = RequestLog.objects.filter(pk__in=[signup.pk, signed_in.pk])
         assert not survivors.exists(), (
             "request rows survived account deletion: "
             f"{list(survivors.values('pk', *IDENTIFYING_FIELDS))}"
@@ -305,11 +266,6 @@ class TestEveryKindOfAttachedDataDeletes:
         account = AccountFactory.create()
         user = account.user
 
-        SubscriptionFactory.create(
-            account=account,
-            region=MicroRegionFactory.create(),
-            subscribed_via=RequestLogFactory.create(account=None),
-        )
         FavouriteFactory.create(user=user)
         FieldObservationFactory.create(user=user)
         RouteFactory.create(user=user)

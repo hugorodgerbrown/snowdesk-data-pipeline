@@ -14,11 +14,10 @@ Pinned:
   expired data.
 * The command writes nothing without ``--commit`` — the project-wide
   management-command contract.
-* A row still referenced by ``Account.acquisition_request`` or
-  ``Subscription.subscribed_via`` is deleted like any other, and the
-  referring row survives with the pointer nulled. That is the intended
-  outcome and worth pinning: it is what lets an account outlive the
-  identifiers captured when it was created.
+* A row still referenced by ``Account.acquisition_request`` is deleted
+  like any other, and the referring account survives with the pointer
+  nulled. That is the intended outcome and worth pinning: it is what lets
+  an account outlive the identifiers captured when it was created.
 """
 
 from __future__ import annotations
@@ -30,17 +29,11 @@ import pytest
 from django.core.management import CommandError, call_command
 from django.utils import timezone
 
-from apps.accounts.models import Account, Subscription
+from apps.accounts.models import Account
 from apps.bulletins.models import BulletinShareClick
 from apps.core.management.commands.purge_request_logs import RETENTION_DAYS
 from apps.core.models import RequestLog
-from tests.factories import (
-    AccountFactory,
-    BulletinShareFactory,
-    MicroRegionFactory,
-    RequestLogFactory,
-    SubscriptionFactory,
-)
+from tests.factories import AccountFactory, BulletinShareFactory, RequestLogFactory
 
 
 def _aged(days: int) -> RequestLog:
@@ -161,23 +154,6 @@ class TestReferencedRows:
         assert not RequestLog.objects.filter(pk=signup.pk).exists()
         assert Account.objects.filter(pk=account.pk).exists()
         assert account.acquisition_request_id is None
-
-    def test_an_expired_subscribed_via_row_is_deleted_and_the_sub_survives(
-        self,
-    ) -> None:
-        via = _aged(RETENTION_DAYS + 30)
-        subscription = SubscriptionFactory.create(
-            account=AccountFactory.create(),
-            region=MicroRegionFactory.create(),
-            subscribed_via=via,
-        )
-
-        _run("--commit")
-        subscription.refresh_from_db()
-
-        assert not RequestLog.objects.filter(pk=via.pk).exists()
-        assert Subscription.objects.filter(pk=subscription.pk).exists()
-        assert subscription.subscribed_via_id is None
 
 
 @pytest.mark.django_db

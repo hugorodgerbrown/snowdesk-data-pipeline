@@ -1,8 +1,8 @@
 """
 tests/accounts/test_models.py — Tests for accounts models.
 
-Covers Account, Subscription, and PasskeyCredential model behaviour,
-queryset methods, string representations, and field constraints.
+Covers Account and PasskeyCredential model behaviour, queryset methods,
+string representations, and field constraints.
 """
 
 import datetime
@@ -14,17 +14,10 @@ from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 
 from apps.accounts.aaguids import lookup as aaguid_lookup
-from apps.accounts.models import (
-    Account,
-    PasskeyCredential,
-    Subscription,
-    user_is_verified,
-)
+from apps.accounts.models import Account, PasskeyCredential, user_is_verified
 from tests.factories import (
     AccountFactory,
-    MicroRegionFactory,
     PasskeyCredentialFactory,
-    SubscriptionFactory,
     UserFactory,
 )
 
@@ -47,35 +40,8 @@ class TestAaguidLookup:
         assert aaguid_lookup(None) is None
 
 
-@pytest.mark.django_db
-class TestSubscriptionModel:
-    """Tests for the Subscription model."""
-
-    def test_str_returns_email_arrow_region(self) -> None:
-        sub = SubscriptionFactory.create()
-        expected = f"{sub.account.user.email} → {sub.region.region_id}"
-        assert str(sub) == expected
-
-    def test_to_string_matches_str(self) -> None:
-        sub = SubscriptionFactory.create()
-        assert sub.to_string() == str(sub)
-
-    def test_unique_together_constraint(self) -> None:
-        from django.db import IntegrityError
-
-        account = AccountFactory.create()
-        region = MicroRegionFactory.create()
-        SubscriptionFactory.create(account=account, region=region)
-        with pytest.raises(IntegrityError):
-            SubscriptionFactory.create(account=account, region=region)
-
-    def test_has_uuid(self) -> None:
-        sub = SubscriptionFactory.create()
-        assert sub.uuid is not None
-
-
 # ---------------------------------------------------------------------------
-# Account and Subscription request_log FKs (SNOW-277, SNOW-514)
+# Account.acquisition_request FK (SNOW-277, SNOW-514)
 # ---------------------------------------------------------------------------
 
 
@@ -106,96 +72,6 @@ class TestAccountAcquisitionRequest:
         req_log.delete()
         account.refresh_from_db()
         assert account.acquisition_request is None
-
-
-@pytest.mark.django_db
-class TestSubscriptionSubscribedVia:
-    """Subscription.subscribed_via FK defaults to None."""
-
-    def test_subscribed_via_defaults_to_none(self) -> None:
-        """Factory-created Subscription has subscribed_via=None."""
-        subscription = SubscriptionFactory.create()
-        assert subscription.subscribed_via is None
-
-    def test_subscribed_via_can_be_set(self) -> None:
-        """subscribed_via can be set to a RequestLog instance."""
-        from tests.factories import RequestLogFactory
-
-        req_log = RequestLogFactory.create()
-        subscription = SubscriptionFactory.create(subscribed_via=req_log)
-        subscription.refresh_from_db()
-        assert subscription.subscribed_via_id == req_log.pk
-
-    def test_subscribed_via_set_null_on_log_delete(self) -> None:
-        """Deleting the RequestLog sets subscribed_via to None (SET_NULL)."""
-        from tests.factories import RequestLogFactory
-
-        req_log = RequestLogFactory.create()
-        subscription = SubscriptionFactory.create(subscribed_via=req_log)
-        req_log.delete()
-        subscription.refresh_from_db()
-        assert subscription.subscribed_via is None
-
-
-# ---------------------------------------------------------------------------
-# Subscription geo-match fields (SNOW-278)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestSubscriptionGeoMatchFields:
-    """Tests for Subscription.geo_match_kind and geo_matched_region (SNOW-278)."""
-
-    def test_geo_match_kind_defaults_to_unknown(self) -> None:
-        """Factory-created Subscription has geo_match_kind='unknown' by default."""
-        subscription = SubscriptionFactory.create()
-        assert subscription.geo_match_kind == Subscription.GeoMatchKind.UNKNOWN
-
-    def test_geo_matched_region_defaults_to_none(self) -> None:
-        """Factory-created Subscription has geo_matched_region=None by default."""
-        subscription = SubscriptionFactory.create()
-        assert subscription.geo_matched_region is None
-
-    def test_geo_match_kind_can_be_set_to_in_region(self) -> None:
-        """geo_match_kind can be explicitly set to IN_REGION."""
-        region = MicroRegionFactory.create()
-        subscription = SubscriptionFactory.create(
-            geo_match_kind=Subscription.GeoMatchKind.IN_REGION,
-            geo_matched_region=region,
-        )
-        subscription.refresh_from_db()
-        assert subscription.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
-        assert subscription.geo_matched_region == region
-
-    def test_geo_match_kind_can_be_set_to_elsewhere(self) -> None:
-        """geo_match_kind can be explicitly set to ELSEWHERE."""
-        subscription = SubscriptionFactory.create(
-            geo_match_kind=Subscription.GeoMatchKind.ELSEWHERE,
-        )
-        subscription.refresh_from_db()
-        assert subscription.geo_match_kind == Subscription.GeoMatchKind.ELSEWHERE
-
-    def test_geo_matched_region_is_nullable(self) -> None:
-        """geo_matched_region can be null (elsewhere / unknown cases)."""
-        subscription = SubscriptionFactory.create(geo_matched_region=None)
-        subscription.refresh_from_db()
-        assert subscription.geo_matched_region is None
-
-    def test_geo_matched_region_set_null_on_region_delete(self) -> None:
-        """Deleting the matched MicroRegion sets geo_matched_region to None (SET_NULL)."""
-        matched = MicroRegionFactory.create()
-        subscription = SubscriptionFactory.create(
-            geo_match_kind=Subscription.GeoMatchKind.IN_REGION,
-            geo_matched_region=matched,
-        )
-        matched.delete()
-        subscription.refresh_from_db()
-        assert subscription.geo_matched_region is None
-
-    def test_geomatchkind_choices_are_correct(self) -> None:
-        """GeoMatchKind has all four expected values."""
-        kinds = {c[0] for c in Subscription.GeoMatchKind.choices}
-        assert kinds == {"IN_REGION", "IN_NEIGHBOUR", "ELSEWHERE", "UNKNOWN"}
 
 
 # ---------------------------------------------------------------------------
