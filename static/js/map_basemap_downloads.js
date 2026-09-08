@@ -841,7 +841,7 @@ async function _forgetBaseLayerRecord(basemapKey) {
  */
 /**
  * Fetch the shown basemap's z0-7 overview, if this device has not got it
- * (SNOW-XXX).
+ * (SNOW-867).
  *
  * The wide half is the app's own map data, and it is small — measured
  * across the four basemaps on 2026-09-07: OpenFreeMap 12.6 MB (56 tiles,
@@ -1351,7 +1351,7 @@ async function evictBasemapAreas(areaIds) {
   // because "delete the overview map" is not a thing the user should have
   // to think about — it appears when their first download does and leaves
   // with their last.
-  // SNOW-XXX removed an `evictOrphanedBaseLayers()` call here. The base
+  // SNOW-867 removed an `evictOrphanedBaseLayers()` call here. The base
   // layer used to be deleted once no downloaded area was left to need it,
   // which followed from its being a cost the user's downloads incurred.
   // It is the app's own map data now — fetched when a basemap is SHOWN,
@@ -1395,7 +1395,7 @@ async function evictBasemapAreas(areaIds) {
 //
 // Exposed as one frozen object beside pwaDownloadedOverlay, the bridge
 // this file already uses for its sibling IIFEs.
-// SNOW-XXX: the shown basemap's z0-7 overview is fetched when it is first
+// SNOW-867: the shown basemap's z0-7 overview is fetched when it is first
 // shown, not when something is first downloaded — see
 // `warmBaseLayerWideBand` for the sizes that make that affordable. Two
 // triggers, because there are two ways a basemap comes to be on screen:
@@ -1775,7 +1775,7 @@ function clearBasemapDownloadError() {
 //
 // @param {number} mb
 // @returns {Promise<boolean>}
-// SNOW-XXX: the device's own download ceiling, resolved once and reused.
+// SNOW-867: the device's own download ceiling, resolved once and reused.
 //
 // `navigator.storage.estimate()` is async and the callers are not: both
 // framing surfaces recompute their selection once per animation frame, and
