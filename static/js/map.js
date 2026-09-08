@@ -532,13 +532,25 @@
   const OVERLAY_VISIBILITY_GOVERNOR = { l3: 'bulletins' };
   const governorFor = (key) => OVERLAY_VISIBILITY_GOVERNOR[key] || key;
 
+  // SNOW-872: the opening view, as the server configured it — see
+  // mapDefaults() in map_state.js. Every read below is a DEFAULT: it applies
+  // only where the device has nothing stored, so a returning visitor's own
+  // choices always win over a changed setting.
+  const MAP_DEFAULTS = mapDefaults();
+
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
+  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
-  overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+  // The three EAWS boundary tiers. At most one is configured on, so each asks
+  // the same question of the same value rather than carrying a literal.
+  for (const key of ['l1', 'l2', 'l4']) {
+    overlayState[key] = readBoolStorage(
+      OVERLAY_STORAGE_KEY[key], MAP_DEFAULTS.boundary === key,
+    );
+  }
   // SNOW-656: seeded from the legacy ``l4`` key until ``bulletins`` has been
   // written once, so a device carrying ``l4=false`` comes back with BOTH rows
   // off. Raw reads, not readBoolStorage, because "absent" and "explicitly
@@ -546,19 +558,29 @@
   overlayState.bulletins = BULLETINS_CORE.seedFromLegacy(
     readStorage(OVERLAY_STORAGE_KEY.bulletins),
     readStorage(OVERLAY_STORAGE_KEY.l4),
-    BULLETINS_CORE.DEFAULT_STEP,
+    // undefined when the page carries no configured step, which
+    // seedFromLegacy reads as "use DEFAULT_STEP".
+    MAP_DEFAULTS.opacityStep,
   );
   bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
   overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
-  // Default: CH on, others off. Each key maps to a boolean (visible/hidden).
-  // Persisted in localStorage under snowdesk.map.overlay.country.<code>.
+  // Each key maps to a boolean (visible/hidden), persisted in localStorage
+  // under snowdesk.map.overlay.country.<code>.
+  //
+  // SNOW-872: which codes start on is configured rather than literal. The
+  // menu row — and so the setting behind it — names a PROVIDER, and
+  // overlayKeyForCountry resolves each code back to the row that owns it, so
+  // ALBINA switching both AT and IT stays COUNTRY_GROUPS's business alone.
   const COUNTRY_KEYS = ['ch', 'fr', 'at', 'it'];
   const COUNTRY_STORAGE_KEY = (code) => `snowdesk.map.overlay.country.${code}`;
-  const countryState = { ch: true, fr: false, at: false, it: false };
+  const countryState = {};
   for (const code of COUNTRY_KEYS) {
-    countryState[code] = readBoolStorage(COUNTRY_STORAGE_KEY(code), countryState[code]);
+    countryState[code] = readBoolStorage(
+      COUNTRY_STORAGE_KEY(code),
+      MAP_DEFAULTS.overlays.has(overlayKeyForCountry(code)),
+    );
   }
   // SNOW-236: Mirror the initial state into the module-scope COUNTRY_STATE
   // so the scrubber IIFE can read it for country-aware effective-last computation.
@@ -7912,20 +7934,31 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
+      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
-      // l4 and bulletins are re-seeded before any install fn runs: the fill's
-      // layout is derived from both, and the bulletin boundary's visibility
-      // from bulletins alone rather than a key of its own.
-      overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
+      // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
+      // fill's layout is derived from l4 and bulletins, and the bulletin
+      // boundary's visibility from bulletins alone rather than a key of its
+      // own.
+      //
+      // SNOW-872: the same configured defaults the boot seed used, read
+      // through the same one owner. A literal left here would mean the
+      // opening view held until the visitor changed basemap and then quietly
+      // reverted to the shipped one — which is the failure mode this block's
+      // duplication has always risked.
+      for (const key of ['l1', 'l2', 'l4']) {
+        overlayState[key] = readBoolStorage(
+          OVERLAY_STORAGE_KEY[key], MAP_DEFAULTS.boundary === key,
+        );
+      }
       // SNOW-656: ``setPreference``, not ``choose`` — a basemap swap is not a
       // click, and must leave the downloads suppression (and the downloads
       // overlay itself, per the note above) exactly as it found them.
       overlayState.bulletins = BULLETINS_CORE.seedFromLegacy(
         readStorage(OVERLAY_STORAGE_KEY.bulletins),
         readStorage(OVERLAY_STORAGE_KEY.l4),
-        BULLETINS_CORE.DEFAULT_STEP,
+        MAP_DEFAULTS.opacityStep,
       );
       bulletinsVisibility = BULLETINS_CORE.setPreference(
         bulletinsVisibility, overlayState.bulletins,

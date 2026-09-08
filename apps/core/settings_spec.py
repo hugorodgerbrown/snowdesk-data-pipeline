@@ -394,6 +394,22 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Include local variables in captured exceptions",
     ),
     SettingSpec("BASEMAP", note="Basemap provider key"),
+    # SNOW-872: the map's opening view. All three are validated at import in
+    # config/settings/base.py against their own catalogues — an unknown
+    # provider, tier or off-scale step raises ImproperlyConfigured there, so
+    # there is no shape left for a validator here to check.
+    SettingSpec(
+        "MAP_DEFAULT_PROVIDERS",
+        note="Bulletin providers painted on a first visit",
+    ),
+    SettingSpec(
+        "MAP_DEFAULT_BOUNDARY",
+        note="EAWS boundary tier drawn on a first visit (l1/l2/l4, or empty)",
+    ),
+    SettingSpec(
+        "MAP_DEFAULT_OPACITY_STEP",
+        note="Danger choropleth's opening opacity step",
+    ),
     SettingSpec("WEATHER_ICON_SET", note="Which weather icon set to serve"),
     # --- Host allowlists (lists built by decouple's Csv cast) -------------
     SettingSpec("ALLOWED_HOSTS", note="Django host allowlist"),

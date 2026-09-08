@@ -475,11 +475,24 @@ location" state promptly instead of holding "Finding your location…".
 
 **A first visit lands on:** the intro panel (`#home-intro`, dismissed state
 persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
-boundaries, the OpenFreeMap basemap, and bulletin fill at 50%. Every one of
-those is a localStorage default rather than a server-rendered choice, so a
-returning visitor keeps whatever they last set; the `aria-checked` /
-`data-state` attributes in the template mirror the same values so the
-control reads correctly before JS runs.
+boundaries, the OpenFreeMap basemap, and bulletin fill at 50%.
+
+Four of those five are **configured, not hardcoded** (SNOW-872 for the
+bulletins, boundary and fill; SNOW-58 for the basemap): `MAP_DEFAULT_PROVIDERS`,
+`MAP_DEFAULT_BOUNDARY`, `MAP_DEFAULT_OPACITY_STEP` and `BASEMAP` are validated
+at import against their catalogues in `config/settings/base.py`, rendered onto
+`#map` as `data-default-*`, and read back through `mapDefaults()` in
+`static/js/map_state.js` — the one client-side owner, used by `map.js`'s boot
+seed, its `styledata` re-seed after a basemap swap, and
+`map_season_ribbon.js`. The values above are the shipped defaults, so nothing
+about the opening view changed when they became configurable; an environment
+can now differ from production without a deploy.
+
+Each is a **default and never an override**: it applies only where the device
+has nothing stored under the matching `snowdesk.map.overlay.*` key, so a
+returning visitor keeps whatever they last set. The `aria-checked` /
+`data-state` attributes in the template are rendered from the same settings,
+so the control reads correctly before JS runs.
 
 ---
 
