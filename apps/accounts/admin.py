@@ -1,10 +1,10 @@
 """
-apps/accounts/admin.py — Django admin registrations for subscriptions models.
+apps/accounts/admin.py — Django admin registrations for the accounts models.
 
-Provides list and detail views for Account, Subscription, PasskeyCredential,
-and PushSubscription records so that operators can inspect and manage
-registered accounts, newsletter subscriptions, registered passkeys, and Web
-Push subscriptions without direct database access.
+Provides list and detail views for Account, PasskeyCredential and
+PushSubscription records so that operators can inspect and manage registered
+accounts, registered passkeys and Web Push subscriptions without direct
+database access.
 
 ``Account`` is the single public-user identity keyed to ``auth.User``; it
 appears both as a standalone admin and as an inline on the custom User admin.
@@ -22,7 +22,7 @@ from django.contrib.auth.admin import UserAdmin as _BaseUserAdmin
 from django.db.models import QuerySet
 from django.http import HttpRequest
 
-from .models import Account, PasskeyCredential, PushSubscription, Subscription
+from .models import Account, PasskeyCredential, PushSubscription
 from .services.deletion import erase_account
 
 logger = logging.getLogger(__name__)
@@ -152,46 +152,6 @@ class AccountAdmin(admin.ModelAdmin):
         for account in queryset.select_related("user"):
             logger.info("Admin erasing account pk=%s (bulk)", account.pk)
             erase_account(account.user, account)
-
-
-@admin.register(Subscription)
-class SubscriptionAdmin(admin.ModelAdmin):
-    """Admin view for Subscription."""
-
-    list_display = [
-        "account",
-        "region",
-        "acquisition_country",
-        "geo_match_kind",
-        "geo_matched_region",
-        "created_at",
-    ]
-    list_filter = ["geo_match_kind"]
-    list_select_related = [
-        "account",
-        "account__user",
-        "region",
-        "subscribed_via",
-        "geo_matched_region",
-    ]
-    search_fields = ["account__user__email", "region__region_id"]
-    readonly_fields = [
-        "uuid",
-        "created_at",
-        "updated_at",
-        "subscribed_via",
-        "geo_match_kind",
-        "geo_matched_region",
-    ]
-    raw_id_fields = []  # subscribed_via is read-only, not editable here
-
-    @admin.display(description="Country (acquisition)")
-    def acquisition_country(self, obj: Subscription) -> str:
-        """Return the country code from the subscribed_via RequestLog, or '—'."""
-        req = getattr(obj, "subscribed_via", None)
-        if req is not None:
-            return req.country_code or "—"
-        return "—"
 
 
 @admin.register(PasskeyCredential)
