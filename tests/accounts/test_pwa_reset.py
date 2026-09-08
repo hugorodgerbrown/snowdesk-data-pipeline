@@ -55,6 +55,12 @@ def test_settings_page_has_reset_helper_copy() -> None:
     also takes every downloaded map and every unsent change, and the
     breakdown panel now enumerates all four. What survives here is the part
     the panel cannot say: what this does NOT touch.
+
+    "app data ... in this browser" rather than "everything on this device",
+    because ``resetLocalData`` clears service workers, Cache Storage,
+    IndexedDB and both Web Storage areas and touches no cookies. The session
+    cookie survives, which is why the line can promise you stay signed in —
+    and why the wider claim would have been false.
     """
     account = AccountFactory.create()
     client = Client()
@@ -66,8 +72,8 @@ def test_settings_page_has_reset_helper_copy() -> None:
     # Copy is spread across template line breaks + blocktrans whitespace
     # normalisation; collapse before asserting.
     collapsed = " ".join(body.split())
-    assert "Clears everything Snowdesk has stored on this device." in collapsed
-    assert "Your subscription is not affected." in collapsed
+    assert "Clears the app data Snowdesk has stored in this browser." in collapsed
+    assert "You stay signed in, and your subscription is not affected." in collapsed
 
 
 @pytest.mark.django_db
