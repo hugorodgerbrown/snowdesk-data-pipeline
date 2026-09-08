@@ -116,6 +116,7 @@ from apps.weather.services.weather_display import (
 )
 
 from .decorators import lowercase_region_id
+from .release import release_label
 from .views import (
     _resolve_region_for_bulletin,
     _select_bulletin_for_date,
@@ -3202,6 +3203,26 @@ def version(request: HttpRequest) -> JsonResponse:
     Update Required state when the server says so (``update_required``),
     and (c) trigger the Mechanism-A kill switch when ``kill`` is true.
 
+    Two further fields (SNOW-869) let the soft update banner NAME the two
+    builds instead of saying only that one exists:
+
+    * ``release`` — the release label a person reads (``"v30"``, or ``""``
+      when ``APP_RELEASE`` is unset). The SHA in ``current`` identifies a
+      build to a machine; this is the same string the site footer shows,
+      so the banner and the footer cannot disagree.
+    * ``update_available`` — true when the request carried an
+      ``X-Client-Version`` AND that value differs from ``APP_VERSION``.
+      This is the whole soft-banner verdict, and it is *equality*, never
+      ordering, for the same reason ``update_required`` is membership: a
+      git SHA has no order (see
+      ``docs/decisions/blocked-builds-not-a-version-floor.md``). It fails
+      CLOSED on an unidentified client — no header means false — which is
+      the mirror of ``update_required``'s fail-open: a client whose build
+      we cannot read is never *told* it has an update we cannot confirm.
+
+    Both new fields are functions of ``X-Client-Version``, which is already
+    in ``Vary`` below, so the 60-second edge cache is unaffected.
+
     ``update_required`` (SNOW-609) is the whole forced-update verdict; the
     client does no version arithmetic of its own. It is true only when the
     request carried an ``X-Client-Version`` header AND that value is listed
@@ -3238,10 +3259,15 @@ def version(request: HttpRequest) -> JsonResponse:
     update_required = (
         client_version != "" and client_version in settings.APP_BLOCKED_VERSIONS
     )
+    # Equality, never ordering — see the docstring. Same ``!= ""`` idiom as
+    # above, and for the same semgrep reason.
+    update_available = client_version != "" and client_version != settings.APP_VERSION
     response = JsonResponse(
         {
             "current": settings.APP_VERSION,
+            "release": release_label(),
             "update_required": update_required,
+            "update_available": update_available,
             "released_at": settings.APP_RELEASED_AT,
             "kill": bool(settings.SW_KILL),
         }
