@@ -330,9 +330,18 @@
     // (never a candidate), `manageRows` (SNOW-867 — not a row on the
     // downloads panel and not in its budget either) and
     // `map_layer_sync_status.js` (a basemap with only a base layer has no
-    // ground downloaded, so its dot must not go green). SNOW-860's
-    // settings-page breakdown is the surface that DOES list it, which is
-    // the place the app's own storage is stated and cleared.
+    // ground downloaded, so its dot must not go green) and
+    // `downloads_sync.js`'s `adopt` (SNOW-860 — a base layer is not one of
+    // the user's downloads, and `area_sync`'s `_AREA_ID_RE` rejects the
+    // `base-` prefix outright). That last one was MISSED when this list
+    // widened, and the cost is the shape to expect if another consumer is
+    // ever forgotten: the push 400d, the mutation queue classified it
+    // permanent, and every signed-in user with a download carried a dead
+    // queue row and a red sync badge. Adding an entry to this list means
+    // auditing every reader of it.
+    //
+    // SNOW-860's settings-page breakdown is the surface that DOES list it,
+    // which is the place the app's own storage is stated and cleared.
     //
     // SNOW-863: driven by the BUCKETS on disk, joined to the records for
     // their sizes — not by the records alone, which is what shipped and was
