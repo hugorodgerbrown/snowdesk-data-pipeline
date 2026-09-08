@@ -276,6 +276,60 @@ because the repository is the authority and the mock is a drawing:
                             </div>
                         </div>
                     {% endwith %}
+
+                    {% comment %}
+                        SNOW-616: sign out, on the page as well as in the nav
+                        disclosure. The nav control is the primary one and now
+                        works without JavaScript too
+                        (templates/includes/nav.html is a native <details>),
+                        but a session-ending control is worth being able to
+                        find from the account page itself — it is the page a
+                        user lands on when they go looking for "my account",
+                        and on a borrowed device it is the one thing they need.
+
+                        SNOW-746: a button, where it was a text link. The
+                        control that ends a session on a machine that is not
+                        yours should look like a control.
+
+                        SNOW-860: in Account, not This device. It ends a
+                        SESSION — the thing the account section is about —
+                        and the reset panel below now enumerates what is held
+                        on the device, which is what that group is for. The
+                        old copy pointed at "reset local data below" to draw
+                        the line between the two; the panel draws it now, so
+                        the sentence is shorter and this row no longer depends
+                        on sitting next to that one.
+
+                        ``button_classes`` rather than includes/_button.html
+                        because the partial takes no data-attribute
+                        passthrough — SNOW-645 removed its ``extra_attrs``
+                        after semgrep flagged it as an attribute-injection
+                        surface in a reusable component. The tag gives the
+                        same class string the partial would have; the
+                        attributes stay this caller's own. The same applies to
+                        Reset and Delete below, each of which carries a
+                        binding contract the partial cannot express:
+                        ``data-testid`` here, ``data-pwa-reset-trigger`` for
+                        pwa_reset.js, and hx-post/hx-confirm for HTMX.
+                    {% endcomment %}
+                    <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <div class="min-w-0">
+                            <h3 class="text-sm font-semibold text-text-1">{% trans "Sign out" %}</h3>
+                            <p class="text-sm text-text-2">
+                                {% trans "Ends this session on this device." %}
+                            </p>
+                        </div>
+                        <form method="post" action="{% url 'accounts:sign_out' %}" class="self-start shrink-0">
+                            {% csrf_token %}
+                            <button
+                                type="submit"
+                                data-testid="manage-sign-out"
+                                class="{% button_classes variant='ghost' size='compact' %} whitespace-nowrap"
+                            >
+                                {% trans "Sign out" %}
+                            </button>
+                        </form>
+                    </div>
                     {% endcard %}
                 </section>
 
@@ -316,61 +370,10 @@ because the repository is the authority and the mock is a drawing:
                         <div class="min-w-0">
                             <h3 class="text-sm font-semibold text-text-1">{% trans "Theme" %}</h3>
                             <p class="text-sm text-text-2">
-                                {% blocktrans trimmed %}
-                                    Applies to this browser only. "System" follows your device's light or dark
-                                    appearance setting.
-                                {% endblocktrans %}
+                                {% trans "Applies to this browser only." %}
                             </p>
                         </div>
                         <div class="shrink-0">{% include "includes/_theme_preference.html" %}</div>
-                    </div>
-
-                    {% comment %}
-                        SNOW-616: sign out, on the page as well as in the nav
-                        disclosure. The nav control is the primary one and now
-                        works without JavaScript too
-                        (templates/includes/nav.html is a native <details>),
-                        but a session-ending control is worth being able to
-                        find from the account page itself — it is the page a
-                        user lands on when they go looking for "my account",
-                        and on a borrowed device it is the one thing they need.
-
-                        SNOW-746: a button, where it was a text link. The
-                        control that ends a session on a machine that is not
-                        yours should look like a control.
-
-                        ``button_classes`` rather than includes/_button.html
-                        because the partial takes no data-attribute
-                        passthrough — SNOW-645 removed its ``extra_attrs``
-                        after semgrep flagged it as an attribute-injection
-                        surface in a reusable component. The tag gives the
-                        same class string the partial would have; the
-                        attributes stay this caller's own. The same applies to
-                        Reset and Delete below, each of which carries a
-                        binding contract the partial cannot express:
-                        ``data-testid`` here, ``data-pwa-reset-trigger`` for
-                        pwa_reset.js, and hx-post/hx-confirm for HTMX.
-                    {% endcomment %}
-                    <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                        <div class="min-w-0">
-                            <h3 class="text-sm font-semibold text-text-1">{% trans "Sign out" %}</h3>
-                            <p class="text-sm text-text-2">
-                                {% blocktrans trimmed %}
-                                    Ends this session on this device. Anything already saved offline stays until you
-                                    reset local data below.
-                                {% endblocktrans %}
-                            </p>
-                        </div>
-                        <form method="post" action="{% url 'accounts:sign_out' %}" class="self-start shrink-0">
-                            {% csrf_token %}
-                            <button
-                                type="submit"
-                                data-testid="manage-sign-out"
-                                class="{% button_classes variant='ghost' size='compact' %} whitespace-nowrap"
-                            >
-                                {% trans "Sign out" %}
-                            </button>
-                        </form>
                     </div>
 
                     {% comment %}
@@ -418,10 +421,7 @@ because the repository is the authority and the mock is a drawing:
                             <div class="min-w-0">
                                 <h3 class="text-sm font-semibold text-text-1">{% trans "Reset local data" %}</h3>
                                 <p class="text-sm text-text-2">
-                                    {% blocktrans trimmed %}
-                                        Clears the app data Snowdesk has stored in this browser. You stay signed in, and
-                                        your subscription is not affected.
-                                    {% endblocktrans %}
+                                    {% trans "Delete locally cached app data. Does not log you out." %}
                                 </p>
                             </div>
                             <button

@@ -35,13 +35,11 @@ const MB = 1024 * 1024;
 
 document.body.innerHTML = `
   <ul id="reset-data-summary-list"><li>Loading…</li></ul>
-  <p id="reset-data-summary-total"></p>
 `;
 
 await import('../../static/js/reset_data_summary.js');
 
 const list = document.getElementById('reset-data-summary-list');
-const totalEl = document.getElementById('reset-data-summary-total');
 
 /** Fire the event the module renders on, and let its async body settle. */
 async function renderPanel() {
@@ -96,7 +94,6 @@ function stubDevice(options) {
 
 beforeEach(() => {
   list.innerHTML = '<li>Loading…</li>';
-  totalEl.textContent = '';
 });
 
 afterEach(() => {
@@ -121,7 +118,6 @@ describe('when the device cannot answer at all', () => {
     };
     await renderPanel();
     expect(placeholderText()).toBe('Could not read what is stored on this device.');
-    expect(totalEl.textContent).toBe('');
   });
 });
 
@@ -180,19 +176,21 @@ describe('painting the four categories', () => {
     expect(category('cached').value).toBe('10.0 MB');
   });
 
-  it('states the preferences with no figure rather than omitting them', async () => {
+  it('names what reverts to the default, and shows no figure for it', async () => {
     await renderPanel();
-    expect(category('preferences').value).toBe('Back to defaults');
-    expect(category('preferences').note).toContain('basemap choice');
+    // The row carries no right-hand value at all: a handful of web-storage
+    // keys is not a size, and "Back to defaults" in the figure column said
+    // less than naming the basemap and viewport does.
+    expect(category('preferences').label).toBe('Map Viewport');
+    expect(category('preferences').value).toBe('');
+    expect(category('preferences').note).toContain('OpenFreeMap');
   });
 
   it('totals the lot for the line pwa_reset.js quotes', async () => {
     await renderPanel();
-    // The full stop is the assertion, not decoration: the total and the
-    // "approximate" caveat are two strings joined by a space, and without
-    // it they painted as "130 MB Approximate — the browser reports ...".
-    expect(totalEl.textContent).toContain('Total on this device: 130 MB.');
-    expect(totalEl.textContent).not.toMatch(/\d\s*MB\s+Approximate/);
+    // The panel shows no total of its own — the confirmation dialog is the
+    // one place a total is stated, and it reads the same summary.
+    expect(list.textContent).not.toContain('Total on this device');
     expect(window.pwaResetDataSummary.confirmLines()).toEqual([
       'This deletes about 130 MB from this device.',
       '2 changes have not reached the server yet, and will be lost.',
@@ -235,15 +233,16 @@ describe('a device with nothing downloaded', () => {
 });
 
 describe('a browser with no storage.estimate()', () => {
-  it('keeps the category, drops the figure, and flags the total partial', async () => {
+  it('keeps the category and drops the figure when the size is unknown', async () => {
     stubDevice({
       areas: [{ id: 'region-ch-4115', name: 'Martigny', bytes: 40 * MB, basemapKey: 'x' }],
       usage: null,
     });
     await renderPanel();
     expect(category('cached').value).toBe('Size unknown');
-    expect(category('cached').note).toContain('costs you a reload');
-    expect(totalEl.textContent).toContain('At least 40.0 MB');
+    expect(category('cached').note).toContain('saved by the device as you browse');
+    // No panel total to go partial, but the dialog still states a floor.
+    expect(window.pwaResetDataSummary.confirmLines()[0]).toContain('40.0 MB');
   });
 });
 

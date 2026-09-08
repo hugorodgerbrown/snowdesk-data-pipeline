@@ -37,7 +37,6 @@
   'use strict';
 
   const LIST_ID = 'reset-data-summary-list';
-  const TOTAL_ID = 'reset-data-summary-total';
 
   // SNOW-620: server-translated copy, read back from the template
   // accounts/partials/_reset_data_summary_body.html renders. The literals
@@ -47,8 +46,7 @@
     failed: 'Could not read what is stored on this device.',
     maps: 'Downloaded maps',
     'maps-note':
-      'Areas you downloaded, plus the shared overview maps they sit on. ' +
-      'Getting them back needs a connection.',
+      'Areas you have downloaded on this device. Restoring them needs a connection.',
     'maps-none': 'Nothing downloaded on this device.',
     'shared-tag': 'Shared',
     unsent: 'Unsent changes',
@@ -56,20 +54,14 @@
     'unsent-one': '1 change has not reached the server yet. Resetting deletes it.',
     'unsent-many': '%(n)s changes have not reached the server yet. Resetting deletes them.',
     cached: 'Cached pages and tiles',
-    'cached-note':
-      'Pages and map tiles saved as you browsed. Losing them costs you a reload, not your data.',
+    'cached-note': 'Pages and map tiles saved by the device as you browse.',
     'cached-unknown': 'Size unknown',
-    preferences: 'Preferences',
+    preferences: 'Map Viewport',
     'preferences-note':
-      'Your basemap choice, where the map was left, which panels were open, ' +
-      'and your usage-data choice.',
-    'preferences-value': 'Back to defaults',
-    // Ends in a full stop: renderSummary joins it to 'total-approx' with a
-    // space, and without one the two sentences run together.
-    total: 'Total on this device: %(size)s.',
-    'total-approx': 'Approximate — the browser reports one figure for everything this site has stored.',
-    'total-partial':
-      'At least %(size)s — this browser will not report how much the site is storing in total.',
+      'The selected basemap and viewport will be restored to the default (OpenFreeMap).',
+    // confirm-* belong to the reset dialog, not the panel. The panel has no
+    // total footer; the confirmation still states a size before the user
+    // commits, and still reads it from the same summary.
     'confirm-total': 'This deletes about %(size)s from this device.',
     'confirm-unsent-one': '1 change has not reached the server yet, and will be lost.',
     'confirm-unsent-many': '%(n)s changes have not reached the server yet, and will be lost.',
@@ -204,14 +196,13 @@
   }
 
   /**
-   * Paint the four categories and the total from a computed summary.
+   * Paint the four categories from a computed summary.
    *
    * @param {HTMLElement} list
-   * @param {HTMLElement|null} totalEl
    * @param {Object} summary `pwaResetDataSummaryCore.summarise` output.
    * @returns {void}
    */
-  function renderSummary(list, totalEl, summary) {
+  function renderSummary(list, summary) {
     list.textContent = '';
 
     const maps = buildCategory({
@@ -258,21 +249,13 @@
       buildCategory({
         category: 'preferences',
         label: STRINGS.preferences,
-        // No size: a handful of keys in web storage is not a figure worth
-        // stating, and the list of what they are is the disclosure.
-        value: STRINGS['preferences-value'],
+        // No figure at all: a handful of keys in web storage is not a size
+        // worth stating, and naming what reverts to the default says more
+        // than a right-hand column could.
+        value: '',
         note: STRINGS['preferences-note'],
       }),
     );
-
-    if (totalEl) {
-      const size = formatBytes(summary.totalBytes);
-      totalEl.textContent = summary.totalIsPartial
-        ? self.pwaStrings.interpolate(STRINGS['total-partial'], { size: size })
-        : self.pwaStrings.interpolate(STRINGS.total, { size: size }) +
-          ' ' +
-          STRINGS['total-approx'];
-    }
   }
 
   /**
@@ -345,7 +328,6 @@
   async function render() {
     const list = document.getElementById(LIST_ID);
     if (!list) return;
-    const totalEl = document.getElementById(TOTAL_ID);
 
     if (!window.pwaDb || !window.pwaResetDataSummaryCore) {
       LAST_SUMMARY = null;
@@ -356,10 +338,9 @@
     try {
       const summary = await collect();
       LAST_SUMMARY = summary;
-      renderSummary(list, totalEl, summary);
+      renderSummary(list, summary);
     } catch (_err) {
       LAST_SUMMARY = null;
-      if (totalEl) totalEl.textContent = '';
       renderPlaceholder(list, STRINGS.failed);
     }
   }
