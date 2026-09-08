@@ -236,6 +236,7 @@ extend-include = [
     "bin/i18n-lint",
     "bin/js-globals-lint",
     "bin/migrations-lint",
+    "bin/render-churn",
     "bin/render-day-summary-matrix",
     "bin/render-testing-scenarios",
 ]
