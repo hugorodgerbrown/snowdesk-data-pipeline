@@ -1,16 +1,26 @@
 {% load i18n components %}
 {% comment %}
 observations/partials/_observation_row_actions.html — the field-
-observation row's icon controls (SNOW-658).
+observation row's one icon control (SNOW-658).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
 _observation.html — which passes its own full context on, so
 ``observation`` is in scope here for the delete endpoint's URL.
 
-Remove is the only control. There is no rename counterpart: an
+Delete is the only control, and that is why it stays a bare icon while
+the favourite and route rows collapsed theirs behind a "…" (SNOW-886):
+the panel rule is more than one action is a menu, exactly one is an icon
+the user aims at directly. There is no rename counterpart — an
 observation records what was seen and where, and none of that is editable
-after the fact — which is why the always-visible name field the
-favourites row used to carry never existed here.
+after the fact, which is why the always-visible name field the favourites
+row used to carry never existed here.
+
+IT SAYS "DELETE", not "Remove" (SNOW-886). Hugo's rule: Delete when the
+underlying record is destroyed, Remove when the thing only comes off the
+map and the data survives. observations:delete destroys the
+FieldObservation row, so it is a Delete — and the accessible name is the
+only place this row says anything at all, the control itself being a
+trash glyph, so that is where the word lands.
 
 ``data-row-remove`` (SNOW-752) is how the surface owning the list knows
 the removal happened, so it can re-read the list — the swap empties one
@@ -24,7 +34,7 @@ returns an empty 200, so ``hx-target``/``hx-swap`` on this row's own id
 removes exactly this row and nothing on the page has to know which one
 was clicked.
 
-The aria-label names the row: "Remove" alone names nothing with a list of
+The aria-label names the row: "Delete" alone names nothing with a list of
 reports on screen. It interpolates ``label`` —
 includes/_ugc_panel_row.html's own parameter, in scope here — which for
 this panel is the observation's own type.
@@ -34,7 +44,7 @@ Context:
     label       : str — the row's display name (the shared row's own
                   parameter): the observation type.
 {% endcomment %}
-{% blocktrans trimmed with kind=label asvar remove_aria_label %}Remove {{ kind }}{% endblocktrans %}
+{% blocktrans trimmed with kind=label asvar remove_aria_label %}Delete {{ kind }}{% endblocktrans %}
 <form
     data-row-remove
     hx-post="{% url 'observations:delete' observation.uuid %}"

@@ -12,9 +12,9 @@ WHY THESE ARE IN A MENU AT ALL. Four inline controls (Share, "Plan a
 trip", Rename, Remove) on a 380px map panel row left the route's name
 rendering as "Mont Fort – Ba…", and the name is the one thing a user scans
 a list of routes by. Collapsing them behind one trigger gives the name the
-row. The other three UGC panels keep their visible trash — see
-includes/_overflow_menu.html's header for why the ruling is narrowed to
-routes rather than reversed.
+row. This was the second panel to do it and SNOW-886 made it the rule
+across all of them — see includes/_overflow_menu.html's header for which
+rows have a menu today and which keep a single bare icon.
 
 EVERY HOOK IS THE ONE IT ALREADY WAS. `data-route-share`,
 `data-row-rename`, `data-route-rename`, `data-row-remove` and
@@ -32,19 +32,30 @@ inline cluster; the rule separates "do something with this route" from
 "change or destroy this row". Delete stays last, on the design's rule that
 the destructive control is in the same place on every panel.
 
-Remove is the only coloured item. A menu of four neutral lines gives a
+Delete is the only coloured item. A menu of four neutral lines gives a
 user nothing to aim at or avoid, and the one irreversible action is the
 one worth marking; it takes the `status-error` pair the inline trash took
 on hover. The inline trash was neutral at rest on the argument that a row
 of red bins reads as an error state — that argument does not carry here,
-because a menu shows one Remove at a time and only while it is open.
+because a menu shows one Delete at a time and only while it is open.
 
-It says "Remove", not "Delete", although the design's handover names the
-item Delete: the control's accessible name is already the translated
-"Remove <name>" that every other panel's trash carries, and WCAG 2.5.3
-(Label in Name) requires the visible label to appear in it. Changing one
-of the pair alone breaks voice control; changing both would fork this row
-away from the wording the other three panels use for the same action.
+IT SAYS "DELETE" (SNOW-886). It said "Remove" until then, on the argument
+that the control's accessible name was already the translated "Remove
+<name>" every other panel's trash carried, and that WCAG 2.5.3 (Label in
+Name) forbids changing the visible half alone. Both halves are true; the
+conclusion drawn from them was not. Hugo's rule decides the verb: Delete
+when the underlying record is destroyed, Remove when the thing only comes
+off the map and the data survives. routes:delete destroys the Route row
+and the uploaded geometry with it, and there is no copy anywhere — the
+user's own .gpx file is the only way back — so this is a Delete. The
+accessible name therefore moves WITH the visible label rather than
+against it, and the pair below is edited as one.
+
+The panels that keep "Remove" keep it on the same rule and not by
+omission: the downloads sheet removes a downloaded area, whose tiles are
+a re-fetchable cache and whose DownloadArea row holds no tiles and no
+bytes, only a re-download recipe. Nothing there is destroyed. The region
+pin says neither word — it unpins, and the region survives.
 
 WHAT KEEPS ITS ELEMENT. "Plan a trip" is an `<a href>` and not a button,
 so middle-click and open-in-new-tab still work — it is a navigation to
@@ -66,9 +77,9 @@ Context (all from _route_row_actions.html's own):
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar remove_aria_label %}Delete {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar remove_confirm %}
-    Remove {{ name }}? You'll need the .gpx file again to put it back.
+    Delete {{ name }}? You'll need the .gpx file again to put it back.
 {% endblocktrans %}
 {% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
 <li role="none">
@@ -172,7 +183,7 @@ Context (all from _route_row_actions.html's own):
             class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
         >
             {% include "includes/_icon_trash.html" only %}
-            {% trans "Remove" %}
+            {% trans "Delete" %}
         </button>
     </form>
 </li>

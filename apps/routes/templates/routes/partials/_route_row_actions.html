@@ -1,7 +1,7 @@
 {% load i18n %}
 {% comment %}
 routes/partials/_route_row_actions.html — the route row's controls
-(SNOW-686, shared with every route surface by SNOW-711).
+(SNOW-686).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
 routes/partials/_route.html — which passes its own full context on, so
@@ -9,24 +9,35 @@ routes/partials/_route.html — which passes its own full context on, so
 `_route_row_map_actions.html` until SNOW-711 retired the map's fork of
 that row; there was never anything map-shaped about either control.
 
+WHICH SURFACE RENDERS THIS (corrected by SNOW-886). SNOW-711 shared this
+row with "every route surface", and every route surface then meant the
+map panel plus a page under ``/account/``. There is one now: SNOW-803
+turned those lists into a 301 to the map, so this row reaches a user only
+through the HTMX fragment endpoints apps/public/templates/public/home.html
+consumes — which is also why the `overflow_menu.js` that drives the menu
+below is loaded once by that page and by nothing else.
+
 TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
 
   An OWNED row gets ONE "…" trigger (SNOW-830) opening a menu that holds
-  Plan a trip, Share, Rename and Remove — Share only when
+  Plan a trip, Share, Rename and Delete — Share only when
   ``sharing_enabled`` says so, which is a surface check and nothing else:
   which listing asked, and therefore whether a handler is wired for the
   click (see apps/routes/views.py's route_list). The items themselves,
   their order and every hook on them live in
   _route_row_menu_items.html.
 
-  WHY A MENU HERE AND NOWHERE ELSE. SNOW-764 put a Share icon on this row
-  and SNOW-819 added a full-width "Plan a trip" text link, which made four
-  controls competing for the right-hand end of a 380px panel row; the
-  route's name — the one thing a user scans the list by — rendered as
-  "Mont Fort – Ba…". SNOW-658's "no ellipsis menu on any panel" ruling is
-  narrowed to exclude this row rather than withdrawn: favourites, field
-  observations and downloads all still have room for a visible trash, and
-  keep it, because one tap beats two wherever the row can afford it.
+  WHY A MENU HERE. SNOW-764 put a Share icon on this row and SNOW-819
+  added a full-width "Plan a trip" text link, which made four controls
+  competing for the right-hand end of a 380px panel row; the route's name
+  — the one thing a user scans the list by — rendered as "Mont Fort –
+  Ba…". SNOW-658's "no ellipsis menu on any panel" ruling was narrowed to
+  exclude this row rather than withdrawn, and SNOW-886 finished the job by
+  stating the rule the panels follow now: more than one action is a "…",
+  exactly one is a bare icon. So the favourite row has a menu too, while
+  an observation (delete only) and a region pin (unpin only) each keep the
+  single icon a user aims at directly — one tap beats two wherever the row
+  can afford it.
 
   A PENDING row — one the visitor was sent and has not claimed — gets a
   single Save. It is not an icon: the other three name actions a user
@@ -43,7 +54,7 @@ TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
   sent them the route.
 
   The two never both render. A pending row's route is not the viewer's, so
-  Rename and Remove have nothing to address — and they are owner-scoped
+  Rename and Delete have nothing to address — and they are owner-scoped
   server-side anyway, so a rendered pencil would be a control that 404s.
 
 WHY THE PENDING BRANCH CARRIES A TOKEN AND NEVER A UUID. The rename and
@@ -63,10 +74,10 @@ The trigger's own aria-label names the row for the same reason the items'
 do: "More actions" alone names nothing with a list of rows on screen.
 
 ``row_target`` rather than a hardcoded ``#route-<uuid>``: the shared row
-takes its own DOM id as a parameter, and a Remove that named the id
+takes its own DOM id as a parameter, and a Delete that named the id
 directly would go on addressing the default one whatever the row was
 given. Same contract as the favourite row's actions. It is passed
-through to the menu items, which own the Remove form.
+through to the menu items, which own the Delete form.
 
 WHAT THE MENU DID NOT CHANGE. Every hook the four controls carry is the
 one it already was, and none of the five modules that read them noticed
@@ -86,14 +97,14 @@ Context:
     label         : str — the row's display name (the shared row's own
                     parameter): the route's name, its source filename, or
                     "Untitled route".
-    row_target    : str — CSS selector for the row this Remove empties (or
+    row_target    : str — CSS selector for the row this Delete empties (or
                     the Save replaces), supplied by _route.html as
                     ``#<the row's id>``.
 {% endcomment %}
 {% if pending_share %}
     {% comment %}
         The pending row's one control. A plain HTMX form, exactly the shape
-        Remove already uses below — routes:share_claim answers with the
+        Delete already uses below — routes:share_claim answers with the
         claimed row (routes/partials/_route.html), so `hx-target` on this
         row's own id and `outerHTML` replace the pending row with the owned
         one in a single swap, with no JS involved and nothing to keep in

@@ -5,14 +5,24 @@ templates/includes/_overflow_menu.html — Reusable "…" kebab overflow menu
 
 WHICH PANELS HAVE ONE, AND WHICH DO NOT. This partial was built for the
 "Manage downloads" sheet's row actions, dropped a day later when SNOW-658
-ruled "no ellipsis menu" across every UGC panel, and brought back by
-SNOW-830 for the ROUTE row alone. That ruling is narrowed rather than
-reversed: favourites, field observations and downloads keep their visible
-trash, because a visible destructive control in the same place on every
-row is one tap rather than two. The route row outgrew it — four inline
-controls (Share, "Plan a trip", Rename, Remove) on a 380px row left the
-route's own name rendering as "Mont Fort – Ba…", and the name is the one
-thing a user scans the list by. One trigger buys the name the row back.
+ruled "no ellipsis menu" across every UGC panel, brought back by SNOW-830
+for the ROUTE row, and generalised by SNOW-886 into the rule the panels
+follow now: MORE THAN ONE ACTION IS A "…", EXACTLY ONE IS A BARE ICON.
+So the downloads row and the route row have a menu, and since SNOW-886 the
+favourite row does too — it was the last one drawing a visible pencil
+beside a visible trash, which made a user relearn the row's anatomy per
+panel. A field observation (delete only) and a region pin (unpin only)
+each have exactly one action, so each stays a single icon the user aims
+at directly: one tap beats two wherever the row can afford it.
+
+SNOW-658's ruling is therefore narrowed rather than reversed. Its case
+was that a destructive control in the same place on every row is one tap;
+that still holds for the rows with nothing else on them, and stopped
+holding for the rows that grew a second and a fourth control — four
+inline controls (Share, "Plan a trip", Rename, Remove) on a 380px row
+left a route's own name rendering as "Mont Fort – Ba…", and the name is
+the one thing a user scans the list by. One trigger buys the name the row
+back.
 
 Built for the "Manage downloads" sheet's row actions (Rename / Remove),
 replacing the two inline buttons every row used to carry. There was no
