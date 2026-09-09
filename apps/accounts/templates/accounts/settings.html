@@ -256,7 +256,7 @@ because the repository is the authority and the mock is a drawing:
                                         minimum every other row action on the site
                                         is drawn at, and this one deletes a way in.
                                     {% endcomment %}
-                                    {% blocktrans trimmed with name=passkey.display_name asvar remove_aria_label %}
+                                    {% blocktrans trimmed with name=passkey.display_name asvar delete_aria_label %}
                                         Delete {{ name }}
                                     {% endblocktrans %}
                                     <button
@@ -264,7 +264,7 @@ because the repository is the authority and the mock is a drawing:
                                         hx-target="closest .passkey-card"
                                         hx-swap="outerHTML"
                                         hx-confirm='{% trans "Delete this passkey?" %}'
-                                        aria-label="{{ remove_aria_label }}"
+                                        aria-label="{{ delete_aria_label }}"
                                         class="{% icon_button_classes variant='destructive' %}"
                                     >
                                         {% include "includes/_icon_trash.html" only %}

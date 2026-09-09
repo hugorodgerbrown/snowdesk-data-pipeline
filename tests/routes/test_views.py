@@ -861,6 +861,31 @@ class TestRouteListFocus:
             in response.content.decode()
         )
 
+    def test_the_renamed_row_still_carries_the_bbox(self, client: Client) -> None:
+        """route_rename renders with ``map_focus=True`` as well (SNOW-886).
+
+        Its response replaces the row in place — ``hx-swap="outerHTML"`` on
+        the row's own id — so whatever it renders IS the row from then until
+        the next full list read. Without the flag a rename would quietly
+        turn the name back into an inert span, and the row a user had just
+        named would be the one row on the panel that no longer frames its
+        own track. The three renderers of this partial therefore pass the
+        same flag: there is one surface left, so there is one shape.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user, name="Haute Route")
+
+        response = client.post(
+            _rename_url(route.uuid), {"name": "Verbier skin track"}, **HTMX_HEADERS
+        )
+
+        west, south, east, north = route.bounds
+        assert (
+            f'data-row-focus="{west:f},{south:f},{east:f},{north:f}"'
+            in response.content.decode()
+        )
+
     def test_the_map_rows_name_is_a_real_button(self, client: Client) -> None:
         """A `<button>`, not a clickable `<span>`.
 

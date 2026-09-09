@@ -77,8 +77,8 @@ Context (all from _route_row_actions.html's own):
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_aria_label %}Delete {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_confirm %}
+{% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_confirm %}
     Delete {{ name }}? You'll need the .gpx file again to put it back.
 {% endblocktrans %}
 {% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
@@ -167,7 +167,7 @@ Context (all from _route_row_actions.html's own):
         hx-post="{% url 'routes:delete' route.uuid %}"
         hx-target="{{ row_target }}"
         hx-swap="outerHTML"
-        hx-confirm="{{ remove_confirm }}"
+        hx-confirm="{{ delete_confirm }}"
     >
         {% csrf_token %}
         {# The one item that does NOT take `hover-affordance`. That class    #}
@@ -179,7 +179,7 @@ Context (all from _route_row_actions.html's own):
         <button
             type="submit"
             role="menuitem"
-            aria-label="{{ remove_aria_label }}"
+            aria-label="{{ delete_aria_label }}"
             class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
         >
             {% include "includes/_icon_trash.html" only %}

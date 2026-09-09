@@ -712,8 +712,21 @@
         window.pwaTelemetry?.emit('map.route.created', {});
         return resp.text();
       })
+      // THE CATCH SITS HERE, between the two steps, and not at the end of
+      // the chain (SNOW-886). It covers the request and reading the reply,
+      // which are the two things that can fail in a way the user needs
+      // telling about — and nothing after them. A trailing catch would also
+      // swallow a throw from the confirmation step below and answer a
+      // SUCCESSFUL upload with "that route couldn't be uploaded", which is
+      // the one thing worse than showing nothing: the route is on the
+      // server and the panel says it is not.
+      .catch(function () {
+        showToast(STRINGS['upload-failed']);
+        return null;
+      })
       .then(function (html) {
-        // The failure branch above already toasted and returned nothing.
+        // Either failure branch above — a refusal, or a request that never
+        // arrived — has already toasted and returned nothing.
         if (html === null || html === undefined) return;
 
         const bounds = uploadedBounds(html);
@@ -750,9 +763,15 @@
           coordinates: bounds,
         });
       })
-      .catch(function () {
-        showToast(STRINGS['upload-failed']);
-      });
+      // The confirmation step's own catch, and it says NOTHING on purpose.
+      // Everything above it is presentation for an upload that has already
+      // landed: the route is on the server, and a toast reading "that route
+      // couldn't be uploaded" would send the user back to re-upload a file
+      // they already have saved. Swallowing keeps a broken card from
+      // becoming a wrong sentence — and from becoming an unhandled
+      // rejection, which is the other thing a chain with no tail does. The
+      // same defensively-non-fatal idiom favourites.js uses for its enqueue.
+      .catch(function () {});
   }
 
   if (uploadInput) {

@@ -453,6 +453,37 @@ describe('uploading a chosen file', () => {
     delete window.pwaMutationQueue;
   });
 
+  it('never reports a failure for an upload the server accepted', async () => {
+    // SNOW-886: the failure catch sits BETWEEN the two steps of the chain
+    // rather than at its end, so a throw from the CONFIRMATION step can
+    // never be reported as a failed upload. Forcing that throw is the only
+    // way to assert the placement — with one trailing catch the route is on
+    // the server, the panel says "that route couldn't be uploaded", and the
+    // user re-uploads a file they have already saved. The tail catch that
+    // does exist says nothing, which is also what keeps this from becoming
+    // an unhandled rejection.
+    const template = document.getElementById('route-confirmation-template');
+    Object.defineProperty(template, 'content', {
+      configurable: true,
+      get() {
+        throw new Error('confirmation blew up');
+      },
+    });
+
+    try {
+      btn.click();
+      choose(gpxFile());
+      await settleUpload();
+
+      expect(toastText()).not.toContain('Try again');
+    } finally {
+      // Drop the own property so HTMLTemplateElement's own getter takes
+      // over again — without this every later test in this block clones a
+      // template whose content throws.
+      delete template.content;
+    }
+  });
+
   it('never swaps the response row into the panel', async () => {
     // route_create's row is READ for its bbox (SNOW-886) and used for
     // nothing else: the authoritative list is refetched rather than

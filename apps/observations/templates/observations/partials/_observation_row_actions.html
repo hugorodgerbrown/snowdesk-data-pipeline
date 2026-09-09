@@ -60,7 +60,7 @@ Context:
     label       : str — the row's display name (the shared row's own
                   parameter): the observation type.
 {% endcomment %}
-{% blocktrans trimmed with kind=label asvar remove_aria_label %}Delete {{ kind }}{% endblocktrans %}
+{% blocktrans trimmed with kind=label asvar delete_aria_label %}Delete {{ kind }}{% endblocktrans %}
 {% blocktrans trimmed with kind=label asvar delete_confirm %}
     Delete this {{ kind }} report? It can't be recovered.
 {% endblocktrans %}
@@ -72,7 +72,7 @@ Context:
     hx-confirm="{{ delete_confirm }}"
 >
     {% csrf_token %}
-    <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
+    <button type="submit" aria-label="{{ delete_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
         {% include "includes/_icon_trash.html" only %}
     </button>
 </form>
