@@ -1723,3 +1723,42 @@ describe('slopeTileURLs', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// SNOW-692: a custom area's slope set is rebuilt from bbox + band
+//
+// The two area kinds describe their ground differently and the derivation
+// has to read whichever is present: a region record carries the run's own
+// `z` row spans, a custom area carries `bbox` + `band` and no `z` at all.
+// `buildBlob` is the client-side twin that produced the custom area's tile
+// set in the first place, so rebuilding through it is what makes the
+// derived set equal the fetched one.
+// ---------------------------------------------------------------------------
+
+describe('slopeTileURLs from a rebuilt custom-area blob', () => {
+  const TEMPLATE = 'https://wmts.geo.admin.ch/slope/{z}/{x}/{y}.png';
+  const ALPS = [5.140242, 45.398181, 11.47757, 48.230651];
+  // A small box over the Valais, inside the raster's rectangle.
+  const BBOX = [7.2, 46.05, 7.35, 46.15];
+
+  it('rebuilds the same tile set the download enumerated', () => {
+    // The equality that matters: what a run FETCHES and what a later probe
+    // DERIVES must be the same list, or an area reads incomplete forever.
+    const blob = core.buildBlob(BBOX, 10, 12);
+    const fetched = core.slopeTileURLs(TEMPLATE, blob, ALPS, 16);
+    const derived = core.slopeTileURLs(
+      TEMPLATE,
+      core.buildBlob(BBOX, blob.band[0], blob.band[1]),
+      ALPS,
+      16,
+    );
+    expect(derived).toEqual(fetched);
+    expect(derived.length).toBeGreaterThan(0);
+  });
+
+  it('is stable across repeated derivation, so a probe never flickers', () => {
+    const once = core.slopeTileURLs(TEMPLATE, core.buildBlob(BBOX, 10, 12), ALPS, 16);
+    const twice = core.slopeTileURLs(TEMPLATE, core.buildBlob(BBOX, 10, 12), ALPS, 16);
+    expect(twice).toEqual(once);
+  });
+});

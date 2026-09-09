@@ -319,15 +319,14 @@
     // (an older shell mid-rollout) yields `[]`, which every reader treats
     // as "unknown" rather than "complete".
     //
-    // SNOW-692: the slope tiles join the list. They are a render dependency
-    // in the sense that matters here — an area holding basemap tiles but no
-    // slope tiles renders the overlay empty exactly when it is needed, and
-    // recording them is what lets the probe say `incomplete` and offer a
-    // repair rather than reporting a silent partial as done.
-    const renderDeps = [
-      ...(typeof deps.renderDeps === 'function' ? deps.renderDeps() : []),
-      ...slopeUrls,
-    ];
+    // SNOW-692: the slope tiles are deliberately NOT recorded here, though
+    // they ARE checked. They are derivable from what the record already
+    // holds — a region's own `z`, or a custom area's `bbox` + `band` — plus
+    // three page-level constants (the template, the raster's rectangle and
+    // its zoom ceiling), so storing ~273 URLs per area would be 27.4 KB of
+    // record carrying no information the probe cannot recompute. The probe
+    // derives them instead: `areaSlopeTileUrls` in map_basemap_downloads.js.
+    const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
 
     // SNOW-742: `glyphPrefix` lets the worker promote this style's
     // already-cached glyph entries into the pinned bucket once the tiles are

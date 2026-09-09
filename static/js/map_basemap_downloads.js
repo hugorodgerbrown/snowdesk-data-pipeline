@@ -415,6 +415,47 @@ function activeSlopeTileURLs(blob) {
 }
 
 /**
+ * SNOW-692: the slope tiles ONE recorded area should hold, derived from
+ * its record rather than read out of it.
+ *
+ * The slope set is a pure function of ground the record already describes
+ * plus three page-level constants (the template, the raster's rectangle,
+ * its zoom ceiling), so recording ~273 URLs per area would store nothing
+ * the probe cannot recompute — 27.4 KB per area, measured on a
+ * CH-4115-shaped region. Deriving keeps the record the size it was.
+ *
+ * The two area kinds describe their ground differently, which is the only
+ * reason this needs to know which it is holding:
+ *
+ *   - a REGION record carries the run's own `z` row spans, the same shape
+ *     `blobFullyCached` is handed at the tile-probe call sites;
+ *   - a CUSTOM area carries `bbox` + `band` and no `z` at all, because its
+ *     tile set was never server-computed — `buildBlob` is the client-side
+ *     twin that produced it in the first place, so it reproduces it here.
+ *
+ * The consequence of deriving rather than recording, stated because it is
+ * a real behavioural difference: the check asks what TODAY'S code would
+ * fetch, not what that run did. If the raster's rectangle or its template
+ * ever changes, every existing area re-reads against the new set at once.
+ * For a constant quoted from the service's own capabilities document that
+ * is the wanted behaviour — the areas really would be missing tiles — but
+ * it is not the same promise `deps` makes.
+ *
+ * @param {Object|null} record A `basemap.regions` or `basemap.customAreas`
+ *   entry.
+ * @returns {string[]} Empty when the overlay is unconfigured, or the
+ *   record describes no ground this can rebuild — never a partial list.
+ */
+function areaSlopeTileUrls(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !record) return [];
+  if (record.z) return activeSlopeTileURLs({ z: record.z });
+  const band = Array.isArray(record.band) ? record.band : null;
+  if (!record.bbox || !band) return [];
+  return activeSlopeTileURLs(core.buildBlob(record.bbox, band[0], band[1]));
+}
+
+/**
  * SNOW-844: which render-dependency list to check ONE recorded area
  * against — the three-row resolution rule, in one place because three
  * surfaces apply it (both download controls and the Manage downloads
@@ -1791,6 +1832,22 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   areaRenderDependencyUrls: (recordedDeps, basemapIsActive) =>
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
+
+  /**
+   * SNOW-692: the slope-angle tiles one recorded area should hold, derived
+   * from its record — see `areaSlopeTileUrls`.
+   *
+   * Unlike `areaRenderDependencyUrls` this takes the WHOLE record, because
+   * a region and a custom area describe their ground with different fields
+   * and the derivation has to read whichever is present. It is also not
+   * subject to the three-row rule: the slope raster is one layer on one
+   * host for every basemap, so a row whose basemap is not on screen can
+   * still be judged.
+   *
+   * @param {Object|null} record
+   * @returns {string[]}
+   */
+  areaSlopeTileUrls: (record) => areaSlopeTileUrls(record),
 
   /**
    * SNOW-844: refetch `urls` into `areaId`'s pinned bucket — the Manage

@@ -490,7 +490,19 @@
     for (const row of rows) {
       if (row.orphaned || row.onDevice === false) continue;
       const isActive = !!activeKey && row.basemapKey === activeKey;
-      const depURLs = bridge.areaRenderDependencyUrls(row.deps, isActive);
+      // SNOW-692: the slope tiles are derived from the row's own record
+      // rather than read from `deps`, and are appended to whatever the
+      // three-row rule yields — including the empty UNKNOWN case, since
+      // the slope raster is one layer on one host whatever the basemap, so
+      // a row for an inactive basemap can still be judged on them.
+      const depURLs = [
+        ...bridge.areaRenderDependencyUrls(row.deps, isActive),
+        // The base layer is excluded: it is the shared z0-9 world ground,
+        // and the slope raster is a regional overlay that never covered it.
+        ...(row.kind !== 'base' && typeof bridge.areaSlopeTileUrls === 'function'
+          ? bridge.areaSlopeTileUrls(row)
+          : []),
+      ];
       const missing = core.missingRenderDependencies(depURLs, cached);
       if (missing.length === 0) continue;
       row.incomplete = true;
