@@ -32,6 +32,8 @@ const V3_STORES = [...V2_STORES, 'log:sync'];
 const V4_STORES = [...V3_STORES, 'data:map_overlays'];
 // SNOW-812 (schema v5) — added alongside the seven version-4 stores above.
 const V5_STORES = [...V4_STORES, 'log:debug'];
+// SNOW-661 (schema v6) — added alongside the eight version-5 stores above.
+const V6_STORES = [...V5_STORES, 'data:panel_rows'];
 
 /**
  * Delete the PWA database and wait for the deletion to actually complete.
@@ -58,14 +60,14 @@ beforeEach(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. Fresh open creates every static store at version 4.
+// 1. Fresh open creates every static store at the current version.
 // ---------------------------------------------------------------------------
 
 describe('fresh open', () => {
-  it('creates all seven stores at version 4', async () => {
+  it('creates all nine stores at version 6', async () => {
     const db = await window.pwaDb.open();
-    expect(db.version).toBe(5);
-    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V5_STORES].sort());
+    expect(db.version).toBe(6);
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V6_STORES].sort());
   });
 });
 
@@ -212,32 +214,32 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(5);
-    expect(result.names).toEqual([...V5_STORES].sort());
+    expect(result.version).toBe(6);
+    expect(result.names).toEqual([...V6_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v2 DB (five stores) gains log:sync, map_overlays + log:debug', async () => {
+  it('a pre-existing v2 DB (five stores) gains every store added since', async () => {
     const seeded = await seedLegacyDb(2, V2_STORES);
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(5);
-    expect(result.names).toEqual([...V5_STORES].sort());
+    expect(result.version).toBe(6);
+    expect(result.names).toEqual([...V6_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v3 DB (six stores) gains data:map_overlays + log:debug', async () => {
+  it('a pre-existing v3 DB (six stores) gains every store added since', async () => {
     const seeded = await seedLegacyDb(3, V3_STORES);
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(5);
-    expect(result.names).toEqual([...V5_STORES].sort());
+    expect(result.version).toBe(6);
+    expect(result.names).toEqual([...V6_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v4 DB (seven stores) gains log:debug', async () => {
+  it('a pre-existing v4 DB (seven stores) gains log:debug + data:panel_rows', async () => {
     // SNOW-812: log:debug is created for EVERY client at v5, not only for
     // those holding the debug_log waffle flag. The store is a schema fact —
     // gating its creation on a per-user flag would leave two populations on
@@ -247,8 +249,22 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(5);
-    expect(result.names).toEqual([...V5_STORES].sort());
+    expect(result.version).toBe(6);
+    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
+  });
+
+  it('a pre-existing v5 DB (eight stores) gains data:panel_rows', async () => {
+    // SNOW-661: the store the field-observation panel repaints itself from
+    // offline. Created generically by _runMigrations — the point of the case
+    // is that a device already on v5 reaches v6 without losing the rows it
+    // seeded there, not that a new branch was written.
+    const seeded = await seedLegacyDb(5, V5_STORES);
+    expect(seeded).toBe(1);
+
+    const result = await openViaDbJsAndRead();
+    expect(result.version).toBe(6);
+    expect(result.names).toEqual([...V6_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 });
