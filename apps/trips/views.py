@@ -1718,19 +1718,18 @@ def _created_trip(request: HttpRequest, trips: list[Trip]) -> Trip | None:
 def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
     """Hang each trip's three word address on the instance, for the list.
 
-    **THE CACHE ONLY, NEVER A CONVERSION**, and that is the whole reason
-    this is not ``fill_what3words``. ``convert-to-3wa`` left what3words'
-    free plan in November 2024, so every conversion is billed against a
-    1,000-a-month allowance; a list page that converted per card would
-    spend an agenda's worth of that allowance on one render, and spend it
-    again for every reader of every agenda. ``Location.three_word_address``
-    is a plain property read — it returns the cached words, or None once
-    the licence's 30-day ceiling has passed.
+    **THE STORED ADDRESS ONLY, NEVER A CONVERSION**, and that is the whole
+    reason this is not ``fill_what3words``. The cost argument that first
+    justified it turned out not to exist — ``convert-to-3wa`` is unmetered
+    on a paid plan — but the LATENCY one is untouched and was always the
+    stronger of the two: the call carries a five-second timeout, so a list
+    page that converted per card would take that timeout once per uncached
+    trip while the reader waited. ``Location.three_word_address`` is a
+    plain property read.
 
-    A trip whose address is not cached shows its COORDINATE PAIR, exactly
-    as the trip's own page does when a conversion fails. There is never a
-    blank where the meeting point was. Opening the trip is what spends a
-    conversion, and the write it makes fills this cache for the list too.
+    A trip whose address is not stored yet shows its COORDINATE PAIR,
+    exactly as the trip's own page does when a conversion fails. There is
+    never a blank where the meeting point was.
 
     Attributes on the instances rather than a parallel list: the card
     partial reads ``trip.meeting_point_w3w`` beside ``trip.date``, and a

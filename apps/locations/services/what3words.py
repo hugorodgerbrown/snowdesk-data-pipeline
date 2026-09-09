@@ -41,12 +41,17 @@ setting, because a fabricated meeting point reaching a real group would
 send them to a square that does not exist. See ``_fake_address``.
 
 **Cost and licence.** ``convert-to-3wa`` left the free plan in November
-2024, so every call is billed against a paid plan (Basic: 1,000/month).
-That is why ``fill_what3words`` converts a square once per month rather
-than once per view, and why an empty ``WHAT3WORDS_API_KEY`` makes no
-request at all instead of a call that 401s. The 30-day ceiling on the cache
-is the licence's, not a tuning choice — see ``Location.three_word_address``
-and docs/decisions/what3words-cache-expires-at-thirty-days.md.
+2024, so it needs a paid plan (Basic, £7.99/mo) — but it is UNMETERED on
+every paid plan and does not draw on the 1,000-a-month allowance, which
+belongs to ``convert-to-coordinates`` and which Snowdesk never calls.
+Conversions are therefore free at the margin, and the reason to convert
+once and store rather than once per view is LATENCY, not cost: the call
+below carries a five-second timeout. An empty ``WHAT3WORDS_API_KEY`` still
+makes no request at all rather than one that 401s.
+
+An address we derived from our own coordinate may be stored INDEFINITELY;
+the 30-day cache ceiling in the terms governs the other direction of
+travel. See docs/decisions/what3words-addresses-are-stored-indefinitely.md.
 """
 
 from __future__ import annotations
@@ -296,32 +301,37 @@ def _error_code(response: requests.Response) -> str:
 def fill_what3words(location: Location) -> str | None:
     """Return a location's three word address, converting it if need be.
 
-    The read path's entry point. Returns the cached address when
-    ``Location.three_word_address`` still has one — which is the common
-    case, since the cache lasts as long as the licence allows — and
-    otherwise spends one conversion and writes the result back.
+    The single-row filler every path goes through — the ``fill_what3words``
+    management command, the services that mint a location, and the trip
+    view. Returns the stored address when there is one, and otherwise
+    spends one conversion and writes the result back.
 
-    IDEMPOTENT, and safe to run concurrently. Two requests for the same
-    trip that both find the cache empty will both convert and both write;
-    they write the same words, and the second save is a no-op in effect.
-    Locking to save a duplicate call would cost more than the call.
+    A STORED ADDRESS IS NEVER RE-CONVERTED. It encodes a fixed 3m square,
+    so it cannot go stale; the only thing that invalidates one is the pin
+    moving, which clears the column at the point of the move rather than
+    here.
 
-    Writes with ``update_fields`` so a fill triggered by a GET touches the
-    two cache columns and nothing else — it cannot clobber a concurrent
-    edit of the location's coordinates.
+    IDEMPOTENT, and safe to run concurrently. Two callers that both find
+    the column empty will both convert and both write; they write the same
+    words, and the second save is a no-op in effect. Locking to save a
+    duplicate call would cost more than the call.
+
+    Writes with ``update_fields`` so a fill touches the two columns and
+    nothing else — it cannot clobber a concurrent edit of the location's
+    coordinates.
 
     Args:
         location: The location to resolve. Saved in place when a
             conversion succeeds.
 
     Returns:
-        The three word address, or None when there is no fresh cache and
-        the conversion did not succeed.
+        The three word address, or None when there is none stored and the
+        conversion did not succeed.
 
     """
-    cached = location.three_word_address
-    if cached is not None:
-        return cached
+    stored = location.three_word_address
+    if stored is not None:
+        return stored
 
     words = convert_to_3wa(location.latitude, location.longitude)
     if words is None:

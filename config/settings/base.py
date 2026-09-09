@@ -732,8 +732,10 @@ WEATHER_BACKFILL_FLOOR = config(
 # ``apps.locations.services.what3words``.
 #
 # NOT FREE. ``convert-to-3wa`` left the free plan in November 2024, which
-# now covers AutoSuggest alone, so this needs the Basic plan (£7.99/mo,
-# 1,000 conversions). An empty key is therefore the default and the
+# now covers AutoSuggest alone, so this needs the Basic plan (£7.99/mo).
+# Conversions themselves are UNMETERED on every paid plan — the 1,000-a-
+# month allowance is for ``convert-to-coordinates``, which Snowdesk does
+# not call. An empty key is therefore the default and the
 # service makes no request at all when it sees one — an environment with
 # no subscription costs nothing and cannot 401 in a loop. The ``what3words``
 # waffle flag is the other half of that: the feature deploys dark.

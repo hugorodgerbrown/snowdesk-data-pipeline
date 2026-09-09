@@ -592,8 +592,8 @@ class TestSave:
     def test_a_rename_alone_keeps_the_cached_three_word_address(self) -> None:
         """The address belongs to the coordinate, which did not change.
 
-        A conversion is billed against a 1,000/month plan, so a rename
-        must not spend one.
+        A conversion is an HTTP round trip with a five-second timeout, so
+        a rename must not take one.
         """
         location = LocationFactory.create(
             name="Mont Fort",
