@@ -17,7 +17,7 @@ stated in words; the route card's line is a caption on the drawing it sits
 under, which is why it uses arrows and this uses labels.
 
 Why the coordinate fallback, the link and the "no place name" rule are the
-way they are: trips/partials/_trip_meeting_address.html says all three.
+way they are: includes/_three_word_address.html says all three.
 
 Context:
     trip                  : Trip — the trip to describe.
@@ -40,7 +40,7 @@ Context:
         {% trans "Meeting point" as meeting_point_label %}
         {% include "includes/_meta_cell.html" with text=meeting_point_label tag="dt" %}
         <dd>
-            {% include "trips/partials/_trip_meeting_address.html" with trip=trip words=meeting_point_w3w url=meeting_point_w3w_url size_class="text-label" data_testid="trip-meeting-point" %}
+            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=meeting_point_w3w url=meeting_point_w3w_url size_class="text-label" data_testid="trip-meeting-point" %}
         </dd>
     </div>
 </dl>

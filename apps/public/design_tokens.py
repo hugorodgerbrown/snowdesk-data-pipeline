@@ -71,6 +71,7 @@ from apps.public._component_fixtures import (
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
     THEME_PREFERENCE_VARIANTS,
+    THREE_WORD_ADDRESS_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     UGC_PANEL_GROUP_VARIANTS,
@@ -1045,6 +1046,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_eyebrow.html",
         variants=EYEBROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="three-word-address",
+        label="Three word address",
+        description=(
+            "A location as a what3words address, linking to their map — the "
+            "only place a 3m square can be seen. Used on trip cards, the "
+            "trip details grid and the favourite card. ALWAYS falls back to "
+            "the coordinate pair rather than rendering blank, so a surface "
+            "reads the same with the flag off, with no API key, or before "
+            "the address has been resolved."
+        ),
+        kind="components",
+        partial="includes/_three_word_address.html",
+        variants=THREE_WORD_ADDRESS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

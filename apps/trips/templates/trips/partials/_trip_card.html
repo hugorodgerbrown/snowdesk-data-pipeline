@@ -119,7 +119,7 @@ Context:
     <div class="flex items-center justify-between gap-3 border-t border-border bg-card-subtle px-4.5 py-2.75">
         <span class="min-w-0 text-xs text-text-3">
             {% trans "Meet at" %}
-            {% include "trips/partials/_trip_meeting_address.html" with trip=trip words=trip.meeting_point_w3w url=trip.meeting_point_w3w_url data_testid="trip-card-meeting-point" %}
+            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=trip.meeting_point_w3w url=trip.meeting_point_w3w_url data_testid="trip-card-meeting-point" %}
         </span>
         {% if trip.created_by_id == request.user.pk %}
             {% if trip.share_is_live %}

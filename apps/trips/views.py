@@ -91,7 +91,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
-from apps.locations.services.what3words import fill_what3words
+from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
 from apps.routes.services.routes import RouteLimitReached
 from apps.trips.forms import TripForm
@@ -284,33 +284,6 @@ def _what3words_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     return {"what3words_active": waffle.flag_is_active(request, "what3words")}
-
-
-def _what3words_map_url(words: str | None) -> str | None:
-    """Return the what3words map URL for one address, or None.
-
-    SNOW-840. ``{settings.WHAT3WORDS_MAP_BASE_URL}/{words}`` — their own
-    map is the only place the 3m square can actually be SEEN, and a reader
-    deciding whether they can find the meeting point needs to see it
-    rather than take three words on trust.
-
-    Built here rather than in the template on the codebase's usual rule: a
-    URL is not presentation, and a template that concatenated a setting
-    onto a variable would be the one place a trailing slash in the
-    environment turned into a broken link. The base is stripped of one for
-    that reason.
-
-    Args:
-        words: The address without its ``///`` prefix, or None when there
-            is no address — flag off, no key, upstream down, cache stale.
-
-    Returns:
-        The absolute URL, or None when there is nothing to link to.
-
-    """
-    if not words:
-        return None
-    return f"{settings.WHAT3WORDS_MAP_BASE_URL.rstrip('/')}/{words}"
 
 
 def _map_deep_link(parameter: str, value: str) -> str:
@@ -619,7 +592,7 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # only place the square itself can be seen. None whenever the
         # address is, so the summary partial's one ``if`` covers both and
         # the coordinate fallback can never sprout a link to nowhere.
-        "meeting_point_w3w_url": _what3words_map_url(meeting_point_w3w),
+        "meeting_point_w3w_url": what3words_map_url(meeting_point_w3w),
         # The picker's conversion copy is gated on the same read — see
         # ``_what3words_context``, which is what the three render sites
         # that have no ``_trip_context`` use.
@@ -1754,7 +1727,7 @@ def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
         # and a parallel structure keyed by uuid would put half a card's
         # data one lookup away from the other half.
         trip.meeting_point_w3w = words  # type: ignore[attr-defined]
-        trip.meeting_point_w3w_url = _what3words_map_url(  # type: ignore[attr-defined]
+        trip.meeting_point_w3w_url = what3words_map_url(  # type: ignore[attr-defined]
             words
         )
 

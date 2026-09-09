@@ -1,7 +1,7 @@
 """
 apps/locations/services/what3words.py — three word addresses for a coordinate.
 
-Contains two functions:
+Contains three functions:
 
   convert_to_3wa(latitude, longitude, base_url=None)
       Calls the what3words ``convert-to-3wa`` endpoint for one lat/lon pair
@@ -9,8 +9,13 @@ Contains two functions:
       ``"filled.count.soap"``.
 
   fill_what3words(location)
-      Returns a ``Location``'s cached address, converting and caching it
-      first if there is nothing fresh to return.
+      Returns a ``Location``'s stored address, converting and storing it
+      first if there is not one yet.
+
+  what3words_map_url(words)
+      Returns where one address links to on what3words' own map. Lives
+      here rather than in a view because two apps render an address
+      (SNOW-882).
 
 Modelled on ``apps.locations.services.elevation`` — module-level
 ``REQUEST_TIMEOUT``, plain ``requests.get``, a ``base_url`` override so
@@ -296,6 +301,35 @@ def _error_code(response: requests.Response) -> str:
         return str(error.get("code", "unknown"))
     except ValueError, AttributeError:
         return "unknown"
+
+
+def what3words_map_url(words: str | None) -> str | None:
+    """Return the what3words map URL for one address, or None.
+
+    SNOW-840, moved here from ``apps.trips.views`` by SNOW-882 when a
+    second app needed it. ``{settings.WHAT3WORDS_MAP_BASE_URL}/{words}`` —
+    their own map is the only place the 3m square can actually be SEEN, and
+    a reader deciding whether they can find the spot needs to see it rather
+    than take three words on trust.
+
+    Built in Python rather than in the template on the codebase's usual
+    rule: a URL is not presentation, and a template that concatenated a
+    setting onto a variable would be the one place a trailing slash in the
+    environment turned into a broken link. The base is stripped of one for
+    that reason.
+
+    Args:
+        words: The address without its ``///`` prefix, or None when there
+            is no address — flag off, no key, upstream down, not yet
+            resolved.
+
+    Returns:
+        The absolute URL, or None when there is nothing to link to.
+
+    """
+    if not words:
+        return None
+    return f"{settings.WHAT3WORDS_MAP_BASE_URL.rstrip('/')}/{words}"
 
 
 def fill_what3words(location: Location) -> str | None:

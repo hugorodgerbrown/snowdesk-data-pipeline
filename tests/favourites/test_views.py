@@ -92,6 +92,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
@@ -99,6 +100,7 @@ from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
@@ -894,6 +896,79 @@ class TestFavouriteDeleteOwnerIsolation:
             _delete_url("00000000-0000-0000-0000-000000000000"), **HTMX_HEADERS
         )
         assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestFavouriteCardThreeWordAddress:
+    """The saved pin's what3words address on the card (SNOW-882).
+
+    BENEATH the locate link rather than replacing its text. That link goes
+    to Snowdesk's own map and the address goes to what3words', so one
+    element cannot carry both destinations — and the coordinate is the
+    locate link's own label, so substituting it would leave a pin with no
+    readable position when no address has resolved.
+    """
+
+    @override_flag("what3words", active=True)
+    def test_the_address_is_rendered_when_the_pin_has_one(self, client: Client) -> None:
+        """With the flag on and an address stored, the card shows it."""
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        favourite = FavouriteFactory.create(user=user, location=location)
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert "///filled.count.soap" in content
+        assert "https://what3words.com/filled.count.soap" in content
+
+    @override_flag("what3words", active=True)
+    def test_no_address_renders_no_line_rather_than_a_second_coordinate(
+        self, client: Client
+    ) -> None:
+        """The partial's coordinate fallback is deliberately not used here.
+
+        The locate link already prints the coordinate, so falling back to
+        it would print the same numbers twice.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words=None)
+        favourite = FavouriteFactory.create(user=user, location=location)
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert "favourite-card-w3w" not in content
+        assert "favourite-card-locate-link" in content
+
+    def test_the_flag_off_hides_the_address(self, client: Client) -> None:
+        """A stored address is not shown while the feature is gated off."""
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        favourite = FavouriteFactory.create(user=user, location=location)
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert "filled.count.soap" not in content
+
+    @override_flag("what3words", active=True)
+    def test_rendering_the_card_makes_no_outbound_call(self, client: Client) -> None:
+        """THE REGRESSION THAT MATTERS. A read path, never a conversion.
+
+        The column is filled out of band, so a card render is a property
+        read. If this ever converts, every card pays a five-second timeout
+        on a pin nobody has swept yet.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words=None)
+        favourite = FavouriteFactory.create(user=user, location=location)
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        mock_get.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
