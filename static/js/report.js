@@ -13,6 +13,14 @@
  *   data-report-form-url="<url>"        — HTMX form endpoint (eligible only).
  *   data-report-list-url="<url>"        — HTMX list endpoint (eligible only).
  *
+ * SNOW-661: that list is also READABLE OFFLINE. The rows of every
+ * successful load are persisted by static/js/observations_offline.js, and a
+ * failed load repaints from them — with a line saying so, and every row's
+ * Delete taken off, that being an online-only action. The panel drew its
+ * "check your connection" line for reports the map was already showing as
+ * pins beside it; it now draws that line only for a device that has never
+ * loaded the list at all.
+ *
  * SNOW-658: the roundel opens a PANEL, not the location flow. The panel
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
