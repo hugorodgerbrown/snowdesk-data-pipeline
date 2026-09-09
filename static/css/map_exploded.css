@@ -198,20 +198,6 @@
     border-top: 1px solid var(--color-border, var(--border));
 }
 
-.map-exploded[data-view="exploded"] .exploded-labels {
-    display: flex;
-    flex-direction: column-reverse;
-}
-
-.map-exploded[data-view="exploded"] .exploded-label {
-    border-top: 0;
-    border-bottom: 1px solid var(--color-border, var(--border));
-}
-
-.map-exploded[data-view="exploded"] .exploded-label:first-child {
-    border-bottom: 0;
-}
-
 .exploded-label {
     margin: 0 -10px 0 -8px;
     transition: opacity 220ms ease, background 150ms ease;
@@ -223,7 +209,7 @@
 
 .exploded-label label {
     display: grid;
-    grid-template-columns: 18px 20px minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
     min-height: 62px;
@@ -235,10 +221,6 @@
 .exploded-label label:hover,
 .exploded-label[data-current="true"] label {
     background: var(--color-card, #fff);
-}
-
-.exploded-label[data-current="true"] .exploded-label-number {
-    color: var(--color-accent, #2563eb);
 }
 
 .exploded-label input {
@@ -253,11 +235,10 @@
     cursor: default;
 }
 
-.exploded-label:first-child input {
+.exploded-label[data-fixed="true"] input {
     accent-color: var(--color-text-2, #6b6860);
 }
 
-.exploded-label-number,
 .exploded-label-off {
     color: var(--color-text-3, var(--muted));
     font: 500 12px/1.4 var(--font-mono, monospace);

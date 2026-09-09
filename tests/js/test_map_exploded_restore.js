@@ -157,6 +157,7 @@ async function runDemo() {
   }
 }
 
+// DOM order, which is now also the painted order: top of the ladder first.
 const rowTitles = () => Array.from(
   document.querySelectorAll('.exploded-label-copy strong'),
 ).map((el) => el.textContent);
@@ -244,7 +245,7 @@ describe('map_exploded.js follows the operator slope kill switch', () => {
     // on step two, so nothing after slope is ever demonstrated.
     expect(rowTitles()).not.toContain('Slope angle');
     expect(rowTitles()).toEqual([
-      'Swisstopo', 'SLF bulletins', 'L1 · Major', 'L2 · Minor', 'L4 · Micro', 'Resorts',
+      'Resorts', 'L4 · Micro', 'L2 · Minor', 'L1 · Major', 'SLF bulletins', 'Swisstopo',
     ]);
     expect(document.querySelector('.map-exploded [role="status"]').textContent)
       .toBe('Every layer, together in one map.');
@@ -295,12 +296,46 @@ describe('map_exploded.js builds the ladder clean, whatever the map is showing',
     await runDemo();
     const before = map.layers.map((layer) => [layer.id, layer.layout?.visibility]);
 
-    const slope = [...document.querySelectorAll('.exploded-label input')][1];
+    const slope = document.querySelector('[aria-label="Slope angle"]');
     slope.checked = false;
     slope.dispatchEvent(new Event('change'));
 
     // Turning a sheet off dims an SVG group. It must not reach the map.
     expect(map.layers.map((layer) => [layer.id, layer.layout?.visibility])).toEqual(before);
+  });
+});
+
+describe('map_exploded.js lists the ladder in one fixed order', () => {
+  it('reads top of the ladder down to the basemap, in both views', async () => {
+    mount();
+    await runDemo();
+
+    const expected = [
+      'Resorts', 'L4 · Micro', 'L2 · Minor', 'L1 · Major',
+      'SLF bulletins', 'Slope angle', 'Swisstopo',
+    ];
+    expect(rowTitles()).toEqual(expected);
+
+    // Switching views must not turn the list upside down. It used to be built
+    // basemap-first and flipped with `column-reverse` for the exploded view
+    // alone, so the stacked view put the basemap at the top of a ladder it is
+    // the bottom of, and the order changed under the reader mid-demo.
+    document.querySelector('[data-view="exploded"]').click();
+    expect(rowTitles()).toEqual(expected);
+    document.querySelector('[data-view="stacked"]').click();
+    expect(rowTitles()).toEqual(expected);
+  });
+
+  it('numbers no rung, and names the basemap row by attribute not position', async () => {
+    mount();
+    await runDemo();
+
+    // A fixed order that runs top-to-bottom cannot carry ascending numbers
+    // without reading wrong, so there are none.
+    expect(document.querySelectorAll('.exploded-label-number')).toHaveLength(0);
+    const fixed = document.querySelectorAll('.exploded-label[data-fixed="true"]');
+    expect(fixed).toHaveLength(1);
+    expect(fixed[0].querySelector('strong').textContent).toBe('Swisstopo');
   });
 });
 
@@ -314,5 +349,12 @@ describe('map_exploded.css closed-dialog display', () => {
     // page — visible and inert.
     expect(CSS).toMatch(/\.map-exploded\[open\]\s*\{[^}]*display:\s*grid/);
     expect(CSS).not.toMatch(/\.map-exploded\s*\{[^}]*display:\s*grid/);
+  });
+
+  it('never reverses the label list for a view, and styles no rung number', () => {
+    // The order is fixed in the DOM now, so reading order matches paint order
+    // and the tab order with it. A `column-reverse` here would break all three.
+    expect(CSS).not.toMatch(/column-reverse/);
+    expect(CSS).not.toMatch(/exploded-label-number/);
   });
 });

@@ -13,7 +13,7 @@
     exploded: 'Exploded',
     replay: 'Replay build',
     'map-layers': 'Map layers',
-    'layers-order': 'Layers from bottom to top',
+    'layers-order': 'Layers from top to bottom',
     reset: 'Reset',
     'data-credits': 'Data credits',
     swisstopo: 'Swisstopo',
@@ -138,6 +138,8 @@
     const row = document.createElement('div');
     row.className = 'exploded-label';
     row.dataset.built = 'false';
+    // The basemap is the one rung that cannot be switched off.
+    if (index === 0) row.dataset.fixed = 'true';
     const control = document.createElement('label');
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -145,9 +147,6 @@
     input.checked = true;
     input.disabled = true;
     input.setAttribute('aria-label', name);
-    const number = document.createElement('span');
-    number.className = 'exploded-label-number';
-    number.textContent = String(index + 1);
     const copy = document.createElement('span');
     copy.className = 'exploded-label-copy';
     const title = document.createElement('strong');
@@ -159,9 +158,16 @@
     off.className = 'exploded-label-off';
     off.textContent = 'OFF';
     off.setAttribute('aria-hidden', 'true');
-    control.append(input, number, copy, off);
+    control.append(input, copy, off);
     row.appendChild(control);
-    labels.appendChild(row);
+    // Prepended, so the list always reads top of the ladder down to the
+    // basemap — the order the exploded view draws, and the order the stack
+    // really has. It used to be built basemap-first and flipped with
+    // `column-reverse` for the exploded view only, so switching views turned
+    // the list upside down, and in the stacked view the basemap sat at the
+    // top of a ladder it is the bottom of. Reversing the DOM rather than the
+    // flex direction also keeps reading and tab order matching what is drawn.
+    labels.prepend(row);
 
     const texture = {
       group,
