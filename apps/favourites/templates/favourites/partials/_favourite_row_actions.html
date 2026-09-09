@@ -1,95 +1,73 @@
-{% load i18n components %}
+{% load i18n %}
 {% comment %}
-favourites/partials/_favourite_row_actions.html — the favourite row's icon
-controls (SNOW-658, shared with the account page by SNOW-711).
+favourites/partials/_favourite_row_actions.html — the favourite row's
+controls (SNOW-658, collapsed behind one "…" trigger by SNOW-886).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
 favourites/partials/_favourite.html — which passes its own full context
 on, so ``favourite`` is in scope here for the delete endpoint's URL.
 
-Rename then Remove, the design's order: trash is always last, on every
-list, so the destructive control is in the same place wherever a user
-meets it. It was `_favourite_row_map_actions.html` until SNOW-711 put the
-account page's rows on this same row; there was never anything map-shaped
-about either control.
+ONE TRIGGER, TWO ITEMS. The row drew a visible pencil beside a visible
+trash until SNOW-886. The panel rule recorded in
+includes/_map_downloads_row_actions.html is *more than one action is a
+"…", exactly one is a bare icon*, and downloads and routes had both
+collapsed while this row had not — so a user who learned the trigger on
+one panel met a different anatomy on the next. The items themselves,
+their order, their colouring and every hook on them live in
+_favourite_row_menu_items.html. Region pins are a different list with a
+different actions partial (_region_pin_row_actions.html) and keep their
+single bare star: one action, so no menu.
 
-Rename is a `data-favourite-rename` button, not a form and not a prompt:
-the row's own label becomes an inline edit (static/js/inline_rename.js)
-and the committed name is posted by static/js/row_rename_commit.js. Which
-module drives that is the surface's business — static/js/favourites.js on
-the map, static/js/account_favourites.js on /account/ — and the uuid rides
-on the button so neither needs a closure over the rendered row.
+WHAT THE MENU DID NOT CHANGE. Every hook the two controls carry is the
+one it already was, and neither of the modules that read them noticed the
+move — static/js/inline_rename.js, row_rename_commit.js and row_removed.js
+each resolve by upward `closest()` traversal or a row-scoped
+`querySelector`, never by depth or sibling position, and every listener is
+delegated on the sheet or on document. See _favourite_row_menu_items.html.
 
-This button is the ONLY way in. A click on the label opened the same
-editor for a day (SNOW-658); Hugo: "We have inline editing & the pencil -
-choose one." The pencil stayed because it is the one that works for
-everybody — a real button, in the tab order, named for a screen reader —
-where the label is a `<span>` only a pointer can reach.
+WHAT THE MENU'S IDS ARE, AND WHY THEY ARE PER-ROW. A panel lists many
+pins and each renders this partial, so `trigger_id`/`menu_id` are keyed on
+the favourite's own uuid — the trigger's `aria-controls` has to name one
+element. static/js/overflow_menu.js itself never reads them (it is scoped
+by `closest()`, not `getElementById`); they exist for ARIA correctness.
+That script is loaded once by the map page
+(apps/public/templates/public/home.html), which since SNOW-803 is the only
+surface any of these rows render on.
 
-Remove stays a plain HTMX form — the delete endpoint returns an empty
-200, so ``hx-target``/``hx-swap`` on the row's own id removes exactly that
-row with no JS involved.
-
-``data-row-remove`` (SNOW-752) is how the surface owning the list knows
-that happened, so it can re-read the list (the swap empties one <li>, and
-the empty state is a server-side clause only a fresh response carries) and
-tell the map its pins changed. The hook is on the FORM rather than on the
-row or the actions span because the row carries other HTMX requests — the
-account page's disclosure chevron hx-gets the pin's detail card from inside
-this same row, and a watcher keyed on the row would re-read the list every
-time a user expanded a card, closing it again. See static/js/row_removed.js.
+The trigger's own aria-label names the row for the same reason the items'
+do: "More actions" alone names nothing with a list of rows on screen. It
+interpolates ``label`` — includes/_ugc_panel_row.html's own parameter, in
+scope here — rather than ``favourite.name``, so an unnamed pin reads as
+"Actions for Unnamed pin" rather than "Actions for ".
 
 ``row_target`` rather than a hardcoded ``#favourite-<uuid>``: the row's id
 is _favourite.html's to decide, and an actions partial that rebuilt the
 same string from the uuid would be a second place to change if it ever
-does. The one caller passes ``#<the row's id>``; this file just points at
-whatever it was handed.
+does. The one caller passes ``#<the row's id>``; this file just passes on
+whatever it was handed, to the menu items that own the Delete form.
 
-(For one commit there was a second reason — the detail card rendered this
-row again under its own id. That copy is gone: it sat fourteen pixels
-below the list's identical row once SNOW-711 moved the card underneath it.
-See _favourite_card.html.)
-
-Both aria-labels name the row, because "Rename" alone names nothing with
-a list of rows on screen. They interpolate ``label`` —
-includes/_ugc_panel_row.html's own parameter, in scope here — rather than
-``favourite.name``, so an unnamed pin reads as "Rename Unnamed pin"
-rather than "Rename ".
+WHICH SURFACE RENDERS THIS (corrected by SNOW-886). It read as "shared
+with the account page by SNOW-711", and named
+``static/js/account_favourites.js`` as the module driving the rename
+there. Neither exists any more: SNOW-803 turned every ``/account/`` list
+into a 301 to the map, that module went with it, and this row is now
+rendered only by the HTMX fragment endpoints the map page consumes —
+apps.favourites.views' favourite_create, favourite_resort_create,
+favourite_rename and the list. static/js/favourites.js is the one module
+driving it.
 
 Context:
     favourite  : Favourite — the saved pin this row describes.
     label      : str — the row's display name (the shared row's own
                  parameter): the pin's name, or "Unnamed pin".
-    row_target : str — CSS selector for the row this Remove empties,
+    row_target : str — CSS selector for the row this Delete empties,
                  supplied by _favourite.html as ``#<the row's id>``.
 {% endcomment %}
-{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
-{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
-{# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
-{# recognise a rename click without knowing which panel it is on;          #}
-{# `data-favourite-rename` carries this row's uuid for the commit.         #}
-{# SNOW-802: a region pin has no name of the user's own — its label is the #}
-{# region's — so there is nothing to rename and no pencil. Trash only.     #}
-{% if not favourite.is_region_pin %}
-    <button
-        type="button"
-        data-row-rename
-        data-favourite-rename="{{ favourite.uuid }}"
-        aria-label="{{ rename_aria_label }}"
-        class="{% icon_button_classes %}"
-    >
-        {% include "includes/_icon_pencil.html" only %}
-    </button>
-{% endif %}
-<form
-    data-row-remove
-    hx-post="{% url 'favourites:delete' favourite.uuid %}"
-    hx-target="{{ row_target }}"
-    hx-swap="outerHTML"
->
-    {% csrf_token %}
-    <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
-        {% include "includes/_icon_trash.html" only %}
-    </button>
-</form>
+{% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for {{ name }}{% endblocktrans %}
+{# ``uuid`` through stringformat before `add`: the filter falls back to  #}
+{# `value + arg`, and str + UUID is a TypeError that Django swallows     #}
+{# into an empty string. Same two-step favourites/partials/_favourite.html #}
+{# uses to build the row's own id.                                        #}
+{% with uuid=favourite.uuid|stringformat:"s" %}
+    {% include "includes/_overflow_menu.html" with trigger_id="favourite-actions-"|add:uuid menu_id="favourite-actions-menu-"|add:uuid trigger_label=row_actions_aria_label items_template="favourites/partials/_favourite_row_menu_items.html" %}
+{% endwith %}

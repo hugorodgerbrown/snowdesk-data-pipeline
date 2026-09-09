@@ -239,7 +239,15 @@ class TestRegionPinSurfaces:
         assert "Show Valais on the map" in content
 
     def test_region_list_unpins_with_a_star_not_a_trash(self, client: Client) -> None:
-        """SNOW-814: unpinning removes the pin, not the region — so it is not a trash."""
+        """SNOW-814: unpinning removes the pin, not the region — so it is not a trash.
+
+        SNOW-886 put the places row's two actions behind a "…" trigger and
+        left this row alone, which is the other half of the same panel
+        rule: more than one action is a menu, exactly one is a bare icon.
+        This row has exactly one, so it stays a star the user aims at —
+        and the word is neither Remove nor Delete, because the region
+        survives either way.
+        """
         user = UserFactory.create()
         client.force_login(user)
         region = MicroRegionFactory.create(name="Valais")
@@ -251,6 +259,9 @@ class TestRegionPinSurfaces:
         assert "Unpin Valais" in content
         assert 'aria-pressed="true"' in content
         assert "Remove Valais" not in content
+        assert "Delete Valais" not in content
+        assert "data-overflow-trigger" not in content
+        assert 'role="menu"' not in content
 
     def test_region_list_empty_state_is_not_a_place_message(
         self, client: Client

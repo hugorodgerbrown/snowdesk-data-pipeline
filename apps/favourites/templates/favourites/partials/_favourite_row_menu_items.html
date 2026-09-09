@@ -1,0 +1,162 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_row_menu_items.html — the two actions a
+saved-pin row offers, as menu items (SNOW-886).
+
+includes/_overflow_menu.html's `items_template` slot, reached from
+_favourite_row_actions.html — which passes its own full context on, so
+``favourite``, ``label`` and ``row_target`` are all in scope here.
+
+WHY THESE ARE IN A MENU AT ALL, when the route row's own move behind a
+trigger (SNOW-830) was argued from four controls not fitting a 380px row
+and this row has two. The reason here is not width, it is uniformity:
+includes/_map_downloads_row_actions.html records the panel rule as *more
+than one action is a "…", exactly one is a bare icon*, and this was the
+one row of the four still drawing a visible pencil beside a visible trash
+while downloads and routes had already collapsed. A user who has learned
+that a row's actions live under the trigger should not have to relearn
+it per panel — and the pencil in particular was a control whose meaning
+had to be guessed from a 17px glyph, where a menu names it.
+
+The bare-icon half of that rule still stands, and the region pin is where
+it lands: one control, a solid star, rendered by
+_region_pin_row_actions.html and untouched by this ticket.
+
+EVERY HOOK IS THE ONE IT ALREADY WAS. `data-row-rename`,
+`data-favourite-rename` and `data-row-remove` are unchanged, and so are
+the three modules that read them: static/js/inline_rename.js,
+row_rename_commit.js and row_removed.js each resolve by upward
+`closest()` traversal or a row-scoped `querySelector`, never by depth or
+sibling position, and every listener is delegated on the sheet or on
+document. Moving a control inside a menu inside the same `<li>` is
+therefore invisible to all of them.
+
+ORDER. Rename, then a rule, then Delete — the same order the two inline
+controls already had, and the same ordering principle
+_route_row_menu_items.html states: the rule separates changing this row
+from destroying it, and the destructive item is last on every panel so it
+is in the same place wherever a user meets it.
+
+Delete is the only coloured item. A menu of neutral lines gives a user
+nothing to aim at or avoid, and the one irreversible action is the one
+worth marking; it takes the `status-error` pair the inline trash took on
+hover. The inline trash was neutral at rest on the argument that a row of
+red bins reads as an error state — that argument does not carry here,
+because a menu shows one Delete at a time and only while it is open.
+
+It says "Delete", not "Remove". Hugo's rule is Delete when the underlying
+record is destroyed and Remove when the thing only comes off the map and
+the data survives: favourites:delete destroys the Favourite row, so this
+is a Delete. The accessible name says the same word, because WCAG 2.5.3
+(Label in Name) requires the visible label to appear in it — the pair
+moves together or voice control breaks.
+
+IT ASKS FIRST (SNOW-886). The trash used to be a 44x44 control a user
+aimed at directly; it is now one item inside a menu, where a mis-tap costs
+a saved place with no way back — favourites:delete is immediate and the
+only recovery is finding the spot on the map and dropping the pin again,
+which the copy says. `hx-confirm` is an attribute Django renders, so it
+carries the translated string naming the row, and htmx hands it to
+window.confirm — the native dialogue, and this project's idiom for a
+destructive action. Nothing bespoke is built for it. See
+_route_row_menu_items.html for the delegated-listener version of this
+that did NOT work, and why.
+
+WHAT KEEPS ITS ELEMENT. Rename is a button and not a form and not a
+prompt: the row's own label becomes an inline edit
+(static/js/inline_rename.js) and the committed name is posted by
+static/js/row_rename_commit.js, with the uuid riding on the button so
+neither module needs a closure over the rendered row. Delete stays a
+plain HTMX form, because favourites:delete answers an empty 200 and
+`hx-target`/`hx-swap` on the row's own id remove exactly this row with no
+JS involved.
+
+`role="none"` on each `<li>`, `role="menuitem"` on the control inside it:
+the ARIA menu pattern wants the items themselves to carry the role, and a
+`<li>` wrapping a `<form>` is not one.
+
+Both aria-labels name the row, because "Rename" alone names nothing with
+a list of rows on screen. They interpolate ``label`` —
+includes/_ugc_panel_row.html's own parameter, passed through
+_favourite_row_actions.html — rather than ``favourite.name``, so an
+unnamed pin reads as "Rename Unnamed pin" rather than "Rename ".
+
+THE REGION-PIN GUARD is carried over from the inline controls it
+replaces, unchanged and for the same reason: a region pin has no name of
+the user's own, its label being the region's, so there is nothing to
+rename. Since SNOW-814 those rows are a different list rendered through a
+different actions partial and never reach this file, so the branch is a
+guard rather than a live case — but favourite_create and favourite_rename
+render this row directly, and dropping the only check standing between a
+region pin and a rename control it cannot serve buys nothing.
+
+Context (all from _favourite_row_actions.html's own):
+    favourite  : Favourite — the saved pin this row describes; addresses
+                 the rename hook and the delete endpoint.
+    label      : str — the row's display name, for the aria-labels and
+                 the confirmation.
+    row_target : str — CSS selector for the row Delete empties.
+{% endcomment %}
+{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_confirm %}
+    Delete {{ name }}? You'll need to place the pin again to get it back.
+{% endblocktrans %}
+{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
+{# renameable panel's control carries, so static/js/inline_rename.js can   #}
+{# recognise a rename click without knowing which panel it is on;          #}
+{# `data-favourite-rename` carries this row's uuid for the commit.         #}
+{% if not favourite.is_region_pin %}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-row-rename
+            data-favourite-rename="{{ favourite.uuid }}"
+            aria-label="{{ rename_aria_label }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_pencil.html" only %}
+            {% trans "Rename" %}
+        </button>
+    </li>
+    {# The rule between the two halves. `aria-hidden` and no separator     #}
+    {# role: it groups the items visually and says nothing a screen reader #}
+    {# needs, which would otherwise be an extra stop between Rename and    #}
+    {# Delete.                                                             #}
+    <li aria-hidden="true" class="my-1 border-t border-border"></li>
+{% endif %}
+{# `data-row-remove` (SNOW-752) is how the surface owning the list knows   #}
+{# the removal happened, so it can re-read the list — the swap empties one #}
+{# <li>, and the empty state is a server-side clause only a fresh response #}
+{# carries — and tell the map its pins changed. The hook is on the FORM,   #}
+{# not the row: the row carries other HTMX requests (the disclosure        #}
+{# chevron hx-gets the pin's detail card from inside it), and a watcher    #}
+{# keyed on the row would re-read the list every time a card was expanded. #}
+{# See static/js/row_removed.js.                                           #}
+<li role="none">
+    <form
+        data-row-remove
+        hx-post="{% url 'favourites:delete' favourite.uuid %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+        hx-confirm="{{ delete_confirm }}"
+    >
+        {% csrf_token %}
+        {# The one item that does NOT take `hover-affordance`. That class    #}
+        {# paints a `background-image` gradient, which draws OVER a          #}
+        {# `background-color`, so the two treatments cannot both show — and  #}
+        {# this item's own fill is the point of colouring it. The cursor is  #}
+        {# stated directly, since a native <button> does not take it from    #}
+        {# the browser (see apps/public/templatetags/components.py).         #}
+        <button
+            type="submit"
+            role="menuitem"
+            aria-label="{{ delete_aria_label }}"
+            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+        >
+            {% include "includes/_icon_trash.html" only %}
+            {% trans "Delete" %}
+        </button>
+    </form>
+</li>
