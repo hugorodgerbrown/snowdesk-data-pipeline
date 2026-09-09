@@ -920,7 +920,8 @@ class TestFavouriteCardThreeWordAddress:
         content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
 
         assert "///filled.count.soap" in content
-        assert "https://what3words.com/filled.count.soap" in content
+        # SNOW-887 moved the host to what3words' own short one.
+        assert "https://w3w.co/filled.count.soap" in content
 
     @override_flag("what3words", active=True)
     def test_no_address_renders_no_line_rather_than_a_second_coordinate(
@@ -1693,17 +1694,121 @@ class TestFavouriteList:
         # so it carries no `name`, and the map variant still has none.
         assert 'name="name"' not in content
 
-    def test_map_variant_offers_rename_and_delete_behind_one_trigger(
+    def test_the_menu_offers_share_when_the_pin_has_an_address(
         self, client: Client
     ) -> None:
-        """Both actions are menu items, in order, delete last (SNOW-886).
+        """Share is first, then Rename, then Remove (SNOW-887).
 
-        They were a visible pencil beside a visible trash until SNOW-886.
-        The panel rule — more than one action is a "…", exactly one is a
-        bare icon — had already collapsed the routes and downloads rows,
-        so this one was the odd anatomy out. What survives the move is the
-        ORDER: the destructive item is last on every panel, so it is in
-        the same place wherever a user meets it.
+        The routes menu's order — Plan, Share, Rename, Delete — minus the
+        item that does not apply, so someone who has learned that menu can
+        use this one without reading it.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        favourite = FavouriteFactory.create(user=user, name="Mine", location=location)
+
+        with override_flag("what3words", active=True):
+            content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        share = content.index(f'data-favourite-share="{favourite.uuid}"')
+        rename = content.index(f'data-favourite-rename="{favourite.uuid}"')
+        remove = content.index(_delete_url(favourite.uuid))
+        assert share < rename < remove
+
+    @override_flag("what3words", active=True)
+    def test_the_share_payload_is_the_name_and_the_short_link(
+        self, client: Client
+    ) -> None:
+        """The payload is "<name> - <link>", as what3words' own app shares.
+
+        Composed server-side so Django escapes the name into the
+        attribute, and so the format is assertable here rather than only
+        in a jsdom test.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FavouriteFactory.create(user=user, name="Mont Fort", location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert (
+            'data-favourite-share-text="Mont Fort - https://w3w.co/filled.count.soap"'
+            in content
+        )
+
+    @override_flag("what3words", active=True)
+    def test_an_unnamed_pin_shares_the_link_alone(self, client: Client) -> None:
+        """An unnamed pin's placeholder label is not a claim about the place.
+
+        It reads as a placeholder among named rows; pasted into somebody's
+        messages with none of that context it reads as a name for the
+        place, so it is left off.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FavouriteFactory.create(user=user, name="", location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-favourite-share-text="https://w3w.co/filled.count.soap"' in content
+        assert "Unnamed pin - " not in content
+
+    @override_flag("what3words", active=True)
+    def test_no_address_means_no_share_item(self, client: Client) -> None:
+        """Never a Share that falls back to the coordinate pair.
+
+        The coordinate is the thing the address exists to replace, so a
+        pin the fill_what3words sweep has not reached simply has no Share.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words=None)
+        FavouriteFactory.create(user=user, name="Mine", location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-favourite-share=" not in content
+        # The menu survives — Rename and Remove are still two controls.
+        assert 'role="menu"' in content
+
+    def test_the_flag_off_hides_the_share_item(self, client: Client) -> None:
+        """A stored address is not shared while the feature is gated off."""
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FavouriteFactory.create(user=user, name="Mine", location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-favourite-share=" not in content
+        assert "filled.count.soap" not in content
+
+    @override_flag("what3words", active=True)
+    def test_rendering_the_list_makes_no_outbound_call(self, client: Client) -> None:
+        """A read path, never a conversion — the column is filled out of band."""
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words=None)
+        FavouriteFactory.create(user=user, location=location)
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            client.get(LIST_URL, **HTMX_HEADERS)
+
+        mock_get.assert_not_called()
+
+    def test_map_variant_collapses_rename_and_delete_into_a_menu(
+        self, client: Client
+    ) -> None:
+        """Two controls, so a "…" rather than two icons (SNOW-887).
+
+        In a restricted area one CTA is a bare icon and two or more
+        collapse. This row carried two before Share existed, so it was
+        already over that line — see docs/design-system.md. Trash stays
+        last inside the menu, as on every list, and says Delete since
+        SNOW-886 — favourites:delete destroys the Favourite row.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1717,8 +1822,10 @@ class TestFavouriteList:
         delete = content.index(_delete_url(favourite.uuid))
         assert rename < delete
         # Each names the row it acts on — "Rename" alone names nothing
-        # with a list of pins on screen.
+        # with a list of pins on screen — and so does the trigger, which
+        # is a bare glyph.
         assert 'aria-label="Rename Mine"' in content
+        assert 'aria-label="Actions for Mine"' in content
         assert 'aria-label="Delete Mine"' in content
 
     def test_map_variant_empty_state(self, client: Client) -> None:
@@ -1848,11 +1955,13 @@ class TestFavouriteRowOverflowMenu:
         assert _delete_url(favourite.uuid) in body
 
     def test_the_items_are_menuitems_inside_the_role_menu(self, client: Client) -> None:
-        """Two items, each carrying the role — a ``<li>`` cannot.
+        """Each item carries the role — a wrapping ``<li>`` cannot.
 
-        The separator between them is ``aria-hidden`` and takes no role of
-        its own: it groups the items visually and would otherwise be a
-        stop between Rename and Delete.
+        Two of them for a pin with no address: Rename and Delete. The rule
+        that would separate them belongs to the Share block above
+        (SNOW-887) and is absent with Share, so a menu of two is two items
+        and nothing else — no separator sitting under the last one, where
+        it would group nothing.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1862,6 +1971,27 @@ class TestFavouriteRowOverflowMenu:
 
         assert body.count('role="menu"') == 1
         assert body.count('role="menuitem"') == 2
+        assert '<li aria-hidden="true"' not in body
+
+    @override_flag("what3words", active=True)
+    def test_the_separator_arrives_with_share_and_takes_no_role(
+        self, client: Client
+    ) -> None:
+        """Three items and one rule, which is ``aria-hidden`` (SNOW-887).
+
+        It divides "do something with this pin" from "change or destroy
+        it", exactly as the routes menu's does. Taking a role of its own
+        would make it a stop between Share and Rename for anyone moving
+        through the menu with a keyboard or a screen reader.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FavouriteFactory.create(user=user, location=location)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count('role="menuitem"') == 3
         assert '<li aria-hidden="true"' in body
 
     def test_the_deletes_visible_label_matches_its_accessible_name(

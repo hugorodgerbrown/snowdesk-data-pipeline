@@ -1,111 +1,107 @@
 {% load i18n %}
 {% comment %}
-favourites/partials/_favourite_row_menu_items.html — the two actions a
-saved-pin row offers, as menu items (SNOW-886).
+favourites/partials/_favourite_row_menu_items.html — the items inside a
+saved pin's "…" menu (SNOW-887).
 
 includes/_overflow_menu.html's `items_template` slot, reached from
-_favourite_row_actions.html — which passes its own full context on, so
-``favourite``, ``label`` and ``row_target`` are all in scope here.
+_favourite_row_actions.html — which passes nothing, so this receives the
+row's full context and `favourite`, `label` and `row_target` are all in
+scope. This file owns its own <li> markup.
 
-WHY THESE ARE IN A MENU AT ALL, when the route row's own move behind a
-trigger (SNOW-830) was argued from four controls not fitting a 380px row
-and this row has two. The reason here is not width, it is uniformity:
-includes/_map_downloads_row_actions.html records the panel rule as *more
-than one action is a "…", exactly one is a bare icon*, and this was the
-one row of the four still drawing a visible pencil beside a visible trash
-while downloads and routes had already collapsed. A user who has learned
-that a row's actions live under the trigger should not have to relearn
-it per panel — and the pencil in particular was a control whose meaning
-had to be guessed from a 17px glyph, where a menu names it.
+ORDER IS SHARE, RENAME, DELETE, and it is the routes menu's order with
+the item that does not apply removed. That menu is Plan a trip, Share,
+Rename, Delete; a saved pin has no route to plan a trip off, so Plan drops
+out and the other three keep their positions. Somebody who has learned one
+menu can use this one without reading it — see docs/design-system.md's
+interaction principles. Trash last, as on every list in the product.
 
-The bare-icon half of that rule still stands, and the region pin is where
-it lands: one control, a solid star, rendered by
-_region_pin_row_actions.html and untouched by this ticket.
+WHY A MENU AND NOT THREE ICONS. In a restricted area — a map overlay, a
+sheet, a panel row — one CTA is a bare icon and two or more collapse into
+a "…". This row carried two before Share existed, so it was already over
+that line; templates/includes/_map_downloads_row_actions.html is where the
+rule was first written down.
 
-EVERY HOOK IS THE ONE IT ALREADY WAS. `data-row-rename`,
-`data-favourite-rename` and `data-row-remove` are unchanged, and so are
-the three modules that read them: static/js/inline_rename.js,
-row_rename_commit.js and row_removed.js each resolve by upward
-`closest()` traversal or a row-scoped `querySelector`, never by depth or
-sibling position, and every listener is delegated on the sheet or on
-document. Moving a control inside a menu inside the same `<li>` is
-therefore invisible to all of them.
+SHARE HANDS OVER "<name> - <link>", not the bare three words and not a
+Snowdesk URL. The link is what3words' own short host, which is the form
+their app puts in its own share text, so what a Snowdesk user sends looks
+like what the what3words app would have sent. The text is composed
+SERVER-SIDE (apps/favourites/views.py) and carried on the button, so the
+name is escaped by Django's autoescaping rather than assembled in
+JavaScript.
 
-ORDER. Rename, then a rule, then Delete — the same order the two inline
-controls already had, and the same ordering principle
-_route_row_menu_items.html states: the rule separates changing this row
-from destroying it, and the destructive item is last on every panel so it
-is in the same place wherever a user meets it.
+Rendered only when there IS an address. A pin whose location the
+fill_what3words sweep has not reached, or the `what3words` flag off, gets
+a menu of Rename and Delete — never a Share that falls back to the
+coordinate pair, which is the thing the address exists to replace.
 
-Delete is the only coloured item. A menu of neutral lines gives a user
-nothing to aim at or avoid, and the one irreversible action is the one
-worth marking; it takes the `status-error` pair the inline trash took on
-hover. The inline trash was neutral at rest on the argument that a row of
-red bins reads as an error state — that argument does not carry here,
-because a menu shows one Delete at a time and only while it is open.
+IT SAYS "DELETE", AND IT ASKS FIRST (SNOW-886). Both were "Remove" and
+neither asked when SNOW-887 wrote this file, and its note said the routes
+menu's confirm was "its own history, not a convention to import" — which
+was right on the day, a confirmation step being a behaviour change that
+should not ride in on a layout change. SNOW-886 imported it deliberately,
+as its own change, and settled the word with it. The rule: DELETE where
+the underlying record is destroyed, REMOVE where the thing only comes off
+the map and the data survives. favourites:delete destroys the Favourite
+row, so this is a Delete — and the downloads panel's trash stays a Remove,
+because what it takes away is a re-fetchable tile cache and a row that any
+device still holding the area writes back.
 
-It says "Delete", not "Remove". Hugo's rule is Delete when the underlying
-record is destroyed and Remove when the thing only comes off the map and
-the data survives: favourites:delete destroys the Favourite row, so this
-is a Delete. The accessible name says the same word, because WCAG 2.5.3
-(Label in Name) requires the visible label to appear in it — the pair
-moves together or voice control breaks.
+The visible label and the aria-label move together, always: WCAG 2.5.3
+(Label in Name) wants the visible text inside the accessible name, so a
+menu reading "Delete" under an accessible name of "Remove Lac de Vaux"
+would break voice control. Changing one alone is the defect, not the
+economy.
 
-IT ASKS FIRST (SNOW-886). The trash used to be a 44x44 control a user
-aimed at directly; it is now one item inside a menu, where a mis-tap costs
-a saved place with no way back — favourites:delete is immediate and the
-only recovery is finding the spot on the map and dropping the pin again,
-which the copy says. `hx-confirm` is an attribute Django renders, so it
-carries the translated string naming the row, and htmx hands it to
-window.confirm — the native dialogue, and this project's idiom for a
-destructive action. Nothing bespoke is built for it. See
-_route_row_menu_items.html for the delegated-listener version of this
-that did NOT work, and why.
+The confirmation is `hx-confirm` on the form — an attribute Django
+renders, so it carries the translated string with the pin's name already
+in it, and htmx hands it to window.confirm: the native dialogue, and this
+project's idiom for a destructive action. Nothing bespoke is built for it,
+and a delegated `submit` listener would not work anyway — htmx binds its
+submit handling to the FORM, so a preventDefault() on an ancestor runs
+after the request has already gone.
 
-WHAT KEEPS ITS ELEMENT. Rename is a button and not a form and not a
-prompt: the row's own label becomes an inline edit
-(static/js/inline_rename.js) and the committed name is posted by
-static/js/row_rename_commit.js, with the uuid riding on the button so
-neither module needs a closure over the rendered row. Delete stays a
-plain HTMX form, because favourites:delete answers an empty 200 and
-`hx-target`/`hx-swap` on the row's own id remove exactly this row with no
-JS involved.
+The Remove form keeps `data-row-remove` (static/js/row_removed.js watches
+for it) — the hook's name is the module's, not this control's word.
 
-`role="none"` on each `<li>`, `role="menuitem"` on the control inside it:
-the ARIA menu pattern wants the items themselves to carry the role, and a
-`<li>` wrapping a `<form>` is not one.
+The destructive item is the one control WITHOUT `hover-affordance` — that
+class paints a background-image gradient, which would sit over the error
+fill.
 
-Both aria-labels name the row, because "Rename" alone names nothing with
-a list of rows on screen. They interpolate ``label`` —
-includes/_ugc_panel_row.html's own parameter, passed through
-_favourite_row_actions.html — rather than ``favourite.name``, so an
-unnamed pin reads as "Rename Unnamed pin" rather than "Rename ".
-
-THE REGION-PIN GUARD is carried over from the inline controls it
-replaces, unchanged and for the same reason: a region pin has no name of
-the user's own, its label being the region's, so there is nothing to
-rename. Since SNOW-814 those rows are a different list rendered through a
-different actions partial and never reach this file, so the branch is a
-guard rather than a live case — but favourite_create and favourite_rename
-render this row directly, and dropping the only check standing between a
-region pin and a rename control it cannot serve buys nothing.
-
-Context (all from _favourite_row_actions.html's own):
-    favourite  : Favourite — the saved pin this row describes; addresses
-                 the rename hook and the delete endpoint.
-    label      : str — the row's display name, for the aria-labels and
-                 the confirmation.
-    row_target : str — CSS selector for the row Delete empties.
+Context:
+    favourite  : Favourite — the saved pin this row describes. Read for
+                 the uuid, `is_region_pin`, and `w3w_share_text` (hung on
+                 the instance by the view; empty when there is no address
+                 or the flag is off).
+    label      : str — the row's display name, or "Unnamed pin".
+    row_target : str — CSS selector for the row this Delete empties.
 {% endcomment %}
+{% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar delete_confirm %}
     Delete {{ name }}? You'll need to place the pin again to get it back.
 {% endblocktrans %}
-{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
-{# renameable panel's control carries, so static/js/inline_rename.js can   #}
-{# recognise a rename click without knowing which panel it is on;          #}
-{# `data-favourite-rename` carries this row's uuid for the commit.         #}
+{% if favourite.w3w_share_text %}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-favourite-share="{{ favourite.uuid }}"
+            data-favourite-share-text="{{ favourite.w3w_share_text }}"
+            aria-label="{{ share_aria_label }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_share.html" only %}
+            {% trans "Share" %}
+        </button>
+    </li>
+    {# The rule between "do something with it" and "manage it", as on the #}
+    {# routes menu. Inert, and hidden from assistive tech: it is a visual #}
+    {# grouping, not an item.                                            #}
+    <li aria-hidden="true" class="my-1 border-t border-border"></li>
+{% endif %}
+{# SNOW-802: a region pin has no name of the user's own — its label is the #}
+{# region's — so there is nothing to rename.                               #}
 {% if not favourite.is_region_pin %}
     <li role="none">
         <button
@@ -120,20 +116,7 @@ Context (all from _favourite_row_actions.html's own):
             {% trans "Rename" %}
         </button>
     </li>
-    {# The rule between the two halves. `aria-hidden` and no separator     #}
-    {# role: it groups the items visually and says nothing a screen reader #}
-    {# needs, which would otherwise be an extra stop between Rename and    #}
-    {# Delete.                                                             #}
-    <li aria-hidden="true" class="my-1 border-t border-border"></li>
 {% endif %}
-{# `data-row-remove` (SNOW-752) is how the surface owning the list knows   #}
-{# the removal happened, so it can re-read the list — the swap empties one #}
-{# <li>, and the empty state is a server-side clause only a fresh response #}
-{# carries — and tell the map its pins changed. The hook is on the FORM,   #}
-{# not the row: the row carries other HTMX requests (the disclosure        #}
-{# chevron hx-gets the pin's detail card from inside it), and a watcher    #}
-{# keyed on the row would re-read the list every time a card was expanded. #}
-{# See static/js/row_removed.js.                                           #}
 <li role="none">
     <form
         data-row-remove
@@ -143,12 +126,6 @@ Context (all from _favourite_row_actions.html's own):
         hx-confirm="{{ delete_confirm }}"
     >
         {% csrf_token %}
-        {# The one item that does NOT take `hover-affordance`. That class    #}
-        {# paints a `background-image` gradient, which draws OVER a          #}
-        {# `background-color`, so the two treatments cannot both show — and  #}
-        {# this item's own fill is the point of colouring it. The cursor is  #}
-        {# stated directly, since a native <button> does not take it from    #}
-        {# the browser (see apps/public/templatetags/components.py).         #}
         <button
             type="submit"
             role="menuitem"

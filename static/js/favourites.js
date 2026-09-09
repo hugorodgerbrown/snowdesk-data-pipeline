@@ -107,6 +107,12 @@
     // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
+    // SNOW-887: the two outcomes the share is allowed to speak about. A
+    // platform that TOOK the payload says nothing (it showed its own
+    // sheet), and a user who dismissed that sheet says nothing either —
+    // see handleShareClick.
+    'share-copied': 'Copied.',
+    'share-failed': "That couldn't be shared. Try again.",
     // SNOW-802: the region pin control's failure line.
   });
 
@@ -402,12 +408,68 @@
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
     if (handleFocusClick(event)) return;
+    if (handleShareClick(event)) return;
     if (handleRenameClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
     startCreateFlow();
   });
+
+  /**
+   * Handle a click on a row's Share, which hands the pin to the platform.
+   *
+   * The payload is composed SERVER-SIDE and sits on the button
+   * (`data-favourite-share-text`): "<name> - <what3words link>". Nothing
+   * is built here, so the name is escaped by Django on its way into the
+   * attribute rather than concatenated in JavaScript.
+   *
+   * NO MINT STEP, unlike the route share. A route share POSTs for a token
+   * first because the recipient needs a page that did not exist before;
+   * a three word address is already a permanent public URL, so there is
+   * no endpoint, no CSRF and nothing to fail before the sheet opens.
+   *
+   * ``'text'`` and not the default ``'url'``: the payload CONTAINS a URL
+   * rather than being one, and `navigator.canShare` rejects a `{url}`
+   * that is not a bare URL.
+   *
+   * ONLY TWO OUTCOMES SPEAK. `shared` means the platform showed its own
+   * sheet and took it — anything from us would be a second confirmation
+   * of something the user watched happen. `cancelled` means they
+   * dismissed that sheet, and a "Copied." toast after a dismissal is the
+   * classic bug static/js/share.js documents: it tells them the thing
+   * they just declined happened anyway.
+   *
+   * Bound on the SHEET rather than on `document`, and that is
+   * load-bearing: static/js/overflow_menu.js closes every open menu on a
+   * document click, so a document-level handler would race the close.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a share, so the caller
+   *   stops rather than also testing the rename and the add CTA.
+   */
+  function handleShareClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const control = target.closest('[data-favourite-share]');
+    if (!control) return false;
+    if (!window.pwaShare) return true;
+
+    const text = control.getAttribute('data-favourite-share-text');
+    if (!text) return true;
+
+    window.pwaTelemetry?.emit('map.favourite.shared', {});
+    window.pwaShare
+      .shareOrCopy(text, undefined, 'text')
+      .then(function (outcome) {
+        if (outcome === 'copied') showToast(STRINGS['share-copied']);
+        else if (outcome === 'failed') showToast(STRINGS['share-failed']);
+      })
+      .catch(function () {
+        showToast(STRINGS['share-failed']);
+      });
+
+    return true;
+  }
 
   /** Handle a click on a row's name, which frames that pin on the map.
    *

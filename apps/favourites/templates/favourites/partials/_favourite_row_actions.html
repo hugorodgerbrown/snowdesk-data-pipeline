@@ -1,73 +1,78 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 favourites/partials/_favourite_row_actions.html — the favourite row's
-controls (SNOW-658, collapsed behind one "…" trigger by SNOW-886).
+controls (SNOW-658, shared with the account page by SNOW-711, collapsed
+into a menu by SNOW-887).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
 favourites/partials/_favourite.html — which passes its own full context
-on, so ``favourite`` is in scope here for the delete endpoint's URL.
+on, so `favourite`, `label` and `row_target` are in scope here.
 
-ONE TRIGGER, TWO ITEMS. The row drew a visible pencil beside a visible
-trash until SNOW-886. The panel rule recorded in
-includes/_map_downloads_row_actions.html is *more than one action is a
-"…", exactly one is a bare icon*, and downloads and routes had both
-collapsed while this row had not — so a user who learned the trigger on
-one panel met a different anatomy on the next. The items themselves,
-their order, their colouring and every hook on them live in
-_favourite_row_menu_items.html. Region pins are a different list with a
-different actions partial (_region_pin_row_actions.html) and keep their
-single bare star: one action, so no menu.
+THE SHAPE IS DECIDED BY HOW MANY CONTROLS THE ROW HAS. In a restricted
+area — a map overlay, a sheet, a panel row — one CTA is a bare icon and
+two or more collapse into a "…" menu. So:
 
-WHAT THE MENU DID NOT CHANGE. Every hook the two controls carry is the
-one it already was, and neither of the modules that read them noticed the
-move — static/js/inline_rename.js, row_rename_commit.js and row_removed.js
-each resolve by upward `closest()` traversal or a row-scoped
-`querySelector`, never by depth or sibling position, and every listener is
-delegated on the sheet or on document. See _favourite_row_menu_items.html.
+  * a REGION PIN has Remove and nothing else (SNOW-802: its label is the
+    region's name, so there is nothing of the user's to rename, and it has
+    no coordinate to share) — one control, rendered as a bare trash;
+  * a PLACED PIN has Rename and Remove, plus Share when its location has
+    a three word address — two or three, rendered as a menu.
 
-WHAT THE MENU'S IDS ARE, AND WHY THEY ARE PER-ROW. A panel lists many
-pins and each renders this partial, so `trigger_id`/`menu_id` are keyed on
-the favourite's own uuid — the trigger's `aria-controls` has to name one
-element. static/js/overflow_menu.js itself never reads them (it is scoped
-by `closest()`, not `getElementById`); they exist for ARIA correctness.
-That script is loaded once by the map page
-(apps/public/templates/public/home.html), which since SNOW-803 is the only
-surface any of these rows render on.
+That rule replaced SNOW-658's "a visible trash on every row, one tap not
+two", which SNOW-830 had already narrowed to exclude the routes row. The
+favourite row carried two controls under the old rule and so was over the
+new line before SNOW-887's Share was proposed; the Share item is what
+made it worth moving rather than the reason it had to.
+templates/includes/_map_downloads_row_actions.html is where the rule was
+first written down, and docs/design-system.md is where it now lives.
 
-The trigger's own aria-label names the row for the same reason the items'
-do: "More actions" alone names nothing with a list of rows on screen. It
-interpolates ``label`` — includes/_ugc_panel_row.html's own parameter, in
-scope here — rather than ``favourite.name``, so an unnamed pin reads as
-"Actions for Unnamed pin" rather than "Actions for ".
+The items themselves, their order and every hook on them are in
+favourites/partials/_favourite_row_menu_items.html.
 
-``row_target`` rather than a hardcoded ``#favourite-<uuid>``: the row's id
-is _favourite.html's to decide, and an actions partial that rebuilt the
-same string from the uuid would be a second place to change if it ever
-does. The one caller passes ``#<the row's id>``; this file just passes on
-whatever it was handed, to the menu items that own the Delete form.
-
-WHICH SURFACE RENDERS THIS (corrected by SNOW-886). It read as "shared
-with the account page by SNOW-711", and named
-``static/js/account_favourites.js`` as the module driving the rename
-there. Neither exists any more: SNOW-803 turned every ``/account/`` list
-into a 301 to the map, that module went with it, and this row is now
-rendered only by the HTMX fragment endpoints the map page consumes —
-apps.favourites.views' favourite_create, favourite_resort_create,
-favourite_rename and the list. static/js/favourites.js is the one module
-driving it.
+`stringformat:"s"` before `add`, because `add` on a str and a UUID is a
+TypeError Django swallows — the ids would silently come out as just the
+prefix, and every row on the page would share them.
 
 Context:
     favourite  : Favourite — the saved pin this row describes.
     label      : str — the row's display name (the shared row's own
                  parameter): the pin's name, or "Unnamed pin".
-    row_target : str — CSS selector for the row this Delete empties,
-                 supplied by _favourite.html as ``#<the row's id>``.
+    row_target : str — CSS selector for the row this Remove empties,
+                 supplied by _favourite.html as `#<the row's id>`.
 {% endcomment %}
-{% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for {{ name }}{% endblocktrans %}
-{# ``uuid`` through stringformat before `add`: the filter falls back to  #}
-{# `value + arg`, and str + UUID is a TypeError that Django swallows     #}
-{# into an empty string. Same two-step favourites/partials/_favourite.html #}
-{# uses to build the row's own id.                                        #}
-{% with uuid=favourite.uuid|stringformat:"s" %}
-    {% include "includes/_overflow_menu.html" with trigger_id="favourite-actions-"|add:uuid menu_id="favourite-actions-menu-"|add:uuid trigger_label=row_actions_aria_label items_template="favourites/partials/_favourite_row_menu_items.html" %}
-{% endwith %}
+{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% if favourite.is_region_pin %}
+    {# One control, so no menu — see the header.                            #}
+    {#                                                                      #}
+    {# AND IT STILL SAYS "REMOVE", where the placed pin's menu item became  #}
+    {# "Delete" in SNOW-886. That rule is Delete where the underlying       #}
+    {# record is destroyed, Remove where the thing only comes off the map   #}
+    {# — and this row's subject is a REGION, which nothing here touches.    #}
+    {# What goes is the user's pin on it, which is the argument             #}
+    {# _region_pin_row_actions.html already made when it took the trash off #}
+    {# these rows in favour of a filled star that unpins (Hugo: "the region #}
+    {# still exists"). That partial is what a region pin actually renders   #}
+    {# since SNOW-814; this branch is the fallback for one reaching the     #}
+    {# favourites list, and it should not be the one place on the site that #}
+    {# calls unpinning a region a deletion.                                 #}
+    <form
+        data-row-remove
+        hx-post="{% url 'favourites:delete' favourite.uuid %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            aria-label="{{ remove_aria_label }}"
+            class="{% icon_button_classes variant='destructive' %}"
+        >
+            {% include "includes/_icon_trash.html" only %}
+        </button>
+    </form>
+{% else %}
+    {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for {{ name }}{% endblocktrans %}
+    {% with uuid=favourite.uuid|stringformat:"s" %}
+        {% include "includes/_overflow_menu.html" with trigger_id="favourite-actions-"|add:uuid menu_id="favourite-actions-menu-"|add:uuid trigger_label=row_actions_aria_label items_template="favourites/partials/_favourite_row_menu_items.html" %}
+    {% endwith %}
+{% endif %}

@@ -754,9 +754,15 @@ WHAT3WORDS_API_KEY = config("WHAT3WORDS_API_KEY", default="")
 # change, and a hardcoded one would make that a code change and a deploy.
 # Not the API host above — that one answers JSON to us, this one is a page
 # we send a person to, and they move independently.
+#
+# ``w3w.co`` rather than ``what3words.com`` (SNOW-887): it is the short
+# host what3words' OWN app puts in its share text, so a link Snowdesk
+# hands somebody looks like the one they would have got from the app
+# itself. Same destination, ~14 fewer characters — which matters when the
+# thing being pasted is going into a message.
 WHAT3WORDS_MAP_BASE_URL = config(
     "WHAT3WORDS_MAP_BASE_URL",
-    default="https://what3words.com",
+    default="https://w3w.co",
 )
 
 # Return a made-up address instead of calling the API. FOR LOCAL UX WORK

@@ -3,26 +3,23 @@
 templates/includes/_overflow_menu.html — Reusable "…" kebab overflow menu
 (SNOW-645, re-adopted by SNOW-830).
 
-WHICH PANELS HAVE ONE, AND WHICH DO NOT. This partial was built for the
-"Manage downloads" sheet's row actions, dropped a day later when SNOW-658
-ruled "no ellipsis menu" across every UGC panel, brought back by SNOW-830
-for the ROUTE row, and generalised by SNOW-886 into the rule the panels
-follow now: MORE THAN ONE ACTION IS A "…", EXACTLY ONE IS A BARE ICON.
-So the downloads row and the route row have a menu, and since SNOW-886 the
-favourite row does too — it was the last one drawing a visible pencil
-beside a visible trash, which made a user relearn the row's anatomy per
-panel. A field observation (delete only) and a region pin (unpin only)
-each have exactly one action, so each stays a single icon the user aims
-at directly: one tap beats two wherever the row can afford it.
+WHICH ROWS HAVE ONE, AND WHICH DO NOT — and it is a count, not a list.
+**In a restricted area one CTA is a bare icon; two or more collapse into a
+menu.** So the routes row, the favourite row and a downloads row with two
+things to offer all have one; a region pin (Unpin only), a field
+observation (Delete only) and a downloads row that has earned a single
+control all keep their bare icon.
 
-SNOW-658's ruling is therefore narrowed rather than reversed. Its case
-was that a destructive control in the same place on every row is one tap;
-that still holds for the rows with nothing else on them, and stopped
-holding for the rows that grew a second and a fourth control — four
-inline controls (Share, "Plan a trip", Rename, Remove) on a 380px row
-left a route's own name rendering as "Mont Fort – Ba…", and the name is
-the one thing a user scans the list by. One trigger buys the name the row
-back.
+The rule arrived the long way round. This partial was built for the
+"Manage downloads" sheet, dropped a day later when SNOW-658 ruled "no
+ellipsis menu" across every UGC panel, brought back by SNOW-830 for the
+ROUTE row alone — four inline controls on a 380px row left the route's own
+name rendering as "Mont Fort – Ba…" — and then generalised when Hugo
+reversed SNOW-658 outright. Past one control, a row's identity loses to
+its actions, and identity is what a user scans a list by.
+
+See docs/design-system.md's interaction principles. Do not re-derive the
+old ruling from an older comment elsewhere: it is gone, not narrowed.
 
 Built for the "Manage downloads" sheet's row actions (Rename / Remove),
 replacing the two inline buttons every row used to carry. There was no

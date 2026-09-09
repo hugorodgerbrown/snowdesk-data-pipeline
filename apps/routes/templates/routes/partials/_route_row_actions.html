@@ -1,21 +1,13 @@
 {% load i18n %}
 {% comment %}
 routes/partials/_route_row_actions.html — the route row's controls
-(SNOW-686).
+(SNOW-686, shared with every route surface by SNOW-711).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
 routes/partials/_route.html — which passes its own full context on, so
 ``route`` is in scope here for the delete endpoint's URL. It was
 `_route_row_map_actions.html` until SNOW-711 retired the map's fork of
 that row; there was never anything map-shaped about either control.
-
-WHICH SURFACE RENDERS THIS (corrected by SNOW-886). SNOW-711 shared this
-row with "every route surface", and every route surface then meant the
-map panel plus a page under ``/account/``. There is one now: SNOW-803
-turned those lists into a 301 to the map, so this row reaches a user only
-through the HTMX fragment endpoints apps/public/templates/public/home.html
-consumes — which is also why the `overflow_menu.js` that drives the menu
-below is loaded once by that page and by nothing else.
 
 TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
 
@@ -27,17 +19,19 @@ TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
   their order and every hook on them live in
   _route_row_menu_items.html.
 
-  WHY A MENU HERE. SNOW-764 put a Share icon on this row and SNOW-819
-  added a full-width "Plan a trip" text link, which made four controls
-  competing for the right-hand end of a 380px panel row; the route's name
-  — the one thing a user scans the list by — rendered as "Mont Fort –
-  Ba…". SNOW-658's "no ellipsis menu on any panel" ruling was narrowed to
-  exclude this row rather than withdrawn, and SNOW-886 finished the job by
-  stating the rule the panels follow now: more than one action is a "…",
-  exactly one is a bare icon. So the favourite row has a menu too, while
-  an observation (delete only) and a region pin (unpin only) each keep the
-  single icon a user aims at directly — one tap beats two wherever the row
-  can afford it.
+  WHY A MENU. SNOW-764 put a Share icon on this row and SNOW-819 added a
+  full-width "Plan a trip" text link, which made four controls competing
+  for the right-hand end of a 380px panel row; the route's name — the one
+  thing a user scans the list by — rendered as "Mont Fort – Ba…".
+
+  This row was the FIRST to get a menu, not the only one to deserve it.
+  SNOW-658's "no ellipsis menu on any panel" ruling was narrowed to
+  exclude this row, and has since been reversed outright: in a restricted
+  area one CTA is a bare icon and two or more collapse. The favourite row
+  and the downloads row followed. What survives from the old ruling is
+  only its instinct — trash last, in the same place on every list — which
+  is now a rule about ORDER rather than about shape. See
+  docs/design-system.md's interaction principles.
 
   A PENDING row — one the visitor was sent and has not claimed — gets a
   single Save. It is not an icon: the other three name actions a user

@@ -1,8 +1,8 @@
 ---
 name: design-system
-description: Bulletin page design handover — fidelity-first editorial principles, design tokens, the component layer, field guidance drafts
+description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-08-26
+last-reviewed: 2026-09-09
 ---
 
 
@@ -220,6 +220,46 @@ These are the principles that should govern any addition or change to the page d
 **The voice is calm, confident, quietly expert.** Direct and unpatronising. No extreme-sports energy. No emojis. No cheerful disclaimers hiding uncertainty. The tone should survive being pasted verbatim into a WhatsApp group without feeling out of place.
 
 **Restraint is part of the brand.** When adding new content (field guidance, day-character labels, change indicators), the temptation is to add visual weight or accent colours to make additions feel "important." Resist. New features should be added in the same restrained idiom — small, quiet, deferential to the existing hierarchy.
+
+## Interaction principles
+
+The editorial principles above govern what a surface *says*. These govern
+how it *behaves* — where a control goes and what shape it takes. They are
+constraints in the same way, and for the same reason: a user who has
+learned one surface should not have to relearn the next.
+
+Unlike the three numbered rules in CLAUDE.md's design-system section, these
+two have **no linter behind them**. `ds-lint` cannot count a row's calls to
+action or judge whether a menu is in the expected order. They hold because
+a reviewer holds them.
+
+**Consistency: put things where the user expects them.** A new menu adopts
+the order an existing one established and drops the items that do not
+apply, rather than inventing its own. The route row's menu is Plan a trip,
+Share, Rename, Delete; a saved pin has no route to plan a trip off, so its
+menu is Share, Rename, Remove — the same order with one item gone, not a
+new order. Destructive is last on every list in the product, so the control
+that cannot be undone is always in the same place. The test is whether
+somebody who has used one menu can use the other without reading it.
+
+**In a restricted area, one CTA is a bare icon and two or more collapse
+into a "…" menu.** A restricted area is any surface where horizontal space
+is contested — a map overlay, a sheet, a panel row. The threshold is
+**two**, not three: a row with exactly Rename and Remove gets a menu.
+
+This reversed an earlier ruling, and the reversal is worth knowing about
+because the old reasoning was good. SNOW-658 required a visible destructive
+control on every row — one tap rather than two, in the same place every
+time. SNOW-830 narrowed that for the routes row alone, when four inline
+controls squeezed the route's own name down to "Mont Fort – Ba…"; the name
+is the thing a user scans a list by, and one trigger buys it back. The rule
+above generalises that: past one control, the row's own identity loses to
+its actions, and identity matters more. It was first written down in
+`templates/includes/_map_downloads_row_actions.html`.
+
+The consequence worth stating plainly: **a row that gains a second action
+changes shape.** That is not scope creep in the ticket that adds the
+action — it is the rule being applied at the moment it starts to bite.
 
 ## The component layer
 

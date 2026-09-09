@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-09
 ---
 
 # Environment network allow-list
@@ -46,6 +46,21 @@ the target site's own bot protection (a 403/timeout *from the site itself*
 would come through differently — see `/root/.ccr/README.md` in-session for
 the full diagnostic playbook). Only the former is fixed by an allowlist
 change.
+
+## Requested — 2026-09-09 (SNOW-887)
+
+Both returned `EGRESS_BLOCKED` while verifying which host a shared
+what3words link should use. The format was confirmed from a screenshot of
+the what3words app's own share sheet instead, but a session that needs to
+check a what3words URL — or read their terms, which have already been
+misread once (see
+[`what3words-addresses-are-stored-indefinitely`](decisions/what3words-addresses-are-stored-indefinitely.md))
+— cannot do it from here.
+
+| Domain | Why it matters |
+|---|---|
+| `w3w.co` | what3words' short link host — the one `WHAT3WORDS_MAP_BASE_URL` now points at, and the one every shared pin and trip meeting point links to |
+| `what3words.com` | The full site: their API docs, plan comparison and terms |
 
 ## Requested — 2026-08-30 (competitor-scan routine)
 

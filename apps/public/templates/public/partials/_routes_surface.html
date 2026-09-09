@@ -178,20 +178,16 @@ Context expected:
 {# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
 {# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
 {# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —   #}
-{# deferred scripts run in document order, so window.pwaShare exists by the  #}
-{# time that module's own top level runs. Loaded from here rather than       #}
-{# home.html for the same reason routes.js is: it is this surface's          #}
-{# dependency, not the map bundle's. static/js/map.js also reads it, for     #}
-{# the shared-route popup's Save, and reaches it from a click handler that   #}
-{# runs long after every deferred script on the page has executed.           #}
-<script defer src="{% static 'js/share.js' %}"></script>
-{# The row's "…" menu is NOT loaded here. SNOW-830 loaded overflow_menu.js #}
-{# from this partial, as this surface's own dependency; SNOW-867 moved the #}
-{# tag to home.html once the downloads panel wanted one too, and SNOW-886  #}
-{# made it three panels. A second tag here would run the module twice —    #}
-{# browsers do not deduplicate script elements by URL — and it needs no    #}
-{# ordering against routes.js in any case: it publishes no global, nothing #}
-{# reads it, and it finds every menu by attribute at click time.           #}
+{# SNOW-887 moved share.js to home.html: the favourites panel became its    #}
+{# second consumer on this page, and a second tag here would run the module #}
+{# twice — browsers do not deduplicate script elements by URL. Same move,   #}
+{# same reason, as SNOW-867 made for overflow_menu.js.                      #}
+{# The row's "…" menu is NOT loaded here either. SNOW-830 loaded          #}
+{# overflow_menu.js from this partial as this surface's own dependency;    #}
+{# SNOW-867 moved the tag to home.html once the downloads panel wanted one #}
+{# too, and SNOW-887 made it three panels. What was left behind here was   #}
+{# the old comment, mid-sentence, describing a script tag that is not on   #}
+{# this page — removed by SNOW-886.                                        #}
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -226,7 +222,7 @@ Context expected:
     {# "link copied" would contradict them. See static/js/share.js.         #}
     <span data-string="share-copied">{% trans "Link copied." %}</span>
     <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-    {# SNOW-830's Delete confirm is NOT here. It is `hx-confirm` on the     #}
+    {# SNOW-830's Delete confirm is NOT here. It is `hx-confirm` on the    #}
     {# form itself (routes/partials/_route_row_menu_items.html) — the       #}
     {# string is rendered into the attribute by Django, so it needs no      #}
     {# runtime lookup and no entry in this template.                        #}
