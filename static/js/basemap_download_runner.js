@@ -277,7 +277,22 @@
     // list anyway.
     const gridPlan = core.tileGridPlan(tileSources, blob);
     const feedUrls = deps.feedUrls();
-    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
+
+    // SNOW-692: the slope-angle raster over the same ground and the same
+    // band as the basemap tiles. Derived from the BLOB, so unlike
+    // `feedUrls` it cannot be resolved before the blob has loaded — hence a
+    // separate dep taking it as an argument.
+    //
+    // Appended AFTER the grid plan's own URLs, never before: `progressGrid`
+    // is given `feedUrls.length` as the offset at which tile URLs start, so
+    // anything inserted between the two would shift every tile off its
+    // cell. Landing them at the end costs only that the on-map grid
+    // finishes filling slightly before the run itself settles.
+    //
+    // A deps bundle without the member (an older shell mid-rollout) yields
+    // `[]`, which is the pre-ticket behaviour: no slope tiles pinned.
+    const slopeUrls = typeof deps.slopeUrls === 'function' ? deps.slopeUrls(blob) : [];
+    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
     // as they land.
@@ -303,7 +318,16 @@
     // documents this run never fetched. A `deps` bundle without the member
     // (an older shell mid-rollout) yields `[]`, which every reader treats
     // as "unknown" rather than "complete".
-    const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
+    //
+    // SNOW-692: the slope tiles join the list. They are a render dependency
+    // in the sense that matters here — an area holding basemap tiles but no
+    // slope tiles renders the overlay empty exactly when it is needed, and
+    // recording them is what lets the probe say `incomplete` and offer a
+    // repair rather than reporting a silent partial as done.
+    const renderDeps = [
+      ...(typeof deps.renderDeps === 'function' ? deps.renderDeps() : []),
+      ...slopeUrls,
+    ];
 
     // SNOW-742: `glyphPrefix` lets the worker promote this style's
     // already-cached glyph entries into the pinned bucket once the tiles are

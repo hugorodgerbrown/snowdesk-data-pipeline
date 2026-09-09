@@ -782,6 +782,91 @@
   }
 
   /**
+   * Every slope-angle raster URL a download should pin for ``blob``.
+   *
+   * SNOW-692: the slope overlay shipped with opportunistic offline support
+   * only — its tiles landed in the passive, FIFO-trimmed ``BASEMAP_CACHE``
+   * as they were viewed, so terrain the user looked at online might still
+   * be there offline, and might not. For a layer whose whole purpose is
+   * answering "how steep is that" while standing in front of it with no
+   * signal, that is the wrong end state.
+   *
+   * Same ground and same band as the basemap tiles, so this walks the SAME
+   * server-computed blob rows ``rangesToTileURLs`` does rather than doing
+   * tile maths of its own. Two things make it not simply a second call to
+   * that function:
+   *
+   *   - **The layer's own rectangle.** The raster is a multi-country DEM
+   *     composite clipped to a rectangle that is NOT Switzerland plus a
+   *     buffer (``COVERAGE_BOUNDS``, slope_overlay_core.js). A region
+   *     straddling the edge must DROP the tiles outside it rather than
+   *     fetch them and take the failures into the run's `failed` count,
+   *     which would fail an otherwise complete download.
+   *   - **The layer's own zoom ceiling.** The service answers HTTP 400
+   *     past z17 and its real detail stops at z16, so anything deeper is
+   *     skipped. The download band tops out at z14 today, making this
+   *     headroom rather than a live constraint — it is enforced anyway
+   *     because the two ceilings are independent and nothing else would
+   *     notice if the band moved.
+   *
+   * @param {string} template An XYZ template with ``{z}``/``{x}``/``{y}``.
+   * @param {Object | null | undefined} blob The download blob, for its
+   *   ``z`` row spans.
+   * @param {number[] | null | undefined} bounds ``[west, south, east,
+   *   north]`` the raster covers. Omitted means no clip.
+   * @param {number} maxZoom Deepest zoom to request, inclusive.
+   * @returns {string[]} Empty when the template, blob or rows are missing —
+   *   the run then pins no slope tiles, exactly as before this ticket.
+   */
+  function slopeTileURLs(template, blob, bounds, maxZoom) {
+    var urls = [];
+    if (!template || !blob || !blob.z) return urls;
+    var ceiling = typeof maxZoom === 'number' ? maxZoom : Infinity;
+    var rect = Array.isArray(bounds) && bounds.length === 4 ? bounds : null;
+    var zKeys = Object.keys(blob.z);
+    for (var zi = 0; zi < zKeys.length; zi += 1) {
+      var z = Number(zKeys[zi]);
+      if (!Number.isFinite(z) || z > ceiling) continue;
+      var rows = zoomRows(blob.z[zKeys[zi]]);
+      var yKeys = Object.keys(rows);
+      for (var yi = 0; yi < yKeys.length; yi += 1) {
+        var y = Number(yKeys[yi]);
+        var span = rows[yKeys[yi]];
+        for (var x = span[0]; x <= span[1]; x += 1) {
+          if (rect && !_tileIntersectsBBox(z, x, y, rect)) continue;
+          urls.push(
+            template
+              .replace('{z}', String(z))
+              .replace('{x}', String(x))
+              .replace('{y}', String(y)),
+          );
+        }
+      }
+    }
+    return urls;
+  }
+
+  /**
+   * Whether a tile's ground overlaps ``bbox``.
+   *
+   * SNOW-692. Overlap, not containment: a tile straddling the raster's edge
+   * carries real data on the inside and has to be fetched. Touching edges
+   * count, matching ``coversPoint``'s inclusive rectangle in
+   * slope_overlay_core.js — a tile flush against the boundary is one the
+   * service still answers.
+   *
+   * @param {number} z
+   * @param {number} x
+   * @param {number} y
+   * @param {number[]} bbox ``[west, south, east, north]``.
+   * @returns {boolean}
+   */
+  function _tileIntersectsBBox(z, x, y, bbox) {
+    var tile = tileBounds(z, x, y);
+    return tile[0] <= bbox[2] && tile[2] >= bbox[0] && tile[1] <= bbox[3] && tile[3] >= bbox[1];
+  }
+
+  /**
    * The area id for a region download.
    *
    * SNOW-586: formalises "area" as the unit a pinned cache bucket and a
@@ -2404,6 +2489,7 @@
     missingRenderDependencies: missingRenderDependencies,
     styleFontstacks: styleFontstacks,
     glyphURLs: glyphURLs,
+    slopeTileURLs: slopeTileURLs,
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,

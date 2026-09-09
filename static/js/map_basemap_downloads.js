@@ -391,6 +391,30 @@ function activeBasemapGlyphURLs(map) {
 }
 
 /**
+ * SNOW-692: the slope-angle raster URLs covering one download blob.
+ *
+ * The template comes from `#map`'s `data-slope-tile-url`, which the view
+ * renders only while `settings.SLOPE_TILE_URL` is configured — so an
+ * environment with the overlay switched off pins nothing here and the rest
+ * of the download is unaffected. The rectangle and the zoom ceiling come
+ * from `slope_overlay_core.js`, the one definition the live overlay's own
+ * source is built from, so the download cannot request ground or zooms the
+ * map itself would refuse to ask for.
+ *
+ * @param {Object|null} blob The download blob, for its `z` row spans.
+ * @returns {string[]} Empty when the overlay is not configured, its core
+ *   module has not loaded, or the blob carries no ranges.
+ */
+function activeSlopeTileURLs(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const slope = self.pwaSlopeOverlayCore;
+  const mapEl = document.getElementById('map');
+  const template = mapEl ? mapEl.dataset.slopeTileUrl : '';
+  if (!core || !slope || !template) return [];
+  return core.slopeTileURLs(template, blob, slope.COVERAGE_BOUNDS, slope.MAX_ZOOM);
+}
+
+/**
  * SNOW-844: which render-dependency list to check ONE recorded area
  * against — the three-row resolution rule, in one place because three
  * surfaces apply it (both download controls and the Manage downloads
@@ -2652,6 +2676,9 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  // SNOW-692: takes the blob, because the slope raster covers the same
+  // ground and band as the area's own tiles — see `slopeTileURLs`.
+  slopeUrls: (blob) => activeSlopeTileURLs(blob),
   // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
   // active style, captured at run start alongside `tileSources` so the
   // record stores the list this run actually fetched rather than whatever
