@@ -24,8 +24,26 @@
  * Content comes from /api/region/<id>/summary/ — the same server-rendered,
  * autoescaped HTML the MapLibre popup used, so there is one definition of
  * what a region summary says — plus /api/resorts-by-region/ for the resort
- * list. Both are already fetched by the map for other reasons and are
- * cacheable, so opening the panel is usually free.
+ * list.
+ *
+ * NOTHING IS FETCHED ON THE OPENING PRESS THAT COULD HAVE BEEN FETCHED
+ * BEFORE IT (SNOW-879). That claim used to be aspirational: the two
+ * requests ran one after the other, and every `appendChild` waited for both,
+ * so the box the chip disclosed was empty for two round trips and the panel
+ * read as the slowest surface on the map. Three things changed and the order
+ * matters. The resort lookup is warmed at idle from the foot of this module
+ * — it is the same answer for every region, so there was never a reason to
+ * wait for a selection to ask for it. The summary fetch now runs CONCURRENTLY
+ * with whatever is left of that warm rather than after it. And `paint` runs
+ * on the press with whatever is already in hand, then again when the summary
+ * lands, so the panel is never a blank box — see `paint`'s three-state
+ * `summaryHtml` for why "still coming" and "came back empty" are two
+ * different sentences.
+ *
+ * Summaries are then kept per `regionId|dateKey` (`summaryCache`), so
+ * stepping back to a region you just looked at costs nothing. `renderedKey`
+ * still short-circuits the repeat of the CURRENT key; the cache is what
+ * catches the return to a previous one.
  *
  * THIS MODULE ALSO OWNS THE PIN ROUNDEL (SNOW-814) — the star between the
  * chip and the download control (public/partials/_map_region_pin_control.html).
@@ -93,6 +111,16 @@
   let currentDate = null;
   let renderedKey = null;
   let resortsByRegion = null;
+  // SNOW-879: the in-flight `/api/resorts-by-region/` fetch, so the idle
+  // warm at the foot of this module and a panel open that beats it share
+  // one request rather than racing two.
+  let resortsWork = null;
+  // SNOW-879: summary HTML by `regionId|dateKey`. The panel used to refetch
+  // on every selection, so stepping back to a region you had just looked at
+  // cost a round trip to be told the same thing. Bounded (SUMMARY_CACHE_MAX)
+  // because a long scrub over the season ribbon visits a new key per day.
+  const summaryCache = new Map();
+  const SUMMARY_CACHE_MAX = 60;
   // Invalidates an in-flight fetch when a newer one starts, mirroring
   // openRegionPopup's summarySeq guard in map.js.
   let seq = 0;
@@ -132,6 +160,7 @@
   const STRINGS = self.pwaStrings.read('region-panel-strings-template', {
     resorts: 'Resorts in this region',
     unavailable: 'Region details are unavailable offline.',
+    loading: 'Loading region details…',
     pinned: 'Pinned regions',
     // Hyphenated, because the key IS the template's `data-string` value and
     // the two are compared literally (tests/test_js_strings_are_translatable).
@@ -322,6 +351,133 @@
   };
 
   /**
+   * Fetch `/api/resorts-by-region/` once per page, warm or not.
+   *
+   * SNOW-879: this used to sit INSIDE `render`, awaited after the summary
+   * fetch had already settled — so the first open of the panel paid two
+   * round trips end to end for two requests that have nothing to do with
+   * each other. It is region-independent and never refetched, which is
+   * exactly what makes it warmable: the call at the foot of this module
+   * starts it while the map is still settling, and by the time the chip is
+   * pressed the answer is usually already here.
+   *
+   * A failed fetch resolves to `{}` and is NOT retried, matching the
+   * behaviour this replaces — a panel with no resort list is a section
+   * missing, not a panel broken.
+   *
+   * @returns {Promise<Object>} region_id → resort names.
+   */
+  const ensureResorts = () => {
+    if (resortsByRegion !== null) return Promise.resolve(resortsByRegion);
+    if (resortsWork) return resortsWork;
+    resortsWork = fetch(RESORTS_URL, { headers: { Accept: 'application/json' } })
+      .then((resp) => (resp.ok ? resp.json() : {}))
+      .catch(() => ({}))
+      .then((data) => {
+        resortsByRegion = data;
+        return data;
+      });
+    return resortsWork;
+  };
+
+  /**
+   * Fetch one region's summary HTML, caching a successful answer.
+   *
+   * Resolves to '' on any failure — offline, a 404, a malformed body — so
+   * the caller has one falsy case to paint the unavailable line from, and
+   * never a rejection to guard.
+   *
+   * @param {string} regionId The EAWS region id.
+   * @param {?string} dateKey The displayed date (YYYY-MM-DD), or null.
+   * @param {string} key The `regionId|dateKey` cache key.
+   * @returns {Promise<string>} The summary HTML, or '' when unavailable.
+   */
+  const fetchSummary = (regionId, dateKey, key) => {
+    let url = SUMMARY_URL_TEMPLATE.replace('XX-0000', encodeURIComponent(regionId));
+    if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
+    return fetch(url, { headers: { Accept: 'application/json' } })
+      .then((resp) => (resp.ok ? resp.json() : null))
+      .then((data) => {
+        const html = (data && data.html) || '';
+        if (html) {
+          // Oldest-first eviction. `Map` iterates in insertion order, so the
+          // first key is the least recently ADDED — not the least recently
+          // read, which a scrub does not distinguish anyway.
+          if (summaryCache.size >= SUMMARY_CACHE_MAX) {
+            summaryCache.delete(summaryCache.keys().next().value);
+          }
+          summaryCache.set(key, html);
+        }
+        return html;
+      })
+      .catch(() => '');
+  };
+
+  /**
+   * Paint the panel body from what is in hand right now.
+   *
+   * Called twice on a cold open — once on the opening press with whatever is
+   * already cached, once when the summary lands. That is the point: `render`
+   * used to clear and rebuild the panel only AFTER its awaits, so the box
+   * the chip disclosed was genuinely empty for the length of the round trip.
+   *
+   * `summaryHtml` carries three states and they are three different
+   * sentences: a string is the summary, `undefined` is "still coming"
+   * (STRINGS.loading), and '' is "asked and got nothing" (STRINGS.unavailable).
+   * Collapsing the last two would tell an online user with a slow connection
+   * that they are offline.
+   *
+   * @param {string} regionId The EAWS region id.
+   * @param {string|undefined} summaryHtml Summary HTML, '' or undefined.
+   * @returns {void}
+   */
+  const paint = (regionId, summaryHtml) => {
+    panel.textContent = '';
+
+    if (summaryHtml) {
+      // Server-rendered by Django templates with autoescaping on — the same
+      // HTML map.js hands to Popup.setHTML, and safe on the same grounds.
+      const section = document.createElement('div');
+      section.className = 'region-panel-section';
+      section.innerHTML = summaryHtml;
+      // The summary's own header is the danger chip and the region name —
+      // exactly what the ribbon above is already showing. Dropping it is
+      // what stops the surface saying the region's name twice. A real seam
+      // in the server template (public/_region_tooltip.html), not a guess at
+      // the markup: everything else in there (breadcrumb, bulletin link,
+      // editorial) is content the ribbon has no room for.
+      section.querySelector('.region-tooltip-header')?.remove();
+      panel.appendChild(section);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'region-panel-empty';
+      p.textContent = summaryHtml === undefined ? STRINGS.loading : STRINGS.unavailable;
+      panel.appendChild(p);
+    }
+
+    const resorts = (resortsByRegion && resortsByRegion[regionId]) || [];
+    if (resorts.length) {
+      const section = buildSection(STRINGS.resorts);
+      const list = document.createElement('ul');
+      list.className = 'region-panel-resorts';
+      resorts.forEach((name) => {
+        const li = document.createElement('li');
+        li.textContent = name;
+        list.appendChild(li);
+      });
+      section.appendChild(list);
+      panel.appendChild(section);
+    }
+
+    // SNOW-814: last, and deliberately so. The panel is opened FROM the
+    // selected region's name, so what that region is comes first; the list
+    // of other regions is where you go when this one is not the one you
+    // wanted. With nothing selected it is the whole panel (see the early
+    // return in `render`) and the question does not arise.
+    attachPinned();
+  };
+
+  /**
    * Render the panel body for one region and date.
    *
    * @param {string} regionId The EAWS region id.
@@ -344,73 +500,34 @@
     }
 
     const mine = ++seq;
-    let summaryHtml = '';
-    try {
-      let url = SUMMARY_URL_TEMPLATE.replace('XX-0000', encodeURIComponent(regionId));
-      if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
-      const resp = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (mine !== seq) return;
-      if (resp.ok) summaryHtml = (await resp.json()).html || '';
-    } catch {
-      // Offline, or the endpoint is unreachable. The panel still opens and
-      // says so rather than hanging on an empty box.
+    const cachedSummary = summaryCache.get(key);
+
+    // SNOW-879: everything already in hand. This is the re-open and the
+    // step back to a region just visited, and it now costs no network at
+    // all — one synchronous paint and done.
+    if (cachedSummary !== undefined && resortsByRegion !== null) {
+      paint(regionId, cachedSummary);
+      renderedKey = key;
+      return;
     }
+
+    // Paint the frame from whatever is cached BEFORE awaiting anything, so
+    // the panel the chip just disclosed has content in it on the same frame
+    // as the press. Then fill in what is missing — both requests together,
+    // because neither needs the other's answer.
+    paint(regionId, cachedSummary);
+
+    const [summaryHtml] = await Promise.all([
+      cachedSummary === undefined
+        ? fetchSummary(regionId, dateKey, key)
+        : Promise.resolve(cachedSummary),
+      ensureResorts(),
+    ]);
+    // A newer render started while these were out; its own paint is the
+    // one that should stand.
     if (mine !== seq) return;
 
-    if (resortsByRegion === null) {
-      try {
-        const resp = await fetch(RESORTS_URL, { headers: { Accept: 'application/json' } });
-        resortsByRegion = resp.ok ? await resp.json() : {};
-      } catch {
-        resortsByRegion = {};
-      }
-    }
-    if (mine !== seq) return;
-
-    panel.textContent = '';
-
-    if (summaryHtml) {
-      // Server-rendered by Django templates with autoescaping on — the same
-      // HTML map.js hands to Popup.setHTML, and safe on the same grounds.
-      const section = document.createElement('div');
-      section.className = 'region-panel-section';
-      section.innerHTML = summaryHtml;
-      // The summary's own header is the danger chip and the region name —
-      // exactly what the ribbon above is already showing. Dropping it is
-      // what stops the surface saying the region's name twice. A real seam
-      // in the server template (public/_region_tooltip.html), not a guess at
-      // the markup: everything else in there (breadcrumb, bulletin link,
-      // editorial) is content the ribbon has no room for.
-      section.querySelector('.region-tooltip-header')?.remove();
-      panel.appendChild(section);
-    } else {
-      const p = document.createElement('p');
-      p.className = 'region-panel-empty';
-      p.textContent = STRINGS.unavailable;
-      panel.appendChild(p);
-    }
-
-    const resorts = (resortsByRegion && resortsByRegion[regionId]) || [];
-    if (resorts.length) {
-      const section = buildSection(STRINGS.resorts);
-      const list = document.createElement('ul');
-      list.className = 'region-panel-resorts';
-      resorts.forEach((name) => {
-        const li = document.createElement('li');
-        li.textContent = name;
-        list.appendChild(li);
-      });
-      section.appendChild(list);
-      panel.appendChild(section);
-    }
-
-    // SNOW-814: last, and deliberately so. The panel is opened FROM the
-    // selected region's name, so what that region is comes first; the list
-    // of other regions is where you go when this one is not the one you
-    // wanted. With nothing selected it is the whole panel (see the early
-    // return above) and the question does not arise.
-    attachPinned();
-
+    paint(regionId, summaryHtml);
     renderedKey = key;
   };
 
@@ -603,5 +720,14 @@
   // this list, so deferring the fetch would leave the star lying about
   // whichever region the page opened on.
   if (PIN_LIST_URL) loadPins();
+  // SNOW-879: and warm the resort lookup, for the same reason one line up —
+  // it is the panel's other prerequisite, it does not depend on which region
+  // is selected, and fetching it here means the first open of the panel is
+  // not the thing that pays for it. Deferred to idle so it never competes
+  // with the map's own first paint; `requestIdleCallback` is absent on
+  // Safari <17, hence the timeout fallback.
+  const warmResorts = () => ensureResorts().catch(() => {});
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(warmResorts);
+  else setTimeout(warmResorts, 1200);
   syncPinControl();
 }());

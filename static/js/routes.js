@@ -176,6 +176,14 @@
   // third attribute repeating a fact these two already carry.
   const SHARE_PENDING = IS_ELIGIBLE && !UPLOAD_ELIGIBLE;
 
+  // SNOW-879: warm this panel's rows at idle so the FIRST open of a
+  // session is instant too, not just the ones after it. Gated on
+  // IS_ELIGIBLE — IS_ELIGIBLE rather than UPLOAD_ELIGIBLE: a visitor holding a pending
+  // share has rows to show too (SNOW-764), and they are the rows the link
+  // they followed was for.
+  // See static/js/panel_rows_cache.js.
+  if (IS_ELIGIBLE && LIST_URL) window.pwaPanelRows?.warm('routes', LIST_URL);
+
   // ---------------------------------------------------------------------------
   // Sheet controller + toast — SNOW-608's shared static/js/map_sheet.js, which
   // owns the open/focus cycle, the three dismissal routes (Escape,
@@ -298,11 +306,11 @@
       // is replaced wholesale by every list load and by the failed-load
       // handler below — a CTA inside it would vanish on the first
       // re-read.
-      loadRows();
+      loadRows(true);
       appendSigninCta();
       return;
     }
-    loadRows();
+    loadRows(true);
   }
 
   /** Put the sign-in prompt at the foot of the panel, under the rows.
@@ -332,11 +340,21 @@
    * re-read-the-truth move favourites.js makes, rather than patching a row
    * in place from what we think we just wrote.
    *
+   * @param {boolean} [fromCache] True to paint the cached rows first —
+   *   set by the open path only, not by the post-mutation re-reads.
    * @returns {void}
    */
-  function loadRows() {
+  function loadRows(fromCache) {
     const rows = sheet.querySelector('[data-routes-rows]');
     if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    // SNOW-879: cached rows paint now, routes:list still gets the last
+    // word a round trip later. `cached` is passed only for an OPEN —
+    // a re-read that follows a mutation must not flash the pre-mutation
+    // list back up. See static/js/panel_rows_cache.js.
+    if (window.pwaPanelRows) {
+      window.pwaPanelRows.load('routes', LIST_URL, rows, { cached: fromCache });
+      return;
+    }
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 

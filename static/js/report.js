@@ -138,6 +138,13 @@
   const LIST_URL = btn.dataset.reportListUrl;
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.reportEligible === 'true';
+
+  // SNOW-879: warm this panel's rows at idle so the FIRST open of a
+  // session is instant too, not just the ones after it. Gated on
+  // IS_ELIGIBLE — an ineligible visitor gets the verify / sign-in gate in place of the
+  // rows, so there is nothing to warm for one.
+  // See static/js/panel_rows_cache.js.
+  if (IS_ELIGIBLE && LIST_URL) window.pwaPanelRows?.warm('observations', LIST_URL);
   // Authenticated but email not yet verified (SNOW-477): not eligible for the
   // report flow, but distinct from anonymous — gets a "verify your email"
   // prompt rather than the sign-in CTA.
@@ -516,7 +523,7 @@
       return true;
     }
     if (gate) gate.remove();
-    loadRows();
+    loadRows(true);
     return true;
   }
 
@@ -531,11 +538,21 @@
    * since SNOW-803 — so the URL is used verbatim and there is nothing to
    * append.
    *
+   * @param {boolean} [fromCache] True to paint the cached rows first —
+   *   set by the open path only, not by the post-mutation re-reads.
    * @returns {void}
    */
-  function loadRows() {
+  function loadRows(fromCache) {
     const rows = sheet.querySelector('[data-report-rows]');
     if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    // SNOW-879: cached rows paint now, observations:list still gets the last
+    // word a round trip later. `cached` is passed only for an OPEN —
+    // a re-read that follows a mutation must not flash the pre-mutation
+    // list back up. See static/js/panel_rows_cache.js.
+    if (window.pwaPanelRows) {
+      window.pwaPanelRows.load('observations', LIST_URL, rows, { cached: fromCache });
+      return;
+    }
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 

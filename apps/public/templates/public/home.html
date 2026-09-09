@@ -135,6 +135,14 @@ in addition to the shared map assets.
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
+    {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
+    {# the same reason as the three tags above: all four are defer, so       #}
+    {# document order is execution order, and favourites.js / report.js /    #}
+    {# routes.js each call window.pwaPanelRows.warm() at init. Each guards   #}
+    {# the call with `?.`, so a page that omits this tag degrades to the     #}
+    {# fetch-on-every-open behaviour rather than breaking.                   #}
+    <script defer src="{% static 'js/panel_rows_cache.js' %}"></script>
     {# SNOW-658: only one overlay is open over the map at a time              #}
     {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
     {# three UGC sheets, the anchored detail popup, the legend card and the   #}

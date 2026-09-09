@@ -185,6 +185,12 @@ for it was dead.
         <template id="region-panel-strings-template">
             <span data-string="resorts">{% trans "Resorts in this region" %}</span>
             <span data-string="unavailable">{% trans "Region details are unavailable offline." %}</span>
+            {# SNOW-879: the placeholder the summary slot holds while its     #}
+            {# fetch is out. The panel paints its frame on the opening press  #}
+            {# rather than after the round trip, so this slot is on screen    #}
+            {# for the moment the request takes and needs words of its own —  #}
+            {# "unavailable" above would be a wrong answer, not an early one. #}
+            <span data-string="loading">{% trans "Loading region details…" %}</span>
             {# SNOW-814: the pinned-regions section's eyebrow, and the line it #}
             {# shows when the list cannot be fetched. The empty state is the   #}
             {# server's (favourites/partials/_region_pin_list.html) and is     #}
