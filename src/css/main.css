@@ -565,6 +565,7 @@
   --z-toast:  50;   /* transient toasts: share, mutation-queue, htmx-error            */
   --z-popup:  60;   /* sheets: favourite / report fly-outs                            */
   --z-modal:  70;   /* full-screen modals: forced update, reset required              */
+  --z-launch: 80;   /* PWA launch shell (SNOW-878) — covers the booting app entirely   */
 
   /* Grid breakpoints */
   --breakpoint-tablet:   600px;
@@ -1890,4 +1891,108 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 
 .forecast-day-picker input:checked ~ label .weather-day-marker {
   background-color: var(--color-accent);
+}
+
+/* —— PWA launch shell (SNOW-878) ——————————————
+   The overlay that continues the OS launch screen
+   into the page, so an installed app boots on one
+   unbroken splash instead of a blank frame.
+
+   The composition deliberately MATCHES
+   bin/build-pwa-splash: the same background token,
+   the same tile, centred, at the same proportion of
+   the viewport's shorter edge. That is the whole
+   trick — iOS hands over from its startup image to
+   this the instant the page paints, and if the two
+   agree the handover is invisible. Change the mark
+   size here and the ICON_RATIO / ICON_MIN_CSS /
+   ICON_MAX_CSS clamp in that script has to move with
+   it, or the tile jumps at handover.
+
+   Hidden by default and shown only under
+   `html.pwa-launching`, which the inline gate in
+   includes/_pwa_launch_shell.html sets synchronously
+   in <head> when this load is a cold launch of the
+   installed app. A browser tab never adds the class,
+   so a visitor on the web sees none of this, and a
+   second navigation inside the app session doesn't
+   either.
+   ————————————————————————————————————————— */
+
+.pwa-launch-shell {
+  display: none;
+  /* Read by both the mark's own size and the label's offset below, so
+     the two cannot drift apart. Mirrors iconPixelsFor() in
+     bin/build-pwa-splash: the shorter edge (vmin) at ICON_RATIO, clamped
+     to the same CSS-pixel floor and ceiling. */
+  --pwa-launch-mark: clamp(96px, 24vmin, 160px);
+}
+
+html.pwa-launching .pwa-launch-shell {
+  display: flex;
+}
+
+.pwa-launch-shell__mark {
+  width: var(--pwa-launch-mark);
+  height: auto;
+}
+
+/* The label is a SECOND-THOUGHT affordance, not part of the splash:
+   it fades in only once the boot is slow enough to be worth
+   acknowledging. A fast launch never shows it at all, which keeps the
+   handover from the OS splash a pure continuation — an app name
+   appearing under a tile that was already on screen reads as a flash,
+   not as progress.
+
+   Taken OUT OF FLOW for the same reason. The OS launch screen centres
+   the tile alone; if the label were a flex sibling, the pair would
+   centre as a group and the tile would sit ~20px lower than the image
+   iOS just handed over — a visible jump at the exact moment the whole
+   feature is trying to be invisible. Absolute positioning keeps the
+   mark on the viewport's centre line and hangs the label below it. */
+.pwa-launch-shell__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + (var(--pwa-launch-mark) / 2) + 1.25rem);
+  text-align: center;
+  opacity: 0;
+  animation: pwa-launch-label-in 400ms ease-out 900ms forwards;
+}
+
+@keyframes pwa-launch-label-in {
+  to { opacity: 1; }
+}
+
+/* JS-driven dismissal: static/js/pwa_launch_shell.js adds this class,
+   waits out the transition, then removes the node. pointer-events go
+   first so the map underneath is live the moment the fade starts
+   rather than 300ms later. */
+.pwa-launch-shell--done {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease-out;
+}
+
+/* Failsafe. Everything above depends on a script running; this does
+   not. If pwa_launch_shell.js never parses — a cache serving a
+   truncated file, a JS error earlier in the document — the overlay
+   would otherwise cover the app permanently, turning a cosmetic
+   feature into a total outage for exactly the users who installed it.
+   Ten seconds is past every legitimate boot and well short of a user
+   concluding the app is broken. */
+.pwa-launch-shell {
+  animation: pwa-launch-failsafe 400ms ease-out 10s forwards;
+}
+
+@keyframes pwa-launch-failsafe {
+  to { opacity: 0; visibility: hidden; pointer-events: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No fades — but the failsafe still has to fire, so it becomes an
+     instant switch at the same deadline rather than being disabled. */
+  .pwa-launch-shell__label { animation: none; opacity: 1; }
+  .pwa-launch-shell--done { transition: none; }
+  .pwa-launch-shell { animation: pwa-launch-failsafe 1ms linear 10s forwards; }
 }

@@ -1,0 +1,44 @@
+{% comment %}
+templates/includes/_pwa_splash.html — iOS launch-screen (splash) links.
+
+SNOW-878. Rendered into every public page's <head> by
+{% pwa_splash_links %} (apps/public/templatetags/pwa_splash.py), which
+reads the manifest bin/build-pwa-splash writes beside the PNGs.
+
+WHY THESE ARE HERE AND NOT IN THE WEB APP MANIFEST
+
+Chrome generates the Android splash itself from the manifest's icon,
+background_color and name. iOS reads none of that: with no matching
+apple-touch-startup-image, a home-screen launch paints plain WHITE for
+the whole cold boot — it does not fall back to background_color, which
+is what docs/offline-map.md assumed for the project's whole life.
+
+WHY EVERY PAGE AND NOT JUST /
+
+iOS caches the startup images when the user adds the app to the Home
+Screen, and they can do that from whatever page they happen to be on.
+Emitting them site-wide is the same reasoning that puts the manifest
+link in base.html (SNOW-79): the install affordance has to work from
+anywhere, so everything it depends on has to be everywhere.
+
+The cost of that is 68 <link> tags on every page. They are near-identical
+strings differing in a few digits, which is the best case for gzip/br:
+measured on the home page they are 17.6 KB raw and 906 bytes gzipped,
+against a 24 KB compressed page. None of them is a REQUEST unless iOS
+decides to fetch one.
+
+Emitting them only for iOS user agents would save those 906 bytes and add
+a Vary: User-Agent to every public page, fragmenting a cache the whole
+site currently shares — a far worse trade, and the reason base.html's own
+comments guard against per-request variation this carefully.
+
+WHY NOT THE STAGING ICON DIRECTORY
+
+Unlike the icons (SNOW-399), there is one splash set and production
+artwork is used on every environment — the staging tell is the amber
+home-screen tile and status bar, which is where a tester chooses the
+app. See apps/public/pwa_splash.py.
+{% endcomment %}
+{% for link in splash_links %}
+    <link rel="apple-touch-startup-image" media="{{ link.media }}" href="{{ link.href }}">
+{% endfor %}

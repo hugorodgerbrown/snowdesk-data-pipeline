@@ -50,7 +50,7 @@ site_footer     : the global site footer. Default = the small SLF
 extra_js        : scripts loaded at end of <body>. Used by
                   accounts/ templates to inject HTMX.
 {% endcomment %}
-{% load i18n og_tags static %}
+{% load i18n og_tags pwa_splash static %}
 <!DOCTYPE html>
 <html lang="{{ LANGUAGE_CODE }}">
     <head>
@@ -165,6 +165,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="{{ SITE_NAME_DISPLAY }}">
+        {# SNOW-878: iOS launch screens. Chrome generates the Android splash  #}
+        {# from the manifest; iOS generates nothing and paints WHITE for the  #}
+        {# whole cold boot unless a startup image's media query matches the   #}
+        {# device exactly. It does NOT fall back to the manifest's            #}
+        {# background_color — the assumption this replaces. One link per      #}
+        {# device × orientation × colour scheme, read from the manifest       #}
+        {# bin/build-pwa-splash writes; see includes/_pwa_splash.html for why #}
+        {# they are emitted on every page rather than only on the start_url.  #}
+        {% pwa_splash_links %}
         {% include "includes/theme_head.html" %}
         {# Preload the primary font file so the browser fetches it in parallel   #}
         {# with the stylesheet rather than after CSS parsing discovers it.       #}
@@ -200,6 +209,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
+        {# SNOW-878: PWA launch shell. FIRST in the body on purpose — it is #}
+        {# the surface that covers everything else while the app boots, so #}
+        {# its inline gate has to run before the nav paints. Hidden unless #}
+        {# this load is a cold launch of the installed app; removed by     #}
+        {# static/js/pwa_launch_shell.js when the map (or the page) is     #}
+        {# ready, and by a CSS failsafe if that script never runs.         #}
+        {% include "includes/_pwa_launch_shell.html" %}
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}
@@ -296,6 +312,12 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}
         {# on iOS Safari once engagement threshold is met.                   #}
         <script src="{% static 'js/pwa_install.js' %}" defer></script>
+        {# SNOW-878: dismisses the launch shell above once the map — or, on #}
+        {# a page without one, the page — is ready. Deferred like every     #}
+        {# other PWA script: it cannot affect whether the overlay SHOWS     #}
+        {# (that is settled before first paint by the partial's inline      #}
+        {# gate), only when it goes.                                        #}
+        <script src="{% static 'js/pwa_launch_shell.js' %}" defer></script>
         {% if debug_log_visible %}
             {# SNOW-812: on-device debug trace, gated by the debug_log waffle #}
             {# flag (GRP_DEBUG). Neither the recorder nor the panel reaches   #}

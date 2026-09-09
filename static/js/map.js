@@ -5641,6 +5641,16 @@
   });
 
   map.on('load', async () => {
+    // SNOW-878: the map is on screen — the basemap has painted, which is
+    // the moment the launch shell exists to wait for. Dispatched FIRST,
+    // synchronously, before any of the boot fetches below: everything
+    // after this point refines a map the user can already see, so making
+    // the splash wait for it would hold a full-screen overlay over a
+    // rendered map. Emitted unconditionally on every load, not only under
+    // the PWA — static/js/pwa_launch_shell.js is the only listener today
+    // and it ignores the event unless it is actually covering something.
+    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
+
     // SNOW-235: Fetch only the choropleth-critical payloads at boot.
     // L1/L2/resorts overlay fetches have been removed from this
     // Promise.all — they are off by default and loaded lazily on first
