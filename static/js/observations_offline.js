@@ -138,8 +138,11 @@
       if (!record || typeof record.body !== 'string') return null;
       // A row with no principal at all was written before this partitioning
       // existed, and never matches — the same rule SNOW-493 applies to the
-      // account-specific overlay rows.
-      if ((record.principal ?? null) !== currentPrincipal()) return null;
+      // account-specific overlay rows. The stored side is compared
+      // untouched, exactly as map_overlay_offline_cache.js does it:
+      // normalising an absent key to ``null`` would make such a row match an
+      // anonymous reader, whose own principal is null.
+      if (record?.principal !== currentPrincipal()) return null;
       return record;
     } catch (_e) {
       return null;

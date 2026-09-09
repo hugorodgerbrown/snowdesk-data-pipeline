@@ -227,6 +227,22 @@ describe('read back', () => {
 
     expect(await window.pwaObservationsOffline.read()).toBeNull();
   });
+
+  it('returns null for a row carrying no principal at all', async () => {
+    // A row written before this partitioning existed belongs to nobody, so
+    // it matches nobody — including the anonymous session this harness runs
+    // as, whose own principal is null. Normalising the absent key to null
+    // would hand somebody else's rows to an anonymous reader, which is the
+    // SNOW-493 fault the account-specific overlay rows already avoid by
+    // comparing the stored value untouched.
+    await window.pwaDb.put(STORE, {
+      key: KEY,
+      body: ROWS,
+      cached_at: new Date().toISOString(),
+    });
+
+    expect(await window.pwaObservationsOffline.read()).toBeNull();
+  });
 });
 
 describe('the public surface', () => {
