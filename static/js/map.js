@@ -5192,7 +5192,7 @@
   // snowdesk:favourites-changed above (or dropped there on a permanent
   // failure). Renders at half opacity via the favourites-pin icon-opacity
   // expression.
-  document.addEventListener('snowdesk:favourite-pending', (event) => {
+  document.addEventListener('snowdesk:favourite-pending', async (event) => {
     if (!FAVOURITES_ELIGIBLE) return;
     const detail = (event && event.detail) || {};
     const lat = Number(detail.lat);
@@ -5204,15 +5204,54 @@
       geometry: { type: 'Point', coordinates: [lon, lat] },
       properties: { name: detail.name || '', pending: true },
     };
-    const base =
+    let base =
       favouritesGeojsonCache && Array.isArray(favouritesGeojsonCache.features)
         ? favouritesGeojsonCache.features
         : [];
+
+    // HYDRATE FROM IDB BEFORE INSTALLING, or this handler's install is the
+    // last word on what the layer holds (SNOW-886 review).
+    //
+    // Installing sets ``overlayLoaded.favourites``, and that flag is what
+    // ``ensureOverlayLoaded`` short-circuits on — so once this branch has
+    // run, nothing on the page will ever load the favourites overlay again.
+    // Online that is harmless: the queue drains, snowdesk:favourites-changed
+    // fires above, and the authoritative collection replaces this one a
+    // moment later. OFFLINE there is no drain, and the pins the user
+    // already has are sitting in the overlay cache where only
+    // ``_loadOverlay`` reads them — which is the call that will now never
+    // happen. The map would claim the user's favourites and draw exactly
+    // one: the pin they just dropped.
+    //
+    // Reachable since SNOW-886, which made a create switch the overlay ON.
+    // Before that a user with the layer off saw nothing at all after
+    // saving — the defect that ticket fixed — so this branch installed a
+    // layer nobody looked at, and an incomplete one cost nothing.
+    //
+    // Only when there is nothing in memory AND no source yet: a loaded
+    // overlay owns its own collection (an empty one is a real answer — the
+    // user has no pins), and re-reading the cache over it would be a stale
+    // copy overwriting a fresh one.
+    if (!base.length && !map.getSource('favourites')) {
+      let cached = null;
+      try {
+        cached = await window.pwaMapOverlayCache?.getOverlay('favourites');
+      } catch (err) {
+        // A cache that cannot be read is the same as one that is empty:
+        // the pin the user just dropped still has to appear.
+        cached = null;
+      }
+      if (cached && Array.isArray(cached.features)) base = cached.features;
+    }
+
     favouritesGeojsonCache = {
       type: 'FeatureCollection',
       features: base.concat([feature]),
     };
 
+    // Re-read AFTER the await: an overlay-load racing this one may have
+    // installed the source while the cache read was in flight, and calling
+    // installFavouritesLayer over a live source would add it twice.
     const source = map.getSource('favourites');
     if (source) {
       source.setData(favouritesGeojsonCache);

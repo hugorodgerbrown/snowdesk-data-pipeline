@@ -1,31 +1,34 @@
 /*
- * tests/js/test_map_write_listeners_bind_without_load.js — the three
- * "a panel wrote, repaint the layer" listeners in static/js/map.js bind
- * without waiting for MapLibre's `load` event (SNOW-752).
+ * tests/js/test_map_favourite_pending_hydrates_cache.js — an optimistic pin
+ * dropped offline brings the user's OTHER pins onto the map with it
+ * (SNOW-886 review).
  *
- * Scenario: none — a boot-order property of one module, observed by not
- * firing an event. No browser could show it and no manual script could
- * describe it.
+ * Scenario: none — a one-module ordering property, and one that only shows
+ * itself on a fresh page with no network. No manual script could set it up
+ * reliably and a browser could not tell it from a slow load.
  *
- * `map.on('load')` waits on the first visually complete render. A basemap
- * style that never loads — offline with nothing cached, an unreachable tile
- * origin — means it never fires, and every listener registered inside it is
- * silently never registered at all. That is not hypothetical: it is the same
- * trap docs/decisions and static/js/map_layer_sync_status.js's history
- * already record, and `snowdesk:favourites-changed` sat inside that handler
- * from SNOW-414 until this ticket.
+ * The trap. `snowdesk:favourite-pending` installs the favourites layer when
+ * nothing has installed it yet, and sets ``overlayLoaded.favourites`` when
+ * it does. That flag is exactly what ``ensureOverlayLoaded`` short-circuits
+ * on — so this install is the LAST WORD on what the layer holds for the rest
+ * of the page. Online it does not matter: the mutation queue drains, the
+ * handler above refetches, and the authoritative collection replaces this
+ * one within a moment. Offline there is no drain, and the pins the user
+ * already has are sitting in the overlay cache that only the loader reads.
  *
- * It matters because the LAYERS do not share that dependency. They install
- * from `snowdesk:overlay-load`, at IIFE level, so a map with a failed style
- * could still be drawing a user's pins — and then have no way to notice one
- * being deleted. Pins that cannot be removed is a worse state than pins that
- * never appear.
+ * It became reachable when SNOW-886 made saving a pin switch the overlay ON.
+ * Before that a create left the layer hidden for a user who had it off — the
+ * defect that ticket fixed — so an incomplete install cost nothing because
+ * nobody was looking at it. Now the map turns itself on and would claim to
+ * be showing the user's favourites while drawing exactly one of them.
  *
- * So this suite boots the bundle and deliberately NEVER calls the `load`
- * handlers, then asks each of the three write announcements to do its job.
- * If any of them is moved back inside that handler, the matching test here
- * goes red rather than the behaviour going quietly missing in the one
- * situation nobody tests by hand.
+ * Its own file because the assertion needs a map on which NOTHING has yet
+ * installed the favourites source, and every other suite that boots the
+ * bundle installs one on the way past. Same reason the report-gate suites
+ * are split: the state under test is set once, at boot.
+ *
+ * Booting map.js in jsdom follows test_map_write_listeners_bind_without_load.js,
+ * including its deliberate refusal to fire MapLibre's `load`.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -200,60 +203,22 @@ afterAll(() => {
   delete globalThis.maplibregl;
 });
 
-describe('with MapLibre’s load event never fired', () => {
-  it('the suite really is testing the unloaded case', () => {
-    // Guards the guard: if a later edit makes the bundle fire `load` itself,
-    // or the stub starts reporting a loaded style, every assertion below
-    // would pass for the wrong reason.
-    expect(mapStub.loaded()).toBe(false);
-    expect(mapStub.isStyleLoaded()).toBe(false);
-  });
+describe('an optimistic pin installed before anything has loaded the layer', () => {
+  it('brings the cached pins with it, not just the pending one', async () => {
+    window.pwaMapOverlayCache = {
+      getOverlay: vi.fn(async () => ({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [7.2, 46.0] },
+            properties: { uuid: 'f-1', name: 'Saved earlier' },
+          },
+        ],
+      })),
+      putOverlay: vi.fn(),
+    };
 
-  it('still installs an overlay the user enables', async () => {
-    // The premise of the rest: the LAYER does not need the load handler, so
-    // a map in this state can genuinely be drawing a user's own data.
-    window.pwaRoutesOverlay.show();
-
-    await waitFor(() => mapStub.sources.has('routes'));
-    expect(mapStub.sources.has('routes')).toBe(true);
-  });
-
-  it('refetches routes on snowdesk:routes-changed', async () => {
-    globalThis.fetch.mockClear();
-
-    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
-
-    await waitFor(() => fetched('routes') > 0);
-    expect(fetched('routes')).toBeGreaterThan(0);
-  });
-
-  it('refetches community reports on snowdesk:reports-changed', async () => {
-    window.pwaCommunityReportsOverlay.show();
-    await waitFor(() => mapStub.sources.has('community-reports'));
-    globalThis.fetch.mockClear();
-
-    document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
-
-    await waitFor(() => fetched('community-reports') > 0);
-    expect(fetched('community-reports')).toBeGreaterThan(0);
-  });
-
-  it('refetches favourites on snowdesk:favourites-changed', async () => {
-    // The listener this ticket MOVED. Inside `map.on('load')` — where it
-    // lived from SNOW-414 — this assertion fails: a deleted pin would stay
-    // on a map whose style never loaded, with nothing able to take it off.
-    globalThis.fetch.mockClear();
-
-    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-
-    await waitFor(() => fetched('favourites.geojson') > 0);
-    expect(fetched('favourites.geojson')).toBeGreaterThan(0);
-  });
-
-  it('draws an optimistic pin on snowdesk:favourite-pending', async () => {
-    // Moved with it, and for the same reason: an offline create is exactly
-    // the case where the style is most likely to have failed, and the
-    // pending pin is the only feedback that the tap was captured.
     document.dispatchEvent(
       new CustomEvent('snowdesk:favourite-pending', {
         detail: { lat: 46.1, lon: 7.5, name: 'Queued' },
@@ -261,7 +226,38 @@ describe('with MapLibre’s load event never fired', () => {
     );
 
     await waitFor(() => mapStub.sources.has('favourites'));
-    expect(mapStub.sources.has('favourites')).toBe(true);
+    const { features } = mapStub.sources.get('favourites').data;
+    expect(features.map((f) => f.properties.name)).toEqual([
+      'Saved earlier',
+      'Queued',
+    ]);
+    // Last, and marked: the pending pin draws at half opacity, and the
+    // authoritative one replaces it when the queue drains.
+    expect(features[1].properties.pending).toBe(true);
+    expect(window.pwaMapOverlayCache.getOverlay).toHaveBeenCalledWith('favourites');
   });
 
+  it('reads the cache once, then appends to what it has', async () => {
+    // The hydrate is guarded on the in-memory collection being EMPTY. Once
+    // it holds something, that is the fresher copy and re-reading the cache
+    // over it would put a stale collection on the map — so a second pin in
+    // the same session appends and asks IDB nothing.
+    window.pwaMapOverlayCache.getOverlay.mockClear();
+
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:favourite-pending', {
+        detail: { lat: 46.2, lon: 7.6, name: 'Second' },
+      }),
+    );
+
+    const source = mapStub.sources.get('favourites');
+    await waitFor(() => source.setData.mock.calls.length > 0);
+    const [collection] = source.setData.mock.calls.at(-1);
+    expect(collection.features.map((f) => f.properties.name)).toEqual([
+      'Saved earlier',
+      'Queued',
+      'Second',
+    ]);
+    expect(window.pwaMapOverlayCache.getOverlay).not.toHaveBeenCalled();
+  });
 });
