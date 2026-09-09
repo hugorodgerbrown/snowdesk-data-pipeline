@@ -337,10 +337,15 @@ function activeBasemapSourceDocumentURLs(map) {
  * `assembleBasemapDownloadFeedURLs` below now calls it rather than
  * repeating it.
  *
- * Glyph ranges are deliberately absent — see `missingRenderDependencies`
- * (basemap_download_core.js) and this ticket's decision doc for why
- * promotion, not enumeration, is how an area keeps its labels, and why
- * checking a promoted set would report a permanent unrepairable failure.
+ * SNOW-847: glyph ranges ARE now part of this list, reversing SNOW-844's
+ * exclusion. That exclusion was correct for as long as glyphs arrived by
+ * PROMOTION out of the passive cache (`sw.js`'s `_promoteGlyphs`): a
+ * promoted set is whatever the user's browsing happened to have cached, so
+ * checking it reported a failure no repair could ever clear. Now the
+ * download FETCHES a fixed set (`glyphURLs`), the same list is checkable by
+ * value on both sides, and a missing range is a real, repairable gap —
+ * which is the condition SNOW-844's own exclusion note named as what would
+ * have to change first.
  *
  * @param {object|null} map The live MapLibre map. Reading it is exactly
  *   why this composer stays here rather than moving into
@@ -361,7 +366,93 @@ function activeBasemapRenderDependencyURLs(map) {
   }
   urls.push(...computeBasemapSpriteURLs(map));
   urls.push(...activeBasemapSourceDocumentURLs(map));
+  urls.push(...activeBasemapGlyphURLs(map));
   return urls;
+}
+
+/**
+ * SNOW-847: every glyph URL the active style's labels can need, from the
+ * fixed range set `basemap_download_core.js` documents.
+ *
+ * Here rather than in the core module for the same reason
+ * `activeBasemapRenderDependencyURLs` is: it reads the live map. The
+ * enumeration itself is pure and lives in the core, where
+ * `tests/js/test_basemap_download_core.js` can reach it.
+ *
+ * @param {object|null} map The live MapLibre map.
+ * @returns {string[]} Empty for a map whose style has not settled, or a
+ *   style declaring no `glyphs` template — both read as UNKNOWN by every
+ *   caller, never as "no glyphs needed".
+ */
+function activeBasemapGlyphURLs(map) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !map || typeof map.getStyle !== 'function') return [];
+  return core.glyphURLs(map.getStyle());
+}
+
+/**
+ * SNOW-692: the slope-angle raster URLs covering one download blob.
+ *
+ * The template comes from `#map`'s `data-slope-tile-url`, which the view
+ * renders only while `settings.SLOPE_TILE_URL` is configured — so an
+ * environment with the overlay switched off pins nothing here and the rest
+ * of the download is unaffected. The rectangle and the zoom ceiling come
+ * from `slope_overlay_core.js`, the one definition the live overlay's own
+ * source is built from, so the download cannot request ground or zooms the
+ * map itself would refuse to ask for.
+ *
+ * @param {Object|null} blob The download blob, for its `z` row spans.
+ * @returns {string[]} Empty when the overlay is not configured, its core
+ *   module has not loaded, or the blob carries no ranges.
+ */
+function activeSlopeTileURLs(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const slope = self.pwaSlopeOverlayCore;
+  const mapEl = document.getElementById('map');
+  const template = mapEl ? mapEl.dataset.slopeTileUrl : '';
+  if (!core || !slope || !template) return [];
+  return core.slopeTileURLs(template, blob, slope.COVERAGE_BOUNDS, slope.MAX_ZOOM);
+}
+
+/**
+ * SNOW-692: the slope tiles ONE recorded area should hold, derived from
+ * its record rather than read out of it.
+ *
+ * The slope set is a pure function of ground the record already describes
+ * plus three page-level constants (the template, the raster's rectangle,
+ * its zoom ceiling), so recording ~273 URLs per area would store nothing
+ * the probe cannot recompute — 27.4 KB per area, measured on a
+ * CH-4115-shaped region. Deriving keeps the record the size it was.
+ *
+ * The two area kinds describe their ground differently, which is the only
+ * reason this needs to know which it is holding:
+ *
+ *   - a REGION record carries the run's own `z` row spans, the same shape
+ *     `blobFullyCached` is handed at the tile-probe call sites;
+ *   - a CUSTOM area carries `bbox` + `band` and no `z` at all, because its
+ *     tile set was never server-computed — `buildBlob` is the client-side
+ *     twin that produced it in the first place, so it reproduces it here.
+ *
+ * The consequence of deriving rather than recording, stated because it is
+ * a real behavioural difference: the check asks what TODAY'S code would
+ * fetch, not what that run did. If the raster's rectangle or its template
+ * ever changes, every existing area re-reads against the new set at once.
+ * For a constant quoted from the service's own capabilities document that
+ * is the wanted behaviour — the areas really would be missing tiles — but
+ * it is not the same promise `deps` makes.
+ *
+ * @param {Object|null} record A `basemap.regions` or `basemap.customAreas`
+ *   entry.
+ * @returns {string[]} Empty when the overlay is unconfigured, or the
+ *   record describes no ground this can rebuild — never a partial list.
+ */
+function areaSlopeTileUrls(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !record) return [];
+  if (record.z) return activeSlopeTileURLs({ z: record.z });
+  const band = Array.isArray(record.band) ? record.band : null;
+  if (!record.bbox || !band) return [];
+  return activeSlopeTileURLs(core.buildBlob(record.bbox, band[0], band[1]));
 }
 
 /**
@@ -1743,6 +1834,22 @@ window.pwaBasemapDownloads = Object.freeze({
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
 
   /**
+   * SNOW-692: the slope-angle tiles one recorded area should hold, derived
+   * from its record — see `areaSlopeTileUrls`.
+   *
+   * Unlike `areaRenderDependencyUrls` this takes the WHOLE record, because
+   * a region and a custom area describe their ground with different fields
+   * and the derivation has to read whichever is present. It is also not
+   * subject to the three-row rule: the slope raster is one layer on one
+   * host for every basemap, so a row whose basemap is not on screen can
+   * still be judged.
+   *
+   * @param {Object|null} record
+   * @returns {string[]}
+   */
+  areaSlopeTileUrls: (record) => areaSlopeTileUrls(record),
+
+  /**
    * SNOW-844: refetch `urls` into `areaId`'s pinned bucket — the Manage
    * downloads sheet's Repair control. See `basemap_download_runner.js`'s
    * `repair` for why this is NOT the download path (no eviction, no budget
@@ -2626,6 +2733,9 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  // SNOW-692: takes the blob, because the slope raster covers the same
+  // ground and band as the area's own tiles — see `slopeTileURLs`.
+  slopeUrls: (blob) => activeSlopeTileURLs(blob),
   // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
   // active style, captured at run start alongside `tileSources` so the
   // record stores the list this run actually fetched rather than whatever

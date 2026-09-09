@@ -270,6 +270,14 @@
           // — normalised to `[]` here, which the sheet reads as UNKNOWN
           // rather than as "nothing needed".
           deps: Array.isArray(entry.deps) ? entry.deps : [],
+          // SNOW-692: the run's own tile row spans, carried so the slope
+          // tiles this area should hold can be DERIVED by the probe rather
+          // than recorded on it (~273 URLs, 27.4 KB per region, all of it
+          // recomputable from this). Null on a record written before
+          // SNOW-583, which carried `bbox` and no `z` — the same absence
+          // the roundel's own tile probe already reads as "no record".
+          z: entry.z || null,
+          band: Array.isArray(entry.band) ? entry.band : null,
         });
       }
     } catch (_e) {
@@ -316,6 +324,12 @@
           bbox: custom.bbox,
           // SNOW-844: see the region branch above.
           deps: Array.isArray(custom.deps) ? custom.deps : [],
+          // SNOW-692: see the region branch above. A custom area has no
+          // `z` — its tiles were never server-computed — so the band it
+          // was fetched over travels beside `bbox`, and the probe rebuilds
+          // the blob from the pair through `buildBlob`, the same
+          // client-side twin that produced the tile set in the first place.
+          band: Array.isArray(custom.band) ? custom.band : null,
         });
       }
     } catch (_e) {

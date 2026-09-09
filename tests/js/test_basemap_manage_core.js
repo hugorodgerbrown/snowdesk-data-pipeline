@@ -890,3 +890,53 @@ describe('reconcileAreas without an account list is unchanged (SNOW-749)', () =>
     expect(rows[0].redownloadable).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SNOW-692: the ground a row describes reaches the sheet
+//
+// The slope check derives its URL list from these two fields. If either is
+// dropped anywhere along the chain the derivation returns [], which
+// `missingRenderDependencies` reads as "nothing missing" — so the check
+// silently does nothing and every area keeps reporting complete. That is
+// exactly how an earlier version of this failed review, so it is pinned
+// here rather than left to the surface tests.
+// ---------------------------------------------------------------------------
+
+describe('manageRows carries the ground a slope check derives from', () => {
+  it('keeps a region row z row spans', () => {
+    const rows = core.manageRows(
+      [{ id: 'region-CH-4115', bytes: 1, savedAt: 'x', onDevice: true, z: { 10: { 363: [532, 533] } } }],
+      {},
+    );
+    expect(rows[0].z).toEqual({ 10: { 363: [532, 533] } });
+  });
+
+  it('keeps a custom row its bbox AND its band', () => {
+    // The band is the half that is easy to drop: a custom area has no `z`,
+    // so without it the blob cannot be rebuilt and the row is unjudgeable.
+    const rows = core.manageRows(
+      [
+        {
+          id: 'custom-abc',
+          bytes: 1,
+          savedAt: 'x',
+          onDevice: true,
+          bbox: [7.2, 46.05, 7.35, 46.15],
+          band: [10, 14],
+        },
+      ],
+      {},
+    );
+    expect(rows[0].bbox).toEqual([7.2, 46.05, 7.35, 46.15]);
+    expect(rows[0].band).toEqual([10, 14]);
+  });
+
+  it('normalises a record that carries neither to null, never undefined', () => {
+    // A pre-SNOW-583 record has bbox and no z. Null is the value the
+    // derivation tests for; undefined would read the same here but not in
+    // a record round-tripped through JSON.
+    const rows = core.manageRows([{ id: 'region-CH-1', bytes: 1, savedAt: 'x', onDevice: true }], {});
+    expect(rows[0].z).toBeNull();
+    expect(rows[0].band).toBeNull();
+  });
+});

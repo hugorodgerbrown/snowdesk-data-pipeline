@@ -800,7 +800,12 @@
         // same way `handleClick`'s `beforeWarm` reads it), so the live
         // style can stand in when the record names no dependencies — the
         // second row of the resolution rule in `areaRenderDependencyURLs`.
-        const depURLs = areaRenderDependencyURLs(stored.deps, true);
+        // SNOW-692: plus the slope-angle tiles this area's ground implies,
+        // derived from the record's own `z` rather than recorded on it.
+        const depURLs = [
+          ...areaRenderDependencyURLs(stored.deps, true),
+          ...areaSlopeTileUrls(stored),
+        ];
         // Only asked once the tiles are all present. An area still missing
         // tiles is not downloaded at all, and 'idle' — download it — is
         // the right thing to offer; 'incomplete' would send the user to a
@@ -880,8 +885,13 @@
       // dependencies — but the question is being asked about the ACTIVE
       // basemap's tiles, so the active style's own list is the right one
       // to check (second row of the resolution rule).
+      // SNOW-692: the slope tiles come from the blob just fetched, which is
+      // the same ground the record would have named had there been one.
       const missingDeps = tilesCached
-        ? core.missingRenderDependencies(areaRenderDependencyURLs(null, true), cached)
+        ? core.missingRenderDependencies(
+            [...areaRenderDependencyURLs(null, true), ...activeSlopeTileURLs(blob)],
+            cached,
+          )
         : [];
       return {
         done: tilesCached && missingDeps.length === 0,

@@ -584,6 +584,288 @@
     return areaId === CUSTOM_AREA_ID || (typeof areaId === 'string' && areaId.indexOf('custom-') === 0);
   }
 
+  // SNOW-847: the glyph ranges a download pins, for every fontstack the
+  // style declares. A FIXED set, not one derived from the style or probed
+  // against the host — both alternatives were measured on 2026-09-09 and
+  // neither works:
+  //
+  //   - Derivation from the STYLE is impossible without decoding the
+  //     area's own vector tiles, since a style says which fonts its labels
+  //     use but never which codepoints.
+  //   - Derivation from the HOST is impossible because every one of the
+  //     four basemaps answers HTTP 200 for all 256 ranges. An unpublished
+  //     range is a tiny stub (29-45 bytes; 627 on OpenFreeMap), not a 404,
+  //     so only the BODY SIZE distinguishes "has glyphs" from "has none" —
+  //     and finding that out costs the whole download. OpenFreeMap's
+  //     ``Noto Sans Regular`` is 33.7 MB across the full space (it carries
+  //     CJK), so "fetch what the host publishes" is ~100 MB for that style
+  //     against a 37 MB region download.
+  //
+  // So: the blocks Alpine labels actually draw from, fixed here. Latin-1
+  // through Latin Extended-B and combining diacritics (0-1023), Latin
+  // Extended Additional (7680-7935), and General Punctuation through
+  // Mathematical Operators (8192-8959) — the last of which is what the
+  // 2026-09-08 staging trace caught missing as
+  // ``Frutiger Neue Condensed Regular/8192-8447``: en dashes, primes,
+  // vulgar fractions and arrows are ordinary furniture on a map, and the
+  // ``0-1023`` set this ticket originally proposed would not have fetched
+  // them.
+  //
+  // Measured cost of this set across EVERY fontstack each style declares:
+  // swisstopo 0.81 MB, IGN 1.49 MB, OpenFreeMap 1.83 MB, basemap.at
+  // 2.11 MB. Against a 37 MB region download that is 2-6%. Widening it to
+  // cover Cyrillic, Greek Extended and the geometric-shape blocks was
+  // costed at 4.12 MB worst case and declined: an Alpine region download
+  // renders Latin-script labels, so those bytes buy coverage nothing on
+  // the page asks for.
+  //
+  // A range a style's fonts do not publish still costs one request and the
+  // stub's few dozen bytes. That is the price of not decoding tiles, and
+  // it is paid once per download.
+  var GLYPH_RANGES = Object.freeze([
+    '0-255',
+    '256-511',
+    '512-767',
+    '768-1023',
+    '7680-7935',
+    '8192-8447',
+    '8448-8703',
+    '8704-8959',
+  ]);
+
+  // MapLibre style-expression operators. An array whose head is one of
+  // these is an EXPRESSION, so its head is an operator name and its tail
+  // holds operands — never a fontstack. Used by ``collectFontstacks``
+  // below to tell ``["Frutiger Neue Regular"]`` (a fontstack) from
+  // ``["get", "class"]`` (a property read whose operand is NOT a font).
+  //
+  // Getting this wrong in either direction is silent: too narrow and real
+  // fontstacks are missed, so those labels ship unlabelled offline — the
+  // failure this ticket exists to fix. Too wide and property names are
+  // fetched as if they were fonts, which 404s harmlessly but pollutes the
+  // record's deps with URLs no probe can ever satisfy, so the area reads
+  // ``incomplete`` for good.
+  var STYLE_EXPRESSION_OPS = Object.freeze([
+    'array', 'at', 'boolean', 'case', 'coalesce', 'collator', 'concat', 'downcase',
+    'feature-state', 'format', 'geometry-type', 'get', 'has', 'id', 'image', 'in',
+    'index-of', 'interpolate', 'interpolate-hcl', 'interpolate-lab', 'length', 'let',
+    'literal', 'match', 'number', 'number-format', 'object', 'properties',
+    'resolved-locale', 'slice', 'step', 'string', 'to-boolean', 'to-color',
+    'to-number', 'to-string', 'typeof', 'upcase', 'var', 'zoom',
+    'all', 'any', '!', '==', '!=', '<', '<=', '>', '>=',
+  ]);
+
+  /**
+   * Collect font names out of one ``text-font`` value.
+   *
+   * SNOW-847: ``text-font`` is not always a plain array of names. In the
+   * swisstopo winter style two of the five fontstacks appear ONLY inside a
+   * ``["match", ["get", "class"], …]`` expression, as
+   * ``["literal", ["Frutiger Neue Condensed Medium"]]`` — a scan that reads
+   * only array-valued ``text-font`` misses them, and the towns and lake
+   * elevations they label ship without glyphs.
+   *
+   * The walk is deliberately conservative about what counts as a font:
+   * a ``literal``'s array payload, or a plain all-string array that is not
+   * itself an expression. Anything else is descended into rather than
+   * collected, so operator names and property reads never reach the URL
+   * list.
+   *
+   * @param {*} node A ``text-font`` value or any sub-expression of one.
+   * @param {Set<string>} out Accumulator, mutated in place.
+   * @returns {void}
+   */
+  function collectFontstacks(node, out) {
+    // A BARE string is never a fontstack here. It is a `match` label, or a
+    // `get`'s property name — collecting it is how an earlier version of
+    // this walk returned `class`, `town` and `lake_elevation` alongside the
+    // real fonts. A fontstack is always an ARRAY of names, whether written
+    // literally or wrapped in `["literal", …]`; the one place a bare string
+    // is accepted is a top-level `text-font`, handled by `styleFontstacks`.
+    if (!Array.isArray(node) || node.length === 0) return;
+    var head = node[0];
+    var i;
+    if (head === 'literal') {
+      for (i = 1; i < node.length; i += 1) {
+        var payload = node[i];
+        if (Array.isArray(payload)) {
+          for (var j = 0; j < payload.length; j += 1) {
+            if (typeof payload[j] === 'string') out.add(payload[j]);
+          }
+        } else if (typeof payload === 'string') {
+          out.add(payload);
+        }
+      }
+      return;
+    }
+    if (typeof head === 'string' && STYLE_EXPRESSION_OPS.indexOf(head) !== -1) {
+      for (i = 1; i < node.length; i += 1) collectFontstacks(node[i], out);
+      return;
+    }
+    var allStrings = true;
+    for (i = 0; i < node.length; i += 1) {
+      if (typeof node[i] !== 'string') {
+        allStrings = false;
+        break;
+      }
+    }
+    if (allStrings) {
+      for (i = 0; i < node.length; i += 1) out.add(node[i]);
+      return;
+    }
+    for (i = 0; i < node.length; i += 1) collectFontstacks(node[i], out);
+  }
+
+  /**
+   * Every fontstack a style's layers can ask for, sorted.
+   *
+   * SNOW-847. Sorted so the URL list a run fetches — and therefore the
+   * ``deps`` it records — is stable across runs of the same style, which
+   * is what lets a later probe compare the two by value.
+   *
+   * @param {Object | null | undefined} style A MapLibre style object, as
+   *   ``map.getStyle()`` returns it.
+   * @returns {string[]} Empty for a style with no layers or no labels.
+   */
+  function styleFontstacks(style) {
+    var out = new Set();
+    var layers = style && Array.isArray(style.layers) ? style.layers : [];
+    for (var i = 0; i < layers.length; i += 1) {
+      var layout = layers[i] && layers[i].layout;
+      if (!layout) continue;
+      var textFont = layout['text-font'];
+      if (textFont === undefined || textFont === null) continue;
+      if (typeof textFont === 'string') {
+        // Not valid MapLibre, but a style that ships one would otherwise
+        // lose the font silently. Only accepted at the TOP level — see
+        // `collectFontstacks` for why a bare string inside an expression is
+        // not a font.
+        out.add(textFont);
+        continue;
+      }
+      collectFontstacks(textFont, out);
+    }
+    return Array.from(out).sort();
+  }
+
+  /**
+   * Every glyph URL a download should pin for ``style``.
+   *
+   * SNOW-847: the cross product of the style's declared fontstacks and
+   * ``GLYPH_RANGES``, substituted into the style's own ``glyphs`` template.
+   * Fed into the run's URL list so glyphs are FETCHED by the download
+   * rather than promoted out of the passive cache — see ``GLYPH_RANGES``
+   * for why the range set is fixed, and ``sw.js``'s ``_promoteGlyphs`` for
+   * what promotion still covers.
+   *
+   * The fontstack is percent-encoded, matching what MapLibre requests: the
+   * names carry spaces, and a pinned entry keyed on an unencoded URL is one
+   * nothing will ever look up.
+   *
+   * @param {Object | null | undefined} style A MapLibre style object.
+   * @returns {string[]} Empty when the style declares no ``glyphs``
+   *   template or no fontstacks — both of which mean "nothing to pin",
+   *   never "not yet known".
+   */
+  function glyphURLs(style) {
+    var urls = [];
+    var template = style && typeof style.glyphs === 'string' ? style.glyphs : '';
+    if (!template) return urls;
+    var stacks = styleFontstacks(style);
+    for (var i = 0; i < stacks.length; i += 1) {
+      var encoded = encodeURIComponent(stacks[i]);
+      for (var j = 0; j < GLYPH_RANGES.length; j += 1) {
+        urls.push(template.replace('{fontstack}', encoded).replace('{range}', GLYPH_RANGES[j]));
+      }
+    }
+    return urls;
+  }
+
+  /**
+   * Every slope-angle raster URL a download should pin for ``blob``.
+   *
+   * SNOW-692: the slope overlay shipped with opportunistic offline support
+   * only — its tiles landed in the passive, FIFO-trimmed ``BASEMAP_CACHE``
+   * as they were viewed, so terrain the user looked at online might still
+   * be there offline, and might not. For a layer whose whole purpose is
+   * answering "how steep is that" while standing in front of it with no
+   * signal, that is the wrong end state.
+   *
+   * Same ground and same band as the basemap tiles, so this walks the SAME
+   * server-computed blob rows ``rangesToTileURLs`` does rather than doing
+   * tile maths of its own. Two things make it not simply a second call to
+   * that function:
+   *
+   *   - **The layer's own rectangle.** The raster is a multi-country DEM
+   *     composite clipped to a rectangle that is NOT Switzerland plus a
+   *     buffer (``COVERAGE_BOUNDS``, slope_overlay_core.js). A region
+   *     straddling the edge must DROP the tiles outside it rather than
+   *     fetch them and take the failures into the run's `failed` count,
+   *     which would fail an otherwise complete download.
+   *   - **The layer's own zoom ceiling.** The service answers HTTP 400
+   *     past z17 and its real detail stops at z16, so anything deeper is
+   *     skipped. The download band tops out at z14 today, making this
+   *     headroom rather than a live constraint — it is enforced anyway
+   *     because the two ceilings are independent and nothing else would
+   *     notice if the band moved.
+   *
+   * @param {string} template An XYZ template with ``{z}``/``{x}``/``{y}``.
+   * @param {Object | null | undefined} blob The download blob, for its
+   *   ``z`` row spans.
+   * @param {number[] | null | undefined} bounds ``[west, south, east,
+   *   north]`` the raster covers. Omitted means no clip.
+   * @param {number} maxZoom Deepest zoom to request, inclusive.
+   * @returns {string[]} Empty when the template, blob or rows are missing —
+   *   the run then pins no slope tiles, exactly as before this ticket.
+   */
+  function slopeTileURLs(template, blob, bounds, maxZoom) {
+    var urls = [];
+    if (!template || !blob || !blob.z) return urls;
+    var ceiling = typeof maxZoom === 'number' ? maxZoom : Infinity;
+    var rect = Array.isArray(bounds) && bounds.length === 4 ? bounds : null;
+    var zKeys = Object.keys(blob.z);
+    for (var zi = 0; zi < zKeys.length; zi += 1) {
+      var z = Number(zKeys[zi]);
+      if (!Number.isFinite(z) || z > ceiling) continue;
+      var rows = zoomRows(blob.z[zKeys[zi]]);
+      var yKeys = Object.keys(rows);
+      for (var yi = 0; yi < yKeys.length; yi += 1) {
+        var y = Number(yKeys[yi]);
+        var span = rows[yKeys[yi]];
+        for (var x = span[0]; x <= span[1]; x += 1) {
+          if (rect && !_tileIntersectsBBox(z, x, y, rect)) continue;
+          urls.push(
+            template
+              .replace('{z}', String(z))
+              .replace('{x}', String(x))
+              .replace('{y}', String(y)),
+          );
+        }
+      }
+    }
+    return urls;
+  }
+
+  /**
+   * Whether a tile's ground overlaps ``bbox``.
+   *
+   * SNOW-692. Overlap, not containment: a tile straddling the raster's edge
+   * carries real data on the inside and has to be fetched. Touching edges
+   * count, matching ``coversPoint``'s inclusive rectangle in
+   * slope_overlay_core.js — a tile flush against the boundary is one the
+   * service still answers.
+   *
+   * @param {number} z
+   * @param {number} x
+   * @param {number} y
+   * @param {number[]} bbox ``[west, south, east, north]``.
+   * @returns {boolean}
+   */
+  function _tileIntersectsBBox(z, x, y, bbox) {
+    var tile = tileBounds(z, x, y);
+    return tile[0] <= bbox[2] && tile[2] >= bbox[0] && tile[1] <= bbox[3] && tile[3] >= bbox[1];
+  }
+
   /**
    * The area id for a region download.
    *
@@ -2205,6 +2487,9 @@
     tileGridPlan: tileGridPlan,
     blobFullyCached: blobFullyCached,
     missingRenderDependencies: missingRenderDependencies,
+    styleFontstacks: styleFontstacks,
+    glyphURLs: glyphURLs,
+    slopeTileURLs: slopeTileURLs,
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
@@ -2229,5 +2514,6 @@
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,
     CUSTOM_AREA_ID: CUSTOM_AREA_ID,
+    GLYPH_RANGES: GLYPH_RANGES,
   });
 })();
