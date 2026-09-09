@@ -51,6 +51,7 @@ import logging
 from typing import cast
 from uuid import UUID
 
+import waffle
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -391,6 +392,46 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _attach_three_word_addresses(
+    request: HttpRequest, observations: list[FieldObservation]
+) -> None:
+    """Hang each report's three word address on the instance, for the list.
+
+    **THIS SURFACE ONLY, AND THAT IS A PRIVACY BOUNDARY, NOT AN OMISSION.**
+    ``observation_list`` is scoped by ``for_user``, so a reader here is
+    reading their own reports and a 3m address tells them nothing they did
+    not supply. The map's community overlay is the opposite: it is public,
+    it carries other people's reports, and
+    ``apps.public.api.community_reports_geojson`` exists to anonymise them
+    — rounding coordinates to three decimals (~80-110 m) and never sending
+    the raw field. A three word address names a 3m square, so putting one
+    in that payload would hand back an order of magnitude more precision
+    than the coordinate it sits beside and undo the anonymisation entirely.
+    The address must not reach that endpoint (SNOW-883).
+
+    **THE STORED ADDRESS ONLY, NEVER A CONVERSION**, the same rule the trip
+    list and the favourite card follow: the column is filled out of band,
+    so this is a plain property read and a panel open never blocks on a
+    five-second HTTP timeout.
+
+    Read the flag ONCE for the whole list rather than per row — a
+    percentage-scoped flag is not obliged to answer the same way twice, and
+    a panel showing some rows an address and others none would look broken
+    rather than gated.
+
+    Args:
+        request: The current request, read for the ``what3words`` flag.
+        observations: The reports to annotate, mutated in place.
+
+    """
+    active = waffle.flag_is_active(request, "what3words")
+    for observation in observations:
+        location = observation.location
+        observation.three_word_address = (  # type: ignore[attr-defined]
+            location.three_word_address if active and location is not None else None
+        )
+
+
 @require_htmx
 @require_GET
 def observation_list(request: HttpRequest) -> HttpResponse:
@@ -426,9 +467,12 @@ def observation_list(request: HttpRequest) -> HttpResponse:
 
     # _auth_gate above guarantees an authenticated User; cast narrows for mypy
     # (the same idiom report_submit uses).
-    observations = FieldObservation.objects.for_user(
-        cast(User, request.user)
-    ).select_related("region")
+    observations = list(
+        FieldObservation.objects.for_user(cast(User, request.user)).select_related(
+            "region", "location"
+        )
+    )
+    _attach_three_word_addresses(request, observations)
     return render(
         request,
         "observations/partials/_observation_list.html",

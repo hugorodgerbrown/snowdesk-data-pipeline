@@ -86,6 +86,14 @@ It is filled by the `fill_what3words` management command, which walks
 network for this row, so a second call there is the same shape of cost.
 Every other path leaves the column null and lets the sweep pick it up.
 
+Where it is *rendered* is a narrower question than where it is stored. A
+trip's meeting point, a saved pin's card and a reporter's own observation
+list show it; region centroids and resort points do not, because a 3m
+square for a polygon centroid is precision about an artefact. The map's
+public community overlay does not either, and that one is a privacy
+boundary rather than a taste call — see
+[`an-address-is-owner-only-on-observations`](decisions/an-address-is-owner-only-on-observations.md).
+
 Note the row above says the address is **exact**: a three word address is a
 deterministic encoding of a 3m square, not an approximation and not a name
 anybody chose. The one thing that invalidates it is the pin moving to a

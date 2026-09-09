@@ -40,11 +40,13 @@ from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
 from django.utils import dateformat, timezone
+from waffle.testutils import override_flag
 
 from apps.observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
     FieldObservationFactory,
+    LocationFactory,
     MicroRegionFactory,
     UserFactory,
 )
@@ -997,6 +999,85 @@ class TestReportSubmitRateLimit:
 
         resp = report_submit(request)
         assert resp.status_code == 429
+
+
+@pytest.mark.django_db
+class TestObservationListThreeWordAddress:
+    """A report's three word address on the owner's own list (SNOW-883).
+
+    On its own line beneath "<region> · <age>", and ONLY here. The map's
+    community overlay is public and anonymises what it publishes; the
+    matching guard lives in
+    ``tests/public/test_map_api.py::TestCommunityReportsGeojson``.
+    """
+
+    @override_flag("what3words", active=True)
+    def test_the_address_is_rendered_beneath_the_meta_line(
+        self, client: Client
+    ) -> None:
+        """Both the region and the age survive; the address joins them."""
+        user = _verified_user()
+        client.force_login(user)
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FieldObservationFactory.create(user=user, region=region, location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "///filled.count.soap" in content
+        assert "Martigny-Verbier" in content
+
+    @override_flag("what3words", active=True)
+    def test_no_address_leaves_the_meta_line_exactly_as_it_was(
+        self, client: Client
+    ) -> None:
+        """The row never showed a coordinate, so it gains nothing on failure."""
+        user = _verified_user()
+        client.force_login(user)
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        location = LocationFactory.create(what3words=None)
+        FieldObservationFactory.create(user=user, region=region, location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "observation-w3w" not in content
+        assert "Martigny-Verbier" in content
+
+    def test_the_flag_off_hides_the_address(self, client: Client) -> None:
+        """A stored address is not shown while the feature is gated off."""
+        user = _verified_user()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FieldObservationFactory.create(user=user, location=location)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "filled.count.soap" not in content
+
+    @override_flag("what3words", active=True)
+    def test_a_report_with_no_location_still_renders(self, client: Client) -> None:
+        """Pre-SNOW-704 rows carry no location and must not 500 the panel."""
+        user = _verified_user()
+        client.force_login(user)
+        FieldObservationFactory.create(user=user, location=None)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "observation-w3w" not in response.content.decode()
+
+    @override_flag("what3words", active=True)
+    def test_rendering_the_list_makes_no_outbound_call(self, client: Client) -> None:
+        """A read path, never a conversion — the column is filled out of band."""
+        user = _verified_user()
+        client.force_login(user)
+        location = LocationFactory.create(what3words=None)
+        FieldObservationFactory.create(user=user, location=location)
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            client.get(LIST_URL, **HTMX_HEADERS)
+
+        mock_get.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -7,10 +7,21 @@ includes/_ugc_panel_row.html's `meta_template` slot. Place first, age
 second: the user is looking at a list of their OWN reports on a map, and
 the region is what tells two of them apart.
 
-"<region> · <age>", and nothing else — no "reported" verb. The map's own
-pin popup renders the same two fields in the same order (map.js's
-activateCommunityReport), so one report reads the same whichever way the
-user reaches it.
+"<region> · <age>" on the first line — no "reported" verb — and, since
+SNOW-883, the report's three word address beneath it when there is one.
+
+THE SECOND LINE IS THIS SURFACE ONLY, and the divergence from the map's pin
+popup (map.js's activateCommunityReport) is deliberate rather than an
+oversight. Those two lines used to match exactly, so a report read the same
+whichever way the user reached it, and that symmetry is still worth keeping
+where it can be. It cannot be kept here. This list is scoped by
+``for_user``, so a reader is looking at their own reports; the map overlay
+is public and carries everyone's, which is why
+``apps.public.api.community_reports_geojson`` rounds its coordinates to
+three decimals (~80-110 m) and never sends the raw field. A three word
+address names a 3m square, so putting one in that payload would undo the
+anonymisation that endpoint exists to apply. See
+``apps.observations.views._attach_three_word_addresses``.
 
 The age is relative ("2 hours ago"), not an absolute stamp ("11 Aug 2026,
 05:29") — the reader should not have to do the arithmetic. ``naturaltime``
@@ -33,7 +44,10 @@ assembled from two halves around it — a locale is free to put the age
 before the place, and only a whole-sentence msgid lets it.
 
 Context:
-    observation : FieldObservation — the report this row is for.
+    observation : FieldObservation — the report this row is for. Read for
+                  ``three_word_address``, which the view hangs on the
+                  instance; None when the flag is off, the report has no
+                  location, or no address has resolved yet.
 {% endcomment %}
 {% with age=observation.observed_at|naturaltime iso=observation.observed_at|date:"c" %}
     {% if observation.region %}
@@ -45,5 +59,16 @@ Context:
         {# boundary is accepted with region=None — so the line is the age  #}
         {# alone rather than rendering "unknown".                          #}
         <time datetime="{{ iso }}" data-relative-time>{{ age }}</time>
+    {% endif %}
+    {# Rendered only when there IS an address. This row never showed a
+       coordinate, so the shared partial's coordinate fallback would be
+       adding noise on failure rather than degrading gracefully — the
+       opposite of the trip and favourite cards, where an address replaces
+       a coordinate that was already on the page. #}
+    {% if observation.three_word_address %}
+        <span
+            class="block font-mono text-text-3"
+            data-testid="observation-w3w"
+        >///{{ observation.three_word_address }}</span>
     {% endif %}
 {% endwith %}

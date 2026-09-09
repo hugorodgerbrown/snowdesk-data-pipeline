@@ -60,6 +60,7 @@ from tests.factories import (
     BulletinGroupingFactory,
     FavouriteFactory,
     FieldObservationFactory,
+    LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -2508,6 +2509,42 @@ class TestCommunityReportsGeojson:
         assert feature["properties"]["type"] == "WHUMPFING"
         assert feature["properties"]["type_label"] == "Whumpfing"
         assert feature["properties"]["region_name"] == "Martigny-Verbier"
+
+    def test_no_three_word_address_ever_reaches_the_payload(self) -> None:
+        """THE ANONYMISATION BOUNDARY, made executable (SNOW-883).
+
+        This endpoint is public and carries everyone's reports, which is
+        why it rounds coordinates to three decimals (~80-110 m) and never
+        sends the raw field. A three word address names a 3m SQUARE, so one
+        in this payload would hand back an order of magnitude more
+        precision than the coordinate beside it and undo the anonymisation
+        entirely — while looking, in a diff, like nothing more than the
+        field the reporter's own panel already shows.
+
+        The reporter's own list is where an address belongs
+        (``apps.observations.views._attach_three_word_addresses``); this is
+        where it must not go.
+        """
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FieldObservationFactory.create(
+            location=location,
+            latitude=46.123456,
+            longitude=7.654321,
+            observed_at=timezone.now(),
+        )
+
+        response = Client().get(reverse("api:community_reports_geojson"))
+
+        body = response.content.decode()
+        assert "filled.count.soap" not in body
+        assert "what3words" not in body
+        properties = response.json()["features"][0]["properties"]
+        assert set(properties) == {
+            "type",
+            "type_label",
+            "observed_at",
+            "region_name",
+        }
 
     def test_region_name_is_null_when_region_unset(self) -> None:
         """A report with no resolved region carries region_name: null."""
