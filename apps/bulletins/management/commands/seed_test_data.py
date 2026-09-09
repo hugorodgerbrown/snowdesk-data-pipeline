@@ -31,6 +31,13 @@ normal user — folded in from the former ``seed_dev_users`` command) plus a sma
 standalone set of Locations and one Favourite per Location (all owned by the
 seeded normal dev user).
 
+Every seeded Location carries a FAKE three word address, invented offline by
+``apps.locations.services.what3words.fake_address`` — the same rule as the
+supplied elevations: the seed makes no outbound call. Without it the
+``what3words`` feature is invisible locally, since seeing a real address
+needs a paid plan and an API key. The words name nowhere, which is safe
+here because this command refuses to run when ``DEBUG`` is ``False``.
+
 The same dev user gets one Route and the Trip planned off it (SNOW-834), both
 written through the production services rather than the factories — so the
 route's derived fields come from the real GPX parser and the trip carries the
@@ -1253,6 +1260,14 @@ class Command(BaseCommand):
         for itself. Elevation is supplied here rather than resolved, because
         the seed must not make an Open-Meteo call.
 
+        **The three word address is supplied for the same reason**, and by
+        the same rule: ``fake_address`` invents one offline rather than
+        ``fill_what3words`` asking what3words for it. Seeding it at all
+        matters because the feature is otherwise invisible locally — it
+        needs a paid plan and an API key, so without this a developer
+        switching the ``what3words`` flag on sees five coordinate pairs and
+        no evidence the feature exists.
+
         Args:
             verbosity: Verbosity level.
 
@@ -1260,8 +1275,10 @@ class Command(BaseCommand):
             The created Location instances.
 
         """
+        from apps.locations.services.what3words import fake_address
         from tests.factories import LocationFactory
 
+        now = django_timezone.now()
         locations = [
             LocationFactory.create(
                 name="",
@@ -1269,6 +1286,8 @@ class Command(BaseCommand):
                 latitude=latitude,
                 longitude=longitude,
                 elevation_m=elevation,
+                what3words=fake_address(latitude, longitude),
+                what3words_fetched_at=now,
             )
             for latitude, longitude, elevation in _SEED_LOCATION_COORDS
         ]
@@ -1403,6 +1422,7 @@ class Command(BaseCommand):
             The number of Trip rows created.
 
         """
+        from apps.locations.services.what3words import fake_address
         from apps.trips.services.trips import create_trip
 
         if not routes:  # pragma: no cover — ROUTE is a TRIP prerequisite
@@ -1415,6 +1435,21 @@ class Command(BaseCommand):
             start_time=_SEED_TRIP_START_TIME,
             name=_SEED_TRIP_NAME,
             description=_SEED_TRIP_DESCRIPTION,
+        )
+
+        # ``create_trip`` mints the meeting point with a null address — in
+        # production ``_fill_meeting_address`` converts it on the first page
+        # render, and there is no page render here. Stamped offline, like
+        # the standalone Locations above, so a seeded trip shows its
+        # meeting point as an address rather than as the coordinate pair
+        # that is the fallback for a conversion that has not happened.
+        meeting_point = trip.meeting_point
+        meeting_point.what3words = fake_address(
+            meeting_point.latitude, meeting_point.longitude
+        )
+        meeting_point.what3words_fetched_at = django_timezone.now()
+        meeting_point.save(
+            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
         )
 
         if verbosity >= 2:

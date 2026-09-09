@@ -17,6 +17,10 @@ Contains three functions:
       here rather than in a view because two apps render an address
       (SNOW-882).
 
+  fake_address(latitude, longitude)
+      Invents a deterministic address offline. Local UX work, demos and
+      seed data — never production; the caller owns the guard.
+
 Modelled on ``apps.locations.services.elevation`` — module-level
 ``REQUEST_TIMEOUT``, plain ``requests.get``, a ``base_url`` override so
 tests can point elsewhere — with ONE DELIBERATE DIVERGENCE: nothing here
@@ -43,7 +47,7 @@ UX work rather than a test double: the endpoint is behind a paid plan, so
 without it nobody can see this feature — or review a change to it —
 without buying a subscription first. It requires ``DEBUG`` on top of the
 setting, because a fabricated meeting point reaching a real group would
-send them to a square that does not exist. See ``_fake_address``.
+send them to a square that does not exist. See ``fake_address``.
 
 **Cost and licence.** ``convert-to-3wa`` left the free plan in November
 2024, so it needs a paid plan (Basic, £7.99/mo) — but it is UNMETERED on
@@ -171,7 +175,7 @@ def convert_to_3wa(
 
     """
     if settings.WHAT3WORDS_FAKE and settings.DEBUG:
-        return _fake_address(latitude, longitude)
+        return fake_address(latitude, longitude)
 
     api_key: str = settings.WHAT3WORDS_API_KEY
     if not api_key:
@@ -242,13 +246,21 @@ def convert_to_3wa(
     return words
 
 
-def _fake_address(latitude: float, longitude: float) -> str:
+def fake_address(latitude: float, longitude: float) -> str:
     """Invent a stable three word address for a coordinate.
 
-    LOCAL UX WORK AND DEMOS ONLY. The words are made up and name nowhere;
-    reaching this in production would send a group to a square that does
-    not exist, which is why ``convert_to_3wa`` requires ``DEBUG`` as well
-    as the setting before it calls this.
+    LOCAL UX WORK, DEMOS AND SEED DATA ONLY. The words are made up and name
+    nowhere; reaching this in production would send a group to a square
+    that does not exist.
+
+    **The guard is the caller's, not this function's**, because the two
+    callers guard differently and both are already correct.
+    ``convert_to_3wa`` requires ``DEBUG`` on top of ``WHAT3WORDS_FAKE``
+    before it calls this. ``seed_test_data`` refuses to run at all when
+    ``DEBUG`` is False, so it may call this unconditionally — it is
+    fabricating an entire database, and an invented address is the least
+    invented thing in it. Public rather than underscore-private for that
+    second caller; anything else importing it needs a guard of its own.
 
     It exists because ``convert-to-3wa`` is behind a paid plan, so without
     it nobody can look at this feature — review the layout, exercise the

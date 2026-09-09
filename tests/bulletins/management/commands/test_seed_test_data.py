@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from datetime import date
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -322,6 +323,61 @@ class TestCommit:
             assert favourite.location.pk in seeded_ids
             assert favourite.latitude == favourite.location.latitude
 
+    def test_every_seeded_location_carries_a_fake_address(self) -> None:
+        """SNOW-881: the feature is invisible locally without one.
+
+        Seeing a real three word address needs a paid plan and an API key,
+        so a developer switching the ``what3words`` flag on against a
+        freshly-seeded database would otherwise find five coordinate pairs
+        and no evidence the feature exists.
+        """
+        call_command(
+            "seed_test_data", "--include", "location", commit=True, verbosity=0
+        )
+
+        assert Location.objects.unaddressed().count() == 0
+        for location in Location.objects.all():
+            address = location.three_word_address
+            assert address is not None
+            # Three lowercase words, the shape convert-to-3wa returns —
+            # and no ``///``, which is presentation and belongs to the
+            # template.
+            assert len(address.split(".")) == 3
+            assert not address.startswith("/")
+            assert location.what3words_fetched_at is not None
+
+    def test_the_seeded_addresses_are_stable_and_distinct(self) -> None:
+        """Deterministic per coordinate, so a reseed does not reshuffle them.
+
+        ``fake_address`` hashes the rounded coordinate rather than using
+        the built-in ``hash``, whose string seed is randomised per process
+        — a meeting point that changed words on every restart would be a
+        worse lie than the invented words themselves.
+        """
+        call_command(
+            "seed_test_data", "--include", "location", commit=True, verbosity=0
+        )
+        first = dict(Location.objects.values_list("latitude", "what3words"))
+
+        Location.objects.all().delete()
+        call_command(
+            "seed_test_data", "--include", "location", commit=True, verbosity=0
+        )
+        second = dict(Location.objects.values_list("latitude", "what3words"))
+
+        assert first == second
+        # Distinct places get distinct words, so the five seeded pins are
+        # told apart by their addresses and not only by their coordinates.
+        assert len(set(second.values())) == len(second)
+
+    def test_seeding_makes_no_what3words_call(self) -> None:
+        """Offline, for the reason the elevations are supplied not resolved."""
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            call_command(
+                "seed_test_data", "--include", "location", commit=True, verbosity=0
+            )
+        mock_get.assert_not_called()
+
     def test_reseeding_populated_db_errors_cleanly(self) -> None:
         """Re-seeding a populated DB raises CommandError, not a raw IntegrityError."""
         call_command(
@@ -558,6 +614,22 @@ class TestTripSeeding:
         assert Route.objects.count() == 1
         assert Trip.objects.count() == 1
         assert User.objects.filter(email=NORMAL_USER_EMAIL).exists()
+
+    def test_the_trip_meeting_point_carries_a_fake_address(self) -> None:
+        """``create_trip`` mints it with a null address; the seed stamps it.
+
+        In production ``_fill_meeting_address`` converts it on the first
+        trip-page render, and there is no page render in a seed run — so a
+        seeded trip would show its meeting point as the coordinate pair
+        that is the fallback for a conversion that never happened.
+        """
+        call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
+
+        meeting_point = Trip.objects.get().meeting_point
+        address = meeting_point.three_word_address
+        assert address is not None
+        assert len(address.split(".")) == 3
+        assert meeting_point.what3words_fetched_at is not None
 
     def test_include_route_seeds_no_trip(self) -> None:
         """The dependency runs one way only."""
