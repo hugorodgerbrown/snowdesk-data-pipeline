@@ -8,7 +8,7 @@ _favourite_row_actions.html — which passes nothing, so this receives the
 row's full context and `favourite`, `label` and `row_target` are all in
 scope. This file owns its own <li> markup.
 
-ORDER IS SHARE, RENAME, REMOVE, and it is the routes menu's order with
+ORDER IS SHARE, RENAME, DELETE, and it is the routes menu's order with
 the item that does not apply removed. That menu is Plan a trip, Share,
 Rename, Delete; a saved pin has no route to plan a trip off, so Plan drops
 out and the other three keep their positions. Somebody who has learned one
@@ -31,14 +31,37 @@ JavaScript.
 
 Rendered only when there IS an address. A pin whose location the
 fill_what3words sweep has not reached, or the `what3words` flag off, gets
-a menu of Rename and Remove — never a Share that falls back to the
+a menu of Rename and Delete — never a Share that falls back to the
 coordinate pair, which is the thing the address exists to replace.
 
+IT SAYS "DELETE", AND IT ASKS FIRST (SNOW-886). Both were "Remove" and
+neither asked when SNOW-887 wrote this file, and its note said the routes
+menu's confirm was "its own history, not a convention to import" — which
+was right on the day, a confirmation step being a behaviour change that
+should not ride in on a layout change. SNOW-886 imported it deliberately,
+as its own change, and settled the word with it. The rule: DELETE where
+the underlying record is destroyed, REMOVE where the thing only comes off
+the map and the data survives. favourites:delete destroys the Favourite
+row, so this is a Delete — and the downloads panel's trash stays a Remove,
+because what it takes away is a re-fetchable tile cache and a row that any
+device still holding the area writes back.
+
+The visible label and the aria-label move together, always: WCAG 2.5.3
+(Label in Name) wants the visible text inside the accessible name, so a
+menu reading "Delete" under an accessible name of "Remove Lac de Vaux"
+would break voice control. Changing one alone is the defect, not the
+economy.
+
+The confirmation is `hx-confirm` on the form — an attribute Django
+renders, so it carries the translated string with the pin's name already
+in it, and htmx hands it to window.confirm: the native dialogue, and this
+project's idiom for a destructive action. Nothing bespoke is built for it,
+and a delegated `submit` listener would not work anyway — htmx binds its
+submit handling to the FORM, so a preventDefault() on an ancestor runs
+after the request has already gone.
+
 The Remove form keeps `data-row-remove` (static/js/row_removed.js watches
-for it) and carries NO `hx-confirm`: this row has never had one, and
-adding a confirmation step would be a behaviour change riding in on a
-layout change. The routes menu's Remove has one; that is its own history,
-not a convention to import.
+for it) — the hook's name is the module's, not this control's word.
 
 The destructive item is the one control WITHOUT `hover-affordance` — that
 class paints a background-image gradient, which would sit over the error
@@ -50,11 +73,14 @@ Context:
                  the instance by the view; empty when there is no address
                  or the flag is off).
     label      : str — the row's display name, or "Unnamed pin".
-    row_target : str — CSS selector for the row this Remove empties.
+    row_target : str — CSS selector for the row this Delete empties.
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_confirm %}
+    Delete {{ name }}? You'll need to place the pin again to get it back.
+{% endblocktrans %}
 {% if favourite.w3w_share_text %}
     <li role="none">
         <button
@@ -97,16 +123,17 @@ Context:
         hx-post="{% url 'favourites:delete' favourite.uuid %}"
         hx-target="{{ row_target }}"
         hx-swap="outerHTML"
+        hx-confirm="{{ delete_confirm }}"
     >
         {% csrf_token %}
         <button
             type="submit"
             role="menuitem"
-            aria-label="{{ remove_aria_label }}"
+            aria-label="{{ delete_aria_label }}"
             class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
         >
             {% include "includes/_icon_trash.html" only %}
-            {% trans "Remove" %}
+            {% trans "Delete" %}
         </button>
     </form>
 </li>

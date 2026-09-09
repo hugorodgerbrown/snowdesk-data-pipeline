@@ -228,8 +228,19 @@ because the repository is the authority and the mock is a drawing:
                                     </div>
                                     {% comment %}
                                         SNOW-711: the trash, in the same place and
-                                        the same shape as Remove on every UGC row
+                                        the same shape as Delete on every UGC row
                                         and on the hub's subscription cards.
+
+                                        SNOW-886: the word is "Delete" here, in
+                                        the accessible name and in the dialogue
+                                        together, on the rule that decides it
+                                        everywhere — Delete when the underlying
+                                        record is destroyed, Remove when the thing
+                                        only comes off the map and the data
+                                        survives. Deleting a passkey destroys the
+                                        PasskeyCredential row, and the credential
+                                        on the device it names cannot be re-paired
+                                        without registering again.
 
                                         The aria-label names the passkey, because
                                         the visible text label is what went and a
@@ -245,15 +256,15 @@ because the repository is the authority and the mock is a drawing:
                                         minimum every other row action on the site
                                         is drawn at, and this one deletes a way in.
                                     {% endcomment %}
-                                    {% blocktrans trimmed with name=passkey.display_name asvar remove_aria_label %}
-                                        Remove {{ name }}
+                                    {% blocktrans trimmed with name=passkey.display_name asvar delete_aria_label %}
+                                        Delete {{ name }}
                                     {% endblocktrans %}
                                     <button
                                         hx-post="{% url 'accounts:passkey_delete' passkey_uuid=passkey.uuid %}"
                                         hx-target="closest .passkey-card"
                                         hx-swap="outerHTML"
-                                        hx-confirm='{% trans "Remove this passkey?" %}'
-                                        aria-label="{{ remove_aria_label }}"
+                                        hx-confirm='{% trans "Delete this passkey?" %}'
+                                        aria-label="{{ delete_aria_label }}"
                                         class="{% icon_button_classes variant='destructive' %}"
                                     >
                                         {% include "includes/_icon_trash.html" only %}

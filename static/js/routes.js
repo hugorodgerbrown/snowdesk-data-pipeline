@@ -621,13 +621,60 @@
     return STRINGS['upload-failed'];
   }
 
-  /** POST one chosen file to routes:create and re-read the list.
+  /** Read the new route's bounding box out of route_create's response.
    *
-   * The response body is deliberately DISCARDED. route_create returns the
-   * default variant's row (_route.html), which is the wrong shape for this
-   * panel — the same reason rename re-reads rather than swaps — so the
-   * authoritative list is refetched instead of patching in what we think
-   * was just created.
+   * The response is one rendered row (routes/partials/_route.html), and
+   * since SNOW-886 the view renders it with `map_focus=True`, so the name
+   * control carries `data-row-focus` — four comma-separated ordinates in
+   * [west, south, east, north] order, written through the `focus_target`
+   * tag so a decimal comma can never reach the attribute under a
+   * non-English locale.
+   *
+   * Parsed with DOMParser rather than a regular expression: the row is
+   * HTML we are about to read one attribute from, and a parser cannot be
+   * fooled by the same four numbers appearing in a route's NAME. Nothing
+   * from this document is inserted into the page — `upload()` clones a
+   * local <template> instead — so this is a read, not a swap.
+   *
+   * The numbers themselves go through window.pwaRowFocus.parse, which is
+   * the one place that decides what a valid pair or quad is (an empty
+   * ordinate is not zero, a partial box frames nothing). A route with no
+   * geometry, an older response, or a row_focus module that has not loaded
+   * all resolve to null, and the caller carries on without a camera move.
+   *
+   * @param {string} html route_create's response body.
+   * @returns {?number[]} Four ordinates, or null when there are not four.
+   */
+  function uploadedBounds(html) {
+    if (!html || !window.pwaRowFocus?.parse) return null;
+    let row = null;
+    try {
+      const parsed = new DOMParser().parseFromString(html, 'text/html');
+      row = parsed.querySelector('[data-row-focus]');
+    } catch (err) {
+      return null;
+    }
+    if (!row) return null;
+    return window.pwaRowFocus.parse(row.getAttribute('data-row-focus'));
+  }
+
+  /** POST one chosen file to routes:create, then show what was created.
+   *
+   * The response row is still not SWAPPED in — the authoritative list is
+   * refetched instead of patching in what we think was just created, the
+   * same reason rename re-reads rather than swaps. What SNOW-886 stopped
+   * discarding is the one fact only this response carries: the new route's
+   * bounding box, stamped on the row as `data-row-focus` now that
+   * route_create renders with `map_focus=True`. Reading it out of the text
+   * we already have beats waiting on the list re-read and then guessing
+   * which of its rows is the new one.
+   *
+   * Then, in order: the confirmation card, the announcement, the reveal.
+   * The upload used to render NOTHING — the row landed in a list behind
+   * the panel body and the line appeared on the map only for a user who
+   * had the layer on, so a successful upload looked exactly like a silent
+   * failure. Every step degrades on its own: no bbox still gives the card
+   * and the overlay, no template still announces and reveals.
    *
    * No Content-Type header: passing FormData to fetch lets the browser set
    * `multipart/form-data` WITH its generated boundary. Setting the header
@@ -660,20 +707,71 @@
       .then(function (resp) {
         if (!resp.ok) {
           showToast(uploadFailureMessage(resp.status));
-          return;
+          return null;
         }
         window.pwaTelemetry?.emit('map.route.created', {});
+        return resp.text();
+      })
+      // THE CATCH SITS HERE, between the two steps, and not at the end of
+      // the chain (SNOW-886). It covers the request and reading the reply,
+      // which are the two things that can fail in a way the user needs
+      // telling about — and nothing after them. A trailing catch would also
+      // swallow a throw from the confirmation step below and answer a
+      // SUCCESSFUL upload with "that route couldn't be uploaded", which is
+      // the one thing worse than showing nothing: the route is on the
+      // server and the panel says it is not.
+      .catch(function () {
+        showToast(STRINGS['upload-failed']);
+        return null;
+      })
+      .then(function (html) {
+        // Either failure branch above — a refusal, or a request that never
+        // arrived — has already toasted and returned nothing.
+        if (html === null || html === undefined) return;
+
+        const bounds = uploadedBounds(html);
+
+        // The confirmation card, replacing the panel body — the user's
+        // answer to "did that work". Cloned rather than fetched, the same
+        // shape favourites.js and report.js use for their own creates.
+        const template = document.getElementById('route-confirmation-template');
+        if (template) {
+          sheet.replaceChildren();
+          sheet.appendChild(template.content.cloneNode(true));
+        }
+
         // The map draws the same routes this panel lists, and an upload
         // that only reached the list is the defect this announcement
         // exists for: the overlay's source is already installed for
         // anybody who has the layer switched on, so nothing else would
         // ever put the new line on the map. map.js owns what it costs, and
         // this module's own listener re-reads the rows.
+        //
+        // BEFORE the reveal, not after: the reveal may switch the layer on
+        // for somebody who had it off, and the layer wants the new route in
+        // its source by the time it draws.
         announceRoutesChanged();
+
+        // SNOW-886: switch the routes layer on if the user has it off, then
+        // fit the camera to the track. Same two steps, same order, as
+        // pressing an existing row's name — an upload landing on a map with
+        // the routes layer hidden shows nothing, which reads as an upload
+        // that failed. No close: the card above is this panel's answer and
+        // owns its own Close.
+        window.pwaRowFocus?.reveal({
+          overlay: window.pwaRoutesOverlay,
+          coordinates: bounds,
+        });
       })
-      .catch(function () {
-        showToast(STRINGS['upload-failed']);
-      });
+      // The confirmation step's own catch, and it says NOTHING on purpose.
+      // Everything above it is presentation for an upload that has already
+      // landed: the route is on the server, and a toast reading "that route
+      // couldn't be uploaded" would send the user back to re-upload a file
+      // they already have saved. Swallowing keeps a broken card from
+      // becoming a wrong sentence — and from becoming an unhandled
+      // rejection, which is the other thing a chain with no tail does. The
+      // same defensively-non-fatal idiom favourites.js uses for its enqueue.
+      .catch(function () {});
   }
 
   if (uploadInput) {

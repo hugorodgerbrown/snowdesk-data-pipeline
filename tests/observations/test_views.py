@@ -1240,14 +1240,19 @@ class TestObservationList:
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Whumpfing"' in content
 
-    def test_remove_is_a_trash_control_on_the_row(self, client: Client) -> None:
-        """Remove is a visible icon control, not a menu item (SNOW-658).
+    def test_delete_is_a_trash_control_on_the_row(self, client: Client) -> None:
+        """Delete is a visible icon control, not a menu item (SNOW-658/886).
 
-        Hugo's design has no ellipsis menu on any panel: Remove is one tap,
-        in the same place on all three, and it is the LAST control on the
-        row wherever a user meets it. Still a plain HTMX form — the delete
-        endpoint returns an empty 200 and the form targets this row's own
-        id, so no JS is involved.
+        The panel rule SNOW-886 states is "more than one action is a '…',
+        exactly one is a bare icon", and this row has exactly one — so
+        where the favourite and route rows collapsed behind a trigger,
+        this one stays a control the user aims at directly. Still a plain
+        HTMX form: the delete endpoint returns an empty 200 and the form
+        targets this row's own id, so no JS is involved.
+
+        The word is Delete because observations:delete destroys the
+        FieldObservation row (SNOW-886), and it lands in the accessible
+        name because the trash glyph is all this control says out loud.
         """
         user = _verified_user()
         observation = FieldObservationFactory.create(user=user)
@@ -1259,10 +1264,37 @@ class TestObservationList:
         assert 'role="menu"' not in content
         assert reverse("observations:delete", args=[observation.uuid]) in content
         assert f'hx-target="#observation-{observation.uuid}"' in content
-        # It names the row it acts on: "Remove" alone names nothing with a
+        # It names the row it acts on: "Delete" alone names nothing with a
         # list of reports on screen.
         kind = observation.get_observation_type_display()
-        assert f'aria-label="Remove {kind}"' in content
+        assert f'aria-label="Delete {kind}"' in content
+
+    def test_delete_asks_first_through_hx_confirm_naming_the_report(
+        self, client: Client
+    ) -> None:
+        """One tap used to be the whole interaction (SNOW-886).
+
+        observations:delete is immediate and a field report records what
+        somebody saw at a place and a time they cannot go back to, so the
+        row now raises the native dialogue first. The attribute rather
+        than a listener: htmx binds its submit handling to the FORM, so a
+        delegated ``preventDefault()`` on an ancestor runs after the
+        request is already away — see
+        routes/partials/_route_row_menu_items.html for the day that
+        shipped.
+
+        It names the report by its type because a list of reports is on
+        screen and "this report" names none of them.
+        """
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        kind = observation.get_observation_type_display()
+        assert "hx-confirm=" in content
+        assert f"Delete this {kind} report?" in content
 
     def test_never_lists_another_users_reports(self, client: Client) -> None:
         """The list is owner-scoped — someone else's report is not in it."""

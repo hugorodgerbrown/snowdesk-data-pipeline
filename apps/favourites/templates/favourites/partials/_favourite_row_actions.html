@@ -42,7 +42,19 @@ Context:
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
 {% if favourite.is_region_pin %}
-    {# One control, so no menu — see the header. #}
+    {# One control, so no menu — see the header.                            #}
+    {#                                                                      #}
+    {# AND IT STILL SAYS "REMOVE", where the placed pin's menu item became  #}
+    {# "Delete" in SNOW-886. That rule is Delete where the underlying       #}
+    {# record is destroyed, Remove where the thing only comes off the map   #}
+    {# — and this row's subject is a REGION, which nothing here touches.    #}
+    {# What goes is the user's pin on it, which is the argument             #}
+    {# _region_pin_row_actions.html already made when it took the trash off #}
+    {# these rows in favour of a filled star that unpins (Hugo: "the region #}
+    {# still exists"). That partial is what a region pin actually renders   #}
+    {# since SNOW-814; this branch is the fallback for one reaching the     #}
+    {# favourites list, and it should not be the one place on the site that #}
+    {# calls unpinning a region a deletion.                                 #}
     <form
         data-row-remove
         hx-post="{% url 'favourites:delete' favourite.uuid %}"

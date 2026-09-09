@@ -170,9 +170,16 @@ class TestDeleteAccountControl:
 
 @pytest.mark.django_db
 class TestRemoveControlsAreIconControls:
-    """A passkey is removed the same way as everything else — a trash, named."""
+    """A passkey is deleted the same way as everything else — a trash, named.
 
-    def test_passkey_remove_is_a_trash_naming_its_passkey(self) -> None:
+    SNOW-886 settled the verb across the site: Delete when the underlying
+    record is destroyed, Remove when the thing only comes off the map and
+    the data survives. Deleting a passkey destroys the PasskeyCredential
+    row, so both halves of this control — the accessible name and the
+    dialogue it raises — say Delete.
+    """
+
+    def test_passkey_delete_is_a_trash_naming_its_passkey(self) -> None:
         account = AccountFactory.create()
         passkey = PasskeyCredentialFactory.create(
             user=account.user, name="MacBook passkey"
@@ -180,20 +187,20 @@ class TestRemoveControlsAreIconControls:
 
         html = _client_for(account).get(reverse("accounts:settings")).content.decode()
 
-        assert f'aria-label="Remove {passkey.display_name}"' in html
+        assert f'aria-label="Delete {passkey.display_name}"' in html
         assert (
             reverse("accounts:passkey_delete", kwargs={"passkey_uuid": passkey.uuid})
             in html
         )
 
-    def test_passkey_remove_keeps_its_confirmation(self) -> None:
+    def test_passkey_delete_keeps_its_confirmation(self) -> None:
         """The one guard on an irreversible action that just lost its words."""
         account = AccountFactory.create()
         PasskeyCredentialFactory.create(user=account.user)
 
         html = _client_for(account).get(reverse("accounts:settings")).content.decode()
 
-        assert "Remove this passkey?" in html
+        assert "Delete this passkey?" in html
 
     def test_change_email_is_the_shared_button_partial(self) -> None:
         """Not an icon control: it navigates to a flow, so it keeps its words."""

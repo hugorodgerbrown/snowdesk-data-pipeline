@@ -29,6 +29,16 @@
  *      "it works when I try it" and "it races" look identical. The other
  *      half is the inertness — three of the four panels pass no basemap
  *      attribute at all, and a regression there breaks framing everywhere.
+ *   6. (SNOW-886) `reveal` — the module's second entry point, called by the
+ *      three panels' CREATE handlers rather than by a row press. It takes
+ *      coordinates directly instead of reading an attribute, and it does
+ *      NOT close the panel, because the panel is showing the confirmation
+ *      card the caller has just rendered. The two properties worth pinning
+ *      are the ones a caller cannot see: the overlay goes on BEFORE the
+ *      camera moves (a create that lands on a hidden layer reads as a
+ *      create that failed), and no coordinates is a legitimate case rather
+ *      than a failure — a MANUAL field observation carries none, and that
+ *      create still wants its layer on.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -549,5 +559,100 @@ describe('a row that names its basemap (SNOW-835)', () => {
 
     expect(answer).toBe(true);
     expect(clicked).not.toHaveBeenCalled();
+  });
+});
+
+describe('window.pwaRowFocus.reveal (SNOW-886)', () => {
+  /** @type {{point: Function, bounds: Function, region: Function}} */
+  let focus;
+
+  beforeEach(() => {
+    focus = { point: vi.fn(), bounds: vi.fn(), region: vi.fn() };
+    window.pwaMapFocus = focus;
+  });
+
+  it('flies to a two-ordinate point — a favourite the user just saved', () => {
+    window.pwaRowFocus.reveal({
+      overlay: stubOverlay(true),
+      coordinates: [7.5, 46.1],
+    });
+
+    expect(focus.point).toHaveBeenCalledWith(7.5, 46.1);
+    expect(focus.bounds).not.toHaveBeenCalled();
+  });
+
+  it('fits a four-ordinate bbox — a route the user just uploaded', () => {
+    // The same two shapes a row's own attribute carries, so a caller
+    // holding a parsed `data-row-focus` can hand it straight over.
+    window.pwaRowFocus.reveal({
+      overlay: stubOverlay(true),
+      coordinates: [6.1, 45.9, 6.3, 46.1],
+    });
+
+    expect(focus.bounds).toHaveBeenCalledWith([6.1, 45.9, 6.3, 46.1]);
+    expect(focus.point).not.toHaveBeenCalled();
+  });
+
+  it('switches a disabled overlay on BEFORE the camera moves', () => {
+    // The order is the whole point, exactly as it is for a row press:
+    // arriving at a coordinate the layer is not drawing looks like an
+    // empty map rather than a hidden layer, and this is the create path,
+    // where "nothing happened" reads as "my save failed".
+    const order = [];
+    const overlay = {
+      isEnabled: () => false,
+      show: vi.fn(() => order.push('overlay')),
+    };
+    focus.point = vi.fn(() => order.push('camera'));
+
+    window.pwaRowFocus.reveal({ overlay: overlay, coordinates: [7.5, 46.1] });
+
+    expect(order).toEqual(['overlay', 'camera']);
+  });
+
+  it('leaves an overlay the user already has on alone', () => {
+    // isEnabled(), the persisted preference — not isVisible(). show() on
+    // an already-enabled overlay is a no-op in map.js, but calling it
+    // anyway would mean this module could not tell the two states apart.
+    const overlay = stubOverlay(true);
+
+    window.pwaRowFocus.reveal({ overlay: overlay, coordinates: [7.5, 46.1] });
+
+    expect(overlay.show).not.toHaveBeenCalled();
+    expect(focus.point).toHaveBeenCalled();
+  });
+
+  it('switches the overlay on but moves nothing with no coordinates', () => {
+    // The MANUAL field observation: report_submit accepted it without a
+    // lat/lon, so there is nowhere to fly — and flying to NaN would take
+    // the map somewhere the user never asked for. The layer still goes on.
+    const overlay = stubOverlay(false);
+
+    window.pwaRowFocus.reveal({ overlay: overlay });
+
+    expect(overlay.show).toHaveBeenCalled();
+    expect(focus.point).not.toHaveBeenCalled();
+    expect(focus.bounds).not.toHaveBeenCalled();
+  });
+
+  it('is inert with no map bundle, and still switches the overlay on', () => {
+    // map.js runs later in the document than this module, so the bridge is
+    // read lazily and may genuinely not be there. The overlay preference
+    // is persisted either way, so it will paint once a map exists.
+    delete window.pwaMapFocus;
+    const overlay = stubOverlay(false);
+
+    expect(() =>
+      window.pwaRowFocus.reveal({ overlay: overlay, coordinates: [7.5, 46.1] }),
+    ).not.toThrow();
+    expect(overlay.show).toHaveBeenCalled();
+  });
+
+  it('survives a call with no overlay and no coordinates at all', () => {
+    // Every argument is optional on purpose: a caller with nothing to
+    // offer should be a no-op, not a thrown error inside a submit handler
+    // that has already enqueued the user's write.
+    expect(() => window.pwaRowFocus.reveal({})).not.toThrow();
+    expect(() => window.pwaRowFocus.reveal()).not.toThrow();
   });
 });

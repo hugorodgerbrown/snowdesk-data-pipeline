@@ -26,7 +26,16 @@
  *   - a failed list load says so. This panel opens offline and its list does
  *     not load offline, and falling through to the server partial's own
  *     "You have no saved favourites yet." would be a wrong statement about
- *     the user's own data.
+ *     the user's own data;
+ *
+ *   - SNOW-886: saving a pin SHOWS it. The create rendered a confirmation
+ *     card and stopped there — the favourites layer stayed off if that is
+ *     how the user had it, so the new pin (and the optimistic marker the
+ *     same handler dispatches) landed on a map drawing no favourites at
+ *     all, which reads as a save that failed. The overlay goes on and the
+ *     camera moves, the same two steps pressing an existing row takes,
+ *     with the ORDER asserted because only the order can be got wrong
+ *     silently.
  *
  * `IS_ELIGIBLE` is captured once when the IIFE runs, so the anonymous branch
  * needs its own file (test_favourites_panel_anonymous.js) — the same
@@ -67,6 +76,12 @@ document.body.innerHTML = `
       <input type="hidden" name="lat">
       <input type="hidden" name="lon">
     </form>
+  </template>
+  <template id="favourite-confirmation-template">
+    <div>
+      <p>Pin saved!</p>
+      <p data-favourite-pending hidden>Saved — will sync when you're back online.</p>
+    </div>
   </template>
 `;
 
@@ -394,5 +409,104 @@ describe('the sheet-level bridge (SNOW-803)', () => {
     expect(sheet.querySelector('[data-favourites-rows]')).not.toBeNull();
     window.pwaFavouritesSheet.close();
     expect(window.pwaFavouritesSheet.isOpen()).toBe(false);
+  });
+});
+
+describe('saving a pin shows it on the map (SNOW-886)', () => {
+  /** @type {{point: Function, bounds: Function}} */
+  let focus;
+
+  /**
+   * Submit the create form the surface partial renders, exactly as the
+   * Save button does — the handler is delegated from `document` and reads
+   * the form's own fields, so a real submit event is the whole gesture.
+   *
+   * @param {?string} lat The form's latitude, or '' for an unplaced pin.
+   * @param {?string} lon The form's longitude.
+   * @returns {void}
+   */
+  function saveFavourite(lat, lon) {
+    sheet.innerHTML = `
+      <form id="favourite-create-form">
+        <input type="hidden" name="csrfmiddlewaretoken" value="tok">
+        <input type="hidden" name="lat" value="${lat}">
+        <input type="hidden" name="lon" value="${lon}">
+        <input type="text" name="name" value="Col des Gentianes">
+      </form>`;
+    sheet.querySelector('#favourite-create-form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+  }
+
+  beforeEach(() => {
+    // The queue's own behaviour is tests/js/test_mutation_queue.js's; what
+    // matters here is that the create gets past it to the two moves below.
+    window.pwaMutationQueue = { enqueue: vi.fn(() => Promise.resolve()) };
+    window.pwaDb = { isResetRequired: () => false };
+    window.pwaTelemetry = { emit: vi.fn() };
+    focus = { point: vi.fn(), bounds: vi.fn() };
+    window.pwaMapFocus = focus;
+  });
+
+  afterEach(() => {
+    delete window.pwaMutationQueue;
+    delete window.pwaDb;
+    delete window.pwaTelemetry;
+    delete window.pwaMapFocus;
+  });
+
+  it('flies to the pin it just saved', () => {
+    saveFavourite('46.1', '7.2');
+
+    // [lon, lat] — the map's order, not the form's.
+    expect(focus.point).toHaveBeenCalledWith(7.2, 46.1);
+  });
+
+  it('switches the favourites layer on when the user has it off', () => {
+    overlay.isEnabled = vi.fn(() => false);
+
+    saveFavourite('46.1', '7.2');
+
+    expect(overlay.show).toHaveBeenCalled();
+  });
+
+  it('leaves the layer alone when it is already on', () => {
+    // isEnabled(), the persisted preference — the same distinction the
+    // panel's own switch reads.
+    saveFavourite('46.1', '7.2');
+
+    expect(overlay.show).not.toHaveBeenCalled();
+    expect(focus.point).toHaveBeenCalled();
+  });
+
+  it('switches the layer on before it moves the camera', () => {
+    // Arriving first and enabling second would show the user an empty map
+    // and then paint the pin into it, which is the flicker the row-press
+    // path was written to avoid.
+    const order = [];
+    overlay.isEnabled = vi.fn(() => false);
+    overlay.show = vi.fn(() => order.push('overlay'));
+    focus.point = vi.fn(() => order.push('camera'));
+
+    saveFavourite('46.1', '7.2');
+
+    expect(order).toEqual(['overlay', 'camera']);
+  });
+
+  it('moves nothing when the form carries no usable coordinate', () => {
+    // The same !isNaN guard the optimistic marker is drawn behind: a
+    // coordinate too broken to draw a marker at is too broken to fly to,
+    // and NaN would take the camera somewhere arbitrary.
+    saveFavourite('', '');
+
+    expect(focus.point).not.toHaveBeenCalled();
+  });
+
+  it('still renders the confirmation card', () => {
+    // The card is the panel's answer to "did that work" and is why the
+    // reveal deliberately does NOT close the sheet.
+    saveFavourite('46.1', '7.2');
+
+    expect(sheet.textContent).toContain('Pin saved!');
   });
 });

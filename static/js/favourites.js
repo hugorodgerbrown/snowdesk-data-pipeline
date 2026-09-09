@@ -792,6 +792,27 @@
       }
     }
 
+    // SNOW-886: show the pin the user has just saved, the same way pressing
+    // an existing row shows one — switch the favourites layer on if they
+    // have it off, then put the camera on the coordinate. Saving a pin onto
+    // a map that draws nothing reads as a save that failed, and the optimistic
+    // marker dispatched above is drawn by the very layer that may be hidden.
+    //
+    // The same lat/lon already parsed for snowdesk:favourite-pending, and
+    // guarded by the same !isNaN test: a coordinate good enough to draw a
+    // marker at is good enough to fly to, and one that is not must not move
+    // the camera to NaN.
+    //
+    // No close, unlike a row press — the confirmation card cloned above is
+    // this panel's answer to "did that work", so it stays and owns its own
+    // Close.
+    if (!isNaN(lat) && !isNaN(lon)) {
+      window.pwaRowFocus?.reveal({
+        overlay: window.pwaFavouritesOverlay,
+        coordinates: [lon, lat],
+      });
+    }
+
     window.PlacePicker?.deactivate();
   });
 
@@ -896,6 +917,25 @@
         offline: !networkInUse(),
         resort: true,
       });
+
+      // SNOW-886: THE OVERLAY ONLY, and this is the stated exception to the
+      // one create experience the other three creates now share.
+      //
+      // No card: the create-form flow renders its confirmation into the
+      // favourites sheet, and this star is in a resort popup on the map with
+      // no sheet open to render into — the popup closes a line below, which
+      // is this path's own acknowledgement.
+      //
+      // No pan: the resort the user has just tapped is what the camera is
+      // already framing, so moving to it would be a jump to where the map
+      // already is. The dropped-pin flow pans because that save is made from
+      // a panel, which can be open anywhere.
+      //
+      // Switching the layer on is the real defect here, and it is the same
+      // one everywhere: the optimistic marker dispatched above is drawn by
+      // the favourites layer, so with that layer off the star was pressed,
+      // the popup closed and nothing appeared.
+      window.pwaRowFocus?.reveal({ overlay: window.pwaFavouritesOverlay });
 
       // The popup's own star state can't be trusted fresh (no uuid yet —
       // the create is queued, possibly offline) — close it rather than

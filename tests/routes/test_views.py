@@ -701,17 +701,21 @@ class TestRouteRowOverflowMenu:
         assert 'aria-label="Plan a trip using Haute Route"' in body
         assert 'aria-label="Share Haute Route"' in body
         assert 'aria-label="Rename Haute Route"' in body
-        assert 'aria-label="Remove Haute Route"' in body
+        assert 'aria-label="Delete Haute Route"' in body
 
-    def test_the_removes_visible_label_matches_its_accessible_name(
+    def test_the_deletes_visible_label_matches_its_accessible_name(
         self, client: Client
     ) -> None:
-        """WCAG 2.5.3 — the design's "Delete" would break voice control.
+        """WCAG 2.5.3 — the pair moves together, so it moved together.
 
-        The control's accessible name is the translated "Remove <name>"
-        every other panel's trash carries, so the visible label has to be
-        "Remove" and not the handover's "Delete": a speech user saying
-        "click Delete" would find nothing to press.
+        This test guarded the pairing in the other direction until
+        SNOW-886: the item said "Remove" because the accessible name
+        already did, and a visible "Delete" over an accessible "Remove
+        <name>" would leave a speech user saying "click Delete" with
+        nothing to press. That constraint is unchanged; what changed is
+        which word both halves carry. Hugo's rule decides it —
+        routes:delete destroys the Route row and its uploaded geometry,
+        so it is a Delete — and the aria-label moved in the same edit.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -721,8 +725,9 @@ class TestRouteRowOverflowMenu:
         items = re.findall(r"role=\"menuitem\"(.*?)</(?:button|a)>", body, re.S)
         labels = [re.sub(r"<[^>]+>", "", item).split()[-1] for item in items]
 
-        assert labels[-1] == "Remove"
-        assert "Delete" not in body
+        assert labels[-1] == "Delete"
+        assert 'aria-label="Delete Haute Route"' in body
+        assert "Remove" not in body
 
     def test_sharing_disabled_drops_only_the_share_item(self) -> None:
         """A surface with no handler wired for Share draws no Share item.
@@ -746,10 +751,10 @@ class TestRouteRowOverflowMenu:
         assert "data-overflow-trigger" in body
         assert body.count('role="menuitem"') == 3
 
-    def test_remove_asks_first_through_hx_confirm_naming_the_route(
+    def test_delete_asks_first_through_hx_confirm_naming_the_route(
         self, client: Client
     ) -> None:
-        """Remove carries an ``hx-confirm`` that names the route.
+        """Delete carries an ``hx-confirm`` that names the route.
 
         Behind a menu a mis-tap is likelier than it was on a 44x44 trash
         a user aimed at, and route_delete is immediate — the route is gone
@@ -777,7 +782,7 @@ class TestRouteRowOverflowMenu:
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
         assert "hx-confirm=" in body
-        assert "Remove Haute Route?" in body
+        assert "Delete Haute Route?" in body
 
     def test_the_pending_rows_claim_never_asks_for_confirmation(
         self, client: Client
@@ -833,6 +838,53 @@ class TestRouteListFocus:
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
         assert 'data-row-focus="7.400000,46.100000,7.420000,46.120000"' in body
+
+    def test_the_created_row_carries_the_new_routes_bbox(self, client: Client) -> None:
+        """route_create renders with ``map_focus=True`` too (SNOW-886).
+
+        The map sheet is the only surface this response reaches since
+        SNOW-803, so a row without the attribute would be a row whose name
+        frames nothing — and static/js/routes.js reads the bbox straight
+        out of THIS response to fit the camera to the track just
+        uploaded, rather than racing a re-read of the list and then
+        guessing which of its rows is the new one.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.post(CREATE_URL, {"file": _upload()}, **HTMX_HEADERS)
+
+        route = Route.objects.get(user=user)
+        west, south, east, north = route.bounds
+        assert (
+            f'data-row-focus="{west:f},{south:f},{east:f},{north:f}"'
+            in response.content.decode()
+        )
+
+    def test_the_renamed_row_still_carries_the_bbox(self, client: Client) -> None:
+        """route_rename renders with ``map_focus=True`` as well (SNOW-886).
+
+        Its response replaces the row in place — ``hx-swap="outerHTML"`` on
+        the row's own id — so whatever it renders IS the row from then until
+        the next full list read. Without the flag a rename would quietly
+        turn the name back into an inert span, and the row a user had just
+        named would be the one row on the panel that no longer frames its
+        own track. The three renderers of this partial therefore pass the
+        same flag: there is one surface left, so there is one shape.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user, name="Haute Route")
+
+        response = client.post(
+            _rename_url(route.uuid), {"name": "Verbier skin track"}, **HTMX_HEADERS
+        )
+
+        west, south, east, north = route.bounds
+        assert (
+            f'data-row-focus="{west:f},{south:f},{east:f},{north:f}"'
+            in response.content.decode()
+        )
 
     def test_the_map_rows_name_is_a_real_button(self, client: Client) -> None:
         """A `<button>`, not a clickable `<span>`.

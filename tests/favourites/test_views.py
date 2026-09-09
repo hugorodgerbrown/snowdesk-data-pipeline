@@ -1799,7 +1799,7 @@ class TestFavouriteList:
 
         mock_get.assert_not_called()
 
-    def test_map_variant_collapses_rename_and_remove_into_a_menu(
+    def test_map_variant_collapses_rename_and_delete_into_a_menu(
         self, client: Client
     ) -> None:
         """Two controls, so a "…" rather than two icons (SNOW-887).
@@ -1807,7 +1807,8 @@ class TestFavouriteList:
         In a restricted area one CTA is a bare icon and two or more
         collapse. This row carried two before Share existed, so it was
         already over that line — see docs/design-system.md. Trash stays
-        last inside the menu, as on every list.
+        last inside the menu, as on every list, and says Delete since
+        SNOW-886 — favourites:delete destroys the Favourite row.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1816,16 +1817,16 @@ class TestFavouriteList:
         response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
-        assert 'role="menu"' in content
+        assert content.count('role="menu"') == 1
         rename = content.index(f'data-favourite-rename="{favourite.uuid}"')
-        remove = content.index(_delete_url(favourite.uuid))
-        assert rename < remove
+        delete = content.index(_delete_url(favourite.uuid))
+        assert rename < delete
         # Each names the row it acts on — "Rename" alone names nothing
         # with a list of pins on screen — and so does the trigger, which
         # is a bare glyph.
         assert 'aria-label="Rename Mine"' in content
         assert 'aria-label="Actions for Mine"' in content
-        assert 'aria-label="Remove Mine"' in content
+        assert 'aria-label="Delete Mine"' in content
 
     def test_map_variant_empty_state(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy in the sheet."""
@@ -1858,6 +1859,192 @@ class TestFavouriteList:
         client.force_login(user)
         response = client.get(LIST_URL)
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# The favourite row's overflow menu — SNOW-886
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteRowOverflowMenu:
+    """One "…" trigger, two items behind it (SNOW-886).
+
+    Modelled on tests/routes/test_views.py's TestRouteRowOverflowMenu,
+    because this is the same move for the same reason: the route row went
+    behind a trigger in SNOW-830 and the downloads row was already there,
+    so a pin row still drawing a visible pencil beside a visible trash was
+    the one panel making a user relearn the anatomy.
+
+    What is asserted here is the SERVER's whole share of that: the
+    trigger's ARIA wiring, that both controls moved INTO the menu rather
+    than disappearing, that each keeps the exact hook its delegated reader
+    resolves by, and that the destructive one asks first. The menu's
+    behaviour — where it is placed, what closes it — is
+    static/js/overflow_menu.js's and is covered in
+    tests/js/test_overflow_menu.js.
+    """
+
+    def test_the_row_renders_one_trigger_naming_the_pin(self, client: Client) -> None:
+        """The trigger names the row: "More actions" alone names nothing."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Lac de Vaux")
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count("data-overflow-trigger") == 1
+        assert 'aria-label="Actions for Lac de Vaux"' in body
+        assert 'aria-haspopup="menu"' in body
+        assert f'aria-controls="favourite-actions-menu-{favourite.uuid}"' in body
+        assert f'id="favourite-actions-menu-{favourite.uuid}"' in body
+
+    def test_an_unnamed_pin_still_names_its_trigger(self, client: Client) -> None:
+        """The label comes from the shared row, so the fallback rides with it.
+
+        ``label`` is includes/_ugc_panel_row.html's own parameter and is
+        already "Unnamed pin" by the time this partial sees it — reading
+        ``favourite.name`` here instead would give a screen reader
+        "Actions for ".
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="")
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'aria-label="Actions for Unnamed pin"' in body
+
+    def test_the_trigger_and_menu_ids_are_per_row(self, client: Client) -> None:
+        """``aria-controls`` has to name ONE element, and a panel lists many.
+
+        The ids are keyed on the favourite's uuid. overflow_menu.js itself
+        never reads them — it is scoped by ``closest()`` — so this is an
+        assertion about ARIA correctness, not about the script.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        first = FavouriteFactory.create(user=user)
+        second = FavouriteFactory.create(user=user)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f'id="favourite-actions-{first.uuid}"' in body
+        assert f'id="favourite-actions-{second.uuid}"' in body
+
+    def test_both_controls_keep_the_hook_their_reader_resolves_by(
+        self, client: Client
+    ) -> None:
+        """The move is invisible to all three delegated modules.
+
+        inline_rename.js, row_rename_commit.js and row_removed.js each
+        resolve by upward ``closest()`` or a row-scoped ``querySelector``,
+        never by depth or sibling position. A hook renamed or dropped here
+        breaks a click that still LOOKS wired, which is why each is
+        asserted by name.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-row-rename" in body
+        assert f'data-favourite-rename="{favourite.uuid}"' in body
+        assert "data-row-remove" in body
+        assert _delete_url(favourite.uuid) in body
+
+    def test_the_items_are_menuitems_inside_the_role_menu(self, client: Client) -> None:
+        """Each item carries the role — a wrapping ``<li>`` cannot.
+
+        Two of them for a pin with no address: Rename and Delete. The rule
+        that would separate them belongs to the Share block above
+        (SNOW-887) and is absent with Share, so a menu of two is two items
+        and nothing else — no separator sitting under the last one, where
+        it would group nothing.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count('role="menu"') == 1
+        assert body.count('role="menuitem"') == 2
+        assert '<li aria-hidden="true"' not in body
+
+    @override_flag("what3words", active=True)
+    def test_the_separator_arrives_with_share_and_takes_no_role(
+        self, client: Client
+    ) -> None:
+        """Three items and one rule, which is ``aria-hidden`` (SNOW-887).
+
+        It divides "do something with this pin" from "change or destroy
+        it", exactly as the routes menu's does. Taking a role of its own
+        would make it a stop between Share and Rename for anyone moving
+        through the menu with a keyboard or a screen reader.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        location = LocationFactory.create(what3words="filled.count.soap")
+        FavouriteFactory.create(user=user, location=location)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count('role="menuitem"') == 3
+        assert '<li aria-hidden="true"' in body
+
+    def test_the_deletes_visible_label_matches_its_accessible_name(
+        self, client: Client
+    ) -> None:
+        """WCAG 2.5.3 — the pair moves together or voice control breaks.
+
+        The visible label has to appear in the accessible name, so
+        "Delete" on the item and "Delete <name>" on the aria-label are one
+        decision. Hugo's rule is what picks the verb: favourites:delete
+        destroys the Favourite row, so this is a Delete and not the
+        downloads panel's Remove.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Lac de Vaux")
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        items = re.findall(r"role=\"menuitem\"(.*?)</(?:button|a)>", body, re.S)
+        labels = [re.sub(r"<[^>]+>", "", item).split()[-1] for item in items]
+
+        assert labels[-1] == "Delete"
+        assert 'aria-label="Delete Lac de Vaux"' in body
+        assert "Remove" not in body
+
+    def test_delete_asks_first_through_hx_confirm_naming_the_pin(
+        self, client: Client
+    ) -> None:
+        """Delete carries an ``hx-confirm`` that names the pin.
+
+        Behind a menu a mis-tap is likelier than it was on a 44x44 trash a
+        user aimed at, and favourite_delete is immediate — the only way
+        back is finding the spot on the map again, which the copy says.
+
+        The attribute rather than a listener, for the reason
+        routes/partials/_route_row_menu_items.html records at length: htmx
+        binds its submit handling to the FORM, so a delegated
+        ``preventDefault()`` on the sheet runs after the request is
+        already away. ``hx-confirm`` has no ordering to get wrong, and
+        Django renders it, so it carries the translated string.
+
+        It names the pin because the menu that was open is closed by the
+        time the dialogue is on screen, so "this pin" would leave the user
+        guessing which one they are about to lose.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Lac de Vaux")
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "hx-confirm=" in body
+        assert "Delete Lac de Vaux?" in body
 
 
 # ---------------------------------------------------------------------------

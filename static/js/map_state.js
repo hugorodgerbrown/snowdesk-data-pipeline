@@ -384,7 +384,7 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'route-save': 'Save route',
   'route-save-signin': 'Sign in to save this route',
   'route-save-failed': "That couldn't be saved. Try again.",
-  'route-save-limit': "You've reached your saved-route limit. Remove one to save this.",
+  'route-save-limit': "You've reached your saved-route limit. Delete one to save this.",
   // SNOW-691: the Terrain row's disable reason — the viewport centre has
   // left the slope raster's declared coverage rectangle, so there is
   // nothing for the layer to draw here. One string, not two: the row is
