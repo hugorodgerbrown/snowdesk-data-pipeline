@@ -137,13 +137,10 @@ Context expected:
 {# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
 {# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
 {# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —   #}
-{# deferred scripts run in document order, so window.pwaShare exists by the  #}
-{# time that module's own top level runs. Loaded from here rather than       #}
-{# home.html for the same reason routes.js is: it is this surface's          #}
-{# dependency, not the map bundle's. static/js/map.js also reads it, for     #}
-{# the shared-route popup's Save, and reaches it from a click handler that   #}
-{# runs long after every deferred script on the page has executed.           #}
-<script defer src="{% static 'js/share.js' %}"></script>
+{# SNOW-887 moved share.js to home.html: the favourites panel became its    #}
+{# second consumer on this page, and a second tag here would run the module #}
+{# twice — browsers do not deduplicate script elements by URL. Same move,   #}
+{# same reason, as SNOW-867 made for overflow_menu.js.                      #}
 {# SNOW-830: the row's "…" menu. Loaded here rather than from home.html    #}
 {# for the same reason share.js and routes.js are — the route row is its   #}
 {# only caller, so it is this surface's dependency and no other page needs #}

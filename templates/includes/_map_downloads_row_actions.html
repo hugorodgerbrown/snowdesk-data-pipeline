@@ -5,13 +5,16 @@ downloads" row's icon controls (SNOW-658).
 
 includes/_ugc_panel_row.html's `actions_template` slot.
 
-THE RULE, as of 2026-09-07 and for every panel: **more than one action is
-a "…"; exactly one action is a bare icon.** SNOW-658 ruled the opposite
-(a visible trash on every row, one tap not two) and SNOW-830 narrowed it
-for the routes row alone; Hugo reversed it. So this row now renders both
-shapes and buildRow keeps whichever the row has earned — the bare trash
-for a region, the bare download for an account-only row, the menu for
-anything with two things to offer.
+THE RULE, for every panel: **two or more actions is a "…"; exactly one is
+a bare icon.** SNOW-658 ruled the opposite (a visible trash on every row,
+one tap not two) and SNOW-830 narrowed it for the routes row alone; Hugo
+reversed it, and this file was where it was first written down. It now
+lives in docs/design-system.md's interaction principles — go there for the
+statement and the reasoning; what follows is only how this row applies it.
+
+So this row renders both shapes and buildRow keeps whichever the row has
+earned — the bare trash for a region, the bare download for an
+account-only row, the menu for anything with two things to offer.
 
 The items themselves are in public/partials/_map_downloads_row_menu_items.html.
 

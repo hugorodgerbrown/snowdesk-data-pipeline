@@ -1,0 +1,112 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_favourite_row_menu_items.html — the items inside a
+saved pin's "…" menu (SNOW-887).
+
+includes/_overflow_menu.html's `items_template` slot, reached from
+_favourite_row_actions.html — which passes nothing, so this receives the
+row's full context and `favourite`, `label` and `row_target` are all in
+scope. This file owns its own <li> markup.
+
+ORDER IS SHARE, RENAME, REMOVE, and it is the routes menu's order with
+the item that does not apply removed. That menu is Plan a trip, Share,
+Rename, Delete; a saved pin has no route to plan a trip off, so Plan drops
+out and the other three keep their positions. Somebody who has learned one
+menu can use this one without reading it — see docs/design-system.md's
+interaction principles. Trash last, as on every list in the product.
+
+WHY A MENU AND NOT THREE ICONS. In a restricted area — a map overlay, a
+sheet, a panel row — one CTA is a bare icon and two or more collapse into
+a "…". This row carried two before Share existed, so it was already over
+that line; templates/includes/_map_downloads_row_actions.html is where the
+rule was first written down.
+
+SHARE HANDS OVER "<name> - <link>", not the bare three words and not a
+Snowdesk URL. The link is what3words' own short host, which is the form
+their app puts in its own share text, so what a Snowdesk user sends looks
+like what the what3words app would have sent. The text is composed
+SERVER-SIDE (apps/favourites/views.py) and carried on the button, so the
+name is escaped by Django's autoescaping rather than assembled in
+JavaScript.
+
+Rendered only when there IS an address. A pin whose location the
+fill_what3words sweep has not reached, or the `what3words` flag off, gets
+a menu of Rename and Remove — never a Share that falls back to the
+coordinate pair, which is the thing the address exists to replace.
+
+The Remove form keeps `data-row-remove` (static/js/row_removed.js watches
+for it) and carries NO `hx-confirm`: this row has never had one, and
+adding a confirmation step would be a behaviour change riding in on a
+layout change. The routes menu's Remove has one; that is its own history,
+not a convention to import.
+
+The destructive item is the one control WITHOUT `hover-affordance` — that
+class paints a background-image gradient, which would sit over the error
+fill.
+
+Context:
+    favourite  : Favourite — the saved pin this row describes. Read for
+                 the uuid, `is_region_pin`, and `w3w_share_text` (hung on
+                 the instance by the view; empty when there is no address
+                 or the flag is off).
+    label      : str — the row's display name, or "Unnamed pin".
+    row_target : str — CSS selector for the row this Remove empties.
+{% endcomment %}
+{% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% if favourite.w3w_share_text %}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-favourite-share="{{ favourite.uuid }}"
+            data-favourite-share-text="{{ favourite.w3w_share_text }}"
+            aria-label="{{ share_aria_label }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_share.html" only %}
+            {% trans "Share" %}
+        </button>
+    </li>
+    {# The rule between "do something with it" and "manage it", as on the #}
+    {# routes menu. Inert, and hidden from assistive tech: it is a visual #}
+    {# grouping, not an item.                                            #}
+    <li aria-hidden="true" class="my-1 border-t border-border"></li>
+{% endif %}
+{# SNOW-802: a region pin has no name of the user's own — its label is the #}
+{# region's — so there is nothing to rename.                               #}
+{% if not favourite.is_region_pin %}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-row-rename
+            data-favourite-rename="{{ favourite.uuid }}"
+            aria-label="{{ rename_aria_label }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_pencil.html" only %}
+            {% trans "Rename" %}
+        </button>
+    </li>
+{% endif %}
+<li role="none">
+    <form
+        data-row-remove
+        hx-post="{% url 'favourites:delete' favourite.uuid %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            role="menuitem"
+            aria-label="{{ remove_aria_label }}"
+            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+        >
+            {% include "includes/_icon_trash.html" only %}
+            {% trans "Remove" %}
+        </button>
+    </form>
+</li>
