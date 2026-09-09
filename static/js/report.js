@@ -335,6 +335,31 @@
       }
     }
 
+    // SNOW-886: show the report the user has just filed, the same way
+    // pressing an existing row shows one — the community-reports layer on if
+    // they have it off, then the camera on the coordinate. Filing a report
+    // onto a map that draws no reports reads as a submission that went
+    // nowhere.
+    //
+    // The coordinates come off the URLSearchParams built above rather than
+    // being re-read from the form, because that is the body actually being
+    // enqueued: whatever the place-picker last wrote is in it, and reading
+    // the DOM again could disagree with what was sent.
+    //
+    // NO COORDINATES IS A REAL CASE, not a failure. A MANUAL report filed
+    // before the place-picker's first onChange has written anything carries
+    // no lat/lon, and report_submit is what decides whether that is
+    // acceptable — so the overlay still goes on (the layer is what the next
+    // report will need) and the camera stays where it is rather than flying
+    // to NaN.
+    const submittedLat = parseFloat(params.get('lat'));
+    const submittedLon = parseFloat(params.get('lon'));
+    const placed = !isNaN(submittedLat) && !isNaN(submittedLon);
+    window.pwaRowFocus?.reveal({
+      overlay: window.pwaCommunityReportsOverlay,
+      coordinates: placed ? [submittedLon, submittedLat] : null,
+    });
+
     window.PlacePicker?.deactivate();
   });
 

@@ -287,6 +287,15 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
 def route_create(request: HttpRequest) -> HttpResponse:
     """Ingest an uploaded GPX file and return the route-row partial.
 
+    The row is rendered with ``map_focus=True`` (SNOW-886), which is what
+    stamps ``data-row-focus`` with the route's bbox. ``route_list``
+    hardcodes the same thing for every row it renders, and for the same
+    reason: since SNOW-803 the map sheet is the ONLY surface either
+    response reaches, so a row without the attribute is a row whose name
+    frames nothing. static/js/routes.js reads the bbox straight back out
+    of this response to fit the camera to the track that was just
+    uploaded, rather than racing a re-read of the list for it.
+
     Validates the request in cheapest-first order — auth, rate limit,
     presence, size, then parse — so an oversized or absent file never
     reaches the XML parser.
@@ -358,7 +367,9 @@ def route_create(request: HttpRequest) -> HttpResponse:
         logger.info("Route create blocked: user=%s hit the cap", request.user.pk)
         return render(request, "routes/partials/_route_limit.html", {}, status=409)
 
-    return render(request, "routes/partials/_route.html", {"route": route})
+    return render(
+        request, "routes/partials/_route.html", {"route": route, "map_focus": True}
+    )
 
 
 @require_htmx
@@ -395,7 +406,9 @@ def route_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
     # explicitly listed (auto_now is applied in Python, not by the DB).
     route.save(update_fields=["name", "updated_at"])
 
-    return render(request, "routes/partials/_route.html", {"route": route})
+    return render(
+        request, "routes/partials/_route.html", {"route": route, "map_focus": True}
+    )
 
 
 @require_htmx

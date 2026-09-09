@@ -8,6 +8,24 @@
  * in the same shape and for the same reason: three panels, one behaviour,
  * one owner.
  *
+ * TWO ENTRY POINTS SINCE SNOW-886, and they are the two moments a user
+ * has a particular saved thing in mind:
+ *
+ *   `handleClick` — a row press. The full sequence below: overlay, close
+ *     the panel, camera.
+ *   `reveal` — an item that has just been CREATED, called by
+ *     static/js/favourites.js, report.js and routes.js from their submit
+ *     handlers. Same overlay-then-camera order, no close: the panel is
+ *     showing the confirmation card the caller has just rendered, and
+ *     that card is the answer to "did that work".
+ *
+ * The second exists because all three creates had the first step's defect
+ * and none had its fix — a pin saved with the favourites layer switched
+ * off landed on a map drawing nothing, which reads as a create that
+ * failed rather than as a hidden layer. That is the same misreading this
+ * module's step 1 was written to prevent for a row press, so it is fixed
+ * in the same place rather than three times over in the three panels.
+ *
  * Three steps, and the ORDER of them is the whole module:
  *
  *   1. TURN THE OVERLAY ON. Flying to a route with the routes layer
@@ -234,6 +252,30 @@
   }
 
   /**
+   * Switch a panel's overlay on, if the user has it off.
+   *
+   * Its own function since SNOW-886 because there are now two callers —
+   * a row press and a just-created item — and the answer must not differ
+   * between them. It is the same call the panel's "Display on the map"
+   * switch makes, so the preference persists and the lazy load runs.
+   *
+   * isEnabled(), the persisted preference — NOT isVisible(), which is
+   * what MapLibre is drawing. An overlay enabled offline with nothing
+   * cached reads enabled and paints nothing, and calling show() again for
+   * it would neither draw anything nor be what the user asked for.
+   *
+   * @param {?object} overlay A panel's own window.pwa*Overlay bridge, or
+   *   nothing — a caller with no overlay to offer passes none, and every
+   *   bridge is read defensively because map.js may not have booted.
+   * @returns {void}
+   */
+  function enable(overlay) {
+    if (overlay && overlay.isEnabled && !overlay.isEnabled() && overlay.show) {
+      overlay.show();
+    }
+  }
+
+  /**
    * Handle a click that may be a row asking to be framed on the map.
    *
    * Shaped like window.pwaRowRenameCommit.handleClick, and answering the
@@ -274,14 +316,7 @@
     // silently dropped rather than passed on.
     if (!coordinates && !regionId) return true;
 
-    var overlay = options && options.overlay;
-    // isEnabled(), the persisted preference — not isVisible(), which is
-    // what MapLibre is drawing. An overlay enabled offline with nothing
-    // cached reads enabled and paints nothing, and calling show() again
-    // for it would neither draw anything nor be what the user asked for.
-    if (overlay && overlay.isEnabled && !overlay.isEnabled() && overlay.show) {
-      overlay.show();
-    }
+    enable(options && options.overlay);
 
     if (options && options.close) options.close();
 
@@ -313,8 +348,57 @@
     return true;
   }
 
+  /**
+   * Show an item that has JUST BEEN CREATED (SNOW-886).
+   *
+   * The second entry point, and the same two steps in the same order as a
+   * row press: the overlay first, the camera second. What it leaves out is
+   * the close — the panel is showing the confirmation card that its caller
+   * has just rendered, which is the whole answer to "did that work", so
+   * dismissing it would take the answer away with it. The caller's own
+   * card owns the close.
+   *
+   * The defect this fixes is the overlay, not the camera. Saving a pin
+   * with the favourites layer switched off dropped it onto a map that
+   * draws nothing, so the create appeared to fail — the same reading a
+   * row press produced before this module existed. Somebody who saves a
+   * place means to see it.
+   *
+   * window.pwaMapFocus is read HERE rather than at module scope: map.js
+   * runs later in the document than these modules, so a reference taken
+   * at parse time would be undefined for the life of the page. Every
+   * existing consumer reads it the same way, and a call with no map
+   * bundle switches the overlay on (which is persisted, and will paint
+   * when a map does exist) and moves nothing.
+   *
+   * @param {{
+   *   overlay: ?object,
+   *   coordinates: ?number[],
+   * }} options
+   *   `overlay` is the creating panel's own window.pwa*Overlay bridge.
+   *   `coordinates` is two ordinates ([lon, lat]) or four ([west, south,
+   *   east, north]) — the same two forms `parse` returns, so a caller
+   *   holding a row's `data-row-focus` can hand it straight over. Absent
+   *   is a legitimate case and not a failure: a MANUAL field observation
+   *   carries no coordinate at all, and that create still wants its layer
+   *   switched on.
+   * @returns {void}
+   */
+  function reveal(options) {
+    enable(options && options.overlay);
+
+    var coordinates = options && options.coordinates;
+    if (!coordinates) return;
+
+    var focus = window.pwaMapFocus;
+    if (!focus) return;
+
+    frame(focus, coordinates, null);
+  }
+
   window.pwaRowFocus = Object.freeze({
     handleClick: handleClick,
     parse: parse,
+    reveal: reveal,
   });
 })();

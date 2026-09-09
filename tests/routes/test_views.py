@@ -839,6 +839,28 @@ class TestRouteListFocus:
 
         assert 'data-row-focus="7.400000,46.100000,7.420000,46.120000"' in body
 
+    def test_the_created_row_carries_the_new_routes_bbox(self, client: Client) -> None:
+        """route_create renders with ``map_focus=True`` too (SNOW-886).
+
+        The map sheet is the only surface this response reaches since
+        SNOW-803, so a row without the attribute would be a row whose name
+        frames nothing — and static/js/routes.js reads the bbox straight
+        out of THIS response to fit the camera to the track just
+        uploaded, rather than racing a re-read of the list and then
+        guessing which of its rows is the new one.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.post(CREATE_URL, {"file": _upload()}, **HTMX_HEADERS)
+
+        route = Route.objects.get(user=user)
+        west, south, east, north = route.bounds
+        assert (
+            f'data-row-focus="{west:f},{south:f},{east:f},{north:f}"'
+            in response.content.decode()
+        )
+
     def test_the_map_rows_name_is_a_real_button(self, client: Client) -> None:
         """A `<button>`, not a clickable `<span>`.
 

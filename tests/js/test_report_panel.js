@@ -11,6 +11,13 @@
  * it, and mirrors tests/js/test_favourites_panel.js, which is the same
  * treatment applied to the other roundel in the same ticket.
  *
+ * SNOW-886 adds the create's own share of the same behaviour: filing a
+ * report switches the community-reports layer on and puts the camera on
+ * it, the two steps pressing an existing row already took. The case worth
+ * the extra test is the one a browser click cannot easily reach — a MANUAL
+ * report carries NO coordinates, and that create must still switch the
+ * layer on while moving nothing, rather than flying the map to NaN.
+ *
  * `IS_ELIGIBLE` is captured once when the IIFE runs, so the two ineligible
  * states keep their own files (test_report_gate_anonymous.js,
  * test_report_gate_unverified.js).
@@ -343,5 +350,99 @@ describe('the sheet-level bridge (SNOW-803)', () => {
     expect(rows()).not.toBeNull();
     window.pwaReportSheet.close();
     expect(window.pwaReportSheet.isOpen()).toBe(false);
+  });
+});
+
+describe('filing a report shows it on the map (SNOW-886)', () => {
+  /**
+   * Submit the report form, exactly as a problem button does.
+   *
+   * The submitter carries the observation type — FormData does not capture
+   * a submit button's value once the default submission is prevented, so
+   * report.js sets it explicitly and this fixture has to press a real one.
+   *
+   * @param {?string} lat The form's latitude, or '' for a MANUAL report
+   *   filed before the place-picker wrote one.
+   * @param {?string} lon The form's longitude.
+   * @returns {void}
+   */
+  function fileReport(lat, lon) {
+    sheet.innerHTML = `
+      <form id="report-form" action="/partials/report/submit/">
+        <input type="hidden" name="csrfmiddlewaretoken" value="tok">
+        <input type="hidden" name="observed_at">
+        <input type="hidden" name="lat" value="${lat}">
+        <input type="hidden" name="lon" value="${lon}">
+        <button type="submit" name="observation_type" value="WHUMPFING">Whumpfing</button>
+      </form>
+      <template id="report-confirmation-template">
+        <div><p>Report filed!</p></div>
+      </template>`;
+    const form = sheet.querySelector('#report-form');
+    const submitter = form.querySelector('button[type="submit"]');
+    const event = new Event('submit', { bubbles: true, cancelable: true });
+    // jsdom does not populate `submitter` on a synthetic submit, and the
+    // handler toasts without one — this is the tap it stands in for.
+    Object.defineProperty(event, 'submitter', { value: submitter });
+    form.dispatchEvent(event);
+  }
+
+  beforeEach(() => {
+    window.pwaMutationQueue = { enqueue: vi.fn(() => Promise.resolve()) };
+    window.pwaDb = { isResetRequired: () => false };
+    window.pwaTelemetry = { emit: vi.fn() };
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+  });
+
+  afterEach(() => {
+    delete window.pwaMutationQueue;
+    delete window.pwaDb;
+    delete window.pwaTelemetry;
+    delete window.pwaMapFocus;
+  });
+
+  it('flies to the report it just filed', () => {
+    fileReport('46.1', '7.2');
+
+    // [lon, lat] — the map's order, not the form's.
+    expect(window.pwaMapFocus.point).toHaveBeenCalledWith(7.2, 46.1);
+  });
+
+  it('switches the community-reports layer on', () => {
+    // isEnabled() is stubbed false in this file's own beforeEach, which is
+    // this overlay's default — so this is the common case, not an edge:
+    // the report landed on a map drawing no reports at all.
+    fileReport('46.1', '7.2');
+
+    expect(overlay.show).toHaveBeenCalled();
+  });
+
+  it('switches the layer on before it moves the camera', () => {
+    const order = [];
+    overlay.show = vi.fn(() => order.push('overlay'));
+    window.pwaMapFocus.point = vi.fn(() => order.push('camera'));
+
+    fileReport('46.1', '7.2');
+
+    expect(order).toEqual(['overlay', 'camera']);
+  });
+
+  it('switches the layer on but moves nothing for a report with no coordinates', () => {
+    // A MANUAL report filed before the place-picker's first onChange has
+    // written anything. report_submit is what decides whether that is
+    // acceptable; what this module must not do is fly the camera to NaN.
+    fileReport('', '');
+
+    expect(overlay.show).toHaveBeenCalled();
+    expect(window.pwaMapFocus.point).not.toHaveBeenCalled();
+    expect(window.pwaMapFocus.bounds).not.toHaveBeenCalled();
+  });
+
+  it('still renders the confirmation card', () => {
+    // The card is the panel's answer to "did that work", and is why the
+    // reveal deliberately does not close the sheet.
+    fileReport('46.1', '7.2');
+
+    expect(sheet.textContent).toContain('Report filed!');
   });
 });

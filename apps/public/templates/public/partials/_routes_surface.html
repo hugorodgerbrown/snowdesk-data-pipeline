@@ -24,7 +24,7 @@ a sign-in prompt underneath it rather than the prompt instead of it.
 Five shared modules are loaded once each by home.html before this partial
 — none is repeated here:
 
-  htmx.min.js       the panel's row list and each row's Remove form.
+  htmx.min.js       the panel's row list and each row's Delete form.
   map_sheet.js      the sheet controller, failure toast and overlay
                     registration this surface shares with the other three.
   inline_rename.js  routes.js drives window.pwaInlineRename for the row's
@@ -83,7 +83,7 @@ Context expected:
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}
-{# routes:list at ?variant=map. Each row arrives with its Remove form       #}
+{# routes:list at ?variant=map. Each row arrives with its Delete form       #}
 {# already wired, so this file needs no copy of it; rename is the one       #}
 {# action that needs JS — the row's pencil opens the inline editor the row  #}
 {# already carries, and routes.js posts what it commits.                    #}
@@ -109,6 +109,47 @@ Context expected:
     {# routes.js delegates on; the LABEL is fixed inside _ugc_panel.html,  #}
     {# not passed, so it cannot be restated per panel.                      #}
     {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" %}
+</template>
+{# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}
+{# by routes.js the instant route_create answers 200, modelled on           #}
+{# _favourites_surface.html's #favourite-confirmation-template and on       #}
+{# observations/partials/_report_confirmation.html. The upload rendered     #}
+{# NOTHING until this ticket: the row appeared in a list the user could not #}
+{# see (routes.js re-reads the list behind the panel body) and the map      #}
+{# drew the line only if they had the layer on, so a successful upload was  #}
+{# indistinguishable from one that silently failed.                         #}
+{#                                                                          #}
+{# NO "will sync when you're back online" LINE, and that is the one         #}
+{# deliberate difference from the favourites card. A GPX upload is          #}
+{# ONLINE-ONLY — it posts straight to routes:create rather than through     #}
+{# window.pwaMutationQueue, because the queue persists JSON bodies in       #}
+{# IndexedDB and a multipart file is a different shape (see this file's own #}
+{# header). routes.js refuses the upload outright when offline, with the    #}
+{# "upload-offline" string below, so there is no offline branch for this    #}
+{# card to have — and a reassurance about syncing would be a promise this   #}
+{# surface cannot keep.                                                     #}
+{#                                                                          #}
+{# `data-action="dismiss"` on Close, matching the other two confirmations:  #}
+{# static/js/overlays.js closes the sheet on it, so this template needs no  #}
+{# handler of its own.                                                      #}
+<template id="route-confirmation-template">
+    {# `min-h-0 flex-1 overflow-y-auto` — the sheet is scroll_body=True, so #}
+    {# every body rendered into it owns its own scroll region rather than   #}
+    {# overflowing the bounded sheet.                                       #}
+    <div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
+        <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
+        <p class="text-base font-medium text-text-1">{% trans "Route saved!" %}</p>
+        <p class="text-sm text-text-2">
+            {% trans "Your route has been added to the map." %}
+        </p>
+        <button
+            type="button"
+            data-action="dismiss"
+            class="rounded-tag border border-text-3/30 px-4 py-2 text-sm font-medium text-text-2 transition-colors hover:border-text-2 hover:text-text-1"
+        >
+            {% trans "Close" %}
+        </button>
+    </div>
 </template>
 {# The file picker. OUTSIDE the sheet, and outside the panel template, on   #}
 {# purpose: the sheet's body is re-cloned on every open, and an <input      #}
@@ -144,12 +185,13 @@ Context expected:
 {# the shared-route popup's Save, and reaches it from a click handler that   #}
 {# runs long after every deferred script on the page has executed.           #}
 <script defer src="{% static 'js/share.js' %}"></script>
-{# SNOW-830: the row's "…" menu. Loaded here rather than from home.html    #}
-{# for the same reason share.js and routes.js are — the route row is its   #}
-{# only caller, so it is this surface's dependency and no other page needs #}
-{# it. Order does not matter for THIS one: it publishes no global and      #}
-{# routes.js never reads it. It self-wires delegated document listeners at #}
-{# parse time and finds every menu by attribute, including the ones HTMX   #}
+{# The row's "…" menu is NOT loaded here. SNOW-830 loaded overflow_menu.js #}
+{# from this partial, as this surface's own dependency; SNOW-867 moved the #}
+{# tag to home.html once the downloads panel wanted one too, and SNOW-886  #}
+{# made it three panels. A second tag here would run the module twice —    #}
+{# browsers do not deduplicate script elements by URL — and it needs no    #}
+{# ordering against routes.js in any case: it publishes no global, nothing #}
+{# reads it, and it finds every menu by attribute at click time.           #}
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -184,7 +226,7 @@ Context expected:
     {# "link copied" would contradict them. See static/js/share.js.         #}
     <span data-string="share-copied">{% trans "Link copied." %}</span>
     <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-    {# SNOW-830's Remove confirm is NOT here. It is `hx-confirm` on the     #}
+    {# SNOW-830's Delete confirm is NOT here. It is `hx-confirm` on the     #}
     {# form itself (routes/partials/_route_row_menu_items.html) — the       #}
     {# string is rendered into the attribute by Django, so it needs no      #}
     {# runtime lookup and no entry in this template.                        #}

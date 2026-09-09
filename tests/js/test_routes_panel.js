@@ -29,11 +29,21 @@
  *   - the add CTA is DELEGATED on the sheet, because the body is re-cloned on
  *     every open — a per-element listener would be bound to an element the
  *     next open throws away;
- *   - SNOW-830: Remove is one item inside the row's "…" menu now, so it
- *     asks first — a delegated `submit` confirm rather than `hx-confirm`,
- *     because the message is translated and names the row. The same
- *     block proves Share and Rename still resolve from inside a menu,
- *     which is the premise the markup change rests on;
+ *   - SNOW-830: Delete is one item inside the row's "…" menu now, so it
+ *     asks first. The dialogue itself is `hx-confirm` on the form and is
+ *     asserted server-side (tests/routes/test_views.py) — the delegated
+ *     `submit` listener it replaced could not work, htmx binding its own
+ *     submit handling to the form. What this file's block proves is that
+ *     Share and Rename still resolve from inside a menu, which is the
+ *     premise the markup change rests on;
+ *
+ *   - SNOW-886: a successful upload SAYS SO. It used to render nothing at
+ *     all — the row landed in a list behind the panel body and the line
+ *     reached the map only for a user who already had the routes layer
+ *     switched on, so success and silent failure looked identical. The
+ *     three moves are the confirmation card, the overlay, and the camera
+ *     fitted to the bbox read out of route_create's own response; each is
+ *     asserted separately because each has to degrade on its own.
  *
  *   - a failed list load says so. This panel opens offline and its list does
  *     not load offline, and falling through to the server partial's own "You
@@ -83,6 +93,12 @@ document.body.innerHTML = `
           data-route-list-url="${LIST_URL}"
           data-route-rename-url-template="/routes/partials/__UUID__/rename/"></button>
   <div id="route-sheet" hidden></div>
+  <template id="route-confirmation-template">
+    <div>
+      <p>Route saved!</p>
+      <button type="button" data-action="dismiss">Close</button>
+    </div>
+  </template>
   <template id="route-list-template">
     <div>
       <div data-routes-rows><p>Loading your routes…</p></div>
@@ -136,6 +152,37 @@ function choose(file) {
   uploadInput.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/** route_create's response: one rendered row, carrying the new bbox.
+ *
+ * ``map_focus=True`` (SNOW-886) is what puts `data-row-focus` on the name
+ * control — four ordinates in [west, south, east, north] order — and
+ * reading it back out of this response is how the upload knows where to
+ * put the camera without racing the list re-read.
+ *
+ * @param {string} focus The attribute's value, or '' for a row without one.
+ * @returns {string} The response body.
+ */
+function uploadedRow(focus) {
+  const attribute = focus ? ` data-row-focus="${focus}"` : '';
+  return `<li id="route-1"><button type="button"${attribute}>Haute Route</button></li>`;
+}
+
+/** Settle the upload's promise chain.
+ *
+ * Three links deep since SNOW-886 — the fetch, the `resp.text()` read, and
+ * the then that renders the card, announces and reveals — so a test that
+ * awaited two microtasks would assert against a chain that has not
+ * finished.
+ *
+ * @returns {Promise<void>}
+ */
+async function settleUpload() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 /** A minimal .gpx File. */
 function gpxFile() {
   return new File(['<gpx></gpx>'], 'haute-route.gpx', {
@@ -150,7 +197,15 @@ function toastText() {
 
 beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
-  globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
+  globalThis.fetch = vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      // SNOW-886: the upload reads the response body for the new route's
+      // bbox, so the stub answers with the row route_create renders.
+      text: () => Promise.resolve(uploadedRow('6.10,45.90,6.30,46.10')),
+    }),
+  );
   window.pwaTelemetry = { emit: vi.fn() };
   // The map.js bridge, stubbed: routes.js reaches the overlay only through
   // this frozen shape, so the panel's whole contract with the layer is the
@@ -398,17 +453,31 @@ describe('uploading a chosen file', () => {
     delete window.pwaMutationQueue;
   });
 
-  it('re-reads the list on success rather than swapping the response in', async () => {
-    // route_create answers with the DEFAULT variant's row (_route.html),
-    // which is the wrong shape for this panel — so the truth is refetched.
+  it('never swaps the response row into the panel', async () => {
+    // route_create's row is READ for its bbox (SNOW-886) and used for
+    // nothing else: the authoritative list is refetched rather than
+    // patched with what we think was just created, the same reason rename
+    // re-reads. The re-read is the panel's next open — the confirmation
+    // card has replaced the rows container by the time
+    // `snowdesk:routes-changed` is raised, so the listener finds nothing
+    // to load into and `showListPanel` fetches the list afresh. That is
+    // the shape the favourites create has always had.
     btn.click();
+    globalThis.htmx.ajax.mockClear();
 
     choose(gpxFile());
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleUpload();
 
-    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(2);
-    expect(globalThis.htmx.ajax.mock.calls[1][1]).toBe(LIST_URL);
+    expect(sheet.textContent).not.toContain('Haute Route');
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+
+    // …and the next open reads it, so the new row is there when the user
+    // comes back to the list.
+    btn.click();
+    btn.click();
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
   });
 
   it('tells the map, so the new route is drawn without a reload', async () => {
@@ -419,19 +488,82 @@ describe('uploading a chosen file', () => {
     btn.click();
 
     choose(gpxFile());
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleUpload();
 
     expect(changed).toHaveBeenCalled();
     document.removeEventListener('snowdesk:routes-changed', changed);
+  });
+
+  it('renders the confirmation card, so a successful upload says so', async () => {
+    // SNOW-886: the upload used to render NOTHING. The row landed in a list
+    // behind the panel body and the line reached the map only for a user
+    // who already had the layer on, so a success and a silent failure
+    // looked identical.
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    expect(sheet.textContent).toContain('Route saved!');
+  });
+
+  it('fits the camera to the route it just uploaded', async () => {
+    // The bbox comes out of route_create's own response rather than from a
+    // re-read of the list, which would mean waiting for it and then
+    // guessing which row is the new one.
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    expect(window.pwaMapFocus.bounds).toHaveBeenCalledWith([6.1, 45.9, 6.3, 46.1]);
+    expect(window.pwaMapFocus.point).not.toHaveBeenCalled();
+    delete window.pwaMapFocus;
+  });
+
+  it('switches the routes layer on, so the new line is visible', async () => {
+    // isEnabled() is stubbed false in beforeEach, matching this overlay's
+    // opt-in default — which is exactly the user this matters for: their
+    // upload landed on a map drawing no routes at all.
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    expect(window.pwaRoutesOverlay.show).toHaveBeenCalled();
+    delete window.pwaMapFocus;
+  });
+
+  it('still shows the card and the layer when the response carries no bbox', async () => {
+    // Every step degrades on its own. A row without `data-row-focus` — an
+    // older response, or a route with no geometry to bound — costs the
+    // camera move and nothing else.
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(uploadedRow('')),
+      }),
+    );
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+    btn.click();
+
+    choose(gpxFile());
+    await settleUpload();
+
+    expect(sheet.textContent).toContain('Route saved!');
+    expect(window.pwaRoutesOverlay.show).toHaveBeenCalled();
+    expect(window.pwaMapFocus.bounds).not.toHaveBeenCalled();
+    delete window.pwaMapFocus;
   });
 
   it('emits telemetry for the upload', async () => {
     btn.click();
 
     choose(gpxFile());
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleUpload();
 
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.route.created', {});
   });
