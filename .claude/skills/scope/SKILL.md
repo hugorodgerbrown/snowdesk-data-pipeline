@@ -71,6 +71,10 @@ When the sidebar approval comes through:
 1. Post the scope as a comment on the Linear ticket using `save_comment` (the
    comment's `issueId` is the internal `id` from `get_issue`, NOT the `SNOW-NN`
    identifier).
-2. Transition the ticket to `Ready for dev` using `save_issue` with the existing
+2. Check the ticket carries exactly one `Type` and one `Area` label. If either
+   is missing or wrong now the scope has settled what the work actually is, fix
+   it with `addLabels` / `removeLabels` in the same `save_issue` call. The
+   tables in `.claude/skills/create-ticket/SKILL.md` decide them.
+3. Transition the ticket to `Ready for dev` using `save_issue` with the existing
    `id` and the new `stateId`.
-3. Confirm to the user: "Scope posted, SNOW-$1 moved to Ready for dev."
+4. Confirm to the user: "Scope posted, SNOW-$1 moved to Ready for dev."
