@@ -392,6 +392,26 @@ blocks every PR that introduces a violation:
    is mandated by the standard, so in JS the token rules above apply and
    this one does not.
 
+Two further rules govern how a surface **behaves** rather than how it is
+built. No linter enforces these — `ds-lint` cannot count a row's calls to
+action or judge a menu's order — so they hold only if a reviewer holds
+them. Full statement and history:
+[`docs/design-system.md`](docs/design-system.md#interaction-principles).
+
+4. **Consistency: put things where the user expects them.** A new menu
+   adopts the order an existing one established and drops the items that
+   do not apply, rather than inventing its own. The routes row is Plan a
+   trip → Share → Rename → Delete; the favourite row is Share → Rename →
+   Remove — the same order minus the route-specific item. Destructive is
+   last on every list.
+5. **In a restricted area, one CTA is a bare icon; two or more collapse
+   into a "…" menu.** A restricted area is any surface where horizontal
+   space is contested — a map overlay, a sheet, a panel row. The threshold
+   is **two**: a row with exactly Rename and Remove gets a menu. This
+   reversed SNOW-658's "a visible trash on every row" and SNOW-830's
+   narrowing of it; a row that gains a second action changes shape, and
+   that is the rule applying rather than scope creep.
+
 Per-line escape hatch, only when a token genuinely can't express the
 constraint. The reason is required and audit-visible
 (`bin/ds-lint --show-allows`) — write it for a reviewer judging it cold:

@@ -174,20 +174,16 @@ in addition to the shared map assets.
     {# are below, all these scripts are defer, so document order is         #}
     {# execution order and window.pwaInlineRename exists before either.     #}
     {#                                                                      #}
-    {# It replaced overflow_menu.js on this page. That module drove the "…" #}
-    {# menu each panel's rows carried for one day; Hugo's design took the   #}
-    {# menu off every panel, so nothing here opened one and loading it      #}
-    {# would have shipped a module with nothing to bind to.                 #}
-    {#                                                                      #}
-    {# SNOW-830 brought it back for ONE panel — the routes row outgrew four #}
-    {# inline controls — and it is loaded from that surface's own partial   #}
-    {# (public/partials/_routes_surface.html), not from here, because it is #}
-    {# that surface's dependency and no other page needs it. The other      #}
-    {# three panels keep their visible trash and load nothing extra.        #}
-    {# SNOW-867: the "…" row menus. Loaded HERE, once, because two surfaces  #}
-    {# on this page now carry one — the routes panel (SNOW-830) and the      #}
-    {# downloads panel, whose rows went back to a menu when Hugo reversed    #}
-    {# SNOW-658's ruling: more than one action is a "…", exactly one is a    #}
+    {# It replaced overflow_menu.js on this page for one day, when Hugo's   #}
+    {# SNOW-658 design took the "…" off every panel and nothing here opened #}
+    {# one. That ruling is gone — see the next block, and                   #}
+    {# docs/design-system.md's interaction principles — so both modules now #}
+    {# load, and this comment is kept only so the swap does not look        #}
+    {# unexplained in the history.                                          #}
+    {# SNOW-867: the "…" row menus. Loaded HERE, once, because several       #}
+    {# surfaces on this page carry one — the routes panel (SNOW-830), the    #}
+    {# downloads panel, and the favourites panel (SNOW-887) — under the      #}
+    {# rule that replaced SNOW-658's: two or more actions is a "…", one is a #}
     {# bare icon. It used to load from _routes_surface.html as that panel's  #}
     {# own dependency; a second tag there would run the module twice, since  #}
     {# browsers do not deduplicate script elements by URL.                   #}
