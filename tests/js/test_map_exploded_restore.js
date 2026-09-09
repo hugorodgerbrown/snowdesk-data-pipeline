@@ -46,7 +46,19 @@ function makeMap(layers) {
     getPaintProperty: () => 0.5,
     setPaintProperty: () => {},
     getContainer: () => document.getElementById('map'),
-    getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=' }),
+    // Every capture records the layer set the photograph actually contains,
+    // which is the only way to assert what each sheet shows.
+    frames: [],
+    getCanvas() {
+      return {
+        toDataURL: () => {
+          map.frames.push(layers
+            .filter((layer) => (layer.layout?.visibility || 'visible') === 'visible')
+            .map((layer) => layer.id));
+          return 'data:image/png;base64,iVBORw0KGgo=';
+        },
+      };
+    },
     getCenter: () => ({ lng: 8, lat: 46.5 }),
     getZoom: () => 8,
     getBearing: () => 0,
@@ -54,6 +66,9 @@ function makeMap(layers) {
     resize: () => {},
     fitBounds: () => {},
     jumpTo: () => {},
+    // A boot-time restoreOverlay landing mid-build: the layer appears once
+    // the demo has already hidden everything for the current step.
+    lateArrival: null,
     once(event, handler) {
       (pending[event] ||= []).push(handler);
     },
@@ -63,6 +78,10 @@ function makeMap(layers) {
     // waitForFrame registers its listener and then asks for a repaint, so
     // firing here is what advances every capture step.
     triggerRepaint() {
+      if (this.lateArrival) {
+        layers.push(this.lateArrival);
+        this.lateArrival = null;
+      }
       for (const event of ['idle', 'render']) {
         const handlers = pending[event] || [];
         pending[event] = [];
@@ -96,9 +115,10 @@ function mount({ slope = true } = {}) {
   if (slope) map.install({ id: 'slope-raster', type: 'raster', source: 'slope' });
 
   const late = {
-    // Installed by the argument-less prepare() — the bulletin boundary's
-    // boot-time restoreOverlay('l3'), still in flight when ready resolved.
-    null: [{ id: 'bulletin-groupings-line', type: 'line', source: 'bulletin-groupings' }],
+    // None of these exists when ``ready`` resolves: the bulletin boundary's
+    // boot-time restoreOverlay('l3') is still in flight, and the tiers are
+    // lazy. Each installs when its loader is asked for.
+    l3: [{ id: 'bulletin-groupings-line', type: 'line', source: 'bulletin-groupings' }],
     l1: [
       { id: 'major-regions-line', type: 'line', source: 'major-regions' },
       { id: 'major-regions-label', type: 'symbol', source: 'major-regions' },
@@ -228,6 +248,59 @@ describe('map_exploded.js follows the operator slope kill switch', () => {
     ]);
     expect(document.querySelector('.map-exploded [role="status"]').textContent)
       .toBe('Every layer, together in one map.');
+  });
+});
+
+describe('map_exploded.js builds the ladder clean, whatever the map is showing', () => {
+  it('photographs only the basemap on the first sheet, even mid-install', async () => {
+    mount();
+    // The visitor has L1 and Resorts switched on, so their boot restores are
+    // in flight when ``ready`` resolves. This one lands during the Swisstopo
+    // step's own idle wait — after that step hid everything it could see.
+    map.lateArrival = { id: 'community-reports-pin', type: 'circle', source: 'community-reports' };
+    await runDemo();
+
+    expect(map.frames[0]).toEqual(['background']);
+    expect(map.frames[0]).not.toContain('community-reports-pin');
+  });
+
+  it('shows one rung per sheet, in ladder order', async () => {
+    mount();
+    await runDemo();
+
+    expect(map.frames.slice(1)).toEqual([
+      ['slope-raster'],
+      ['regions-fill', 'bulletin-groupings-line'],
+      ['major-regions-line', 'major-regions-label'],
+      ['sub-regions-line', 'sub-regions-label'],
+      ['regions-line', 'regions-label'],
+      ['resorts-pin', 'resorts-label'],
+    ]);
+  });
+
+  it('installs every tier before the first shutter, so a tier the visitor has off still appears', async () => {
+    mount();
+    await runDemo();
+
+    // The ladder is fixed. `prepare` is called for each keyed tier before any
+    // capture, so a visitor with L1, L2 or Resorts switched off still sees
+    // those sheets — and each tier is left at whatever visibility its own
+    // toggle dictates, which the restore below puts back.
+    const keys = window.snowdeskLayerExplainer.prepare.mock.calls.map(([key]) => key);
+    expect(keys.slice(0, 5)).toEqual([undefined, 'l3', 'l1', 'l2', 'resorts']);
+  });
+
+  it('leaves the demo switches disconnected from the map', async () => {
+    mount();
+    await runDemo();
+    const before = map.layers.map((layer) => [layer.id, layer.layout?.visibility]);
+
+    const slope = [...document.querySelectorAll('.exploded-label input')][1];
+    slope.checked = false;
+    slope.dispatchEvent(new Event('change'));
+
+    // Turning a sheet off dims an SVG group. It must not reach the map.
+    expect(map.layers.map((layer) => [layer.id, layer.layout?.visibility])).toEqual(before);
   });
 });
 

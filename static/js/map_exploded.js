@@ -386,6 +386,14 @@
         filters.set(layer.id, layer.filter || null);
       }
     };
+    // Show exactly ``ids`` and nothing else, recording what each layer was
+    // configured to be first.
+    const only = (ids) => {
+      remember();
+      for (const layer of map.getStyle().layers) {
+        map.setLayoutProperty(layer.id, 'visibility', ids.includes(layer.id) ? 'visible' : 'none');
+      }
+    };
     remember();
     const oldFill = map.getPaintProperty('regions-fill', 'fill-opacity');
     const container = map.getContainer();
@@ -402,6 +410,22 @@
       if (closed) return;
       remember();
       restoreCountries = await window.snowdeskLayerExplainer.focusSwitzerland();
+      // Install every tier the ladder shows BEFORE photographing anything.
+      // The demo is a fixed sequence — basemap, then each layer on top — and
+      // it must read the same whatever the visitor happens to have switched
+      // on, so it cannot wait for the ordinary lazy loads to arrive as their
+      // step comes round. That is also a correctness fix: the boot-time
+      // ``restoreOverlay`` calls for a visitor's OWN enabled tiers are
+      // fire-and-forget, still in flight when ``ready`` resolves, so an L1
+      // outline or a resort pin would install a moment after a step had
+      // already hidden everything and land in that step's photograph. The
+      // Swisstopo sheet came out with region boundaries and resorts drawn on
+      // it. Loading is not showing: each tier installs at the visibility its
+      // own toggle dictates, and the capture forces what it needs per step.
+      for (const [, , , loaderKey] of groups) {
+        if (loaderKey) await window.snowdeskLayerExplainer.prepare(loaderKey);
+      }
+      remember();
       const applicationSources = new Set([
         'regions', 'major-regions', 'sub-regions', 'bulletin-groupings',
         'resorts', 'favourites', 'weather', 'routes', 'community-reports',
@@ -418,20 +442,21 @@
       map.setPaintProperty('regions-fill', 'fill-opacity', metadata.fillOpacity);
       let lastRevealAt = 0;
       for (let index = 0; index < groups.length; index += 1) {
-        const [name, , ids, loaderKey] = groups[index];
+        const [name, , ids] = groups[index];
         if (closed) return;
         activeIndex = index;
         status.textContent = interpolate(strings.adding, {name});
         syncRows();
-        await window.snowdeskLayerExplainer.prepare(loaderKey);
-        remember();
         if (!ids.some(id => map.getLayer(id))) {
           throw new Error(interpolate(strings.unavailable, {name}));
         }
-        for (const layer of map.getStyle().layers) {
-          map.setLayoutProperty(layer.id, 'visibility', ids.includes(layer.id) ? 'visible' : 'none');
-        }
+        only(ids);
         await idle(map);
+        // Re-assert immediately before the shutter. The preload above settles
+        // the tiers this demo owns, but an overlay it does not — community
+        // reports, weather, routes — can still land from its own boot restore
+        // during the wait, and would otherwise be photographed.
+        only(ids);
         const url = await capture(map);
         const decoded = new Image();
         decoded.src = url;
