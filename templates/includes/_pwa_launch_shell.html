@@ -1,0 +1,89 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_pwa_launch_shell.html — PWA launch shell (SNOW-878).
+
+The second half of the splash. The iOS startup images
+(includes/_pwa_splash.html) cover from tap to first paint; this covers
+from first paint to the app being worth looking at — on the map page
+that is the gap while MapLibre fetches its style and first tiles, during
+which the page has painted chrome over an empty #map.
+
+It is drawn to MATCH the OS launch screen exactly: same background
+token, same tile, centred, same proportion of the shorter edge (the
+clamp in .pwa-launch-shell__mark mirrors iconPixelsFor() in
+bin/build-pwa-splash). Done right the user never sees a handover at
+all — one splash that happens to change owner halfway through.
+
+WHO SEES IT
+
+Only a cold launch of the INSTALLED app. Two gates, both in the inline
+script below:
+
+  * standalone — display-mode: standalone, or iOS Safari's legacy
+    navigator.standalone. A browser tab is not launching an app; a
+    splash there is an interstitial nobody asked for.
+  * once per launch — a sessionStorage flag. In a standalone window that
+    storage lives exactly as long as the app does, so "not yet set"
+    means "this is the launch". Without it, every in-app navigation back
+    to a full page load would replay the splash.
+
+WHY THE GATE IS AN INLINE SCRIPT
+
+It has to resolve BEFORE first paint, or the overlay flashes on the two
+populations that must never see it. A deferred external script runs
+after paint, and CSS alone can express display-mode but not the session
+flag. This is the same constraint, and the same solution, as
+includes/theme_head.html — which is also why the failure mode is
+"overlay never shows" rather than "overlay never leaves": the class is
+only ever added, never relied on for removal.
+
+Removal is the deferred script's job (static/js/pwa_launch_shell.js),
+backstopped by a CSS failsafe animation in src/css/main.css so a script
+that never parses cannot leave the app covered.
+{% endcomment %}
+<script nonce="{{ request.csp_nonce }}">
+    (function () {
+      var standalone = false;
+      try {
+        standalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          navigator.standalone === true;
+      } catch (_e) {
+        // Treat an unreadable display-mode as "browser tab" — the safe
+        // direction, since the cost is a missing splash rather than a
+        // stuck one.
+      }
+      if (!standalone) return;
+      try {
+        // Set before the class, so a throw on write can't leave a flag
+        // that says the splash already ran when it never did.
+        if (sessionStorage.getItem('snowdesk.launched') === '1') return;
+        sessionStorage.setItem('snowdesk.launched', '1');
+      } catch (_e) {
+        // Storage blocked (private browsing, site data off). Fall
+        // through and show the splash: repeating it on an in-app
+        // navigation is a smaller fault than never showing it.
+      }
+      document.documentElement.classList.add('pwa-launching');
+    })();
+</script>
+<div
+    id="pwa-launch-shell"
+    class="pwa-launch-shell fixed inset-0 z-[var(--z-launch)] items-center justify-center bg-bg"
+    role="status"
+    aria-live="polite"
+>
+    {# The home-screen tile itself, not a redraw of it — the same file the #}
+    {# OS just showed. alt is empty because the label below already names  #}
+    {# what this is; announcing the logo too would say it twice.           #}
+    <img
+        class="pwa-launch-shell__mark"
+        src="{% static 'icons/pwa/icon-192.png' %}"
+        alt=""
+        width="192"
+        height="192"
+        decoding="sync"
+        fetchpriority="high"
+    >
+    <p class="pwa-launch-shell__label text-sm text-text-3">{% trans "Loading…" %}</p>
+</div>

@@ -1,0 +1,484 @@
+{
+  "generated_by": "bin/build-pwa-splash",
+  "season_label": "25/26",
+  "background_light": "#f2f0ec",
+  "background_dark": "#1c1b19",
+  "entries": [
+    {
+      "file": "splash-750x1334-light.png",
+      "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 750,
+      "height": 1334,
+      "models": "iPhone SE (2nd/3rd gen), 8, 7, 6s"
+    },
+    {
+      "file": "splash-750x1334-dark.png",
+      "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 750,
+      "height": 1334,
+      "models": "iPhone SE (2nd/3rd gen), 8, 7, 6s"
+    },
+    {
+      "file": "splash-1334x750-light.png",
+      "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 1334,
+      "height": 750,
+      "models": "iPhone SE (2nd/3rd gen), 8, 7, 6s"
+    },
+    {
+      "file": "splash-1334x750-dark.png",
+      "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 1334,
+      "height": 750,
+      "models": "iPhone SE (2nd/3rd gen), 8, 7, 6s"
+    },
+    {
+      "file": "splash-1125x2436-light.png",
+      "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1125,
+      "height": 2436,
+      "models": "iPhone X, XS, 11 Pro, 12 mini, 13 mini"
+    },
+    {
+      "file": "splash-1125x2436-dark.png",
+      "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1125,
+      "height": 2436,
+      "models": "iPhone X, XS, 11 Pro, 12 mini, 13 mini"
+    },
+    {
+      "file": "splash-2436x1125-light.png",
+      "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2436,
+      "height": 1125,
+      "models": "iPhone X, XS, 11 Pro, 12 mini, 13 mini"
+    },
+    {
+      "file": "splash-2436x1125-dark.png",
+      "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2436,
+      "height": 1125,
+      "models": "iPhone X, XS, 11 Pro, 12 mini, 13 mini"
+    },
+    {
+      "file": "splash-1170x2532-light.png",
+      "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1170,
+      "height": 2532,
+      "models": "iPhone 12, 12 Pro, 13, 13 Pro, 14, 16e"
+    },
+    {
+      "file": "splash-1170x2532-dark.png",
+      "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1170,
+      "height": 2532,
+      "models": "iPhone 12, 12 Pro, 13, 13 Pro, 14, 16e"
+    },
+    {
+      "file": "splash-2532x1170-light.png",
+      "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2532,
+      "height": 1170,
+      "models": "iPhone 12, 12 Pro, 13, 13 Pro, 14, 16e"
+    },
+    {
+      "file": "splash-2532x1170-dark.png",
+      "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2532,
+      "height": 1170,
+      "models": "iPhone 12, 12 Pro, 13, 13 Pro, 14, 16e"
+    },
+    {
+      "file": "splash-1179x2556-light.png",
+      "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1179,
+      "height": 2556,
+      "models": "iPhone 14 Pro, 15, 15 Pro, 16"
+    },
+    {
+      "file": "splash-1179x2556-dark.png",
+      "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1179,
+      "height": 2556,
+      "models": "iPhone 14 Pro, 15, 15 Pro, 16"
+    },
+    {
+      "file": "splash-2556x1179-light.png",
+      "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2556,
+      "height": 1179,
+      "models": "iPhone 14 Pro, 15, 15 Pro, 16"
+    },
+    {
+      "file": "splash-2556x1179-dark.png",
+      "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2556,
+      "height": 1179,
+      "models": "iPhone 14 Pro, 15, 15 Pro, 16"
+    },
+    {
+      "file": "splash-1206x2622-light.png",
+      "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1206,
+      "height": 2622,
+      "models": "iPhone 16 Pro"
+    },
+    {
+      "file": "splash-1206x2622-dark.png",
+      "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1206,
+      "height": 2622,
+      "models": "iPhone 16 Pro"
+    },
+    {
+      "file": "splash-2622x1206-light.png",
+      "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2622,
+      "height": 1206,
+      "models": "iPhone 16 Pro"
+    },
+    {
+      "file": "splash-2622x1206-dark.png",
+      "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2622,
+      "height": 1206,
+      "models": "iPhone 16 Pro"
+    },
+    {
+      "file": "splash-828x1792-light.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 828,
+      "height": 1792,
+      "models": "iPhone XR, 11"
+    },
+    {
+      "file": "splash-828x1792-dark.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 828,
+      "height": 1792,
+      "models": "iPhone XR, 11"
+    },
+    {
+      "file": "splash-1792x828-light.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 1792,
+      "height": 828,
+      "models": "iPhone XR, 11"
+    },
+    {
+      "file": "splash-1792x828-dark.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 1792,
+      "height": 828,
+      "models": "iPhone XR, 11"
+    },
+    {
+      "file": "splash-1242x2688-light.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1242,
+      "height": 2688,
+      "models": "iPhone XS Max, 11 Pro Max"
+    },
+    {
+      "file": "splash-1242x2688-dark.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1242,
+      "height": 2688,
+      "models": "iPhone XS Max, 11 Pro Max"
+    },
+    {
+      "file": "splash-2688x1242-light.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2688,
+      "height": 1242,
+      "models": "iPhone XS Max, 11 Pro Max"
+    },
+    {
+      "file": "splash-2688x1242-dark.png",
+      "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2688,
+      "height": 1242,
+      "models": "iPhone XS Max, 11 Pro Max"
+    },
+    {
+      "file": "splash-1284x2778-light.png",
+      "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1284,
+      "height": 2778,
+      "models": "iPhone 12 Pro Max, 13 Pro Max, 14 Plus"
+    },
+    {
+      "file": "splash-1284x2778-dark.png",
+      "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1284,
+      "height": 2778,
+      "models": "iPhone 12 Pro Max, 13 Pro Max, 14 Plus"
+    },
+    {
+      "file": "splash-2778x1284-light.png",
+      "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2778,
+      "height": 1284,
+      "models": "iPhone 12 Pro Max, 13 Pro Max, 14 Plus"
+    },
+    {
+      "file": "splash-2778x1284-dark.png",
+      "media": "(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2778,
+      "height": 1284,
+      "models": "iPhone 12 Pro Max, 13 Pro Max, 14 Plus"
+    },
+    {
+      "file": "splash-1290x2796-light.png",
+      "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1290,
+      "height": 2796,
+      "models": "iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus"
+    },
+    {
+      "file": "splash-1290x2796-dark.png",
+      "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1290,
+      "height": 2796,
+      "models": "iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus"
+    },
+    {
+      "file": "splash-2796x1290-light.png",
+      "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2796,
+      "height": 1290,
+      "models": "iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus"
+    },
+    {
+      "file": "splash-2796x1290-dark.png",
+      "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2796,
+      "height": 1290,
+      "models": "iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus"
+    },
+    {
+      "file": "splash-1320x2868-light.png",
+      "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1320,
+      "height": 2868,
+      "models": "iPhone 16 Pro Max"
+    },
+    {
+      "file": "splash-1320x2868-dark.png",
+      "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1320,
+      "height": 2868,
+      "models": "iPhone 16 Pro Max"
+    },
+    {
+      "file": "splash-2868x1320-light.png",
+      "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2868,
+      "height": 1320,
+      "models": "iPhone 16 Pro Max"
+    },
+    {
+      "file": "splash-2868x1320-dark.png",
+      "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2868,
+      "height": 1320,
+      "models": "iPhone 16 Pro Max"
+    },
+    {
+      "file": "splash-1488x2266-light.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1488,
+      "height": 2266,
+      "models": "iPad mini (6th gen)"
+    },
+    {
+      "file": "splash-1488x2266-dark.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1488,
+      "height": 2266,
+      "models": "iPad mini (6th gen)"
+    },
+    {
+      "file": "splash-2266x1488-light.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2266,
+      "height": 1488,
+      "models": "iPad mini (6th gen)"
+    },
+    {
+      "file": "splash-2266x1488-dark.png",
+      "media": "(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2266,
+      "height": 1488,
+      "models": "iPad mini (6th gen)"
+    },
+    {
+      "file": "splash-1536x2048-light.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1536,
+      "height": 2048,
+      "models": "iPad mini (5th gen), iPad 9.7\""
+    },
+    {
+      "file": "splash-1536x2048-dark.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1536,
+      "height": 2048,
+      "models": "iPad mini (5th gen), iPad 9.7\""
+    },
+    {
+      "file": "splash-2048x1536-light.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2048,
+      "height": 1536,
+      "models": "iPad mini (5th gen), iPad 9.7\""
+    },
+    {
+      "file": "splash-2048x1536-dark.png",
+      "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2048,
+      "height": 1536,
+      "models": "iPad mini (5th gen), iPad 9.7\""
+    },
+    {
+      "file": "splash-1620x2160-light.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1620,
+      "height": 2160,
+      "models": "iPad 10.2\""
+    },
+    {
+      "file": "splash-1620x2160-dark.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1620,
+      "height": 2160,
+      "models": "iPad 10.2\""
+    },
+    {
+      "file": "splash-2160x1620-light.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2160,
+      "height": 1620,
+      "models": "iPad 10.2\""
+    },
+    {
+      "file": "splash-2160x1620-dark.png",
+      "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2160,
+      "height": 1620,
+      "models": "iPad 10.2\""
+    },
+    {
+      "file": "splash-1640x2360-light.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1640,
+      "height": 2360,
+      "models": "iPad Air 10.9\", iPad 10.9\""
+    },
+    {
+      "file": "splash-1640x2360-dark.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1640,
+      "height": 2360,
+      "models": "iPad Air 10.9\", iPad 10.9\""
+    },
+    {
+      "file": "splash-2360x1640-light.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2360,
+      "height": 1640,
+      "models": "iPad Air 10.9\", iPad 10.9\""
+    },
+    {
+      "file": "splash-2360x1640-dark.png",
+      "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2360,
+      "height": 1640,
+      "models": "iPad Air 10.9\", iPad 10.9\""
+    },
+    {
+      "file": "splash-1668x2224-light.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1668,
+      "height": 2224,
+      "models": "iPad Pro 10.5\""
+    },
+    {
+      "file": "splash-1668x2224-dark.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1668,
+      "height": 2224,
+      "models": "iPad Pro 10.5\""
+    },
+    {
+      "file": "splash-2224x1668-light.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2224,
+      "height": 1668,
+      "models": "iPad Pro 10.5\""
+    },
+    {
+      "file": "splash-2224x1668-dark.png",
+      "media": "(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2224,
+      "height": 1668,
+      "models": "iPad Pro 10.5\""
+    },
+    {
+      "file": "splash-1668x2388-light.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 1668,
+      "height": 2388,
+      "models": "iPad Pro 11\", iPad Air 11\""
+    },
+    {
+      "file": "splash-1668x2388-dark.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 1668,
+      "height": 2388,
+      "models": "iPad Pro 11\", iPad Air 11\""
+    },
+    {
+      "file": "splash-2388x1668-light.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2388,
+      "height": 1668,
+      "models": "iPad Pro 11\", iPad Air 11\""
+    },
+    {
+      "file": "splash-2388x1668-dark.png",
+      "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2388,
+      "height": 1668,
+      "models": "iPad Pro 11\", iPad Air 11\""
+    },
+    {
+      "file": "splash-2048x2732-light.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+      "width": 2048,
+      "height": 2732,
+      "models": "iPad Pro 12.9\", iPad Pro 13\""
+    },
+    {
+      "file": "splash-2048x2732-dark.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+      "width": 2048,
+      "height": 2732,
+      "models": "iPad Pro 12.9\", iPad Pro 13\""
+    },
+    {
+      "file": "splash-2732x2048-light.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+      "width": 2732,
+      "height": 2048,
+      "models": "iPad Pro 12.9\", iPad Pro 13\""
+    },
+    {
+      "file": "splash-2732x2048-dark.png",
+      "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+      "width": 2732,
+      "height": 2048,
+      "models": "iPad Pro 12.9\", iPad Pro 13\""
+    }
+  ]
+}

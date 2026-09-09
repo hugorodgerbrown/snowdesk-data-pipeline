@@ -1,0 +1,351 @@
+#!/usr/bin/env node
+/*
+ * bin/build-pwa-splash — Render the iOS launch-screen (splash) PNGs.
+ *
+ * SNOW-878. iOS is the reason this file exists. Chrome generates an
+ * Android splash from the manifest (icon + background_color + name), so
+ * that platform needs no artwork at all. iOS reads none of that: unless
+ * the page declares an ``apple-touch-startup-image`` whose media query
+ * matches the device EXACTLY, a home-screen launch paints plain white
+ * for the whole cold boot.
+ *
+ * That white screen is what shipped. docs/offline-map.md used to record
+ * the omission as deliberate, on the grounds that "a launch on the brand
+ * background_color is acceptable" — but iOS never falls back to
+ * background_color, so the acceptable fallback was never the one users
+ * saw. The fix is the matrix, and the matrix is why this is a generator
+ * rather than a designer's export: 68 near-identical PNGs is not a thing
+ * to maintain by hand.
+ *
+ * WHAT IT DRAWS
+ * -------------
+ * The page background with the home-screen tile centred on it — the same
+ * composition Android generates, so the two platforms launch alike.
+ *
+ * The tile is not redrawn here: it is ``static/icons/pwa/icon-512.png``,
+ * composited as-is. That PNG keeps its alpha (it is the purpose:any
+ * variant), so its rounded corners land on the splash background
+ * cleanly. Reading the built icon rather than re-rendering favicon.svg
+ * means the launch screen cannot drift from the home-screen icon — same
+ * artwork, same season label, one source. It also means this script
+ * REQUIRES ``npm run build:icons`` to have run first; main() checks and
+ * says so rather than emitting a splash with a hole in it.
+ *
+ * LIGHT AND DARK
+ * --------------
+ * Two sets. Unlike the manifest's single ``background_color``, the
+ * ``apple-touch-startup-image`` links can carry
+ * ``(prefers-color-scheme: dark)``, so iOS is the one platform where the
+ * launch screen can match the app it opens into. BACKGROUND_LIGHT and
+ * BACKGROUND_DARK mirror ``--color-bg`` in src/css/main.css in each
+ * scheme — the token the page itself paints, so the handover from splash
+ * to first paint is invisible. Keep them in step with that file; a test
+ * (tests/public/test_pwa_splash.py) asserts the pair against the
+ * stylesheet so a token change surfaces as a failure rather than as a
+ * flash on a device nobody is holding.
+ *
+ * The app's own dark mode can also be pinned by the user in
+ * localStorage (templates/includes/theme_head.html). The OS cannot read
+ * that, so a user whose stored preference disagrees with their system
+ * setting gets a splash in the system's scheme. Nothing can be done
+ * about it from here, and it is the rare case: the stored key is only
+ * written when someone overrides the default.
+ *
+ * PRODUCTION ONLY
+ * ---------------
+ * There is no staging splash set, unlike the icons (SNOW-399). The
+ * staging/production distinction has to be legible where the user
+ * CHOOSES the app — the home-screen tile — and on the status bar beside
+ * it; both stay amber. Doubling 68 files to make the half-second launch
+ * screen amber too is a poor trade, so templates/includes/_pwa_splash.html
+ * points at this production set on every environment.
+ *
+ * ORIENTATION
+ * -----------
+ * Every device gets portrait and landscape. iOS ignores a startup image
+ * whose dimensions don't match the launch orientation, and a map app is
+ * held both ways — landscape-only-white would have been half a fix.
+ *
+ * Run via ``npm run build:splash``. The PNGs are checked in, like the
+ * icons: regenerate and commit when the device matrix, the background
+ * tokens, or the icon artwork changes.
+ */
+
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const sharp = require('sharp');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const SRC_ICON = path.join(REPO_ROOT, 'static', 'icons', 'pwa', 'icon-512.png');
+const ICON_BUILD_MANIFEST = path.join(REPO_ROOT, 'static', 'icons', 'pwa-build.json');
+const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa', 'splash');
+const OUT_MANIFEST = path.join(OUT_DIR, 'splash-manifest.json');
+
+// Mirrors --color-bg in src/css/main.css, light and dark. The splash
+// hands straight over to the page, so any drift here shows as a flash of
+// the wrong cream (or the wrong black) at the moment the app appears.
+const BACKGROUND_LIGHT = '#f2f0ec';
+const BACKGROUND_DARK = '#1c1b19';
+
+// The tile's size as a fraction of the device's SHORTER edge, in CSS
+// pixels, then clamped. Taking the shorter edge means portrait and
+// landscape get the same tile — rotating the phone mid-launch must not
+// resize the mark. The clamp stops a 320pt phone from a stamp-sized tile
+// and a 1024pt iPad from a billboard; between them the ratio does the
+// work.
+const ICON_RATIO = 0.24;
+const ICON_MIN_CSS = 96;
+const ICON_MAX_CSS = 160;
+
+/*
+ * The device matrix, in CSS pixels and device-pixel ratio — the three
+ * values iOS matches a startup image on.
+ *
+ * Coverage is every iPhone and iPad that runs a current iOS, which is
+ * also every device where a modern PWA is worth installing. Several
+ * models share a viewport and are listed together on one row; where two
+ * models share a viewport but differ in DPR (the 414×896 pair) they are
+ * separate rows, because the DPR is part of the media query and the
+ * pixel canvas differs.
+ *
+ * Adding a device is one row here plus a rebuild. Nothing else in the
+ * codebase enumerates them: the template reads the manifest this script
+ * writes (see writeManifest below), so the links and the files cannot
+ * disagree.
+ */
+const DEVICES = [
+  { css: [375, 667], dpr: 2, models: 'iPhone SE (2nd/3rd gen), 8, 7, 6s' },
+  { css: [375, 812], dpr: 3, models: 'iPhone X, XS, 11 Pro, 12 mini, 13 mini' },
+  { css: [390, 844], dpr: 3, models: 'iPhone 12, 12 Pro, 13, 13 Pro, 14, 16e' },
+  { css: [393, 852], dpr: 3, models: 'iPhone 14 Pro, 15, 15 Pro, 16' },
+  { css: [402, 874], dpr: 3, models: 'iPhone 16 Pro' },
+  { css: [414, 896], dpr: 2, models: 'iPhone XR, 11' },
+  { css: [414, 896], dpr: 3, models: 'iPhone XS Max, 11 Pro Max' },
+  { css: [428, 926], dpr: 3, models: 'iPhone 12 Pro Max, 13 Pro Max, 14 Plus' },
+  { css: [430, 932], dpr: 3, models: 'iPhone 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus' },
+  { css: [440, 956], dpr: 3, models: 'iPhone 16 Pro Max' },
+  { css: [744, 1133], dpr: 2, models: 'iPad mini (6th gen)' },
+  { css: [768, 1024], dpr: 2, models: 'iPad mini (5th gen), iPad 9.7"' },
+  { css: [810, 1080], dpr: 2, models: 'iPad 10.2"' },
+  { css: [820, 1180], dpr: 2, models: 'iPad Air 10.9", iPad 10.9"' },
+  { css: [834, 1112], dpr: 2, models: 'iPad Pro 10.5"' },
+  { css: [834, 1194], dpr: 2, models: 'iPad Pro 11", iPad Air 11"' },
+  { css: [1024, 1366], dpr: 2, models: 'iPad Pro 12.9", iPad Pro 13"' },
+];
+
+const SCHEMES = [
+  { name: 'light', background: BACKGROUND_LIGHT },
+  { name: 'dark', background: BACKGROUND_DARK },
+];
+
+const ORIENTATIONS = ['portrait', 'landscape'];
+
+/**
+ * The tile's edge in device pixels for a given device.
+ *
+ * @param {number[]} css - The device's [width, height] in CSS pixels.
+ * @param {number} dpr - The device-pixel ratio.
+ * @returns {number} The tile's edge length in device pixels.
+ */
+function iconPixelsFor(css, dpr) {
+  const shorterEdge = Math.min(css[0], css[1]);
+  const clamped = Math.min(
+    ICON_MAX_CSS,
+    Math.max(ICON_MIN_CSS, Math.round(shorterEdge * ICON_RATIO)),
+  );
+  return Math.round(clamped * dpr);
+}
+
+/**
+ * The canvas size in device pixels for a device in a given orientation.
+ *
+ * @param {object} device - A DEVICES row.
+ * @param {string} orientation - 'portrait' or 'landscape'.
+ * @returns {number[]} [width, height] in device pixels.
+ */
+function canvasFor(device, orientation) {
+  const [cssWidth, cssHeight] = device.css;
+  const [width, height] =
+    orientation === 'portrait' ? [cssWidth, cssHeight] : [cssHeight, cssWidth];
+  return [width * device.dpr, height * device.dpr];
+}
+
+/**
+ * Build the media query iOS matches this image on.
+ *
+ * ``device-width`` / ``device-height`` are the device's CSS dimensions in
+ * its NATURAL (portrait) orientation and do not swap when the device
+ * rotates — the ``orientation`` term is what distinguishes the two
+ * images. Getting that wrong is the classic failure here: swapping the
+ * width/height for the landscape entry produces a query no device ever
+ * matches, and the launch silently falls back to white.
+ *
+ * Both schemes are stated explicitly rather than leaving light
+ * unqualified. A device with no preference resolves to ``light``, so the
+ * light image still matches, and stating it keeps the two links
+ * symmetrical instead of relying on document order to break a tie.
+ *
+ * @param {object} device - A DEVICES row.
+ * @param {string} orientation - 'portrait' or 'landscape'.
+ * @param {string} scheme - 'light' or 'dark'.
+ * @returns {string} The media attribute's value.
+ */
+function mediaFor(device, orientation, scheme) {
+  const [cssWidth, cssHeight] = device.css;
+  return (
+    `(device-width: ${cssWidth}px)` +
+    ` and (device-height: ${cssHeight}px)` +
+    ` and (-webkit-device-pixel-ratio: ${device.dpr})` +
+    ` and (orientation: ${orientation})` +
+    ` and (prefers-color-scheme: ${scheme})`
+  );
+}
+
+/**
+ * Render one splash PNG: a solid background with the home-screen tile
+ * centred on it.
+ *
+ * The output is flattened and stripped of its alpha channel. A launch
+ * screen is never composited over anything, so the channel is dead
+ * weight on 68 files — and an alpha-bearing PNG here would let the
+ * white beneath show through wherever the tile is transparent, which is
+ * the exact failure the file exists to prevent.
+ *
+ * @param {object} entry - A manifest entry: file, width, height, iconPx,
+ *   background.
+ * @returns {Promise<void>}
+ */
+async function buildSplash(entry) {
+  const outPath = path.join(OUT_DIR, entry.file);
+  const tile = await sharp(SRC_ICON)
+    .resize(entry.icon_px, entry.icon_px)
+    .png()
+    .toBuffer();
+  await sharp({
+    create: {
+      width: entry.width,
+      height: entry.height,
+      channels: 4,
+      background: entry.background,
+    },
+  })
+    .composite([
+      {
+        input: tile,
+        top: Math.round((entry.height - entry.icon_px) / 2),
+        left: Math.round((entry.width - entry.icon_px) / 2),
+      },
+    ])
+    .flatten({ background: entry.background })
+    .removeAlpha()
+    // Indexed-palette PNG, maximum effort. A splash is a flat background
+    // and a three-colour tile — perhaps a few hundred distinct values
+    // once the tile's antialiased edges are counted, far inside a 256-
+    // entry palette, so quantising is lossless in everything the eye can
+    // reach. It is not a micro-optimisation: sharp's truecolour default
+    // wrote these same 68 images at 4.8 MB, and this is a checked-in
+    // build artefact that ships in the static bundle. Drop the palette
+    // and the repo grows by an order of magnitude for no visible gain.
+    .png({ palette: true, compressionLevel: 9, effort: 10 })
+    .toFile(outPath);
+}
+
+/**
+ * Expand DEVICES × ORIENTATIONS × SCHEMES into the flat list of images
+ * to render, each carrying the media query that selects it.
+ *
+ * @returns {object[]} The manifest entries.
+ */
+function planEntries() {
+  const entries = [];
+  for (const device of DEVICES) {
+    for (const orientation of ORIENTATIONS) {
+      const [width, height] = canvasFor(device, orientation);
+      for (const scheme of SCHEMES) {
+        entries.push({
+          file: `splash-${width}x${height}-${scheme.name}.png`,
+          media: mediaFor(device, orientation, scheme.name),
+          width,
+          height,
+          icon_px: iconPixelsFor(device.css, device.dpr),
+          background: scheme.background,
+          models: device.models,
+        });
+      }
+    }
+  }
+  return entries;
+}
+
+/**
+ * Write the manifest the Django template reads.
+ *
+ * This is the contract between the two halves: the script owns the
+ * device matrix and the filenames, and
+ * apps/public/pwa_splash.py reads them back to emit one
+ * ``<link rel="apple-touch-startup-image">`` per entry. Nothing on the
+ * Python side enumerates devices, so a rebuild is the only thing needed
+ * to add one — and a file that was never rendered cannot be linked.
+ *
+ * @param {object[]} entries - The rendered manifest entries.
+ * @param {string} seasonLabel - The season baked into the source icon.
+ */
+function writeManifest(entries, seasonLabel) {
+  const manifest = {
+    generated_by: 'bin/build-pwa-splash',
+    season_label: seasonLabel,
+    background_light: BACKGROUND_LIGHT,
+    background_dark: BACKGROUND_DARK,
+    entries: entries.map((entry) => ({
+      file: entry.file,
+      media: entry.media,
+      width: entry.width,
+      height: entry.height,
+      models: entry.models,
+    })),
+  };
+  fs.writeFileSync(OUT_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+async function main() {
+  if (!fs.existsSync(SRC_ICON)) {
+    console.error(
+      `source icon not found: ${path.relative(REPO_ROOT, SRC_ICON)}\n` +
+        'run `npm run build:icons` first — the splash composites the built' +
+        ' home-screen tile rather than re-rendering the artwork.',
+    );
+    process.exit(1);
+  }
+
+  let seasonLabel = null;
+  if (fs.existsSync(ICON_BUILD_MANIFEST)) {
+    seasonLabel = JSON.parse(fs.readFileSync(ICON_BUILD_MANIFEST, 'utf8')).season_label;
+  }
+
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+
+  const entries = planEntries();
+  // Two orientations of the same device never share a canvas, but two
+  // DEVICES rows could in principle; render each distinct file once and
+  // let the duplicate entries link to it.
+  const rendered = new Set();
+  for (const entry of entries) {
+    if (rendered.has(entry.file)) continue;
+    await buildSplash(entry);
+    rendered.add(entry.file);
+  }
+
+  writeManifest(entries, seasonLabel);
+  console.log(
+    `wrote ${rendered.size} splash PNGs + ${path.relative(REPO_ROOT, OUT_MANIFEST)}` +
+      ` (${DEVICES.length} devices × ${ORIENTATIONS.length} orientations ×` +
+      ` ${SCHEMES.length} schemes = ${entries.length} links, season ${seasonLabel})`,
+  );
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

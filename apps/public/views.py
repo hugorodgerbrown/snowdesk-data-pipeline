@@ -2237,7 +2237,14 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "start_url": f"{base}/",
         "scope": f"{base}/",
         "display": "standalone",
-        "background_color": "#f4f1e8",
+        # SNOW-878: --color-bg from src/css/main.css, the colour the page
+        # itself paints. It was #f4f1e8 — map.css's --paper, a neighbouring
+        # cream — so Chrome's generated Android splash handed over to a
+        # visibly different background than the one it opened into. There is
+        # no per-scheme mechanism in the manifest, so this stays the light
+        # value on every platform; the dark launch screen is iOS-only, via
+        # the prefers-color-scheme startup images (bin/build-pwa-splash).
+        "background_color": "#f2f0ec",
         "theme_color": identity.theme_color,
         "icons": [
             {
