@@ -45,6 +45,18 @@
  * still short-circuits the repeat of the CURRENT key; the cache is what
  * catches the return to a previous one.
  *
+ * A PLACEHOLDER NEVER REPLACES AN ANSWER (SNOW-880). SNOW-879 painted its
+ * frame on every render, which fixed the blank box on the way IN and broke
+ * the far more common move: changing region with the panel already open went
+ * body -> placeholder -> body, collapsing the panel to two lines and
+ * springing it back inside about a tenth of a second. That is a flash, not
+ * loading. The placeholder is now painted only when nothing on screen is
+ * worth keeping — see the pre-paint condition in `render`, and `paintedKey`,
+ * which is what the panel is SHOWING as opposed to what `render` last
+ * decided. Changing region under an open panel holds the previous answer
+ * until the new one is ready, so the box stays still and the user sees one
+ * change rather than three.
+ *
  * THIS MODULE ALSO OWNS THE PIN ROUNDEL (SNOW-814) — the star between the
  * chip and the download control (public/partials/_map_region_pin_control.html).
  * It sits here rather than in a module of its own because the roundel's
@@ -110,6 +122,13 @@
   let currentRegionId = null;
   let currentDate = null;
   let renderedKey = null;
+  // SNOW-880: the key whose SETTLED body is on screen right now, or null when
+  // the panel holds no answer (nothing painted yet, or only a placeholder).
+  // Distinct from `renderedKey`, which the selection and date handlers null to
+  // force a repaint — that says what `render` should do next, this says what
+  // the user is currently looking at, and only the second one can answer
+  // "is there something here worth keeping".
+  let paintedKey = null;
   let resortsByRegion = null;
   // SNOW-879: the in-flight `/api/resorts-by-region/` fetch, so the idle
   // warm at the foot of this module and a panel open that beats it share
@@ -482,9 +501,13 @@
    *
    * @param {string} regionId The EAWS region id.
    * @param {?string} dateKey The displayed date (YYYY-MM-DD), or null.
+   * @param {{fromOpen?: boolean}} [options] ``fromOpen: true`` when this
+   *   render is the panel being disclosed rather than its subject changing
+   *   underneath an already-open panel. It is what decides whether a
+   *   placeholder may be painted — see the pre-paint below.
    * @returns {Promise<void>}
    */
-  const render = async (regionId, dateKey) => {
+  const render = async (regionId, dateKey, options) => {
     const key = `${regionId}|${dateKey || ''}`;
     if (key === renderedKey) return;
 
@@ -496,6 +519,7 @@
       panel.textContent = '';
       attachPinned();
       renderedKey = key;
+      paintedKey = key;
       return;
     }
 
@@ -508,14 +532,29 @@
     if (cachedSummary !== undefined && resortsByRegion !== null) {
       paint(regionId, cachedSummary);
       renderedKey = key;
+      paintedKey = key;
       return;
     }
 
-    // Paint the frame from whatever is cached BEFORE awaiting anything, so
-    // the panel the chip just disclosed has content in it on the same frame
-    // as the press. Then fill in what is missing — both requests together,
-    // because neither needs the other's answer.
-    paint(regionId, cachedSummary);
+    // SNOW-880: paint the placeholder frame ONLY when there is nothing on
+    // screen worth keeping — a cold open, or an open onto a body left behind
+    // by a region the user has since moved away from.
+    //
+    // Not when the panel is already open and its subject changes under it.
+    // SNOW-879 pre-painted unconditionally, and switching regions with the
+    // panel open therefore went body -> placeholder -> body: the panel
+    // collapsed to two lines and sprang back within about a tenth of a
+    // second, which reads as a flash rather than as loading. The old body is
+    // the better thing to hold for that moment. It is what the user was just
+    // reading, it keeps the panel's box still, and the swap when the summary
+    // lands is then a single change from one region's answer to the next.
+    //
+    // Both halves of the condition matter. `fromOpen` alone would keep a
+    // stale body across a re-open; `paintedKey !== key` alone would let a
+    // mid-flight switch repaint the placeholder and reintroduce the flash.
+    if ((options && options.fromOpen) && paintedKey !== key) {
+      paint(regionId, cachedSummary);
+    }
 
     const [summaryHtml] = await Promise.all([
       cachedSummary === undefined
@@ -529,6 +568,7 @@
 
     paint(regionId, summaryHtml);
     renderedKey = key;
+    paintedKey = key;
   };
 
   /**
@@ -549,7 +589,7 @@
     panel.hidden = false;
     chip.setAttribute('aria-expanded', 'true');
     ribbon?.classList.add('is-open');
-    render(currentRegionId, currentDate);
+    render(currentRegionId, currentDate, { fromOpen: true });
     // `render` short-circuits when nothing it keys on has changed, and a
     // re-open after a selection made while closed is exactly that case — so
     // the mark is refreshed here rather than only on the paths that repaint.
