@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-09-09
 ---
 
 # Offline-first PWA compliance
@@ -162,6 +162,41 @@ classify staleness itself rather than never caching at all:
 This is the first `data:*` consumer under the SNOW-375 reserved
 namespace — see [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)
 for the store's shape.
+
+### The same relaxation for the user's own field observations (SNOW-661)
+
+The map's field-observation panel loads its rows from `observations:list`,
+which `sw.js` classifies network-only — so away from signal the panel
+opened onto "Your reports couldn't be loaded", for reports the map was
+already drawing as pins beside it (SNOW-492 caches the community-reports
+GeoJSON). The list is the one surface that names them, and it was the one
+that went away with the signal.
+
+- Every successful swap of the panel's rows is written through into the
+  `data:panel_rows` IndexedDB store (schema v6) by
+  `static/js/observations_offline.js`, partitioned by principal exactly as
+  the account-specific overlay rows are (see below).
+- What is stored is the **rendered response body**, not a record per
+  observation — the row's meta line is server-translated and carries a
+  region name, a `<time datetime>` element and a what3words line, so
+  rebuilding it in JavaScript would mean assembling a translated,
+  markup-bearing sentence there.
+- Offline, a failed request repaints those rows and appends an explicit
+  "Showing your saved reports — last updated HH:MM" line. Each row's
+  relative age keeps ticking, because `static/js/relative_time.js`
+  recomputes it from the `<time datetime>` instant — arithmetic that needs
+  no network.
+- **No staleness horizon**, and that is the difference from a favourite's
+  rating: an observation is a record of something that happened, not a
+  forecast that expires, so there is nothing for a 48h cutoff to protect
+  the reader from.
+- Delete is removed from every repainted row. It is an online-only
+  `hx-post` (only report *submission* goes through the mutation queue), and
+  a control that silently does nothing offline is worse than one that is
+  not there.
+
+A report filed offline and still sitting in `queue:mutations` is
+deliberately out of this scope — it is not yet a report the server has.
 
 ## Idempotency (SNOW-371)
 
@@ -345,7 +380,8 @@ with no stamp, or one from a page carrying no meta tag, never matches
 and is never served.
 
 This is the same partitioning SNOW-493 applied to the `data:map_overlays`
-cache and SNOW-462 applied to mutation rows (see
+cache, SNOW-661 to the `data:panel_rows` cache, and SNOW-462 to mutation
+rows (see
 [`mutation-queue.md`](mutation-queue.md#account-change-partitioning-snow-462)).
 Mechanics, the `Vary: Cookie` dead end, and the fail-closed argument:
 [`offline-map.md`](offline-map.md#principal-partitioned-navigations-snow-607).
