@@ -1,7 +1,7 @@
 """
 apps/locations/services/what3words.py — three word addresses for a coordinate.
 
-Contains two functions:
+Contains three functions:
 
   convert_to_3wa(latitude, longitude, base_url=None)
       Calls the what3words ``convert-to-3wa`` endpoint for one lat/lon pair
@@ -9,8 +9,17 @@ Contains two functions:
       ``"filled.count.soap"``.
 
   fill_what3words(location)
-      Returns a ``Location``'s cached address, converting and caching it
-      first if there is nothing fresh to return.
+      Returns a ``Location``'s stored address, converting and storing it
+      first if there is not one yet.
+
+  what3words_map_url(words)
+      Returns where one address links to on what3words' own map. Lives
+      here rather than in a view because two apps render an address
+      (SNOW-882).
+
+  fake_address(latitude, longitude)
+      Invents a deterministic address offline. Local UX work, demos and
+      seed data — never production; the caller owns the guard.
 
 Modelled on ``apps.locations.services.elevation`` — module-level
 ``REQUEST_TIMEOUT``, plain ``requests.get``, a ``base_url`` override so
@@ -38,15 +47,20 @@ UX work rather than a test double: the endpoint is behind a paid plan, so
 without it nobody can see this feature — or review a change to it —
 without buying a subscription first. It requires ``DEBUG`` on top of the
 setting, because a fabricated meeting point reaching a real group would
-send them to a square that does not exist. See ``_fake_address``.
+send them to a square that does not exist. See ``fake_address``.
 
 **Cost and licence.** ``convert-to-3wa`` left the free plan in November
-2024, so every call is billed against a paid plan (Basic: 1,000/month).
-That is why ``fill_what3words`` converts a square once per month rather
-than once per view, and why an empty ``WHAT3WORDS_API_KEY`` makes no
-request at all instead of a call that 401s. The 30-day ceiling on the cache
-is the licence's, not a tuning choice — see ``Location.three_word_address``
-and docs/decisions/what3words-cache-expires-at-thirty-days.md.
+2024, so it needs a paid plan (Basic, £7.99/mo) — but it is UNMETERED on
+every paid plan and does not draw on the 1,000-a-month allowance, which
+belongs to ``convert-to-coordinates`` and which Snowdesk never calls.
+Conversions are therefore free at the margin, and the reason to convert
+once and store rather than once per view is LATENCY, not cost: the call
+below carries a five-second timeout. An empty ``WHAT3WORDS_API_KEY`` still
+makes no request at all rather than one that 401s.
+
+An address we derived from our own coordinate may be stored INDEFINITELY;
+the 30-day cache ceiling in the terms governs the other direction of
+travel. See docs/decisions/what3words-addresses-are-stored-indefinitely.md.
 """
 
 from __future__ import annotations
@@ -161,7 +175,7 @@ def convert_to_3wa(
 
     """
     if settings.WHAT3WORDS_FAKE and settings.DEBUG:
-        return _fake_address(latitude, longitude)
+        return fake_address(latitude, longitude)
 
     api_key: str = settings.WHAT3WORDS_API_KEY
     if not api_key:
@@ -232,13 +246,21 @@ def convert_to_3wa(
     return words
 
 
-def _fake_address(latitude: float, longitude: float) -> str:
+def fake_address(latitude: float, longitude: float) -> str:
     """Invent a stable three word address for a coordinate.
 
-    LOCAL UX WORK AND DEMOS ONLY. The words are made up and name nowhere;
-    reaching this in production would send a group to a square that does
-    not exist, which is why ``convert_to_3wa`` requires ``DEBUG`` as well
-    as the setting before it calls this.
+    LOCAL UX WORK, DEMOS AND SEED DATA ONLY. The words are made up and name
+    nowhere; reaching this in production would send a group to a square
+    that does not exist.
+
+    **The guard is the caller's, not this function's**, because the two
+    callers guard differently and both are already correct.
+    ``convert_to_3wa`` requires ``DEBUG`` on top of ``WHAT3WORDS_FAKE``
+    before it calls this. ``seed_test_data`` refuses to run at all when
+    ``DEBUG`` is False, so it may call this unconditionally — it is
+    fabricating an entire database, and an invented address is the least
+    invented thing in it. Public rather than underscore-private for that
+    second caller; anything else importing it needs a guard of its own.
 
     It exists because ``convert-to-3wa`` is behind a paid plan, so without
     it nobody can look at this feature — review the layout, exercise the
@@ -293,35 +315,69 @@ def _error_code(response: requests.Response) -> str:
         return "unknown"
 
 
+def what3words_map_url(words: str | None) -> str | None:
+    """Return the what3words map URL for one address, or None.
+
+    SNOW-840, moved here from ``apps.trips.views`` by SNOW-882 when a
+    second app needed it. ``{settings.WHAT3WORDS_MAP_BASE_URL}/{words}`` —
+    their own map is the only place the 3m square can actually be SEEN, and
+    a reader deciding whether they can find the spot needs to see it rather
+    than take three words on trust.
+
+    Built in Python rather than in the template on the codebase's usual
+    rule: a URL is not presentation, and a template that concatenated a
+    setting onto a variable would be the one place a trailing slash in the
+    environment turned into a broken link. The base is stripped of one for
+    that reason.
+
+    Args:
+        words: The address without its ``///`` prefix, or None when there
+            is no address — flag off, no key, upstream down, not yet
+            resolved.
+
+    Returns:
+        The absolute URL, or None when there is nothing to link to.
+
+    """
+    if not words:
+        return None
+    return f"{settings.WHAT3WORDS_MAP_BASE_URL.rstrip('/')}/{words}"
+
+
 def fill_what3words(location: Location) -> str | None:
     """Return a location's three word address, converting it if need be.
 
-    The read path's entry point. Returns the cached address when
-    ``Location.three_word_address`` still has one — which is the common
-    case, since the cache lasts as long as the licence allows — and
-    otherwise spends one conversion and writes the result back.
+    The single-row filler every path goes through — the ``fill_what3words``
+    management command, the services that mint a location, and the trip
+    view. Returns the stored address when there is one, and otherwise
+    spends one conversion and writes the result back.
 
-    IDEMPOTENT, and safe to run concurrently. Two requests for the same
-    trip that both find the cache empty will both convert and both write;
-    they write the same words, and the second save is a no-op in effect.
-    Locking to save a duplicate call would cost more than the call.
+    A STORED ADDRESS IS NEVER RE-CONVERTED. It encodes a fixed 3m square,
+    so it cannot go stale; the only thing that invalidates one is the pin
+    moving, which clears the column at the point of the move rather than
+    here.
 
-    Writes with ``update_fields`` so a fill triggered by a GET touches the
-    two cache columns and nothing else — it cannot clobber a concurrent
-    edit of the location's coordinates.
+    IDEMPOTENT, and safe to run concurrently. Two callers that both find
+    the column empty will both convert and both write; they write the same
+    words, and the second save is a no-op in effect. Locking to save a
+    duplicate call would cost more than the call.
+
+    Writes with ``update_fields`` so a fill touches the two columns and
+    nothing else — it cannot clobber a concurrent edit of the location's
+    coordinates.
 
     Args:
         location: The location to resolve. Saved in place when a
             conversion succeeds.
 
     Returns:
-        The three word address, or None when there is no fresh cache and
-        the conversion did not succeed.
+        The three word address, or None when there is none stored and the
+        conversion did not succeed.
 
     """
-    cached = location.three_word_address
-    if cached is not None:
-        return cached
+    stored = location.three_word_address
+    if stored is not None:
+        return stored
 
     words = convert_to_3wa(location.latitude, location.longitude)
     if words is None:

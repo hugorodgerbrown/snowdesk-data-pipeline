@@ -23,10 +23,12 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
+from django.utils import timezone
 
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.locations.services.elevation import fetch_elevation
+from apps.locations.services.what3words import convert_to_3wa
 from apps.regions.services.point_match import region_for_point
 
 if TYPE_CHECKING:
@@ -80,9 +82,18 @@ def create_favourite(
             f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
         )
 
-    # External HTTP call (Open-Meteo elevation lookup) — kept outside any
-    # transaction so a slow or failing request never holds a DB lock.
+    # External HTTP calls (Open-Meteo elevation, what3words address) — kept
+    # outside any transaction so a slow or failing request never holds a DB
+    # lock. Neither raises: a pin saves with a null elevation or a null
+    # address rather than not saving.
+    #
+    # The address is resolved HERE rather than left to the fill_what3words
+    # command because this path already pays a round trip, so a second one
+    # is the same shape of cost — and because a pin the user just dropped
+    # reads better with its address already on it than with a coordinate
+    # pair that changes on the next sweep.
     elevation = fetch_elevation(latitude, longitude)
+    what3words = convert_to_3wa(latitude, longitude)
 
     # Best-effort — may be None when the pin falls outside every known
     # boundary. region_for_point is lat-first (matching this module's
@@ -111,6 +122,8 @@ def create_favourite(
             latitude=latitude,
             longitude=longitude,
             elevation_m=elevation,
+            what3words=what3words,
+            what3words_fetched_at=timezone.now() if what3words else None,
         )
         favourite = Favourite.objects.create(
             user=user,
@@ -171,9 +184,11 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
             f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
         )
 
-    # External HTTP call (Open-Meteo elevation lookup) — kept outside any
-    # transaction so a slow or failing request never holds a DB lock.
+    # External HTTP calls — see create_favourite for why both sit outside
+    # the transaction and why the address is resolved here rather than left
+    # to the fill_what3words command.
     elevation = fetch_elevation(resort.latitude, resort.longitude)
+    what3words = convert_to_3wa(resort.latitude, resort.longitude)
 
     try:
         with transaction.atomic():
@@ -193,6 +208,8 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                 latitude=resort.latitude,
                 longitude=resort.longitude,
                 elevation_m=elevation,
+                what3words=what3words,
+                what3words_fetched_at=timezone.now() if what3words else None,
             )
             favourite = Favourite.objects.create(
                 user=user,

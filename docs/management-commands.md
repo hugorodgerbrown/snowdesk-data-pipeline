@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, import_resorts, import_locations, link_region_centroid_locations, backfill_*
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, import_resorts, import_locations, backfill_*
 status: current
 last-reviewed: 2026-09-03
 ---
@@ -103,8 +103,9 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 
 ## Operational requirements
 
-Three scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, and one enforces a data-retention window. All three
+Four scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, one enforces a data-retention window, and one fills a
+derived column. All four
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
@@ -118,6 +119,7 @@ visible in the worker logs.
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
+| what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 
 ### `purge_request_logs` — enforce the RequestLog retention window
 
@@ -590,6 +592,39 @@ which is the point: that data describes a place nothing can reach.
 ```bash
 uv run python manage.py prune_orphan_locations           # preview
 uv run python manage.py prune_orphan_locations --commit  # delete
+```
+
+### `fill_what3words` — give every Location its three word address
+
+Walks `Location.objects.unaddressed()` and converts each coordinate to the
+address for the 3m square it falls in (SNOW-881). It is the primary fill
+path: locations arrive from several directions and only some mint through a
+service that already reaches the network, so this catches the rest — and
+the estate that predates any of them.
+
+**Read the plan and licence position before changing the pacing.**
+`convert-to-3wa` is unmetered on every paid plan; the 1,000-a-month
+allowance belongs to `convert-to-coordinates`, which Snowdesk never calls,
+and a derived address may be stored indefinitely (see
+[`what3words-addresses-are-stored-indefinitely`](decisions/what3words-addresses-are-stored-indefinitely.md)).
+The `--delay` default of 0.2s therefore paces a burst rather than rationing
+a budget.
+
+**No API key is a supported state**, checked before the walk rather than
+during it. `convert_to_3wa` answers `None` both for "no key" and for "the
+call failed", so walking without one would count every row as a failure and
+exit non-zero — alarming a scheduled run in any environment that has simply
+not subscribed. The local `WHAT3WORDS_FAKE` is checked alongside the key,
+because it answers without one.
+
+Nothing is ever re-converted: a stored address encodes a fixed square and
+cannot go stale. A pin that *moves* has its column cleared at the point of
+the move, which returns it to the candidate set.
+
+```bash
+uv run python manage.py fill_what3words                      # preview
+uv run python manage.py fill_what3words --commit             # apply
+uv run python manage.py fill_what3words --commit --delay 1.0 # pace harder
 ```
 
 ### `link_resort_locations` — give every geocoded resort weather

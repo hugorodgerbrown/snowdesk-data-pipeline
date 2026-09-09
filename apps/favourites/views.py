@@ -58,6 +58,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
+import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -86,6 +87,7 @@ from apps.favourites.services import (
     delete_favourite,
     delete_region_favourite,
 )
+from apps.locations.services.what3words import what3words_map_url
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 from apps.regions.models import MicroRegion, Resort
@@ -668,6 +670,38 @@ def _favourite_card_context(
     return context, generated_at, unsafe_after
 
 
+def _attach_three_word_address(request: HttpRequest, context: dict[str, Any]) -> None:
+    """Add a pin's three word address and its map URL to the card context.
+
+    **THE STORED ADDRESS ONLY, NEVER A CONVERSION.** The column is filled
+    out of band — at mint time by ``apps.favourites.services``, and by the
+    ``fill_what3words`` command for anything that missed — so this is a
+    plain property read. A card whose pin has no address yet simply omits
+    the line; it never blocks a render on a five-second HTTP timeout.
+
+    Gated on the ``what3words`` waffle flag, read here rather than in the
+    template because the flag decides whether a surface exists at all, and
+    the template should not have to know that.
+
+    A region pin (SNOW-802) has no ``location`` and therefore no address,
+    which falls out of the ``None`` check rather than needing its own
+    branch.
+
+    Args:
+        request: The current request, read for the flag.
+        context: The card context, mutated in place.
+
+    """
+    location = context["favourite"].location
+    words = (
+        location.three_word_address
+        if location is not None and waffle.flag_is_active(request, "what3words")
+        else None
+    )
+    context["favourite_w3w"] = words
+    context["favourite_w3w_url"] = what3words_map_url(words)
+
+
 @require_htmx
 @require_GET
 def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
@@ -728,6 +762,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     # because the rank is the caller's to state. See _favourite_card.html's
     # "WHO OWNS THE TITLE'S RANK".
     context["heading_tag"] = "h2"
+    _attach_three_word_address(request, context)
     response = render(request, "favourites/partials/_favourite_card.html", context)
     return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
 

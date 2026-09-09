@@ -149,6 +149,23 @@ has no section heading to rank under either.
         {% include "includes/_icon_locate.html" only %}
         {{ favourite.latitude|floatformat:5 }}, {{ favourite.longitude|floatformat:5 }}
     </a>
+    {# SNOW-882: the three word address on its own line, BENEATH the locate
+       link rather than replacing its text, for two reasons. The link above
+       goes to OUR map and the address links to what3words' — an <a> inside
+       an <a> is invalid HTML, and there is no version of this where one
+       element can carry both destinations. And the coordinate is the
+       locate link's label, so substituting it would leave the pin with no
+       readable position at all when no address has resolved.
+
+       Rendered only when there IS one, which is why this is not the
+       partial's own coordinate fallback: that fallback exists for surfaces
+       where the address REPLACES a coordinate, and here it would print the
+       same numbers twice. #}
+    {% if favourite_w3w %}
+        <p class="mt-0.5" data-testid="favourite-card-w3w">
+            {% include "includes/_three_word_address.html" with location=favourite.location words=favourite_w3w url=favourite_w3w_url size_class="text-summary" %}
+        </p>
+    {% endif %}
 
     {# 2. Avalanche danger — regional #}
     <div class="mt-4 pt-4 border-t border-border">

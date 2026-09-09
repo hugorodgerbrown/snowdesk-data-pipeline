@@ -505,11 +505,11 @@ class TestTripCardContents:
 class TestTripListMeetingAddress:
     """The list reads the what3words CACHE and never converts.
 
-    ``convert-to-3wa`` is billed per call against a 1,000-a-month
-    allowance and takes an HTTP round trip with a 5-second timeout. A list
-    page that converted per card would spend an agenda's worth of the
-    allowance on one render — and, worse, would take that timeout once per
-    uncached trip while the reader waited.
+    ``convert-to-3wa`` takes an HTTP round trip with a 5-second timeout.
+    A list page that converted per card would take that timeout once per
+    uncached trip while the reader waited. (It is unmetered on a paid
+    plan, so cost is not the argument — latency is, and always was the
+    stronger of the two.)
 
     The conversion happens at the WRITE instead: ``trip_create`` and
     ``trip_edit`` both call ``_fill_meeting_address``, so the cached case

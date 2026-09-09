@@ -18,10 +18,12 @@ by ``apps.locations.services.open_meteo``.
 app. A location's own height is location domain, not weather — it is a
 fixed property of a point on the ground, fetched once and stored on
 ``Location.elevation_m``, where weather is a time-varying observation
-about the air above it. The three callers left standing after the strip
-are all location work: ``link_region_centroid_locations`` (SNOW-696's
-backfill, which SNOW-758 depends on running), ``import_locations``, and
-favourite creation in ``apps.favourites.services``.
+about the air above it. The one caller left standing is favourite
+creation in ``apps.favourites.services``. ``link_region_centroid_locations``
+and ``import_locations`` are named here in earlier revisions and no longer
+call this: SNOW-771 moved centroid elevations into the committed fixtures,
+which made the former wholly offline on purpose. Check before adding an
+outbound call to either — that offline property is load-bearing.
 """
 
 from __future__ import annotations

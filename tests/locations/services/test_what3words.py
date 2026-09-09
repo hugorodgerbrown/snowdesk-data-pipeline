@@ -25,6 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.utils import timezone
 from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 
@@ -219,14 +220,11 @@ class TestConvertTo3waFailures:
 class TestFillWhat3words:
     """The read path's entry point — cache first, convert second."""
 
-    @freeze_time("2026-03-01T12:00:00+00:00")
-    def test_a_fresh_cache_is_returned_without_a_call(self) -> None:
-        """One paid conversion per square per month, not per page view."""
+    def test_a_stored_address_is_returned_without_a_call(self) -> None:
+        """One conversion per square, ever — not one per page view."""
         location = LocationFactory.create(
             what3words="filled.count.soap",
-            what3words_fetched_at=datetime.datetime(
-                2026, 2, 20, 12, 0, tzinfo=datetime.UTC
-            ),
+            what3words_fetched_at=timezone.now(),
         )
         mock_get = _mock_get(_GOOD_BODY)
         with patch("apps.locations.services.what3words.requests.get", mock_get):
@@ -234,27 +232,31 @@ class TestFillWhat3words:
         mock_get.assert_not_called()
 
     @freeze_time("2026-03-01T12:00:00+00:00")
-    def test_an_expired_cache_is_reconverted_and_restamped(self) -> None:
-        """Past 30 days the held value is no longer ours to show."""
+    def test_an_old_address_is_never_reconverted(self) -> None:
+        """Fourteen months old and still no call (SNOW-861).
+
+        Under SNOW-840 this re-converted every 30 days. The square has not
+        moved, so there is nothing to re-ask; a pin that DOES move clears
+        the column at the point of the move instead.
+        """
         location = LocationFactory.create(
-            what3words="stale.old.words",
+            what3words="filled.count.soap",
             what3words_fetched_at=datetime.datetime(
-                2026, 1, 1, 12, 0, tzinfo=datetime.UTC
+                2025, 1, 1, 12, 0, tzinfo=datetime.UTC
             ),
         )
-        with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
-        ):
+        mock_get = _mock_get(_GOOD_BODY)
+        with patch("apps.locations.services.what3words.requests.get", mock_get):
             assert fill_what3words(location) == "filled.count.soap"
+        mock_get.assert_not_called()
 
         location.refresh_from_db()
-        assert location.what3words == "filled.count.soap"
         assert location.what3words_fetched_at == datetime.datetime(
-            2026, 3, 1, 12, 0, tzinfo=datetime.UTC
+            2025, 1, 1, 12, 0, tzinfo=datetime.UTC
         )
 
     def test_an_empty_row_is_filled_and_both_columns_written(self) -> None:
-        """The first render of a trip is what fills the cache."""
+        """An unresolved row is what a fill is for."""
         location = LocationFactory.create()
         with patch(
             "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
@@ -283,7 +285,7 @@ class TestFillWhat3words:
         assert location.what3words_fetched_at is None
 
     def test_filling_twice_is_idempotent(self) -> None:
-        """Two concurrent renders both converting is harmless."""
+        """Two concurrent callers both converting is harmless."""
         location = LocationFactory.create()
         with patch(
             "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)

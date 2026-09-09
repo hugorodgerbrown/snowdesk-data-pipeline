@@ -193,6 +193,15 @@ contains so it can be relied on and extended safely.
   per location, plus one CH-4115 region pin (the row a `Subscription`
   became — SNOW-802). All six are owned by the seeded normal dev user
   (`dev@snowdesk.dev`).
+- **what3words addresses:** every seeded `Location` carries one, including
+  the trip's meeting point — invented offline by `fake_address`, so the
+  seed makes no outbound call (the same rule as the supplied elevations).
+  They are FAKE and name nowhere. They exist because a real address needs a
+  paid plan and an API key, so without them a developer switching the
+  `what3words` flag on would see only coordinate pairs and no sign the
+  feature is there. Turn it on with
+  `python manage.py waffle_flag what3words --everyone` (or sign in as the
+  superuser, whom the flag already targets).
 - **Route / trip:** one `Route` — an 8-point, 3.4 km / 700 m skin track above
   Verbier — and one `Trip` planned off it, both owned by the normal dev user.
   Both go through the production services (`create_route` parses a generated

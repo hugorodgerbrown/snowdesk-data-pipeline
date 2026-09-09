@@ -152,56 +152,56 @@ class TestLocationModel:
 
 @pytest.mark.django_db
 class TestLocationThreeWordAddress:
-    """The licence boundary: a cached address expires at 30 days (SNOW-840).
+    """A stored address never expires (SNOW-861, reversing SNOW-840).
 
     ``three_word_address`` is the only reader of the ``what3words``
-    column, so these are the tests that stop a stale address reaching a
-    page — the cap is contractual, not a performance choice.
+    column. It enforced a 30-day licence ceiling until that ceiling turned
+    out to govern ``convert-to-coordinates`` rather than an address derived
+    from our own pin, so what is left to test is that age is irrelevant and
+    that the unresolved states both normalise to None.
     """
 
-    def test_returns_none_when_never_fetched(self) -> None:
-        """No address and no stamp is the state every row starts in."""
+    def test_returns_none_when_never_resolved(self) -> None:
+        """No address is the state every row starts in."""
         location = LocationFactory.create()
         assert location.three_word_address is None
 
-    def test_returns_none_when_the_stamp_is_missing(self) -> None:
-        """Words with no stamp cannot be dated, so they cannot be shown.
+    def test_returns_none_when_the_column_is_empty(self) -> None:
+        """``""`` and None both mean "not resolved yet".
 
-        Unreachable through ``fill_what3words``, which writes both columns
-        together — but a fixture, a data repair or a future writer could
-        produce it, and an undatable cache entry is indistinguishable from
-        an expired one.
+        The column is nullable AND blankable, so a fixture, a data repair
+        or a form can produce the empty string where the service writes
+        None. One reader normalising both is the whole remaining job.
         """
-        location = LocationFactory.create(what3words="filled.count.soap")
+        location = LocationFactory.create(what3words="")
         assert location.three_word_address is None
 
-    @freeze_time("2026-03-01T12:00:00+00:00")
-    def test_returns_the_address_inside_the_window(self) -> None:
-        """29 days old is still inside the licence's 30."""
-        location = LocationFactory.create(
-            what3words="filled.count.soap",
-            what3words_fetched_at=datetime.datetime(
-                2026, 1, 31, 12, 0, tzinfo=datetime.UTC
-            ),
-        )
+    def test_returns_the_address_with_no_stamp(self) -> None:
+        """The stamp is provenance, not a precondition.
+
+        ``fill_what3words`` writes both columns together, but a row that
+        somehow carries words and no stamp is still showable — there is no
+        longer anything the stamp gates.
+        """
+        location = LocationFactory.create(what3words="filled.count.soap")
         assert location.three_word_address == "filled.count.soap"
 
     @freeze_time("2026-03-01T12:00:00+00:00")
-    def test_returns_none_past_the_window(self) -> None:
-        """31 days old is outside it, and the row stops being showable.
+    def test_returns_the_address_long_past_the_old_thirty_days(self) -> None:
+        """THE REGRESSION THIS TICKET EXISTS FOR.
 
-        The column keeps its value — expiry is a read-time test, not a
-        delete — so the assertion is on the property, and on the column
-        NOT having been touched.
+        Fourteen months old. Under SNOW-840 this returned None and the
+        trip dropped back to a coordinate pair on the list and offline.
+        The square has not moved in the meantime, so neither has the
+        address.
         """
         location = LocationFactory.create(
             what3words="filled.count.soap",
             what3words_fetched_at=datetime.datetime(
-                2026, 1, 29, 12, 0, tzinfo=datetime.UTC
+                2025, 1, 1, 12, 0, tzinfo=datetime.UTC
             ),
         )
-        assert location.three_word_address is None
-        assert location.what3words == "filled.count.soap"
+        assert location.three_word_address == "filled.count.soap"
 
     def test_the_stored_value_carries_no_prefix(self) -> None:
         """The ``///`` is presentation and belongs to the template."""

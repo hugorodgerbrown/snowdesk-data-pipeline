@@ -1,11 +1,21 @@
 ---
 name: what3words-cache-expires-at-thirty-days
 description: Location.what3words is a 30-day cache read through three_word_address, not a denormalised column — the licence caps it
-status: current
-last-reviewed: 2026-09-05
+status: historical
+last-reviewed: 2026-09-09
 ---
 
 # A three word address expires; it is not a fact about the place
+
+> **SUPERSEDED (SNOW-861) by
+> [`what3words-addresses-are-stored-indefinitely`](what3words-addresses-are-stored-indefinitely.md).**
+> The premise below is wrong. The licence's 30-day cache ceiling and its
+> 1,000-a-month allowance both govern `convert-to-coordinates`; Snowdesk
+> derives an address from its own pin via `convert-to-3wa`, which is
+> unmetered and storable indefinitely. what3words confirmed this in
+> writing in September 2026. `WHAT3WORDS_MAX_CACHE_AGE` no longer exists.
+> Kept for the record, per `docs/decisions/README.md` — the reasoning is
+> sound and only the clause it rests on was misread.
 
 ## Decision
 

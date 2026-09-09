@@ -933,6 +933,37 @@ EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+THREE_WORD_ADDRESS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Resolved — links to the what3words map",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": "filled.count.soap",
+            "url": "https://what3words.com/filled.count.soap",
+        },
+    },
+    {
+        "caption": "Trip details grid (15px)",
+        "context": {
+            "location": SimpleNamespace(latitude=45.976589, longitude=7.658447),
+            "words": "cornice.saddle.willow",
+            "url": "https://what3words.com/cornice.saddle.willow",
+            "size_class": "text-label",
+        },
+    },
+    {
+        # The state every surface has to survive: flag off, no key, upstream
+        # down, or simply not resolved yet. There is never a blank where the
+        # place was.
+        "caption": "Unresolved — falls back to the coordinate pair",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": None,
+            "url": None,
+        },
+    },
+)
+
 META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Issued", "context": {"text": "Issued"}},
     {"caption": "Valid until", "context": {"text": "Valid until"}},
