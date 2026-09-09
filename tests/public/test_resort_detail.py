@@ -387,6 +387,28 @@ class TestResortMetaDescription:
         assert "Val de Bagnes avalanche bulletin" in description
         assert "forecast" not in description
 
+    def test_the_with_locations_description_is_one_clean_line(self) -> None:
+        """The second blocktrans is squished too, not just the first.
+
+        ``TestNoWhitespaceLeaks`` in tests/public/test_page_meta.py walks
+        every page, but its resort has no locations, so it only ever renders
+        the other branch. ``|squish`` in the shared emitter protects both —
+        this is what would catch a description that stopped going through it.
+        """
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name="Mont Fort", kind="PEAK"),
+            role="TOP",
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "\n" not in description
+        assert "  " not in description
+        assert description == description.strip()
+
 
 @pytest.mark.django_db
 class TestResortObservationsLink:

@@ -90,7 +90,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
     {% if locations %}
         {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
             {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin and to a mountain weather
-            forecast for each location recorded here.
+            forecast for each of its locations.
         {% endblocktrans %}
     {% else %}
         {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
