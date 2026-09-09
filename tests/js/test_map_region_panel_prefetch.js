@@ -17,7 +17,8 @@
  *   the summary fetch does not queue behind it;
  *   the panel has words in it on the frame the chip is pressed, and "still
  *   coming" is not the same sentence as "unavailable offline";
- *   a region already looked at is repainted from cache, with no refetch.
+ *   a region already looked at is repainted from cache, with no refetch;
+ *   and (SNOW-880) a placeholder never replaces an answer already on screen.
  *
  * Scenario: none — this is fetch sequencing and cache state, which jsdom
  * holds exactly; a browser would add a WebGL map and tell us nothing more.
@@ -180,5 +181,54 @@ describe('going back to a region already looked at', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(panel.querySelector('.summary').textContent).toBe('Considerable');
     expect(panel.textContent).toContain('Verbier');
+  });
+});
+
+describe('changing region with the panel already open', () => {
+  // SNOW-880. SNOW-879 pre-painted the placeholder on every render, so this
+  // move went body -> placeholder -> body: the panel collapsed to two lines
+  // and sprang back within about a tenth of a second. A flash, not loading.
+  it('holds the previous answer rather than collapsing to a placeholder', async () => {
+    // CH-4115 is on screen from the suite above, with its resorts.
+    expect(panel.querySelector('.summary').textContent).toBe('Considerable');
+
+    // A region never looked at before, so this cannot be served from cache.
+    selectRegion('CH-9999');
+    await settle();
+
+    // The request is out and nothing has come back — and the panel still
+    // shows the answer it had. No placeholder, and no collapse.
+    expect(outFor(SUMMARY_URL.replace('XX-0000', 'CH-9999'))).toBe(true);
+    expect(panel.textContent).not.toContain('Loading region details');
+    expect(panel.querySelector('.summary').textContent).toBe('Considerable');
+
+    // One change, when the new answer is ready.
+    answer(SUMMARY_URL.replace('XX-0000', 'CH-9999'), {
+      html: '<p class="summary">Low</p>',
+    });
+    await settle();
+    expect(panel.querySelector('.summary').textContent).toBe('Low');
+  });
+});
+
+describe('opening onto a region picked while the panel was shut', () => {
+  it('shows the placeholder rather than the region the user has left', async () => {
+    // Shut the panel while CH-9999's answer is on screen.
+    chip.click();
+    expect(panel.hidden).toBe(true);
+
+    // Pick a different region from the map. Nothing renders — the panel is
+    // shut — so its body still belongs to CH-9999.
+    selectRegion('CH-7777');
+    await settle();
+
+    chip.click();
+    await settle();
+
+    // The stale body is gone. Keeping it would have put one region's
+    // breadcrumb under another region's name in the chip above.
+    expect(panel.hidden).toBe(false);
+    expect(panel.textContent).not.toContain('Low');
+    expect(panel.textContent).toContain('Loading region details');
   });
 });
