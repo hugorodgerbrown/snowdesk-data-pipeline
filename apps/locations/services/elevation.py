@@ -71,12 +71,15 @@ def fetch_elevation(
 
     """
     url = open_meteo.request_url(open_meteo.ELEVATION, base_url)
-    logger.debug(
-        "Fetching elevation for latitude=%s longitude=%s url=%s",
-        latitude,
-        longitude,
-        url,
-    )
+    # The COORDINATE is deliberately absent from both log lines here.
+    # SNOW-732: CodeQL flags it as clear-text logging of private data, and it
+    # is right to — this service resolves a curated summit, but it also
+    # resolves a user's own saved pin (``apps/favourites/services.py``), so a
+    # debug log would put someone's location in a file. The endpoint is safe
+    # to log because the coordinate travels in ``params``, never in the url,
+    # and anything a coordinate would have told a reader is on the row that
+    # prompted the call.
+    logger.debug("Fetching elevation from %s", url)
 
     params: dict[str, str] = open_meteo.with_api_key(
         {
@@ -91,11 +94,6 @@ def fetch_elevation(
 
     elevation: float = data["elevation"][0]
 
-    logger.debug(
-        "Open-Meteo elevation: latitude=%s longitude=%s elevation=%s",
-        latitude,
-        longitude,
-        elevation,
-    )
+    logger.debug("Open-Meteo resolved elevation=%s", elevation)
 
     return elevation
