@@ -3,8 +3,11 @@
  *
  * Publishes ``window.pwaShare`` with three functions:
  *
- *   shareOrCopy(url, title)  open the native share sheet, or fall back to
- *                            the clipboard.
+ *   shareOrCopy(value, title, kind)
+ *                            open the native share sheet, or fall back to
+ *                            the clipboard. ``kind`` is 'url' (default) or
+ *                            'text', for a payload that contains a URL
+ *                            rather than being one.
  *   createShare(url, csrf)   POST to a share-minting endpoint and resolve
  *                            with the link it answers.
  *   claim(url, csrf)         POST to a claim endpoint and resolve with the
@@ -84,28 +87,43 @@
   }
 
   /**
-   * Hand a URL to the native share sheet, or fall back to the clipboard.
+   * Hand a URL — or a line of text — to the share sheet, or the clipboard.
    *
    * See this file's header for why there are three branches and why the
    * cancellation one must do nothing.
    *
-   * @param {string} url The URL to share.
+   * ``kind`` decides ONE thing: which key the ``navigator.share`` payload
+   * carries. Everything else — ``canShare``, the four outcomes, the
+   * AbortError branch, the clipboard fallback — is identical, and the
+   * clipboard writes ``value`` either way. A second function would have
+   * duplicated that contract, which is the whole reason this module
+   * exists (SNOW-887).
+   *
+   * ``'text'`` is for a payload that CONTAINS a URL rather than being one:
+   * a favourite is shared as "<name> - <link>", and handing that to
+   * ``{url: …}`` gets it rejected by ``canShare`` or mangled by the
+   * platform.
+   *
+   * @param {string} value The URL, or the text, to share.
    * @param {string} [title] Sheet title. Defaults to the document's own.
+   * @param {string} [kind] ``'url'`` (default) or ``'text'``.
    * @returns {Promise<string>} How it ended: ``'shared'`` (the platform
    *   took it), ``'cancelled'`` (the user dismissed the sheet),
    *   ``'copied'`` (the clipboard has it), or ``'failed'`` (neither
    *   worked). The caller decides what, if anything, to say about each.
    */
-  function shareOrCopy(url, title) {
+  function shareOrCopy(value, title, kind) {
     const nav = window.navigator;
-    const payload = { url: url, title: title || document.title };
+    const payload = { title: title || document.title };
+    if (kind === 'text') payload.text = value;
+    else payload.url = value;
     const canShare =
       nav &&
       typeof nav.share === 'function' &&
       (typeof nav.canShare !== 'function' || nav.canShare(payload));
 
     if (!canShare) {
-      return copyToClipboard(url).then(function (copied) {
+      return copyToClipboard(value).then(function (copied) {
         return copied ? 'copied' : 'failed';
       });
     }
@@ -119,7 +137,7 @@
         // The user closed the sheet. They declined; do not then do the
         // thing they declined by another route.
         if (err && err.name === 'AbortError') return 'cancelled';
-        return copyToClipboard(url).then(function (copied) {
+        return copyToClipboard(value).then(function (copied) {
           return copied ? 'copied' : 'failed';
         });
       });

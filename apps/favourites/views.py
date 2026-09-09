@@ -670,6 +670,50 @@ def _favourite_card_context(
     return context, generated_at, unsafe_after
 
 
+def _attach_share_text(request: HttpRequest, favourites: list[Favourite]) -> None:
+    """Hang each pin's share text on the instance, for the row's menu.
+
+    The payload is ``"<name> - <link>"`` — the pin's own name and the
+    what3words short link for its square. That is the shape what3words'
+    own app shares, so what a Snowdesk user sends looks like what they
+    would have got from the app itself, and the name is what tells two
+    shared pins apart in somebody's messages.
+
+    **An unnamed pin shares the link alone.** ``label`` renders "Unnamed
+    pin" on screen, where it reads as a placeholder among named rows;
+    pasted into a message with no such context it reads as a claim about
+    the place, so the name is simply omitted.
+
+    Composed HERE rather than in JavaScript so Django's autoescaping owns
+    the name on its way into the attribute, and so the format is
+    assertable in a Python test.
+
+    **THE STORED ADDRESS ONLY, NEVER A CONVERSION.** The column is filled
+    out of band (SNOW-881), so this is a plain property read; a panel open
+    never blocks on a five-second HTTP timeout.
+
+    Read the flag ONCE for the whole list rather than per row: a
+    percentage-scoped flag is not obliged to answer the same way twice,
+    and a panel where some rows offer Share and others do not reads as
+    broken rather than gated.
+
+    Args:
+        request: The current request, read for the ``what3words`` flag.
+        favourites: The rows to annotate, mutated in place.
+
+    """
+    active = waffle.flag_is_active(request, "what3words")
+    for favourite in favourites:
+        location = favourite.location
+        words = location.three_word_address if active and location else None
+        url = what3words_map_url(words)
+        if url and favourite.name:
+            share_text = f"{favourite.name} - {url}"
+        else:
+            share_text = url or ""
+        favourite.w3w_share_text = share_text  # type: ignore[attr-defined]
+
+
 def _attach_three_word_address(request: HttpRequest, context: dict[str, Any]) -> None:
     """Add a pin's three word address and its map URL to the card context.
 
@@ -995,6 +1039,8 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
             region_id__in=region_ids, date=today
         )
     }
+
+    _attach_share_text(request, favourites)
 
     roster_payload: list[dict[str, Any]] = []
     present_ratings: list[RegionDayRating] = []

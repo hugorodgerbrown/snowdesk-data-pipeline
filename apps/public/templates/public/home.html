@@ -192,6 +192,14 @@ in addition to the shared map assets.
     {# own dependency; a second tag there would run the module twice, since  #}
     {# browsers do not deduplicate script elements by URL.                   #}
     <script defer src="{% static 'js/overflow_menu.js' %}"></script>
+    {# SNOW-887: window.pwaShare. Loaded HERE for the same reason as the     #}
+    {# menu above — the routes panel had it as its own dependency until the  #}
+    {# favourites panel became a second consumer, and two tags would run the #}
+    {# module twice. Deferred scripts run in document order, so pwaShare     #}
+    {# exists before routes.js and favourites.js reach their own top level;  #}
+    {# static/js/map.js reads it from a click handler, long after all of     #}
+    {# them.                                                                 #}
+    <script defer src="{% static 'js/share.js' %}"></script>
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
     {# SNOW-711: the server half of that rename — read the row's uuid off   #}
     {# the pencil, POST the committed name, hand the response back. The     #}

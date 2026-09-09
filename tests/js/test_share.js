@@ -150,6 +150,85 @@ describe('shareOrCopy', () => {
   });
 });
 
+describe("shareOrCopy's text mode (SNOW-887)", () => {
+  const TEXT_UNDER_TEST = 'Mont Fort - https://w3w.co/filled.count.soap';
+
+  it('sends text rather than url when asked for text', async () => {
+    const share = vi.fn(() => Promise.resolve());
+    stubNavigator({ share });
+
+    await window.pwaShare.shareOrCopy(TEXT_UNDER_TEST, 'Snowdesk', 'text');
+
+    const payload = share.mock.calls[0][0];
+    // A payload that CONTAINS a URL is not a payload that IS one, and
+    // canShare rejects the latter claim.
+    expect(payload.text).toBe(TEXT_UNDER_TEST);
+    expect(payload.url).toBeUndefined();
+    expect(payload.title).toBe('Snowdesk');
+  });
+
+  it('still sends url when the kind is omitted', async () => {
+    const share = vi.fn(() => Promise.resolve());
+    stubNavigator({ share });
+
+    await window.pwaShare.shareOrCopy(URL_UNDER_TEST);
+
+    const payload = share.mock.calls[0][0];
+    expect(payload.url).toBe(URL_UNDER_TEST);
+    expect(payload.text).toBeUndefined();
+  });
+
+  it('copies the text when the platform cannot share', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    stubNavigator({ clipboard: { writeText } });
+
+    const outcome = await window.pwaShare.shareOrCopy(
+      TEXT_UNDER_TEST,
+      undefined,
+      'text',
+    );
+
+    // The clipboard gets the whole string, not just the link inside it.
+    expect(writeText).toHaveBeenCalledWith(TEXT_UNDER_TEST);
+    expect(outcome).toBe('copied');
+  });
+
+  it('falls back to the clipboard when the platform rejects the text', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    stubNavigator({
+      share: vi.fn(() => Promise.reject(new Error('refused'))),
+      clipboard: { writeText },
+    });
+
+    const outcome = await window.pwaShare.shareOrCopy(
+      TEXT_UNDER_TEST,
+      undefined,
+      'text',
+    );
+
+    expect(outcome).toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(TEXT_UNDER_TEST);
+  });
+
+  it('does not copy the text when the user dismissed the sheet', async () => {
+    const abort = Object.assign(new Error('dismissed'), { name: 'AbortError' });
+    const writeText = vi.fn(() => Promise.resolve());
+    stubNavigator({
+      share: vi.fn(() => Promise.reject(abort)),
+      clipboard: { writeText },
+    });
+
+    const outcome = await window.pwaShare.shareOrCopy(
+      TEXT_UNDER_TEST,
+      undefined,
+      'text',
+    );
+
+    expect(outcome).toBe('cancelled');
+    expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
 describe('createShare', () => {
   it('resolves with the url the endpoint answers', async () => {
     globalThis.fetch = vi.fn(() =>
