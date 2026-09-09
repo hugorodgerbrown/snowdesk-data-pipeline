@@ -1269,6 +1269,33 @@ class TestObservationList:
         kind = observation.get_observation_type_display()
         assert f'aria-label="Delete {kind}"' in content
 
+    def test_delete_asks_first_through_hx_confirm_naming_the_report(
+        self, client: Client
+    ) -> None:
+        """One tap used to be the whole interaction (SNOW-886).
+
+        observations:delete is immediate and a field report records what
+        somebody saw at a place and a time they cannot go back to, so the
+        row now raises the native dialogue first. The attribute rather
+        than a listener: htmx binds its submit handling to the FORM, so a
+        delegated ``preventDefault()`` on an ancestor runs after the
+        request is already away — see
+        routes/partials/_route_row_menu_items.html for the day that
+        shipped.
+
+        It names the report by its type because a list of reports is on
+        screen and "this report" names none of them.
+        """
+        user = _verified_user()
+        observation = FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        kind = observation.get_observation_type_display()
+        assert "hx-confirm=" in content
+        assert f"Delete this {kind} report?" in content
+
     def test_never_lists_another_users_reports(self, client: Client) -> None:
         """The list is owner-scoped — someone else's report is not in it."""
         theirs = FieldObservationFactory.create()

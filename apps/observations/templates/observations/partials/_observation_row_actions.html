@@ -34,6 +34,22 @@ returns an empty 200, so ``hx-target``/``hx-swap`` on this row's own id
 removes exactly this row and nothing on the page has to know which one
 was clicked.
 
+IT ASKS FIRST (SNOW-886). One tap used to be the whole interaction, and
+observations:delete is immediate: a field report records what somebody saw
+at a place and a time they cannot go back to, so a mis-tap costs a record
+that cannot be re-entered from anything but memory. `hx-confirm` is an
+attribute Django renders, so it carries the translated string naming the
+report, and htmx hands it to window.confirm — the native dialogue, and
+this project's idiom for a destructive action. Nothing bespoke is built
+for it, and a delegated listener would not work anyway: htmx binds its
+submit handling to the FORM, so a `preventDefault()` on an ancestor runs
+after the request is already away. See
+routes/partials/_route_row_menu_items.html for the day that shipped.
+
+The dialogue names the report by its type rather than saying "this
+report", for the same reason the aria-label does: a list of reports is on
+screen and "this" names none of them.
+
 The aria-label names the row: "Delete" alone names nothing with a list of
 reports on screen. It interpolates ``label`` —
 includes/_ugc_panel_row.html's own parameter, in scope here — which for
@@ -45,11 +61,15 @@ Context:
                   parameter): the observation type.
 {% endcomment %}
 {% blocktrans trimmed with kind=label asvar remove_aria_label %}Delete {{ kind }}{% endblocktrans %}
+{% blocktrans trimmed with kind=label asvar delete_confirm %}
+    Delete this {{ kind }} report? It can't be recovered.
+{% endblocktrans %}
 <form
     data-row-remove
     hx-post="{% url 'observations:delete' observation.uuid %}"
     hx-target="#observation-{{ observation.uuid }}"
     hx-swap="outerHTML"
+    hx-confirm="{{ delete_confirm }}"
 >
     {% csrf_token %}
     <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
