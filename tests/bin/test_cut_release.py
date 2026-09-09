@@ -303,3 +303,135 @@ def test_lists_each_ticket_under_its_own_subject(repo: Path) -> None:
         in result.stdout
     )
     assert "Merge pull request" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# SNOW-818: the commands an operator must run once production is up
+# ---------------------------------------------------------------------------
+#
+# The script reads commit SUBJECTS, so a post-deploy step had no way to
+# travel from the ticket that introduced it to the person merging the
+# release. A `Deploy-Step:` trailer survives a squash-merge, so it reaches
+# the range this script already reads.
+
+
+def _commit_with_body(repo: Path, name: str, subject: str, body: str) -> None:
+    """Add a file and commit it with a multi-line message.
+
+    Args:
+        repo: The working clone.
+        name: Path of the file to create, relative to the repo.
+        subject: Commit subject.
+        body: Commit body, appended after a blank line.
+
+    """
+    target = repo / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("x\n", encoding="utf-8")
+    _git(repo, "add", str(name))
+    _git(repo, "commit", "-m", subject, "-m", body)
+
+
+def test_collects_a_deploy_step_trailer_into_the_body(repo: Path) -> None:
+    """A `Deploy-Step:` trailer reaches the release PR body.
+
+    The whole point: the operator merging the release reads what they have
+    to run, instead of remembering it.
+    """
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/backfill_slugs.py",
+        "SNOW-2: backfill resort slugs",
+        "Deploy-Step: backfill_resort_slugs --commit",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "## Run after this deploys" in result.stdout
+    assert "backfill_resort_slugs --commit" in result.stdout
+
+
+def test_omits_the_section_when_there_is_no_step(repo: Path) -> None:
+    """A release with no manual step carries no empty heading.
+
+    An always-present section invites the operator to hunt for a step that
+    is not there, which is how a real one stops being noticed.
+    """
+    _commit_with_body(repo, "apps/x.py", "SNOW-3: something ordinary", "No trailer.")
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "## Run after this deploys" not in result.stdout
+
+
+def test_deduplicates_a_step_named_by_two_commits(repo: Path) -> None:
+    """Two commits naming the same step produce one line, not two."""
+    for n in (2, 3):
+        _commit_with_body(
+            repo,
+            f"apps/regions/f{n}.py",
+            f"SNOW-{n}: part {n}",
+            "Deploy-Step: backfill_resort_slugs --commit",
+        )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.stdout.count("- `backfill_resort_slugs --commit`") == 1
+
+
+def test_warns_about_a_new_backfill_with_no_trailer(repo: Path) -> None:
+    """The backstop, for the trailer nobody remembered to write.
+
+    A warning on stderr and never a refusal — a backfill can legitimately
+    ship without needing a production run, so blocking the release on a
+    guess would be worse than reporting what was noticed.
+    """
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/backfill_forgotten.py",
+        "SNOW-4: add a backfill and forget the trailer",
+        "No trailer here.",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.returncode == 0, "the backstop warns, it must never refuse"
+    assert "backfill_forgotten" in result.stderr
+    assert "no Deploy-Step" in result.stderr
+
+
+def test_does_not_warn_when_the_backfill_is_already_named(repo: Path) -> None:
+    """A trailer naming the command silences the backstop for it."""
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/backfill_named.py",
+        "SNOW-5: add a backfill and say so",
+        "Deploy-Step: backfill_named --commit",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "backfill_named" not in result.stderr
+
+
+def test_does_not_warn_about_a_non_backfill_command(repo: Path) -> None:
+    """Only `backfill_*` commands are the backstop's business.
+
+    Every other new command is ordinary code that ships and runs itself.
+    """
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/fetch_something.py",
+        "SNOW-6: an ordinary command",
+        "No trailer.",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "fetch_something" not in result.stderr

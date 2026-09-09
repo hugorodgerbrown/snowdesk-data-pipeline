@@ -1,6 +1,6 @@
 ---
 name: deployment
-description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, release-sync fast-forward, Render topology, CalVer tags
+description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
 last-reviewed: 2026-09-02
 ---
@@ -287,6 +287,38 @@ Release 26 shipped …" against the live deploy, and a reader could not tell
 which was running. That happened on 2026-08-30. What the last release
 contained belongs in the PR description and the GitHub Release, both of which
 are read on their own.
+
+### Post-deploy steps: the `Deploy-Step:` trailer
+
+Some of what a release ships needs an operator to run a command once
+production is up — a backfill is the usual case. Nothing carried that fact
+from the ticket that introduced the command to the person merging the
+release, because `cut-release` reads commit *subjects* only, so the step had
+to be remembered rather than read.
+
+Write it as a trailer on the commit that introduces it:
+
+```
+SNOW-42: backfill resort slugs
+
+Deploy-Step: backfill_resort_slugs --commit
+```
+
+`cut-release` collects every `Deploy-Step:` across
+`origin/release..origin/main`, de-duplicates them, and renders a **"Run after
+this deploys"** section in the release PR body. A squash-merge keeps the full
+commit body, so a trailer written on the feature branch reaches the range the
+script reads. A release with no steps gets no section — an always-present
+heading would invite the operator to hunt for something that is not there,
+which is how a real one stops being noticed.
+
+**Backstop.** Because that still depends on somebody remembering, the script
+also looks for files added in the range matching
+`apps/*/management/commands/backfill_*.py`. If no trailer mentions one, it
+prints a warning to stderr naming the command. A warning, never a refusal:
+a backfill can legitimately ship without needing a production run, and a
+script that blocked a release on that guess would be worse than one that
+reports what it noticed.
 
 ### Why the sync dispatches rather than relying on a push
 

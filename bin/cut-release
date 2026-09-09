@@ -151,6 +151,49 @@ else
     TICKET_LINES="- (no SNOW tickets found in range)"$'\n'
 fi
 
+# SNOW-818: the commands an operator has to run once production is up.
+#
+# A release ships whatever `main` accumulated, and some of it needs a manual
+# run afterwards — the three backfills that waited on v29 are the standing
+# example. Nothing carried that fact from the ticket that introduced the
+# command to the person merging the release, because this script reads commit
+# SUBJECTS only. A `Deploy-Step:` trailer on the feature branch's commit
+# survives a squash-merge (GitHub keeps the full body), so it reaches this
+# range and can be collected here.
+DEPLOY_STEPS="$(git log "$RANGE" --format='%B' \
+    | grep -E '^Deploy-Step:[[:space:]]*' \
+    | sed -E 's/^Deploy-Step:[[:space:]]*//' \
+    | grep -v '^[[:space:]]*$' \
+    | awk '!seen[$0]++' || true)"
+
+DEPLOY_STEP_LINES=""
+if [[ -n "$DEPLOY_STEPS" ]]; then
+    while read -r step; do
+        [[ -z "$step" ]] && continue
+        DEPLOY_STEP_LINES+="- \`${step}\`"$'\n'
+    done <<<"$DEPLOY_STEPS"
+fi
+
+# Backstop for the trailer nobody remembered to write. A new backfill command
+# in the range that no trailer mentions is *probably* a missed step — but only
+# probably, since a backfill can legitimately ship without needing a
+# production run, so this warns and never refuses. The script's job is to
+# report what it can see.
+NEW_BACKFILLS="$(git log "$RANGE" --diff-filter=A --name-only --format= \
+    | grep -E '^apps/[^/]+/management/commands/backfill_[^/]+\.py$' \
+    | sed -E 's|.*/||; s|\.py$||' \
+    | sort -u || true)"
+
+UNMENTIONED=""
+if [[ -n "$NEW_BACKFILLS" ]]; then
+    while read -r cmd; do
+        [[ -z "$cmd" ]] && continue
+        if ! printf '%s\n' "$DEPLOY_STEPS" | grep -qF "$cmd"; then
+            UNMENTIONED+="${cmd}"$'\n'
+        fi
+    done <<<"$NEW_BACKFILLS"
+fi
+
 COMMIT_MSG="Bump VERSION to ${NEXT} for the next production release
 
 Merging this opens release v${NEXT}: it moves the ordinal the account menu
@@ -160,6 +203,18 @@ shows, and the Release sync workflow then fast-forwards \`release\` to
 The tickets this release ships are listed in the pull request.
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# Only rendered when there is something to say — a release with no manual
+# step should not carry an empty heading inviting the operator to look for one.
+DEPLOY_SECTION=""
+if [[ -n "$DEPLOY_STEP_LINES" ]]; then
+    DEPLOY_SECTION="
+## Run after this deploys
+
+Once production is up, run each of these once:
+
+${DEPLOY_STEP_LINES}"
+fi
 
 PR_TITLE="Release v${NEXT}"
 PR_BODY="Ships **v${NEXT}** to production — ${COMMIT_COUNT} commits on \`main\` that
@@ -173,7 +228,7 @@ create the GitHub Release. Squash or merge-commit both work.
 
 ## Tickets in this release
 
-${TICKET_LINES}
+${TICKET_LINES}${DEPLOY_SECTION}
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
 echo
@@ -187,6 +242,23 @@ echo
 echo "${PR_BODY}"
 echo "─────────────────────────────────────────────────────────────"
 echo
+
+# SNOW-818: printed AFTER the body so it is the last thing on screen before
+# the dry-run notice, and to stderr so it survives a redirect of the body.
+# A warning, not a refusal: there are legitimate reasons a new backfill ships
+# without needing a production run, and a script that blocked the release on
+# a guess would be worse than one that says what it noticed.
+if [[ -n "$UNMENTIONED" ]]; then
+    echo "WARNING: new backfill command(s) in this range with no Deploy-Step: trailer:" >&2
+    while read -r cmd; do
+        [[ -z "$cmd" ]] && continue
+        echo "  - ${cmd}" >&2
+    done <<<"$UNMENTIONED"
+    echo "  If production needs one of these run, add it to the PR body by hand," >&2
+    echo "  and add a 'Deploy-Step: <command>' trailer next time." >&2
+    echo >&2
+fi
+
 
 if [[ "$COMMIT" -eq 0 ]]; then
     echo "DRY RUN — nothing pushed. Pass --commit to open this PR."
