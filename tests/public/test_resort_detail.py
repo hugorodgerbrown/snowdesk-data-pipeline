@@ -15,6 +15,9 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     location is a link to its weather page (no inline weather); the
     observations section is one link to the map with the reports sheet
     open, flown to the resort.
+  - SNOW-855: the meta description branches on whether the resort has any
+    curated locations — it named a village, a mid-station and a summit for
+    every resort, including those with no locations at all.
   - Resort facts block (SNOW-695): the curated Resort columns the page
     stored but never rendered. Every cell renders when curated, an unset
     cell is omitted, and the whole block is omitted rather than rendered
@@ -329,6 +332,82 @@ class TestResortLocations:
 
         assert 'data-testid="resort-locations"' not in content
         assert "Forecasts" not in content
+
+
+def _meta_description(content: str) -> str:
+    """Return the rendered meta description, or "" when the page emits none."""
+    match = re.search(r'<meta name="description" content="([^"]*)"', content)
+    return match.group(1) if match else ""
+
+
+@pytest.mark.django_db
+class TestResortMetaDescription:
+    """SNOW-855: the description promises only what this resort links to."""
+
+    def test_role_labelled_locations_promise_forecasts_without_naming_tiers(
+        self,
+    ) -> None:
+        """A curated resort gets the forecast sentence, minus the three tiers."""
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name="Mont Fort", kind="PEAK"),
+            role="TOP",
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "forecast" in description
+        assert "village, mid-station and summit" not in description
+
+    def test_a_blank_role_location_promises_forecasts_without_naming_tiers(
+        self,
+    ) -> None:
+        """An auto-linked resort has no roles, so it can name no tiers either."""
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort, location=LocationFactory.create(anonymous=True), role=""
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "forecast" in description
+        assert "village, mid-station and summit" not in description
+
+    def test_no_locations_names_the_bulletin_and_claims_no_forecast(self) -> None:
+        """No Forecasts section means no forecast promise in the description."""
+        region = MicroRegionFactory.create(name="Val de Bagnes")
+        resort = ResortFactory.create(name="Verbier", region=region, geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "Val de Bagnes avalanche bulletin" in description
+        assert "forecast" not in description
+
+    def test_the_with_locations_description_is_one_clean_line(self) -> None:
+        """The second blocktrans is squished too, not just the first.
+
+        ``TestNoWhitespaceLeaks`` in tests/public/test_page_meta.py walks
+        every page, but its resort has no locations, so it only ever renders
+        the other branch. ``|squish`` in the shared emitter protects both —
+        this is what would catch a description that stopped going through it.
+        """
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name="Mont Fort", kind="PEAK"),
+            role="TOP",
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "\n" not in description
+        assert "  " not in description
+        assert description == description.strip()
 
 
 @pytest.mark.django_db

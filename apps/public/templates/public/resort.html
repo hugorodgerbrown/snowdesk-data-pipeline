@@ -79,12 +79,24 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# exists for — SNOW-504 built /resorts/<id>/<slug>/ specifically as an  #}
 {# indexable, shareable URL cross-linked from the map's resort popup,    #}
 {# and until now it unfurled with no title, description or og:url.      #}
+{# SNOW-855: the description branches on ``locations``, the same         #}
+{# condition the Forecasts section itself uses, so it promises only what #}
+{# this resort actually links to. It named a village, a mid-station and  #}
+{# a summit for every resort; no resort in the fixture set has all three #}
+{# roles, and most have locations with no role at all, so the page may   #}
+{# be offering one anonymous point or none.                              #}
 {% block page_meta %}
     {% blocktrans with name=resort.name trimmed asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
-    {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
-        {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin and to forecasts for its
-        village, mid-station and summit.
-    {% endblocktrans %}
+    {% if locations %}
+        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
+            {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin and to a mountain weather
+            forecast for each of its locations.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
+            {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin.
+        {% endblocktrans %}
+    {% endif %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
 
