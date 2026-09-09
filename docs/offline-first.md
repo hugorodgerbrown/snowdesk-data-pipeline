@@ -176,6 +176,14 @@ that went away with the signal.
   `data:panel_rows` IndexedDB store (schema v6) by
   `static/js/observations_offline.js`, partitioned by principal exactly as
   the account-specific overlay rows are (see below).
+- So is the **idle warm** `report.js` fires at every map page load. That
+  warm is a plain `fetch` raising no htmx event, so it reaches the store
+  through `panel_rows_cache.js`'s `onWarmed()` hook rather than the swap
+  listener. Without it the rows would be stored only for a user who had
+  opened the panel while online, which is not the user this relaxation is
+  for — someone who loads the map with signal and opens the panel without
+  it. The hook is per key and only `observations` registers one, so a warm
+  of the favourites or routes panel still persists nothing.
 - What is stored is the **rendered response body**, not a record per
   observation — the row's meta line is server-translated and carries a
   region name, a `<time datetime>` element and a what3words line, so

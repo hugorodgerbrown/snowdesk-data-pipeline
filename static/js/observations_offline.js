@@ -33,6 +33,18 @@
  * with no prose of its own: the one line the user reads offline is
  * ``report.js``'s, from the template's strings block.
  *
+ * Two ways in
+ * ------------
+ * A body reaches ``write()`` either from a panel OPEN — ``htmx:beforeSwap``
+ * on the container this module owns — or from the idle WARM ``report.js``
+ * fires at every map page load. Both are needed, and the second is the one
+ * that matters: a warm is a plain fetch raising no htmx event, so on the
+ * open path alone the rows would be stored only for a user who had opened
+ * the sheet while online, and not for the user who loads the map with
+ * signal and opens the panel in the backcountry. The warm reaches here
+ * through ``panel_rows_cache.js``'s ``onWarmed()`` hook, registered below
+ * for this key only.
+ *
  * Storage only. This module writes and reads; ``report.js`` decides when to
  * paint, because it owns everything else the user sees in that panel.
  *
@@ -156,6 +168,20 @@
       // Swallowed — see write().
     });
   });
+
+  // The other half of the write-through, and the one that serves the user
+  // this module was written for. ``report.js`` warms the panel's rows at
+  // module init on every map page load, and that warm is a plain fetch
+  // raising no htmx event (``panel_rows_cache.js``'s header says why), so
+  // the listener above never sees it. Without this the rows would be
+  // persisted only by a panel OPEN while online — leaving the far commoner
+  // case, loading the map with signal and opening the panel later without
+  // it, on the failure line the ticket exists to remove.
+  //
+  // Naming the key here rather than in panel_rows_cache.js is SNOW-722's
+  // boundary: the shared cache serves three panels and must not know which
+  // of them keeps its rows.
+  window.pwaPanelRows?.onWarmed(KEY, write);
 
   Object.defineProperty(window, 'pwaObservationsOffline', {
     value: Object.freeze({ read: read, write: write }),

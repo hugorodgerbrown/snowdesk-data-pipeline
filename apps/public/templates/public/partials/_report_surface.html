@@ -63,10 +63,12 @@ Context expected:
 {# _favourites_surface.html) — not repeated here; see this partial's    #}
 {# header comment.                                                      #}
 {# SNOW-661: the panel's offline row store — written on every successful  #}
-{# list swap, read back when the request fails. Loaded immediately before  #}
-{# report.js, which reads it through window.pwaObservationsOffline; both    #}
-{# are deferred, so document order holds. Map page only, unlike             #}
-{# favourites_offline.js, which base.html loads site-wide.                  #}
+{# list swap AND on report.js's idle warm, read back when the request      #}
+{# fails. Sits between the two scripts it talks to, and both edges are      #}
+{# document order between deferred scripts: home.html's panel_rows_cache.js #}
+{# is above (this registers its onWarmed hook at parse time), and report.js  #}
+{# is below (it reads window.pwaObservationsOffline). Map page only, unlike  #}
+{# favourites_offline.js, which base.html loads site-wide.                   #}
 <script defer src="{% static 'js/observations_offline.js' %}"></script>
 {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
 {# Deferred so it executes in document order after the map assets.      #}

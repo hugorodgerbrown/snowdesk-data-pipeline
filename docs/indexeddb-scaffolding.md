@@ -42,7 +42,7 @@ never removed.
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
-| `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) |
+| `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
 | `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
 
 Alongside `basemap.origins` and `sw.devShellCache`, `meta:app` also

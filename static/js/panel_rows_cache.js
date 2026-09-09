@@ -54,10 +54,27 @@
  * the panels bind to. A warm that fails is simply not cached; the panel then
  * behaves exactly as it did before this module existed.
  *
- * Nothing here is persisted. The cache is per page load, in memory, and
- * therefore cannot outlive a sign-out or leak across an account switch —
- * the hazard ``map_overlay_offline_cache.js`` has to carry a ``principal``
- * to defend against, and one this module avoids rather than solves.
+ * ``onWarmed()`` is the consequence of raising no htmx event: a module that
+ * writes a panel's rows through to storage on ``htmx:beforeSwap`` sees a
+ * panel OPEN and never sees a warm, so before SNOW-661 the observation rows
+ * reached IndexedDB only if the user had opened the sheet while online —
+ * which is not the user the offline read exists for. A handler registered
+ * for a key is handed the body of every successful warm for it, and the
+ * registration runs the other way round on purpose: this module knows
+ * nothing about observations, and the module that cares about that key is
+ * the one that names it (the ownership boundary SNOW-722 cost the routes
+ * panel a list of favourites to learn). No handler is registered for
+ * ``favourites`` or ``routes``, so a warm for those keys goes on persisting
+ * nothing.
+ *
+ * The cache itself still persists nothing. It is per page load, in memory,
+ * and therefore cannot outlive a sign-out or leak across an account switch
+ * — the hazard ``map_overlay_offline_cache.js`` has to carry a
+ * ``principal`` to defend against, and one this module avoids rather than
+ * solves. What a handler does with a body it is handed is that handler's
+ * business, including the account partitioning: ``observations_offline.js``
+ * stamps the ``principal`` on the row it writes, exactly as it does for a
+ * body that arrives through a swap, so nothing about that hazard moves here.
  *
  * No exports beyond ``window.pwaPanelRows``.
  */
@@ -91,6 +108,18 @@
    * @type {WeakMap<Element, {key: string, painted: ?string}>}
    */
   const owners = new WeakMap();
+
+  /**
+   * Handlers to notify when a warm for a panel key succeeds, by key.
+   *
+   * A list rather than one handler per key so that a second registration
+   * cannot silently displace the first — a module losing its write-through
+   * to a load-order change is precisely the class of failure this hook was
+   * added to fix.
+   *
+   * @type {Map<string, Array<Function>>}
+   */
+  const warmHandlers = new Map();
 
   /**
    * Paint cached markup into a rows container.
@@ -163,13 +192,62 @@
   }
 
   /**
+   * Register a handler to receive the body of every successful warm for one
+   * panel key.
+   *
+   * Called by the module that owns that panel's storage, never by this one:
+   * see this module's header. Registration must happen before the warm
+   * lands, which document order already guarantees — every registering
+   * module is a deferred script loaded after this one, and a warm does not
+   * run until the browser is idle.
+   *
+   * @param {string} key The panel key.
+   * @param {Function} handler Called with the response body, verbatim. Its
+   *   return value is ignored and a throw or a rejection is swallowed — a
+   *   warm is best effort and must not become a source of errors.
+   * @returns {void}
+   */
+  function onWarmed(key, handler) {
+    if (!key || typeof handler !== 'function') return;
+    const handlers = warmHandlers.get(key) || [];
+    handlers.push(handler);
+    warmHandlers.set(key, handlers);
+  }
+
+  /**
+   * Hand a freshly warmed body to every handler registered for its key.
+   *
+   * @param {string} key The panel key.
+   * @param {string} body The response body, verbatim.
+   * @returns {void}
+   */
+  function notifyWarmed(key, body) {
+    const handlers = warmHandlers.get(key);
+    if (!handlers) return;
+    handlers.forEach(function (handler) {
+      try {
+        const result = handler(body);
+        if (result && typeof result.catch === 'function') {
+          result.catch(function () {
+            // Best effort — a handler that cannot store the body leaves the
+            // panel exactly as it behaved before this hook existed.
+          });
+        }
+      } catch (_e) {
+        // As above: a throwing handler must not take the warm down with it.
+      }
+    });
+  }
+
+  /**
    * Fill the cache before any panel has been opened, so even the first open
    * of a session paints instantly. Deferred to idle; safe to call at module
    * init.
    *
-   * Best effort throughout: a failed or non-2xx warm is not cached and is
-   * not retried, leaving the panel's own load to report the failure in the
-   * place the user can see it.
+   * Best effort throughout: a failed or non-2xx warm is not cached, is not
+   * handed to the key's warm handlers, and is not retried, leaving the
+   * panel's own load to report the failure in the place the user can see
+   * it.
    *
    * @param {string} key The panel key.
    * @param {string} url The list endpoint.
@@ -193,7 +271,14 @@
           return resp.ok ? resp.text() : null;
         })
         .then(function (body) {
-          if (typeof body === 'string' && !cache.has(key)) cache.set(key, body);
+          if (typeof body !== 'string' || cache.has(key)) return;
+          cache.set(key, body);
+          // Only on the branch that caches. An entry already present means
+          // the panel was opened while this request was out, so its own
+          // swap has been through every listener bound to it — including
+          // the write-through this hook exists to reach — with a body no
+          // older than this one.
+          notifyWarmed(key, body);
         })
         .catch(function () {
           // Offline, or the endpoint is unreachable. Nothing cached, nothing
@@ -243,7 +328,12 @@
   });
 
   Object.defineProperty(window, 'pwaPanelRows', {
-    value: Object.freeze({ load: load, warm: warm, invalidate: invalidate }),
+    value: Object.freeze({
+      load: load,
+      warm: warm,
+      invalidate: invalidate,
+      onWarmed: onWarmed,
+    }),
     writable: false,
     configurable: false,
   });
