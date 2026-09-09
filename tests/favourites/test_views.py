@@ -953,6 +953,29 @@ class TestFavouriteCardThreeWordAddress:
         assert "filled.count.soap" not in content
 
     @override_flag("what3words", active=True)
+    def test_a_region_pin_has_no_location_and_renders_without_one(
+        self, client: Client
+    ) -> None:
+        """A region pin (SNOW-802) has no coordinate and no Location at all.
+
+        This endpoint is scoped by ``for_user``, not ``placed()``, so a
+        region pin's uuid reaches the card even though the map never draws
+        one. ``_attach_three_word_address`` therefore cannot assume a
+        location exists — a bare ``favourite.location.three_word_address``
+        would raise ``AttributeError`` on None and 500 the panel.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        favourite = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        assert favourite.location is None
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "favourite-card-w3w" not in response.content.decode()
+
+    @override_flag("what3words", active=True)
     def test_rendering_the_card_makes_no_outbound_call(self, client: Client) -> None:
         """THE REGRESSION THAT MATTERS. A read path, never a conversion.
 
