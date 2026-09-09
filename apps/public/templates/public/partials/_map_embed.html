@@ -1005,6 +1005,15 @@ Optional context:
             aria-label='{% trans "Map information" %}'
         >
             <section class="map-legend-section">
+                <a
+                    id="map-explainer-link"
+                    class="map-legend-row map-legend-attribution-link hover-affordance"
+                    href="{% url 'public:home' %}?layers=exploded{% if request.GET.d %}&amp;d={{ request.GET.d|urlencode }}{% endif %}"
+                >
+                    {% trans "Show map demo" %}
+                </a>
+            </section>
+            <section class="map-legend-section">
                 <div class="map-legend-title">{% trans "EAWS Danger Scale" %}</div>
                 <div class="map-legend-row">
                     <span

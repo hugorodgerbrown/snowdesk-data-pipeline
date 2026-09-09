@@ -190,9 +190,11 @@
   }
   const DEFAULT_BASEMAP_KEY = mapEl.dataset.defaultBasemapKey;
   const storedBasemapKey = readStorage(BASEMAP_STORAGE_KEY);
-  const initialBasemapKey = (storedBasemapKey && BASEMAP_OPTIONS[storedBasemapKey])
+  const layerExplainerRequested = new URLSearchParams(window.location.search).get('layers') === 'exploded';
+  const preferredBasemapKey = (storedBasemapKey && BASEMAP_OPTIONS[storedBasemapKey])
     ? storedBasemapKey
     : DEFAULT_BASEMAP_KEY;
+  const initialBasemapKey = layerExplainerRequested ? 'swisstopo_winter' : preferredBasemapKey;
   const initialBasemapUrl = BASEMAP_OPTIONS[initialBasemapKey];
   // SNOW-483: true once the native basemap style has failed to load (offline)
   // and the inline fallback background (buildFallbackStyle, below) is active.
@@ -4166,6 +4168,51 @@
     return work;
   };
 
+  // The explainer shares the normal loaders, feature state and paint rules.
+  // No independent GeoJSON renderer or copied danger-colour expressions.
+  if (layerExplainerRequested) {
+    window.snowdeskLayerExplainer = {
+      async prepare(key) {
+        await window.snowdeskMapState.ready;
+        if (key) await ensureOverlayLoaded(key);
+        return {
+          date: currentDisplayedDate,
+          favouritesEligible: FAVOURITES_ELIGIBLE,
+          fillOpacity: regionFillOpacity(
+            BULLETINS_CORE.regionsFillLayout(true, bulletinsVisibility).opacity || 0.5,
+          ),
+        };
+      },
+      // SNOW-172: the explainer captures a fixed Swiss view, but the country
+      // filters belong to the user. Someone following only France or ALBINA
+      // has ``ch`` off, and ``applyCountryFilters`` then keeps every Swiss
+      // region, bulletin, L1, L2 and L4 feature out of the style — so the
+      // capture would photograph blank sheets. Turn CH on for the duration and
+      // hand back a restore function. Deliberately mutates the in-memory state
+      // only: ``COUNTRY_STORAGE_KEY`` is never written, so the preference
+      // survives the demo untouched, and ``ensureCountryLoaded`` is called
+      // without ``userInitiated`` so a failed fetch degrades silently rather
+      // than reverting the row.
+      async focusSwitzerland() {
+        if (countryState.ch) return () => {};
+        countryState.ch = true;
+        COUNTRY_STATE.ch = true;
+        try {
+          await ensureCountryLoaded('ch');
+        } catch (_e) {
+          // Offline or a failed feed — the filter still comes off, and the
+          // build's own missing-layer check reports what could not be drawn.
+        }
+        applyCountryFilters();
+        return () => {
+          countryState.ch = false;
+          COUNTRY_STATE.ch = false;
+          applyCountryFilters();
+        };
+      },
+    };
+  }
+
   // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
   // to l1 / l2 / resorts. l4 is not lazy — its layers are installed
   // eagerly in installRegionsLayers; the other tiers fetch their
@@ -5547,6 +5594,15 @@
   // it active in environments where the map never loads (e.g. Playwright
   // offline headless tests).
   let currentDisplayedDate = readDisplayDate();
+  const explainerLink = document.getElementById('map-explainer-link');
+  const syncExplainerLink = () => {
+    if (!explainerLink) return;
+    const url = new URL(explainerLink.href, window.location.href);
+    if (currentDisplayedDate) url.searchParams.set('d', currentDisplayedDate);
+    else url.searchParams.delete('d');
+    explainerLink.href = url.href;
+  };
+  syncExplainerLink();
 
   // SNOW-318: Forward reference to the refreshPopupForDate function defined
   // inside map.on('load'). Default no-op so the date-changed listener below
@@ -5559,6 +5615,7 @@
   // event never fires.
   document.addEventListener('snowdesk:date-changed', (e) => {
     currentDisplayedDate = (e.detail && e.detail.date) || null;
+    syncExplainerLink();
   });
 
   // SNOW-318: Refresh the open popup's colour/label/link when the scrubber
