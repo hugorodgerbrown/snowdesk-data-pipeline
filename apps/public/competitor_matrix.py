@@ -386,8 +386,11 @@ FEATURES: tuple[Feature, ...] = (
             skitourenguru=_UNKNOWN,
             whympr=Cell(Support.PARTIAL, _("Reports after the outing")),
             opensnow=_UNKNOWN,
-            # apps/trips/ — Trip + TripParticipant, one share link, roster.
-            snowdesk=Cell(Support.YES, _("One link adds you to the roster")),
+            # apps/trips/ — Trip + TripParticipant, one share link. SNOW-848
+            # took the roster surface off: the rows still scope ``for_user``,
+            # but nobody sees who else holds the trip, so the claim is the
+            # shared object rather than the group.
+            snowdesk=Cell(Support.YES, _("One link, one shared trip")),
         ),
     ),
     Feature(
