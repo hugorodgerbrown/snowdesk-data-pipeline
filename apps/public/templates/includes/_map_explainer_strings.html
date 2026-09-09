@@ -1,0 +1,41 @@
+{% load i18n %}
+<template id="map-explainer-strings">
+    <span data-string="title">{% trans "How the map is built" %}</span>
+    <span data-string="loading">{% trans "Loading map layers…" %}</span>
+    <span data-string="close">{% trans "Close layer animation" %}</span>
+    <span data-string="view-label">{% trans "Map layer view" %}</span>
+    <span data-string="stacked">{% trans "Stacked" %}</span>
+    <span data-string="exploded">{% trans "Exploded" %}</span>
+    <span data-string="replay">{% trans "Replay build" %}</span>
+    <span data-string="map-layers">{% trans "Map layers" %}</span>
+    <span data-string="layers-order">{% trans "Layers from bottom to top" %}</span>
+    <span data-string="reset">{% trans "Reset" %}</span>
+    <span data-string="data-credits">{% trans "Data credits" %}</span>
+    <span data-string="swisstopo">{% trans "Swisstopo" %}</span>
+    <span data-string="winter-basemap">{% trans "Winter basemap" %}</span>
+    <span data-string="slope">{% trans "Slope angle" %}</span>
+    <span data-string="terrain-shading">{% trans "Terrain shading" %}</span>
+    <span data-string="bulletins">{% trans "SLF bulletins" %}</span>
+    <span data-string="avalanche-danger">{% trans "Avalanche danger" %}</span>
+    <span data-string="major">{% trans "L1 · Major" %}</span>
+    <span data-string="minor">{% trans "L2 · Minor" %}</span>
+    <span data-string="micro">{% trans "L4 · Micro" %}</span>
+    <span data-string="boundaries">{% trans "EAWS boundaries" %}</span>
+    <span data-string="resorts">{% trans "Resorts" %}</span>
+    <span data-string="resort-locations">{% trans "Resort locations" %}</span>
+    <span data-string="locations">{% trans "Your locations" %}</span>
+    <span data-string="saved-places">{% trans "Saved places" %}</span>
+    <span data-string="stacked-status">{% trans "Stacked layer view." %}</span>
+    <span data-string="exploded-status">{% trans "Exploded layer view." %}</span>
+    <span data-string="replay-status">{% trans "Replaying map build." %}</span>
+    <span data-string="complete">{% trans "Every layer, together in one map." %}</span>
+    <span data-string="restored">{% trans "All layers restored." %}</span>
+    <span data-string="adding">{% blocktrans %}Adding %(name)s.{% endblocktrans %}</span>
+    <span data-string="unavailable">
+        {% blocktrans %}%(name)s is unavailable. Close and retry after its data loads.{% endblocktrans %}
+    </span>
+    <span data-string="timeout">
+        {% trans "Map tiles did not finish loading. Close and retry." %}
+    </span>
+    <span data-string="no-date">{% trans "No bulletin date selected" %}</span>
+</template>

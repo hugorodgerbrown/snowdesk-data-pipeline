@@ -44,6 +44,11 @@ in addition to the shared map assets.
     <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {# The explainer is an opt-in map mode. Keep its styles off the normal #}
+    {# homepage path; production's manifest storage fingerprints this URL. #}
+    {% if request.GET.layers == 'exploded' %}
+        <link rel="stylesheet" href="{% static 'css/map_exploded.css' %}">
+    {% endif %}
     {# Per-country RSS/Atom feeds (SNOW-396). Feed readers and LLM crawlers  #}
     {# pick these up from the page head; the four hrefs cover every country. #}
     <link
@@ -417,6 +422,12 @@ in addition to the shared map assets.
     {# see tests/public/test_map_script_order.py.                            #}
     {% if zoom_readout_visible %}
         <script defer src="{% static 'js/map_zoom_readout.js' %}"></script>
+    {% endif %}
+    {% if request.GET.layers == 'exploded' %}
+        {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
+        {# ordinary map visits so the feature has no JS cost until opened.  #}
+        {% include "includes/_map_explainer_strings.html" %}
+        <script defer src="{% static 'js/map_exploded.js' %}"></script>
     {% endif %}
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
