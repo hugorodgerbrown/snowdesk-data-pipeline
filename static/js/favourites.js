@@ -117,6 +117,13 @@
   const SIGNIN_URL = btn.dataset.signinUrl;
   const IS_ELIGIBLE = btn.dataset.favouritesEligible === 'true';
 
+  // SNOW-879: warm this panel's rows at idle so the FIRST open of a
+  // session is instant too, not just the ones after it. Gated on
+  // IS_ELIGIBLE — the panel loads nothing for an ineligible visitor (it gets the sign-in
+  // CTA instead), so there is nothing to warm for one.
+  // See static/js/panel_rows_cache.js.
+  if (IS_ELIGIBLE && LIST_URL) window.pwaPanelRows?.warm('favourites', LIST_URL);
+
   // SNOW-499: resort-popup star create URL — read from #map's own dataset
   // (not #favourite-add-btn's) since it is emitted alongside the other
   // #map data-*-url attributes and gated the same way
@@ -284,7 +291,7 @@
       if (rows) rows.replaceChildren(buildSigninCta());
       return true;
     }
-    loadRows();
+    loadRows(true);
     return true;
   }
 
@@ -300,11 +307,21 @@
    * calls render(), rather than patching the row in place from what we
    * think we just wrote.
    *
+   * @param {boolean} [fromCache] True to paint the cached rows first —
+   *   set by the open path only, not by the post-mutation re-reads.
    * @returns {void}
    */
-  function loadRows() {
+  function loadRows(fromCache) {
     const rows = sheet.querySelector('[data-favourites-rows]');
     if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    // SNOW-879: cached rows paint now, favourites:list still gets the last
+    // word a round trip later. `cached` is passed only for an OPEN —
+    // a re-read that follows a mutation must not flash the pre-mutation
+    // list back up. See static/js/panel_rows_cache.js.
+    if (window.pwaPanelRows) {
+      window.pwaPanelRows.load('favourites', LIST_URL, rows, { cached: fromCache });
+      return;
+    }
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 

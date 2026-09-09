@@ -940,6 +940,14 @@ const STATIC_SHELL_EXTENSIONS = new Set([
 // somehow rotated Accept-Encoding mid-session would just cache-miss
 // and re-fetch — not a correctness risk.
 //
+//   /api/resorts-by-region/ (SNOW-879) — the region_id -> resort names
+//   lookup the region panel lists. Curated reference data from the resort
+//   sheet, changed only by an import, and identical for every visitor and
+//   every date; it already declares itself publicly cacheable. Cached here
+//   so the panel's resort section survives an offline boot, which it did
+//   not: the response carries no date and no account, so nothing about it
+//   can go stale WITHIN a session.
+//
 // Any new entry must be similarly safe to cache across a session.
 const STATIC_PATHS = new Set([
   '/api/ratings/',
@@ -947,6 +955,7 @@ const STATIC_PATHS = new Set([
   '/api/major-regions.geojson',
   '/api/sub-regions.geojson',
   '/api/resorts.geojson',
+  '/api/resorts-by-region/',
   '/api/bulletin-groupings.geojson',
 ]);
 
