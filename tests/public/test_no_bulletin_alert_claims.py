@@ -93,7 +93,16 @@ _TEMPLATE_SUFFIXES = frozenset({".html", ".txt"})
 # a staff page. SNOW-877 found seven false strings in this one module
 # that the template walk could never have seen, three of them outside
 # the range the ticket had listed.
-_EXTRA_COPY_FILES = [_ROOT / "apps" / "public" / "_component_fixtures.py"]
+_EXTRA_COPY_FILES = [
+    _ROOT / "apps" / "public" / "_component_fixtures.py",
+    # The category labels and descriptions above each panel, rendered by
+    # ``_components/partials/_panel.html``. Added after the first version
+    # of this walk covered the fixtures and missed the prose beside them:
+    # the status-page panel still said it served "all five confirmation /
+    # error pages in the subscriptions flow", of which the count, the
+    # flow and its existence were each wrong.
+    _ROOT / "apps" / "public" / "design_tokens.py",
+]
 
 # Django comments, replaced by their own newlines so line numbers survive.
 _COMMENT_RE = re.compile(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}|{#.*?#}", re.DOTALL)
@@ -159,6 +168,14 @@ _CLAIMS: dict[str, re.Pattern[str]] = {
     ),
     "count-of-subscriptions": re.compile(
         r"\b(no|active|any)\s+(?:active\s+)?subscriptions?\b", re.IGNORECASE
+    ),
+    # A named subscriptions surface. There is no subscriptions flow, page,
+    # form or settings screen — SNOW-802 retired the last of them — so the
+    # noun phrase is false wherever it appears, and it is specific enough
+    # not to reach the true push copy.
+    "subscriptions-surface": re.compile(
+        r"\bsubscriptions?\s+(flow|page|form|settings|management)\b",
+        re.IGNORECASE,
     ),
     "install-unlocks-notifications": re.compile(
         r"\bunlocks?\s+(?:[\w-]+\s+){0,3}(notification|alert|update|subscription)s?\b",
@@ -274,6 +291,12 @@ _ORIGINALS: list[tuple[str, str]] = [
     ("receive-alerts", "You'll receive alerts for the regions below."),
     ("avalanche-alerts", "Get avalanche alerts"),
     ("count-of-subscriptions", "You have no active subscriptions."),
+    (
+        "subscriptions-surface",
+        "Centred status-page shell — flex full-viewport wrapper → max-w-md "
+        "column → p-8 centred card — used by all five confirmation / error "
+        "pages in the subscriptions flow.",
+    ),
 ]
 
 

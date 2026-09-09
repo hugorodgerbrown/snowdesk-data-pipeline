@@ -878,8 +878,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Status page",
         description=(
             "Centred status-page shell — flex full-viewport wrapper → max-w-md "
-            "column → p-8 centred card — used by all five confirmation / error "
-            "pages in the subscriptions flow."
+            "column → p-8 centred card — used by the nine confirmation and "
+            "error pages in the account flow."
         ),
         kind="components",
         partial="public/partials/_status_page_demo.html",
