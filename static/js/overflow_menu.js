@@ -108,13 +108,34 @@
    * @returns {void}
    */
   function place(triggerEl, menuEl) {
-    var anchor = triggerEl.getBoundingClientRect();
+    // TAKE THE MENU OUT OF FLOW BEFORE MEASURING ANYTHING (SNOW-886). This
+    // assignment used to sit BELOW the `getBoundingClientRect()` call, and
+    // that one line of ordering was the whole "the menu opens 132px to the
+    // left of its trigger" bug.
+    //
+    // `setOpen` un-hides the <ul> and then calls this. At that instant the
+    // menu is visible and still `position: static`, so it is in normal flow
+    // inside includes/_overflow_menu.html's `<div class="inline-block"
+    // data-overflow-menu>` wrapper — and that wrapper therefore widens from
+    // the trigger's 44x44 to the menu's own `w-44`, 176px. The row is a flex
+    // line whose label is `flex-1`, so the extra 132px (176 - 44) is taken
+    // out of the label and the trigger is pushed exactly that far LEFT.
+    // Reading the trigger's rect first forces layout in precisely that
+    // transient state; `position: fixed` then landed a line later, the row
+    // snapped back, and the menu was placed against an anchor that had
+    // already stopped being true. It predicted the symptom exactly: three
+    // screenshots at different sheet and trigger positions all showed a
+    // CONSTANT 131-133px horizontal error with the vertical correct, because
+    // widening the wrapper moves the trigger sideways and not up or down.
+    //
+    // So: out of flow first, measure second. Do not reorder these.
     menuEl.style.position = 'fixed';
     // Cleared first so a re-open measures the menu's own natural box
     // rather than the one the previous placement squeezed it into.
     menuEl.style.top = '';
     menuEl.style.left = '';
 
+    var anchor = triggerEl.getBoundingClientRect();
     var width = menuEl.offsetWidth;
     var height = menuEl.offsetHeight;
     var viewportWidth = window.innerWidth || 0;

@@ -27,6 +27,14 @@
  *     when a menu is open, so one Escape closes the menu without also
  *     closing the sheet — but an Escape with no menu open still reaches
  *     the sheet's own bubble-phase handler (static/js/map_sheet.js).
+ *
+ * SNOW-886 adds a fourth, and it is an ORDERING assertion rather than a
+ * geometric one. The placement tests below all supply their own numbers
+ * through `measure()` precisely because jsdom lays nothing out — which
+ * means no test here can ever see the real bug that shipped with SNOW-830,
+ * a menu measured while it was still in normal flow and therefore widening
+ * the row it was measured from. What a test CAN see is what state the menu
+ * was in when the measurement was taken, so that is what is asserted.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -190,6 +198,35 @@ describe('placement (SNOW-830)', () => {
     trigger('a').click();
 
     expect(menu('a').style.left).toBe('4px');
+  });
+
+  it('takes the menu out of flow BEFORE it measures the trigger (SNOW-886)', () => {
+    // The ordering regression test, and it has to be an ordering test:
+    // jsdom lays nothing out, so no assertion here can observe the
+    // wrapper widening from the trigger's 44px to the menu's 176px `w-44`
+    // and shoving the trigger 132px left along its flex line. What CAN be
+    // observed is the state the menu was in at the moment its trigger was
+    // measured — and while the menu is still `position: static` it is in
+    // normal flow inside the `inline-block` wrapper, which is exactly when
+    // that measurement is worthless.
+    //
+    // So the spy records `menu.style.position` at call time rather than
+    // returning a rect and forgetting. `fixed` means the <ul> was already
+    // out of flow and the row had already snapped back to its real width;
+    // an empty string means someone has reordered `place()` back to
+    // measuring first, and the menu will open against a stale anchor
+    // again.
+    let positionWhenMeasured = null;
+    measure('a', { top: 100, bottom: 144, left: 300, right: 344 }, { width: 176, height: 120 });
+    const measured = trigger('a').getBoundingClientRect;
+    trigger('a').getBoundingClientRect = () => {
+      positionWhenMeasured = menu('a').style.position;
+      return measured();
+    };
+
+    trigger('a').click();
+
+    expect(positionWhenMeasured).toBe('fixed');
   });
 
   it('clears the placement again on close', () => {
