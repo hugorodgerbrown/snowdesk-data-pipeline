@@ -614,6 +614,27 @@ class ResortQuerySet(models.QuerySet):
         """Return only resorts with both latitude and longitude set."""
         return self.filter(latitude__isnull=False, longitude__isnull=False)
 
+    def unlinked(self) -> "ResortQuerySet":
+        """Return geocoded resorts carrying no ``ResortLocation`` at all.
+
+        This is the silent gap SNOW-885 exists to detect. A resort's pin and
+        its weather are separate things: the edit-resorts overlay writes the
+        coordinate, and only a ``ResortLocation`` makes the resort page render
+        a Forecasts section. ``link_resort_locations`` creates that link, and
+        PR #758 took it out of the deploy on purpose, so a resort added or
+        re-geocoded since then shows no weather until an operator remembers to
+        run the command by hand — with nothing anywhere noticing.
+
+        A resort with NO coordinates is deliberately not here. It cannot be
+        linked at all, so it is a known backlog rather than a silent failure,
+        and folding the two together would bury the one in the other.
+
+        Returns:
+            Filtered queryset of geocoded resorts with no location link.
+
+        """
+        return self.geocoded().filter(resort_locations__isnull=True)
+
     def needs_geocoding(self) -> "ResortQuerySet":
         """Return resorts missing coords or flagged for review."""
         return self.filter(
