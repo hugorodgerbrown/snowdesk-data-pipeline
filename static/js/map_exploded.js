@@ -98,16 +98,26 @@
   let busy = true;
   let closed = false;
 
+  const mapEl = document.getElementById('map');
   const groups = [
     [strings.swisstopo, strings['winter-basemap'], [], null],
-    [strings.slope, strings['terrain-shading'], ['slope-raster'], null],
+  ];
+  // SNOW-691/724: the slope raster is behind an operator kill switch — clear
+  // settings.SLOPE_TILE_URL and `installSlopeLayer` never adds `slope-raster`,
+  // so the template omits `data-slope-tile-url`. Demonstrating a sheet the map
+  // will not install aborts the build on its missing-layer check, taking every
+  // later layer with it; omit the group instead.
+  if (mapEl?.dataset.slopeTileUrl) {
+    groups.push([strings.slope, strings['terrain-shading'], ['slope-raster'], null]);
+  }
+  groups.push(
     [strings.bulletins, strings['avalanche-danger'], ['regions-fill', 'bulletin-groupings-line'], 'l3'],
     [strings.major, strings.boundaries, ['major-regions-line', 'major-regions-label'], 'l1'],
     [strings.minor, strings.boundaries, ['sub-regions-line', 'sub-regions-label'], 'l2'],
     [strings.micro, strings.boundaries, ['regions-line', 'regions-label'], null],
     [strings.resorts, strings['resort-locations'], ['resorts-pin', 'resorts-label'], 'resorts'],
-  ];
-  if (document.getElementById('map')?.dataset.favouritesEligible === 'true') {
+  );
+  if (mapEl?.dataset.favouritesEligible === 'true') {
     groups.push([strings.locations, strings['saved-places'], ['favourites-pin', 'favourites-label'], 'favourites']);
   }
 
@@ -358,15 +368,40 @@
       center: map.getCenter(), zoom: map.getZoom(),
       bearing: map.getBearing(), pitch: map.getPitch(),
     };
-    const original = map.getStyle();
-    const visibility = new Map(original.layers.map(layer => [layer.id, layer.layout?.visibility || 'visible']));
-    const filters = new Map(original.layers.map(layer => [layer.id, layer.filter || null]));
+    const visibility = new Map();
+    const filters = new Map();
+    // Snapshot every layer the demo is about to override, and do it LAZILY.
+    // Reading the style once after ``ready`` misses the tiers the boot-time
+    // lazy loads install later — the bulletin boundary, and an eligible user's
+    // default-on favourites — which `prepare()` brings in mid-build. Those
+    // layers would be absent from the snapshot, and the restore below would
+    // read them as `none` and leave them hidden for the rest of the session,
+    // with `overlayLoaded` already true so no loader reinstates them. Taking
+    // each layer's state the first time we see it records what the
+    // application configured, before this demo touches it.
+    const remember = () => {
+      for (const layer of map.getStyle().layers) {
+        if (visibility.has(layer.id)) continue;
+        visibility.set(layer.id, layer.layout?.visibility || 'visible');
+        filters.set(layer.id, layer.filter || null);
+      }
+    };
+    remember();
     const oldFill = map.getPaintProperty('regions-fill', 'fill-opacity');
     const container = map.getContainer();
     const oldContainerStyle = container.getAttribute('style');
+    // SNOW-172: the capture flies to a fixed Swiss view, but the persisted
+    // country filters are the user's. A returning visitor who follows only
+    // France or ALBINA has Switzerland filtered out, so the region, bulletin,
+    // L1, L2 and L4 sheets would all capture blank. Force CH on for the
+    // duration and put the preference back afterwards — localStorage is never
+    // written.
+    let restoreCountries = () => {};
     try {
       const metadata = await window.snowdeskLayerExplainer.prepare();
       if (closed) return;
+      remember();
+      restoreCountries = await window.snowdeskLayerExplainer.focusSwitzerland();
       const applicationSources = new Set([
         'regions', 'major-regions', 'sub-regions', 'bulletin-groupings',
         'resorts', 'favourites', 'weather', 'routes', 'community-reports',
@@ -389,6 +424,7 @@
         status.textContent = interpolate(strings.adding, {name});
         syncRows();
         await window.snowdeskLayerExplainer.prepare(loaderKey);
+        remember();
         if (!ids.some(id => map.getLayer(id))) {
           throw new Error(interpolate(strings.unavailable, {name}));
         }
@@ -413,11 +449,16 @@
       draw();
     } finally {
       for (const layer of map.getStyle().layers) {
-        map.setLayoutProperty(layer.id, 'visibility', visibility.get(layer.id) || 'none');
-        if (filters.has(layer.id) && layer.type !== 'background' && layer.type !== 'raster') {
+        // A layer this demo never saw is a layer it never hid; leave it alone
+        // rather than defaulting it to `none`.
+        if (!visibility.has(layer.id)) continue;
+        map.setLayoutProperty(layer.id, 'visibility', visibility.get(layer.id));
+        if (layer.type !== 'background' && layer.type !== 'raster') {
           map.setFilter(layer.id, filters.get(layer.id));
         }
       }
+      // Last, so the recomposed country filters win over the snapshot above.
+      restoreCountries();
       map.setPaintProperty('regions-fill', 'fill-opacity', oldFill);
       if (oldContainerStyle === null) container.removeAttribute('style');
       else container.setAttribute('style', oldContainerStyle);

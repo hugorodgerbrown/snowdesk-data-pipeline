@@ -1,6 +1,5 @@
 .map-exploded {
     box-sizing: border-box;
-    display: grid;
     gap: 24px;
     width: min(1120px, calc(100vw - 32px));
     max-height: calc(100dvh - 32px);
@@ -13,6 +12,16 @@
     border-radius: var(--radius-card, 16px);
     box-shadow: 0 18px 50px rgb(0 0 0 / .28);
     font-family: var(--font-sans, var(--sans));
+}
+
+/* The display must be scoped to the open state. An author-level
+ * `display: grid` on the bare selector beats the user-agent
+ * `dialog:not([open]) { display: none }` rule, so Escape or the close button
+ * would clear the modal state and leave the explainer on the page — visible,
+ * and inert, because the close handler has already stopped the animation and
+ * disconnected the observer. */
+.map-exploded[open] {
+    display: grid;
 }
 
 .map-exploded::backdrop {

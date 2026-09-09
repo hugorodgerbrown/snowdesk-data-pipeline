@@ -4183,6 +4183,33 @@
           ),
         };
       },
+      // SNOW-172: the explainer captures a fixed Swiss view, but the country
+      // filters belong to the user. Someone following only France or ALBINA
+      // has ``ch`` off, and ``applyCountryFilters`` then keeps every Swiss
+      // region, bulletin, L1, L2 and L4 feature out of the style — so the
+      // capture would photograph blank sheets. Turn CH on for the duration and
+      // hand back a restore function. Deliberately mutates the in-memory state
+      // only: ``COUNTRY_STORAGE_KEY`` is never written, so the preference
+      // survives the demo untouched, and ``ensureCountryLoaded`` is called
+      // without ``userInitiated`` so a failed fetch degrades silently rather
+      // than reverting the row.
+      async focusSwitzerland() {
+        if (countryState.ch) return () => {};
+        countryState.ch = true;
+        COUNTRY_STATE.ch = true;
+        try {
+          await ensureCountryLoaded('ch');
+        } catch (_e) {
+          // Offline or a failed feed — the filter still comes off, and the
+          // build's own missing-layer check reports what could not be drawn.
+        }
+        applyCountryFilters();
+        return () => {
+          countryState.ch = false;
+          COUNTRY_STATE.ch = false;
+          applyCountryFilters();
+        };
+      },
     };
   }
 
