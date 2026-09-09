@@ -15,6 +15,7 @@ Covers ``import_locations`` (SNOW-701):
 
 from __future__ import annotations
 
+import csv
 from io import StringIO
 from pathlib import Path
 
@@ -22,6 +23,10 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from apps.locations.management.commands.import_locations import (
+    DEFAULT_LINKS_PATH,
+    DEFAULT_SHEET_PATH,
+)
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
     LocationFactory,
@@ -347,6 +352,12 @@ class TestImportLocationsErrors:
             )
 
 
+def _read_tsv(path: Path) -> list[dict[str, str]]:
+    """Read a committed sheet, so a test can size itself off the real data."""
+    with path.open(newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
 @pytest.mark.django_db
 class TestCommittedSheets:
     """The sheets actually committed to the repo must import cleanly."""
@@ -357,19 +368,25 @@ class TestCommittedSheets:
         Cheap guard against a hand-edited sheet reaching main with a typo
         in a kind, a role, or a resort uuid — none of which any other test
         would catch, since every other test writes its own fixture.
+
+        Both the resorts created and the counts asserted are READ OFF the
+        sheets rather than written here. SNOW-732 added 84 peaks and 94
+        links in one commit and this test failed on a hard-coded four — a
+        guard that has to be re-typed every time the data it guards grows
+        stops guarding and starts blocking. What it actually pins is that
+        every row parses and every link names a resort that exists, which
+        is what the counts below say whatever their size.
         """
-        for resort_uuid in (
-            "f12cecf9-def8-43d3-b9df-80f93472f16f",
-            "532151df-47a0-497b-b168-09f975f7d07d",
-            "9cf90fc9-46b0-4ce3-bf4c-5dc9cabd2374",
-            "4b0941b3-4293-4343-896a-03cd606bd744",
-        ):
+        location_rows = _read_tsv(DEFAULT_SHEET_PATH)
+        link_rows = _read_tsv(DEFAULT_LINKS_PATH)
+
+        for resort_uuid in {row["resort_uuid"] for row in link_rows}:
             ResortFactory.create(uuid=resort_uuid)
 
         out = StringIO()
         call_command("import_locations", verbosity=2, stdout=out)
 
         body = out.getvalue()
-        assert "4 location(s) to add" in body
-        assert "4 link(s) to add" in body
+        assert f"{len(location_rows)} location(s) to add" in body
+        assert f"{len(link_rows)} link(s) to add" in body
         assert not Location.objects.exists()

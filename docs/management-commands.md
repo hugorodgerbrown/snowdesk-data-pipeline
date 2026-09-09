@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, import_resorts, import_locations, backfill_*
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, fill_location_elevations, import_resorts, backfill_*
 status: current
 last-reviewed: 2026-09-03
 ---
@@ -625,6 +625,44 @@ the move, which returns it to the candidate set.
 uv run python manage.py fill_what3words                      # preview
 uv run python manage.py fill_what3words --commit             # apply
 uv run python manage.py fill_what3words --commit --delay 1.0 # pace harder
+```
+
+### `fill_location_elevations` — resolve every Location's elevation
+
+Walks `Location.objects.unresolved()` and asks Open-Meteo for the ground
+height at each coordinate (SNOW-732). `elevation_m` is deliberately not a
+sheet column — [`locations.md`](locations.md) makes it always derived,
+never supplied — so `import_locations` writes every other field and leaves
+this one null. That queryset existed from SNOW-700 and was named in two
+comments as "how a missing one gets filled in later", with no command
+behind it, so every imported location sat at null until this shipped.
+
+**The elevation is a check on the coordinate, not just a value.** A curated
+peak's sheet `note` records the height its source claims; the height
+Open-Meteo resolves at the pinned coordinate is an independent second
+opinion. `--report` compares the two and prints the disagreements over 60 m,
+resolving nothing and writing nothing — so a mis-pinned summit surfaces
+against a list at curation time rather than on a resort page months later.
+The 60 m tolerance is deliberately generous: a resort sheet's
+`top_elevation_m` is rounded and often names the highest lift-served point
+rather than the summit itself.
+
+`note` is a sheet column with no model field, so `--report` reads the claim
+off `apps/locations/data/locations.tsv` and the resolved height from the
+database. That is what makes it a comparison of two sources rather than a
+row against itself.
+
+Nothing is re-resolved unless asked: a location that already carries an
+elevation is skipped, so an interrupted run costs only the rows it had not
+reached. `--force` re-resolves everything, which is what a re-pinned
+coordinate needs — moving a location leaves a stale elevation behind and
+nothing else would notice.
+
+```bash
+uv run python manage.py fill_location_elevations                  # preview
+uv run python manage.py fill_location_elevations --commit         # apply
+uv run python manage.py fill_location_elevations --commit --force # re-resolve
+uv run python manage.py fill_location_elevations --report         # check pins
 ```
 
 ### `link_resort_locations` — give every geocoded resort weather
