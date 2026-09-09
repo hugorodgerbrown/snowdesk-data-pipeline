@@ -80,6 +80,12 @@ The column is still read through `Location.three_word_address`, which
 normalises the unresolved states to `None`; nothing outside
 `apps/locations/models.py` reads it directly.
 
+It is filled by the `fill_what3words` management command, which walks
+`Location.objects.unaddressed()` daily, and at mint time by
+`apps.favourites.services` — the one write path that already reaches the
+network for this row, so a second call there is the same shape of cost.
+Every other path leaves the column null and lets the sweep pick it up.
+
 Note the row above says the address is **exact**: a three word address is a
 deterministic encoding of a 3m square, not an approximation and not a name
 anybody chose. The one thing that invalidates it is the pin moving to a

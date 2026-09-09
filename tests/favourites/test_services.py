@@ -632,3 +632,68 @@ class TestDeleteFavouritesForUser:
         assert delete_favourites_for_user(user) == 1
 
         assert not Favourite.objects.filter(pk=favourite.pk).exists()
+
+
+@pytest.mark.django_db
+class TestFavouriteThreeWordAddress:
+    """A saved pin gets its three word address at mint (SNOW-881).
+
+    This path already pays an Open-Meteo round trip, so a second call is
+    the same shape of cost — which is the rule that decides where a
+    mint-time fill belongs and where ``fill_what3words`` picks it up
+    instead. What matters here is that a what3words outage costs the save
+    nothing: ``convert_to_3wa`` never raises, and a pin with no address is
+    a pin that renders its coordinate pair.
+    """
+
+    def test_a_new_pin_carries_its_address(self) -> None:
+        """Both columns are written, so nothing has to sweep the row later."""
+        user = UserFactory.create()
+        with (
+            patch("apps.favourites.services.fetch_elevation", return_value=1834.0),
+            patch("apps.favourites.services.region_for_point", return_value=None),
+            patch(
+                "apps.favourites.services.convert_to_3wa",
+                return_value="filled.count.soap",
+            ),
+        ):
+            favourite = create_favourite(user, 46.1, 7.4, name="My pin")
+
+        # Nullable on the model — a region pin has no location at all
+        # (SNOW-802) — so a placed pin having one is part of the claim.
+        assert favourite.location is not None
+        assert favourite.location.what3words == "filled.count.soap"
+        assert favourite.location.what3words_fetched_at is not None
+
+    def test_a_failed_conversion_still_saves_the_pin(self) -> None:
+        """A what3words outage must never cost somebody their saved place."""
+        user = UserFactory.create()
+        with (
+            patch("apps.favourites.services.fetch_elevation", return_value=1834.0),
+            patch("apps.favourites.services.region_for_point", return_value=None),
+            patch("apps.favourites.services.convert_to_3wa", return_value=None),
+        ):
+            favourite = create_favourite(user, 46.1, 7.4, name="My pin")
+
+        assert favourite.pk is not None
+        assert favourite.location is not None
+        assert favourite.location.what3words is None
+        # No stamp either — the pair is written together or not at all, so
+        # the row stays in fill_what3words' candidate set for the next run.
+        assert favourite.location.what3words_fetched_at is None
+
+    def test_a_saved_resort_carries_its_address_too(self) -> None:
+        """The second mint site, and the same rule applies to it."""
+        user = UserFactory.create()
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        with (
+            patch("apps.favourites.services.fetch_elevation", return_value=1200.0),
+            patch(
+                "apps.favourites.services.convert_to_3wa",
+                return_value="filled.count.soap",
+            ),
+        ):
+            favourite = create_resort_favourite(user, resort)
+
+        assert favourite.location is not None
+        assert favourite.location.what3words == "filled.count.soap"

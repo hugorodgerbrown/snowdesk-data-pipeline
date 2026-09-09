@@ -15,6 +15,14 @@ pre-loaded with the recurring data-pipeline job:
   ``purge_request_logs --commit``. Enforces the ``RequestLog`` retention
   window the Privacy Policy states (SNOW-775); until this job existed
   nothing deleted a row, while the page claimed fourteen days.
+- **fill_what3words** — fires at 04:00 UTC, running
+  ``fill_what3words --commit``. Sweeps up locations minted without an
+  address: a field observation's, and any row where a mint-time conversion
+  failed. A no-op in an environment with no ``WHAT3WORDS_API_KEY``, which
+  is why it can be registered unconditionally (SNOW-881). Daily rather than
+  hourly because the estate grows with user activity, not with the clock,
+  and an address that arrives a few hours late costs nothing — the surface
+  renders a coordinate pair until it does.
 
 Every job carries guard settings (``coalesce=True``, ``max_instances=1``,
 ``misfire_grace_time=300``) so a slow run does not stack up duplicate
@@ -92,6 +100,16 @@ def _run_purge_request_logs() -> None:
     call_command("purge_request_logs", "--commit")
 
 
+def _run_fill_what3words() -> None:
+    """Invoke ``fill_what3words`` to address any location still without one."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing fill_what3words")
+    call_command("fill_what3words", "--commit")
+
+
 def build_scheduler() -> BlockingScheduler:
     """Build and return a configured :class:`BlockingScheduler`.
 
@@ -109,6 +127,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=0,6,12,18`` (four times a day, on the hour UTC).
         ``purge_request_logs``
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
+        ``fill_what3words``
+            Cron: ``hour=4`` (once a day, off the fetch hours).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -140,6 +160,16 @@ def build_scheduler() -> BlockingScheduler:
         _run_purge_request_logs,
         trigger=CronTrigger(hour=3, minute=30, timezone="UTC"),
         id="purge_request_logs",
+        **_common,
+    )
+
+    # SNOW-881: after the purge, on an hour no fetch job runs. Nothing
+    # renders a three word address on a timetable, so the only thing this
+    # competes for is the outbound connection pool.
+    scheduler.add_job(
+        _run_fill_what3words,
+        trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
+        id="fill_what3words",
         **_common,
     )
 

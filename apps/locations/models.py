@@ -26,8 +26,9 @@ Open-Meteo elevation call, which cannot ride on a model save.
 
 ``what3words`` (SNOW-840) is nullable for the same reason as
 ``elevation_m``: it is derived from the coordinate by an HTTP call that
-cannot ride on a model save, so it is resolved out of band and null until
-that has happened. It does NOT expire — see
+cannot ride on a model save, so it is resolved out of band — by the
+``fill_what3words`` command, or at mint time where a service already
+reaches the network — and null until that has happened. It does NOT expire — see
 docs/decisions/what3words-addresses-are-stored-indefinitely.md — and
 ``what3words_fetched_at`` records when the conversion happened rather than
 starting a clock. The pair is still read through the ``three_word_address``
@@ -235,6 +236,26 @@ class LocationQuerySet(models.QuerySet["Location"]):
 
         """
         return self.filter(elevation_m__isnull=True)
+
+    def unaddressed(self) -> "LocationQuerySet":
+        """Return locations still missing their three word address.
+
+        The sibling of ``unresolved()`` above, and the candidate set
+        ``fill_what3words`` walks. A row lands here when it was minted
+        without an address, or when the location editor cleared one because
+        the pin moved to a different square.
+
+        Matches the empty string as well as NULL. The column is nullable
+        AND blankable, so both states occur — the service writes NULL, a
+        form or a fixture can write ``""`` — and a candidate set that saw
+        only one of them would leave rows unfillable forever without
+        anything looking wrong.
+
+        Returns:
+            Filtered queryset of locations with no three word address.
+
+        """
+        return self.filter(models.Q(what3words__isnull=True) | models.Q(what3words=""))
 
 
 # ---------------------------------------------------------------------------

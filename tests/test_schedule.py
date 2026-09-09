@@ -48,14 +48,30 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_three_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly three registered jobs."""
-    assert len(scheduler.get_jobs()) == 3
+def test_scheduler_has_exactly_four_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly four registered jobs."""
+    assert len(scheduler.get_jobs()) == 4
 
 
 def test_job_ids(jobs: dict) -> None:
     """The expected job IDs are registered."""
-    assert set(jobs) == {"fetch_bulletins", "fetch_weather", "purge_request_logs"}
+    assert set(jobs) == {
+        "fetch_bulletins",
+        "fetch_weather",
+        "purge_request_logs",
+        "fill_what3words",
+    }
+
+
+def test_fill_what3words_runs_off_the_fetch_hours(jobs: dict) -> None:
+    """04:00 UTC — after the purge, on an hour no fetch job runs.
+
+    Nothing renders an address on a timetable, so the sweep competes for
+    nothing but the outbound connection pool.
+    """
+    trigger = jobs["fill_what3words"].trigger
+    assert str(_get_field(trigger, "hour")) == "4"
+    assert str(_get_field(trigger, "minute")) == "0"
 
 
 # ---------------------------------------------------------------------------
