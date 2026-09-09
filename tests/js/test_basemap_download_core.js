@@ -1524,3 +1524,134 @@ describe('bytes per tile, per basemap (SNOW-868)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// SNOW-847: glyph enumeration
+//
+// The expression walk is the whole point of these tests. The bug this
+// ticket fixes is silent in both directions — a fontstack missed ships an
+// area with no labels for those layers, and a non-font string collected
+// (an operator name, a property read) puts a URL in the record's `deps`
+// that no repair can ever satisfy. The swisstopo shape below is taken from
+// the live winter style, where two of the five stacks appear ONLY inside a
+// `["match", ["get", "class"], …]`.
+// ---------------------------------------------------------------------------
+
+describe('styleFontstacks', () => {
+  it('reads a plain text-font array', () => {
+    const style = {
+      layers: [{ layout: { 'text-font': ['Frutiger Neue Regular'] } }],
+    };
+    expect(core.styleFontstacks(style)).toEqual(['Frutiger Neue Regular']);
+  });
+
+  it('finds a fontstack that appears only inside a match expression', () => {
+    // The swisstopo case, verbatim in shape: without the literal walk these
+    // two stacks are invisible and towns and lake elevations lose their
+    // labels offline.
+    const style = {
+      layers: [
+        {
+          layout: {
+            'text-font': [
+              'match',
+              ['get', 'class'],
+              'town',
+              ['literal', ['Frutiger Neue Medium']],
+              'lake_elevation',
+              ['literal', ['Frutiger Neue Condensed Medium']],
+              ['literal', ['Frutiger Neue Regular']],
+            ],
+          },
+        },
+      ],
+    };
+    expect(core.styleFontstacks(style)).toEqual([
+      'Frutiger Neue Condensed Medium',
+      'Frutiger Neue Medium',
+      'Frutiger Neue Regular',
+    ]);
+  });
+
+  it('never collects an operator name or a property read as a font', () => {
+    // The inverse failure: an earlier version of this walk returned
+    // `class`, `lake_elevation` and `town` alongside the real fonts,
+    // because it descended into `["get", …]` and took its operand.
+    const style = {
+      layers: [
+        {
+          layout: {
+            'text-font': ['match', ['get', 'class'], 'town', ['literal', ['Arial Bold']], ['literal', ['Arial Regular']]],
+          },
+        },
+      ],
+    };
+    const stacks = core.styleFontstacks(style);
+    expect(stacks).toEqual(['Arial Bold', 'Arial Regular']);
+    for (const name of ['class', 'town', 'get', 'match', 'literal']) {
+      expect(stacks).not.toContain(name);
+    }
+  });
+
+  it('deduplicates across layers and sorts, so a run records a stable list', () => {
+    const style = {
+      layers: [
+        { layout: { 'text-font': ['Noto Sans Regular'] } },
+        { layout: { 'text-font': ['Noto Sans Bold', 'Noto Sans Regular'] } },
+        { layout: { 'text-font': ['Noto Sans Italic'] } },
+      ],
+    };
+    expect(core.styleFontstacks(style)).toEqual([
+      'Noto Sans Bold',
+      'Noto Sans Italic',
+      'Noto Sans Regular',
+    ]);
+  });
+
+  it('answers [] for a style with no layers, no layout or no labels', () => {
+    expect(core.styleFontstacks(null)).toEqual([]);
+    expect(core.styleFontstacks({})).toEqual([]);
+    expect(core.styleFontstacks({ layers: [{}] })).toEqual([]);
+    expect(core.styleFontstacks({ layers: [{ layout: {} }] })).toEqual([]);
+  });
+});
+
+describe('glyphURLs', () => {
+  const style = {
+    glyphs: 'https://vectortiles.geo.admin.ch/fonts/{fontstack}/{range}.pbf',
+    layers: [{ layout: { 'text-font': ['Frutiger Neue Regular'] } }],
+  };
+
+  it('is the cross product of the style fontstacks and the fixed ranges', () => {
+    const urls = core.glyphURLs(style);
+    expect(urls).toHaveLength(core.GLYPH_RANGES.length);
+    expect(urls[0]).toBe(
+      'https://vectortiles.geo.admin.ch/fonts/Frutiger%20Neue%20Regular/0-255.pbf',
+    );
+  });
+
+  it('percent-encodes the fontstack, matching what MapLibre requests', () => {
+    // A pinned entry keyed on an unencoded URL is one nothing ever looks
+    // up, so the area reads complete and still renders unlabelled.
+    for (const url of core.glyphURLs(style)) {
+      expect(url).toContain('Frutiger%20Neue%20Regular');
+      expect(url).not.toContain('Frutiger Neue Regular');
+    }
+  });
+
+  it('covers 8192-8447, the range the 2026-09-08 staging trace caught missing', () => {
+    // The regression this ticket's range set exists for: the originally
+    // proposed 0-1023 set would not have fetched it.
+    expect(core.GLYPH_RANGES).toContain('8192-8447');
+    expect(core.glyphURLs(style)).toContain(
+      'https://vectortiles.geo.admin.ch/fonts/Frutiger%20Neue%20Regular/8192-8447.pbf',
+    );
+  });
+
+  it('answers [] for a style with no glyphs template', () => {
+    // UNKNOWN, never "no glyphs needed" — the probe reads an empty list as
+    // no claim.
+    expect(core.glyphURLs({ layers: style.layers })).toEqual([]);
+    expect(core.glyphURLs(null)).toEqual([]);
+  });
+});

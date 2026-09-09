@@ -337,10 +337,15 @@ function activeBasemapSourceDocumentURLs(map) {
  * `assembleBasemapDownloadFeedURLs` below now calls it rather than
  * repeating it.
  *
- * Glyph ranges are deliberately absent — see `missingRenderDependencies`
- * (basemap_download_core.js) and this ticket's decision doc for why
- * promotion, not enumeration, is how an area keeps its labels, and why
- * checking a promoted set would report a permanent unrepairable failure.
+ * SNOW-847: glyph ranges ARE now part of this list, reversing SNOW-844's
+ * exclusion. That exclusion was correct for as long as glyphs arrived by
+ * PROMOTION out of the passive cache (`sw.js`'s `_promoteGlyphs`): a
+ * promoted set is whatever the user's browsing happened to have cached, so
+ * checking it reported a failure no repair could ever clear. Now the
+ * download FETCHES a fixed set (`glyphURLs`), the same list is checkable by
+ * value on both sides, and a missing range is a real, repairable gap —
+ * which is the condition SNOW-844's own exclusion note named as what would
+ * have to change first.
  *
  * @param {object|null} map The live MapLibre map. Reading it is exactly
  *   why this composer stays here rather than moving into
@@ -361,7 +366,28 @@ function activeBasemapRenderDependencyURLs(map) {
   }
   urls.push(...computeBasemapSpriteURLs(map));
   urls.push(...activeBasemapSourceDocumentURLs(map));
+  urls.push(...activeBasemapGlyphURLs(map));
   return urls;
+}
+
+/**
+ * SNOW-847: every glyph URL the active style's labels can need, from the
+ * fixed range set `basemap_download_core.js` documents.
+ *
+ * Here rather than in the core module for the same reason
+ * `activeBasemapRenderDependencyURLs` is: it reads the live map. The
+ * enumeration itself is pure and lives in the core, where
+ * `tests/js/test_basemap_download_core.js` can reach it.
+ *
+ * @param {object|null} map The live MapLibre map.
+ * @returns {string[]} Empty for a map whose style has not settled, or a
+ *   style declaring no `glyphs` template — both read as UNKNOWN by every
+ *   caller, never as "no glyphs needed".
+ */
+function activeBasemapGlyphURLs(map) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !map || typeof map.getStyle !== 'function') return [];
+  return core.glyphURLs(map.getStyle());
 }
 
 /**

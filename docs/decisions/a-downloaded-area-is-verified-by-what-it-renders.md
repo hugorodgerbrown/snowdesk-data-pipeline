@@ -74,15 +74,34 @@ read either as a fault.
 
 ## What is deliberately excluded
 
-**Glyph ranges.** MapLibre requests only the unicode ranges its labels
-actually use, so the honest list is not derivable without re-deriving
-MapLibre's own glyph logic — which SNOW-492 declined to do and SNOW-742
-still declines. SNOW-742's answer is **promotion**: copy whatever ranges
-ordinary browsing already cached into the pinned bucket, so they survive
-the passive cache's FIFO trim. That set is legitimately partial — ranges
-never browsed were never covered — so a completeness check over it would
-report a permanent fault no repair could clear. Pinning the ranges an area
-actually needs is [SNOW-847](https://linear.app/hugorodgerbrown/issue/SNOW-847).
+**Glyph ranges — no longer excluded (SNOW-847, 2026-09-09).** This section
+used to exclude them, and the reasoning held for exactly as long as glyphs
+arrived by PROMOTION. MapLibre requests only the unicode ranges its labels
+actually use, so the honest per-area list is not derivable without
+re-deriving MapLibre's own glyph logic — which SNOW-492 declined and
+SNOW-742 also declined. SNOW-742's answer was to copy whatever ranges
+ordinary browsing had already cached into the pinned bucket, so they
+survived the passive cache's FIFO trim. That set is legitimately partial —
+ranges never browsed were never covered — so a completeness check over it
+would have reported a permanent fault no repair could clear.
+
+SNOW-847 changes the input rather than the check. The download now FETCHES
+a fixed range set for every fontstack the style declares (`GLYPH_RANGES`
+and `glyphURLs`, `basemap_download_core.js`), so both sides of the
+comparison name the same list by value and a missing range is a real,
+repairable gap. The set is fixed rather than derived because neither
+derivation works: a style says which FONTS its labels use but never which
+CODEPOINTS, and every one of the four basemap hosts answers HTTP 200 for
+all 256 ranges — an unpublished range is a 29–45 byte stub rather than a
+404, so only body size distinguishes it, and finding that out costs the
+whole download (OpenFreeMap's `Noto Sans Regular` is 33.7 MB across the
+full space). The chosen set is Latin-1 through Latin Extended-B and
+combining diacritics, Latin Extended Additional, and General Punctuation
+through Mathematical Operators, costing 0.81–2.11 MB per download
+depending on the style.
+
+Promotion survives as a second line, for ranges outside that set — see
+`_promoteGlyphs` in `static/js/sw.js`.
 
 **The layers menu** (`static/js/map_layer_sync_status.js`). Its dots report
 the live cached/uncached/partial state of a whole basemap, not one area's

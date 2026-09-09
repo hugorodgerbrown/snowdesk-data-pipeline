@@ -2240,12 +2240,19 @@ async function _warmCache(urls, options) {
  * safe in the pinned bucket. The area quietly decays into geometry with no
  * labels — which is what "the map only partially loaded" looked like.
  *
- * Deliberately NOT an enumeration of every glyph range the style could ask
- * for. That would mean re-deriving MapLibre's own range logic, which
- * ``computeBasemapSpriteURLs`` (map_basemap_downloads.js) rejected for good
- * reasons that still hold. Ranges the user has never browsed stay uncovered,
- * exactly as before; what changes is that an area stops losing the ones it
- * already had.
+ * SNOW-847 makes this a SECOND line rather than the only one. The download
+ * now fetches a fixed range set outright (``glyphURLs``,
+ * basemap_download_core.js), so the case this function was written for — an
+ * area losing labels it had already cached — is covered deterministically
+ * and is checked by the render-dependency probe.
+ *
+ * It is kept, not deleted, because the fixed set is Latin-script by
+ * measurement and design: a user browsing a style with CJK or Cyrillic
+ * labels caches ranges the download does not fetch, and promoting those
+ * still costs nothing and still helps. What it must never do again is stand
+ * alone — a promoted set is whatever browsing happened to touch, which is
+ * why the ranges the download DOES fetch are enumerated rather than left to
+ * this.
  *
  * Idempotent: ``cache.put`` overwrites, so re-downloading an area re-promotes
  * the same entries rather than duplicating them. The byte total is returned so
