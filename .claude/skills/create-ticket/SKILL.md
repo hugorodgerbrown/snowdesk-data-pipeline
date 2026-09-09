@@ -74,9 +74,56 @@ After creation, report back a summary like:
   settled, it stays at `Todo` with a note on what's missing — even if the
   adjacent tickets are ready. Underspecified tickets leaking into
   implementation is the failure mode this rule prevents.
-- **Title, label, priority, one-paragraph description are mandatory** at
-  creation time. The scoping comment is in addition to the description,
+- **Title, Type + Area labels, priority, one-paragraph description are
+  mandatory** at creation time. The scoping comment is in addition to the description,
   not instead of it.
+
+## Labelling
+
+Every ticket carries **exactly one `Type` and exactly one `Area`**, plus
+zero or more `Non-functional` flags. Both mandatory labels are set at
+creation time — a ticket with no Area is invisible to every backlog filter
+that matters.
+
+### Type — what kind of change
+
+| Label         | Test                                                                        |
+|---------------|-----------------------------------------------------------------------------|
+| `Bug`         | Behaviour is wrong today.                                                   |
+| `Feature`     | A capability that does not exist yet.                                       |
+| `Improvement` | Product code gets better; no new capability. Refactors, cleanups.           |
+| `Chore`       | No product-code behaviour change: deps, tooling, CI, docs, test coverage.   |
+
+The `Improvement`/`Chore` line is behaviour: if a user could in principle
+notice the result, it is `Improvement`.
+
+### Area — which part of the product
+
+| Label       | Covers                                                                       |
+|-------------|------------------------------------------------------------------------------|
+| `Bulletin`  | The bulletin document and page: render model, day character, CAAML fidelity, glossary, reading guide, calendar, compressed views. |
+| `Map`       | The map page and what is drawn on it: layers, basemaps, scrubber, slope angle, location beacon, map-anchored panels. |
+| `Offline`   | The PWA shell and what makes it work without a network: service worker, cache strategy, downloaded areas, mutation queue, IndexedDB, sync state. |
+| `Weather`   | The Open-Meteo domain: the Location-anchored `Weather` model, its fetch and backfill, and the surfaces rendering it. Not CAAML provider weather prose, which is `Bulletin`. |
+| `Ingest`    | Getting provider data in and keeping it right: the SLF / ALBINA / Météo-France fetchers and translators, pipeline commands, and the regions and resorts reference data they key against. |
+| `Planning`  | What a user saves and shares: favourites, routes, trips, field observations. |
+| `Account`   | Sign-in, passkeys, the settings page, the account profile, session and identity. |
+| `Alerts`    | Anything sent out unprompted: web push, digest and notification email, and the rules deciding when they fire. |
+| `Site`      | The shell every page shares and the pages that are none of the above: nav, /help/, page metadata and share cards, error pages, design system, component library. |
+| `Platform`  | Everything that is not the product: CI, tox, linters, dependencies, deploys, migrations, test infrastructure and coverage, developer tooling, analytics and telemetry plumbing. |
+
+Pick where the **work happens**, not every area it touches. A test-seeding
+ticket for the weather surfaces is `Platform`, not `Weather`; a download
+ticket for slope tiles is `Offline`, not `Map`.
+
+### Non-functional — optional cross-cutting flags
+
+`Security`, `Performance`, `Design` (needs visual design work, not just
+implementation), `Accessibility`. Zero or more, never instead of an Area.
+
+`Performance` is a workspace-level label shared with the Ski Parrainage
+team, so it sits outside the `Non-functional` group in Linear's picker
+while meaning the same thing.
 
 ## Scoping comment contract
 
@@ -192,4 +239,5 @@ before the implementer picks up a malformed ticket.
 - The user asks to promote a ticket to `Ready for dev` but there are open
   questions in the scoping comment → refuse the promotion and name the
   open questions.
-- Priority or label is ambiguous from context → ask once, don't guess.
+- Priority is ambiguous from context → ask once, don't guess. Labels are
+  not ambiguous: the Type and Area tables above decide them.
