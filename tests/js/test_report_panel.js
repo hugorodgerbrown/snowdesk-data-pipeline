@@ -51,7 +51,9 @@ document.body.innerHTML = `
   </template>
 `;
 
-globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()) };
+// `process` is stubbed alongside `ajax` because SNOW-661's repaint from cache
+// binds the rows it paints — nothing else in this file reaches it.
+globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()), process: vi.fn() };
 
 await import('../../static/js/report.js');
 
@@ -80,6 +82,34 @@ function reopen() {
 /** The rows container inside the currently-rendered panel body. */
 function rows() {
   return sheet.querySelector('[data-report-rows]');
+}
+
+/**
+ * Let a failed list load's cache read settle (SNOW-661).
+ *
+ * The failure handler asks static/js/observations_offline.js before it draws
+ * anything, so what the panel shows is one turn of the event loop behind the
+ * event that failed it.
+ *
+ * @returns {Promise<void>}
+ */
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Stand in for the offline row store, which is its own module and its own
+ * test file (test_observations_offline.js) — what is asserted here is what
+ * this panel does with the answer.
+ *
+ * @param {?object} record The cached row, or null for a cold device.
+ * @returns {void}
+ */
+function stubCache(record) {
+  window.pwaObservationsOffline = {
+    read: () => Promise.resolve(record),
+    write: () => Promise.resolve(),
+  };
 }
 
 let overlay;
@@ -193,13 +223,14 @@ describe('the overlay switch', () => {
 describe('a list load that fails', () => {
   it.each(['htmx:responseError', 'htmx:sendError'])(
     'replaces the loading line with a failure line on %s',
-    (eventName) => {
+    async (eventName) => {
       btn.click();
       const container = rows();
 
       document.dispatchEvent(
         new CustomEvent(eventName, { detail: { target: container } }),
       );
+      await settle();
 
       // Never observations:list's "You haven't reported any field observations
       // yet." — the request failed, which says nothing about how many exist.
@@ -218,6 +249,98 @@ describe('a list load that fails', () => {
     );
 
     expect(sheet.hidden).toBe(true);
+  });
+});
+
+describe('a failed list load with rows cached on the device (SNOW-661)', () => {
+  // static/js/observations_offline.js holds the last good response body; this
+  // module decides what to do with it. The panel used to say "check your
+  // connection" for reports the map was already drawing as pins beside it.
+
+  const CACHED_ROWS =
+    '<ul>' +
+    '<li id="observation-a1b2">' +
+    '<button data-row-label data-row-focus="7.5,46.1">Whumpfing</button>' +
+    '<time datetime="2026-09-09T06:00:00+00:00" data-relative-time>3 hours ago</time>' +
+    '<form data-row-remove><button type="submit">Delete</button></form>' +
+    '</li></ul>';
+
+  /**
+   * Fail the list request and settle the cache read behind it.
+   *
+   * @returns {Promise<Element>} The rows container, after the handler ran.
+   */
+  async function failListLoad() {
+    btn.click();
+    const container = rows();
+    document.dispatchEvent(
+      new CustomEvent('htmx:sendError', { detail: { target: container } }),
+    );
+    await settle();
+    return container;
+  }
+
+  beforeEach(() => {
+    window.pwaRelativeTime = { refresh: vi.fn(), format: vi.fn() };
+    stubCache({
+      body: CACHED_ROWS,
+      cached_at: '2026-09-09T09:00:00+00:00',
+    });
+  });
+
+  afterEach(() => {
+    delete window.pwaRelativeTime;
+    stubCache(null);
+  });
+
+  it('repaints the rows instead of the failure line', async () => {
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain('Whumpfing');
+    expect(container.textContent).not.toContain("couldn't be loaded");
+  });
+
+  it('says the rows came from the cache', async () => {
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain('Showing your saved reports');
+  });
+
+  it('carries no Delete form, which offline would do nothing', async () => {
+    // Deleting a report is an online-only hx-post — only SUBMISSION goes
+    // through the mutation queue — and a control that silently does nothing
+    // is worse than one that is not there.
+    const container = await failListLoad();
+
+    expect(container.querySelector('[data-row-remove]')).toBeNull();
+    expect(container.textContent).toContain('Whumpfing');
+  });
+
+  it('refreshes every row age, which no swap event would', async () => {
+    // Painting from cache fires no htmx:afterSwap, so relative_time.js's own
+    // listener never runs — a row cached at dawn would still read "3 hours
+    // ago" at dusk.
+    const container = await failListLoad();
+
+    expect(window.pwaRelativeTime.refresh).toHaveBeenCalledWith(container);
+  });
+
+  it('is still pressable, because the click handler is on the sheet', async () => {
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+    const container = await failListLoad();
+
+    container.querySelector('[data-row-focus]').click();
+
+    expect(window.pwaMapFocus.point).toHaveBeenCalledWith(7.5, 46.1);
+    delete window.pwaMapFocus;
+  });
+
+  it('falls back to the failure line when the cache is empty', async () => {
+    stubCache(null);
+
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain("couldn't be loaded");
   });
 });
 

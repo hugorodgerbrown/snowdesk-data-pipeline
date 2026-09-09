@@ -129,10 +129,14 @@
     'signin-prompt': 'Sign in to submit a field observation.',
     'signin-cta': 'Sign in',
     'list-failed': "Your reports couldn't be loaded — check your connection.",
+    // SNOW-661: the same list, painted from the last response this device
+    // stored, when the request fails and there IS something cached.
+    'list-cached': 'Showing your saved reports — last updated %(time)s.',
     locating: 'Finding your location…',
   });
 
   const esc = self.pwaStrings.escapeHtml;
+  const interpolate = self.pwaStrings.interpolate;
 
   const FORM_URL = btn.dataset.reportFormUrl;
   const LIST_URL = btn.dataset.reportListUrl;
@@ -684,12 +688,21 @@
     else window.pwaCommunityReportsOverlay?.hide();
   });
 
-  // SNOW-658: the list is fetched, and this panel opens offline while its
-  // list does not load offline. Say so, rather than leaving the loading line
-  // up forever — and never fall through to observations:list's own empty
-  // state, which would tell the user they have reported nothing when the
-  // request merely failed. Both htmx failure events are covered:
-  // responseError is a non-2xx reply, sendError is no reply at all.
+  // SNOW-658: the list is fetched, and this panel opens offline. Say so,
+  // rather than leaving the loading line up forever — and never fall through
+  // to observations:list's own empty state, which would tell the user they
+  // have reported nothing when the request merely failed. Both htmx failure
+  // events are covered: responseError is a non-2xx reply, sendError is no
+  // reply at all.
+  //
+  // SNOW-661: ask the cache FIRST, and draw that failure line only on a
+  // miss. The reports were readable offline as pins on the map beside this
+  // panel the whole time (SNOW-492 caches the community-reports GeoJSON) —
+  // it was the user's own list, the one surface that names them, that went
+  // away with the signal.
+  //
+  // Nothing is drawn synchronously before the cache answers, so there is no
+  // failure line flashing up and being replaced a moment later.
   //
   // Registered before the general htmx:responseError handler above would
   // reach it — that one keys off `target === sheet` (the form load), which
@@ -698,11 +711,86 @@
     document.addEventListener(name, function (event) {
       const rows = sheet.querySelector('[data-report-rows]');
       if (!rows || !event.detail || event.detail.target !== rows) return;
-      const p = document.createElement('p');
-      p.className = 'text-sm text-text-2';
-      p.textContent = STRINGS['list-failed'];
-      rows.replaceChildren(p);
+      paintCachedRows(rows).then(function (painted) {
+        if (!painted) showListFailure(rows);
+      });
     });
+  }
+
+  /** Draw this panel's own failure line in place of the rows.
+   *
+   * @param {Element} rows The panel's rows container.
+   * @returns {void}
+   */
+  function showListFailure(rows) {
+    const p = document.createElement('p');
+    p.className = 'text-sm text-text-2';
+    p.textContent = STRINGS['list-failed'];
+    rows.replaceChildren(p);
+  }
+
+  /** Repaint the rows from the last list response this device stored.
+   *
+   * The cached value is the server's rendered markup, verbatim — see
+   * static/js/observations_offline.js for why it is the markup and not a
+   * record per report. Painting it keeps every translation, region name and
+   * three word address exactly as the server wrote them, and this module
+   * adds one line of its own saying where the rows came from.
+   *
+   * Three things have to happen around the paint:
+   *
+   *   - ``htmx.process``, because these rows arrive carrying their own
+   *     attributes and nothing else would bind them;
+   *   - every Remove form comes OUT. Delete is an online-only ``hx-post``
+   *     (only report submission goes through the mutation queue), and a
+   *     control that silently does nothing is worse than one that is not
+   *     there;
+   *   - ``pwaRelativeTime.refresh``, because painting from cache fires no
+   *     ``htmx:afterSwap`` and each row's age is a server-rendered string
+   *     that would otherwise sit at whatever it said when it was cached.
+   *
+   * Row zoom needs nothing: the click handler is delegated on the SHEET via
+   * ``closest()``, so cached rows are pressable without rebinding.
+   *
+   * @param {Element} rows The panel's rows container.
+   * @returns {Promise<boolean>} Whether anything was painted.
+   */
+  async function paintCachedRows(rows) {
+    const cache = window.pwaObservationsOffline;
+    if (!cache) return false;
+    const record = await cache.read();
+    if (!record) return false;
+    rows.innerHTML = record.body;
+    if (typeof htmx !== 'undefined') htmx.process(rows);
+    rows.querySelectorAll('[data-row-remove]').forEach(function (form) {
+      form.remove();
+    });
+    const line = document.createElement('p');
+    line.className = 'mt-3 text-xs text-text-3 font-mono';
+    line.setAttribute('data-testid', 'report-list-cached');
+    line.textContent = interpolate(STRINGS['list-cached'], {
+      time: formatHHMM(record.cached_at),
+    });
+    rows.appendChild(line);
+    window.pwaRelativeTime?.refresh(rows);
+    return true;
+  }
+
+  /** Format an ISO timestamp as "HH:MM" (24h, zero-padded).
+   *
+   * Mirrors favourites_offline.js's ``_formatHHMM`` — the other surface that
+   * stamps a cached read — so the two say the age of a cache the same way.
+   * Returns '' on a parse failure.
+   *
+   * @param {?string} isoValue An ISO 8601 instant.
+   * @returns {string}
+   */
+  function formatHHMM(isoValue) {
+    if (!isoValue) return '';
+    const d = new Date(isoValue);
+    if (Number.isNaN(d.valueOf())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   /** Ask the map for a fix and load the report form from whatever comes back.

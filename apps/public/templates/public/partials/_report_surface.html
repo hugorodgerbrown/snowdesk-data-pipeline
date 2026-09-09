@@ -62,6 +62,12 @@ Context expected:
 {# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}
 {# header comment.                                                      #}
+{# SNOW-661: the panel's offline row store — written on every successful  #}
+{# list swap, read back when the request fails. Loaded immediately before  #}
+{# report.js, which reads it through window.pwaObservationsOffline; both    #}
+{# are deferred, so document order holds. Map page only, unlike             #}
+{# favourites_offline.js, which base.html loads site-wide.                  #}
+<script defer src="{% static 'js/observations_offline.js' %}"></script>
 {# SNOW-333: field-report JS — geolocation + HTMX sheet opener.          #}
 {# Deferred so it executes in document order after the map assets.      #}
 <script defer src="{% static 'js/report.js' %}"></script>
@@ -85,11 +91,23 @@ Context expected:
     >{% trans "Verify your email to submit a field observation. Check your inbox for the verification link." %}</span>
     <span data-string="signin-prompt">{% trans "Sign in to submit a field observation." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
-    {# SNOW-658: the panel's own failure line. Distinct from                   #}
-    {# observations:list's empty state ("You haven't reported any field        #}
-    {# observations yet.") on purpose — this panel opens offline, its list      #}
-    {# does not load offline, and telling a user they have reported nothing     #}
-    {# when the request merely failed is a wrong statement about their data.    #}
+    {# SNOW-658: the panel's own failure line, for a failed request with     #}
+    {# nothing cached behind it. Distinct from observations:list's empty     #}
+    {# state ("You haven't reported any field observations yet.") on purpose #}
+    {# — telling a user they have reported nothing when the request merely   #}
+    {# failed is a wrong statement about their data.                         #}
     <span data-string="list-failed">{% trans "Your reports couldn't be loaded — check your connection." %}</span>
+    {# SNOW-661: what the panel says instead when the request fails and this #}
+    {# device HAS the last response stored. A field report is a record of    #}
+    {# something that happened, not a forecast that expires, so the rows     #}
+    {# render as themselves and this line says where they came from — each   #}
+    {# row's own age keeps ticking via static/js/relative_time.js.           #}
+    {# ``%(time)s`` is substituted by name in JS (window.pwaStrings), the    #}
+    {# same shape includes/_favourites_offline_strings.html uses.            #}
+    <span data-string="list-cached">
+        {% blocktrans trimmed %}
+            Showing your saved reports — last updated %(time)s.
+        {% endblocktrans %}
+    </span>
     <span data-string="locating">{% trans "Finding your location…" %}</span>
 </template>
