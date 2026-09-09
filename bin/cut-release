@@ -139,13 +139,27 @@ COMMIT_COUNT="$(git rev-list --count "$RANGE")"
 # mentions the ticket while its subject says nothing useful.
 SUBJECTS="$(git log "$RANGE" --format='%s')"
 TICKETS="$(printf '%s\n' "$SUBJECTS" | grep -oE 'SNOW-[0-9]+' | sort -u -t- -k2 -n || true)"
+#
+# SNOW-890: a subject naming two tickets resolves once per id, so emit each
+# distinct subject only once. `SNOW-847 / SNOW-692: …` reaches the loose match
+# under both ids — the strict one rejects both, the first for the space after
+# the id and the second for not opening the subject — and listed the release
+# note twice. De-duplicating on the SUBJECT rather than the id keeps the
+# strict match narrow, which is what ignores the merge commits above.
 TICKET_LINES=""
 if [[ -n "$TICKETS" ]]; then
+    seen_subjects=""
     while read -r ticket; do
         [[ -z "$ticket" ]] && continue
         subject="$(printf '%s\n' "$SUBJECTS" | grep -m1 -E "^${ticket}[[:punct:]]" || true)"
         [[ -z "$subject" ]] && subject="$(printf '%s\n' "$SUBJECTS" | grep -m1 -F "$ticket" || true)"
-        TICKET_LINES+="- ${subject:-$ticket}"$'\n'
+        line="- ${subject:-$ticket}"
+        # `--` because the line opens with "- ", which grep reads as options.
+        if printf '%s\n' "$seen_subjects" | grep -qxF -- "$line"; then
+            continue
+        fi
+        seen_subjects+="${line}"$'\n'
+        TICKET_LINES+="${line}"$'\n'
     done <<<"$TICKETS"
 else
     TICKET_LINES="- (no SNOW tickets found in range)"$'\n'
@@ -174,24 +188,32 @@ if [[ -n "$DEPLOY_STEPS" ]]; then
     done <<<"$DEPLOY_STEPS"
 fi
 
-# Backstop for the trailer nobody remembered to write. A new backfill command
-# in the range that no trailer mentions is *probably* a missed step — but only
-# probably, since a backfill can legitimately ship without needing a
-# production run, so this warns and never refuses. The script's job is to
-# report what it can see.
-NEW_BACKFILLS="$(git log "$RANGE" --diff-filter=A --name-only --format= \
-    | grep -E '^apps/[^/]+/management/commands/backfill_[^/]+\.py$' \
+# Backstop for the trailer nobody remembered to write. A new one-shot data
+# command in the range that no trailer mentions is *probably* a missed step —
+# but only probably, since such a command can legitimately ship without
+# needing a production run, so this warns and never refuses. The script's job
+# is to report what it can see.
+#
+# SNOW-889: the prefixes are the families this codebase actually uses for a
+# command an operator runs once against an environment, not `backfill_` alone.
+# v33 shipped `fill_location_elevations` and `fill_what3words` — both estate
+# walks production needed — and the backstop said nothing, because neither is
+# spelt `backfill_`. Add a prefix here when a new family appears; a false
+# positive costs one line of stderr, which is the trade this check is for.
+ONE_SHOT_PREFIXES='backfill|fill|link|import'
+NEW_DATA_COMMANDS="$(git log "$RANGE" --diff-filter=A --name-only --format= \
+    | grep -E "^apps/[^/]+/management/commands/(${ONE_SHOT_PREFIXES})_[^/]+\.py$" \
     | sed -E 's|.*/||; s|\.py$||' \
     | sort -u || true)"
 
 UNMENTIONED=""
-if [[ -n "$NEW_BACKFILLS" ]]; then
+if [[ -n "$NEW_DATA_COMMANDS" ]]; then
     while read -r cmd; do
         [[ -z "$cmd" ]] && continue
         if ! printf '%s\n' "$DEPLOY_STEPS" | grep -qF "$cmd"; then
             UNMENTIONED+="${cmd}"$'\n'
         fi
-    done <<<"$NEW_BACKFILLS"
+    done <<<"$NEW_DATA_COMMANDS"
 fi
 
 COMMIT_MSG="Bump VERSION to ${NEXT} for the next production release
@@ -245,11 +267,11 @@ echo
 
 # SNOW-818: printed AFTER the body so it is the last thing on screen before
 # the dry-run notice, and to stderr so it survives a redirect of the body.
-# A warning, not a refusal: there are legitimate reasons a new backfill ships
+# A warning, not a refusal: there are legitimate reasons such a command ships
 # without needing a production run, and a script that blocked the release on
 # a guess would be worse than one that says what it noticed.
 if [[ -n "$UNMENTIONED" ]]; then
-    echo "WARNING: new backfill command(s) in this range with no Deploy-Step: trailer:" >&2
+    echo "WARNING: new data command(s) in this range with no Deploy-Step: trailer:" >&2
     while read -r cmd; do
         [[ -z "$cmd" ]] && continue
         echo "  - ${cmd}" >&2

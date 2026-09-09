@@ -420,7 +420,7 @@ def test_does_not_warn_when_the_backfill_is_already_named(repo: Path) -> None:
 
 
 def test_does_not_warn_about_a_non_backfill_command(repo: Path) -> None:
-    """Only `backfill_*` commands are the backstop's business.
+    """Only the one-shot data commands are the backstop's business.
 
     Every other new command is ordinary code that ships and runs itself.
     """
@@ -435,3 +435,82 @@ def test_does_not_warn_about_a_non_backfill_command(repo: Path) -> None:
     result = _run(repo)
 
     assert "fetch_something" not in result.stderr
+
+
+def test_warns_about_a_new_fill_command_with_no_trailer(repo: Path) -> None:
+    """SNOW-889: `fill_*` is a one-shot data command too.
+
+    v33 shipped `fill_location_elevations` and `fill_what3words`, both of
+    which production had to be walked with, and the backstop said nothing
+    because it matched `backfill_` alone.
+    """
+    _commit_with_body(
+        repo,
+        "apps/locations/management/commands/fill_what3words.py",
+        "SNOW-7: fill the estate's three word addresses",
+        "No trailer.",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert "fill_what3words" in result.stderr
+
+
+def test_does_not_warn_when_the_fill_command_is_named(repo: Path) -> None:
+    """The trailer suppresses the warning for every prefix, not just one."""
+    _commit_with_body(
+        repo,
+        "apps/locations/management/commands/fill_named.py",
+        "SNOW-8: fill something and say so",
+        "Deploy-Step: fill_named --commit",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "fill_named" not in result.stderr
+
+
+def test_warns_about_a_new_link_command_with_no_trailer(repo: Path) -> None:
+    """`link_*` completes the family: the region-centroid links are one."""
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/link_resort_locations.py",
+        "SNOW-9: link resorts to their locations",
+        "No trailer.",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "link_resort_locations" in result.stderr
+
+
+def test_lists_a_two_ticket_subject_once(repo: Path) -> None:
+    """SNOW-890: a subject naming two tickets is one line, not two.
+
+    Neither id matches the strict `^SNOW-nnn[[:punct:]]` lookup — the first
+    is followed by a space, the second does not open the subject — so both
+    fall through to the loose match and resolve to the same subject. v33's
+    PR body carried `SNOW-847 / SNOW-692: …` twice.
+    """
+    _git(
+        repo,
+        "commit",
+        "--allow-empty",
+        "-m",
+        "SNOW-847 / SNOW-692: pin a download's glyphs and slope tiles",
+    )
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        result.stdout.count(
+            "- SNOW-847 / SNOW-692: pin a download's glyphs and slope tiles"
+        )
+        == 1
+    )

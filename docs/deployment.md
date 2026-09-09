@@ -314,11 +314,17 @@ which is how a real one stops being noticed.
 
 **Backstop.** Because that still depends on somebody remembering, the script
 also looks for files added in the range matching
-`apps/*/management/commands/backfill_*.py`. If no trailer mentions one, it
-prints a warning to stderr naming the command. A warning, never a refusal:
-a backfill can legitimately ship without needing a production run, and a
-script that blocked a release on that guess would be worse than one that
-reports what it noticed.
+`apps/*/management/commands/{backfill,fill,link,import}_*.py` — the prefixes
+this codebase uses for a command an operator runs once against an
+environment. If no trailer mentions one, it prints a warning to stderr naming
+the command. A warning, never a refusal: such a command can legitimately ship
+without needing a production run, and a script that blocked a release on that
+guess would be worse than one that reports what it noticed.
+
+The prefix list is `ONE_SHOT_PREFIXES` in the script, and it is meant to be
+extended. It read `backfill_` alone until SNOW-889, which is why v33's
+`fill_location_elevations` and `fill_what3words` — two estate walks
+production needed — drew no warning at all.
 
 ### Why the sync dispatches rather than relying on a push
 
