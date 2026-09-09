@@ -548,7 +548,7 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Primary · compact",
         "context": {
-            "label": "Subscribe",
+            "label": "Save route",
             "variant": "primary",
             "size": "compact",
         },
@@ -663,17 +663,17 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "px-5 py-4 — info banner / welcome card",
         "context": {
-            "title": "Your subscription is confirmed.",
-            "body": "You'll receive alerts for the regions below.",
+            "title": "Your route is saved.",
+            "body": "It is on the map's routes panel, and is yours alone.",
             "padding": "px-5 py-4",
         },
     },
     {
-        "caption": "p-6 — subscribe CTA card (default)",
+        "caption": "p-6 — register CTA card (default)",
         "context": {
-            "title": "Get avalanche alerts",
+            "title": "Create a Snowdesk account",
             "body": (
-                "Enter your email to receive daily bulletin updates for this region."
+                "Enter your email address and we'll send you a link to verify it."
             ),
             "padding": "p-6",
         },
@@ -681,7 +681,7 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "px-6 py-8 — empty-state card",
         "context": {
-            "title": "You have no active subscriptions.",
+            "title": "You haven't saved any routes yet.",
             "body": "",
             "padding": "px-6 py-8",
             "center": True,
@@ -691,10 +691,7 @@ CARD_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "p-8 — status page card (centred)",
         "context": {
             "title": "Check your inbox",
-            "body": (
-                "We've sent you a link to manage your subscriptions."
-                " It expires in 24 hours."
-            ),
+            "body": ("We've sent you a link to sign in. It expires in 24 hours."),
             "padding": "p-8",
             "center": True,
         },
@@ -723,8 +720,8 @@ STATUS_PAGE_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "heading": "Check your inbox",
             "body": (
-                "If that address is registered, we've sent you a link to manage"
-                " your subscriptions. It expires in 24 hours."
+                "If that address is registered, we've sent you a link to sign"
+                " in. It expires in 24 hours."
             ),
             "cta_label": None,
             "cta_href": None,
@@ -1612,7 +1609,7 @@ TOAST_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Success — dismissible only",
         "context": {
             "kind": "success",
-            "body": "Subscription saved.",
+            "body": "Route saved.",
             "dismissible": True,
             "static": True,
         },

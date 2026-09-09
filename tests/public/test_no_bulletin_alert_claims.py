@@ -53,6 +53,12 @@ Two consequences a reader should know about:
   phrases at all ("we'll be in touch when conditions change"), passes.
   The guard catches the phrasings the site actually used, not every
   phrasing it could.
+* A bare noun or verb passes, because the true Web Push copy uses the
+  same words. SNOW-877 fixed a ``"Subscribe"`` button label and a
+  ``"Subscription saved."`` toast in the component library, and neither
+  is caught: a pattern loose enough to reach them would fire on the push
+  consent paragraph. Six of that ticket's eight strings are covered; those
+  two are not, and are recorded here rather than counted as guarded.
 * Each pattern matches one word order, so the same claim rearranged
   slips through. These were all checked and none of them fires:
   "manage the subscriptions on your account" (``your`` not adjacent, and
@@ -80,6 +86,23 @@ _ROOT = Path(__file__).resolve().parents[2]
 _TEMPLATE_ROOTS = [_ROOT / "templates", *sorted((_ROOT / "apps").glob("*/templates"))]
 
 _TEMPLATE_SUFFIXES = frozenset({".html", ".txt"})
+
+# Copy that reaches a reader without being a template. The component
+# library renders its card, button, banner and status-page variants from
+# these dicts, so a claim written here is a claim on a page — it is just
+# a staff page. SNOW-877 found seven false strings in this one module
+# that the template walk could never have seen, three of them outside
+# the range the ticket had listed.
+_EXTRA_COPY_FILES = [
+    _ROOT / "apps" / "public" / "_component_fixtures.py",
+    # The category labels and descriptions above each panel, rendered by
+    # ``_components/partials/_panel.html``. Added after the first version
+    # of this walk covered the fixtures and missed the prose beside them:
+    # the status-page panel still said it served "all five confirmation /
+    # error pages in the subscriptions flow", of which the count, the
+    # flow and its existence were each wrong.
+    _ROOT / "apps" / "public" / "design_tokens.py",
+]
 
 # Django comments, replaced by their own newlines so line numbers survive.
 _COMMENT_RE = re.compile(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}|{#.*?#}", re.DOTALL)
@@ -132,6 +155,28 @@ _CLAIMS: dict[str, re.Pattern[str]] = {
     # Installing to the home screen unlocks nothing: the service worker
     # registers on any page load, so a downloaded area reads offline in
     # the browser tab too, and there is no notification to unlock.
+    # SNOW-877. The component library said "You'll receive alerts for the
+    # regions below", "Get avalanche alerts" and "You have no active
+    # subscriptions" — three phrasings none of the patterns above reach,
+    # because each names the thing without the qualifying word they need.
+    "receive-alerts": re.compile(
+        r"\b(receive|receiving|get)\s+(?:[\w'-]+\s+){0,2}(alerts?|notifications?)\b",
+        re.IGNORECASE,
+    ),
+    "avalanche-alerts": re.compile(
+        r"\bavalanche\s+(alert|notification|digest)s?\b", re.IGNORECASE
+    ),
+    "count-of-subscriptions": re.compile(
+        r"\b(no|active|any)\s+(?:active\s+)?subscriptions?\b", re.IGNORECASE
+    ),
+    # A named subscriptions surface. There is no subscriptions flow, page,
+    # form or settings screen — SNOW-802 retired the last of them — so the
+    # noun phrase is false wherever it appears, and it is specific enough
+    # not to reach the true push copy.
+    "subscriptions-surface": re.compile(
+        r"\bsubscriptions?\s+(flow|page|form|settings|management)\b",
+        re.IGNORECASE,
+    ),
     "install-unlocks-notifications": re.compile(
         r"\bunlocks?\s+(?:[\w-]+\s+){0,3}(notification|alert|update|subscription)s?\b",
         re.IGNORECASE,
@@ -156,6 +201,16 @@ _ALLOWED: dict[str, list[tuple[str, str]]] = {
             "rows the browser created. This is the staff-only push demo page "
             "(every push_views route is @staff_member_required), so no reader "
             "is being offered anything.",
+        ),
+    ],
+    "apps/public/_component_fixtures.py": [
+        (
+            "Bulletin updated.",
+            "An ingest banner, not a notification. It sits in the admin set "
+            "beside 'Bulletin processed successfully.' and \"We couldn't "
+            'process this bulletin.", and a revised bulletin really is '
+            "issued and ingested — the banner states that it happened, and "
+            "promises nobody it will be told.",
         ),
     ],
 }
@@ -231,22 +286,40 @@ _ORIGINALS: list[tuple[str, str]] = [
         "Tap the Share icon, then choose Add to Home Screen. Home-screen "
         "installs unlock notifications and offline access.",
     ),
+    # SNOW-877 — the component library's card fixtures. Not templates, which
+    # is why the walk never saw them until this ticket added the module to it.
+    ("receive-alerts", "You'll receive alerts for the regions below."),
+    ("avalanche-alerts", "Get avalanche alerts"),
+    ("count-of-subscriptions", "You have no active subscriptions."),
+    (
+        "subscriptions-surface",
+        "Centred status-page shell — flex full-viewport wrapper → max-w-md "
+        "column → p-8 centred card — used by all five confirmation / error "
+        "pages in the subscriptions flow.",
+    ),
 ]
 
 
 def _template_files() -> list[Path]:
-    """Return every template file under the project's template roots.
+    """Return every file whose copy can reach a reader.
+
+    The template roots, plus the non-template modules in
+    :data:`_EXTRA_COPY_FILES` that hold rendered copy of their own.
 
     Returns:
-        Paths to every ``.html`` and ``.txt`` template, sorted, so a
-        failure names the same file on every machine.
+        Paths to every ``.html`` and ``.txt`` template and every extra
+        copy file, sorted, so a failure names the same file on every
+        machine.
 
     """
     return sorted(
-        path
-        for root in _TEMPLATE_ROOTS
-        for path in root.rglob("*")
-        if path.suffix in _TEMPLATE_SUFFIXES and path.is_file()
+        [
+            path
+            for root in _TEMPLATE_ROOTS
+            for path in root.rglob("*")
+            if path.suffix in _TEMPLATE_SUFFIXES and path.is_file()
+        ]
+        + [path for path in _EXTRA_COPY_FILES if path.is_file()]
     )
 
 
