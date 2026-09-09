@@ -23,6 +23,12 @@ pre-loaded with the recurring data-pipeline job:
   hourly because the estate grows with user activity, not with the clock,
   and an address that arrives a few hours late costs nothing — the surface
   renders a coordinate pair until it does.
+- **check_resort_locations** — fires at 05:00 UTC, running
+  ``link_resort_locations --check``. The only job here that writes nothing:
+  it asks whether any geocoded resort has no ``ResortLocation``, which means
+  that resort's page renders no Forecasts section while nothing anywhere
+  says so (SNOW-885). It raises on a non-empty answer, so the failure shows
+  in the worker log rather than needing somebody to read a count.
 
 Every job carries guard settings (``coalesce=True``, ``max_instances=1``,
 ``misfire_grace_time=300``) so a slow run does not stack up duplicate
@@ -110,6 +116,23 @@ def _run_fill_what3words() -> None:
     call_command("fill_what3words", "--commit")
 
 
+def _run_check_resort_locations() -> None:
+    """Invoke ``link_resort_locations --check`` to detect unlinked resorts.
+
+    SNOW-885. Writes nothing — it only asks whether any geocoded resort has
+    no location link, which means a resort page rendering no Forecasts
+    section with nothing anywhere reporting it. A non-zero exit is the point:
+    the ``CommandError`` it raises on a non-empty answer surfaces in the
+    worker log, which is the alarm.
+    """
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing link_resort_locations --check")
+    call_command("link_resort_locations", "--check")
+
+
 def build_scheduler() -> BlockingScheduler:
     """Build and return a configured :class:`BlockingScheduler`.
 
@@ -119,7 +142,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with three jobs pre-registered:
+        A scheduler with five jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -129,6 +152,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
             Cron: ``hour=4`` (once a day, off the fetch hours).
+        ``check_resort_locations``
+            Cron: ``hour=5`` (once a day; read-only detector, SNOW-885).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -170,6 +195,17 @@ def build_scheduler() -> BlockingScheduler:
         _run_fill_what3words,
         trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
         id="fill_what3words",
+        **_common,
+    )
+
+    # SNOW-885: a read-only detector, so it competes for nothing — placed on
+    # the same quiet stretch as the other two daily jobs, after them, because
+    # `link_resort_locations` is what an operator runs in response and there
+    # is no reason for the answer to be fresher than daily.
+    scheduler.add_job(
+        _run_check_resort_locations,
+        trigger=CronTrigger(hour=5, minute=0, timezone="UTC"),
+        id="check_resort_locations",
         **_common,
     )
 

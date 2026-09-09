@@ -48,9 +48,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_four_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly four registered jobs."""
-    assert len(scheduler.get_jobs()) == 4
+def test_scheduler_has_exactly_five_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly five registered jobs."""
+    assert len(scheduler.get_jobs()) == 5
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -60,7 +60,31 @@ def test_job_ids(jobs: dict) -> None:
         "fetch_weather",
         "purge_request_logs",
         "fill_what3words",
+        "check_resort_locations",
     }
+
+
+def test_check_resort_locations_runs_off_the_fetch_hours(jobs: dict) -> None:
+    """05:00 UTC — after the other two daily jobs, on a quiet hour.
+
+    A read-only detector competes for nothing, and there is no reason for
+    the answer to be fresher than daily: the response to it is an operator
+    running `link_resort_locations --commit` by hand.
+    """
+    trigger = jobs["check_resort_locations"].trigger
+    assert str(_get_field(trigger, "hour")) == "5"
+    assert str(_get_field(trigger, "minute")) == "0"
+
+
+def test_check_resort_locations_calls_the_check_mode() -> None:
+    """It must pass --check and NOT --commit.
+
+    The one job here that writes nothing. Firing the linker's write path on
+    a schedule is exactly what PR #758 took out of the deploy.
+    """
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_check_resort_locations()
+    mock_cc.assert_called_once_with("link_resort_locations", "--check")
 
 
 def test_fill_what3words_runs_off_the_fetch_hours(jobs: dict) -> None:

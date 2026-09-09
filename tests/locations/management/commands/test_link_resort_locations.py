@@ -20,6 +20,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client
 from django.utils import timezone
 
@@ -170,3 +171,52 @@ class TestAGeocodedResortGetsWeather:
         link_markup = body.split('data-testid="resort-location-0-link"')[1][:200]
         assert ">Verbier</a>" in link_markup
         assert str(resort.latitude) not in link_markup
+
+
+@pytest.mark.django_db
+class TestCheckMode:
+    """``--check`` is the SNOW-885 detector: report, write nothing, fail loud.
+
+    The gap it names is silent by construction — a resort renders no
+    Forecasts section and nothing else says so — so a detector that exits 0
+    whatever it finds would never detect. The non-zero exit IS the signal,
+    and these pin it in both directions.
+    """
+
+    def test_passes_when_every_geocoded_resort_is_linked(self) -> None:
+        """The state today, and the one the scheduled run should usually see."""
+        ResortLocationFactory.create(
+            resort=ResortFactory.create(latitude=46.1, longitude=7.2)
+        )
+        out = StringIO()
+        call_command("link_resort_locations", "--check", stdout=out)
+        assert "No unlinked geocoded resorts." in out.getvalue()
+
+    def test_fails_and_names_an_unlinked_geocoded_resort(self) -> None:
+        """The defect: on the map, no weather, nothing reporting it."""
+        ResortFactory.create(name="Ovronnaz", latitude=46.2, longitude=7.1)
+        out = StringIO()
+        with pytest.raises(CommandError, match="1 geocoded resort"):
+            call_command("link_resort_locations", "--check", stdout=out)
+        # Named, not just counted — the count says "run something", the name
+        # says which page is wrong.
+        assert "unlinked: Ovronnaz" in out.getvalue()
+
+    def test_ignores_a_resort_with_no_coordinates(self) -> None:
+        """A resort with no pin cannot be linked, so it is backlog, not a gap.
+
+        Folding the two together would bury the silent failure inside a
+        known one — there were 57 un-geocoded resorts when this was scoped.
+        """
+        ResortFactory.create(name="Nowhere", latitude=None, longitude=None)
+        out = StringIO()
+        call_command("link_resort_locations", "--check", stdout=out)
+        assert "No unlinked geocoded resorts." in out.getvalue()
+
+    def test_check_writes_nothing(self) -> None:
+        """It must never mint the link it is reporting the absence of."""
+        ResortFactory.create(latitude=46.2, longitude=7.1)
+        with pytest.raises(CommandError):
+            call_command("link_resort_locations", "--check", stdout=StringIO())
+        assert not ResortLocation.objects.exists()
+        assert not Location.objects.exists()

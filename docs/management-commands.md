@@ -120,6 +120,7 @@ visible in the worker logs.
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
+| Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports geocoded resorts carrying no `ResortLocation` — each one a resort page rendering no Forecasts section with nothing anywhere saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. The response is an operator running `link_resort_locations --commit` by hand; PR #758 took that write out of the deploy on purpose. |
 
 ### `purge_request_logs` — enforce the RequestLog retention window
 
@@ -700,9 +701,19 @@ anonymous `Location` at the coordinate rather than minting a new one, for
 the reason SNOW-771 records — a fresh row each deploy would orphan the
 previous one and every `Weather` row hanging off it.
 
+**`--check` is the scheduled detector (SNOW-885).** It runs the same
+candidate query (`Resort.objects.unlinked()`) and does nothing else: names
+every geocoded resort with no link, then exits non-zero if there were any.
+The gap is silent by construction — a resort renders no Forecasts section
+and nothing else reports it — so a check that exited 0 whatever it found
+would never detect anything. It names the resorts rather than counting them
+because the count only says "run something", while the names say which
+pages are wrong.
+
 ```bash
 uv run python manage.py link_resort_locations           # preview
 uv run python manage.py link_resort_locations --commit  # apply
+uv run python manage.py link_resort_locations --check    # detect only
 ```
 
 ### `refresh_centroid_elevations` — resolve centroid heights into the fixtures

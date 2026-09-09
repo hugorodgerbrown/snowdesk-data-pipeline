@@ -87,17 +87,68 @@ class Command(BaseCommand):
                 "nothing."
             ),
         )
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help=(
+                "Report unlinked geocoded resorts and exit NON-ZERO if there "
+                "are any. Mints nothing. For the scheduled detector."
+            ),
+        )
+
+    def _check(self, candidates: Any) -> None:
+        """Report unlinked geocoded resorts and fail if there are any.
+
+        SNOW-885. The gap this names is silent by construction — a resort
+        renders no Forecasts section and nothing else says so, so it stays
+        broken for as long as nobody visits that page. A scheduled run that
+        exits 0 whatever it finds would be a detector that never detects, so
+        finding any is an ERROR and a non-zero exit: that is the whole signal.
+
+        Naming every resort, not just counting them, is deliberate. The count
+        alone tells an operator to run something; the names tell them which
+        pages are currently wrong, which is what they need if the answer is
+        that a recent geocoding pass is the cause.
+
+        Args:
+            candidates: The unlinked queryset.
+
+        Raises:
+            CommandError: When any unlinked geocoded resort exists.
+
+        """
+        names = list(candidates.order_by("name").values_list("name", flat=True))
+        if not names:
+            self.stdout.write("No unlinked geocoded resorts.")
+            return
+
+        for name in names:
+            self.stdout.write(f"unlinked: {name}")
+        logger.error(
+            "link_resort_locations: %d geocoded resort(s) have no location "
+            "link and render no weather: %s",
+            len(names),
+            ", ".join(names),
+        )
+        raise CommandError(
+            f"{len(names)} geocoded resort(s) have no location link. "
+            f"Run: link_resort_locations --commit"
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Link every geocoded resort that has no location yet."""
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
 
-        candidates = Resort.objects.filter(
-            latitude__isnull=False,
-            longitude__isnull=False,
-            resort_locations__isnull=True,
-        )
+        # SNOW-885: one definition of "unlinked", on the queryset, so the
+        # detector below and the linker cannot drift into disagreeing about
+        # which resorts are the gap.
+        candidates = Resort.objects.unlinked()
+
+        if options["check"]:
+            self._check(candidates)
+            return
+
         total = candidates.count()
 
         announce_link_run(
