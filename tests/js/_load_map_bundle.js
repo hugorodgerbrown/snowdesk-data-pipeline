@@ -87,6 +87,14 @@ const PARSE_TIME_CORES = [
   // without it answers "nothing downloaded" to every such call — which no
   // suite would be asserting on purpose.
   'basemap_downloaded_areas.js',
+  // SNOW-898: not a parse-time read either — `map.js` reaches
+  // `pwaCountryLoadCore` from inside `ensureCountryLoaded`. It is here for
+  // the other reason this list exists: that function is on the `load` path
+  // of every suite that fires the map's load handler, which is most of them,
+  // and without this the failure is `planCountryFeeds of undefined` thrown
+  // from inside a MapLibre event handler — which names nothing a reader
+  // could act on.
+  'country_load_core.js',
   // SNOW-737: `map.js`'s boot IIFE resolves the stored camera through
   // `pwaViewportCore.restore` while building the MapLibre constructor
   // options, so a bundle booted without it throws before any test has run —
