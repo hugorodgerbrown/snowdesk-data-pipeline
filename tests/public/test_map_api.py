@@ -2817,3 +2817,137 @@ def test_resort_popup_blank_why_it_matters_signed_in_renders_nothing() -> None:
 
     html = response.json()["html"]
     assert "resort-why-it-matters" not in html
+
+
+# ---------------------------------------------------------------------------
+# SNOW-896 — the three region-boundary endpoints are cached server-side
+# ---------------------------------------------------------------------------
+#
+# ``regions_geojson`` was the only map endpoint with no server-side cache,
+# while its three siblings had used ``cache.get_or_set`` since SNOW-191. It is
+# also the largest payload the map fetches and it sits on the boot critical
+# path, so every cold visitor paid a walk over every MicroRegion row plus a
+# re-serialisation of every polygon.
+#
+# The cache-hit assertions patch the builder rather than counting queries:
+# ``covered_region_ids()`` has its own hour-long cache, so a query count would
+# be measuring two caches at once and would pass for the wrong reason.
+
+
+def _make_boundary_fixture() -> None:
+    """Seed one CH and one AT region at every tier, each with a boundary.
+
+    Both countries are needed because the per-country keying assertion has to
+    compare two distinct payloads; the AT names differ from the CH ones so the
+    comparison cannot pass by accident on an empty collection.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    ch_major = MajorRegionFactory.create(
+        prefix="CH-4", country="CH", name_en="Valais", boundary=boundary
+    )
+    ch_sub = SubRegionFactory.create(
+        prefix="CH-41", major=ch_major, name_en="Lower Valais", boundary=boundary
+    )
+    MicroRegionFactory.create(
+        region_id="CH-4115",
+        name="Valais",
+        slug="ch-4115",
+        boundary=boundary,
+        subregion=ch_sub,
+    )
+    at_major = MajorRegionFactory.create(
+        prefix="AT-02", country="AT", name_en="Carinthia", boundary=boundary
+    )
+    at_sub = SubRegionFactory.create(
+        prefix="AT-02-01", major=at_major, name_en="Carinthia North", boundary=boundary
+    )
+    MicroRegionFactory.create(
+        region_id="AT-02-01-01",
+        name="Carinthia North",
+        slug="at-02-01-01",
+        boundary=boundary,
+        subregion=at_sub,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("url_name", "builder"),
+    [
+        ("api:regions_geojson", "_build_micro_regions_payload"),
+        ("api:major_regions_geojson", "_build_major_regions_payload"),
+        ("api:sub_regions_geojson", "_build_sub_regions_payload"),
+    ],
+)
+def test_region_geojson_second_call_is_served_from_cache(
+    url_name: str, builder: str
+) -> None:
+    """A repeat request for the same country never rebuilds the payload."""
+    _make_boundary_fixture()
+    client = Client()
+    url = reverse(url_name) + "?country=ch"
+
+    first = client.get(url)
+    assert first.status_code == 200
+
+    # A real dict, not a bare MagicMock: without it an uncached endpoint fails
+    # on JsonResponse rejecting the mock, and the error names serialisation
+    # rather than the missing cache. The assertion below should be what breaks.
+    sentinel = {"type": "FeatureCollection", "features": []}
+    with patch(f"apps.public.api.{builder}", return_value=sentinel) as mock_build:
+        second = client.get(url)
+        assert second.status_code == 200
+        mock_build.assert_not_called()
+        assert second.json() == first.json()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_region_geojson_cache_is_keyed_per_country(url_name: str) -> None:
+    """A second country gets its own entry, not the first country's payload.
+
+    The failure this guards is a cache key that forgets the country — every
+    visitor would then be served whichever country happened to warm the cache
+    first, which on a map of Switzerland would be silently wrong rather than
+    visibly broken.
+    """
+    _make_boundary_fixture()
+    client = Client()
+
+    ch = client.get(reverse(url_name) + "?country=ch").json()
+    at = client.get(reverse(url_name) + "?country=at").json()
+
+    assert ch != at
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_region_geojson_invalid_country_is_not_cached(url_name: str) -> None:
+    """An unrecognised country 400s and never becomes a cache key.
+
+    Validation runs before the cache lookup precisely so that a junk value
+    cannot occupy an entry — and so that a later valid request for a country
+    whose code merely resembles it is unaffected.
+    """
+    _make_boundary_fixture()
+    client = Client()
+
+    bad = client.get(reverse(url_name) + "?country=zz")
+    assert bad.status_code == 400
+
+    assert cache.get(f"region-geojson:v1:{url_name}:zz") is None
+
+    good = client.get(reverse(url_name) + "?country=ch")
+    assert good.status_code == 200
+    assert good.json()["type"] == "FeatureCollection"

@@ -151,6 +151,35 @@ _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 # correctly and the session middleware cannot append Vary: Cookie.
 _GEOJSON_CACHE_MAX_AGE = 86400
 
+# SNOW-896: server-side cache key for the three region-boundary
+# FeatureCollections. ``regions_geojson`` was the only map endpoint with no
+# server-side cache at all — its three siblings (``ratings``,
+# ``bulletin_groupings_geojson``, ``weather_geojson``) have wrapped their
+# payloads in ``cache.get_or_set`` since SNOW-191, and this one was left out.
+# It is also the largest payload the map fetches (~180 KB for CH) and it sits
+# on the boot critical path, so every cold visitor paid a walk over every
+# MicroRegion row plus a re-serialisation of every polygon.
+#
+# The ``v1`` segment is a manual bust: region geometry only changes when an
+# operator runs a fixture import, and an import is a deploy, so a stale entry
+# cannot outlive a restart. Bump it if the FEATURE SHAPE changes mid-deploy.
+_REGION_GEOJSON_CACHE_PREFIX = "region-geojson:v1"
+
+
+def _region_geojson_cache_key(tier: str, country: str) -> str:
+    """Build the cache key for one boundary tier and country.
+
+    Args:
+        tier: ``micro``, ``major`` or ``sub`` — the three FeatureCollections.
+        country: The validated upper-case ISO-2 code.
+
+    Returns:
+        The cache key string.
+
+    """
+    return f"{_REGION_GEOJSON_CACHE_PREFIX}:{tier}:{country.lower()}"
+
+
 # Cache lifetime for dynamic-but-slow-moving map endpoints (ratings,
 # resorts-by-region, resorts.geojson). Content only changes when a pipeline
 # run lands new bulletins or an operator edits a resort; 5 minutes bounds the
@@ -675,6 +704,16 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     extra fetch; the full blob (incl. ``z`` tile ranges) is fetched on
     demand from ``region_basemap_tiles`` only when the user clicks it.
 
+    SNOW-896: the payload is also cached SERVER-side for
+    ``_GEOJSON_CACHE_MAX_AGE``, keyed on country. This was the only map
+    endpoint without one — its siblings have had ``cache.get_or_set`` since
+    SNOW-191 — and it is both the largest payload the map fetches and on the
+    boot critical path. Note the knock-on: ``covered_region_ids()`` is
+    separately cached for an hour, so a region gaining its first
+    ``RegionDayRating`` now takes up to 24 hours rather than one to show as
+    covered. That is the right trade for a map (nobody needs it inside the
+    hour) but it is a real change, not an oversight.
+
     The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
     pair prevents Django's ``SessionMiddleware`` from appending
     ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
@@ -698,6 +737,30 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
+    # SNOW-896: validate BEFORE the cache lookup. An unrecognised country must
+    # 400 without becoming a cache key of its own.
+    payload = cache.get_or_set(
+        _region_geojson_cache_key("micro", country_param),
+        lambda: _build_micro_regions_payload(country_param),
+        timeout=_GEOJSON_CACHE_MAX_AGE,
+    )
+    return JsonResponse(payload)
+
+
+def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
+    """Build the L4 FeatureCollection for one country.
+
+    Split out of ``regions_geojson`` by SNOW-896 so the view is
+    validate-then-``get_or_set``, matching the shape ``ratings`` and
+    ``bulletin_groupings_geojson`` already use.
+
+    Args:
+        country_param: A validated upper-case ISO-2 country code.
+
+    Returns:
+        The FeatureCollection dict.
+
+    """
     features: list[dict[str, Any]] = []
     covered = covered_region_ids()
     qs = (
@@ -750,12 +813,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
-    )
+    return {"type": "FeatureCollection", "features": features}
 
 
 @cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
@@ -772,6 +830,11 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     SNOW-521: offline-basemap download is a **MicroRegion-only** feature
     — this tier never carries a ``properties.download`` key.
 
+    SNOW-896: cached server-side for ``_GEOJSON_CACHE_MAX_AGE``, keyed on
+    country, like its two siblings. This tier is lazy-loaded rather than on
+    the boot path, so the win is smaller — but leaving two of three uncached
+    would recreate exactly the inconsistency that ticket closed.
+
     The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
     ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
     ``regions_geojson`` for the full rationale.
@@ -790,6 +853,24 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
+    payload = cache.get_or_set(
+        _region_geojson_cache_key("major", country_param),
+        lambda: _build_major_regions_payload(country_param),
+        timeout=_GEOJSON_CACHE_MAX_AGE,
+    )
+    return JsonResponse(payload)
+
+
+def _build_major_regions_payload(country_param: str) -> dict[str, Any]:
+    """Build the L1 FeatureCollection for one country.
+
+    Args:
+        country_param: A validated upper-case ISO-2 country code.
+
+    Returns:
+        The FeatureCollection dict.
+
+    """
     features: list[dict[str, Any]] = []
     for major in MajorRegion.objects.filter(
         country=country_param, boundary__isnull=False, display_on_map=True
@@ -806,12 +887,7 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
-    )
+    return {"type": "FeatureCollection", "features": features}
 
 
 @cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
@@ -827,6 +903,11 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
 
     SNOW-521: offline-basemap download is a **MicroRegion-only** feature
     — this tier never carries a ``properties.download`` key.
+
+    SNOW-896: cached server-side for ``_GEOJSON_CACHE_MAX_AGE``, keyed on
+    country, like its two siblings. This tier is lazy-loaded rather than on
+    the boot path, so the win is smaller — but leaving two of three uncached
+    would recreate exactly the inconsistency that ticket closed.
 
     The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
     ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
@@ -846,6 +927,24 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
+    payload = cache.get_or_set(
+        _region_geojson_cache_key("sub", country_param),
+        lambda: _build_sub_regions_payload(country_param),
+        timeout=_GEOJSON_CACHE_MAX_AGE,
+    )
+    return JsonResponse(payload)
+
+
+def _build_sub_regions_payload(country_param: str) -> dict[str, Any]:
+    """Build the L2 FeatureCollection for one country.
+
+    Args:
+        country_param: A validated upper-case ISO-2 country code.
+
+    Returns:
+        The FeatureCollection dict.
+
+    """
     features: list[dict[str, Any]] = []
     qs = (
         SubRegion.objects.filter(
@@ -869,12 +968,7 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
-    )
+    return {"type": "FeatureCollection", "features": features}
 
 
 @cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
