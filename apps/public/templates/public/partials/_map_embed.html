@@ -170,6 +170,29 @@ Optional context:
     data-trip-route-url-template="{{ trip_route_url_template }}"
     data-trip-share-route-url-template="{{ trip_share_route_url_template }}"
 >
+    {# SNOW-893: the state this page falls back to when MapLibre cannot get a #}
+    {# WebGL context and its constructor throws — an old device, a GPU        #}
+    {# blocklist, a hardened privacy configuration. Rendered server-side and  #}
+    {# hidden rather than built in JS, so the copy reaches the message        #}
+    {# catalogue (makemessages never scans JavaScript) and the classes are    #}
+    {# ordinary template classes rather than a string assembled at runtime.   #}
+    {# map.js unhides it and sets data-map-unavailable on #map, which is what #}
+    {# hides every other child here — see static/css/map.css.                 #}
+    {#                                                                        #}
+    {# The CTA is /help/, not a retry: nothing the visitor can do in this     #}
+    {# browser will produce a WebGL context, so a "try again" would be a lie. #}
+    {# It is not a bulletin index either, because there isn't one — the map   #}
+    {# IS the way in to a region, and the header search is a client-side      #}
+    {# match over data map.js fetches inside its `load` handler, which never  #}
+    {# fires here. So this state cannot route the visitor to their own        #}
+    {# region, and says so rather than pretending otherwise.                  #}
+    <div id="map-unavailable" class="map-unavailable" hidden>
+        {% trans "The map can’t run in this browser" as map_unavailable_heading %}
+        {% trans "The map needs WebGL, which this browser or device hasn’t made available. Bulletin pages themselves read fine without it — but the map is how you reach one, so you’ll need a different browser or device to look up a region." as map_unavailable_body %}
+        {% trans "What Snowdesk shows" as map_unavailable_cta %}
+        {% url 'public:help' as map_unavailable_cta_href %}
+        {% include "includes/_callout.html" with kind="warning" heading=map_unavailable_heading body=map_unavailable_body cta_label=map_unavailable_cta cta_href=map_unavailable_cta_href %}
+    </div>
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
             <button
