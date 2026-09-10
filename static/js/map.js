@@ -715,24 +715,59 @@
     fitBoundsOptions: { padding: 20 },
   };
 
-  const map = new maplibregl.Map({
-    container: 'map',
-    ...initialCamera,
-    // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
-    // constructor synchronously — boot them with an empty style and swap
-    // the fetched+rewritten style in once it resolves (below). Native
-    // basemaps load directly from their URL.
-    style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
-      ? { version: 8, sources: {}, layers: [] }
-      : initialBasemapUrl,
-    minZoom: MIN_ZOOM,
-    maxZoom: MAX_ZOOM,
-    maxBounds: MAX_BOUNDS,
-    // SNOW-230: attribution moved to top-right so the scrubber can sit
-    // flush at the bottom edge. Disable the default bottom-right slot and
-    // add it explicitly at the desired corner after the Map is constructed.
-    attributionControl: false,
-  });
+  // SNOW-893: the constructor is the one call in this file that can take the
+  // whole page down. MapLibre throws from it when the browser will not give
+  // it a WebGL context — an old Android device, a GPU blocklist, a hardened
+  // privacy configuration — and `maplibregl` being undefined (its script
+  // failed to load) throws here too.
+  //
+  // Everything in this file is inside ONE IIFE, so an uncaught throw here
+  // skips every statement below it. That includes `map.on('error', …)` and
+  // the offline fallback style it installs, both of which are defined
+  // further down: the handlers for "the map is in trouble" sit underneath
+  // the thing that fails, and so never exist. The other scripts on the page
+  // are separate files and still run, which is why the failure used to
+  // render the full map furniture — roundels, scrubber, legend, search —
+  // around an empty grey box with nothing saying what had happened.
+  //
+  // `let`, not `const`: it has to be assignable from inside the try. Every
+  // read below is after the early return, so it is never null there.
+  let map = null;
+  try {
+    map = new maplibregl.Map({
+      container: 'map',
+      ...initialCamera,
+      // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
+      // constructor synchronously — boot them with an empty style and swap
+      // the fetched+rewritten style in once it resolves (below). Native
+      // basemaps load directly from their URL.
+      style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
+        ? { version: 8, sources: {}, layers: [] }
+        : initialBasemapUrl,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      maxBounds: MAX_BOUNDS,
+      // SNOW-230: attribution moved to top-right so the scrubber can sit
+      // flush at the bottom edge. Disable the default bottom-right slot and
+      // add it explicitly at the desired corner after the Map is constructed.
+      attributionControl: false,
+    });
+  } catch (err) {
+    // Reveal the server-rendered unavailable panel and stamp #map so the
+    // stylesheet hides every other child of it. Both live in
+    // _map_embed.html / map.css: no copy and no class string is built here,
+    // which keeps the words in the message catalogue and the classes under
+    // ds-lint.
+    const unavailable = document.getElementById('map-unavailable');
+    if (unavailable) unavailable.hidden = false;
+    mapEl.dataset.mapUnavailable = 'true';
+    // Nothing else on the page can recover from this, so say so once, loudly
+    // enough to show up in a support session. There is no global error
+    // reporter yet — SNOW-894 adds one, and this is exactly the failure it
+    // exists to make visible.
+    console.error('[map] MapLibre could not start — the map is unavailable', err);
+    return;
+  }
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
