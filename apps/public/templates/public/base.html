@@ -219,6 +219,20 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}
+        {# SNOW-894: window.onerror / unhandledrejection -> pwaTelemetry.    #}
+        {#                                                                   #}
+        {# ABOVE {% block content %} on purpose, and this is the whole       #}
+        {# point of the file. Deferred classic scripts run in DOCUMENT       #}
+        {# order, and home.html puts the entire map bundle inside the        #}
+        {# content block — so a tag placed with the other shell scripts      #}
+        {# below would register its listeners AFTER map.js's boot IIFE had   #}
+        {# already run, missing exactly the faults this exists to catch.     #}
+        {#                                                                   #}
+        {# It has no load-time dependency to satisfy by being lower:         #}
+        {# window.pwaTelemetry is read at CALL time, and a fault raised      #}
+        {# before telemetry.js loads is buffered and flushed once it does.   #}
+        <script src="{% static 'js/error_reporting.js' %}" defer></script>
+
         {# Admin-managed site banners. In flow directly under the nav, so a #}
         {# notice pushes the page down rather than covering it — the        #}
         {# position the hard-coded off-season bar held on the map. Renders  #}

@@ -69,6 +69,18 @@
       'pwa.mutation.failed_permanent',
       'pwa.push.subscription_lost',
       'pwa.sw.activation_failed',
+      // SNOW-894: an uncaught exception or unhandled rejection. Critical for
+      // a reason specific to this event: the crash most worth seeing is the
+      // one that kills the page, and a page that has died does not flush its
+      // own buffer, so waiting for the next flush would lose exactly the
+      // reports worth having.
+      //
+      // Firing regardless of opt-in is the cost of that. It is paid down in
+      // static/js/error_reporting.js rather than here: an opted-out visitor's
+      // report carries the path and nothing else — no message, no file, no
+      // stack — on top of the id-stripping _buildEnvelope already does for
+      // every critical event.
+      'js.error',
     ]),
   );
 
