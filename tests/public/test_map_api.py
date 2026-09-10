@@ -2930,15 +2930,26 @@ def test_region_geojson_cache_is_keyed_per_country(url_name: str) -> None:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "url_name",
-    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+    ("url_name", "tier"),
+    [
+        ("api:regions_geojson", "micro"),
+        ("api:major_regions_geojson", "major"),
+        ("api:sub_regions_geojson", "sub"),
+    ],
 )
-def test_region_geojson_invalid_country_is_not_cached(url_name: str) -> None:
+def test_region_geojson_invalid_country_is_not_cached(url_name: str, tier: str) -> None:
     """An unrecognised country 400s and never becomes a cache key.
 
     Validation runs before the cache lookup precisely so that a junk value
-    cannot occupy an entry — and so that a later valid request for a country
-    whose code merely resembles it is unaffected.
+    cannot occupy an entry.
+
+    The key is built by the same helper the views use, against the real tier
+    name. Raised in review on the SNOW-896 PR: this asserted on a key
+    assembled from the URL NAME (``region-geojson:v1:api:regions_geojson:zz``),
+    which no view can ever write — so it passed vacuously and would have kept
+    passing if validation moved after the cache call and ``?country=zz``
+    really did pollute the cache. Asserting the write did not happen means
+    naming the key the write would have used.
     """
     _make_boundary_fixture()
     client = Client()
@@ -2946,8 +2957,11 @@ def test_region_geojson_invalid_country_is_not_cached(url_name: str) -> None:
     bad = client.get(reverse(url_name) + "?country=zz")
     assert bad.status_code == 400
 
-    assert cache.get(f"region-geojson:v1:{url_name}:zz") is None
+    assert cache.get(public_api._region_geojson_cache_key(tier, "ZZ")) is None
 
     good = client.get(reverse(url_name) + "?country=ch")
     assert good.status_code == 200
     assert good.json()["type"] == "FeatureCollection"
+    # And the valid request DID write, so the assertion above is a real
+    # negative rather than a key nothing ever populates.
+    assert cache.get(public_api._region_geojson_cache_key(tier, "CH")) is not None
