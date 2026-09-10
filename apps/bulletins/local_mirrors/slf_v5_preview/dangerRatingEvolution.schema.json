@@ -1,0 +1,21 @@
+{
+  "dangerRatingEvolution": {
+    "title": "Danger Rating Evolution",
+    "description": "Evolution of the danger rating by day.",
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "title": "Day",
+          "type": "string",
+          "format": "date-time"
+        },
+        "dangerRating": {
+          "$ref": "#/definitions/dangerRating"
+        }
+      },
+      "required": ["date"]
+    }
+  }
+}
