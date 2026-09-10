@@ -14,10 +14,12 @@
  * Deliberately client-side-only — no new service-worker plumbing. The
  * probes below inspect Cache Storage and IndexedDB directly and are
  * re-run each time the popover opens (static/js/map.js's
- * basemapPickerInit calls ``refresh()`` from its ``setMenuOpen``), and on
+ * basemapPickerInit calls ``refresh()`` from its ``setMenuOpen``), on
  * every ``snowdesk:connectivity-changed`` (broadcast by pwa_offline.js), so
  * the menu reacts the instant the device goes offline/online rather than
- * only on the next popover open.
+ * only on the next popover open, and on every ``snowdesk:basemap-changed``
+ * (SNOW-891) — a swap changes which countries the boundary tiers are drawn
+ * for, and so what their dots are reporting on.
  *
  * Offline gating (offline-integrity)
  * ----------------------------------
@@ -82,11 +84,14 @@
  *                          versioned CACHE_VERSION shell-cache name).
  *                          l1/l2/l4 are ``?country=``-scoped, and the SW
  *                          caches per full URL, so they are probed
- *                          EXACTLY, once per enabled country, and go green
- *                          only when cached for every country switched on
- *                          — otherwise a tier dot could sit green above a
- *                          red country row. resorts takes no country param
- *                          and keeps the single ``ignoreSearch`` probe.
+ *                          EXACTLY, once per country, and go green only
+ *                          when cached for every one of them. SNOW-891:
+ *                          the countries are the ACTIVE BASEMAP's, not the
+ *                          ones the Bulletins rows switch on — the boundary
+ *                          tiers follow the ground the basemap covers, so
+ *                          those are the feeds that are actually fetched.
+ *                          resorts takes no country param and keeps the
+ *                          single ``ignoreSearch`` probe.
  *   (SNOW-658: ``favourites`` and ``community_reports`` were probed via an
  *                          IndexedDB ``data:map_overlays`` row until their
  *                          rows left this menu for their own panels — see
@@ -375,21 +380,40 @@
   }
 
   /**
-   * The codes of the countries currently switched ON. Read from the rows'
-   * ``aria-checked`` rather than from map.js's ``countryState`` — that lives
-   * in another IIFE, and the DOM is already the picker's source of truth.
-   *
-   * Flat-mapped over each row's codes: one checked ALBINA row means both AT
-   * and IT are on, and the country-scoped tier probes below must judge
-   * against both.
+   * Every country code the menu offers, deduplicated — the four the map
+   * carries, read off the provider rows rather than restated here.
    *
    * @returns {string[]}
    */
-  function _enabledCountryCodes() {
-    return _countryItems()
-      .filter((item) => item.getAttribute('aria-checked') === 'true')
-      .flatMap(_countryCodesOf)
-      .filter(Boolean);
+  function _allCountryCodes() {
+    return Array.from(new Set(_countryItems().flatMap(_countryCodesOf).filter(Boolean)));
+  }
+
+  /**
+   * The country codes the ACTIVE BASEMAP draws, from its picker row's
+   * ``data-basemap-countries`` (rendered from settings.BASEMAP_COUNTRIES).
+   *
+   * SNOW-891: this is what the boundary tiers (l1/l2/l4) are scoped by now.
+   * They used to follow the countries switched ON in the Bulletins section,
+   * which was the same read map.js made — and the same mistake: a provider
+   * row says whose bulletins to paint, while the outlines follow the ground
+   * the basemap covers. The dots have to be probed against the codes the
+   * tier is actually LOADED for, or a basemap swap leaves a green dot over
+   * geometry that was never fetched.
+   *
+   * Falls back to every code the menu offers, which is exactly what
+   * ``boundaryCountryCodes`` in map.js falls back to fetching — so the dot
+   * keeps reporting on the same feeds the map is loading.
+   *
+   * @returns {string[]}
+   */
+  function _basemapCountryCodes() {
+    const active = _basemapItems().find(
+      (item) => item.getAttribute('aria-checked') === 'true',
+    );
+    const declared = ((active && active.dataset.basemapCountries) || '').trim();
+    if (declared) return declared.split(/\s+/).filter(Boolean);
+    return _allCountryCodes();
   }
 
   /**
@@ -603,11 +627,11 @@
    * True when ``path`` is cached for EVERY code in ``codes`` — the
    * country-aware replacement for ``_probeGeoJson`` on the country-scoped
    * tiers (l1/l2/l4). A tier is only honestly "available offline" if it's
-   * available for every country the user has switched on; otherwise the tier
-   * dot would sit green above a red country row.
+   * available for every country it is DRAWN for, which since SNOW-891 is the
+   * active basemap's coverage rather than the enabled providers'.
    *
    * @param {string} path - a country-scoped feed path.
-   * @param {string[]} codes - enabled country codes.
+   * @param {string[]} codes - the country codes the tier is drawn for.
    * @returns {Promise<boolean>}
    */
   async function _probeEveryCountry(path, codes) {
@@ -860,11 +884,17 @@
 
     const tasks = [];
 
-    // SNOW-524: the country-scoped tiers are judged against the countries the
-    // user actually has switched on. With none enabled there is no country to
-    // judge against, so fall back to the country-blind probe rather than
-    // reporting "not cached" for a tier that has nothing to cache.
-    const enabledCountries = _enabledCountryCodes();
+    // SNOW-524: the country-scoped tiers are judged per country rather than
+    // against one country-blind URL. With no country to judge against at all
+    // (a menu with no rows, in practice a fixture), fall back to the
+    // country-blind probe rather than reporting "not cached" for a tier that
+    // has nothing to cache.
+    //
+    // SNOW-891: the countries are the ACTIVE BASEMAP's, not the ones the
+    // Bulletins rows have switched on — those tiers are loaded and filtered
+    // by the basemap's coverage now, so that is the set whose feeds decide
+    // whether the tier is honestly available offline.
+    const boundaryCountries = _basemapCountryCodes();
 
     for (const [key, resource] of Object.entries(OVERLAY_RESOURCES)) {
       const dot = _overlayDot(key);
@@ -873,8 +903,8 @@
       let probe;
       if (resource.kind === 'idb') {
         probe = _probeIdbRow(resource.key);
-      } else if (resource.countryScoped && enabledCountries.length > 0) {
-        probe = _probeEveryCountry(resource.path, enabledCountries);
+      } else if (resource.countryScoped && boundaryCountries.length > 0) {
+        probe = _probeEveryCountry(resource.path, boundaryCountries);
       } else {
         probe = _probeGeoJson(resource.path);
       }
@@ -1062,6 +1092,21 @@
   // reflects reality without waiting for the next popover open. refresh()
   // never rejects, so the bare .catch is belt-and-braces.
   document.addEventListener('snowdesk:connectivity-changed', () => {
+    try {
+      refresh();
+    } catch (_e) {
+      // refresh() is internally guarded; ignore any synchronous throw.
+    }
+  });
+
+  // SNOW-891: a basemap swap changes which countries the boundary tiers are
+  // drawn and loaded for, so it changes what their dots are judging. Without
+  // this the menu would keep the pre-swap answer until the next popover open
+  // — a green l1 dot over three countries' geometry that has never been
+  // fetched, which is precisely the lie these dots exist to prevent. The
+  // fetches map.js starts on the same event green their own rows as they
+  // land; this re-probes what is already stored.
+  document.addEventListener('snowdesk:basemap-changed', () => {
     try {
       refresh();
     } catch (_e) {
