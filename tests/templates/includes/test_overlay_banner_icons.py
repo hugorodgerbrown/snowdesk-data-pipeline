@@ -9,9 +9,11 @@ banner's refresh glyph had been corrupt for a year with no second copy to
 compare it against. Its two remaining inline glyphs are the same rule from
 the other direction:
 
-  * **calendar** — the off-season strip's mark, which ALSO existed inline
-    in ``includes/nav.html``'s season trigger at a different size. Two
-    copies that had to be edited in step, and would not have been.
+  * **calendar** — the mark the off-season strip carried, which ALSO
+    existed inline in ``includes/nav.html``'s season trigger at a
+    different size. Two copies that had to be edited in step, and would
+    not have been. That strip has since been dropped, so the nav is the
+    only caller left; the strip's own render is exercised here directly.
   * **location-off** — the off-map nudge's struck-through pin, five
     subpaths that only read correctly at 18px when all five agree.
 
@@ -25,9 +27,9 @@ catch.
 
 from __future__ import annotations
 
-import pytest
+from types import SimpleNamespace
+
 from django.template.loader import render_to_string
-from django.test import Client
 
 TEMPLATE = "includes/_overlay_banner.html"
 
@@ -76,7 +78,7 @@ def render_floating(**context: object) -> str:
 
 
 class TestCalendarIcon:
-    """The off-season strip's mark."""
+    """The mark the strip variant draws when a caller asks for it."""
 
     def test_the_whole_mark_reaches_the_page(self) -> None:
         """All four subpaths, not just the grid.
@@ -165,21 +167,27 @@ class TestOneSourcePerMark:
         assert CALENDAR_GRID not in source
 
 
-@pytest.mark.django_db
-class TestRenderedOnThePage:
+class TestRenderedInTheNav:
     """The nav's season trigger still draws its mark after the extraction.
 
     The include passes ``size=14``, and a silently-failing include renders
-    nothing at all rather than raising — so the mark is checked on a real
-    page rather than only in the template source.
+    nothing at all rather than raising — so the mark is checked against a
+    render rather than only in the template source.
+
+    Rendered from ``nav.html`` with the trigger's own context. An earlier
+    cut fetched ``/`` instead, which never carried a season trigger at all
+    (``season_trigger`` is a bulletin-page parameter): the calendar it
+    found there came from the off-season strip above the map, so the check
+    went green while asserting nothing about the nav, and it broke when
+    that strip was dropped.
     """
 
-    def test_the_season_trigger_keeps_its_glyph(self, client: Client) -> None:
-        """A page carrying the nav carries the calendar at the nav's size."""
-        html = client.get("/").content.decode("utf-8")
-
-        if "season" not in html.lower():
-            pytest.skip("no season trigger in this fixture's nav")
+    def test_the_season_trigger_keeps_its_glyph(self) -> None:
+        """The nav draws the calendar at its own 14px size."""
+        html = render_to_string(
+            "includes/nav.html",
+            {"season_trigger": SimpleNamespace(season_label="25/26")},
+        )
 
         assert CALENDAR_GRID in html
         assert 'width="14"' in html
