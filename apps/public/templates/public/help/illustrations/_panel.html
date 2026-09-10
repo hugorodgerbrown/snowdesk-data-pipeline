@@ -15,6 +15,9 @@ foot carries a namespaced id from the previews module precisely so that
 map.js, which finds the real switch by id, can never find this one.
 
 Context expected:
-  panel — one entry from component_previews._PANELS.
+  panel         — one entry from component_previews._PANELS.
+  rows_template — optional; a rows template other than _panel_rows.html.
+                  The Routes article passes _routes_rows.html, whose rows
+                  carry the real action cluster.
 {% endcomment %}
-{% include "includes/_ugc_panel.html" with title=panel.title icon_template=panel.icon_template context_line=panel.context_line section_label=panel.section_label rows_template="public/help/illustrations/_panel_rows.html" cta_label=panel.cta_label toggle_id=panel.toggle_id %}
+{% include "includes/_ugc_panel.html" with title=panel.title icon_template=panel.icon_template context_line=panel.context_line section_label=panel.section_label rows_template=rows_template|default:"public/help/illustrations/_panel_rows.html" cta_label=panel.cta_label toggle_id=panel.toggle_id %}
