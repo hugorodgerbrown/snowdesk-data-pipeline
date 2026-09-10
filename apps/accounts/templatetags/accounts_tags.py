@@ -17,6 +17,21 @@ fixture.
 
 Registered in ``apps.accounts`` because the URL it reverses is this app's.
 Django's tag registry is global, so any template may ``{% load accounts_tags %}``.
+
+**Only use this in a template rendered by a FULL-PAGE response.**  The tag
+names ``request.get_full_path()``, and in a template served by an HTMX
+fragment endpoint that is the FRAGMENT's own URL, not the page the visitor
+is looking at.  Sending someone to ``?next=/routes/partials/list/?variant=map``
+lands them on a ``require_htmx``-guarded endpoint, which answers 400 to the
+plain GET a redirect makes — so the return trip becomes an error page.
+
+Verified on the current call sites: the nav and the region-pin roundel render
+only in full pages, and the two trips partials ARE also rendered as fragments
+(``_saved_fragment`` / ``_save_route_fragment`` in ``apps.trips.views``) but
+only for a visitor who has just saved — the anonymous branch holding this tag
+is unreachable down that path.  A new call site needs the same check; the
+question to ask is not "is this file a partial" but "can the signed-out branch
+render in a fragment response".
 """
 
 from urllib.parse import quote

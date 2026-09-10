@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n accounts_tags %}
 {% comment %}
 public/partials/_map_region_pin_control.html — the region pin roundel
 (SNOW-814).
@@ -53,7 +53,7 @@ control, offer the way in. It is the same choice the download roundel's
         id="map-region-pin-control"
         class="map-glass-roundel map-region-pin-control hover-affordance"
         data-pin-state="signin"
-        href="{% url 'accounts:sign_in' %}"
+        href="{% sign_in_href %}"
         aria-label="{% trans 'Sign in to pin a region' %}"
         title="{% trans 'Sign in to pin a region' %}"
     >
