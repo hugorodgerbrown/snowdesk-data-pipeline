@@ -4192,3 +4192,42 @@ body.map-framing #map-legend {
     border-top-right-radius: 0;
     border-top: none;
 }
+
+/* ---------------------------------------------------------------------------
+   SNOW-893 — the map could not start
+   ---------------------------------------------------------------------------
+   MapLibre's constructor throws when the browser will not give it a WebGL
+   context. map.js catches that, unhides #map-unavailable and stamps
+   data-map-unavailable on #map; these two rules are the whole visual
+   treatment.
+
+   Hiding is expressed as "every child except the panel" rather than as a
+   list of the chrome's ids. The chrome is thirteen sibling containers today
+   and grows with every map ticket, and a list would silently stop covering
+   whichever one was added last — leaving a stray roundel floating beside an
+   error message. The universal selector also catches MapLibre's own
+   .maplibregl-canvas-container, which it may have inserted before throwing.
+
+   Specificity is (1,1,0) — an id plus an attribute — which beats the class
+   and id rules the chrome sets its own display with, so no !important. */
+#map[data-map-unavailable='true'] > *:not(#map-unavailable) {
+    display: none;
+}
+
+#map[data-map-unavailable='true'] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.map-unavailable {
+    max-width: 30rem;
+}
+
+/* _callout.html sets `mb-4` for its usual place in a document flow. Here it
+   is the only thing in a centred flex box, so that margin pushes it off
+   centre. */
+.map-unavailable > [data-testid='callout'] {
+    margin-bottom: 0;
+}

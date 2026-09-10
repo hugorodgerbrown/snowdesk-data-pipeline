@@ -141,6 +141,67 @@ const OVERLAY_STORAGE_KEY = {
 // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
 // SNOW-656 points it at ``bulletins`` rather than ``l4``.
 
+// SNOW-897: overlay key -> the MapLibre layer ids that overlay controls.
+//
+// ONE table. There were two, with near-identical names and identical shape:
+// ``OVERLAY_LAYER_IDS_MAIN`` in map.js and ``OVERLAY_LAYER_IDS`` in
+// map_basemap_picker.js. Five entries (l1, l2, resorts, slope, weather) were
+// duplicated verbatim between them, four existed only in map.js and one only
+// in the picker — so the pair was neither a clean partition nor a clean copy,
+// and establishing which it was meant reading roughly sixty lines of comment
+// across two files. Every reader had to redo that, and the answer was not
+// visible from either site. Nothing would have noticed the duplicated five
+// drifting apart.
+//
+// Both consumers only ever LOOK KEYS UP; neither enumerates the table. So one
+// table serves both, and each simply resolves the keys it drives: map.js the
+// panel-driven overlays plus the tiers, the picker the menu rows. A key
+// visible to a consumer that never asks for it costs nothing.
+//
+// ``regions-fill`` is deliberately in NO entry, and adding it would be a bug
+// rather than a tidy-up. It is the only overlay layer driven by OPACITY
+// rather than visibility, because it is the map's hit-test target and
+// ``queryRenderedFeatures`` returns nothing from a layer at
+// ``visibility: none``. It goes through ``applyBulletinsVisibility`` in
+// map.js, which is its single writer.
+// ``tests/js/test_overlay_layer_registry.js`` asserts that.
+//
+// Order within a group is load-bearing in one place: map.js's
+// ``panelOverlayPainted`` answers for a whole group from element [0], so the
+// first id must be the layer the user actually sees.
+const OVERLAY_LAYERS = Object.freeze({
+  l1: ['major-regions-line', 'major-regions-label'],
+  l2: ['sub-regions-line', 'sub-regions-label'],
+  // SNOW-323: a line layer only — groupings carry no user-facing name to
+  // label. No storage key either (see the note above this table).
+  l3: ['bulletin-groupings-line'],
+  // The micro-region GEOGRAPHY: the boundary and its label, and NOT the
+  // choropleth painted onto it (SNOW-656). Driven by the picker's row.
+  l4: ['regions-line', 'regions-label'],
+  resorts: ['resorts-pin', 'resorts-label'],
+  favourites: ['favourites-pin', 'favourites-label'],
+  community_reports: [
+    'community-reports-clusters',
+    'community-reports-cluster-count',
+    'community-reports-point',
+  ],
+  // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
+  // is an inline `image` section inside `text-field`.
+  weather: ['weather-point'],
+  // SNOW-687: the coloured line FIRST and the casing second — deliberately
+  // the inverse of the order installRoutesLayer adds them in, where the
+  // casing has to be added first to paint underneath. SNOW-764's
+  // 'routes-line-pending' is NOT first either: a visitor holding only a
+  // pending share is the exception, not the case the roundel ring is
+  // painted from.
+  routes: [
+    'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
+  ],
+  // SNOW-691: the raster alone. The coverage outline that rode alongside it
+  // was removed; see slope_overlay_core.js's header.
+  slope: ['slope-raster'],
+});
+
 // SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF
 // (CH), MétéoFrance (FR), ALBINA (AT, IT) — because that is what a row
 // actually switches on: one provider's bulletins. ALBINA publishes for both
@@ -556,5 +617,24 @@ window.snowdeskMapState = Object.freeze({
   },
   set isPlaying(value) {
     IS_PLAYING = value;
+  },
+
+  /** @returns {Object} SNOW-897: overlay key → its MapLibre layer ids. */
+  get overlayLayers() {
+    return OVERLAY_LAYERS;
+  },
+
+  /**
+   * SNOW-897: overlay key → the localStorage key persisting its switch.
+   *
+   * Published alongside ``overlayLayers`` so the pairing between the two is
+   * checkable: a key with a switch but no layers is a control wired to
+   * nothing, which is exactly the class of bug one merged table makes
+   * findable and two separate ones hid.
+   *
+   * @returns {Object}
+   */
+  get overlayStorageKey() {
+    return OVERLAY_STORAGE_KEY;
   },
 });

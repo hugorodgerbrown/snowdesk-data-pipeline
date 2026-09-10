@@ -359,6 +359,12 @@ in addition to the shared map assets.
     {# it has been read. map.js reads it inside its load handler, not at    #}
     {# parse time, so it sits with the other call-site cores.               #}
     <script defer src="{% static 'js/trip_deeplink_core.js' %}"></script>
+    {# SNOW-898: the two pure decisions inside a country load               #}
+    {# (window.pwaCountryLoadCore) — which of a country's four feeds must   #}
+    {# be fetched, and what its layers-menu sync dot should do given which  #}
+    {# of them landed. map.js reads it from inside ensureCountryLoaded,     #}
+    {# never at parse time, so it sits with the other call-site cores.      #}
+    <script defer src="{% static 'js/country_load_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-860: the one reader of what this device has downloaded          #}
     {# (window.pwaBasemapAreas). map_basemap_downloads.js delegates to it,  #}

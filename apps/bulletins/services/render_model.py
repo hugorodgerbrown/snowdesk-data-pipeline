@@ -1461,6 +1461,50 @@ def _is_prose_only(matched_problems: list[dict[str, Any]]) -> bool:
     return True
 
 
+def _drop_untyped_problems(
+    avalanche_problems: list[dict[str, Any]],
+    bulletin_id: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Split off avalanche problems that carry no ``problemType``.
+
+    ``problemType`` stopped being a required CAAML field in SLF's 2026/27
+    interface (SNOW-900) — the reduced next-day bulletin has no avalanche
+    problem to name. Absent means the key is missing or explicitly null; a
+    present-but-empty value is malformed and is left in place to fail
+    validation. A trait is keyed by problem type, and an aggregation
+    entry lists the types it covers, so an untyped problem has nothing to
+    key on and is excluded from both rather than rendering a card with no
+    heading. Whether such an entry should render at all is SNOW-900's
+    question, to be answered once real payloads exist.
+
+    Filtering here rather than at each consumer means the validators, the
+    aggregation synthesis and the trait builders below never see one.
+
+    Args:
+        avalanche_problems: The raw ``avalancheProblems`` list.
+        bulletin_id: Used in the warning log message.
+
+    Returns:
+        A ``(typed_problems, untyped_count)`` tuple. The count is zero for
+        every payload issued to date, which is the case worth keeping cheap.
+
+    """
+    # Test for None, not truthiness: an empty-string problemType is a present
+    # value outside the enum, so it must reach _validate_problems and fail the
+    # build rather than being quietly dropped as though it were absent.
+    typed = [p for p in avalanche_problems if p.get("problemType") is not None]
+    untyped_count = len(avalanche_problems) - len(typed)
+    if untyped_count:
+        logger.warning(
+            "Bulletin %s carries %d avalancheProblem entry/entries with no "
+            "problemType — excluded from aggregation and traits.",
+            bulletin_id,
+            untyped_count,
+        )
+    return typed, untyped_count
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -1478,8 +1522,13 @@ def _validate_problems(avalanche_problems: list[dict[str, Any]]) -> None:
 
     """
     for problem in avalanche_problems:
-        pt = problem.get("problemType", "")
-        if pt not in KNOWN_PROBLEM_TYPES:
+        # An absent problemType is not an unknown one. SLF made the field
+        # optional in its 2026/27 CAAML interface (SNOW-900), so a problem
+        # may legitimately carry no type; ``build_render_model`` drops such
+        # entries before validation. A type outside the enum still fails
+        # hard — it means the EAWS enum moved under us.
+        pt = problem.get("problemType")
+        if pt is not None and pt not in KNOWN_PROBLEM_TYPES:
             raise RenderModelBuildError(
                 f"Unknown problemType in avalancheProblems: {pt!r}. "
                 f"Known types: {sorted(KNOWN_PROBLEM_TYPES)}"
@@ -1554,7 +1603,7 @@ def _validate(
     # Cross-check: problem types in avalancheProblems must exactly match
     # the flattened set of problemTypes across aggregation entries.
     if avalanche_problems or aggregation:
-        problem_set = {p["problemType"] for p in avalanche_problems}
+        problem_set = {pt for p in avalanche_problems if (pt := p.get("problemType"))}
         agg_set: set[str] = set()
         for entry in aggregation:
             agg_set.update(entry.get("problemTypes") or [])
@@ -1755,7 +1804,7 @@ def _build_traits(
     else:
         # SLF: problem type uniquely identifies a problem row.
         problems_by_type: dict[str, dict[str, Any]] = {
-            p["problemType"]: p for p in avalanche_problems
+            pt: p for p in avalanche_problems if (pt := p.get("problemType"))
         }
         for entry in aggregation:
             traits.append(_build_trait(entry, problems_by_type, ratings, source, lang))
@@ -1949,7 +1998,14 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
     ratings: list[dict[str, Any]] = properties.get("dangerRatings") or []
     danger = _resolve_danger(ratings, source)
 
-    avalanche_problems: list[dict[str, Any]] = properties.get("avalancheProblems") or []
+    avalanche_problems, untyped_count = _drop_untyped_problems(
+        properties.get("avalancheProblems") or [], bulletin_id
+    )
+    if untyped_count:
+        # Aggregation synthesis (ALBINA, MeteoFrance) reads avalancheProblems
+        # back out of properties, so hand the adapters the filtered list too —
+        # an untyped problem must not become an aggregation entry with no type.
+        properties = {**properties, "avalancheProblems": avalanche_problems}
     aggregation: list[dict[str, Any]] = _resolve_aggregations(properties, source)
 
     # For SLF bulletins: aggregation is expected to always be present when

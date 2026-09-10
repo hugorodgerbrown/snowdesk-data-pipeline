@@ -100,6 +100,23 @@ class TestBulletinGetAvalancheProblems:
         bulletin = BulletinFactory.create(raw_data=_wrap({}))
         assert bulletin.get_avalanche_problems() == []
 
+    def test_problem_without_type_does_not_raise(self) -> None:
+        """A problem with no problemType parses instead of raising (SNOW-901)."""
+        bulletin = BulletinFactory.create(
+            raw_data=_wrap(
+                {
+                    "avalancheProblems": [
+                        {"comment": "Prose without a named problem type."}
+                    ]
+                }
+            )
+        )
+
+        problems = bulletin.get_avalanche_problems()
+
+        assert len(problems) == 1
+        assert problems[0].problem_type is None
+
     def test_returns_dataclass_instances(self) -> None:
         """Each entry is converted into an AvalancheProblem dataclass."""
         bulletin = BulletinFactory.create(

@@ -440,10 +440,12 @@ def _avalanche_problems_summary(
     if not problems:
         return f"{header}: 0 avalanche problems reported."
     noun = "avalanche problem" if len(problems) == 1 else "avalanche problems"
+    # problem_type is None when the issuing service published a problem with
+    # no CAAML problemType (SNOW-900) — describe it rather than printing None.
     described = ", ".join(
-        f"{p['problem_type']} ({p['danger_rating_value']})"
+        f"{p['problem_type'] or 'unspecified'} ({p['danger_rating_value']})"
         if p["danger_rating_value"]
-        else p["problem_type"]
+        else (p["problem_type"] or "unspecified")
         for p in problems
     )
     return f"{header}: {len(problems)} {noun} — {described}."

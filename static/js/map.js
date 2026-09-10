@@ -723,24 +723,59 @@
     fitBoundsOptions: { padding: 20 },
   };
 
-  const map = new maplibregl.Map({
-    container: 'map',
-    ...initialCamera,
-    // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
-    // constructor synchronously — boot them with an empty style and swap
-    // the fetched+rewritten style in once it resolves (below). Native
-    // basemaps load directly from their URL.
-    style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
-      ? { version: 8, sources: {}, layers: [] }
-      : initialBasemapUrl,
-    minZoom: MIN_ZOOM,
-    maxZoom: MAX_ZOOM,
-    maxBounds: MAX_BOUNDS,
-    // SNOW-230: attribution moved to top-right so the scrubber can sit
-    // flush at the bottom edge. Disable the default bottom-right slot and
-    // add it explicitly at the desired corner after the Map is constructed.
-    attributionControl: false,
-  });
+  // SNOW-893: the constructor is the one call in this file that can take the
+  // whole page down. MapLibre throws from it when the browser will not give
+  // it a WebGL context — an old Android device, a GPU blocklist, a hardened
+  // privacy configuration — and `maplibregl` being undefined (its script
+  // failed to load) throws here too.
+  //
+  // Everything in this file is inside ONE IIFE, so an uncaught throw here
+  // skips every statement below it. That includes `map.on('error', …)` and
+  // the offline fallback style it installs, both of which are defined
+  // further down: the handlers for "the map is in trouble" sit underneath
+  // the thing that fails, and so never exist. The other scripts on the page
+  // are separate files and still run, which is why the failure used to
+  // render the full map furniture — roundels, scrubber, legend, search —
+  // around an empty grey box with nothing saying what had happened.
+  //
+  // `let`, not `const`: it has to be assignable from inside the try. Every
+  // read below is after the early return, so it is never null there.
+  let map = null;
+  try {
+    map = new maplibregl.Map({
+      container: 'map',
+      ...initialCamera,
+      // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
+      // constructor synchronously — boot them with an empty style and swap
+      // the fetched+rewritten style in once it resolves (below). Native
+      // basemaps load directly from their URL.
+      style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
+        ? { version: 8, sources: {}, layers: [] }
+        : initialBasemapUrl,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      maxBounds: MAX_BOUNDS,
+      // SNOW-230: attribution moved to top-right so the scrubber can sit
+      // flush at the bottom edge. Disable the default bottom-right slot and
+      // add it explicitly at the desired corner after the Map is constructed.
+      attributionControl: false,
+    });
+  } catch (err) {
+    // Reveal the server-rendered unavailable panel and stamp #map so the
+    // stylesheet hides every other child of it. Both live in
+    // _map_embed.html / map.css: no copy and no class string is built here,
+    // which keeps the words in the message catalogue and the classes under
+    // ds-lint.
+    const unavailable = document.getElementById('map-unavailable');
+    if (unavailable) unavailable.hidden = false;
+    mapEl.dataset.mapUnavailable = 'true';
+    // Nothing else on the page can recover from this, so say so once, loudly
+    // enough to show up in a support session. There is no global error
+    // reporter yet — SNOW-894 adds one, and this is exactly the failure it
+    // exists to make visible.
+    console.error('[map] MapLibre could not start — the map is unavailable', err);
+    return;
+  }
   // Expose for sibling IIFEs (timelapse, season scrubber). FEATURE_BY_ID
   // and FEATURE_BY_REGION_ID are at module scope and get populated below.
   MAP = map;
@@ -1745,7 +1780,7 @@
   // Visibility is owned by ``overlayState.resorts`` and applied at
   // install time; toggle clicks (handled in the basemap-picker IIFE)
   // call ``setLayoutProperty`` on the pin and label layer ids via
-  // ``OVERLAY_LAYER_IDS.resorts``.
+  // ``OVERLAY_LAYERS.resorts`` (map_state.js, SNOW-897).
   const installResortsLayer = (geojson) => {
     if (!geojson || map.getSource('resorts')) return;
     map.addSource('resorts', { type: 'geojson', data: geojson });
@@ -3801,17 +3836,31 @@
   const _loadCountry = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
+    // SNOW-898: which of this country's four feeds this load must actually
+    // fetch. Pure, and unit-tested in country_load_core.js — the rule it
+    // carries is SNOW-524's, and it is one character away from the bug that
+    // ticket fixed (see that module's header).
+    const plan = self.pwaCountryLoadCore.planCountryFeeds({
+      isBootCountry,
+      hasRegionsUrl: !!REGIONS_URL,
+      hasMajorUrl: !!MAJOR_REGIONS_URL,
+      hasSubUrl: !!SUB_REGIONS_URL,
+      hasRatingsUrl: !!RATINGS_URL,
+    });
     try {
       const [newRegions, newMajor, newSub] = await Promise.all([
-        REGIONS_URL && !isBootCountry ? fetch(REGIONS_URL + '?country=' + code).then(r => {
+        plan.regions ? fetch(REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('regions fetch failed');
           return r.json();
         }) : Promise.resolve(null),
-        MAJOR_REGIONS_URL ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
+        // The two optional legs swallow their own failure so a partial load
+        // degrades rather than rejecting — which is exactly why the sync-dot
+        // decision below cannot read a successful CALL as complete data.
+        plan.major ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('major fetch failed');
           return r.json();
         }).catch(() => null) : Promise.resolve(null),
-        SUB_REGIONS_URL ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
+        plan.sub ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('sub fetch failed');
           return r.json();
         }).catch(() => null) : Promise.resolve(null),
@@ -3912,7 +3961,7 @@
       // load doesn't reject — which means the country dot must not be greened
       // off a successful *call*, only off complete data.
       let ratingsOk = false;
-      if (RATINGS_URL && isBootCountry) {
+      if (plan.ratings === 'ensure-cached') {
         // Boot already fetched this country's season ratings into
         // SEASON_RATINGS_PROMISE, so there is nothing to fetch or merge — but
         // that fetch can still be missing from Cache Storage: on a first-ever
@@ -3920,31 +3969,37 @@
         // never intercepted and never cached. Top it up only when it really is
         // absent, which costs one request on a first visit and none after.
         ratingsOk = await ensureRatingsCached(code);
-      } else if (RATINGS_URL) {
+      } else if (plan.ratings === 'fetch') {
+        // SNOW-891 extracted this body into `loadCountryRatings`; SNOW-898
+        // replaced the `RATINGS_URL &&` guard with the plan, which is the
+        // same condition named rather than re-derived at the call site.
         ratingsOk = await loadCountryRatings(code);
       }
-      // SNOW-524: green the country's own dot, but only once all four of its
-      // feeds have actually flowed through the SW cache — a skipped feed was
-      // already fetched by boot, so it counts. Optimistic on purpose: the SW's
-      // ``cache.put`` isn't awaited inside ``_staleWhileRevalidate``, so an
-      // immediate re-probe would race the write; the next popover-open
-      // ``refresh()`` re-verifies against real cache state and self-corrects.
-      const allFeedsLoaded =
-        (isBootCountry || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
-      if (allFeedsLoaded) {
-        // SNOW-658: the ROW's key, not the code's — AT and IT share the ALBINA
-        // row, whose dot may only green once both have landed. markCached is
-        // optimistic for a single-country row and would be a lie for this one,
-        // so a grouped row hands off to a real probe instead.
-        const rowKey = overlayKeyForCountry(code);
-        if (countryCodesFor(rowKey).length === 1) {
-          window.pwaLayerSyncStatus?.markCached(rowKey);
-        } else {
-          window.pwaLayerSyncStatus?.refresh();
-        }
+      // SNOW-898: green the country's own dot, or hand off to a real probe.
+      // The two rules that decide it — SNOW-524's "a feed boot already
+      // fetched counts as landed, but a successful CALL is not complete
+      // data", and SNOW-658's "an optimistic mark is a lie for a grouped
+      // provider row" — live in country_load_core.js, where they are named
+      // and tested rather than being a conditional under a comment.
+      //
+      // Marking is optimistic on purpose: the SW's ``cache.put`` isn't
+      // awaited inside ``_staleWhileRevalidate``, so an immediate re-probe
+      // would race the write. The next popover-open ``refresh()`` re-verifies
+      // against real cache state and self-corrects. A ``refresh`` here is
+      // also what stops a partial load leaving the row pulsing forever after
+      // its optimistic markSyncing.
+      const rowKey = overlayKeyForCountry(code);
+      const dotAction = self.pwaCountryLoadCore.syncDotAction({
+        isBootCountry,
+        regionsLoaded: !!newRegions,
+        majorLoaded: !!newMajor,
+        subLoaded: !!newSub,
+        ratingsOk,
+        rowCountryCount: countryCodesFor(rowKey).length,
+      });
+      if (dotAction === 'mark-cached') {
+        window.pwaLayerSyncStatus?.markCached(rowKey);
       } else {
-        // Partial load — let a real probe decide, rather than leaving the row
-        // pulsing forever after an optimistic markSyncing.
         window.pwaLayerSyncStatus?.refresh();
       }
     } catch (err) {
@@ -4389,61 +4444,19 @@
       },
     };
   }
-
-  // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
-  // to l1 / l2 / resorts. l4 is not lazy — its layers are installed
-  // eagerly in installRegionsLayers; the other tiers fetch their
-  // GeoJSON on first enable.
-  //
-  // SNOW-656: there is no ``bulletins`` entry here and there is no
-  // ``regions-fill`` entry anywhere in this map. The Bulletins row's two
-  // layers are driven differently from every other overlay — the fill by
-  // opacity (it must stay hit-testable), the groupings boundary through the
-  // ``l3`` entry below via OVERLAY_VISIBILITY_GOVERNOR — so both go through
-  // applyBulletinsVisibility rather than the generic visibility loop this
-  // table feeds.
-  // Mirrors OVERLAY_LAYER_IDS in basemapPickerInit but scoped here so
-  // the snowdesk:overlay-load handler below can reach them without
-  // crossing IIFE boundaries.
-  const OVERLAY_LAYER_IDS_MAIN = {
-    l1: ['major-regions-line', 'major-regions-label'],
-    l2: ['sub-regions-line', 'sub-regions-label'],
-    // SNOW-323: l3 has only a line layer (no label layer — groupings
-    // don't carry a user-facing name property).
-    l3: ['bulletin-groupings-line'],
-    resorts: ['resorts-pin', 'resorts-label'],
-    favourites: ['favourites-pin', 'favourites-label'],
-    community_reports: [
-      'community-reports-clusters',
-      'community-reports-cluster-count',
-      'community-reports-point',
-    ],
-    // SNOW-761: one symbol layer, not a pin+label pair — the condition
-    // glyph is an inline `image` section inside `text-field`, so there is
-    // a single layer to toggle rather than the pin+label pairs favourites
-    // and resorts use.
-    weather: ['weather-point'],
-    // SNOW-687: the coloured line FIRST and the casing second — deliberately
-    // the inverse of the order installRoutesLayer adds them in, where the
-    // casing has to be added first to paint underneath. This list's order is
-    // read by panelOverlayPainted below, which answers for the whole group
-    // from element [0], and that has to be the layer the user actually sees.
-    // SNOW-764 adds 'routes-line-pending'. It is NOT first: panelOverlayPainted
-    // answers for the whole group from element [0], and that has to be the
-    // layer every routes user has — a visitor with only a pending share is
-    // the exception, not the case the roundel ring is painted from.
-    routes: [
-      'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
-    ],
-    // SNOW-691: one layer — the raster. The coverage outline that rode
-    // alongside it was removed; see slope_overlay_core.js's header.
-    slope: ['slope-raster'],
-  };
+  // SNOW-897: the layer ids for each overlay now live in ONE table,
+  // ``OVERLAY_LAYERS`` in map_state.js, which map_basemap_picker.js reads
+  // too. There used to be a near-identical copy here and another there —
+  // five entries duplicated verbatim, four only here, one only there — and
+  // telling a partition from a copy meant reading sixty lines of comment
+  // across two files. Neither consumer enumerates the table; both look keys
+  // up, so one table serves both and each resolves the keys it drives.
 
   /**
    * Whether a panel-driven overlay is actually drawn on the map right now.
    *
-   * SNOW-658: the FIRST id in each group above is that overlay's principal
+   * SNOW-658: the FIRST id in each group of ``OVERLAY_LAYERS`` is that
+   * overlay's principal
    * layer — the one carrying its markers ('favourites-pin',
    * 'community-reports-clusters'). Every id in a group is installed by one
    * function and flipped by one loop, so the principal layer answers for the
@@ -4453,7 +4466,7 @@
    * @param {string} key - ``'favourites'`` or ``'community_reports'``.
    * @returns {boolean} True when that overlay's layers are on the map.
    */
-  const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYER_IDS_MAIN[key][0]);
+  const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYERS[key][0]);
 
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
   // the user enables an overlay tier that hasn't been fetched yet.
@@ -4508,7 +4521,7 @@
         overlayState[gov] = stillEnabled;
       }
       const visibility = stillEnabled ? 'visible' : 'none';
-      for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+      for (const layerId of OVERLAY_LAYERS[key]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', visibility);
         }
@@ -5235,7 +5248,7 @@
   const hidePanelOverlay = (key) => {
     writeStorage(OVERLAY_STORAGE_KEY[key], 'false');
     overlayState[key] = false;
-    for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+    for (const layerId of OVERLAY_LAYERS[key]) {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', 'none');
       }
