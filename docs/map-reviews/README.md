@@ -71,10 +71,11 @@ The two halves are maintained differently:
 
 ## Cadence
 
-Weekly, via the **"Weekly Snowdesk map review"** Routine (Tuesdays, 07:00 UK).
+Weekly, via the **"Weekly Snowdesk map review"** Routine, cron `0 6 * * 2`.
 Tuesday keeps it clear of the Monday page audit and the Sunday-evening slot
 that already holds the code review, the dependency updates and the competitor
-scan.
+scan. Routine crons are fixed UTC, so that is 07:00 under BST and 06:00 under
+GMT — the same one-hour seasonal drift the page-audit Routine has.
 
 - **Unattended:** the Routine calls `/audit-map routine`, which runs
   end-to-end with no approval gate — branch → re-verify → new findings →
