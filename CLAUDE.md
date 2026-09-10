@@ -633,6 +633,7 @@ Read these when working in the relevant area:
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
+| Admin-managed site banners (PersistentMessage rows, apps/public/banners.py, _persistent_banners.html, the dismissal endpoint) | [`docs/site-banners.md`](docs/site-banners.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |

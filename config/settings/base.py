@@ -200,6 +200,11 @@ INSTALLED_APPS = [
     # table on first boot — see apps/core/apps.py for the why.
     "apps.core.apps.BootstrapTolerantCSPTrackerConfig",
     "waffle",
+    # Admin-managed site banners (django-persistent-messages).
+    # Ships its own migrations, so ``migrate`` creates the two tables; the
+    # rendering side is ours — see apps/public/banners.py and
+    # templates/includes/_persistent_banners.html.
+    "persistent_messages",
     # Local
     "apps.core",
     "apps.locations",
@@ -321,6 +326,12 @@ TEMPLATES = [
                 # base.html can render a distinct app name, icon, and theme
                 # colour on staging vs production PWA installs.
                 "apps.public.context_processors.site_environment",
+                # Injects ``persistent_banners`` — the admin-managed
+                # banners targeted at this request's user. A context processor
+                # because a site notice is a universal surface rather than one
+                # view's, the same reasoning debug_log_visible above carries.
+                # Lazy, so a page that never renders the strip costs no query.
+                "apps.public.context_processors.persistent_banners",
             ],
         },
     },
@@ -1029,6 +1040,21 @@ WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
 
 WAFFLE_FLAG_DEFAULT = False
 WAFFLE_CREATE_MISSING_FLAGS = False
+
+
+# ---------------------------------------------------------------------------
+# Admin-managed site banners (django-persistent-messages)
+# ---------------------------------------------------------------------------
+# A named predicate a banner can target instead of a user or an auth Group:
+# ``PersistentMessage.target_custom_group`` is validated against these keys
+# in the model's ``clean()``, so an unknown name is an admin form error
+# rather than a banner that quietly shows to nobody.
+#
+# Empty on purpose. Snowdesk's audiences are "everyone" and "signed in",
+# both of which the package's own TargetType covers; a predicate here would
+# be a third targeting mechanism with no caller. Add one when a banner
+# genuinely needs an audience the model cannot express.
+MESSAGE_CUSTOM_GROUPS: dict[str, object] = {}
 
 
 # ---------------------------------------------------------------------------

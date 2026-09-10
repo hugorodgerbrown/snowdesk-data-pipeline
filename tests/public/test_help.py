@@ -14,7 +14,7 @@ Covers:
     neither, which is what that pair of tests exists to stop recurring.
   * The SNOW-744 illustrations: each illustrated topic renders one, every
     illustration is inert, the four panel illustrations carry namespaced
-    switch ids, and the page still issues no queries.
+    switch ids, and none of them reaches the database.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``. It is the only
     gated panel left, and now the only gate on this page at all: SNOW-724
@@ -25,16 +25,18 @@ Covers:
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
 
-No factories or database fixtures are required — the page is entirely
-static and carries no model queries.
+No factories or database fixtures are required — the page's own content is
+entirely static. It is not query-free: since the admin-managed site
+banners landed, every page extending ``public/base.html`` looks them up
+(``apps.public.banners``, counted in ``docs/query-counts.md``).
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from waffle.testutils import override_flag
 
@@ -421,17 +423,35 @@ class TestHelpIllustrations:
         ):
             assert real_id not in content, real_id
 
-    def test_help_page_issues_no_queries(
-        self, client: Client, django_assert_num_queries: Any
-    ) -> None:
+    def test_help_page_issues_no_illustration_queries(self, client: Client) -> None:
         """The illustrations are built in memory, and must stay that way.
 
         The season grid is the one that could regress: the real builder
         reads RegionDayRating, and a future edit that reached for it
-        instead of the synthetic cells would put a query on a static page.
+        instead of the synthetic cells would put a bulletin query on a
+        static page.
+
+        Asserted against the tables the illustrations would have to touch
+        rather than as a flat ``django_assert_num_queries(0)``. The page is
+        no longer query-free: every page extending ``public/base.html``
+        now looks up the admin-managed site banners
+        (``apps.public.banners``), which is a deliberate, documented cost
+        (``docs/query-counts.md``) and says nothing about whether an
+        illustration went to the database. The flat count also could not
+        distinguish the two, and would fail on the banner lookup while a
+        real illustration regression hid behind it.
         """
-        with django_assert_num_queries(0):
+        with CaptureQueriesContext(connection) as ctx:
             client.get(reverse("public:help"))
+
+        illustration_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "regiondayrating" in q["sql"].lower()
+            or "bulletins_bulletin" in q["sql"].lower()
+            or "regions_microregion" in q["sql"].lower()
+        ]
+        assert illustration_queries == []
 
 
 @pytest.mark.django_db
