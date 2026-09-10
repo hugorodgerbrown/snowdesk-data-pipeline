@@ -175,6 +175,38 @@ describe('the payload', () => {
     }
   });
 
+  it('redacts a query string out of message, filename AND stack', async () => {
+    // Raised in review: `pathname` alone was not the guarantee. An error
+    // thrown from an inline or dynamically-evaluated script is attributed to
+    // the DOCUMENT, so `filename` and every stack frame carry the full URL —
+    // query string included — and a rejected fetch puts the request URL in
+    // its message. The original version satisfied its own comment and still
+    // leaked.
+    window.history.replaceState({}, '', '/map/?route_share=SECRET-TOKEN');
+    const emit = await load({ optIn: true });
+
+    const event = new Event('error');
+    Object.assign(event, {
+      message: 'Failed to fetch https://snowdesk.info/map/?route_share=SECRET-TOKEN',
+      filename: 'https://snowdesk.info/map/?route_share=SECRET-TOKEN',
+      lineno: 1,
+      colno: 1,
+      error: {
+        stack: 'Error\n  at https://snowdesk.info/map/?route_share=SECRET-TOKEN:1:1',
+      },
+    });
+    window.dispatchEvent(event);
+    await settle();
+
+    const props = emit.mock.calls[0][1];
+    const serialised = JSON.stringify(props);
+    expect(serialised).not.toContain('SECRET-TOKEN');
+    expect(serialised).not.toContain('route_share');
+    // Redacted, not blanked: the path is what makes a report actionable.
+    expect(props.filename).toContain('snowdesk.info/map/');
+    expect(props.stack).toContain('snowdesk.info/map/');
+  });
+
   it('clamps a runaway stack so one fault cannot fill the beacon', async () => {
     const emit = await load({ optIn: true });
 
@@ -226,13 +258,55 @@ describe('the dedupe', () => {
   });
 });
 
+describe('a fault raised before telemetry has loaded', () => {
+  it('is buffered and flushed, not dropped', async () => {
+    // Raised in review. This module registers ABOVE the content block so its
+    // listeners beat every page's boot scripts — which necessarily means it
+    // beats telemetry.js, further down the same document. A throw during
+    // map.js's boot IIFE is the motivating case for the whole file, and
+    // dropping it because the buffer had not loaded yet would have made the
+    // ticket self-defeating.
+    const emit = await load({ optIn: true });
+    delete window.pwaTelemetry;
+
+    throwAt('map boot threw before telemetry existed');
+    await settle();
+
+    // Nothing to emit to yet.
+    expect(emit).not.toHaveBeenCalled();
+
+    // telemetry.js arrives.
+    window.pwaTelemetry = { emit, isOptIn: () => Promise.resolve(true) };
+    window.pwaErrorReporting._flush();
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0][0]).toBe('js.error');
+  });
+
+  it('buffers it as an opted-OUT payload, since consent is unknowable', async () => {
+    // isOptIn() lives on the module that has not loaded. Treating "cannot
+    // ask" as consent would be the wrong default in the one direction that
+    // matters.
+    const emit = await load({ optIn: true });
+    delete window.pwaTelemetry;
+
+    throwAt('a fault with no consent answer available');
+    await settle();
+
+    window.pwaTelemetry = { emit, isOptIn: () => Promise.resolve(true) };
+    window.pwaErrorReporting._flush();
+
+    expect(Object.keys(emit.mock.calls[0][1]).sort()).toEqual(['kind', 'pathname']);
+  });
+});
+
 describe('the reporter itself', () => {
-  it('does nothing, and throws nothing, when telemetry is absent', async () => {
+  it('throws nothing when telemetry is absent', async () => {
     await load({ optIn: true });
     delete window.pwaTelemetry;
 
     // A reporter that throws inside an error handler turns one fault into
-    // a loop.
+    // a loop. (The fault itself is buffered — see the block above.)
     expect(() => throwAt('no telemetry on this page')).not.toThrow();
   });
 

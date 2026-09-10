@@ -184,3 +184,36 @@ class TestMapScriptOrder:
                 "its IIFE runs at parse time and depends on the boot IIFE "
                 "having already installed the map and its overlays."
             )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-894 — the error reporter must register before any page's boot scripts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_error_reporter_loads_before_the_map_bundle() -> None:
+    """``error_reporting.js`` precedes every map script in document order.
+
+    Deferred classic scripts execute in document order, and ``home.html``
+    puts the whole map bundle inside ``{% block content %}``. A reporter tag
+    placed with the other shell scripts — which render *after* that block —
+    registers its listeners only once ``map.js``'s boot IIFE has already run,
+    so a throw during that boot goes unreported. That is the exact failure
+    the reporter exists to catch, which made the placement self-defeating.
+
+    Caught in review on the SNOW-894 PR rather than by a test, hence this
+    one: the ordering is invisible in either file on its own, and only the
+    rendered page shows it.
+    """
+    html = Client().get(reverse("public:home")).content.decode()
+
+    reporter = html.index("js/error_reporting")
+    first_map_script = min(
+        html.index(f"js/{name}") for name in ("map_state", "map.js", "map_shared")
+    )
+
+    assert reporter < first_map_script, (
+        "error_reporting.js must load before the map bundle — deferred "
+        "scripts run in document order, so a later tag misses the boot."
+    )

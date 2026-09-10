@@ -36,12 +36,24 @@
  * from paths alone — without collecting diagnostics from someone who
  * declined to be diagnosed. Decision recorded on SNOW-894.
  *
- * `search` is NEVER included, on either branch, and `pathname` is sent
- * rather than `href` for exactly that reason. The map's own URLs carry
- * `?route_share=<token>` and `?trip_share=<token>`; a share token is a
- * capability, and putting one in an analytics payload would put a grant on
- * somebody's private route into a third-party system. The same rule the
- * `map.route.shared` event already follows.
+ * NO QUERY STRING REACHES THE PAYLOAD — AND `pathname` IS NOT ENOUGH
+ * -------------------------------------------------------------------
+ * The map's own URLs carry `?route_share=<token>` and `?trip_share=<token>`.
+ * A share token is a capability, and putting one in an analytics payload
+ * would put a grant on somebody's private route into a third-party system.
+ * The `map.route.shared` event already follows this rule.
+ *
+ * Sending `pathname` rather than `href` is only the first half. `message`,
+ * `filename` and `stack` are strings the runtime hands us, and each can
+ * carry the document URL in full: an error thrown from an inline or
+ * dynamically-evaluated script is attributed to the DOCUMENT, so `filename`
+ * and every stack frame read `/?route_share=SECRET`; and a rejected fetch
+ * commonly puts the request URL in its message. So every diagnostic string
+ * goes through `redact()` before it is emitted, not just the path.
+ *
+ * Raised in review on the SNOW-894 PR. Worth stating plainly: the original
+ * version satisfied its own comment and still leaked, because the comment
+ * described the field it had thought about rather than the guarantee.
  *
  * WHY THE DEDUPE IS NOT OPTIONAL
  * ------------------------------
@@ -94,6 +106,23 @@
   const seen = new Map();
 
   /**
+   * Faults raised before `window.pwaTelemetry` existed.
+   *
+   * This module registers ABOVE the content block so its listeners are in
+   * place before any page's boot scripts run — which necessarily means
+   * before `telemetry.js`, further down the same document. Dropping those
+   * faults would drop precisely the ones worth having: a throw during the
+   * map's boot IIFE is the motivating case for the whole file.
+   *
+   * Bounded by the dedupe, which runs before anything reaches here, so this
+   * cannot exceed MAX_KEYS * MAX_PER_KEY entries however badly the page is
+   * failing.
+   *
+   * @type {Array<{kind: string, properties: object}>}
+   */
+  const pending = [];
+
+  /**
    * Has this fault already been reported enough times?
    *
    * @param {string} key
@@ -120,6 +149,48 @@
   }
 
   /**
+   * Strip query strings and fragments out of anything URL-shaped.
+   *
+   * Applied to every diagnostic string, not only to the path — see the
+   * header. Two passes, because they catch different things:
+   *
+   *   1. Any `…?…` run inside a URL-ish token loses its query. This is the
+   *      general case and covers a filename, a stack frame and a fetch
+   *      error message alike.
+   *   2. The current page's own `search`, matched literally. Belt and
+   *      braces for a runtime that has already reformatted the URL — a
+   *      percent-encoded or re-ordered copy would slip past pass 1, and
+   *      this is the one string we know for certain is sensitive.
+   *
+   * Deliberately blunt. Losing a query string that would have been useful
+   * for debugging costs a support conversation; keeping one that carries a
+   * share token costs someone their private route.
+   *
+   * @param {unknown} text
+   * @param {number} max Truncate to this many characters afterwards.
+   * @returns {string} Redacted and clamped, or '' for a non-string.
+   */
+  function redact(text, max) {
+    if (typeof text !== 'string') return '';
+    var out = text;
+    try {
+      // Pass 1 — drop `?query` and `#fragment` from any URL-ish token. The
+      // token ends at whitespace, a quote, or a bracket, which is how these
+      // strings delimit URLs in practice.
+      out = out.replace(/([^\s'"()<>]*?)[?#][^\s'"()<>]*/g, '$1?[redacted]');
+      // Pass 2 — the page's own query, verbatim.
+      var search = window.location.search;
+      if (search && search.length > 1) {
+        while (out.indexOf(search) !== -1) out = out.replace(search, '?[redacted]');
+      }
+    } catch (_err) {
+      // A redaction that throws must not become an unredacted payload.
+      return '[redaction failed]';
+    }
+    return clamp(out, max);
+  }
+
+  /**
    * The page path, with the query string deliberately dropped.
    *
    * @returns {string}
@@ -143,10 +214,27 @@
    * @param {number} detail.colno
    * @param {string} detail.stack
    */
-  function report(kind, detail) {
+  /**
+   * Hand anything buffered to telemetry, if it has arrived.
+   *
+   * Called on every new fault and from both document lifecycle events, so a
+   * page whose only fault happened before telemetry loaded still reports it.
+   */
+  function flushPending() {
     const telemetry = window.pwaTelemetry;
     if (!telemetry || typeof telemetry.emit !== 'function') return;
+    while (pending.length) {
+      const queued = pending.shift();
+      try {
+        telemetry.emit('js.error', queued.properties);
+      } catch (_err) {
+        // Nowhere left to report to; dropping one queued fault is better
+        // than looping on it.
+      }
+    }
+  }
 
+  function report(kind, detail) {
     const pathname = safePath();
     const key = `${detail.message}|${detail.filename}|${detail.lineno}`;
     if (isSuppressed(key)) return;
@@ -154,9 +242,16 @@
     // isOptIn() reads IndexedDB, so it is a promise. Resolving it before
     // emitting is what lets the payload differ; a rejection (a broken or
     // reset DB) is treated as opted OUT, which is the conservative branch.
+    // isOptIn() reads IndexedDB, so it is a promise. A missing telemetry
+    // module (this fault beat it to the page) and a rejection (a broken or
+    // reset DB) both resolve to opted OUT, which is the conservative branch:
+    // the buffered report carries the path and nothing else.
     let optIn;
     try {
-      optIn = telemetry.isOptIn();
+      const telemetry = window.pwaTelemetry;
+      optIn = telemetry && typeof telemetry.isOptIn === 'function'
+        ? telemetry.isOptIn()
+        : Promise.resolve(false);
     } catch (_err) {
       optIn = Promise.resolve(false);
     }
@@ -164,20 +259,27 @@
     Promise.resolve(optIn)
       .catch(() => false)
       .then((allowed) => {
+        const telemetry = window.pwaTelemetry;
         const properties = allowed
           ? {
             kind,
             pathname,
-            message: clamp(detail.message, MAX_MESSAGE_CHARS),
-            filename: clamp(detail.filename, MAX_MESSAGE_CHARS),
+            message: redact(detail.message, MAX_MESSAGE_CHARS),
+            filename: redact(detail.filename, MAX_MESSAGE_CHARS),
             lineno: Number.isFinite(detail.lineno) ? detail.lineno : 0,
             colno: Number.isFinite(detail.colno) ? detail.colno : 0,
-            stack: clamp(detail.stack, MAX_STACK_CHARS),
+            stack: redact(detail.stack, MAX_STACK_CHARS),
           }
           // Opted out: that a fault happened, and where in the site. No
           // message, no file, no line, no stack.
           : { kind, pathname };
-        telemetry.emit('js.error', properties);
+        if (telemetry && typeof telemetry.emit === 'function') {
+          flushPending();
+          telemetry.emit('js.error', properties);
+        } else {
+          // telemetry.js has not loaded yet — see `pending`.
+          pending.push({ kind, properties });
+        }
       })
       .catch(() => {
         // An error reporter that throws inside an error handler turns one
@@ -230,8 +332,14 @@
   // Exposed for tests only — the listeners above are the whole public
   // surface in a browser. `_reset` clears the per-page dedupe state so one
   // suite can assert the cap and the next can start from zero.
+  // Two chances to drain anything buffered on a page whose faults all
+  // happened before telemetry.js loaded and which then raises no more.
+  window.addEventListener('DOMContentLoaded', flushPending);
+  window.addEventListener('load', flushPending);
+
   window.pwaErrorReporting = Object.freeze({
-    _reset: () => seen.clear(),
+    _flush: flushPending,
+    _reset: () => { seen.clear(); pending.length = 0; },
     MAX_PER_KEY,
     MAX_KEYS,
   });
