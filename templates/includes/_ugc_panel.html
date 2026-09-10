@@ -1,4 +1,4 @@
-{% load i18n components %}
+{% load components %}
 {% comment %}
 templates/includes/_ugc_panel.html — the shared skeleton for the three
 map panels that manage a user's own data (SNOW-658).
@@ -17,7 +17,7 @@ mock (see the SNOW-645/SNOW-635 notes in
 public/partials/_map_downloads_sheet.html), so its skeleton is what got
 extracted here and the other two conform to it, not the reverse.
 
-SNOW-658 (Hugo's "Map panels — common format" design): the shell is five
+SNOW-658 (Hugo's "Map panels — common format" design): the shell is four
 parts, always in this order, and what varies between the three panels is
 only ever their contents.
 
@@ -35,17 +35,23 @@ only ever their contents.
   3. LIST — a mono uppercase section label on a rule, then the rows,
      which are separated by hairlines and are NOT cards: no boxes inside
      the panel. The scroll region is the only part that scrolls, so the
-     header above and the CTA/switch below stay pinned.
+     header above and the CTA below stay pinned.
   4. ADD CTA — one full-width outlined button, exactly one per panel.
-  5. MAP TOGGLE — includes/_map_overlay_toggle.html at the foot, so the
-     map BEHIND the sheet is the last thing read rather than the first.
+
+SNOW-904 removed a fifth part. Each panel used to carry a "Display on the
+map" switch at its foot, put there by SNOW-658 on a "one subject, one way
+in" rule — so a reader who wanted to know what could go on their map had
+to open five surfaces to find out, and no single surface answered it. The
+map's layers menu is the sole control for every layer now, and a panel is
+about its own list again. The partial that held the switch
+(includes/_map_overlay_toggle.html) went with it.
 
 The outer flex column runs at the 18px (`gap-4.5`) rhythm and carries
 `min-h-0 flex-1` so it fills — and is allowed to SHRINK inside — the
 bounded box includes/_overlay_sheet.html's `scroll_body=True` renders.
 `min-h-0` is load-bearing: a flex child defaults to `min-height: auto`
 ("never shrink below my content"), and without the override the list
-refuses to scroll and pushes the CTA and the switch off-screen instead.
+refuses to scroll and pushes the CTA off-screen instead.
 
 Composition. Django has no slot mechanism, and the three shapes we need
 to vary (a rows region, an optional header extra) are markup, not
@@ -94,36 +100,6 @@ Parameters (passed via {% include … with … %}):
                   anything to hold.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
-  toggle_id       (string, optional) — DOM id for the overlay switch.
-                  Omit it and the switch is not rendered at all.
-
-                  NOT optional as a style choice: a panel that owns a map
-                  overlay must carry its switch, because that is where
-                  SNOW-658 moved it from the layers menu. All four panels
-                  pass one as of SNOW-687, which gave the routes panel the
-                  MapLibre line and the overlay bridge its switch drives.
-
-                  The parameter stays optional all the same, because the
-                  gap it covered is a real state and will recur: SNOW-686
-                  landed the routes panel BEFORE that layer existed, and
-                  the two honest options were a switch wired to nothing or
-                  no switch. A control that silently does nothing when
-                  tapped is a worse lie than an absent one, so routes
-                  omitted it until there was something for it to drive.
-
-                  That is the narrow inverse of the note in
-                  static/js/favourites.js about the anonymous branch KEEPING
-                  its switch: there, the overlay exists and merely has
-                  nothing in it yet, so hiding the control would hide a
-                  working view setting. In the gap case the overlay itself
-                  does not exist.
-
-The overlay switch's LABEL is not a parameter. It is "Display on the map"
-on every panel that has one — the design's own wording, replacing "Show areas on
-the map" / "Show favourites on the map" / "Show community reports on the
-map". Three sentences for one control is the same divergence the shared
-`data-panel-add` hook removed in attribute form, so the string is fixed
-here, where no caller can restate it.
 
 The CTA carries `disabled:` utilities unconditionally. Only downloads
 ever sets `disabled` on it today (SNOW-637: starting a download needs a
@@ -206,12 +182,4 @@ state should not have to remember to bring its own.
             {{ cta_label }}
         </button>
     </div>
-    {# One string for every panel that HAS this switch — see the note above #}
-    {# the parameter list for why the label is not a parameter, and why      #}
-    {# `toggle_id` is optional (a panel whose overlay does not exist yet     #}
-    {# renders no switch rather than a dead one).                           #}
-    {% if toggle_id %}
-        {% trans "Display on the map" as overlay_toggle_label %}
-        {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
-    {% endif %}
 </div>

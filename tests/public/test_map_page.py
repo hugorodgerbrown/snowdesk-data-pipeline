@@ -645,41 +645,86 @@ def test_map_layer_menu_section_order() -> None:
     order.  This is a presentation reorder only; all remaining items and
     their data-* attributes are unchanged.
 
-    SNOW-521: the Options section (Auto-zoom) was removed along with the
-    L3 bulletin-groupings overlay and the basemap sync-status caption —
-    see ``test_layers_menu_removed_items.py`` (e2e) for the absence
-    coverage.
-
-    SNOW-658 renamed the first two sections to say what their rows actually
-    are — "Bulletins" (one row per PROVIDER) and "Boundaries" (one per EAWS
-    level) — and split the trailing rows out of the tier list into their own
-    sections: "Locations" for resorts.  SNOW-762 removed "Conditions" with
-    the weather overlay; SNOW-761 rebuilt the overlay and the heading came
-    back with it, still holding that one row.
+    SNOW-904 rebuilt the menu around four sections, which is the fourth
+    revision of this list: Places (what is on the ground), Conditions (what
+    the mountain is doing today), Boundaries (the EAWS tiers) and Basemap
+    (the map underneath, plus the two things drawn on top of it). The six
+    it replaced — Bulletins, Boundaries, Locations, Conditions, Terrain,
+    Base map — are asserted gone where the name is now unused, because a
+    stale heading beside a new one is exactly the drift this pins.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     # Each label is unique in the rendered output; assert relative order.
-    start = content.index("basemap-menu-section-label")
+    start = content.index("basemap-menu-section-title")
     positions = [
-        content.index(label, start)
-        for label in (
-            "Bulletins",
-            "Boundaries",
-            "Locations",
-            "Conditions",
-            "Terrain",
-            "Base map",
-        )
+        content.index(f">{label}<", start)
+        for label in ("Places", "Conditions", "Boundaries", "Basemap")
     ]
 
     assert positions == sorted(positions), (
         "Map layer menu sections are not in the expected order "
-        "(Bulletins < Boundaries < Locations < Conditions < Terrain < Base map)"
+        "(Places < Conditions < Boundaries < Basemap)"
     )
     assert "Options" not in content
+    # "Terrain" and "Locations" were sections of their own; their rows moved
+    # into Basemap and Places respectively.
+    assert ">Terrain<" not in content
+    assert ">Locations<" not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
+    """SNOW-904: every row, in one fixed order, for a visitor with no account.
+
+    The menu renders the same seventeen rows for everyone — favourites and
+    routes included. Hiding a row for an anonymous visitor would leave the
+    menu a different shape for different people and would hide a working
+    view setting; tapping one of those two hands off to the sign-in sheet
+    instead, which is a JS behaviour covered in tests/js.
+
+    Asserted as ONE ordered list rather than per section, because the two
+    labelling asymmetries in it are deliberate and a reader "tidying" them
+    is the likeliest way this drifts: only the FIRST Conditions row says
+    "bulletins", and only the two Basemap overlay rows carry "Display ".
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    start = content.index('id="basemap-menu"')
+    rows = [
+        "resorts",
+        "favourites",
+        "routes",
+        "country.ch",
+        "country.fr",
+        "country.albina",
+        "weather",
+        "community_reports",
+        "l1",
+        "l2",
+        "l4",
+        "slope",
+        "downloads",
+    ]
+    positions = [content.index(f'data-overlay-key="{key}"', start) for key in rows]
+    assert positions == sorted(positions), rows
+
+    for label in (
+        "SLF bulletins (CH)",
+        "MétéoFrance (FR)",
+        "ALBINA (AT, IT)",
+        "Field observations",
+        "Major regions (EAWS L1)",
+        "Display slope angles",
+        "Display downloaded areas",
+    ):
+        assert label in content, label
+    # The pattern the first Conditions row sets is NOT repeated.
+    assert "MétéoFrance bulletins" not in content
+    assert "ALBINA bulletins" not in content
 
 
 @pytest.mark.django_db
@@ -696,12 +741,26 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
     it has no dot here. Its feed (``/api/ratings/``) is one of the four a
     country load fetches, so a country missing it already shows red on its
     own row.
+
+    SNOW-904 added the three user-data rows to this list. All three are
+    IndexedDB-backed and probed like any other resource, so all three carry
+    a dot — and the two rows that carry NONE are asserted separately, in
+    ``test_the_two_dotless_rows_carry_no_dot``.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    for key in ("l1", "l2", "l4", "resorts"):
+    for key in (
+        "l1",
+        "l2",
+        "l4",
+        "resorts",
+        "weather",
+        "favourites",
+        "routes",
+        "community_reports",
+    ):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_close_idx = content.index("</button>", key_idx)
         button_scope = content[key_idx:button_close_idx]
@@ -711,20 +770,46 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
 
 
 @pytest.mark.django_db
-def test_map_layer_menu_has_no_user_data_rows() -> None:
+def test_the_two_dotless_rows_carry_no_dot() -> None:
+    """SNOW-904: slope and downloads render without a ``.sync-dot``.
+
+    Neither can make an honest claim, for opposite reasons. Slope draws a
+    third-party raster this app cannot probe — its dot had been permanently
+    ``unknown`` (and so ``display: none``) since SNOW-691, which is markup
+    for a state that never resolves. Downloads draws a list that is local by
+    definition, so its answer is always yes and the dot carries no
+    information.
+
+    A green dot on this menu means one thing since SNOW-904 — the payload
+    this row draws is in a cache right now — and a row that cannot answer
+    that question gets no dot rather than a permanently blank one.
     """
-    SNOW-658: the favourites (eligible-only) and community_reports rows are
-    gone from this menu — and so, deliberately, are their sync dots.
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
 
-    Both are USER-GENERATED data with a roundel of their own, so each toggle
-    moved into the panel that roundel opens (its "Display on the map"
-    footer switch), driving
-    ``window.pwaFavouritesOverlay`` / ``window.pwaCommunityReportsOverlay``.
-    The dots did not move with them: a panel is not a cache-state dashboard,
-    which is the same call SNOW-645 made for the downloaded-areas row.
+    for key in ("slope", "downloads"):
+        key_idx = content.index(f'data-overlay-key="{key}"')
+        button_scope = content[key_idx : content.index("</button>", key_idx)]
+        assert "sync-dot" not in button_scope, key
 
-    Asserted for a signed-in user, since the favourites row was rendered only
-    for one — an anonymous request never had it to lose.
+
+@pytest.mark.django_db
+def test_map_layer_menu_holds_every_user_data_row() -> None:
+    """
+    SNOW-904 inverts what SNOW-658 asserted here. That ticket took the
+    favourites and community_reports rows OUT of this menu and into the
+    footer of the panel each subject's roundel opens, on a "one subject,
+    one way in" rule; SNOW-687 gave routes the same treatment, and
+    SNOW-645 had already done it for downloads.
+
+    The cost was that a reader asking what can go on their map had to open
+    five surfaces to find out, and no single surface answered it. All four
+    are rows here now, driving the same ``window.pwa*Overlay`` bridges, and
+    the panel switches are gone — asserted absent rather than merely
+    unlisted, because a reinstated switch would be a second control for a
+    layer this menu already owns.
+
+    Asserted for a signed-in user, mirroring the test this replaces.
     """
     account = AccountFactory.create()
     client = Client()
@@ -732,11 +817,15 @@ def test_map_layer_menu_has_no_user_data_rows() -> None:
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    for key in ("favourites", "community_reports"):
-        assert f'data-overlay-key="{key}"' not in content, key
-    # The switches that replaced them, in their own panels.
-    assert 'id="map-favourites-overlay-toggle"' in content
-    assert 'id="map-community-reports-overlay-toggle"' in content
+    for key in ("favourites", "community_reports", "routes", "downloads"):
+        assert f'data-overlay-key="{key}"' in content, key
+    for toggle_id in (
+        "map-favourites-overlay-toggle",
+        "map-community-reports-overlay-toggle",
+        "map-routes-overlay-toggle",
+        "map-downloads-overlay-toggle",
+    ):
+        assert toggle_id not in content, toggle_id
 
 
 @pytest.mark.django_db
@@ -1052,24 +1141,25 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
 
 
 @pytest.mark.django_db
-def test_terrain_row_renders_when_tile_url_configured() -> None:
-    """SNOW-691: the Terrain section and its Slope angle row render.
+def test_slope_row_renders_when_tile_url_configured() -> None:
+    """SNOW-691: the slope-angle row renders, and its tile template reaches
+    ``#map`` as ``data-slope-tile-url`` for map.js to build the raster
+    source from.
 
-    The row carries the same ``.sync-dot`` its siblings do, and the tile
-    template reaches ``#map`` as ``data-slope-tile-url`` for map.js to build
-    the raster source from.
+    SNOW-904 moved it out of a "Terrain" section of its own and under
+    Basemap, below a hairline with the downloaded-areas row: both are drawn
+    ON TOP of whichever basemap is chosen, which is what that section is
+    about, and a section holding one row was a heading doing no work. Its
+    label gains the "Display " verb the radios above it do not carry — the
+    verb is what separates "additionally draw this" from "choose this".
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
 
     assert 'data-overlay-key="slope"' in content
-    assert "Terrain" in content
+    assert "Display slope angles" in content
     assert 'data-slope-layer-eligible="true"' in content
     assert "data-slope-tile-url=" in content
-
-    key_idx = content.index('data-overlay-key="slope"')
-    button_scope = content[key_idx : content.index("</button>", key_idx)]
-    assert 'class="sync-dot" data-sync-state="unknown"' in button_scope
 
 
 @pytest.mark.django_db
@@ -1085,46 +1175,47 @@ def test_terrain_row_absent_without_tile_url() -> None:
     endpoint behind it to 403, so a template rendered for an ineligible
     page would be an invitation to install the layer anyway.
 
-    The heading is asserted absent alongside the row because it sits inside
-    the same eligibility check — SNOW-658's lesson that a section whose only
-    row is gated must gate its heading too, or the menu grows an empty
-    "Terrain".
+    SNOW-904: there is no heading to gate with it any more. The row lives
+    under Basemap, a section that renders whatever slope does, so the
+    eligibility check wraps the row alone — SNOW-658's "a section whose only
+    row is gated must gate its heading too" no longer applies because slope
+    is no longer a section's only row.
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
 
     assert 'data-overlay-key="slope"' not in content
-    assert "Terrain" not in content
+    assert "Display slope angles" not in content
     assert 'data-slope-layer-eligible="false"' in content
     assert "data-slope-tile-url=" not in content
+    # The section it sits in is unaffected — the basemap radios and the
+    # downloaded-areas row still render.
+    assert 'data-overlay-key="downloads"' in content
 
 
 @pytest.mark.django_db
-def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
-    """SNOW-691: Terrain sits after Locations and before Base map.
+def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
+    """SNOW-904: four radios, a separator, then the two "Display " rows.
 
-    Slope is a permanent property of the ground rather than something that
-    changes with the scrubbed day, so it gets a section of its own rather
-    than a row under Conditions — and it belongs with the other
-    view-controls, above the basemap list that closes the menu.
-
-    Overlaps ``test_map_layer_menu_section_order`` above, which since
-    SNOW-724 can name Terrain too — kept because this one exists to pin
-    Terrain's position specifically, and would be the test to update if the
-    section ever moved.
+    The section holds two kinds of row — pick ONE basemap, then
+    additionally draw either of two things over it — and the only thing
+    marking the boundary is a hairline. Nothing is indented under anything
+    in this menu: an indent reads as a child of the row above it, and with
+    collapsible sections it would also hide rows the collapsed heading does
+    not govern.
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
 
-    start = content.index("basemap-menu-section-label")
-    positions = [
-        content.index(label, start)
-        for label in ("Bulletins", "Boundaries", "Locations", "Terrain", "Base map")
-    ]
-    assert positions == sorted(positions), (
-        "Map layer menu sections are not in the expected order "
-        "(Bulletins < Boundaries < Locations < Terrain < Base map)"
-    )
+    start = content.index('id="basemap-menu-group-basemap"')
+    group = content[start : content.index("</ul>", start)]
+
+    last_radio = group.rindex("data-basemap-key=")
+    separator = group.index("basemap-menu-separator")
+    slope = group.index('data-overlay-key="slope"')
+    downloads = group.index('data-overlay-key="downloads"')
+
+    assert last_radio < separator < slope < downloads
 
 
 @pytest.mark.django_db

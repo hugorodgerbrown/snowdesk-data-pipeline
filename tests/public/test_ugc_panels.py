@@ -125,10 +125,13 @@ PANEL_SECTION_LABELS: dict[str, tuple[str, ...]] = {
 # own comment.
 DOWNLOADS_GROUP_TEMPLATE_ID = "map-downloads-group-template"
 
-# The overlay switch's label — ONE sentence for all three panels, fixed
-# inside the shared partial. These three are what it replaced.
-OVERLAY_TOGGLE_LABEL = "Display on the map"
-SUPERSEDED_TOGGLE_LABELS = (
+# SNOW-904 removed the overlay switch from every panel: whether a layer is
+# drawn is a row in the map's layers menu, so a panel is about its own list.
+# The labels stay named here, all four of them, because a panel that grew
+# one back would be a second control for a layer the menu already owns —
+# which is the state this ticket set out to end.
+RETIRED_TOGGLE_LABELS = (
+    "Display on the map",
     "Show areas on the map",
     "Show favourites on the map",
     "Show community reports on the map",
@@ -182,8 +185,8 @@ def skeleton_classes() -> set[str]:
 
     Derived by rendering the shared partial and subtracting the class
     strings contributed by the rows template handed to it — what is left is
-    the chrome: the outer flex column, the sheet header, the scroll region,
-    the CTA and the overlay-toggle panel.
+    the chrome: the outer flex column, the sheet header, the scroll region
+    and the CTA.
 
     Returns:
         The skeleton's class-attribute values.
@@ -201,7 +204,6 @@ def skeleton_classes() -> set[str]:
             # all four panels share.
             "rows_template": DEMO_ROWS_TEMPLATE,
             "cta_label": "Add one",
-            "toggle_id": "skeleton-toggle",
         },
     )
     rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
@@ -263,30 +265,29 @@ class TestUgcPanelSkeleton:
         assert skeleton_classes <= present, skeleton_classes - present
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
-    def test_panel_runs_the_five_parts_in_that_order(
+    def test_panel_runs_the_four_parts_in_that_order(
         self, home_html: str, template_id: str
     ) -> None:
-        """The five shell parts appear in the reading order the design sets.
+        """The four shell parts appear in the reading order the design sets.
 
-        Header, context strip, list, add CTA, map toggle — and the toggle
-        LAST is Hugo's own instruction from the downloads sheet (SNOW-645
-        review), so the map behind the sheet is the last thing read rather
-        than the first. Class-string containment alone would not catch a
-        panel that shipped these in a different order.
+        Header, context strip, list, add CTA. There was a fifth — the map
+        toggle, last, so the map behind the sheet was the last thing read
+        (Hugo, SNOW-645 review) — until SNOW-904 made the layers menu the
+        one place a layer is switched on. Class-string containment alone
+        would not catch a panel that shipped these in a different order.
         """
         body = _panel_body(home_html, template_id)
         header = body.index("text-lg font-semibold")
         scroll = body.index("overflow-y-auto")
         cta = body.index("data-panel-add")
-        switch = body.index("rounded-tag bg-tag")
         line = PANEL_CONTEXT_LINES[template_id]
         if line is None:
-            # No strip on this panel — the four parts it does have still
+            # No strip on this panel — the three parts it does have still
             # run in the same order.
-            assert header < scroll < cta < switch
+            assert header < scroll < cta
             return
         strip = body.index(line)
-        assert header < strip < scroll < cta < switch
+        assert header < strip < scroll < cta
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_header_carries_its_own_roundels_glyph(
@@ -386,21 +387,21 @@ class TestUgcPanelSkeleton:
         assert 'data-hook="group-label"' in group
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
-    def test_panel_labels_its_switch_the_same_way_as_the_others(
+    def test_panel_carries_no_overlay_switch(
         self, home_html: str, template_id: str
     ) -> None:
-        """One sentence for one control, on all three panels.
+        """SNOW-904: no panel switches a map layer on any more.
 
-        "Show areas on the map" / "Show favourites on the map" / "Show
-        community reports on the map" were three sentences for the same
-        switch — the divergence this partial exists to end, in copy rather
-        than markup. The string is fixed inside the shared partial, so
-        there is nothing for a caller to restate.
+        A panel that grew one back would be a second control for a layer
+        the layers menu already owns, and the reason the switches went is
+        that a reader asking what can go on their map had to open five
+        surfaces to find out. Asserted against the whole page, not just
+        this panel's body: a switch reinstated anywhere is the same defect.
         """
         body = _panel_body(home_html, template_id)
-        assert body.count(OVERLAY_TOGGLE_LABEL) == 1
-        for superseded in SUPERSEDED_TOGGLE_LABELS:
-            assert superseded not in home_html
+        assert "data-panel-overlay-toggle" not in body
+        for retired in RETIRED_TOGGLE_LABELS:
+            assert retired not in home_html
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_has_exactly_one_add_cta(

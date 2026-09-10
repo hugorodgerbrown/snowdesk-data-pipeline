@@ -258,80 +258,11 @@ describe('opening and closing the panel', () => {
 
 });
 
-describe('the overlay switch', () => {
-  it('reflects the overlay preference on open, not a flag of its own', () => {
-    window.pwaRoutesOverlay.isEnabled = vi.fn(() => true);
-    btn.click();
-    expect(overlaySwitch().checked).toBe(true);
-
-    // Re-opened after the preference moved elsewhere — the panel re-reads
-    // rather than remembering what it drew last time.
-    btn.click();
-    window.pwaRoutesOverlay.isEnabled = vi.fn(() => false);
-    btn.click();
-    expect(overlaySwitch().checked).toBe(false);
-  });
-
-  it('reads isEnabled(), never isVisible()', () => {
-    // The state where the two disagree: the user enabled the overlay and
-    // nothing was drawn (offline, nothing cached). The switch must keep
-    // showing their choice — the roundel's ring is what reports that it
-    // never reached the map. A switch painted from isVisible() would appear
-    // to silently undo the setting the user just made.
-    window.pwaRoutesOverlay.isEnabled = vi.fn(() => true);
-    window.pwaRoutesOverlay.isVisible = vi.fn(() => false);
-
-    btn.click();
-
-    expect(overlaySwitch().checked).toBe(true);
-    expect(window.pwaRoutesOverlay.isVisible).not.toHaveBeenCalled();
-  });
-
-  it('drives the bridge in both directions', () => {
-    btn.click();
-    const toggle = overlaySwitch();
-
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(window.pwaRoutesOverlay.show).toHaveBeenCalledTimes(1);
-
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(window.pwaRoutesOverlay.hide).toHaveBeenCalledTimes(1);
-  });
-
-  it('is delegated on the sheet, so it survives a re-clone', () => {
-    // The body is replaced wholesale on every open, so the element carrying
-    // this switch is thrown away each time. A listener bound to the input
-    // itself would work exactly once.
-    btn.click();
-    btn.click();
-    btn.click();
-
-    const toggle = overlaySwitch();
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-
-    expect(window.pwaRoutesOverlay.show).toHaveBeenCalledTimes(1);
-  });
-
-  it('survives a missing bridge rather than throwing', () => {
-    // map.js publishes the bridge at parse time, but routes.js loads from
-    // its own surface partial and does not depend on the map bundle being
-    // present at all (the panel opens on pages the map does not). An absent
-    // bridge must leave the panel usable, not break the open.
-    delete window.pwaRoutesOverlay;
-
-    expect(() => btn.click()).not.toThrow();
-    expect(overlaySwitch().checked).toBe(false);
-
-    const toggle = overlaySwitch();
-    toggle.checked = true;
-    expect(() =>
-      toggle.dispatchEvent(new Event('change', { bubbles: true })),
-    ).not.toThrow();
-  });
-});
+// SNOW-904 removed this file's "the overlay switch" block. The panel no
+// longer carries a "Display on the map" switch — every layer is switched
+// from the map's layers menu, whose row drives the same
+// window.pwaRoutesOverlay bridge. Its coverage lives in
+// tests/js/test_map_layers_menu.js.
 
 describe('loading the rows', () => {
   it('fetches routes:list over HTMX into the rows container', () => {

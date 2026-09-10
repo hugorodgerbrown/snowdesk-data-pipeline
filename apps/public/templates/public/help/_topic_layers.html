@@ -5,17 +5,17 @@ Content partial for the help page; included via the body_template
 parameter of includes/_collapsible_panel.html.
 
 Documents the layers menu (#basemap-menu in
-public/partials/_map_embed.html) group by group, in the order the menu
-itself renders them: Bulletins, Boundaries, Locations, Conditions,
-Terrain, Base map. Two of those groups have a panel of their own on this
-page — Weather and Slope angle — so the rows here get a
-sentence and a pointer rather than a second copy of the detail.
+public/partials/_map_embed.html) section by section, in the order the
+menu itself renders them: Places, Conditions, Boundaries, Basemap. Three
+of those rows have a panel of their own on this page — Weather, Slope
+angle and Downloads — so they get a sentence and a pointer rather than a
+second copy of the detail.
 
-The user-generated overlays (favourites, field observations, routes) are
-deliberately NOT described here: SNOW-658 moved each one's toggle out of
-this menu and into the panel its own roundel opens, and the last
-paragraph says so, because a reader who remembers the old menu rows will
-otherwise go looking for them.
+SNOW-904 rewrote this topic with the menu. Every layer is switched on
+here now, including the four (downloads, favourites, field observations,
+routes) that SNOW-658 had moved into the footer of whichever panel their
+roundel opened — so the paragraph that sent a reader off to those panels
+is gone, and the sections named below are the ones the menu renders.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -26,12 +26,27 @@ otherwise go looking for them.
             Snowdesk on this device.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Bulletins" %}</h3>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Places" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
+        {% blocktrans trimmed %}
+            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
+            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
+            favourites.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-ugc">
+        {% blocktrans trimmed %}
+            Favourites draws your own saved places, and Routes draws every track you have uploaded. Both need an
+            account: tapping one while you are signed out offers you the way in rather than switching on a layer with
+            nothing in it.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-bulletins">
         {% blocktrans trimmed %}
-            One row per provider &mdash; SLF (CH), Météo-France (FR) and ALBINA (AT, IT) &mdash; each covering the
-            countries that provider publishes for. Switching one off takes its bulletins off the map, which is the way
-            to look at one country's picture on its own. Switzerland is on to start with.
+            One row per bulletin provider &mdash; SLF (CH), Météo-France (FR) and ALBINA (AT, IT) &mdash; each
+            covering the countries that provider publishes for. Switching one off takes its bulletins off the map, which
+            is the way to look at one country's picture on its own. Switzerland is on to start with.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-fill">
@@ -39,6 +54,19 @@ otherwise go looking for them.
             How strongly the danger colour paints is a separate control: the half-filled square below the layers button
             steps the shading from off to full, so you can read the terrain underneath without losing the bulletin
             altogether.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
+        {% blocktrans trimmed %}
+            Weather draws a condition symbol and the day's high temperature at every place Snowdesk holds, with the
+            height that reading is for beneath it. It follows the timeline like everything else on the map, and it has
+            rules of its own worth knowing about &mdash; read "Weather on the map" below.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-observations">
+        {% blocktrans trimmed %}
+            Field observations draws what other people have reported from the ground, fading as each report ages. It is
+            public, so it works whether or not you are signed in.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Boundaries" %}</h3>
@@ -51,43 +79,37 @@ otherwise go looking for them.
             them.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Locations" %}</h3>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
-        {% blocktrans trimmed %}
-            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
-            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
-            favourites.
-        {% endblocktrans %}
-    </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
-        {% blocktrans trimmed %}
-            Weather draws a condition symbol and the day's high temperature at every place Snowdesk holds, with the
-            height that reading is for beneath it. It follows the timeline like everything else on the map, and it has
-            rules of its own worth knowing about &mdash; read "Weather on the map" below.
-        {% endblocktrans %}
-    </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Terrain" %}</h3>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
-        {% blocktrans trimmed %}
-            Slope angle shades the ground by steepness. It is the one layer with real limits on what it can tell you, so
-            read "Slope angle" below before you rely on a shading.
-        {% endblocktrans %}
-    </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Base map" %}</h3>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Basemap" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-basemaps">
         {% blocktrans trimmed %}
-            The map underneath everything else. OpenFreeMap covers the whole area; the national mapping-agency maps
-            &mdash; Swisstopo (CH), IGN (FR) and basemap.at (AT) &mdash; carry far more detail for their own country and
-            are blank outside it, so switching to one is a choice to look closely at one place.
+            The map underneath everything else, and the only section where you pick one rather than switching several
+            on. OpenFreeMap covers the whole area; the national mapping-agency maps &mdash; Swisstopo (CH), IGN (FR) and
+            basemap.at (AT) &mdash; carry far more detail for their own country and are blank outside it, so switching
+            to one is a choice to look closely at one place.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
+        {% blocktrans trimmed %}
+            Two things are drawn on top of whichever one you chose, which is why they sit under this heading. "Display
+            slope angles" shades the ground by steepness &mdash; the one layer with real limits on what it can tell you,
+            so read "Slope angle" below before you rely on a shading.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-downloads">
+        {% blocktrans trimmed %}
+            "Display downloaded areas" shades the ground you already hold on this device, so you can see the edges of
+            your own coverage before you set off. Left alone it switches itself on whenever you are offline, which is
+            when the answer matters.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The dot on each row" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-sync-dots">
         {% blocktrans trimmed %}
-            Every row carries a small dot saying whether that layer is held on this device: green for available offline,
-            grey for not stored yet, and a pulse while it is being fetched. It is there so you can check what will still
-            work before you lose signal.
+            Most rows carry a small dot saying whether that layer is held on this device: green for available offline,
+            grey for not stored yet, and a pulse while it is being fetched. Green means the data is on the device right
+            now, checked rather than assumed, so you can see what will still work before you lose signal. Two rows have
+            no dot, because neither could answer honestly: slope angles come from someone else's map server, and your
+            downloaded areas are on this device by definition.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-disabled-rows">
@@ -96,10 +118,11 @@ otherwise go looking for them.
             or any layer that has never been loaded while you were online. The note on the row says which.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-ugc-elsewhere">
+    <p class="mb-3 last:mb-0" data-testid="help-layers-sections">
         {% blocktrans trimmed %}
-            Your own pins, reports and routes are not in this menu. Each has its own button on the right of the map, and
-            the "Display on the map" switch inside that button's panel is what puts it on the map.
+            Each heading opens and closes, and remembers which way you left it. The line under a heading says what is on
+            inside it without you having to open it, and the count at the top of the menu says how many layers are on
+            altogether.
         {% endblocktrans %}
     </p>
 </div>

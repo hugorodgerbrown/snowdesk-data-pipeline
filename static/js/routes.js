@@ -1,6 +1,7 @@
 /*
  * static/js/routes.js — SNOW-686 saved-routes panel: upload, list, rename
- * and delete; SNOW-687's "Display on the map" switch.
+ * and delete. (SNOW-687's "Display on the map" switch lived here until
+ * SNOW-904 moved every layer control into the map's layers menu.)
  *
  * The fourth UGC surface, built to the shape SNOW-634 set for downloads and
  * SNOW-658 generalised across favourites and field observations: its own
@@ -271,17 +272,6 @@
     sheet.replaceChildren();
     sheet.appendChild(listTemplate.content.cloneNode(true));
 
-    // SNOW-687: reflect the overlay's REAL state rather than a flag of this
-    // module's own, the way favourites.js and map_downloads_manager.js do.
-    //
-    // isEnabled(), the persisted preference — NOT isVisible(), which
-    // answers from the layers MapLibre is drawing. See this file's header:
-    // the switch states what the user asked for, the roundel's ring states
-    // whether it reached the map, and the case where they disagree is the
-    // case the distinction exists for.
-    const toggle = sheet.querySelector('#map-routes-overlay-toggle');
-    if (toggle) toggle.checked = !!window.pwaRoutesOverlay?.isEnabled?.();
-
     if (!UPLOAD_ELIGIBLE) {
       // Uploading needs an account either way, so the add CTA goes.
       const addButton = sheet.querySelector('[data-panel-add]');
@@ -461,18 +451,11 @@
   // and the request is away before preventDefault() is reached. See that
   // template's own note for the full account.
 
-  // SNOW-687: the overlay switch drives window.pwaRoutesOverlay directly —
-  // show()/hide() are the only writers of that overlay's visibility, and
-  // showListPanel() reads isEnabled() back, so the two can never drift. No
-  // re-render: nothing else in the panel depends on this state. Delegated
-  // on the sheet because the body is re-cloned on every open.
-  sheet.addEventListener('change', function (event) {
-    const target = /** @type {HTMLInputElement} */ (event.target);
-    if (!target || !target.matches) return;
-    if (!target.matches('#map-routes-overlay-toggle')) return;
-    if (target.checked) window.pwaRoutesOverlay?.show();
-    else window.pwaRoutesOverlay?.hide();
-  });
+  // SNOW-904: the "Display on the map" switch this panel carried, and the
+  // change listener that drove window.pwaRoutesOverlay from it, are gone.
+  // The layers menu's Routes row drives the same bridge, and hands an
+  // anonymous visitor to the sign-in sheet rather than ticking a box over
+  // an empty layer.
 
   /** Handle a click on a row's name, which frames that route on the map.
    *

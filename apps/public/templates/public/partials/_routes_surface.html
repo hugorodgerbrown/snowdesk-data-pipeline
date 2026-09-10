@@ -38,12 +38,12 @@ Five shared modules are loaded once each by home.html before this partial
                     field-observation panels; routes.js passes only its own
                     overlay bridge and its own close.
 
-SNOW-687 closed the gap SNOW-686 left: there IS a routes map layer now (a
-MapLibre line pair driven by window.pwaRoutesOverlay), so
-includes/_ugc_panel.html is included WITH a ``toggle_id`` and renders the
-"Display on the map" switch every other UGC panel carries. routes.js
-reflects it from the bridge's ``isEnabled()`` — the persisted preference,
-not what MapLibre is drawing — and drives show()/hide() on change.
+SNOW-687 closed the gap SNOW-686 left: there IS a routes map layer now, a
+MapLibre line pair driven by window.pwaRoutesOverlay. This panel carried a
+"Display on the map" switch for it until SNOW-904, which made the map's
+layers menu the sole control for every layer — the routes row there drives
+the same bridge, so nothing about the layer changed, only where it is
+switched on.
 
 WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
 
@@ -108,7 +108,7 @@ Context expected:
     {# SNOW-687: the switch the panel shipped without. Its id is the hook  #}
     {# routes.js delegates on; the LABEL is fixed inside _ugc_panel.html,  #}
     {# not passed, so it cannot be restated per panel.                      #}
-    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" %}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label %}
 </template>
 {# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}
 {# by routes.js the instant route_create answers 200, modelled on           #}

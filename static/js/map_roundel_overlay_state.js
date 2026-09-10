@@ -2,15 +2,20 @@
  * static/js/map_roundel_overlay_state.js — "my overlay is on the map" on the
  * four roundels that switch one (SNOW-658; SNOW-687 added the fourth).
  *
- * Downloads, Favourites, Field observations and Routes each open a panel
- * whose footer carries a "Display on the map" switch
- * (templates/includes/_map_overlay_toggle.html). Until this module the
- * roundel itself said nothing about that switch's position, so the only way
- * to find out whether your favourites were being drawn was to open the panel
+ * Downloads, Favourites, Field observations and Routes each open a panel,
+ * and each has a layer on the map. Until this module the roundel itself
+ * said nothing about whether that layer was being drawn, so the only way to
+ * find out whether your favourites were on the map was to open the panel
  * and look — and the downloads roundel, the one roundel that DID carry a
  * state, carried a different fact entirely ("this device holds at least one
  * downloaded area"). One roundel, two meanings, no way to tell which you
  * were reading.
+ *
+ * SNOW-904: the control each roundel used to report on was a "Display on
+ * the map" switch in its own panel's footer; every layer is switched from
+ * the map's layers menu now. The ring is unchanged — it reads
+ * ``isVisible()`` off MapLibre, never off a control — so it reports on the
+ * menu row exactly as it reported on the switch.
  *
  * So: ONE mechanism for all of them. Every roundel below carries
  * ``data-overlay-shown="true|false"``, meaning exactly one thing on each —

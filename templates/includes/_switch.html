@@ -24,8 +24,8 @@ in favour of the track+thumb pair drawn next to it, which read its
 `:checked` state via the `peer` / `peer-checked` / `peer-focus-visible`
 Tailwind variants. This partial renders ONLY the control — no visible
 text label — because a caller almost always wants that label positioned
-and styled as part of its own row (see _map_downloads_sheet.html's
-overlay-toggle panel), not fixed by this partial's own markup. Pair it
+and styled as part of its own row (see includes/nav.html's "Offline mode"
+row), not fixed by this partial's own markup. Pair it
 with a `<label for="{{ id }}">` alongside the include, using the same id —
 this is a SECOND label pointing at the same input, and that is fine: an
 input can have any number of labels associated by `for`, as long as one is

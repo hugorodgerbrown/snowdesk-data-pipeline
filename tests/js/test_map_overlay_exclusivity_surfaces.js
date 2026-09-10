@@ -199,10 +199,7 @@ function buildFixture() {
     <template id="map-downloads-body-template">
       <div><div data-downloads-groups></div>
         <p data-downloads-empty hidden></p>
-        <button type="button" data-panel-add></button>
-        <div data-panel-overlay-toggle>
-          <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
-        </div></div>
+        <button type="button" data-panel-add></button></div>
     </template>
     <!-- SNOW-832: map_downloads_manager.js returns early without this
          template, so every downloads case below would silently stop

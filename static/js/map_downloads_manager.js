@@ -831,31 +831,6 @@
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
 
-    // SNOW-645 review: reflects the overlay's REAL state —
-    // window.pwaDownloadedOverlay — rather than a flag of its own that could
-    // drift from it.
-    //
-    // SNOW-658 review: isEnabled(), the persisted preference that show()/
-    // hide() write — NOT isVisible(), which now answers from the squares
-    // MapLibre is drawing. Same split as the other two panels' own switches:
-    // this states what the user asked for. The two diverge while something
-    // else has cleared the map (a placement flow, and this sheet is not open
-    // then), and — since the overlay draws the ACTIVE basemap's downloads
-    // alone — whenever the overlay is on and this basemap has none, where ON
-    // over an empty map is the honest reading.
-    //
-    // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
-    // includes/_switch.html dropped its extra_attrs passthrough (a live
-    // attribute-injection surface semgrep flagged), and the switch already
-    // renders id="{{ id }}", which this sheet already sets to the one
-    // fixed value below — a second hook was never needed.
-    const overlayToggle = /** @type {HTMLInputElement|null} */ (
-      sheet.querySelector('#map-downloads-overlay-toggle')
-    );
-    if (overlayToggle) {
-      overlayToggle.checked = !!window.pwaDownloadedOverlay?.isEnabled?.();
-    }
-
     // SNOW-645 review: the budget figure itself is no longer stated in
     // this text — it now lives in the <select> right after it ("40.3 MB
     // of [500 MB ⌄]"), part of the same header row (see the sheet's own
@@ -922,17 +897,11 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    // SNOW-832: "Display on the map" governs the squares this panel's
-    // downloads draw. With nothing downloaded there are no squares, so the
-    // switch is a control that cannot do what it says — and a user who
-    // turns it on and sees no change learns the wrong thing about it.
-    // Hidden, not disabled: unlike the add-trigger's offline state there
-    // is nothing here to explain, and the switch comes back the moment
-    // there is a download for it to show. The hook is on the whole strip
-    // (includes/_map_overlay_toggle.html) so its label and its box go with
-    // it rather than an empty box being left behind.
-    const overlayStrip = sheet.querySelector('[data-panel-overlay-toggle]');
-    if (overlayStrip) overlayStrip.hidden = rows.length === 0;
+    // SNOW-904 removed SNOW-832's empty-list guard here. It hid the
+    // "Display on the map" strip when this panel had nothing to display,
+    // because a switch that cannot do what it says teaches the wrong
+    // thing. The strip is gone with every other panel switch — the layers
+    // menu is the sole control now — so there is no control left to hide.
 
     // SNOW-XXX: two groups — what is on this device, and what is only on
     // the account. SNOW-832's per-basemap headings are gone; the basemap
@@ -1975,43 +1944,13 @@
     });
   });
 
-  // SNOW-645 review: the "Available offline" toggle drives the overlay
-  // DIRECTLY — show()/hide() are the only writers of
-  // window.pwaDownloadedOverlay's visibility, so this is the single place
-  // outside open() that ever calls them, and it never touches a flag of
-  // its own (render() reads isVisible() back, above). No re-render needed:
-  // nothing else on the sheet depends on this state.
-  sheet.addEventListener('change', function (event) {
-    const target = /** @type {HTMLInputElement} */ (event.target);
-    if (!target || !target.matches || !target.matches('#map-downloads-overlay-toggle')) {
-      return;
-    }
-    if (target.checked) {
-      window.pwaDownloadedOverlay?.show();
-    } else {
-      window.pwaDownloadedOverlay?.hide();
-    }
-  });
-
-  // The in-sheet switch is not the only thing that can turn the overlay off
-  // — placement focus clears every app layer off the map — and a sheet still
-  // open behind that has to show it, rather than sitting on a checked switch
-  // for an overlay that is no longer drawn. (The Bulletins step control was
-  // the other such writer until the two layers stopped being exclusive.)
-  //
-  // Sets the checkbox rather than re-rendering: render() re-clones the whole
-  // body template and re-reads IndexedDB, and nothing else on the sheet
-  // depends on this state (its own change handler already skips the
-  // re-render for the same reason). Not skipped while hidden either — this
-  // is one attribute write on an element that stays in the DOM, and leaving
-  // it stale would only be corrected by render()'s read-back on the next
-  // open, which is exactly the drift this closes.
-  document.addEventListener('snowdesk:downloaded-overlay-changed', function (event) {
-    const overlayToggle = /** @type {HTMLInputElement|null} */ (
-      sheet.querySelector('#map-downloads-overlay-toggle')
-    );
-    if (overlayToggle) overlayToggle.checked = !!(event.detail && event.detail.visible);
-  });
+  // SNOW-904: this sheet's "Display on the map" switch is gone, and with it
+  // both the change handler that drove window.pwaDownloadedOverlay and the
+  // ``snowdesk:downloaded-overlay-changed`` read-back that kept it honest
+  // when something else (a placement flow, a connectivity flip) moved the
+  // overlay. The layers menu's "Display downloaded areas" row drives the
+  // same bridge and listens to the same broadcast — see
+  // map_basemap_picker.js.
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it
   // there and then — waiting for the next open would leave a live-looking

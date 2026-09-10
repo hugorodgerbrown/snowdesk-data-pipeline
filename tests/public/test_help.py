@@ -59,16 +59,26 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-install",
 ]
 
-# The map's five layers-menu groups, each documented by its own paragraph
-# in ``_topic_layers.html``. Asserted individually rather than as "the
-# layers panel is non-empty": a group added to #basemap-menu with no
-# paragraph here is exactly the drift this list is for.
+# Every layers-menu row, each documented by its own paragraph in
+# ``_topic_layers.html``. Asserted individually rather than as "the layers
+# panel is non-empty": a row added to #basemap-menu with no paragraph here
+# is exactly the drift this list is for.
+#
+# SNOW-904 made this list longer, because the menu did. Four overlays that
+# lived behind a "Display on the map" switch in their own panel — downloads,
+# favourites, field observations and routes — are rows here now, so the
+# paragraph that used to send a reader off to those panels is replaced by
+# paragraphs describing the rows.
 LAYERS_GROUP_TESTIDS = [
-    "help-layers-bulletins",
-    "help-layers-boundaries",
     "help-layers-resorts",
-    "help-layers-slope",
+    "help-layers-ugc",
+    "help-layers-bulletins",
+    "help-layers-weather",
+    "help-layers-observations",
+    "help-layers-boundaries",
     "help-layers-basemaps",
+    "help-layers-slope",
+    "help-layers-downloads",
 ]
 
 ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
@@ -140,6 +150,22 @@ class TestHelpPage:
         content = client.get(reverse("public:help")).content
         assert b"help-layers-sync-dots" in content
         assert b"help-layers-disabled-rows" in content
+        # SNOW-904: and the two rows that carry no dot are named, because a
+        # missing dot on one row among seventeen reads as a bug rather than
+        # as a refusal to claim something the app cannot check.
+        assert b"neither could answer honestly" in content
+
+    def test_layers_panel_explains_the_collapsible_sections(
+        self, client: Client
+    ) -> None:
+        """SNOW-904: the menu's headings open, close and summarise.
+
+        The summary line under a collapsed heading is the whole reason a
+        seventeen-row menu can be read without scrolling it, so the copy
+        has to say the line is there rather than leave it to be found.
+        """
+        content = client.get(reverse("public:help")).content
+        assert b"help-layers-sections" in content
 
     def test_install_panel_does_not_promise_always_fresh_data(
         self, client: Client
@@ -366,10 +392,15 @@ class TestHelpIllustrations:
         "help-topic-bulletins": b'data-testid="day-windows-panel"',
         "help-topic-problems": b"Wind slab",
         "help-topic-calendar": b"calendar-cell",
-        "help-topic-favourites": b"help-illustration-toggle-favourites",
-        "help-topic-observations": b"help-illustration-toggle-observations",
-        "help-topic-routes": b"help-illustration-toggle-routes",
-        "help-topic-downloads": b"help-illustration-toggle-downloads",
+        # SNOW-904: the four panel illustrations were marked by the id of
+        # the "Display on the map" switch each one rendered. That switch is
+        # gone from every panel — the layers menu is the sole control for
+        # every layer now — so each is marked by its own add-CTA label,
+        # which is the one string that differs between the four.
+        "help-topic-favourites": b"Add a favourite",
+        "help-topic-observations": b"Report an observation",
+        "help-topic-routes": b"Add a route",
+        "help-topic-downloads": b"Download a custom area",
     }
 
     @pytest.mark.parametrize("testid,marker", ILLUSTRATED.items())
@@ -406,19 +437,20 @@ class TestHelpIllustrations:
             assert "inert" in wrapper, testid
             assert 'aria-hidden="true"' in wrapper, testid
 
-    def test_illustration_switch_ids_never_shadow_the_real_ones(
-        self, client: Client
-    ) -> None:
-        """map.js finds the switch it drives by id; a decoration must not answer.
+    def test_illustrations_render_no_panel_overlay_switch(self, client: Client) -> None:
+        """SNOW-904: no panel has a "Display on the map" switch any more.
 
-        The real ids are asserted absent from /help/ rather than merely
-        different from the illustrations', because that is the failure
-        that would matter: a page where the wrong element responds.
+        This test used to guard a subtler thing — map.js found the switch
+        it drove by id, so a decoration must not answer to that id. There
+        is no such switch and no such id now, on /help/ or anywhere else,
+        and the ids are still asserted absent because a reinstated switch
+        would be a second control for a layer the menu already owns.
         """
         content = client.get(reverse("public:help")).content
         for real_id in (
             b"map-favourites-overlay-toggle",
             b"map-community-reports-overlay-toggle",
+            b"map-routes-overlay-toggle",
             b"map-downloads-overlay-toggle",
         ):
             assert real_id not in content, real_id

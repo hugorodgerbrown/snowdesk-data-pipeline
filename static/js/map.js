@@ -453,9 +453,9 @@
 
   // The downloaded-areas overlay's own state. Read by installRegionsLayers
   // (initial layout.visibility), refreshDownloadedOverlay, and
-  // window.pwaDownloadedOverlay.isEnabled() (the "Display on the map"
-  // switch INSIDE the "Manage downloads" panel reads this, not a flag of
-  // its own, so the two can never drift); written only by show()/hide() on
+  // window.pwaDownloadedOverlay.isEnabled() (the layers menu's own row
+  // seeds its aria-checked from this, not from a flag of its own, so the
+  // two can never drift); written only by show()/hide() on
   // window.pwaDownloadedOverlay, which persist it alongside.
   //
   // PERSISTED, reversing SNOW-645's session-scoped inspection mode — see
@@ -4741,16 +4741,18 @@
   });
 
   // ==== SNOW-570/SNOW-587: the downloaded-tiles overlay ====
-  // (SNOW-645 review: no longer a togglable layers-menu row — see
-  // downloadedOverlayVisible's own declaration above for why. SNOW-645
-  // second review: it is now a "Display on the map" switch INSIDE the
-  // "Manage downloads" panel, not the sheet's own open/closed state — a
-  // sheet that is bottom-docked and full-width on mobile would otherwise
-  // cover the very squares it draws, making the overlay unreachable on
-  // the platform that needs offline maps most. Neither opening nor closing
-  // the sheet touches the overlay now — SNOW-656 also stopped open() calling
-  // show() — and the switch's setting is persisted across reloads like the
-  // other three panels'.)
+  // (SNOW-645 took this out of the layers menu — see
+  // downloadedOverlayVisible's own declaration above for why — and made it
+  // a "Display on the map" switch inside the "Manage downloads" panel,
+  // because a sheet that is bottom-docked and full-width on mobile would
+  // otherwise cover the very squares it draws. Neither opening nor closing
+  // that sheet ever touched the overlay.
+  //
+  // SNOW-904 puts the control back in the layers menu, as "Display
+  // downloaded areas" under Basemap — the per-active-template probe that
+  // made SNOW-645's ROW unusable was a sync DOT, and this row has none.
+  // Nothing about the overlay changed: the bridge below is still the only
+  // writer, and the preference is still persisted across reloads.)
   //
   // Answers "where is the basemap I already have?" for the whole map at
   // once, where the download roundels only ever answer it for the one
@@ -5022,11 +5024,11 @@
   /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
-   * The "Display on the map" switch inside the downloads sheet is not the
-   * only thing that can change this — placement focus clears every app layer
-   * off the map — and the switch has to move rather than sit there claiming
-   * a state the map does not have. The sheet owns its own DOM, so it listens
-   * for this instead of this IIFE reaching into it.
+   * The layers menu's own row is not the only thing that can change this —
+   * placement focus clears every app layer off the map, and an untouched
+   * preference follows the connection — so the row has to move rather than
+   * sit there claiming a state the map does not have. The picker owns that
+   * DOM, so it listens for this instead of this IIFE reaching into it.
    *
    * @returns {void}
    */
@@ -5179,12 +5181,13 @@
   // bound visibility to the sheet being OPEN, full stop; that made the
   // overlay unreachable on mobile, where the sheet is bottom-docked and
   // full-width, covering the very squares it would have drawn): neither
-  // opening nor closing the sheet touches the overlay any more. The panel's
-  // "Display on the map" switch is the only caller of show()/hide(), and
-  // what it sets is a PERSISTED preference like the other three panels' —
-  // close the sheet with it on, look at the map, come back tomorrow and it
-  // is still on. Both reads below are functions, not plain frozen
-  // properties, since what they answer changes after this object is built.
+  // opening nor closing the sheet touches the overlay any more. The layers
+  // menu's "Display downloaded areas" row is the only caller of
+  // show()/hide() (SNOW-904; it was the panel's own switch before that),
+  // and what it sets is a PERSISTED preference — switch it on, look at the
+  // map, come back tomorrow and it is still on. Both reads below are
+  // functions, not plain frozen properties, since what they answer changes
+  // after this object is built.
   //
   // SNOW-658 review: ``isVisible()`` reads the SQUARES, not the flag that
   // asked for them — see the isVisible/isEnabled note beside the two

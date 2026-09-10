@@ -103,13 +103,18 @@ const OVERLAY_STORAGE_KEY = {
   // condition symbol at every station is a second layer of information over
   // the danger ratings someone opened the map to read.
   weather: 'snowdesk.map.overlay.weather',
-  // The downloads panel's "Display on the map" switch. PERSISTED, like the
-  // three switches beside it — this reverses SNOW-645's "session-scoped
-  // inspection mode", which is what Hugo reported as a bug: four identical
-  // switches on four identical panels, three of which survive a reload and
-  // one of which silently forgets. A view setting the user set deliberately
-  // is a preference, and the panel it lives in gives no hint that this one
-  // is different.
+  // The layers menu's "Display downloaded areas" row (SNOW-904; the
+  // downloads panel's own switch before that). PERSISTED — this reverses
+  // SNOW-645's "session-scoped inspection mode", which is what Hugo
+  // reported as a bug: four identical switches on four identical panels,
+  // three of which survive a reload and one of which silently forgets. A
+  // view setting the user set deliberately is a preference.
+  //
+  // SNOW-857 made it a TRI-state, and it is the only key in this table that
+  // is: 'true'/'false' are the user's own answer, and ABSENT means
+  // untouched, which derives to "on while offline". It is therefore read
+  // with ``readStorage``, never ``readBoolStorage``, and nothing may write
+  // it on a seeding path — see map.js's ``downloadedOverlayShouldPaint``.
   //
   // A NEW key name, not SNOW-570's 'snowdesk.map.overlay.downloaded'. That
   // one is still on disk on any device that used the layers-menu row this
