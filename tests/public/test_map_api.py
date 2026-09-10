@@ -3097,7 +3097,7 @@ def test_geojson_empty_collection_gets_no_stale_window(url_name: str) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "offered",
-    ['W/{etag}', '{etag}, W/"other"', '*'],
+    ["W/{etag}", '{etag}, W/"other"', "*"],
     ids=["weak", "one-of-several", "star"],
 )
 def test_geojson_if_none_match_is_compared_weakly(offered: str) -> None:
