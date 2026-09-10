@@ -3799,7 +3799,7 @@
   //   - Season ratings are already fetched into ``SEASON_RATINGS_PROMISE``,
   //     which IS the cache this function otherwise merges into — so there is
   //     nothing to merge and no second fetch to make.
-  const ensureCountryLoaded = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
+  const _loadCountry = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
     try {
@@ -4010,6 +4010,52 @@
       window.pwaLayerSyncStatus?.refresh();
       revealOfflineToast('map-offline-toast-layer');
     }
+  };
+
+  // SNOW-891: the in-flight loads, keyed by country code — the same shape
+  // ``overlayLoading`` gives the lazy overlay tiers, and for the same reason
+  // (SNOW-493 P1).
+  //
+  // ``loadedCountries`` only flips true once a load SETTLES, so it cannot
+  // answer "is this already happening". Two calls that overlap therefore both
+  // pass its guard and both merge their L4 answer into ``geojsonCache`` — a
+  // plain concat, not the prefix-deduped ``mergeRegionFeatures`` the L1/L2
+  // caches use — so every polygon in that country is drawn twice, with its
+  // ratings and L1/L2 feeds fetched twice for good measure.
+  //
+  // The overlap was rare while only the boot loop and a provider toggle
+  // called this. Binding the boundaries to the basemap gave it a third
+  // caller that fires on every swap, over a set of countries the swap itself
+  // chooses: opening on OpenFreeMap (all four loading) and switching basemap
+  // twice before they settle is now an ordinary thing to do.
+  const countryLoading = {};
+
+  /**
+   * Load one country's geometry and ratings, at most once at a time.
+   *
+   * @param {string} code A ``COUNTRY_KEYS`` member.
+   * @param {{isBootCountry?: boolean, userInitiated?: boolean}} [opts]
+   * @returns {Promise<void>}
+   */
+  const ensureCountryLoaded = (code, opts = {}) => {
+    if (loadedCountries.has(code)) return Promise.resolve();
+    const start = () => {
+      const work = _loadCountry(code, opts).finally(() => {
+        delete countryLoading[code];
+      });
+      countryLoading[code] = work;
+      return work;
+    };
+    const pending = countryLoading[code];
+    if (!pending) return start();
+    // A user-initiated call must not lose its revert-on-failure by joining a
+    // load it did not ask for: the boot and basemap paths pass no
+    // ``userInitiated``, so a failure there leaves the provider row switched
+    // on and empty. Wait for the load in flight, and take over only if it did
+    // not leave the country loaded — which is the failure case, and the only
+    // one where the revert has anything to do.
+    if (!opts.userInitiated) return pending;
+    return pending.then(() => (loadedCountries.has(code) ? undefined : start()));
   };
 
   // SNOW-492: reveal the per-overlay "unavailable offline" toast by id —

@@ -45,11 +45,32 @@ const featureCollection = () => ({
   })),
 });
 
+/**
+ * What the server would answer for one URL: the tier endpoints are
+ * per-country and carry only that country's features, which is what makes a
+ * country loaded twice visible as a duplicate rather than hidden in a payload
+ * that always held all four.
+ *
+ * @param {string} url
+ * @returns {Object} A FeatureCollection.
+ */
+const responseFor = (url) => {
+  const code = (String(url).match(/country=([a-z]+)/) || [])[1];
+  const all = featureCollection();
+  if (!code) return all;
+  const country = code.toUpperCase();
+  return {
+    type: 'FeatureCollection',
+    features: all.features.filter((f) => f.properties.country === country),
+  };
+};
+
 /** Minimal MapLibre stub — this suite reads filters, not paint. */
 function stubMapLibre() {
   const handlers = {};
   const layers = new Set();
   const filters = new Map();
+  const sourceData = {};
   const map = {
     on: (ev, a, b) => { (handlers[ev] ||= []).push(typeof a === 'function' ? a : b); },
     once: () => {},
@@ -62,8 +83,13 @@ function stubMapLibre() {
     getPaintProperty: () => undefined,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
-    getSource: () => null,
-    addSource: () => {},
+    // Sources are tracked (rather than the usual `() => null`) because the
+    // dedupe test below reads what actually landed in the `regions` source:
+    // a country loaded twice shows up there as duplicate features.
+    getSource: (id) => (id in sourceData
+      ? { setData: (data) => { sourceData[id] = data; } }
+      : null),
+    addSource: (id, def) => { sourceData[id] = (def && def.data) || null; },
     addLayer: (def) => {
       layers.add(def.id);
       if (def.filter !== undefined) filters.set(def.id, def.filter);
@@ -100,6 +126,7 @@ function stubMapLibre() {
     queryRenderedFeatures: () => [],
     resize: () => {},
     handlers,
+    sourceData,
   };
   globalThis.maplibregl = {
     Map: function () { return map; },
@@ -183,9 +210,9 @@ async function boot(options) {
   localStorage.setItem('snowdesk.map.overlay.l2', 'true');
   buildFixture(options);
   const mapStub = stubMapLibre();
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+  vi.stubGlobal('fetch', vi.fn((url) => Promise.resolve({
     ok: true,
-    json: () => Promise.resolve(featureCollection()),
+    json: () => Promise.resolve(responseFor(url)),
   })));
 
   vi.resetModules();
@@ -338,5 +365,42 @@ describe('the boundary outlines and the bulletin fill are filtered separately', 
         .map((url) => new URL(url, 'https://example.test').searchParams.get('country')),
     );
     expect(fetched).toEqual(new Set(['ch', 'fr', 'at', 'it']));
+  });
+});
+
+describe('a country is loaded at most once at a time', () => {
+  it('does not start a second load when a swap arrives mid-flight', async () => {
+    // `loadedCountries` only flips true once a load SETTLES, so it cannot
+    // answer "is this already happening". Two overlapping calls would both
+    // pass its guard and both concat their L4 answer into `geojsonCache` —
+    // every polygon in that country drawn twice. Two quick basemap swaps is
+    // the ordinary way to get there now that a swap loads countries.
+    const mapStub = await boot({
+      providers: '',
+      countries: 'ch',
+      activeBasemap: 'swisstopo_winter',
+    });
+
+    // Move to the global basemap the way the picker does: mark its row
+    // checked (synchronously, before the style swap) and announce it.
+    const menu = document.getElementById('basemap-menu');
+    const global = menu.querySelector('[data-basemap-key="openfreemap_liberty"]');
+    global.dataset.basemapCountries = 'ch fr at it';
+    menu.querySelector('[data-basemap-key="swisstopo_winter"]')
+      .setAttribute('aria-checked', 'false');
+    global.setAttribute('aria-checked', 'true');
+
+    globalThis.fetch.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const microFetches = globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/regions.geojson') && url.includes('country=at'));
+    expect(microFetches).toHaveLength(1);
+    // And nothing arrived twice in the source the choropleth reads.
+    const ids = mapStub.sourceData['regions'].features.map((f) => f.properties.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
