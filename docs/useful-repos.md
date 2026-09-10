@@ -41,7 +41,7 @@ A small demo-style app showing how to wire SAML SSO into a Django project. **Use
 Stores transactional email templates in the database (name / language / version) with admin editing and optional logging of sent messages. Does not send mail itself — just renders. **Use for:** any time non-developers (support, marketing, ops) need to edit email copy without a deploy.
 
 ### [django-persistent-messages](https://github.com/yunojuno/django-persistent-messages)
-Like `django.contrib.messages`, but messages persist across sessions, can be targeted at specific users, and stay until explicitly dismissed. **Use for:** onboarding nudges, "please verify your email" banners, or any in-app notification that shouldn't vanish on the next page load.
+Like `django.contrib.messages`, but messages persist across sessions, can be targeted at specific users, and stay until explicitly dismissed. **Use for:** onboarding nudges, "please verify your email" banners, or any in-app notification that shouldn't vanish on the next page load. **In use here** — it backs the site banners; see [`docs/site-banners.md`](site-banners.md).
 
 ### [django-nps](https://github.com/yunojuno/django-nps)
 Records NPS scores (0-10) per user, groups them into detractors / neutrals / promoters, and exposes a queryset method to compute the score. Ships a middleware to signal when a user should be shown the survey. **Use for:** measuring product satisfaction on a recurring cadence.

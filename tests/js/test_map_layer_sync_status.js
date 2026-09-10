@@ -63,6 +63,11 @@ function buildFixture({
   // SNOW-524: country rows are opt-in so the pre-existing tier tests keep
   // exercising the country-blind fallback (no country enabled ⟹ ignoreSearch).
   countries = null,
+  // SNOW-891: the ACTIVE basemap row's `data-basemap-countries` — the coverage
+  // the boundary tiers are now scoped by. Null omits the attribute entirely,
+  // which is the fallback path (every code the menu offers) the pre-existing
+  // tests exercise.
+  basemapCountries = null,
 } = {}) {
   const overlayRow = (key) => `
     <li role="none">
@@ -73,7 +78,7 @@ function buildFixture({
     </li>`;
 
   // SNOW-524: one row per PROVIDER, `checked` mirroring the picker's
-  // aria-checked (which is what _enabledCountryCodes reads).
+  // aria-checked (which is what the country-row probes read).
   //
   // SNOW-658: `codes` is the row's own `data-country-codes`, the DOM
   // projection of COUNTRY_GROUPS in static/js/map_state.js. It defaults to
@@ -94,6 +99,7 @@ function buildFixture({
     <li role="none">
       <button type="button" class="basemap-menu-item" role="menuitemradio"
               data-basemap-key="${key}" data-basemap-url="${url}"
+              ${active && basemapCountries ? `data-basemap-countries="${basemapCountries.join(' ')}"` : ''}
               aria-checked="${active ? 'true' : 'false'}">
         <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
         ${key}
@@ -363,15 +369,18 @@ describe('country rows (SNOW-524)', () => {
     for (const call of countryCalls) expect(call[1]).toBeUndefined();
   });
 
-  it('scopes the l1/l2/l4 dots to the enabled countries', async () => {
+  it("scopes the l1/l2/l4 dots to the basemap's countries", async () => {
     buildFixture({
       countries: [
         { code: 'ch', checked: true },
-        { code: 'at', checked: true },
+        { code: 'at', checked: false },
       ],
+      // SNOW-891: a global basemap draws both countries, so both countries'
+      // boundary feeds are loaded — whatever the provider rows say.
+      basemapCountries: ['ch', 'at'],
     });
-    // Every tier cached for CH, none for AT — with both enabled, no tier is
-    // honestly available offline, so no tier dot may sit green above AT's red.
+    // Every tier cached for CH, none for AT: no tier is honestly available
+    // offline, so no tier dot may go green.
     vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('ch') }));
 
     await window.pwaLayerSyncStatus.refresh();
@@ -381,7 +390,35 @@ describe('country rows (SNOW-524)', () => {
     expect(dotState('l4')).toBe('uncached');
   });
 
-  it('greens the tiers when every enabled country has them', async () => {
+  it("greens the tiers when every one of the basemap's countries has them", async () => {
+    buildFixture({
+      countries: [
+        { code: 'ch', checked: true },
+        { code: 'at', checked: true },
+      ],
+      // A national basemap: only Switzerland is drawn, so only Switzerland's
+      // boundary feeds are fetched. SNOW-891 is the inversion under test —
+      // Austria being switched ON no longer reds these dots, because the
+      // Austrian OUTLINES are not on this map to be missing.
+      basemapCountries: ['ch'],
+    });
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('ch') }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('l1')).toBe('cached');
+    expect(dotState('l2')).toBe('cached');
+    expect(dotState('l4')).toBe('cached');
+    // The Austrian PROVIDER row still reports its own four feeds honestly:
+    // the split is about which question each row answers, not about
+    // softening either answer.
+    expect(dotState('country.at')).toBe('uncached');
+  });
+
+  it('falls back to every country the menu offers with no declared coverage', async () => {
+    // A row with no ``data-basemap-countries`` — map.js's boundaryCountryCodes
+    // loads all four in that case, so the dot must judge against all four
+    // rather than quietly greening on one.
     buildFixture({
       countries: [
         { code: 'ch', checked: true },
@@ -392,8 +429,28 @@ describe('country rows (SNOW-524)', () => {
 
     await window.pwaLayerSyncStatus.refresh();
 
-    expect(dotState('l1')).toBe('cached');
-    expect(dotState('l4')).toBe('cached');
+    expect(dotState('l1')).toBe('uncached');
+  });
+
+  it('re-probes the tiers when the basemap changes', async () => {
+    buildFixture({
+      countries: [{ code: 'ch', checked: true }],
+      basemapCountries: ['ch', 'at'],
+    });
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('ch') }));
+
+    await window.pwaLayerSyncStatus.refresh();
+    expect(dotState('l1')).toBe('uncached');
+
+    // The picker narrows the active row's coverage to CH and announces the
+    // swap. Without the listener the dot would keep the pre-swap answer
+    // until the next popover open.
+    document
+      .querySelector('[data-basemap-key="standard"]')
+      .setAttribute('data-basemap-countries', 'ch');
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+
+    await vi.waitFor(() => expect(dotState('l1')).toBe('cached'));
   });
 
   it('treats Switzerland like any other country — no default-country exemption', async () => {

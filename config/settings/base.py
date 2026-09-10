@@ -200,6 +200,11 @@ INSTALLED_APPS = [
     # table on first boot — see apps/core/apps.py for the why.
     "apps.core.apps.BootstrapTolerantCSPTrackerConfig",
     "waffle",
+    # Admin-managed site banners (django-persistent-messages).
+    # Ships its own migrations, so ``migrate`` creates the two tables; the
+    # rendering side is ours — see apps/public/banners.py and
+    # templates/includes/_persistent_banners.html.
+    "persistent_messages",
     # Local
     "apps.core",
     "apps.locations",
@@ -321,6 +326,12 @@ TEMPLATES = [
                 # base.html can render a distinct app name, icon, and theme
                 # colour on staging vs production PWA installs.
                 "apps.public.context_processors.site_environment",
+                # Injects ``persistent_banners`` — the admin-managed
+                # banners targeted at this request's user. A context processor
+                # because a site notice is a universal surface rather than one
+                # view's, the same reasoning debug_log_visible above carries.
+                # Lazy, so a page that never renders the strip costs no query.
+                "apps.public.context_processors.persistent_banners",
             ],
         },
     },
@@ -1032,6 +1043,21 @@ WAFFLE_CREATE_MISSING_FLAGS = False
 
 
 # ---------------------------------------------------------------------------
+# Admin-managed site banners (django-persistent-messages)
+# ---------------------------------------------------------------------------
+# A named predicate a banner can target instead of a user or an auth Group:
+# ``PersistentMessage.target_custom_group`` is validated against these keys
+# in the model's ``clean()``, so an unknown name is an admin form error
+# rather than a banner that quietly shows to nobody.
+#
+# Empty on purpose. Snowdesk's audiences are "everyone" and "signed in",
+# both of which the package's own TargetType covers; a predicate here would
+# be a third targeting mechanism with no caller. Add one when a banner
+# genuinely needs an audience the model cannot express.
+MESSAGE_CUSTOM_GROUPS: dict[str, object] = {}
+
+
+# ---------------------------------------------------------------------------
 # Account-access token
 # ---------------------------------------------------------------------------
 # Maximum age (in seconds) for account-access tokens verified by
@@ -1258,6 +1284,54 @@ BASEMAP_STYLES = {
     ),
     "basemap_at": "https://mapsneu.wien.gv.at/basemapvectorneu/root.json",
 }
+
+# SNOW-891: the ground each basemap actually draws, as EAWS country codes.
+# The EAWS boundary outlines (Major / Minor / Micro) follow this rather than
+# the layers menu's Bulletins rows — a national style renders blank past its
+# own border, so outlines beyond it delineate ground the tiles do not cover.
+# The Bulletins rows keep filtering the bulletin DATA, which is a separate
+# question: someone on the Swiss basemap may still follow ALBINA.
+#
+# Every ``BASEMAP_STYLES`` key must appear here and every code must be one of
+# the four countries the map carries, both checked at import below — a new
+# basemap that forgets its coverage fails the boot rather than silently
+# drawing no outlines, which is the bug this ticket fixed.
+BASEMAP_COUNTRIES = {
+    # Global style: all four, so the outlines cover the whole map.
+    "openfreemap_liberty": ("ch", "fr", "at", "it"),
+    "swisstopo_winter": ("ch",),
+    "swisstopo_light": ("ch",),
+    "ign_plan": ("fr",),
+    "basemap_at": ("at",),
+}
+
+# The countries the map carries geometry for — the same four
+# ``COUNTRY_KEYS`` in static/js/map_state.js lists. Italy has no national
+# basemap of its own (see BASEMAP_STYLES above), so it is reachable only
+# through the global style.
+MAP_COUNTRY_CODES = ("ch", "fr", "at", "it")
+
+_uncovered_basemaps = sorted(set(BASEMAP_STYLES) - set(BASEMAP_COUNTRIES))
+if _uncovered_basemaps:
+    raise ImproperlyConfigured(
+        f"BASEMAP_COUNTRIES is missing {_uncovered_basemaps}. Every basemap "
+        f"must declare the country codes it draws, or its EAWS boundary "
+        f"outlines cannot be scoped to what the tiles cover."
+    )
+
+_unknown_basemap_countries = sorted(
+    {
+        code
+        for codes in BASEMAP_COUNTRIES.values()
+        for code in codes
+        if code not in MAP_COUNTRY_CODES
+    }
+)
+if _unknown_basemap_countries:
+    raise ImproperlyConfigured(
+        f"BASEMAP_COUNTRIES names {_unknown_basemap_countries}, which are not "
+        f"countries the map carries. Valid codes: {list(MAP_COUNTRY_CODES)}"
+    )
 
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")
 

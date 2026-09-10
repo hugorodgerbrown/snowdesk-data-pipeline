@@ -15,6 +15,7 @@ import waffle
 from django.conf import settings
 from django.utils.functional import SimpleLazyObject
 
+from apps.public.banners import banners_for_request, dismiss_url_for, kind_for
 from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
 
@@ -253,4 +254,46 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
         "PWA_ICON_DIR": identity.icon_dir,
         "PWA_THEME_COLOR": identity.theme_color,
         "PWA_TITLE_SUFFIX": identity.title_suffix,
+    }
+
+
+def persistent_banners(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the admin-managed site banners into every template context.
+
+    ``templates/includes/_persistent_banners.html`` renders these under the
+    nav on every page extending ``public/base.html``, so a notice authored
+    in the admin needs no view change to appear. See ``apps.public.banners``
+    for what "targeted at this user" means, and ``docs/site-banners.md``
+    for the operator's side.
+
+    Each entry is a ``{"message", "kind", "dismiss_url"}`` dict rather than
+    the row itself. Both derived values depend on something the row cannot
+    know on its own — which design-system status token its level paints in,
+    and whether this reader's dismissal can be recorded at all — and
+    resolving them here keeps them in testable Python rather than an
+    ``{% if %}`` ladder in the partial.
+
+    Lazy via ``SimpleLazyObject``: the banners are rendered inside a
+    ``{% for %}``, so a response that never reaches it pays no query.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        ``persistent_banners`` — a lazily-evaluated list of
+        ``{"message", "kind", "dismiss_url"}`` dicts, most severe first.
+
+    """
+    return {
+        "persistent_banners": SimpleLazyObject(
+            lambda: [
+                {
+                    "message": message,
+                    "kind": kind_for(message),
+                    "dismiss_url": dismiss_url_for(message, request),
+                }
+                for message in banners_for_request(request)
+            ]
+        )
     }

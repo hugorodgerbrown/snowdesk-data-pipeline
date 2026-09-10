@@ -676,6 +676,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-persistent-messages"
+version = "0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e2/28/8a8b6968046da31cd2d9af7099ecfa71037976561db153c7011dbee97f52/django_persistent_messages-0.5.tar.gz", hash = "sha256:186bb9af8ccf5d82e34d4897d0500ac99b542cb20ab32e719f1aa6627d5a9543", size = 10679, upload-time = "2026-01-06T17:42:49.404Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/fc/c757627c121208106fc3fcf6b9f575431923ee5d6867a7a5d8e124ec33f2/django_persistent_messages-0.5-py3-none-any.whl", hash = "sha256:6788442629d702548d96b859f6398073a8ee6a55a91f1e3c749270c821f59e4c", size = 14350, upload-time = "2026-01-06T17:42:48.341Z" },
+]
+
+[[package]]
 name = "django-ratelimit"
 version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2546,6 +2558,7 @@ dependencies = [
     { name = "django" },
     { name = "django-csp-plus" },
     { name = "django-htmx" },
+    { name = "django-persistent-messages" },
     { name = "django-ratelimit" },
     { name = "django-tasks" },
     { name = "django-tasks-db" },
@@ -2661,6 +2674,7 @@ requires-dist = [
     { name = "django", specifier = ">=6.0.7,<7" },
     { name = "django-csp-plus", specifier = ">=3.3.0,<4" },
     { name = "django-htmx", specifier = ">=1.29.0,<2" },
+    { name = "django-persistent-messages", specifier = ">=0.5" },
     { name = "django-ratelimit", specifier = ">=4.1.0,<5" },
     { name = "django-tasks", specifier = ">=0.12.0,<0.13" },
     { name = "django-tasks-db", specifier = ">=0.12.0,<0.14" },

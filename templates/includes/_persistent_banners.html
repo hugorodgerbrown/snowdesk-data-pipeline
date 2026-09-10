@@ -1,0 +1,40 @@
+{% comment %}
+templates/includes/_persistent_banners.html — the admin-managed site banners.
+
+One "strip" from includes/_overlay_banner.html per active
+``persistent_messages.PersistentMessage`` targeted at this request's user,
+in flow under the nav so a notice pushes the page down rather than
+covering it. Included unconditionally by public/base.html; renders nothing
+at all when no banner applies.
+
+Context comes from ``apps.public.context_processors.persistent_banners``:
+a list of ``{"message", "kind", "dismiss_url"}`` dicts, most severe first.
+``kind`` is the design-system status key the row's level maps to
+(``apps.public.banners.KIND_FOR_LEVEL_TAG``), not a colour; ``dismiss_url``
+is empty unless this reader's dismissal can actually be recorded.
+
+This replaced the hard-coded off-season archive bar, which was the strip
+variant's only caller and stated a resume month the data no longer
+supported. The same shape is now authored in the admin, which is the
+difference that matters: the copy can be corrected without a deploy.
+
+The row's own copy reaches ``body`` already rendered. A banner is
+staff-authored through the admin, and ``mark_content_safe`` on the model is
+what allows HTML in it — the package's ``message`` property applies
+``mark_safe`` only when that flag is set, so an author who leaves it off
+gets their angle brackets escaped. That flag is the one place a banner can
+introduce markup, and it is reachable only by a staff user with change
+permission on the model; nothing a visitor submits can reach here.
+
+``dismissible`` is the row's ``is_dismissable``, and dismissal has two
+halves. The × always hides the strip client-side via
+static/js/overlays.js's shared handler. For a signed-in reader
+static/js/persistent_messages.js additionally DELETEs the row's
+``dismiss_url``, which records the dismissal against their account so the
+banner does not come back — the package's endpoint is ``login_required``,
+so for an anonymous reader the dismissal lasts the page view, which is the
+banner primitive's documented contract.
+{% endcomment %}
+{% for banner in persistent_banners %}
+    {% include "includes/_overlay_banner.html" with variant="strip" kind=banner.kind body=banner.message dismissible=banner.message.is_dismissable id=banner.message.id_tag dismiss_url=banner.dismiss_url %}
+{% endfor %}
