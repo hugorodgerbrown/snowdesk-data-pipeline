@@ -115,6 +115,24 @@ that matters most: whether a user is affected.
 | **4** | User-visible. Someone gets a broken or degraded page. |
 | **5** | Data or safety. Wrong avalanche information, or data loss. |
 
+## Measuring
+
+Two mistakes cycle 01 made, both worth inheriting as rules.
+
+**Measure a function by brace matching, and report code lines separately
+from span.** Cycle 01 took each function's span as *"start line to the next
+top-level `const … = ("*, which swallowed the following event handler and
+reported a 14-line function as 215 lines. Comments are ~56% of `map.js`, so
+a raw span overstates everything. The `audit-map` skill carries the script.
+
+**Before writing "X should be extracted", grep for whether it already has
+been.** The same finding named a decision that was already a pure function
+in `choropleth_core.js` with six unit tests. The child ticket it produced
+was work someone had finished months earlier.
+
+Both errors survived into `SNOW-892`'s dated artefact, which is not edited
+to hide them — see the note in the History table.
+
 ## Trivial vs spin-off rule
 
 Inherited from `docs/code-reviews/README.md`, and applied the same way.
@@ -152,4 +170,4 @@ re-verification note), and **New**.
 
 | Date | Baseline | Ticket | Headline |
 |------|----------|--------|----------|
-| [2026-09-10](2026-09-10.html) ([artifact](https://claude.ai/code/artifact/c6a9af11-14d4-43ae-accd-134e9541ab2d)) | — → `6824c52d` | `SNOW-892` | First cycle. Seven findings: a WebGL failure blanks the map silently and nothing reports it; 210 lines of unreachable popup code with nine live call sites into it; no type checking on 44k lines of JS. The payload turned out to be a non-finding — the deploy already minifies. |
+| [2026-09-10](2026-09-10.html) ([artifact](https://claude.ai/code/artifact/c6a9af11-14d4-43ae-accd-134e9541ab2d)) | — → `6824c52d` | `SNOW-892` | First cycle. Seven findings: a WebGL failure blanks the map silently and nothing reports it; 210 lines of unreachable popup code with nine live call sites into it; no type checking on 44k lines of JS. The payload turned out to be a non-finding — the deploy already minifies. **Known error, uncorrected in the file:** finding 02 reports `repaintAfterStyleSwap` at 215 lines; it is 14, and the decision it names was already extracted and tested. See "Measuring" above. The artefact is left as published — rewriting a dated record to be right after the fact is how a series stops being evidence. |

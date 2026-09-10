@@ -105,6 +105,49 @@ EOF
 # wire cost: gzip -9 each script; then the same again through node_modules/.bin/esbuild --minify
 ```
 
+**Measure a function by BRACE MATCHING, and report code lines separately
+from span.** Cycle 01 got this wrong and it cost a whole child ticket. It
+took each function's span as *"start line to the next top-level `const … =
+(`"*, which for `repaintAfterStyleSwap` swallowed the entire
+`map.on('styledata', …)` handler that follows it and reported 215 lines for
+a 14-line function. Comments are ~56% of `map.js`, so a raw span overstates
+every function; that one overstated it by 15×.
+
+```bash
+# Brace-match from the declaration, and count code lines separately.
+python3 - <<'EOF'
+import re
+lines = open('static/js/map.js').read().split('\n')
+out = []
+for i, l in enumerate(lines):
+    if not re.match(r'^\s{2,6}(?:const|let)\s+\w+\s*=\s*(?:async\s*)?\(', l):
+        continue
+    depth, j, started = 0, i, False
+    while j < len(lines):
+        for ch in lines[j]:
+            if ch == '{':
+                depth += 1
+                started = True
+            elif ch == '}':
+                depth -= 1
+        if started and depth <= 0:
+            break
+        j += 1
+    body = lines[i:j + 1]
+    code = [x for x in body if x.strip() and not x.strip().startswith(('//', '*', '/*'))]
+    out.append((len(code), len(body), l.strip().split()[1], i + 1))
+out.sort(reverse=True)
+for c, t, n, ln in out[:12]:
+    print(f'{c:>5} code {t:>5} span  {n} :{ln}')
+EOF
+```
+
+**Before writing "X should be extracted", grep for whether it already has
+been.** The same cycle-01 finding named a decision that was already a pure
+function in `choropleth_core.js` with six unit tests of its own. One
+`grep -rn '<name>' static/js/*_core.js tests/js/` would have caught it, and
+the ticket it produced was work that had been done months earlier.
+
 Endpoint measurements go through the Django test client with
 `settings.DEBUG = True` and `django.db.connection.queries`, not through a
 running server — the numbers have to be reproducible in CI and on a laptop.
