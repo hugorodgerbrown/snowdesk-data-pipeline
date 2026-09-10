@@ -653,6 +653,7 @@ Read these when working in the relevant area:
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Page audits (what each public page says, does and promises) | [`docs/page-audits/README.md`](docs/page-audits/README.md) |
+| Map reviews (the map subsystem explained, plus its findings and their tickets) | [`docs/map-reviews/README.md`](docs/map-reviews/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |

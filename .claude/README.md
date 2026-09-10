@@ -16,6 +16,8 @@ updates).
 │   ├── release/                ← fast-forward `release` → production deploy
 │   ├── audit-security/         ← security audit of the codebase
 │   ├── audit-code/             ← whole-codebase drift audit (SNOW-269)
+│   ├── audit-pages/            ← product state of every public page (used by Routine)
+│   ├── audit-map/              ← technical review of the map subsystem (used by Routine)
 │   ├── post-project-update/    ← Linear project status update (used by Routine)
 │   ├── report-churn/           ← weekly churn chart (used by Routine)
 │   └── create-ticket/          ← make a Linear ticket (front of the lifecycle)
@@ -139,6 +141,8 @@ You don't need to remember slash commands — say what you want:
 - "work on 42" / "take 42 through to review" → work-on
 - "run a security audit" → audit-security
 - "audit the code for drift" → audit-code
+- "what state are the pages in" / "page audit" → audit-pages
+- "review the map" / "map review" → audit-map
 - "post a daily update for Snowdesk" → post-project-update
 - "update the churn chart" / "how's throughput been" → report-churn
 
@@ -176,6 +180,12 @@ environment can find them after cloning, and neither carries
 - **`post-project-update`** — once a day, posts a Linear project status update.
 - **`report-churn`** — once a week, re-renders the churn chart and republishes
   its artifact. Publishes nothing else: no PR, no Linear write.
+
+- **`audit-map`** — once a week, re-verifies the previous map review against
+  the code, raises a parent ticket with one scoped child per new finding, and
+  opens a PR carrying the dated artefact. Unlike `audit-pages`, which
+  deliberately only reports, this one writes to Linear — see
+  `docs/map-reviews/README.md` for why the two differ.
 
 `audit-code` and `audit-pages` also support Routine mode, invoked the same way.
 
