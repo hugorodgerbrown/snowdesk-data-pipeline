@@ -229,7 +229,7 @@ follow the scrubbed date.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ and open the layers menu | A "Conditions" section with a single "Weather" row, unchecked |
+| 1 | Navigate to http://localhost:8000/ and open the layers menu | The "Conditions" section is open (the one section that is, on a first visit) and holds a "Weather" row, unchecked |
 | 2 | Click the Weather row | Row becomes checked; condition icons appear across the map, each labelled with the day's max temperature and the station's altitude on the line below |
 | 3 | Zoom out below zoom 7 | The symbols disappear entirely — a condition icon per station across a whole country is a texture, not information |
 | 4 | Zoom back in to a valley with a village and a peak close together | At low zoom only one symbol shows per cluster, and it is the LOWER station's; both appear once zoomed past ~11 |
@@ -943,8 +943,8 @@ on `/help/`.
 >   at z11 one valley over you get a coarse basemap rather than nothing.
 >   That is deliberate (accepted 2026-09-07).
 > - **So the coverage overlay is what marks the edge, and offline it turns
->   itself on** (SNOW-857) unless you have set the "Display on the map"
->   switch yourself — a hatch over ground downloaded for the basemap you
+>   itself on** (SNOW-857) unless you have set the "Display downloaded
+>   areas" row yourself — a hatch over ground downloaded for the basemap you
 >   are on, an outline in another basemap's colour over ground downloaded
 >   for that one. The legend card carries the key while it is showing.
 > - A **region** download is clipped to the region's real boundary plus
@@ -1023,8 +1023,8 @@ truthfully across a reload.
 | 1 | Tap the framed-square roundel, bottom-right | The "Your downloads" sheet opens |
 | 2 | Read the header | Budget row: segmented bar, "Using N MB of", and a 500 MB pill. Caption: areas follow the account, map data and budget stay on this device |
 | 3 | Read the list | One group headed by the active basemap (swatch + name + this device's total); D1's row reads `Region · N MB` |
-| 4 | Turn on "Display on the map" | Translucent squares appear over the downloaded area, one per z14 tile, in the basemap's identity colour |
-| 5 | Close the sheet | The squares **stay** — the switch is the only thing that turns them off |
+| 4 | Close the sheet, open the layers menu and turn on "Display downloaded areas" (under Basemap) | Translucent squares appear over the downloaded area, one per z14 tile, in the basemap's identity colour |
+| 5 | Close the menu | The squares **stay** — that row is the only thing that turns them off |
 | 6 | Compare the shaded edge with the region outline | Coverage follows the boundary plus roughly one tile of margin — a ragged edge, not a rectangle |
 
 ### Scenario D3: Where coverage stops, offline
@@ -1103,7 +1103,7 @@ claims to be coverage.
 |------|--------|-----------------|
 | 1 | With areas downloaded in browser A, sign in as the same account in a clean profile B | — |
 | 2 | Open the sheet in B | Each area is listed, dimmed, with **no size**, and carries a "Download here" button |
-| 3 | Turn on "Display on the map" in B | No squares — B holds no tiles. The budget total in B reads 0 for those rows |
+| 3 | Turn on "Display downloaded areas" in B's layers menu | No squares — B holds no tiles. The budget total in B reads 0 for those rows |
 | 4 | Tap "Download here" | A region downloads directly; a custom area reopens framing fitted to the stored box |
 | 5 | Rename the custom area in A, then reload B | The new name shows in B — the definition syncs, the bytes never do |
 
@@ -1168,8 +1168,8 @@ rather than repeated.
    each row in the sheet (D7).
 3. `localStorage.removeItem('snowdesk.map.overlay.downloads')` in the
    Console. The auto-on rule in Part D fires only for a reader who has
-   never touched "Display on the map" — an explicit choice, either way,
-   is persisted and always wins (SNOW-857). Running D2 first sets it.
+   never touched "Display downloaded areas" — an explicit choice, either
+   way, is persisted and always wins (SNOW-857). Running D2 first sets it.
 4. DevTools open on **Application → Cache storage**, **Application →
    Service workers**, **Network** and **Console**.
 

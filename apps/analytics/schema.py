@@ -94,15 +94,17 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # Map favourites (SNOW-414) — deliberately a `map.*` namespace, not
         # `pwa.*`, since these describe a map-surface interaction rather
         # than PWA shell lifecycle. Emitted by static/js/favourites.js and
-        # static/js/map.js's overlay-toggle handler.
+        # by window.pwaFavouritesOverlay's own show/hide in
+        # static/js/map.js, which the layers menu's row drives (SNOW-904).
         "map.favourite.created",
         "map.favourite.deleted",
         "map.favourite.overlay_toggled",
         # Community reports overlay (SNOW-419) — anonymised, clustered
-        # FieldObservation pins on /map/. Emitted by static/js/map.js's
-        # overlay-toggle handler and the community-reports-point click
-        # handler. Deliberately no location/identity data on the marker-
-        # tapped event — see the geojson endpoint's anonymisation contract.
+        # FieldObservation pins on /map/. Emitted by
+        # window.pwaCommunityReportsOverlay's own show/hide in
+        # static/js/map.js and the community-reports-point click handler.
+        # Deliberately no location/identity data on the marker-tapped
+        # event — see the geojson endpoint's anonymisation contract.
         "map.community_reports.overlay_toggled",
         "map.community_reports.marker_tapped",
         # SNOW-612: a completed basemap download whose `basemap.regions`

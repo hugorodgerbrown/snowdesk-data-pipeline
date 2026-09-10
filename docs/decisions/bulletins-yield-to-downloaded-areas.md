@@ -15,7 +15,7 @@ rest — which is how an atlas draws one area layer over another. A hatch
 makes no colour claim, so the danger colour reads through it and the reason
 for the exclusivity went away with the second tint.
 
-The fill and the downloads panel's "Display on the map" switch are now
+The fill and the downloaded-areas overlay are now
 independent in both directions: `show()`/`hide()` on
 `window.pwaDownloadedOverlay` suppress nothing, and raising the fill step
 switches no squares off. "Which days are dangerous" and "which areas do I

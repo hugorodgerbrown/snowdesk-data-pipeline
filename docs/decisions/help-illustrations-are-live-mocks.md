@@ -78,10 +78,13 @@ in the tab order, which is the focusable-inside-aria-hidden fault. The
 prose must therefore stand on its own, because a screen-reader user gets
 the paragraph and nothing else.
 
-**Ids must be namespaced.** The real panels' switches are how `map.js`
-finds what it drives (`#map-favourites-overlay-toggle` and friends). An
-illustration must never answer to one of those names, so
-`component_previews.py` gives each a `help-illustration-…` id.
+**Ids must be namespaced.** SNOW-904 removed the case that made this
+urgent — the panels' "Display on the map" switches, which `map.js` found
+by id (`#map-favourites-overlay-toggle` and friends) — but the rule
+outlives it: an illustration renders REAL components, and a live surface
+that addresses one of them by id would find the decoration. So
+`component_previews.py` gives every id it supplies a `help-illustration-…`
+prefix.
 
 **A component whose styles are not in `output.css` cannot be illustrated
 here.** `/help/` loads that stylesheet alone. The season scrubber has a

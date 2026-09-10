@@ -1090,36 +1090,46 @@ The tiles need no stored record to stay honest, and cannot drift from the
 cache: eviction, a basemap swap and Clear Site Data all change the answer
 and all show up for free.
 
-**No longer a layers-menu toggle (SNOW-645, twice reworked).** The row
-that used to live in the layers menu (`data-overlay-key="downloaded"`, a
-persisted `overlayState.downloaded`) is gone — its probe was inherently
-per-ACTIVE-template, so switching basemap while it was on left its sync
-dot permanently grey and unclickable, with no way for the row to say why.
-The first fix bound the overlay to the "Manage downloads" sheet being
-open, full stop — which broke it a different way: the sheet is
+**A layers-menu row again (SNOW-904), after two reworks away from one.**
+SNOW-570 put it in the menu as `data-overlay-key="downloaded"`; SNOW-645
+took it out, because its SYNC DOT was inherently per-ACTIVE-template and
+switching basemap left the row permanently grey and unclickable with no
+way to say why. The first replacement bound the overlay to the "Manage
+downloads" sheet being open, which broke it a different way: the sheet is
 bottom-docked and full-width on mobile
 (`includes/_overlay_sheet.html`'s `sm:` breakpoint is what gives it a
 384px right-hand panel instead), so the squares this overlay draws were
 permanently covered by the sheet showing them, on the platform that needs
-offline maps most. It settled on: opening the sheet still turns the
-overlay ON (`map_downloads_manager.js`'s `open()` calls
-`window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
-turns it off. A second toggle — a switch, "Display on the map" — now
-lives INSIDE the sheet, at the foot of the panel (see "Manage downloads"
-sheet below) and is the ONLY thing that ever calls `show()`/`hide()`:
-SNOW-656 stopped `open()` calling `show()`, so opening the panel no longer
-repaints the map either.
+offline maps most. It settled on a "Display on the map" switch INSIDE the
+sheet, the only caller of `show()`/`hide()`.
 
-What that switch sets is a **persisted preference**, under
+SNOW-904 brings the control back to the menu as "Display downloaded
+areas", under Basemap with the slope-angle row: both are drawn on top of
+whichever basemap is chosen. SNOW-645's objection does not follow it,
+because that objection was about a dot, and this row has none — see "No
+sync dot" below. The bridge is untouched; the menu row calls the same
+`show()`/`hide()`.
+
+What that row sets is a **persisted preference**, under
 `OVERLAY_STORAGE_KEY.downloads` (`static/js/map_state.js`), restored into
 `downloadedOverlayVisible` at parse time and painted at boot by the
 `refreshDownloadedOverlay()` call that follows `installRegionsLayers` in
 the `load` handler — visible layers over an empty source draw nothing, so
 restoring the flag alone is half a fix. It was a deliberately
 session-scoped "inspection mode" for the life of SNOW-645, and Hugo
-reported that as a bug: three other panels carry the identical switch under
-the identical label and all three survive a reload, so this one forgetting
-reads as breakage rather than as design.
+reported that as a bug: three other panels carried the identical switch
+under the identical label and all three survived a reload, so this one
+forgetting read as breakage rather than as design.
+
+**It is the map's one TRI-state preference**, and SNOW-904's menu row does
+not change that. `'true'` and `'false'` are the reader's own answer;
+ABSENT means untouched, which derives to "on while offline" (SNOW-857).
+`map.js` therefore reads it with `readStorage`, never `readBoolStorage`,
+and the menu row seeds its tick from `isEnabled()` and writes only on a
+real click. A seeding pass that persisted what it read would convert every
+untouched device into "explicitly off" on its next load and kill the
+auto-on for good — see
+`tests/js/test_map_layers_menu_downloads_row.js`.
 
 The key is a NEW name. SNOW-570's `snowdesk.map.overlay.downloaded` is
 still on disk wherever the old layers-menu row was used, holding a value
@@ -1130,8 +1140,8 @@ to something else. It stays dead and unread.
 **It shares the map with the bulletin fill (SNOW-663).** It did not always:
 the squares were a second translucent tint over the very polygons the danger
 choropleth fills, unreadable together, so SNOW-656 made the two mutually
-exclusive — "Display on the map" dropped the fill control to its 0 step and
-any step above 0 switched the squares off. SNOW-663 changed the MARK instead.
+exclusive — switching the squares on dropped the fill control to its 0 step
+and any step above 0 switched the squares off. SNOW-663 changed the MARK instead.
 The squares are a 45-degree hatch now (`static/js/hatch_core.js`, one image
 per basemap identity colour at a fixed screen-space period), a third of the
 area in hard strokes with the choropleth's own colour showing through the
@@ -1882,21 +1892,11 @@ have areas, so that is 1–2 in practice and 5 at the extreme, on a path
 that runs on basemap change, eviction and download completion — not per
 frame.
 
-**No longer a layers-menu toggle (SNOW-645).** It was originally a
-`data-overlay-key="downloaded"` row, off by default and persisted like
-every other overlay. Switching basemap while it was on left its sync dot
-permanently grey and unclickable — the probe was keyed to the ACTIVE
-basemap's template alone, and the row had no way to say that was why. The
-row is gone; opening the "Manage downloads" sheet now turns the overlay
-on (`window.pwaDownloadedOverlay.show()`, called from
-`map_downloads_manager.js`'s `open()`), but closing the sheet does NOT
-turn it off — an in-sheet switch ("Display on the map") is the only
-thing that calls `hide()` (see "Manage downloads" sheet below for why: the
-sheet covers the whole screen on mobile, so binding visibility to "sheet
-open" made the overlay unreachable there). SNOW-656 then stopped `open()`
-calling `show()` as well, so the switch is the overlay's only writer — and
-what it sets is persisted across a reload, like the other three panels'
-switches (see "No longer a layers-menu toggle" above).
+**Switched from the layers menu (SNOW-904).** The "Display downloaded
+areas" row under Basemap is the overlay's only writer; opening or closing
+the "Manage downloads" sheet does not touch it. See "A layers-menu row
+again" above for the full route this control took to get back here, and
+for the tri-state its stored preference carries.
 
 Three layers (SNOW-857 — two before it), all installed with the regions
 source (not lazy) so a basemap swap rebuilds them with everything else,
@@ -1965,11 +1965,16 @@ repaints it with the new basemap's areas rather than turning it off. This
 reverses SNOW-645's "every basemap at once" — see "Colour" above for both
 the reason and what went with it.
 
-**No sync dot** — SNOW-645 removed the layers-menu row this overlay used
-to live in (and the `pinned-tiles` resource kind /
-`_probeAnyPinnedTile` probe that fed its dot along with it), moving the
-overlay to the "Manage downloads" sheet instead — see "No longer a
-layers-menu toggle" above.
+**No sync dot**, and that is the point of the row's return. SNOW-645
+removed the `pinned-tiles` resource kind and the `_probeAnyPinnedTile`
+probe that fed this dot, because the answer was inherently
+per-ACTIVE-template. SNOW-904's row has no `OVERLAY_RESOURCES` entry at
+all: the list it draws is local-only, so "is this available offline" is
+always yes and a dot saying so would carry no information. Green on that
+menu means one thing — the payload this row draws is in a cache right now
+— and a row that cannot answer that question gets no dot rather than a
+permanently blank one. (`slope` is the other such row, for the opposite
+reason: it draws a third-party raster this app cannot probe.)
 
 ### "Manage downloads" sheet (SNOW-588)
 
@@ -2360,59 +2365,15 @@ optimistic half of the same shape the favourites panel's pending pin uses.
 An area forgotten and then re-downloaded here is listed again: the local
 record is newer than the pending forget.
 
-**The overlay switch.** `includes/_switch.html` — a real
-`input[type="checkbox" role="switch"]` drawn as a track+thumb with
-Tailwind's `peer` variant, no JS; see that partial's own docstring for why
-(there was no switch primitive in the design system before this). Its
-label — "Display on the map" since SNOW-658, one sentence for the same
-control on all three UGC panels — sits in its own `bg-tag` rounded panel,
-reading as a view control for the map BEHIND the sheet rather than a fact
-about what is stored, which is also why it leads the sheet ahead of the
-list it governs.
+**The overlay switch is gone (SNOW-904).** This sheet carried one —
+`includes/_switch.html` in a `bg-tag` rounded panel, labelled "Display on
+the map" — as did the favourites, field-observation and routes panels. All
+four went with SNOW-904, which made the layers menu the sole control for
+every layer: a reader asking what can go on their map had to open five
+surfaces to find out. The paragraphs below describe what that switch did
+while it existed, and SNOW-832's empty-list guard went with it.
 
-SNOW-832 hides the whole strip while the list is empty. The switch draws
-the squares this panel's downloads make; with no downloads there are no
-squares, so it is a control that cannot do what it says, and a user who
-turns it on and sees no change learns the wrong thing about it. Hidden
-rather than disabled — unlike the add-trigger's offline state there is
-nothing to explain, and it comes back the moment there is a download to
-show. The hook is `data-panel-overlay-toggle` on the STRIP
-(`includes/_map_overlay_toggle.html`), so the label and the box go with
-it; the module had no hook at all before, and reaching for the switch's
-parentage would have been a guess.
-
-It is no longer the only writer of that state (SNOW-656): choosing any
-bulletin-fill step above 0 switches this off, since the two are mutually
-exclusive. `map_downloads_manager.js` therefore listens for
-`snowdesk:downloaded-overlay-changed` and sets the checkbox from it —
-`render()`'s read-back of `isEnabled()` on every open covers a sheet being
-opened, but not one already open behind another control.
-
-**A real bug shipped in this control's first cut, found by Hugo clicking
-it in a live browser (not by `render_to_string`, which cannot show a
-pointer-activation defect).** The wrapping element was a bare `<span>`.
-Since the track and thumb are both `pointer-events-none` (so a click
-passes THROUGH them) and the input itself is `sr-only` (clipped to 1×1px),
-a click anywhere on the visible pill landed on that inert `<span>` and did
-nothing — silently, no console error, only the label TEXT ("Show areas on
-the map") actually worked, because that text sits in a genuine
-`<label for="…">` in the sheet's own markup. Fixed by making
-`_switch.html`'s own wrapping element a SECOND `<label for="{{ id }}">` —
-an input can have any number of labels, provided none is nested inside
-another (this one and the sheet's own external text label are siblings,
-not nested) — so the browser's native click-to-activate-a-labelled-control
-behaviour handles it with no JS and cannot be defeated by the
-`pointer-events-none` children. The same pass grew the label's tap target
-to `min-h-11` (44px minimum height; the width already matched at `w-11`)
-while keeping the VISUAL pill at its original 24px, centred within the
-taller label via `inset-y-0 h-* my-auto` (literal top:0/bottom:0 plus an
-explicit height plus auto margins — the standard technique for centring a
-fixed-size absolutely-positioned box regardless of how its container's own
-height was arrived at, unlike a percentage `top: 50%` which is fussier
-about that). Verified with real Playwright clicks against the running dev
-server (not `render_to_string`) — centre-of-label, edge-of-hitbox, and a
-second click to toggle back, plus a keyboard Space-on-focus check, and the
-`/_components/switch/` fixture panel — all toggle correctly.
+The account of that switch's own defects — SNOW-832's empty-list guard, and the bare-`<span>` wrapper that made the visible pill inert until `_switch.html`'s own element became a second `<label for>` — is kept in the SNOW-645/SNOW-832 history rather than restated here. The `<label for>` lesson still applies to `includes/_switch.html`, which the nav's "Offline mode" row and the account settings page still use; see that partial's own docstring.
 
 **The row actions.** Two visible icon controls, not a menu (SNOW-658 —
 `includes/_overflow_menu.html` and `static/js/overflow_menu.js` survive with
@@ -2804,22 +2765,37 @@ DOM element `_overlayDot('l3')` returned `null` and the whole branch was
 guarded out, so SNOW-532 removed it along with the hollow
 "never cacheable" dot state it was the only user of.
 
-**Favourites and community reports are absent too, from SNOW-658.** Both had
-a row here with its own IndexedDB-backed dot (`kind: 'idb'` in
-`OVERLAY_RESOURCES`). SNOW-658 moved each overlay's toggle into the panel its
-own roundel opens — the footer switch reading "Display on the map" on all
-three — so there is no row left to hang a dot on, and both entries were
-dropped from `OVERLAY_RESOURCES` rather than relocated. That follows the call
-SNOW-645 made for the downloaded-areas row: **a panel is not a cache-state
-dashboard**, and this menu's invariant is about the rows it lists.
+**Favourites, field observations and routes are back (SNOW-904).** All three
+had a row here with its own IndexedDB-backed dot (`kind: 'idb'`); SNOW-658
+moved each overlay's toggle into the panel its own roundel opens, so there
+was no row left to hang a dot on and the entries were dropped. SNOW-904
+returns every layer control to this menu, and the three entries with them.
 
-Nothing was lost that the dashboard was answering. Both overlays are per-user
-or near-real-time data that a device fetches on demand and caches
-write-through (`window.pwaMapOverlayCache`); neither is something a user
-deliberately downloads for a trip, which is what the dots exist to report on.
-`map.js` still calls `markCached('favourites')` on the lazy-load path — it
-no-ops now, because `OVERLAY_RESOURCES` membership is the allowlist and
-`_overlayDot` returns `null` for a row that is not there.
+They are probed through **`window.pwaMapOverlayCache.getOverlay()`**, never a
+raw `window.pwaDb.get('data:map_overlays', key)`. `favourites` and `routes`
+are PRINCIPAL-SCOPED (`map_overlay_offline_cache.js`'s `PRINCIPAL_SCOPED`): a
+row written under one account does not read back under another, and a row
+written before SNOW-493 carries no principal and never reads back at all. The
+raw read ignores every bit of that, so it would report a row physically
+present but unretrievable — green would be true about storage and false about
+the only thing the dot claims, which is that this layer will draw offline.
+Harmless while `weather` (public, unpartitioned) was the only `idb` entry; a
+landmine the moment these two joined it.
+
+**Two rows have no dot, and that is a claim in itself (SNOW-904).** `slope`
+draws a third-party raster this app cannot probe — its dot had been
+permanently `unknown`, and so `display: none`, since SNOW-691. `downloads`
+draws a list that is local by definition, so its answer is always yes. Both
+render without a `.sync-dot` element rather than with one that never
+resolves.
+
+**Green is observed, never asserted (SNOW-904).** `markCached(key)` used to
+paint green outright on the reasoning that a successful load has, to all
+practical intents, populated the cache — which gave green two meanings on one
+surface. It runs the row's real probe now (`_probeFor`, extracted from
+`_refresh` so the two paths cannot drift), holding the row at the pulsing
+"Caching for offline use…" state until the answer comes back, and painting
+grey if a background `cache.put` never landed.
 
 **One country row can cover two countries (SNOW-658).** The menu lists
 bulletin PROVIDERS, and ALBINA publishes for Austria and Italy, so its single

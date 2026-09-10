@@ -7,8 +7,9 @@ last-reviewed: 2026-09-10
 
 # The boundary outlines follow the basemap, not the Bulletins rows
 
-**Decision.** The layers menu's **Bulletins** rows (SLF, Météo-France,
-ALBINA) filter bulletin **data** only — `regions-fill`, the danger
+**Decision.** The layers menu's provider rows (SLF, Météo-France, ALBINA —
+under **Bulletins** when this was written, under **Conditions** since
+SNOW-904) filter bulletin **data** only — `regions-fill`, the danger
 choropleth, and `bulletin-groupings-line`, the per-provider boundary. The
 six **Boundaries** layers — `regions-line`, `regions-label`,
 `sub-regions-line`, `sub-regions-label`, `major-regions-line`,
