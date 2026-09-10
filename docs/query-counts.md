@@ -39,8 +39,8 @@ admin-managed site banners lookup (`apps.public.banners`), which runs
 whether or not a banner exists. It is why `home` reads 7 rather than 5
 and `bulletin_historic` 9 rather than 7, and why `/help/` — a static
 page — is no longer query-free. One of the two is wasted work in the
-package's own `filter_user`; see
-[`docs/site-banners.md`](site-banners.md#the-cost).
+package's own `filter_user`, fixed in an upstream PR that is open rather
+than merged; see [`docs/site-banners.md`](site-banners.md#the-cost).
 
 ## When the count legitimately changes
 

@@ -100,6 +100,12 @@ One of the two is avoidable and lives upstream.
 unconditionally, and that method evaluates a queryset eagerly to build a
 `Q`. With `settings.MESSAGE_CUSTOM_GROUPS` empty — which it is, and which
 the model's own `clean()` enforces — the query it runs can never match a
-row. A short-circuit on an empty setting in
-[django-persistent-messages](https://github.com/yunojuno/django-persistent-messages)
-would halve the per-page cost here.
+row.
+
+The short-circuit is written and filed as
+[yunojuno/django-persistent-messages#4](https://github.com/yunojuno/django-persistent-messages/pull/4).
+It needs someone with write access on that repo to land it, and nobody
+here has it, so treat the second query as the standing cost rather than
+something about to go away. When a release does carry the fix: bump the
+pin and re-run `manage.py monitor_query_counts --commit`, which should
+take `home` back to 6 and `bulletin_historic` to 8.
