@@ -626,7 +626,13 @@ client-side download flow.
 
 The data flow on map load is: `map.js` fetches `regions.geojson?country=ch`
 and the single-date ratings leg for `readDisplayDate()` — the `?d=` day, or
-today (SNOW-793) — in parallel. The leg is skipped only when neither is
+today (SNOW-793) — in parallel. Off that critical path it then loads the
+UNION of the enabled providers' countries and the ACTIVE BASEMAP's, because
+the EAWS boundary outlines are scoped by the basemap rather than by the
+Bulletins rows (SNOW-891 — see
+[`decisions/boundaries-follow-the-basemap.md`](decisions/boundaries-follow-the-basemap.md)),
+and geometry that was never fetched draws no outline however the filter
+reads. The leg is skipped only when neither is
 known, which needs a page with no readable `data-today`; nothing is painted
 then, because the map has not been asked for a day and inventing one is the
 bug SNOW-660 removed. "Inventing" means the season's last populated day
