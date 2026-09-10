@@ -144,6 +144,21 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # into a third-party system.
         "map.route.shared",
         "map.route.claimed",
+        # SNOW-894: an uncaught exception or unhandled rejection in the
+        # browser, from static/js/error_reporting.js. The first client-side
+        # error signal the pipeline has carried — before it, every uncaught
+        # throw was invisible in production.
+        #
+        # Properties differ by opt-in state, deliberately. An opted-in
+        # report carries {kind, pathname, message, filename, lineno, colno,
+        # stack}; an opted-out one carries {kind, pathname} and nothing
+        # else. `js.error` is a CRITICAL event client-side, so it is sent
+        # either way — the reduced payload is what makes that acceptable.
+        #
+        # NEVER a query string, on either branch: the map's URLs carry
+        # ?route_share= and ?trip_share= tokens, and a share token is a
+        # capability. Same rule as map.route.shared above.
+        "js.error",
     }
 )
 

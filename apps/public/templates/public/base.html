@@ -273,6 +273,15 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below use optional chaining (window.pwaTelemetry?.emit) so    #}
         {# the load order is defensive rather than strict.                #}
         <script src="{% static 'js/telemetry.js' %}" defer></script>
+        {# SNOW-894: window.onerror / unhandledrejection -> pwaTelemetry.  #}
+        {# Loads directly after telemetry.js so it is watching as early as #}
+        {# possible: the faults most worth catching happen during the boot #}
+        {# of the scripts below, and a listener registered after them      #}
+        {# misses exactly those. It reaches window.pwaTelemetry through    #}
+        {# optional chaining like every other consumer, so this order is a #}
+        {# preference rather than a requirement — but it is the reason     #}
+        {# this tag is here and not at the end.                            #}
+        <script src="{% static 'js/error_reporting.js' %}" defer></script>
         {# SNOW-376: pure backoff/classification helpers shared by the      #}
         {# page (below) and the SW's Background Sync self-drain path       #}
         {# (static/js/sw.js, via importScripts). Must load BEFORE          #}
