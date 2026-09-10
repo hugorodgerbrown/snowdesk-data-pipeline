@@ -499,11 +499,32 @@
   }
 
   const observer = new ResizeObserver(draw);
+
+  /*
+   * Take ``layers=exploded`` back off the URL when the demo closes.
+   *
+   * The parameter is what opened the demo, and it is what map.js reads to
+   * force the Swiss winter basemap for the capture. Left in place, closing
+   * the dialog dismisses the demo for this paint only — a reload, a
+   * back/forward step, or a shared link reopens it and re-forces the
+   * basemap over the visitor's own stored choice. Closing is the visitor
+   * saying they are done, so the address bar has to agree. replaceState
+   * rather than pushState: the demo is not a history entry of its own, and
+   * every other parameter (``d``, the date) stays exactly as it was.
+   */
+  function clearExplainerParam() {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('layers') !== 'exploded') return;
+    url.searchParams.delete('layers');
+    window.history.replaceState(window.history.state, '', url.href);
+  }
+
   dialog.addEventListener('close', () => {
     closed = true;
     captureAbort.abort();
     stopAnimation();
     observer.disconnect();
+    clearExplainerParam();
   });
   dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
   syncRows();
