@@ -616,6 +616,20 @@
         // AT + IT), so it is checked only when EVERY code it switches is on.
         // Checked-when-any would claim coverage the map is not drawing.
         checked = countryCodesFor(key).every((code) => countryState[code]);
+      } else if (key === 'downloads') {
+        // SNOW-904: the downloaded-areas row, back in this menu after
+        // SNOW-645 moved it into the "Manage downloads" sheet. It is the one
+        // row whose state is NOT a key of overlayState — it is a TRI-state
+        // (SNOW-857), read raw a few hundred lines above precisely so that
+        // null ("untouched", which derives to "on while offline") stays
+        // distinguishable from an explicit 'false'.
+        //
+        // So it seeds from the DERIVED answer, and nothing on this path
+        // writes localStorage. A seeding pass that persisted what it read
+        // would convert every untouched device into "explicitly off" on its
+        // next page load and kill the auto-on for good; the picker writes
+        // through the bridge, on a real click, and only then.
+        checked = downloadedOverlayVisible;
       } else {
         checked = overlayState[key];
       }

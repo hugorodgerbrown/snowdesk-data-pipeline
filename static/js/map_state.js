@@ -141,6 +141,23 @@ const OVERLAY_STORAGE_KEY = {
 // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
 // SNOW-656 points it at ``bulletins`` rather than ``l4``.
 
+// SNOW-904: whether one collapsible section of the layers menu is open, one
+// key per section slug (``places`` / ``conditions`` / ``boundaries`` /
+// ``basemap``). A factory rather than four literals for the same reason
+// ``COUNTRY_STORAGE_KEY`` is one: the slug is already in the DOM, on each
+// heading's ``data-section-toggle``, so restating it here four times would
+// be a fifth and sixth copy of the same name to keep in step.
+//
+// Every section defaults CLOSED except ``conditions``, read with
+// ``readBoolStorage`` — a plain two-state preference, unlike the downloads
+// overlay's tri-state next to it, because "never touched" and "closed" want
+// exactly the same behaviour here.
+const LAYERS_SECTION_STORAGE_KEY = (slug) => `snowdesk.map.layers.section.${slug}`;
+
+// The one section that opens EXPANDED on a first visit. Conditions is what
+// the map is for: the danger ratings and what the mountain is doing today.
+const LAYERS_SECTION_DEFAULT_OPEN = 'conditions';
+
 // SNOW-897: overlay key -> the MapLibre layer ids that overlay controls.
 //
 // ONE table. There were two, with near-identical names and identical shape:
