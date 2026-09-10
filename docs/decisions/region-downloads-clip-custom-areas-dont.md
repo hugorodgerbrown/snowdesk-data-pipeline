@@ -87,10 +87,11 @@ check never depended on the thing that broke.
   point every consumer of a blob's `z` (`rangesToTileURLs`, `tileCount`,
   `tileGridPlan`, `blobFullyCached`) routes through, so both shapes — the
   clipped row-span map and the unchanged rectangle — are handled once.
-  This is required, not optional: `/api/region-basemap-tiles/` is
-  `Cache-Control: public, max-age=86400` with no ETag, so a returning
-  client can be served an old rectangle blob for up to 24h after this
-  ships.
+  This is required, not optional: `/api/region-basemap-tiles/` serves a
+  stale copy while it revalidates (`max-age=300`,
+  `stale-while-revalidate=86400`, with an ETag — SNOW-902), so a returning
+  client can be served an old rectangle blob until that revalidation
+  lands.
 - The progress grid's `_cellForTile` clamp becomes two steps — snap the
   row first (to the nearest one the clipped grid actually has), then clamp
   x into that row's own span — because a clipped grid's rows are no longer

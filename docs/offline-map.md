@@ -1320,9 +1320,10 @@ consumer of a blob's `z` (`rangesToTileURLs`, `tileCount`, `tileGridPlan`,
 `blobFullyCached`) routes through, so both shapes — this one and the
 custom-area download's unchanged rectangle — are handled in exactly one
 place. Dual-shape support is required, not politeness:
-`/api/region-basemap-tiles/` is `Cache-Control: public, max-age=86400`
-with no ETag, so a returning user can still be handed an old rectangle
-blob for up to 24h after a deploy.
+`/api/region-basemap-tiles/` serves a stale copy while it revalidates
+(`max-age=300`, `stale-while-revalidate=86400`, with an ETag — SNOW-902),
+so a returning user can still be handed an old rectangle blob until that
+revalidation lands.
 
 The on-map progress grid's `_cellForTile` clamp (above) is correspondingly
 a **two-step** clamp since SNOW-583: a clipped region's grid rows are no

@@ -50,9 +50,10 @@
  * 4-int rectangle ``[xmin, xmax, ymin, ymax]`` — it is now
  * ``{"<y>": [xmin, xmax]}``, one row span per present row. The
  * CUSTOM-AREA blob ``buildBlob`` (below) produces is UNCHANGED and stays
- * rectangular — a user-drawn rectangle genuinely is one — and a stale
- * `Cache-Control: max-age=86400` response can still hand back an
- * old-shape rectangle for up to 24h after a deploy. ``zoomRows`` is the
+ * rectangular — a user-drawn rectangle genuinely is one — and a response
+ * served from the stale window (`max-age=300`,
+ * `stale-while-revalidate=86400`, SNOW-902) can still hand back an
+ * old-shape rectangle until its revalidation lands. ``zoomRows`` is the
  * one accessor every consumer of a blob's ``z`` routes through so both
  * shapes are handled in exactly one place.
  *
@@ -1160,9 +1161,8 @@
    * A full blob's ``z[zoom]`` is one of:
    *   - a 4-int rectangle ``[xmin, xmax, ymin, ymax]`` — ``buildBlob``'s
    *     own shape (the custom-area download, always a rectangle) and
-   *     what a stale `max-age=86400` region response can still be for up
-   *     to 24h after a deploy — expanded here into one identical span
-   *     per row.
+   *     what a region response served from its stale window can still be
+   *     (SNOW-902) — expanded here into one identical span per row.
    *   - an object ``{"<y>": [xmin, xmax]}`` — a clipped region blob's
    *     shape (``apps.regions.services.basemap_tiles.build_region_blob``),
    *     taken as given.

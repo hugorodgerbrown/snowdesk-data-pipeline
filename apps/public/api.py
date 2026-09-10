@@ -63,6 +63,7 @@ endpoint is hit on demand when the user taps a region.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -76,7 +77,13 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseNotModified,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -145,11 +152,22 @@ _PROVIDER_BY_COUNTRY: dict[str, str] = {
 # Stored as uppercase ISO-2 codes; the query param is accepted case-insensitively.
 _VALID_GEOJSON_COUNTRIES: frozenset[str] = frozenset(COUNTRY_NAMES)
 
-# Cache lifetime for static region GeoJSON — region geometry is fixture-backed
-# and essentially never changes between deploys. Applied via decorator rather
-# than a manual header assignment so Django's cache framework tracks it
-# correctly and the session middleware cannot append Vary: Cookie.
-_GEOJSON_CACHE_MAX_AGE = 86400
+# How long a region-GeoJSON answer may be REUSED WITHOUT ASKING once it has
+# gone stale — the ``stale-while-revalidate`` window, not the ``max-age``
+# (SNOW-902). Region geometry is fixture-backed and rarely changes, so a
+# returning visitor should still get an instant answer from cache; what
+# changed is that the cache now refreshes behind that answer instead of
+# refusing to ask for a day.
+#
+# It WAS the ``max-age``, with no validator on the response, and that
+# combination has no way back: a browser holding one of these responses does
+# not ask again until the day is out. Two things went wrong with it. A
+# deployment that adds a region or redraws a boundary took 24h to reach a
+# returning visitor. And an EMPTY answer — a country whose geometry this
+# deployment does not have yet — was pinned just as hard, which is how a
+# database that gained the FR/AT/IT fixtures went on serving "no regions" for
+# the rest of the day (see ``_geojson_response``).
+_GEOJSON_STALE_WHILE_REVALIDATE = 86400
 
 # Cache lifetime for dynamic-but-slow-moving map endpoints (ratings,
 # resorts-by-region, resorts.geojson). Content only changes when a pipeline
@@ -157,6 +175,11 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # staleness while letting browsers and edge caches absorb the bulk of repeat
 # hits. Pair the decorator with @vary_on_headers("Accept-Encoding") to stop
 # SessionMiddleware from appending Vary: Cookie and killing shared caching.
+#
+# SNOW-902: also the ``max-age`` the region-GeoJSON endpoints now carry, above
+# a day-long ``stale-while-revalidate``. Five minutes is what bounds how long
+# a change takes to be NOTICED; the stale window is what keeps the answer
+# instant meanwhile.
 _DYNAMIC_CACHE_MAX_AGE = 300
 
 # Cache lifetime for settled (past the fetcher's earliest-mutable-date
@@ -223,6 +246,82 @@ _RATING_TO_INT: dict[str, int] = {
     RegionDayRating.Rating.HIGH: 4,
     RegionDayRating.Rating.VERY_HIGH: 5,
 }
+
+
+def _geojson_response(
+    request: HttpRequest, payload: dict[str, Any], *, empty: bool = False
+) -> HttpResponse:
+    """
+    Serialise a region-GeoJSON payload with an ETag and a revalidatable policy.
+
+    SNOW-902. The three region tiers and the per-region tile blob used to be
+    decorated ``@cache_control(public=True, max_age=86400)`` and nothing else,
+    which is a promise with no way back: with no validator on the response, a
+    browser holding one cannot ASK whether it is still current, so it does not
+    ask for a day.
+
+    Three things change here, and only the last is about staleness:
+
+    - an **ETag** over the serialised body, so a client that wants to check can
+      be told "unchanged" in a couple of hundred bytes instead of being sent
+      the geometry again. Strong rather than weak: the body is deterministic
+      for a given database state, so byte equality is the honest test.
+      ``GZipMiddleware`` (production, perf) appends its own ``;gzip`` marker to
+      whatever ETag it finds, consistently in both directions, so a compressed
+      response still matches itself;
+    - ``max-age`` drops to ``_DYNAMIC_CACHE_MAX_AGE`` with the old day-long
+      lifetime moving to ``stale-while-revalidate``. The cached copy is still
+      served instantly for a day — the visitor waits for nothing — but the
+      cache refreshes behind that answer, so a deployment that redraws a
+      boundary reaches a returning visitor in minutes rather than tomorrow;
+    - an **empty FeatureCollection gets no stale window at all**. An empty
+      answer does not mean "this country has no regions", it means "this
+      deployment has no geometry for it yet" — a fixture not loaded, a
+      migration not run, a backfill still to come. Pinning that for a day is
+      how a database that gained the FR/AT/IT fixtures went on drawing Swiss
+      outlines alone until the entry expired, with a hard reload no help
+      (these feeds are re-issued by the service worker, which does not carry
+      the reload's cache mode).
+
+    Offline is untouched by all of this: ``sw.js`` keeps its Cache Storage copy
+    of these feeds regardless of HTTP freshness, and that copy is what makes a
+    downloaded area readable with no network.
+
+    Args:
+        request: The incoming request, read for ``If-None-Match``.
+        payload: The FeatureCollection (or tile blob) to serialise.
+        empty: True when the payload carries no geometry, and so must not get
+            a stale window. Passed by the caller rather than sniffed from the
+            payload, because "empty" is not the same shape in every one —
+            ``region_basemap_tiles`` 404s instead of returning a blank blob,
+            so it never takes this branch.
+
+    Returns:
+        A ``JsonResponse``, or ``HttpResponseNotModified`` when the client's
+        ``If-None-Match`` already matches. Both carry the ETag and the cache
+        policy.
+
+    """
+    response: HttpResponse = JsonResponse(payload)
+    etag = f'"{hashlib.blake2b(response.content, digest_size=16).hexdigest()}"'
+    candidates = {
+        value.strip() for value in request.headers.get("If-None-Match", "").split(",")
+    }
+    if etag in candidates or "*" in candidates:
+        # A 304 repeats the validator and the policy below — a bare 304 would
+        # leave the client holding an entry it cannot check next time.
+        response = HttpResponseNotModified()
+    response["ETag"] = etag
+    if empty:
+        patch_cache_control(response, public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+    else:
+        patch_cache_control(
+            response,
+            public=True,
+            max_age=_DYNAMIC_CACHE_MAX_AGE,
+            stale_while_revalidate=_GEOJSON_STALE_WHILE_REVALIDATE,
+        )
+    return response
 
 
 def _download_summary_or_none(blob: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -655,9 +754,8 @@ def _build_weather_payload(
     return {"type": "FeatureCollection", "features": features}, oldest_fetched_at
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def regions_geojson(request: HttpRequest) -> JsonResponse:
+def regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L4 region polygons for a single country.
 
@@ -675,10 +773,11 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     extra fetch; the full blob (incl. ``z`` tile ranges) is fetched on
     demand from ``region_basemap_tiles`` only when the user clicks it.
 
-    The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
-    pair prevents Django's ``SessionMiddleware`` from appending
-    ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
-    anonymous — it is safe to cache publicly for 24 hours.  ``Vary: Cookie``
+    Caching is set by ``_geojson_response``, not a decorator: an ETag, a
+    five-minute ``max-age`` over a day-long ``stale-while-revalidate``, and no
+    stale window at all on an empty answer (SNOW-902). ``@vary_on_headers``
+    stays, and is what prevents Django's ``SessionMiddleware`` from appending
+    ``Vary: Cookie`` on the response.  ``Vary: Cookie``
     is also suppressed by exempting this path from ``PosthogContextMiddleware``
     via ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``
     (SNOW-299) — without that exemption the middleware would read
@@ -688,7 +787,7 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
+        A JSON response with a FeatureCollection payload, or 400 on bad input.
 
     """
     country_param = request.GET.get("country", "").upper()
@@ -750,17 +849,15 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
+    return _geojson_response(
+        request,
+        {"type": "FeatureCollection", "features": features},
+        empty=not features,
     )
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def major_regions_geojson(request: HttpRequest) -> JsonResponse:
+def major_regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L1 EAWS major regions for a single country.
 
@@ -772,15 +869,15 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     SNOW-521: offline-basemap download is a **MicroRegion-only** feature
     — this tier never carries a ``properties.download`` key.
 
-    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
-    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
-    ``regions_geojson`` for the full rationale.
+    ``@vary_on_headers`` prevents Django's ``SessionMiddleware`` from
+    appending ``Vary: Cookie``; the cache policy itself comes from
+    ``_geojson_response``.  See ``regions_geojson`` for the full rationale.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
+        A JSON response with a FeatureCollection payload, or 400 on bad input.
 
     """
     country_param = request.GET.get("country", "").upper()
@@ -806,17 +903,15 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
+    return _geojson_response(
+        request,
+        {"type": "FeatureCollection", "features": features},
+        empty=not features,
     )
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
+def sub_regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L2 EAWS sub-regions for a single country.
 
@@ -828,15 +923,15 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     SNOW-521: offline-basemap download is a **MicroRegion-only** feature
     — this tier never carries a ``properties.download`` key.
 
-    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
-    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
-    ``regions_geojson`` for the full rationale.
+    ``@vary_on_headers`` prevents Django's ``SessionMiddleware`` from
+    appending ``Vary: Cookie``; the cache policy itself comes from
+    ``_geojson_response``.  See ``regions_geojson`` for the full rationale.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload, or 400 on bad input.
+        A JSON response with a FeatureCollection payload, or 400 on bad input.
 
     """
     country_param = request.GET.get("country", "").upper()
@@ -869,18 +964,16 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
                 "properties": properties,
             }
         )
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-        }
+    return _geojson_response(
+        request,
+        {"type": "FeatureCollection", "features": features},
+        empty=not features,
     )
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
 @require_GET
-def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
+def region_basemap_tiles(request: HttpRequest) -> HttpResponse:
     """
     Return the full precomputed ``basemap_download`` blob for one MicroRegion.
 
@@ -897,16 +990,17 @@ def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
     download for most regions.
 
     Region geometry — and therefore this blob — is static reference
-    data, so the same ``@cache_control(public=True, max_age=86400)`` +
-    ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the
-    geojson endpoints applies. See ``regions_geojson`` for the full
-    ``Vary: Cookie`` rationale.
+    data, so it takes the same ``_geojson_response`` policy and the same
+    ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the geojson
+    endpoints. It never reaches that helper's empty branch: a region with no
+    computed blob 404s above rather than returning a blank one. See
+    ``regions_geojson`` for the full ``Vary: Cookie`` rationale.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with the blob, or 400 (missing ``?id=``) / 404
+        A JSON response with the blob, or 400 (missing ``?id=``) / 404
         (unknown region or no computed blob).
 
     """
@@ -918,7 +1012,7 @@ def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
     if region is None or not region.basemap_download:
         raise Http404(f"No computed basemap_download for region {region_id!r}")
 
-    return JsonResponse(region.basemap_download)
+    return _geojson_response(request, region.basemap_download)
 
 
 @vary_on_headers("Accept-Encoding")
