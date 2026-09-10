@@ -42,7 +42,7 @@ ROUTER = REPO_ROOT / "CLAUDE.md"
 # audits, QA scripts, research spikes, images) rather than living
 # documentation. They are exempt from frontmatter and routing requirements.
 EXCLUDED_DIRS: frozenset[str] = frozenset(
-    {"code-reviews", "page-audits", "qa", "research", "screenshots"}
+    {"code-reviews", "map-reviews", "page-audits", "qa", "research", "screenshots"}
 )
 
 VALID_STATUSES: frozenset[str] = frozenset({"current", "draft", "historical"})
