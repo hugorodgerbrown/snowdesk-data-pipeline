@@ -148,7 +148,7 @@ class TestAvalancheProblem:
     """Tests for the AvalancheProblem dataclass."""
 
     def test_from_dict_minimal(self) -> None:
-        """Only problemType is required."""
+        """problemType alone leaves every other field at its default."""
         problem = AvalancheProblem.from_dict({"problemType": "wet_snow"})
         assert problem.problem_type == "wet_snow"
         assert problem.comment is None
@@ -161,6 +161,18 @@ class TestAvalancheProblem:
         assert problem.frequency is None
         assert problem.subdivision is None
         assert problem.avalanche_type is None
+
+    def test_from_dict_without_problem_type(self) -> None:
+        """A problem with no problemType parses with problem_type None (SNOW-901)."""
+        problem = AvalancheProblem.from_dict(
+            {"comment": "No distinct problem for the following day."}
+        )
+        assert problem.problem_type is None
+        assert problem.comment == "No distinct problem for the following day."
+
+    def test_untyped_problem_is_not_wet(self) -> None:
+        """is_wet is False when there is no problem type to classify."""
+        assert AvalancheProblem.from_dict({}).is_wet is False
 
     def test_from_dict_with_all_fields(self) -> None:
         """All optional fields are mapped from camelCase to snake_case."""

@@ -153,9 +153,10 @@ class AvalancheProblem:
     """
     A single problem entry from a bulletin's ``avalancheProblems`` array.
 
-    ``problem_type`` is one of the values in :class:`AvalancheProblemType`.
-    All other fields are optional and reflect what the issuing AWS chose
-    to publish for the problem.
+    ``problem_type`` is one of the values in :class:`AvalancheProblemType`,
+    or None when the issuing service published none. All other fields are
+    optional and reflect what the issuing AWS chose to publish for the
+    problem.
 
     The two providers publish opposite ends of the EAWS model: SLF emits the
     matrix *output* (``danger_rating_value``, ``comment``, and the ``"+"/"="/"-"``
@@ -166,7 +167,12 @@ class AvalancheProblem:
     publish it.
     """
 
-    problem_type: str
+    # problem_type is None when the issuing service published a problem with
+    # no ``problemType``. SLF made the field optional in its 2026/27 CAAML
+    # interface (SNOW-900): a problem may now carry prose and a rating without
+    # naming an EAWS type. Absent is not the same as unrecognised — a type
+    # outside the enum is still a fault, and the render model raises on one.
+    problem_type: str | None = None
     comment: str | None = None
     danger_rating_value: str | None = None
     valid_time_period: str | None = None
@@ -187,7 +193,7 @@ class AvalancheProblem:
         ch = custom_data.get("CH") or {}
         albina = custom_data.get("ALBINA") or {}
         return cls(
-            problem_type=data["problemType"],
+            problem_type=data.get("problemType"),
             comment=data.get("comment"),
             danger_rating_value=data.get("dangerRatingValue"),
             valid_time_period=data.get("validTimePeriod"),
