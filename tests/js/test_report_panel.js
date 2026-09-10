@@ -46,7 +46,6 @@ document.body.innerHTML = `
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
       <button type="button" data-panel-add>Report an observation</button>
-      <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
 `;
@@ -59,11 +58,6 @@ await import('../../static/js/report.js');
 
 const btn = document.getElementById('report-btn');
 const sheet = document.getElementById('report-sheet');
-
-/** The switch inside the currently-rendered panel body. */
-function overlaySwitch() {
-  return sheet.querySelector('#map-community-reports-overlay-toggle');
-}
 
 /**
  * Close the panel and open it again.
@@ -184,41 +178,11 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
   });
 });
 
-describe('the overlay switch', () => {
-  it('opens reflecting the overlay itself, not a flag of its own', () => {
-    overlay.isEnabled.mockReturnValue(true);
-    btn.click();
-    expect(overlaySwitch().checked).toBe(true);
-
-    overlay.isEnabled.mockReturnValue(false);
-    reopen();
-    expect(overlaySwitch().checked).toBe(false);
-  });
-
-  it('drives show()/hide() on the bridge', () => {
-    btn.click();
-    const toggle = overlaySwitch();
-
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(overlay.show).toHaveBeenCalledTimes(1);
-
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(overlay.hide).toHaveBeenCalledTimes(1);
-  });
-
-  it('still works after a re-open, because the listener is on the sheet', () => {
-    btn.click();
-    reopen();
-
-    const toggle = overlaySwitch();
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-
-    expect(overlay.show).toHaveBeenCalledTimes(1);
-  });
-});
+// SNOW-904 removed this file's "the overlay switch" block. The panel no
+// longer carries a "Display on the map" switch — every layer is switched
+// from the map's layers menu, whose row drives the same
+// window.pwaCommunityReportsOverlay bridge. Its coverage lives in
+// tests/js/test_map_layers_menu.js.
 
 describe('a list load that fails', () => {
   it.each(['htmx:responseError', 'htmx:sendError'])(

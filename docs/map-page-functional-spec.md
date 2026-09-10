@@ -110,9 +110,8 @@ things — and it meant the borders, which interfere with nothing, could not
 stay up while the infill came off.
 
 The infill's original reason to come off was the downloaded-areas overlay,
-which paints over the very same polygons: **the fill and the downloads
-panel's "Display on the map" switch could not both be on**, and the two
-controls mirrored each other. That is no longer true. SNOW-663 made the
+which paints over the very same polygons: **the fill and the downloaded-areas
+overlay could not both be on**, and the two controls mirrored each other. That is no longer true. SNOW-663 made the
 download squares a hatch the danger colour reads through, so both can be on
 at once and neither control moves the other. The reversed decision, and what
 of its mechanism survives:
@@ -393,27 +392,56 @@ reason all three of those sentences are there.
 
 ---
 
-## 3.6 What the layer menu lists (SNOW-658)
+## 3.6 What the layer menu lists (SNOW-904)
 
-The layer menu (the stacked-layers roundel) is the map's **view controls for
-published data**. Its sections say what their rows are:
+The layer menu (the stacked-layers roundel) is the map's **one control for
+everything it draws**. It is titled "Map display options" and carries a live
+"N layers on" count of the overlay rows that are switched on — never the
+basemap radio, which is always exactly one.
+
+Four sections, each collapsible and each remembering how it was left, with
+**Conditions** the one open on a first visit:
 
 | Section | Rows | What a row switches |
 |---------|------|---------------------|
-| **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for — the choropleth and the groupings boundary, and nothing else (SNOW-891) |
-| **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Locations** | Resorts | Named places geocoded onto regions |
-| **Terrain** | Slope angle (absent without `SLOPE_TILE_URL`) | Steepness shading |
-| **Base map** | one row per basemap | The geographic backdrop |
+| **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
+| **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
+| **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
+| **Basemap** | one radio per basemap · Display slope angles (absent without `SLOPE_TILE_URL`), Display downloaded areas | The geographic backdrop; then, under a hairline, the two things drawn ON TOP of whichever one is chosen |
 
-**Favourites and community reports are not in it.** Both are
-user-generated, and each already has a roundel of its own, so each toggle
-lives in the panel that roundel opens — as the footer switch labelled
-"Display on the map", the same wording on all three UGC panels (SNOW-658)
-— alongside the list of what the user has saved and the control to add
-another. That is the pattern SNOW-634 set
-for offline downloads, generalised: one subject, one way in. Their
-offline-status dots did not move with them; see
+Four things about that layout are decisions rather than accidents, and a
+tidy-up would undo each of them:
+
+* **Nothing is indented under anything.** A hairline separates a sub-group.
+  An indent reads as a child of the row above it, and with collapsible
+  sections it would also hide rows the collapsed heading does not govern.
+* **Only the first Conditions row says "bulletins".** The first row sets the
+  pattern and the reader carries it down.
+* **Only the two Basemap overlay rows carry "Display ".** There the verb
+  separates "additionally draw this" from the radio group's "choose this".
+* **The Boundaries tiers are checkboxes, not radios.** They are independent;
+  only the opening view names one, via `settings.MAP_DEFAULT_BOUNDARY`.
+
+Each heading also carries a derived second line naming what is on inside it
+— "None selected" when nothing is, the row names when they fit, "N of M on"
+when they would not — so a collapsed section still answers its own question.
+
+**Everything is in it, including the user's own data.** Downloads,
+favourites, field observations and routes were toggled from a "Display on
+the map" switch in the footer of whichever panel their roundel opened
+(SNOW-634, generalised by SNOW-658 on a "one subject, one way in" rule).
+SNOW-904 reversed that: a reader asking what can go on their map had to open
+five surfaces to find out, and no single surface answered it. Each row
+drives the same `window.pwa*Overlay` bridge its switch drove, so nothing
+about any overlay changed.
+
+**Every row renders for every visitor**, signed in or not. Favourites and
+routes need an account, so tapping one while signed out opens the sign-in
+sheet rather than ticking a box over an empty layer; field observations are
+public data and work signed out. Hiding a row would leave the menu a
+different shape for different people and would hide a working view setting.
+
+For what the dot on a row means — and why two rows have none — see
 [`offline-map.md`](offline-map.md).
 
 ---
@@ -500,10 +528,12 @@ so the control reads correctly before JS runs.
 
 Downloads, Favourites and Field observations each open a panel from their
 own roundel in the bottom-right stack. The three share one shape — a
-header carrying the roundel's own mark, a list of what the user has, an
-"add" call to action, and a footer switch labelled "Display on the map" —
-and **two layouts**, chosen by viewport width at the `sm` breakpoint
-(640px).
+header carrying the roundel's own mark, a list of what the user has, and an
+"add" call to action — and **two layouts**, chosen by viewport width at the
+`sm` breakpoint (640px).
+
+Each carried a fourth part, a footer switch labelled "Display on the map",
+until SNOW-904 made §3.6's layers menu the sole control for every layer.
 
 **Below `sm`, a panel is a docked sheet**: full-width, anchored to the
 bottom edge, covering the map beneath it. That is the right shape on a
@@ -542,7 +572,7 @@ side effect:
 * **the overlay switches on** if the user had it off. Flying to a route
   with its layer hidden lands on an empty map, which reads as a broken
   button rather than as a hidden layer. This writes the same persisted
-  preference the panel's own "Display on the map" switch writes;
+  preference the layers menu's own row writes;
 * **the panel closes.** Below `sm` it covers the map entirely (see above),
   so a camera move behind it would be invisible on the device most likely
   to be holding it open. It closes at every width, because one behaviour
@@ -566,12 +596,11 @@ three rather than more on one.
 
 Each of the four roundels — downloads, favourites, field observations and,
 since SNOW-687, routes — shows whether **its own** overlay is currently
-drawn: a coloured rim, in the same colour as the ON position of the
-"Display on the map" switch that controls it, plus the same fact in the
-roundel's accessible label ("Your favourites — shown on the map"). One
-signal, one meaning, on all of them.
+drawn: a coloured rim, plus the same fact in the roundel's accessible label
+("Your favourites — shown on the map"). One signal, one meaning, on all of
+them.
 
-It is live rather than a snapshot: the rim follows the panel switch, and
+It is live rather than a snapshot: the rim follows the layers-menu row, and
 also follows anything else that takes an overlay off the map — positioning
 a pin clears every overlay for the duration, and the roundels say so
 without any panel being open. It survives a basemap switch, which re-draws
@@ -631,8 +660,8 @@ paint the ACTIVE basemap's colour, never a basemap some earlier download
 happened to use — a control sitting on the Swisstopo map is never painted
 in OpenFreeMap's colour, whatever is stored underneath it. Per-area basemap
 identity is the "Manage downloads" sheet's job, one tap away. The
-downloaded-areas overlay follows the same rule: with "Display on the map"
-on, it draws the ACTIVE basemap's downloaded tiles in that basemap's
+downloaded-areas overlay follows the same rule: with "Display downloaded
+areas" on, it draws the ACTIVE basemap's downloaded tiles in that basemap's
 colour and no other basemap's, and switching basemap repaints it with the
 new one's areas rather than switching it off. Two basemaps' squares over
 the same ground would describe neither basemap's coverage. The per-region

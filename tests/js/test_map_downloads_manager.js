@@ -122,12 +122,6 @@ function buildFixture() {
         <div>
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
-        <div data-panel-overlay-toggle>
-          <label for="map-downloads-overlay-toggle">Display on the map</label>
-          <label for="map-downloads-overlay-toggle">
-            <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
-          </label>
-        </div>
       </div>
     </template>
     <template id="map-downloads-group-template">
@@ -773,56 +767,22 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     await settle();
   });
 
-  it("paints the toggle from the overlay's real visibility, not a flag of its own", async () => {
-    seed({});
-    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
+  it('renders no overlay switch of its own (SNOW-904)', async () => {
+    // This sheet drove the overlay from a "Display on the map" switch at
+    // its foot: it painted the switch from isEnabled(), called show()/hide()
+    // on change, and mirrored `snowdesk:downloaded-overlay-changed` back
+    // onto it. All three moved to the layers menu's "Display downloaded
+    // areas" row — see tests/js/test_map_layers_menu.js — so what this
+    // sheet must now do is leave the overlay alone entirely.
+    seed({ 'basemap.regions': REGIONS });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(
-      document.getElementById('map-downloads-overlay-toggle').checked,
-    ).toBe(true);
-  });
-
-  it('the "Display on the map" toggle drives show()/hide() directly', async () => {
-    seed({});
-    await loadModule();
-    openSheet();
-    await settle();
-
-    const toggle = document.getElementById('map-downloads-overlay-toggle');
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    // Once, from this change alone — open() no longer calls it (SNOW-656).
-    expect(window.pwaDownloadedOverlay.show).toHaveBeenCalledTimes(1);
-
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(window.pwaDownloadedOverlay.hide).toHaveBeenCalledTimes(1);
-  });
-
-  it('mirrors a change made from outside the sheet (SNOW-656)', async () => {
-    // The in-sheet switch is no longer the only writer: switching the
-    // Bulletins row on from the layers menu switches the squares off, and a
-    // sheet still open behind that menu must not sit on a checked switch for
-    // an overlay that is no longer drawn.
-    seed({});
-    window.pwaDownloadedOverlay.isEnabled.mockReturnValue(true);
-    await loadModule();
-    openSheet();
-    await settle();
-
-    const toggle = document.getElementById('map-downloads-overlay-toggle');
-    expect(toggle.checked).toBe(true);
-
-    document.dispatchEvent(
-      new CustomEvent('snowdesk:downloaded-overlay-changed', {
-        detail: { visible: false },
-      }),
-    );
-
-    expect(toggle.checked).toBe(false);
+    expect(document.getElementById('map-downloads-overlay-toggle')).toBeNull();
+    expect(document.querySelector('[data-panel-overlay-toggle]')).toBeNull();
+    expect(window.pwaDownloadedOverlay.show).not.toHaveBeenCalled();
+    expect(window.pwaDownloadedOverlay.hide).not.toHaveBeenCalled();
   });
 });
 
@@ -1516,29 +1476,10 @@ describe('the budget readout', () => {
   });
 });
 
-describe('the "Display on the map" strip (SNOW-832)', () => {
-  it('is hidden while there is nothing downloaded to display', async () => {
-    // The switch drives the squares this panel's downloads draw. With no
-    // downloads there are no squares, so it is a control that cannot do
-    // what it says — and a user who turns it on and sees no change learns
-    // the wrong thing about it.
-    seed({});
-    await loadModule();
-    openSheet();
-    await settle();
-
-    expect(document.querySelector('[data-panel-overlay-toggle]').hidden).toBe(true);
-  });
-
-  it('comes back as soon as there is a download for it to show', async () => {
-    seed({ 'basemap.regions': REGIONS });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    expect(document.querySelector('[data-panel-overlay-toggle]').hidden).toBe(false);
-  });
-});
+// SNOW-904 removed SNOW-832's empty-list guard and the block that covered
+// it. That guard hid the "Display on the map" strip while this panel had
+// nothing to display, because a switch that cannot do what it says teaches
+// the wrong thing. There is no strip to hide — see the bridge block above.
 
 describe('account-only rows (SNOW-749)', () => {
   // An area on the user's ACCOUNT that this device does not hold — saved

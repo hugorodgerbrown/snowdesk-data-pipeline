@@ -30,7 +30,6 @@ document.body.innerHTML = `
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
       <button type="button" data-panel-add>Add a favourite</button>
-      <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
   <template id="favourite-create-template"></template>
@@ -77,9 +76,14 @@ describe('anonymous tap on the favourites roundel', () => {
     expect(sheet.querySelector('[data-panel-add]')).toBeNull();
   });
 
-  it('keeps the overlay switch — a hidden control reads as a bug', () => {
-    expect(sheet.querySelector('#map-favourites-overlay-toggle')).not.toBeNull();
-  });
+  // SNOW-658 asserted here that the panel KEEPS its overlay switch for an
+  // anonymous visitor, on the rule that a hidden control reads as a bug.
+  // SNOW-904 removed all four panel switches, so there is no longer a control
+  // on this surface to keep. The rule did not go with it — it moved to the
+  // layers menu, which is now the only place the favourites overlay is
+  // toggled, and where tests/js/test_map_layers_menu.js asserts that the row
+  // renders for a signed-out visitor and hands them to the sign-in sheet
+  // rather than disappearing.
 
   it('carries a dismiss control, so the panel is not a dead end (SNOW-474)', () => {
     // The real template's own includes/_sheet_header.html renders it; this

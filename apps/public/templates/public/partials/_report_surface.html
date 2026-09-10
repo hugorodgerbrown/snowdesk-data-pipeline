@@ -57,7 +57,7 @@ Context expected:
     {# so before the user adds another.                                     #}
     {% trans "Reports are shared with the community." as report_context_line %}
     {% trans "Reports" as report_section_label %}
-    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" %}
+    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label %}
 </template>
 {# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}

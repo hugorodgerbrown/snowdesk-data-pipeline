@@ -46,7 +46,6 @@ from apps.public._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
-    MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1197,22 +1196,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="map-overlay-toggle",
-        label="Map overlay toggle",
-        description=(
-            "The 'Show X on the map' footer panel shared by the three map "
-            "sheets (SNOW-658) — a label plus includes/_switch.html in a "
-            "bg-tag box. A view control for the map BEHIND the sheet, not a "
-            "row in the list the sheet is about; the owning JS module binds "
-            "the switch by id and drives the matching window.pwa*Overlay "
-            "bridge in static/js/map.js."
-        ),
-        kind="components",
-        partial="includes/_map_overlay_toggle.html",
-        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
         slug="ugc-panel",
         label="UGC panel",
         description=(
@@ -1222,9 +1205,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "opening roundel's icon plus the title, at one size for all "
             "three), context strip (one line saying where the data lives), "
             "list (mono uppercase section label, then hairline-separated "
-            "rows — never cards), one add-CTA, and the 'Display on the "
-            "map' switch at the foot. The icon, rows and header-extra slots "
-            "take template paths, since Django has no slot mechanism."
+            "rows — never cards) and one add-CTA. SNOW-904 removed a fifth "
+            "part, the 'Display on the map' switch: every layer is chosen "
+            "from the map's own layers menu now, so a panel is about its "
+            "list alone. The icon, rows and header-extra slots take "
+            "template paths, since Django has no slot mechanism."
         ),
         kind="components",
         partial="includes/_ugc_panel.html",

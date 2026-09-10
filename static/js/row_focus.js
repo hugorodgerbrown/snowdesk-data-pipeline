@@ -32,8 +32,8 @@
  *      switched off lands on an empty map, which reads as a broken button
  *      rather than as a hidden layer. Somebody who presses "take me to
  *      this" means to see it, so the panel's own overlay bridge is asked
- *      to show — the same call the panel's "Display on the map" switch
- *      makes, so the preference persists and the lazy load runs. The
+ *      to show — the same call the layers menu's own row makes, so the
+ *      preference persists and the lazy load runs. The
  *      ``/map/?favourite=<uuid>`` deep link set this precedent and its own
  *      note in static/js/map.js explains why flipping `visibility` by hand
  *      instead would be undone by the next thing to re-read the
@@ -256,8 +256,8 @@
    *
    * Its own function since SNOW-886 because there are now two callers —
    * a row press and a just-created item — and the answer must not differ
-   * between them. It is the same call the panel's "Display on the map"
-   * switch makes, so the preference persists and the lazy load runs.
+   * between them. It is the same call the layers menu's own row makes
+   * (SNOW-904), so the preference persists and the lazy load runs.
    *
    * isEnabled(), the persisted preference — NOT isVisible(), which is
    * what MapLibre is drawing. An overlay enabled offline with nothing

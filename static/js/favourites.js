@@ -20,11 +20,11 @@
  * Rename — the pencil, and only the pencil — puts the row's own label
  * into an inline edit (static/js/inline_rename.js, shared with the
  * downloads panel) and posts the committed name from below. The panel
- * offers [data-panel-add] to place another, and carries the "Display on
- * the map" switch that used to be a row in the layers menu (it drives
- * window.pwaFavouritesOverlay in map.js). This
- * follows SNOW-634's downloads pattern: user-generated data gets its own
- * roundel, its own panel, and its panel owns the overlay switch.
+ * offers [data-panel-add] to place another. It carried a "Display on the
+ * map" switch for window.pwaFavouritesOverlay between SNOW-658 and
+ * SNOW-904; that ticket returned every layer control to the map's layers
+ * menu, so the panel is about its own list and the menu's Favourites row
+ * drives the bridge.
  *
  * Flow when eligible (authenticated), using the shared place-picker
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
@@ -264,9 +264,10 @@
   /** Clone #favourite-list-template into the sheet and populate it.
    *
    * Eligible: the rows load over HTMX from favourites:list. Anonymous: the
-   * rows and the add CTA are removed and a sign-in CTA takes their place —
-   * but the overlay switch stays, because it is a view control for the map
-   * behind the sheet, not a row in a list the visitor doesn't have.
+   * rows and the add CTA are removed and a sign-in CTA takes their place.
+   * (The overlay switch that used to stay put here through both branches —
+   * a view control for the map behind the sheet — left with every other
+   * panel switch in SNOW-904.)
    *
    * @returns {boolean} Whether the panel was rendered — false when the
    *   surface carries no list template, so the caller can fall back.
@@ -275,20 +276,6 @@
     if (!listTemplate) return false;
     sheet.replaceChildren();
     sheet.appendChild(listTemplate.content.cloneNode(true));
-
-    // Reflect the overlay's REAL state rather than a flag of this module's
-    // own, the way map_downloads_manager.js's render() does.
-    //
-    // SNOW-658 review: isEnabled(), the persisted preference — NOT
-    // isVisible(), which now answers from the layers MapLibre is drawing.
-    // The switch states what the user asked for; the roundel's ring states
-    // whether it reached the map. Offline with nothing cached the two
-    // disagree, and that is the point: the switch stays on (their choice
-    // took, and will restore at the next boot) while the ring is off
-    // (nothing is drawn). Painting this switch from paint would instead
-    // show the user's own setting silently flipping itself off.
-    const toggle = sheet.querySelector('#map-favourites-overlay-toggle');
-    if (toggle) toggle.checked = !!window.pwaFavouritesOverlay?.isEnabled?.();
 
     if (!IS_ELIGIBLE) {
       const addButton = sheet.querySelector('[data-panel-add]');
@@ -551,17 +538,11 @@
     });
   }
 
-  // SNOW-658: the overlay switch drives window.pwaFavouritesOverlay directly —
-  // show()/hide() are the only writers of that overlay's visibility, and
-  // showListPanel() reads isVisible() back, so the two can never drift. No
-  // re-render: nothing else in the panel depends on this state.
-  sheet.addEventListener('change', function (event) {
-    const target = /** @type {HTMLInputElement} */ (event.target);
-    if (!target || !target.matches) return;
-    if (!target.matches('#map-favourites-overlay-toggle')) return;
-    if (target.checked) window.pwaFavouritesOverlay?.show();
-    else window.pwaFavouritesOverlay?.hide();
-  });
+  // SNOW-904: the "Display on the map" switch this panel carried, and the
+  // change listener that drove window.pwaFavouritesOverlay from it, are
+  // gone. The layers menu is the sole control for every layer now, and its
+  // Favourites row drives the same bridge — so the overlay is unchanged and
+  // this module simply no longer owns a view control for it.
 
   // SNOW-658: the list is fetched, and this panel opens offline while its
   // list does not load offline. Say so, rather than leaving the loading line

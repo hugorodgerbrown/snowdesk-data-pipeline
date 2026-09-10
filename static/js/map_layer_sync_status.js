@@ -112,19 +112,25 @@
  * ``refresh()`` must never reject, since it runs from a UI event handler
  * with no caller-side error handling.
  *
- * Live update (SNOW-505 iteration): ``refresh()`` re-probes real cache
- * state and runs on every popover open. ``markCached(key)`` is the
- * optimistic real-time counterpart — static/js/map.js calls it the moment
- * a lazy overlay tier's toggle-on load succeeds, flipping that row's dot
- * green immediately so the user sees the toggle action populate the offline
- * cache, rather than only discovering it on the next popover open. It is
- * deliberately optimistic: a successful online load routes the GeoJSON
- * through the SW's STATIC_PATHS stale-while-revalidate (or writes the
- * favourites/community_reports IDB overlay row), so the resource is — to
- * all practical intents — now cached; the next ``refresh()`` re-verifies
- * against real cache state and self-corrects in the rare case a background
- * ``cache.put`` didn't land. ``markCached`` no-ops for any key absent from
- * ``OVERLAY_RESOURCES``.
+ * Live update: ``refresh()`` re-probes real cache state and runs on every
+ * popover open. ``markCached(key)`` is the real-time counterpart —
+ * static/js/map.js calls it the moment a lazy overlay tier's toggle-on load
+ * succeeds, so the user watches their click populate the offline cache
+ * rather than discovering it on the next popover open. ``markCached``
+ * no-ops for any key absent from ``OVERLAY_RESOURCES``.
+ *
+ * SNOW-904: it is NOT optimistic any more. It used to assert green — a
+ * bare ``_applyState(dot, true, …)`` on the reasoning that a successful
+ * online load has, to all practical intents, populated the cache. That
+ * left green with two meanings on one surface: "probed and present" on
+ * every row ``refresh()`` had touched, and "a fetch resolved and we assume
+ * the write landed" on every row a toggle had just loaded. This menu's
+ * whole job is that green means one thing, so ``markCached`` now runs the
+ * SAME probe ``refresh()`` runs (``_probeFor``) and paints what comes
+ * back. The ``markSyncing`` → ``MIN_SYNCING_MS`` dwell is unchanged, so
+ * the row holds the pulsing "Caching for offline use…" state until the
+ * probe confirms — and goes grey rather than green if a background
+ * ``cache.put`` never landed.
  *
  * Not listed: the bulletin-boundary layer (internal key ``l3``). It has no
  * layers-menu row — SNOW-521 removed it, and since PR #506 the boundary
@@ -137,8 +143,6 @@
 
 (function () {
   'use strict';
-
-  const IDB_STORE = 'data:map_overlays';
 
   // SNOW-620: every label below is server-translated into the strings
   // template _map_embed.html renders, and read back here. The literals are
@@ -197,9 +201,17 @@
   // The core row→resource constant. Keys are the overlay rows'
   // ``data-overlay-key`` values; the basemap indicator and (SNOW-524) the
   // country rows are handled separately — the country rows' resource set is
-  // per-code, so it lives in COUNTRY_FEED_PATHS below rather than here. The
-  // Options rows (autozoom, cache-now) are deliberately absent from both, so
-  // they never get a dot.
+  // per-code, so it lives in COUNTRY_FEED_PATHS below rather than here.
+  //
+  // SNOW-904: a row absent from here gets no dot AT ALL, and two rows are
+  // absent on purpose rather than by omission. ``slope`` draws a
+  // third-party raster, not a Snowdesk feed or an IndexedDB row, so it can
+  // make no honest claim — its dot had been permanently ``unknown``
+  // (display:none) since SNOW-691, and the markup for it is gone now.
+  // ``downloads`` draws a list that is local-only, so its answer is always
+  // yes and a dot saying so carries no information. (The comment this
+  // replaces named "the Options rows (autozoom, cache-now)", which have not
+  // been in the template for several tickets.)
   const OVERLAY_RESOURCES = Object.freeze({
     l1: Object.freeze({
       kind: 'geojson',
@@ -230,16 +242,16 @@
     // Not country-scoped: /api/resorts.geojson takes no ``?country=`` param,
     // it's one payload for every country.
     resorts: Object.freeze({ kind: 'geojson', path: '/api/resorts.geojson' }),
-    // SNOW-658: the ``favourites`` and ``community_reports`` entries lived
-    // here while those overlays were rows in this menu. Both moved into the
-    // panel their own roundel opens (favourites.js / report.js), so there is
-    // no row to hang a dot on — the same call SNOW-645 made for the
-    // downloaded-areas row: drop the dot rather than relocate it. This menu's
-    // invariant is about the rows it lists, and neither is one of them.
-    //
-    // ``markCached('favourites')`` is still called by map.js's lazy-load path.
-    // It no-ops now — the membership check in ``_markCachedNow`` is the
-    // allowlist, and ``_overlayDot`` returns null for a row that isn't there.
+    // SNOW-904: the three user-data overlays are rows in this menu again,
+    // so their dots are back. All three are ``idb`` — each overlay's
+    // payload is written through to ``data:map_overlays`` by map.js's
+    // ``_loadOverlay`` — and all three are probed through
+    // ``window.pwaMapOverlayCache.getOverlay()`` rather than a raw
+    // ``pwaDb.get``; see ``_probeIdbRow`` for why that distinction is the
+    // whole point for two of them.
+    favourites: Object.freeze({ kind: 'idb', key: 'favourites' }),
+    community_reports: Object.freeze({ kind: 'idb', key: 'community_reports' }),
+    routes: Object.freeze({ kind: 'idb', key: 'routes' }),
     // SNOW-761: the Weather overlay's payload. ``idb``, not ``geojson`` —
     // its endpoint is public, but what it carries is a mutable forecast,
     // not static reference data suited to sw.js's STATIC_PATHS shell cache
@@ -663,19 +675,33 @@
   }
 
   /**
-   * True when ``window.pwaDb``'s ``data:map_overlays`` store holds a row
-   * for ``key`` carrying a truthy ``.geojson`` payload. Never throws — a
-   * missing/broken ``window.pwaDb`` resolves to ``false``, matching the
-   * "DB probe path unavailable" case in the module docstring.
+   * True when the overlay cache can hand back a payload for ``key``.
    *
-   * @param {string} key - ``'favourites'`` or ``'community_reports'``.
+   * SNOW-904: read through ``window.pwaMapOverlayCache.getOverlay()``, NOT
+   * a raw ``window.pwaDb.get('data:map_overlays', key)``. ``favourites`` and
+   * ``routes`` are PRINCIPAL-SCOPED (map_overlay_offline_cache.js's
+   * ``PRINCIPAL_SCOPED``): a row written under one account does not read
+   * back under another, and a row written before SNOW-493 carries no
+   * principal and never reads back at all. The raw read ignores every bit
+   * of that, so it would report a row physically present but
+   * unretrievable — green would be true about storage and false about the
+   * only thing the dot claims, which is that this layer will draw offline.
+   *
+   * Harmless while ``weather`` was the only ``idb`` entry (it is public and
+   * unpartitioned); a landmine the moment favourites and routes joined it.
+   *
+   * Never throws — a missing or broken cache module resolves to ``false``,
+   * matching the "DB probe path unavailable" case in the module docstring.
+   *
+   * @param {string} key - ``'favourites'``, ``'community_reports'``,
+   *   ``'routes'`` or ``'weather'``.
    * @returns {Promise<boolean>}
    */
   async function _probeIdbRow(key) {
     try {
-      if (typeof window.pwaDb !== 'object' || window.pwaDb === null) return false;
-      const record = await window.pwaDb.get(IDB_STORE, key);
-      return !!(record && record.geojson);
+      const cache = window.pwaMapOverlayCache;
+      if (!cache || typeof cache.getOverlay !== 'function') return false;
+      return !!(await cache.getOverlay(key));
     } catch (_e) {
       return false;
     }
@@ -817,6 +843,31 @@
     return !!key && keys.has(key);
   }
 
+  /**
+   * The probe that answers whether one overlay row's payload is in a cache
+   * right now.
+   *
+   * SNOW-904 extracted this from ``_refresh``'s loop so ``markCached`` can
+   * run the SAME probe rather than asserting green — one function, so the
+   * two paths cannot drift into two different definitions of "cached".
+   *
+   * @param {string} key - an ``OVERLAY_RESOURCES`` key.
+   * @param {string[]} [countries] - the codes the country-scoped tiers are
+   *   drawn for. Resolved from the active basemap when omitted; passed in
+   *   by ``_refresh``, which resolves it once for the whole pass.
+   * @returns {Promise<boolean>} Never rejects.
+   */
+  function _probeFor(key, countries) {
+    const resource = OVERLAY_RESOURCES[key];
+    if (!resource) return Promise.resolve(false);
+    if (resource.kind === 'idb') return _probeIdbRow(resource.key);
+    const codes = countries || _basemapCountryCodes();
+    if (resource.countryScoped && codes.length > 0) {
+      return _probeEveryCountry(resource.path, codes);
+    }
+    return _probeGeoJson(resource.path);
+  }
+
   // SNOW-613: the pass currently running, and the single trailing pass
   // queued behind it. See ``refresh``.
   /** @type {Promise<void>|null} */
@@ -896,18 +947,11 @@
     // whether the tier is honestly available offline.
     const boundaryCountries = _basemapCountryCodes();
 
-    for (const [key, resource] of Object.entries(OVERLAY_RESOURCES)) {
+    for (const key of Object.keys(OVERLAY_RESOURCES)) {
       const dot = _overlayDot(key);
       if (!dot) continue;
 
-      let probe;
-      if (resource.kind === 'idb') {
-        probe = _probeIdbRow(resource.key);
-      } else if (resource.countryScoped && boundaryCountries.length > 0) {
-        probe = _probeEveryCountry(resource.path, boundaryCountries);
-      } else {
-        probe = _probeGeoJson(resource.path);
-      }
+      const probe = _probeFor(key, boundaryCountries);
       tasks.push(
         probe
           .then((cached) =>
@@ -1057,7 +1101,14 @@
   }
 
   /**
-   * The immediate half of ``markCached`` — paints green with no dwell check.
+   * The post-dwell half of ``markCached`` — probe, then paint what came
+   * back.
+   *
+   * SNOW-904: this used to paint green unconditionally. It runs the row's
+   * real probe now, so a load whose cache write never landed leaves the
+   * row grey (or red offline) instead of claiming an offline copy that is
+   * not there. The row holds its pulsing "syncing" state for the whole
+   * round trip, which is what it is for.
    *
    * @param {string} key
    * @returns {void}
@@ -1077,13 +1128,20 @@
       );
       return;
     }
-    // Unknown keys are ignored — every remaining OVERLAY_RESOURCES entry is
-    // a 'geojson' or 'idb' resource whose successful load does put it in the
-    // offline cache, so membership alone is the allowlist.
+    // Unknown keys are ignored — ``OVERLAY_RESOURCES`` membership is the
+    // allowlist, and a key outside it has no row and no probe.
     if (!OVERLAY_RESOURCES[key]) return;
-    // A successful load only happens online; ``_applyState`` with cached=true
-    // paints green and clears any offline-disabled marker on the row.
-    _applyState(_overlayDot(key), true, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL);
+    _probeFor(key)
+      .then((cached) =>
+        _applyState(
+          _overlayDot(key), cached, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL,
+        ),
+      )
+      .catch(() =>
+        _applyState(
+          _overlayDot(key), false, CACHED_LABEL, UNCACHED_LABEL, OFFLINE_BLOCKED_LABEL,
+        ),
+      );
   }
 
   // Re-run the full probe on every connectivity transition (broadcast by

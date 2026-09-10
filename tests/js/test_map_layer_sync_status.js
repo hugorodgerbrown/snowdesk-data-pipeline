@@ -16,12 +16,15 @@
  * defaults it to `true`. `setOnline(false)` overrides it per-test (reset in
  * afterEach) to exercise the offline red-dot + row-disable behaviour.
  *
- * SNOW-658: the `favourites` and `community_reports` rows this file used to
- * cover are gone from OVERLAY_RESOURCES — both overlays moved into the panel
- * their own roundel opens, so there is no row here to hang a dot on (see
- * tests/js/test_favourites_panel.js and tests/js/test_report_panel.js). The
- * same ticket merged the Austria and Italy country rows into one ALBINA
- * provider row, which is why `countryRow` now takes a `codes` argument: the
+ * SNOW-904: `favourites`, `community_reports` and `routes` are rows in this
+ * menu again — the four panel "Display on the map" switches are gone — so
+ * all three are back in OVERLAY_RESOURCES as `idb` resources. They are
+ * opt-in in `buildFixture` (`idbRows`) so the pre-existing blocks below keep
+ * exercising a menu without them. `slope` and `downloads` are rows with NO
+ * dot at all, which is asserted directly rather than left implicit.
+ *
+ * SNOW-658 merged the Austria and Italy country rows into one ALBINA
+ * provider row, which is why `countryRow` takes a `codes` argument: the
  * row carries its own `data-country-codes`, and a merged row's dot may only
  * go green once EVERY code it switches is cached.
  *
@@ -68,6 +71,11 @@ function buildFixture({
   // which is the fallback path (every code the menu offers) the pre-existing
   // tests exercise.
   basemapCountries = null,
+  // SNOW-904: the three IndexedDB-backed user-data rows, opt-in for the same
+  // reason the country rows are.
+  idbRows = [],
+  // SNOW-904: the two rows the real menu renders with NO `.sync-dot`.
+  dotlessRows = [],
 } = {}) {
   const overlayRow = (key) => `
     <li role="none">
@@ -106,6 +114,15 @@ function buildFixture({
       </button>
     </li>`;
 
+  // SNOW-904: a row with no dot — the real markup for `slope` and
+  // `downloads`, neither of which can make an honest cache claim.
+  const dotlessRow = (key) => `
+    <li role="none">
+      <button type="button" class="basemap-menu-item basemap-menu-item--overlay" data-overlay-key="${key}">
+        ${key}
+      </button>
+    </li>`;
+
   document.body.innerHTML = `
     <ul id="basemap-menu">
       ${(countries || []).map(countryRow).join('')}
@@ -113,11 +130,44 @@ function buildFixture({
       ${overlayRow('l2')}
       ${overlayRow('l4')}
       ${overlayRow('resorts')}
+      ${idbRows.map(overlayRow).join('')}
+      ${dotlessRows.map(dotlessRow).join('')}
       ${basemapRow('standard', STANDARD_STYLE, true)}
       ${basemapRow('swisstopo', SWISSTOPO_STYLE, false)}
     </ul>
   `;
 }
+
+/**
+ * SNOW-904: a fake `window.pwaMapOverlayCache` — the ONLY read path the
+ * `idb` probes take now.
+ *
+ * The real module (static/js/map_overlay_offline_cache.js) partitions
+ * `favourites` and `routes` by principal and returns null for a row
+ * belonging to a different account, which is exactly why this module must
+ * not read `window.pwaDb` directly: such a row is physically present and
+ * unretrievable, and a dot that went green on it would be true about
+ * storage and false about the only thing it claims.
+ *
+ * `stored` is keyed by resource; a key mapped to null models both "nothing
+ * cached" and "cached under another principal", which is what the caller
+ * sees in both cases.
+ *
+ * @param {Object<string, object|null>} stored
+ * @param {{rejects?: boolean}} [options]
+ */
+function fakeOverlayCache(stored, { rejects = false } = {}) {
+  const cache = {
+    getOverlay: vi.fn(async (resource) => {
+      if (rejects) throw new Error('getOverlay failed');
+      return stored[resource] || null;
+    }),
+  };
+  window.pwaMapOverlayCache = cache;
+  return cache;
+}
+
+const GEOJSON = { type: 'FeatureCollection', features: [] };
 
 function dotState(key) {
   const dot = document.querySelector(`[data-overlay-key="${key}"] .sync-dot`);
@@ -218,6 +268,7 @@ afterEach(() => {
   delete window.pwaDb;
   delete window.pwaBasemapDownloads;
   delete window.pwaConnectivity;
+  delete window.pwaMapOverlayCache;
 });
 
 describe('GeoJSON overlay rows (l1/l2/l4/resorts) — online', () => {
@@ -586,12 +637,14 @@ describe('country rows (SNOW-524)', () => {
 
 describe('rows absent from the DOM (conditionally rendered)', () => {
   it('skips them rather than throwing', async () => {
-    // SNOW-658 removed the favourites and community_reports rows outright —
-    // map.js still calls markCached('favourites') on its lazy-load path, so a
-    // missing row has to stay a no-op rather than a throw.
+    // Not every page that loads this module renders every row — the
+    // conditionally-rendered ones (slope, and any embed with a reduced
+    // menu) are simply absent. map.js still calls markCached('favourites')
+    // on its lazy-load path, so a missing row has to stay a no-op rather
+    // than a throw.
     buildFixture();
     vi.stubGlobal('caches', fakeCaches());
-    window.pwaDb = { get: vi.fn(async () => ({ geojson: {} })) };
+    fakeOverlayCache({ favourites: GEOJSON });
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
@@ -909,26 +962,70 @@ describe('Cache Storage unsupported', () => {
   });
 });
 
-describe('markCached (optimistic live update)', () => {
-  it('flips a cacheable row to "cached" with no probe', () => {
-    expect('caches' in window).toBe(false);
+// SNOW-904: `markCached` was the one green on this surface that was
+// ASSERTED rather than observed — a bare `_applyState(dot, true, …)` on the
+// reasoning that a successful load has, to all practical intents,
+// populated the cache. That gave green two meanings on one menu. It runs
+// the row's real probe now, and these tests are what pin that.
+describe('markCached (probe-backed live update)', () => {
+  /** Let the probe promise inside markCached settle. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('greens a row only once the probe finds the payload', async () => {
+    vi.stubGlobal('caches', fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] }));
 
     window.pwaLayerSyncStatus.markCached('l1');
-    window.pwaLayerSyncStatus.markCached('resorts');
+    await settle();
 
     expect(dotState('l1')).toBe('cached');
-    expect(dotState('resorts')).toBe('cached');
   });
 
-  it('clears an offline-disabled marker when it flips a row green', async () => {
-    // Row starts offline-disabled (red), then a successful load marks it
-    // cached — it must re-enable, not stay locked.
+  it('paints uncached when the probe comes back empty', async () => {
+    // The case the old optimistic paint could not express: the fetch
+    // resolved, but the background cache.put never landed.
+    vi.stubGlobal('caches', fakeCaches({ hitPaths: [] }));
+
+    window.pwaLayerSyncStatus.markCached('resorts');
+    await settle();
+
+    expect(dotState('resorts')).toBe('uncached');
+  });
+
+  it('holds the row at "syncing" until the probe answers', async () => {
+    vi.useFakeTimers();
+    let release;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal('caches', {
+      match: vi.fn(() => pending.then(() => new Response('{}'))),
+    });
+
+    window.pwaLayerSyncStatus.markSyncing('l1');
+    expect(dotState('l1')).toBe('syncing');
+
+    window.pwaLayerSyncStatus.markCached('l1');
+    // Past the MIN_SYNCING_MS dwell, but the probe has not answered.
+    await vi.advanceTimersByTimeAsync(600);
+    expect(dotState('l1')).toBe('syncing');
+
+    release();
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dotState('l1')).toBe('cached');
+  });
+
+  it('clears an offline-disabled marker when the probe confirms', async () => {
+    // Row starts offline-disabled (red); a load lands and the probe finds
+    // it, so the row must re-enable rather than stay locked.
     setOnline(false);
     vi.stubGlobal('caches', fakeCaches({ hitPaths: [] }));
     await window.pwaLayerSyncStatus.refresh();
     expect(rowDisabled('l1')).toBe(true);
 
+    vi.stubGlobal('caches', fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] }));
     window.pwaLayerSyncStatus.markCached('l1');
+    await settle();
 
     expect(dotState('l1')).toBe('cached');
     expect(rowDisabled('l1')).toBe(false);
@@ -937,6 +1034,86 @@ describe('markCached (optimistic live update)', () => {
   it('no-ops for a key absent from OVERLAY_RESOURCES', () => {
     expect(() => window.pwaLayerSyncStatus.markCached('country.ch')).not.toThrow();
     expect(() => window.pwaLayerSyncStatus.markCached('nonsense')).not.toThrow();
+  });
+});
+
+// SNOW-904: the three user-data rows. Each is `idb`, and each is probed
+// through window.pwaMapOverlayCache.getOverlay() — never a raw pwaDb.get,
+// because favourites and routes are principal-scoped.
+describe('IndexedDB overlay rows (favourites / routes / field observations)', () => {
+  const IDB_KEYS = ['favourites', 'community_reports', 'routes'];
+
+  beforeEach(() => {
+    buildFixture({ idbRows: IDB_KEYS });
+    vi.stubGlobal('caches', fakeCaches());
+  });
+
+  it('greens a row when the cache hands back a payload', async () => {
+    fakeOverlayCache({ favourites: GEOJSON, routes: GEOJSON });
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('favourites')).toBe('cached');
+    expect(dotState('routes')).toBe('cached');
+    expect(dotState('community_reports')).toBe('uncached');
+  });
+
+  it('greys a row whose payload belongs to a different principal', async () => {
+    // The whole reason this probe goes through the cache module. The row IS
+    // on the device — a raw pwaDb.get would find it — but getOverlay
+    // withholds it because it was written under another account, so the
+    // layer cannot draw offline and the dot must not claim it can.
+    window.pwaDb = {
+      get: vi.fn(async () => ({
+        key: 'favourites',
+        geojson: GEOJSON,
+        principal: 'someone-else',
+      })),
+    };
+    fakeOverlayCache({ favourites: null });
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('favourites')).toBe('uncached');
+    expect(window.pwaDb.get).not.toHaveBeenCalled();
+  });
+
+  it('reds out and disables an uncached row while offline', async () => {
+    setOnline(false);
+    fakeOverlayCache({});
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('routes')).toBe('unavailable-offline');
+    expect(rowDisabled('routes')).toBe(true);
+  });
+
+  it('resolves uncached when the cache module is absent or throws', async () => {
+    fakeOverlayCache({ favourites: GEOJSON }, { rejects: true });
+
+    await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
+
+    expect(dotState('favourites')).toBe('uncached');
+  });
+});
+
+// SNOW-904: two rows carry no dot, for opposite reasons — slope draws a
+// third-party raster this app cannot probe, downloads draws a list that is
+// always local. Neither has an OVERLAY_RESOURCES entry, so a refresh must
+// simply pass them by.
+describe('rows with no dot (slope / downloads)', () => {
+  it('paints nothing and touches nothing for either row', async () => {
+    buildFixture({ dotlessRows: ['slope', 'downloads'] });
+    vi.stubGlobal('caches', fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    for (const key of ['slope', 'downloads']) {
+      expect(document.querySelector(`[data-overlay-key="${key}"] .sync-dot`)).toBeNull();
+      expect(rowDisabled(key)).toBe(false);
+    }
+    // The rest of the menu still resolved.
+    expect(dotState('l1')).toBe('cached');
   });
 });
 

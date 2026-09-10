@@ -167,14 +167,16 @@ change the frozenset + document the property shape here.
   create-form submit whose response carries a favourite row),
   `map.favourite.deleted` (same file, a delete response with an empty
   body), `map.favourite.overlay_toggled` with `properties.visible`
-  (`static/js/map.js`'s basemap-menu overlay-toggle handler, fired only
-  for `data-overlay-key="favourites"`).
+  (emitted by `window.pwaFavouritesOverlay`'s own show/hide in
+  `static/js/map.js`, which the layers menu's Favourites row drives —
+  SNOW-904).
 - **Community reports** (SNOW-419 — same `map.*` namespace):
   `map.community_reports.overlay_toggled` with `properties.visible`
   (SNOW-658: emitted by `window.pwaCommunityReportsOverlay`'s own
-  show/hide in `static/js/map.js`, driven by the "Display on the map"
-  switch at the foot of the field-observation panel — it was the
-  basemap-menu overlay-toggle handler until that row was removed), and
+  show/hide in `static/js/map.js`. SNOW-904 returned the control to the
+  layers menu's "Field observations" row, which drives that same bridge —
+  the emit did not move with it, which is the point of the bridge owning
+  it), and
   `map.community_reports.marker_tapped` with
   `properties.observation_type` (the `community-reports-point` layer's
   click handler — deliberately carries no location or identity data,
@@ -371,7 +373,7 @@ below the table.
 | `static/js/mutation_queue.js` (real queue, SNOW-376) | `pwa.mutation.enqueued` (`enqueue`) / `.drained` with the real count of rows a 2xx removed (`drain`) / `.failed_permanent` with `properties.attempts` reflecting the attempt that just failed — a permanent 4xx or the 20th retry (`_markRowFailed`, and `markFailed` for a caller-driven report outside the queue) |
 | `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); `TODO(SNOW-848)` in the source marks it for tightening once real eviction cases surface |
 | `static/js/favourites.js` (SNOW-414) | `map.favourite.created` (create-form `htmx:afterSwap` whose response carries `[data-favourite-uuid]`, gated on a module-level "currently creating" flag so a rename doesn't also fire it) / `map.favourite.deleted` (delete's empty-body `htmx:afterSwap`) |
-| `static/js/map.js::basemapPickerInit` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="favourites"` |
+| `static/js/map.js` — `window.pwaFavouritesOverlay` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, whatever drives them (the layers menu's Favourites row since SNOW-904, the panel switch before it) |
 | `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 | `static/js/map.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |

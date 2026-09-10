@@ -117,27 +117,28 @@ class TestRoutesSurfaceRenders:
         assert 'id="route-add-btn"' in body
         assert 'data-routes-eligible="false"' in body
 
-    def test_the_panel_carries_the_overlay_switch(self, client: Client) -> None:
-        """The "Display on the map" switch, now there is a layer to drive.
+    def test_the_routes_layer_is_switched_from_the_layers_menu(
+        self, client: Client
+    ) -> None:
+        """SNOW-904: the Routes row is in the layers menu, not this panel.
 
-        SNOW-686 asserted the inverse: the panel shipped before its map
-        layer existed, so ``includes/_ugc_panel.html`` was included without
-        a ``toggle_id`` and rendered no switch, on the grounds that a
-        switch wired to nothing is a worse lie than an absent one. SNOW-687
-        adds the layer and the ``window.pwaRoutesOverlay`` bridge, so the
-        panel now passes a ``toggle_id`` and the switch appears.
+        This test asserted the opposite twice over. SNOW-686 shipped the
+        panel before its map layer existed and asserted no switch; SNOW-687
+        added ``window.pwaRoutesOverlay`` and asserted one. SNOW-904 makes
+        the layers menu the sole control for every layer, so the switch is
+        gone from this panel and from the three beside it, and the row
+        driving that same bridge is asserted instead.
 
-        The id is the one static/js/routes.js delegates its ``change``
-        listener on, which is why it is asserted here rather than left to
-        the JS suite: a rename on either side silently unwires the switch.
-        The sibling panels keep theirs — this was never a global change.
+        The panel's own switch id is asserted absent because a reinstated
+        one would be a second control for a layer the menu already owns.
         """
         client.force_login(UserFactory.create())
 
         body = _home(client)
 
-        assert 'id="map-routes-overlay-toggle"' in body
-        assert 'id="map-favourites-overlay-toggle"' in body
+        assert 'data-overlay-key="routes"' in body
+        assert 'id="map-routes-overlay-toggle"' not in body
+        assert 'id="map-favourites-overlay-toggle"' not in body
 
 
 @pytest.mark.django_db

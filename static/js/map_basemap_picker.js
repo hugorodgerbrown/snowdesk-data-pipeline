@@ -20,6 +20,30 @@
 // initial aria-checked state are handled by the main IIFE before the
 // map is constructed so the popover renders correctly on first paint.
 //
+// SNOW-904: it drives EVERY layer now, not the boundary tiers and the
+// basemap alone. Four overlays — downloads, favourites, field observations
+// and routes — were toggled from a "Display on the map" switch in the
+// footer of whichever panel their roundel opened; those switches are gone
+// and each is a row here. Three things follow from that, all of them in
+// this file:
+//
+//   - the menu has a pinned header carrying a live "N layers on" count, and
+//     each section a derived second line naming what is on inside it. Both
+//     are read off the rows' own ``aria-checked``, so nothing here keeps a
+//     flag that could disagree with the controls;
+//   - the sections COLLAPSE, persisted one key per section
+//     (``LAYERS_SECTION_STORAGE_KEY``), because seventeen rows in one list
+//     is a scroll rather than a menu;
+//   - a row whose overlay needs an account (favourites and routes, never
+//     field observations — those are public) hands an anonymous visitor to
+//     the sign-in sheet instead of ticking a box over an empty layer.
+//
+// The four new rows drive the SAME ``window.pwa*Overlay`` bridges the
+// panel switches drove. That is deliberate: the telemetry emitters, the
+// favourited-resort exclusion recompute and the roundel-ring announcement
+// all live inside those bridges, so routing through them keeps every one
+// of them without this file learning about any of them.
+//
 // Style swapping itself happens via MAP.setStyle(); the regions source
 // + layers are re-installed by a style.load handler inside the main
 // IIFE. Active timelapse playback (if any) is stopped first via the
@@ -35,6 +59,151 @@
   if (items.length === 0) return;
 
   const STORAGE_KEY = BASEMAP_STORAGE_KEY;
+
+  // SNOW-904: the header count and the section summaries are assembled
+  // here, so their words have to be server-translated and read back —
+  // ``makemessages`` never scans JavaScript. The literals are the English
+  // fallback for a page that omits the strings template.
+  const STRINGS = self.pwaStrings.read('map-layers-menu-strings-template', {
+    'count-none': 'No layers on',
+    'count-one': '1 layer on',
+    'count-many': '%(count)s layers on',
+    'none-selected': 'None selected',
+    'summary-overflow': '%(count)s of %(total)s on',
+    'label-prefix': 'Display',
+    'signin-favourites': 'Sign in to save places and show your favourites on the map.',
+    'signin-routes': 'Sign in to upload routes and show them on the map.',
+    'signin-cta': 'Sign in',
+  });
+
+  // Longest a section's summary may get before it stops naming rows and
+  // states a count instead. The menu is shrink-to-fit and its rows are
+  // ``white-space: nowrap``, so an unbounded summary would widen the whole
+  // menu to fit a line nobody reads.
+  const MAX_SUMMARY_CHARS = 38;
+
+  // SNOW-904: the four rows this ticket added, each mapped to the bridge
+  // that already owns its overlay. Read lazily (``() =>``) because map.js
+  // publishes them from inside its own IIFE, which has run by the time a
+  // click arrives but is not guaranteed to have at parse time.
+  const OVERLAY_BRIDGES = {
+    favourites: () => window.pwaFavouritesOverlay,
+    community_reports: () => window.pwaCommunityReportsOverlay,
+    routes: () => window.pwaRoutesOverlay,
+    downloads: () => window.pwaDownloadedOverlay,
+  };
+
+  // The two rows that need an account, and the sentence each hands off
+  // with. ``community_reports`` is deliberately absent: #map's
+  // ``data-community-reports-eligible`` is a hardcoded "true" because
+  // community reports are public data that genuinely works signed out.
+  const SIGNIN_GATED = {
+    favourites: 'signin-favourites',
+    routes: 'signin-routes',
+  };
+
+  /**
+   * Is the visitor able to see this overlay's data at all?
+   *
+   * Read off ``#map``'s own eligibility attributes rather than kept here,
+   * so this answers exactly what map.js answers when it decides whether to
+   * fetch the layer. Absent element or absent attribute reads as eligible —
+   * the gate exists to redirect a visitor who has nothing to draw, never to
+   * withhold a row from one who might.
+   *
+   * @param {string} key - an overlay key.
+   * @returns {boolean}
+   */
+  const overlayEligible = (key) => {
+    const el = document.getElementById('map');
+    if (!el) return true;
+    const attr = key === 'favourites'
+      ? el.dataset.favouritesEligible
+      : el.dataset.routesEligible;
+    return attr !== 'false';
+  };
+
+  /**
+   * A row's label, shortened for a section summary.
+   *
+   * Derived from the row's own text rather than a second string per row:
+   * a trailing parenthetical goes ("SLF bulletins (CH)" → "SLF bulletins")
+   * and so does the leading "Display" verb the two Basemap overlay rows
+   * carry ("Display slope angles" → "slope angles"). The verb is read from
+   * the strings template, so the strip survives a locale that words it
+   * differently.
+   *
+   * @param {HTMLElement} item - a ``.basemap-menu-item``.
+   * @returns {string}
+   */
+  const shortLabel = (item) => {
+    const full = self.pwaStrings.collapse(item.textContent);
+    const withoutParenthetical = full.replace(/\s*\([^)]*\)$/, '').trim();
+    const prefix = STRINGS['label-prefix'];
+    if (prefix && withoutParenthetical.toLowerCase().startsWith(`${prefix.toLowerCase()} `)) {
+      return withoutParenthetical.slice(prefix.length + 1);
+    }
+    return withoutParenthetical;
+  };
+
+  /**
+   * The one-line summary under a section heading: which of its rows are on.
+   *
+   * "None selected" when nothing is; the names, comma-separated, when they
+   * fit; "N of M on" when they do not. The Basemap section names its own
+   * radio selection through the same path, since a checked radio is a
+   * checked row like any other.
+   *
+   * @param {HTMLElement} group - the section's ``role="group"`` list.
+   * @returns {string}
+   */
+  const summaryFor = (group) => {
+    const rows = Array.from(group.querySelectorAll('.basemap-menu-item'));
+    const checked = rows.filter((row) => row.getAttribute('aria-checked') === 'true');
+    if (checked.length === 0) return STRINGS['none-selected'];
+    const named = checked.map(shortLabel).join(', ');
+    if (named.length <= MAX_SUMMARY_CHARS) return named;
+    return self.pwaStrings.interpolate(STRINGS['summary-overflow'], {
+      count: checked.length,
+      total: rows.length,
+    });
+  };
+
+  /**
+   * Repaint the header count and every section's summary from the rows'
+   * live ``aria-checked``.
+   *
+   * The count is OVERLAY rows only — the basemap radio is always exactly
+   * one and would inflate every reading by one without ever varying. Run on
+   * every open, after every toggle and at parse time, which is after map.js
+   * has seeded the rows from the persisted state.
+   *
+   * @returns {void}
+   */
+  const refreshReadout = () => {
+    const countEl = menu.querySelector('[data-layers-count]');
+    if (countEl) {
+      const on = items.filter(
+        (item) =>
+          item.classList.contains('basemap-menu-item--overlay') &&
+          item.getAttribute('aria-checked') === 'true',
+      ).length;
+      if (on === 0) {
+        countEl.textContent = STRINGS['count-none'];
+      } else if (on === 1) {
+        countEl.textContent = STRINGS['count-one'];
+      } else {
+        countEl.textContent = self.pwaStrings.interpolate(STRINGS['count-many'], {
+          count: on,
+        });
+      }
+    }
+    for (const section of menu.querySelectorAll('.basemap-menu-section')) {
+      const group = section.querySelector('.basemap-menu-group');
+      const summary = section.querySelector('[data-section-summary]');
+      if (group && summary) summary.textContent = summaryFor(group);
+    }
+  };
 
   // SNOW-658: this menu's name in the shared map-overlay registry — the
   // element's own id, so a failing exclusivity assertion names something
@@ -109,6 +278,80 @@
     menu.style.maxHeight = `${bounds.maxHeight}px`;
   };
 
+  /**
+   * Open or close one section, and remember the choice.
+   *
+   * ``positionMenu()`` is called on every toggle, not only on open: it
+   * writes ``max-height`` inline from the room the viewport leaves, and the
+   * content whose height that bounds has just changed.
+   *
+   * @param {string} slug - the section's ``data-section-toggle`` value.
+   * @param {boolean} open
+   * @param {boolean} persist - false while seeding from storage at boot, so
+   *   reading a preference never writes one back.
+   * @returns {void}
+   */
+  const setSectionOpen = (slug, open, persist) => {
+    const button = menu.querySelector(`[data-section-toggle="${slug}"]`);
+    const group = document.getElementById(`basemap-menu-group-${slug}`);
+    if (!button || !group) return;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    group.hidden = !open;
+    if (persist) writeStorage(LAYERS_SECTION_STORAGE_KEY(slug), String(open));
+    if (!menu.hidden) positionMenu();
+  };
+
+  for (const button of menu.querySelectorAll('[data-section-toggle]')) {
+    const slug = button.dataset.sectionToggle;
+    setSectionOpen(
+      slug,
+      readBoolStorage(
+        LAYERS_SECTION_STORAGE_KEY(slug), slug === LAYERS_SECTION_DEFAULT_OPEN,
+      ),
+      false,
+    );
+    button.addEventListener('click', (e) => {
+      // Same reason every row below stops propagation: the document-level
+      // outside-click dismiss must not read a heading tap as "outside".
+      e.stopPropagation();
+      setSectionOpen(slug, button.getAttribute('aria-expanded') !== 'true', true);
+    });
+  }
+
+  // SNOW-904: the sign-in hand-off behind the Favourites and Routes rows.
+  // MapSheet.attach empties the sheet on every close, so the body is cloned
+  // from its template on every open — the same shape the favourites and
+  // routes panels use.
+  const signinSheetEl = document.getElementById('map-layer-signin-sheet');
+  const signinTemplate = document.getElementById('map-layer-signin-template');
+  const signinSheet =
+    signinSheetEl && window.MapSheet ? window.MapSheet.attach(signinSheetEl) : null;
+
+  /**
+   * Hand an anonymous visitor off to sign-in for one gated row.
+   *
+   * Opening the sheet announces itself to ``window.pwaMapOverlays``, which
+   * closes this menu — so the tap reads as a hand-off rather than as a menu
+   * that ignored the click. The row itself is left untouched: nothing is
+   * ticked, and nothing is persisted, for an overlay that has no data.
+   *
+   * @param {string} key - ``'favourites'`` or ``'routes'``.
+   * @returns {void}
+   */
+  const openSigninSheet = (key) => {
+    if (!signinSheet || !signinTemplate || !window.snowdeskSigninCta) return;
+    const el = signinSheet.element;
+    el.replaceChildren(signinTemplate.content.cloneNode(true));
+    el.appendChild(
+      window.snowdeskSigninCta.build(
+        menu.dataset.signinUrl || '',
+        STRINGS[SIGNIN_GATED[key]],
+        STRINGS['signin-cta'],
+      ),
+    );
+    signinSheet.open();
+  };
+
   const setMenuOpen = (open) => {
     // SNOW-658: only one overlay is open over the map at a time. Announced
     // before the menu is unhidden, so whatever it replaces is gone by the
@@ -124,10 +367,65 @@
     // bucket, so repeated opens coalesce inside `refresh()` rather than
     // each starting their own pass.
     if (open) window.pwaLayerSyncStatus?.refresh();
+    // SNOW-904: the count and the section summaries are derived, so they are
+    // recomputed here as well as on every toggle — the downloads row can
+    // change under the menu while it is closed (its untouched state follows
+    // the connection), and a stale header is exactly the kind of quiet lie
+    // this menu was rebuilt to stop telling.
+    if (open) refreshReadout();
     // SNOW-511/SNOW-656: place the baseline and size the menu to the visible
     // map area, once it's laid out.
     if (open) positionMenu();
   };
+
+  // SNOW-857/SNOW-904: the downloads row is the one whose state can move
+  // without anyone touching it — untouched means "on while offline", so a
+  // connectivity flip repaints the overlay and this row has to follow.
+  // map.js broadcasts every change to it; this is the same read-back the
+  // downloads sheet's own switch made before SNOW-904 removed it.
+  document.addEventListener('snowdesk:downloaded-overlay-changed', (event) => {
+    const row = menu.querySelector('[data-overlay-key="downloads"]');
+    if (!row) return;
+    const visible = !!(event.detail && event.detail.visible);
+    row.setAttribute('aria-checked', visible ? 'true' : 'false');
+    refreshReadout();
+  });
+
+  // SNOW-904 review: the menu is the only CONTROL for these overlays, but it
+  // is not the only CALLER of their bridges. row_focus.js turns a layer on
+  // when someone focuses or creates a favourite, route or observation while
+  // it is off (its ``reveal()`` calls ``overlay.show()``), and the deep-link
+  // paths in map.js do the same. Nothing wrote that back to the row, so its
+  // ``aria-checked`` went stale: the header undercounted, the section summary
+  // omitted a layer that was plainly on the map, and the row's next click
+  // called ``show()`` on an already-shown overlay — costing the user a
+  // second click to turn something off.
+  //
+  // Re-seed from the bridges rather than from the event's payload: the
+  // bridges are the state, ``isEnabled()`` is the preference every row
+  // renders, and reading all four keeps this correct no matter which one
+  // moved. Cheap enough to do unconditionally — four property reads and at
+  // most four attribute writes, on an event that fires only when a layer
+  // actually changes.
+  const syncRowsFromBridges = () => {
+    for (const [key, resolve] of Object.entries(OVERLAY_BRIDGES)) {
+      const row = menu.querySelector(`[data-overlay-key="${key}"]`);
+      if (!row) continue;
+      const bridge = resolve();
+      if (!bridge || typeof bridge.isEnabled !== 'function') continue;
+      row.setAttribute('aria-checked', bridge.isEnabled() ? 'true' : 'false');
+    }
+    refreshReadout();
+  };
+
+  document.addEventListener(
+    'snowdesk:overlay-visibility-changed',
+    syncRowsFromBridges,
+  );
+
+  // Seed the header and the summaries from the state map.js has already
+  // written onto the rows (it runs before this file — see home.html).
+  refreshReadout();
 
   // SNOW-588 exposed ``window.pwaLayersMenu.close()`` here so the "Manage
   // downloads" sheet could close this menu on its way in. SNOW-658 replaces
@@ -204,8 +502,33 @@
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
       if (overlayKey) {
+        // SNOW-904: an overlay that needs an account, tapped by someone
+        // without one, is a hand-off and not a toggle. Checked BEFORE the
+        // aria-checked flip so nothing is ticked and nothing is persisted
+        // for a layer that has no data behind it.
+        if (SIGNIN_GATED[overlayKey] && !overlayEligible(overlayKey)) {
+          openSigninSheet(overlayKey);
+          return;
+        }
+
         const next = item.getAttribute('aria-checked') !== 'true';
         item.setAttribute('aria-checked', next ? 'true' : 'false');
+        refreshReadout();
+
+        // SNOW-904: the four rows whose overlay is owned by a bridge in
+        // map.js. Routing through the bridge rather than repeating its work
+        // here is what keeps the telemetry emit, the favourited-resort
+        // exclusion recompute and the roundel-ring announcement — and, for
+        // downloads, keeps this file from ever writing that row's
+        // localStorage on any path but a real click (SNOW-857's tri-state:
+        // 'true'/'false' are the user's answer, null means untouched and
+        // derives to "on while offline").
+        const bridge = OVERLAY_BRIDGES[overlayKey] && OVERLAY_BRIDGES[overlayKey]();
+        if (bridge) {
+          if (next) bridge.show();
+          else bridge.hide();
+          return;
+        }
 
         // SNOW-314 prototype: notify the season-header readout so its breadcrumb
         // mirrors which region tiers are visible (l1=Major, l2=Minor, l4=Micro).
@@ -317,6 +640,9 @@
           other === item ? 'true' : 'false',
         );
       }
+      // The Basemap section's summary names its selection, so it moves with
+      // the radios even though the header count deliberately does not.
+      refreshReadout();
       setMenuOpen(false);
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
     });

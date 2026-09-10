@@ -453,9 +453,9 @@
 
   // The downloaded-areas overlay's own state. Read by installRegionsLayers
   // (initial layout.visibility), refreshDownloadedOverlay, and
-  // window.pwaDownloadedOverlay.isEnabled() (the "Display on the map"
-  // switch INSIDE the "Manage downloads" panel reads this, not a flag of
-  // its own, so the two can never drift); written only by show()/hide() on
+  // window.pwaDownloadedOverlay.isEnabled() (the layers menu's own row
+  // seeds its aria-checked from this, not from a flag of its own, so the
+  // two can never drift); written only by show()/hide() on
   // window.pwaDownloadedOverlay, which persist it alongside.
   //
   // PERSISTED, reversing SNOW-645's session-scoped inspection mode — see
@@ -564,7 +564,29 @@
     MAP_DEFAULTS.opacityStep,
   );
   bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
-  overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+  /**
+   * The favourites overlay's boot preference, gated on eligibility.
+   *
+   * Favourites is the one overlay that defaults ON, so an ineligible visitor
+   * would otherwise start with it "enabled" over a layer that can never load:
+   * the lazy-load path returns early without a ``FAVOURITES_URL`` and nothing
+   * is drawn. That was invisible while the only control was a switch inside
+   * the favourites panel, which already said "sign in" beside it — but
+   * SNOW-904 put the row in the layers menu next to a header that counts the
+   * layers reported on, and a count of one over an empty map is a false
+   * statement about the map.
+   *
+   * The gate is on the READ rather than on the render, so ``isEnabled()`` is
+   * honest for the roundel rings too. Nothing here writes storage, so a real
+   * preference survives signing out and back in.
+   *
+   * @returns {boolean} True when the overlay may start visible.
+   */
+  const readFavouritesPreference = () =>
+    FAVOURITES_ELIGIBLE &&
+    readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+
+  overlayState.favourites = readFavouritesPreference();
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
   // Each key maps to a boolean (visible/hidden), persisted in localStorage
@@ -616,6 +638,20 @@
         // AT + IT), so it is checked only when EVERY code it switches is on.
         // Checked-when-any would claim coverage the map is not drawing.
         checked = countryCodesFor(key).every((code) => countryState[code]);
+      } else if (key === 'downloads') {
+        // SNOW-904: the downloaded-areas row, back in this menu after
+        // SNOW-645 moved it into the "Manage downloads" sheet. It is the one
+        // row whose state is NOT a key of overlayState — it is a TRI-state
+        // (SNOW-857), read raw a few hundred lines above precisely so that
+        // null ("untouched", which derives to "on while offline") stays
+        // distinguishable from an explicit 'false'.
+        //
+        // So it seeds from the DERIVED answer, and nothing on this path
+        // writes localStorage. A seeding pass that persisted what it read
+        // would convert every untouched device into "explicitly off" on its
+        // next page load and kill the auto-on for good; the picker writes
+        // through the bridge, on a real click, and only then.
+        checked = downloadedOverlayVisible;
       } else {
         checked = overlayState[key];
       }
@@ -4727,16 +4763,18 @@
   });
 
   // ==== SNOW-570/SNOW-587: the downloaded-tiles overlay ====
-  // (SNOW-645 review: no longer a togglable layers-menu row — see
-  // downloadedOverlayVisible's own declaration above for why. SNOW-645
-  // second review: it is now a "Display on the map" switch INSIDE the
-  // "Manage downloads" panel, not the sheet's own open/closed state — a
-  // sheet that is bottom-docked and full-width on mobile would otherwise
-  // cover the very squares it draws, making the overlay unreachable on
-  // the platform that needs offline maps most. Neither opening nor closing
-  // the sheet touches the overlay now — SNOW-656 also stopped open() calling
-  // show() — and the switch's setting is persisted across reloads like the
-  // other three panels'.)
+  // (SNOW-645 took this out of the layers menu — see
+  // downloadedOverlayVisible's own declaration above for why — and made it
+  // a "Display on the map" switch inside the "Manage downloads" panel,
+  // because a sheet that is bottom-docked and full-width on mobile would
+  // otherwise cover the very squares it draws. Neither opening nor closing
+  // that sheet ever touched the overlay.
+  //
+  // SNOW-904 puts the control back in the layers menu, as "Display
+  // downloaded areas" under Basemap — the per-active-template probe that
+  // made SNOW-645's ROW unusable was a sync DOT, and this row has none.
+  // Nothing about the overlay changed: the bridge below is still the only
+  // writer, and the preference is still persisted across reloads.)
   //
   // Answers "where is the basemap I already have?" for the whole map at
   // once, where the download roundels only ever answer it for the one
@@ -5008,11 +5046,11 @@
   /**
    * Broadcast a change in the downloaded-areas overlay's visibility.
    *
-   * The "Display on the map" switch inside the downloads sheet is not the
-   * only thing that can change this — placement focus clears every app layer
-   * off the map — and the switch has to move rather than sit there claiming
-   * a state the map does not have. The sheet owns its own DOM, so it listens
-   * for this instead of this IIFE reaching into it.
+   * The layers menu's own row is not the only thing that can change this —
+   * placement focus clears every app layer off the map, and an untouched
+   * preference follows the connection — so the row has to move rather than
+   * sit there claiming a state the map does not have. The picker owns that
+   * DOM, so it listens for this instead of this IIFE reaching into it.
    *
    * @returns {void}
    */
@@ -5165,12 +5203,13 @@
   // bound visibility to the sheet being OPEN, full stop; that made the
   // overlay unreachable on mobile, where the sheet is bottom-docked and
   // full-width, covering the very squares it would have drawn): neither
-  // opening nor closing the sheet touches the overlay any more. The panel's
-  // "Display on the map" switch is the only caller of show()/hide(), and
-  // what it sets is a PERSISTED preference like the other three panels' —
-  // close the sheet with it on, look at the map, come back tomorrow and it
-  // is still on. Both reads below are functions, not plain frozen
-  // properties, since what they answer changes after this object is built.
+  // opening nor closing the sheet touches the overlay any more. The layers
+  // menu's "Display downloaded areas" row is the only caller of
+  // show()/hide() (SNOW-904; it was the panel's own switch before that),
+  // and what it sets is a PERSISTED preference — switch it on, look at the
+  // map, come back tomorrow and it is still on. Both reads below are
+  // functions, not plain frozen properties, since what they answer changes
+  // after this object is built.
   //
   // SNOW-658 review: ``isVisible()`` reads the SQUARES, not the flag that
   // asked for them — see the isVisible/isEnabled note beside the two
@@ -5179,9 +5218,11 @@
   // whole of this overlay's life until placement focus (which clears every
   // app layer off the map without touching any bridge). They also disagree,
   // legitimately, while the overlay is on and the active basemap has no
-  // downloads: the switch reads ON (the preference took) over an empty
+  // downloads: the row reads ON (the preference took) over an empty
   // source. ``isEnabled()`` publishes the flag itself, which is what the
-  // in-sheet switch reads on every open.
+  // layers menu's "Display downloaded areas" row seeds its ``aria-checked``
+  // from on every render (SNOW-904 — the in-sheet switch this used to name
+  // is gone, along with the other three).
   window.pwaDownloadedOverlay = Object.freeze({
     refresh: refreshDownloadedOverlay,
     show: showDownloadedOverlay,
@@ -5190,23 +5231,27 @@
     isEnabled: () => downloadedOverlayVisible,
   });
 
-  // ==== SNOW-658: the two user-data overlays, driven from their own panels ====
+  // ==== The user-data overlays, driven from the layers menu ====
   //
-  // Favourites and Community reports lost their layers-menu rows this ticket.
-  // The switch that drives each now lives in the panel its own roundel opens —
-  // the pattern SNOW-634 set for downloads — so the callers are favourites.js
-  // and report.js, separate IIFEs that reach this one through a frozen bridge
-  // of the same shape ``pwaDownloadedOverlay`` already publishes.
+  // SNOW-658 moved Favourites and Community reports out of the layers menu and
+  // onto a switch in the panel each roundel opens, so the callers were
+  // favourites.js and report.js. SNOW-904 reversed that: all four switches are
+  // gone and the menu is the only control, so the caller is once again
+  // map_basemap_picker.js, routing a row click through the frozen bridges
+  // published below.
   //
-  // Being INSIDE this IIFE, these do directly what map_basemap_picker.js had
-  // to ask for across the boundary: write the persisted preference, dispatch
-  // the lazy load, and — for favourites — recompute the favourited-resort
-  // exclusion. (``snowdesk:favourites-visibility-changed`` stays: other
-  // callers still fire it, and its listener is the same one-line call.)
+  // The bridges are what the picker calls rather than the storage write and
+  // the lazy-load dispatch directly, because being INSIDE this IIFE they also
+  // recompute the favourited-resort exclusion and announce visibility to the
+  // roundel rings — effects the picker cannot reach across the boundary, and
+  // which a row that only wrote localStorage would silently drop.
+  // (``snowdesk:favourites-visibility-changed`` stays: other callers still
+  // fire it, and its listener is the same one-line call.)
   //
-  // Unlike the downloads overlay these ARE persisted, exactly as the rows
-  // were: same localStorage key, same default, so a device carrying a
-  // preference from before this ticket keeps it.
+  // All four preferences persist, downloads included since SNOW-857 — though
+  // that one is a TRI-STATE read raw at :490, where an untouched key means
+  // "follow the connection" rather than "off". Nothing here may write it at
+  // seed time.
 
   /**
    * Show a panel-driven overlay: persist the preference, then hand off to the
@@ -8103,7 +8148,7 @@
       bulletinsVisibility = BULLETINS_CORE.setPreference(
         bulletinsVisibility, overlayState.bulletins,
       );
-      overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+      overlayState.favourites = readFavouritesPreference();
 
       // SNOW-478: the new basemap has its own glyph server and fonts, so
       // re-derive the overlay label font before re-installing any layer.

@@ -66,8 +66,6 @@ document.body.innerHTML = `
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
       <button type="button" data-panel-add>Add a favourite</button>
-      <label for="map-favourites-overlay-toggle">Display on the map</label>
-      <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
   <template id="favourite-create-template">
@@ -91,11 +89,6 @@ await import('../../static/js/favourites.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
-
-/** The switch inside the currently-rendered panel body. */
-function overlaySwitch() {
-  return sheet.querySelector('#map-favourites-overlay-toggle');
-}
 
 /**
  * Close the panel and open it again.
@@ -200,41 +193,11 @@ describe('the add CTA', () => {
   });
 });
 
-describe('the overlay switch', () => {
-  it('opens reflecting the overlay itself, not a flag of its own', () => {
-    overlay.isEnabled.mockReturnValue(false);
-    btn.click();
-    expect(overlaySwitch().checked).toBe(false);
-
-    overlay.isEnabled.mockReturnValue(true);
-    reopen();
-    expect(overlaySwitch().checked).toBe(true);
-  });
-
-  it('drives show()/hide() on the bridge', () => {
-    btn.click();
-    const toggle = overlaySwitch();
-
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(overlay.show).toHaveBeenCalledTimes(1);
-
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(overlay.hide).toHaveBeenCalledTimes(1);
-  });
-
-  it('still works after a re-open, because the listener is on the sheet', () => {
-    btn.click();
-    reopen();
-
-    const toggle = overlaySwitch();
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-
-    expect(overlay.hide).toHaveBeenCalledTimes(1);
-  });
-});
+// SNOW-904 removed this file's "the overlay switch" block. The panel no
+// longer carries a "Display on the map" switch — every layer is switched
+// from the map's layers menu, whose row drives the same
+// window.pwaFavouritesOverlay bridge. Its coverage lives in
+// tests/js/test_map_layers_menu.js.
 
 describe('a list load that fails', () => {
   it.each(['htmx:responseError', 'htmx:sendError'])(

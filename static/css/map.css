@@ -514,9 +514,17 @@
     right: 48px;
     bottom: 0;
     margin: 0;
-    padding: 4px;
-    list-style: none;
-    min-width: 148px;
+    /* SNOW-904: #basemap-menu is a WRAPPER now, not the list. Padding and
+       list-style moved to .basemap-menu-list below, and the overflow moved
+       with them, so the header stays put while the rows scroll under it.
+       positionMenu still writes `bottom` and `max-height` onto THIS element
+       — it is the box being placed — which is why the column has to be
+       flex: the max-height has to reach the list rather than stop at a
+       block whose content decides its own height. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 200px;
     /* Anchored at the bottom baseline, the menu grows upward. This dvh cap is
        the no-JS floor; it stops the menu overrunning the whole viewport but
        does NOT reserve the chrome above #map (nav + the conditional off-season
@@ -539,12 +547,61 @@
        stack's own foot still sits above the scrubber by a margin that varies
        with the safe-area inset. These values stay as the no-JS fallback. */
     max-height: calc(100dvh - 96px);
-    overflow-y: auto;
     background: var(--color-card);
     border: 0.5px solid var(--color-border);
     border-radius: 12px;
     box-shadow: var(--shadow-glass);
     z-index: 5;
+}
+
+/* SNOW-904: the pinned header — the menu's title and the live "N layers
+   on" count map_basemap_picker.js recomputes on every open and every
+   toggle. Outside the scroll region on purpose: it is the one line that
+   answers "what am I looking at" without scrolling to find out. */
+.basemap-menu-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex: 0 0 auto;
+    padding: 10px 12px 8px;
+    border-bottom: 0.5px solid var(--color-border);
+}
+
+.basemap-menu-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-1);
+    white-space: nowrap;
+}
+
+.basemap-menu-count {
+    margin: 0;
+    font-size: 11px;
+    color: var(--color-text-2, var(--color-text-1));
+    white-space: nowrap;
+}
+
+/* The scroll region. `min-height: 0` is load-bearing in the same way it is
+   on every other bounded flex column in this codebase: without it a flex
+   child refuses to shrink below its content and the list runs past the
+   menu's own max-height instead of scrolling inside it. */
+.basemap-menu-list {
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* A section's rows. `hidden` on this element is what collapse toggles;
+   `display: block` would beat the UA's `[hidden]` rule, so the list-style
+   reset is stated without one. */
+.basemap-menu-group {
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .basemap-menu-item {
@@ -597,20 +654,92 @@
    separator + section label divide overlay checkboxes from the
    basemap radios above; checkbox glyphs are square rather than the
    round radio dot so the role distinction reads at a glance. */
+/* SNOW-904: indented past the CONTROL column (12px row padding + a 14px
+   checkbox + the 8px gap), so the hairline starts where the labels start
+   and reads as a division between two runs of rows. It is the only way a
+   sub-group is marked in this menu — nothing is ever indented under
+   anything, because an indent reads as a child of the row above it. */
 .basemap-menu-separator {
     height: 1px;
-    margin: 6px 8px;
+    margin: 6px 8px 6px 34px;
     background: var(--color-border);
 }
 
+/* SNOW-904: the section heading is a BUTTON now — it opens and closes its
+   own group — so the `pointer-events: none` that used to sit here (a label
+   nobody could click) is gone with the label it described. */
 .basemap-menu-section-label {
-    padding: 4px 12px 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 12px 4px;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    font: inherit;
+    text-align: left;
+    color: var(--color-text-2, var(--color-text-1));
+    cursor: pointer;
+}
+
+.basemap-menu-section-label:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+
+/* Title over summary, and the pair takes the remaining width so the chevron
+   stays pinned to the right edge whatever the summary says. `min-width: 0`
+   lets the summary ellipsise rather than push the chevron out of the box. */
+.basemap-menu-section-text {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.basemap-menu-section-title {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-2, var(--color-text-1));
-    pointer-events: none;
+}
+
+/* The derived second line: which of this section's rows are on. Written by
+   map_basemap_picker.js from the rows' own labels, so it is empty until
+   that module runs and the heading is simply a heading without it. */
+.basemap-menu-section-summary {
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--color-text-3, var(--color-text-2));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.basemap-menu-section-summary:empty {
+    display: none;
+}
+
+/* Points DOWN when the group is closed and UP when it is open, so the mark
+   always points at where the rows will go — the meaning
+   includes/_icon_chevron.html's own docstring gives it. */
+.basemap-menu-chevron {
+    flex: 0 0 auto;
+    transition: transform 120ms ease;
+}
+
+[aria-expanded="true"] > .basemap-menu-chevron {
+    transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .basemap-menu-chevron {
+        transition: none;
+    }
 }
 
 .basemap-menu-item--overlay::before {
@@ -683,31 +812,11 @@
     display: none;
 }
 
-/* SNOW-505: basemap sync-status caption row — a non-interactive li carrying
-   its own dot plus honest "browsed areas only" copy, distinct from the
-   clickable .basemap-menu-item rows above/below it. */
-.basemap-menu-caption {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 12px 6px;
-    font-size: 11px;
-    color: var(--color-text-2, var(--color-text-1));
-    pointer-events: none;
-}
-
-/* An action row in the layers menu: a one-shot command, not a persistent
-   toggle. It never sets aria-checked, so the shared radio-dot glyph would
-   otherwise sit permanently empty beside it — hide it for these rows only.
-
-   Introduced by SNOW-492 for "Cache this area for offline", which has since
-   moved out of the menu to its own roundel; SNOW-588's "Manage downloads…"
-   row (public/partials/_map_embed.html) is the current user. Those rows also
-   take role="menuitem" rather than menuitemcheckbox/menuitemradio, which is
-   the accessibility half of the same distinction this rule makes visually. */
-.basemap-menu-item--action::before {
-    display: none;
-}
+/* SNOW-904 removed `.basemap-menu-caption` (SNOW-505's "browsed areas
+   only" row, whose markup SNOW-521 deleted) and
+   `.basemap-menu-item--action::before` (SNOW-492's one-shot command rows,
+   the last of which SNOW-634 moved to a roundel). Neither selector had
+   matched anything in the tree for several tickets.  */
 
 .basemap-menu-item--overlay[aria-checked="true"]::before {
     background: var(--color-text-1);

@@ -25,11 +25,11 @@
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
  * with its own delete wiring — offers [data-panel-add] to file another,
- * and carries the "Display on the map" switch that used to
- * be a row in the layers menu (it drives window.pwaCommunityReportsOverlay
- * in map.js). This follows SNOW-634's downloads pattern: user-generated
- * data gets its own roundel, its own panel, and its panel owns the overlay
- * switch. favourites.js took the same treatment in the same ticket.
+ * and offers [data-panel-add] to file another. It carried a "Display on
+ * the map" switch for window.pwaCommunityReportsOverlay between SNOW-658
+ * and SNOW-904; that ticket made the map's layers menu the sole control
+ * for every layer, so the panel is about its own list again and the
+ * "Field observations" row there drives the bridge.
  *
  * Flow when eligible (authenticated):
  *   1. User taps the floating #report-btn, then [data-panel-add] in the
@@ -537,16 +537,6 @@
 
     // Reflect the overlay's REAL state rather than a flag of this module's
     // own, the way map_downloads_manager.js's render() does.
-    //
-    // SNOW-658 review: isEnabled(), the persisted preference — NOT
-    // isVisible(), which now answers from the layers MapLibre is drawing.
-    // See the matching note in static/js/favourites.js: the switch states
-    // what the user asked for, the roundel's ring states whether it reached
-    // the map, and offline-with-nothing-cached is the case where the user
-    // needs to be able to see the two disagree.
-    const toggle = sheet.querySelector('#map-community-reports-overlay-toggle');
-    if (toggle) toggle.checked = !!window.pwaCommunityReportsOverlay?.isEnabled?.();
-
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
@@ -684,17 +674,11 @@
     });
   }
 
-  // SNOW-658: the overlay switch drives window.pwaCommunityReportsOverlay
-  // directly — show()/hide() are the only writers of that overlay's
-  // visibility, and showListPanel() reads isVisible() back, so the two can
-  // never drift. No re-render: nothing else in the panel depends on it.
-  sheet.addEventListener('change', function (event) {
-    const target = /** @type {HTMLInputElement} */ (event.target);
-    if (!target || !target.matches) return;
-    if (!target.matches('#map-community-reports-overlay-toggle')) return;
-    if (target.checked) window.pwaCommunityReportsOverlay?.show();
-    else window.pwaCommunityReportsOverlay?.hide();
-  });
+  // SNOW-904: the "Display on the map" switch this panel carried, and the
+  // change listener that drove window.pwaCommunityReportsOverlay from it,
+  // are gone. The layers menu's "Field observations" row drives the same
+  // bridge — and, unlike Favourites and Routes beside it, needs no sign-in
+  // hand-off, because community reports are public data.
 
   // SNOW-658: the list is fetched, and this panel opens offline. Say so,
   // rather than leaving the loading line up forever — and never fall through
