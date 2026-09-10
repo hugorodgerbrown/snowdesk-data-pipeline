@@ -36,6 +36,8 @@
  *   restore(raw, limits)   — string → a MapLibre camera, or null
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 

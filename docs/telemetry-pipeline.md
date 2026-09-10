@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-09-10
 ---
 
 # Telemetry pipeline
@@ -375,6 +375,7 @@ below the table.
 | `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 | `static/js/map.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |
+| `static/js/error_reporting.js` (SNOW-894) | `js.error` — every uncaught exception (`window` `error`) and unhandled rejection. **CRITICAL**, so it beacons immediately and fires regardless of opt-in; the payload is what differs. Opted in: `{kind, pathname, message, filename, lineno, colno, stack}`. Opted out: `{kind, pathname}` and nothing more. Never a query string on either branch — the map's URLs carry `?route_share=` / `?trip_share=` tokens, and a share token is a capability. Deduped per page on `message\|filename\|lineno` (3 reports per fault, 20 distinct faults), because a throw inside a MapLibre `moveend` handler fires on every frame of a pan |
 
 **SNOW-585 — suppressed in dev.** `pwa.sw.update_available` (and
 `.update_applied`) never fire while `settings.SW_DEV_SHELL_BYPASS` is

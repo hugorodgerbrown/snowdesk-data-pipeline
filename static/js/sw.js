@@ -965,6 +965,56 @@ const STATIC_PATHS = new Set([
 // basemap_cache_core.js.
 const IMMUTABLE_ONLY_PATHS = new Set(['/api/bulletin-groupings.geojson']);
 
+// SNOW-902: STATIC_PATHS entries whose EMPTY answer must never be written to
+// the shell cache.
+//
+// An empty FeatureCollection from these three does not mean "this country has
+// no regions"; it means this deployment has no geometry for it yet — a fixture
+// not loaded, an import not run. The server already refuses to give such an
+// answer a long life (``_geojson_response`` sends no
+// ``stale-while-revalidate``, and ``_cached_region_payload`` will not memo it
+// for a day), but neither of those reaches HERE: this strategy serves the
+// cached entry first and stores every ok response whatever its headers say, so
+// an empty one, once written, was replayed on every load and the map went on
+// drawing nothing. Refusing to write it is what makes the server-side rule
+// mean anything on a device that has already been here.
+//
+// One load's lag survives deliberately: an entry written BEFORE this rule
+// existed is still served once, and is overwritten by the populated answer the
+// same request revalidates with. Refusing to SERVE a stale-empty entry would
+// mean parsing the cached body on every boot-path request to find out whether
+// it is one, which is a real cost on every load to fix one.
+const EMPTY_SENSITIVE_PATHS = new Set([
+  '/api/regions.geojson',
+  '/api/major-regions.geojson',
+  '/api/sub-regions.geojson',
+]);
+
+/**
+ * Whether this response is an empty FeatureCollection from a path where that
+ * means "not loaded yet" (see EMPTY_SENSITIVE_PATHS).
+ *
+ * Reads a clone, so the caller's own copy is untouched. An unreadable or
+ * unparseable body answers false — the ordinary path, and the behaviour
+ * everything had before this check existed.
+ *
+ * @param {URL} url The request URL.
+ * @param {Response} response An unread response (or clone) to inspect.
+ * @returns {Promise<boolean>}
+ */
+async function _isUnpopulatedCollection(url, response) {
+  if (!EMPTY_SENSITIVE_PATHS.has(url.pathname)) return false;
+  try {
+    // ``text()`` then parse rather than ``json()``: the two are equivalent
+    // here, and this is the method every Response-alike in the tests already
+    // implements.
+    const body = JSON.parse(await response.text());
+    return Array.isArray(body.features) && body.features.length === 0;
+  } catch (_e) {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Telemetry bridge (SNOW-384)
 // ---------------------------------------------------------------------------
@@ -1662,7 +1712,13 @@ async function _staleWhileRevalidate(request) {
               .map((token) => token.trim())
               .includes('immutable');
         if (persist) {
-          cache.put(request, response.clone()).catch(() => {});
+          // SNOW-902: both clones are taken now, while the body is still
+          // unread — the page consumes the original as soon as this handler
+          // returns, and a clone after that throws.
+          const toStore = response.clone();
+          _isUnpopulatedCollection(url, toStore.clone()).then((unpopulated) => {
+            if (!unpopulated) cache.put(request, toStore).catch(() => {});
+          }).catch(() => {});
         }
       }
       return response;

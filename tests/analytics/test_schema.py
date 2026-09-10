@@ -120,3 +120,59 @@ class TestMutationDiscardedEventAllowlisted:
         }
         parsed = parse_payload(envelope)
         assert parsed == [envelope]
+
+
+class TestJsErrorEventAllowlisted:
+    """SNOW-894: the client-side error reporter's event is accepted."""
+
+    def test_event_name_in_allowed_events(self) -> None:
+        """``js.error`` is a member of ALLOWED_EVENTS."""
+        assert "js.error" in ALLOWED_EVENTS
+
+    def test_parse_payload_accepts_the_opted_in_payload(self) -> None:
+        """The full diagnostic payload an opted-in client sends parses cleanly."""
+        envelope = {
+            "event": "js.error",
+            "timestamp": "2026-09-10T10:00:00+00:00",
+            "client_version": "2026.09.10.abc",
+            "properties": {
+                "kind": "error",
+                "pathname": "/",
+                "message": "Failed to initialize WebGL",
+                "filename": "/static/js/map.js",
+                "lineno": 718,
+                "colno": 12,
+                "stack": "Error: Failed to initialize WebGL\n  at boot",
+            },
+        }
+        assert parse_payload(envelope) == [envelope]
+
+    def test_parse_payload_accepts_the_opted_out_payload(self) -> None:
+        """The reduced payload an opted-out client sends parses cleanly too.
+
+        ``js.error`` is a CRITICAL event client-side, so it is sent whatever
+        the opt-in preference says; the reduced properties are what makes
+        that acceptable (see ``static/js/error_reporting.js``). Both shapes
+        have to reach the receiver — a schema that only knew the full one
+        would 400 exactly the reports from people who opted out.
+        """
+        envelope = {
+            "event": "js.error",
+            "timestamp": "2026-09-10T10:00:00+00:00",
+            "client_version": "2026.09.10.abc",
+            "properties": {"kind": "error", "pathname": "/"},
+            # telemetry.js strips both ids for an opted-out envelope.
+            "session_id": None,
+            "user_id": None,
+        }
+        assert parse_payload(envelope) == [envelope]
+
+    def test_unknown_error_event_rejected(self) -> None:
+        """A plausible neighbour that was never declared is still rejected."""
+        envelope = {
+            "event": "js.warning",
+            "timestamp": "2026-09-10T10:00:00+00:00",
+            "client_version": "2026.09.10.abc",
+        }
+        with pytest.raises(TelemetrySchemaError):
+            parse_payload(envelope)

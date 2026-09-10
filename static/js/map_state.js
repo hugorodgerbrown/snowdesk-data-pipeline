@@ -248,11 +248,14 @@ const VIEWPORT_STORAGE_KEY = 'snowdesk.map.viewport';
 // ship as English to every locale. The literals here are the English
 // fallback — see static/js/i18n_strings.js.
 //
-// Module scope rather than per-IIFE: the popup and the timelapse transport
-// are separate IIFEs, and both need these.
+// Module scope rather than per-IIFE: several separate IIFEs read these.
+//
+// SNOW-895: 'bulletin-link' and 'no-bulletin' were here for map.js's region
+// popup, which relabelled its own bulletin link as the scrubber moved. That
+// popup is gone, and so are they. The same two sentences are still rendered
+// SERVER-side by public/_region_tooltip.html, which is what the region panel
+// shows — the client-side copies had no reader left.
 const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
-  'bulletin-link': 'Open bulletin for %(date)s →',
-  'no-bulletin': 'No bulletin available for %(date)s',
   'season-unavailable': 'Season data unavailable',
   'timelapse-play': 'Play season timelapse',
   'timelapse-play-reverse': 'Play season timelapse in reverse',

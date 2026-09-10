@@ -2216,8 +2216,9 @@ describe('warm-cache under the two offline modes (SNOW-748)', () => {
     const sw = loadSw({ caches: makeCaches(), fetch: gate.fetch });
 
     const done = dispatchWarmCache(sw, 'req-live', urls);
-    await Promise.resolve();
-    await Promise.resolve();
+    // The write is decided after the body is read, so let the microtasks
+    // and the pending put settle before asking what landed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await Promise.resolve();
 
     sw._latchOffline();
@@ -3183,5 +3184,50 @@ describe('push handler', () => {
     // notificationclick reads the URL back off data, so a drop here would
     // send every tap to the map root instead of the bulletin.
     expect(options.data).toEqual({ url: '/ch-4115/' });
+  });
+});
+
+describe('an unpopulated region tier is never written to the shell cache (SNOW-902)', () => {
+  it('skips the put when the FeatureCollection is empty', async () => {
+    // An empty answer from these paths means this deployment has no geometry
+    // for that country YET. The server refuses to give it a stale window or a
+    // day-long memo, but neither reaches here: this strategy serves the cached
+    // entry first and stores every ok response whatever its headers say, so an
+    // empty one, once written, was replayed on every load.
+    const cachesStub = makeCaches();
+    const url = `${ORIGIN}/api/regions.geojson?country=it`;
+    const empty = JSON.stringify({ type: 'FeatureCollection', features: [] });
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: () => Promise.resolve(basicResponse(empty)),
+    });
+
+    const response = await sw._staleWhileRevalidate(new Request(url));
+    // The write is decided after the body is read, so let the microtasks
+    // and the pending put settle before asking what landed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(JSON.parse(await response.text()).features).toEqual([]);
+    expect(cachesStub.size('snowdesk-shell-UNSUBSTITUTED')).toBe(0);
+  });
+
+  it('still writes the same path once it has geometry', async () => {
+    const cachesStub = makeCaches();
+    const url = `${ORIGIN}/api/regions.geojson?country=it`;
+    const populated = JSON.stringify({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', properties: { id: 'IT-21' }, geometry: null }],
+    });
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: () => Promise.resolve(basicResponse(populated)),
+    });
+
+    await sw._staleWhileRevalidate(new Request(url));
+    // The write is decided after the body is read, so let the microtasks
+    // and the pending put settle before asking what landed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(cachesStub.size('snowdesk-shell-UNSUBSTITUTED')).toBe(1);
   });
 });

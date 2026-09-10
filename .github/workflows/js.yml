@@ -1,4 +1,5 @@
-# .github/workflows/js.yml — JS unit tests (Vitest/jsdom/fake-indexeddb).
+# .github/workflows/js.yml — JS unit tests (Vitest) and the JSDoc type
+# check (SNOW-899).
 #
 # Runs the ``tox -e js`` env on every pull-request and push to main/release.
 # Isolated from ci.yml and e2e.yml so its Node setup and dependency install
@@ -16,7 +17,7 @@
 # filter — pushes to main/release aren't merge-gated. Docs-only PRs skip the
 # test job via the ``changes`` gate, same pattern as e2e.yml.
 
-name: JS unit tests (Vitest)
+name: JS unit tests and type check
 
 on:
   # The push trigger is deliberately NOT path-filtered — see SNOW-600. `JS unit
@@ -109,3 +110,35 @@ jobs:
         run: |
           pip install tox tox-uv
           tox -e js
+
+  js-types:
+    name: JS type check (tsc --checkJs)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      # Same two runtimes as the job above, for the same reason: tox is
+      # Python, tsc is Node.
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node (22)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-js-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      - name: Install tox and run js-types env
+        run: |
+          pip install tox tox-uv
+          tox -e js-types
