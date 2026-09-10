@@ -49,6 +49,8 @@
  *   coversPoint(lng, lat)
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 

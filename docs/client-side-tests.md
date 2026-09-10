@@ -1,8 +1,8 @@
 ---
 name: client-side-tests
-description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop and exclusion list, tox -e e2e and tox -e js
+description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop, tox -e e2e / js / js-types, JSDoc types
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-09-10
 ---
 
 # Client-side test harness
@@ -20,6 +20,45 @@ the mutation queue, sw.js cache helpers, …) without a browser. See "JS unit
 tests" below for when to reach for which.
 
 ---
+
+## Type checking (SNOW-899)
+
+`tox -e js-types` runs `tsc --checkJs --noEmit` over `static/js`. It is a
+**check, not a build**: `noEmit` is set, nothing feeds `bin/minify-js` or
+`collectstatic`, and no source file changes syntax — types are JSDoc
+comments (`@param`, `@returns`, `@typedef`).
+
+### Opting a file in
+
+Add `// @ts-check` under its header comment. `checkJs` is `false` in
+`tsconfig.json`, so a file is unchecked until someone does. That is what let
+this land green rather than red-with-a-suppression-list.
+
+Opted in today — the pure, already-unit-tested modules:
+
+`calendar_core` · `choropleth_core` · `hatch_core` · `map_viewport_core` ·
+`route_markers_core` · `scrubber_core` · `search_core` ·
+`slope_overlay_core` · `trip_deeplink_core`
+
+Not yet: `basemap_download_core` (61 errors), `map_weather_core` (15),
+`layer_visibility_core` (14), `elevation_profile_core` (11). Between them
+they carry 115 of the 128 errors the first run found, which is a ticket of
+its own rather than a footnote to this one.
+
+### `globals.d.ts`
+
+`static/js/globals.d.ts` declares the `window.pwa*` publish channel. A module
+publishes by assigning `self.pwaSomething`, and consumers read it back from
+`window`; that is this project's module system, and TypeScript cannot infer
+it. The file is the first place that channel has been enumerated anywhere.
+
+Its types are `any` **for now**, and deliberately: the opted-in set is the
+pure cores, none of which consumes another's global, so a precise type would
+be checked against nothing. Narrowing one is the job of the ticket that opts
+in its consumers — when `map.js` is checked, the error lands there, which is
+where the value is. Do not widen that file to silence an error in an opted-in
+module.
+
 
 ## Which layer? Read this before writing a client-side test
 

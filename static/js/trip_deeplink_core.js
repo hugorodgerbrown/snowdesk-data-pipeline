@@ -42,6 +42,8 @@
  * (tests/js/test_trip_deeplink_core.js) with no browser and no map.
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 
@@ -66,14 +68,25 @@
   /**
    * The placeholder each identifier space is spelled with, matching
    * `apps.public.views._trips_context`.
+   *
+   * @type {Object<string, string>}
    */
   var PLACEHOLDER = Object.freeze({ uuid: '__UUID__', token: '__TOKEN__' });
+
+  /**
+   * One trip deep link, as `read()` resolves it from a query string.
+   *
+   * @typedef {Object} TripDeepLink
+   * @property {string} param The query parameter it was read from.
+   * @property {string} kind The identifier space — `'uuid'` or `'token'`.
+   * @property {string} value The identifier itself, still attacker-controlled.
+   */
 
   /**
    * Read whichever trip parameter a query string carries.
    *
    * @param {string} search A `location.search`, with or without its `?`.
-   * @returns {?Object} `{param, kind, value}`, or null when there is none.
+   * @returns {?TripDeepLink} The link, or null when there is none.
    */
   function read(search) {
     if (typeof search !== 'string' || !search) return null;
@@ -99,8 +112,9 @@
    * the value arrives from the address bar, so it is attacker-controlled,
    * and a path built from it must not be assemblable into something else.
    *
-   * @param {?Object} link A `read()` result.
-   * @param {?Object} templates `{uuid, token}` URL templates.
+   * @param {?TripDeepLink} link A `read()` result.
+   * @param {?Object<string, ?string>} templates The `{uuid, token}` URL
+   *   templates, keyed by the identifier space each parameter carries.
    * @returns {?string} The URL to fetch, or null when either is missing.
    */
   function endpointFor(link, templates) {

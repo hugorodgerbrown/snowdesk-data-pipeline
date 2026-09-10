@@ -66,6 +66,8 @@
  *     ``'no_rating'`` for ``null``/``undefined``/out-of-range ``n``.
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 

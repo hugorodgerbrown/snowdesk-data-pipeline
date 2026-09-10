@@ -63,6 +63,8 @@
  * destination.
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 
@@ -146,7 +148,7 @@
    * @param {{regionID?: string, name?: string}} props A region feature's
    *   properties — the parent of every resort in ``resorts``.
    * @param {string[]} [resorts] Resort names attached to the region.
-   * @returns {Array<Object>} Possibly empty: a region with no resorts, no
+   * @returns {SearchEntry[]} Possibly empty: a region with no resorts, no
    *   ``regionID``, or only a same-named resort yields no rows.
    */
   function buildResortEntries(props, resorts) {
@@ -154,6 +156,7 @@
     var regionID = props.regionID;
     var regionName = props.name || regionID;
     var regionKey = normalise(regionName);
+    /** @type {SearchEntry[]} */
     var entries = [];
     (resorts || []).forEach(function (resortName) {
       if (!resortName) return;
@@ -172,6 +175,18 @@
   }
 
   /**
+   * One searchable row: a region, or one of its resorts.
+   *
+   * @typedef {Object} SearchEntry
+   * @property {string} type `'region'` or `'resort'`.
+   * @property {string} primary The name shown on the row.
+   * @property {string} secondary The disambiguating line under it.
+   * @property {string} primaryKey `primary`, normalised for matching.
+   * @property {string} regionID The EAWS id this row selects.
+   * @property {string} searchable Every matchable word, normalised.
+   */
+
+  /**
    * Every row a region contributes: the region itself, then its resorts.
    *
    * The order matters only as a tie-break input — ``runSearch`` ranks —
@@ -180,7 +195,7 @@
    *
    * @param {{regionID?: string, name?: string, subregion_name?: string}} props
    * @param {string[]} [resorts] Resort names attached to the region.
-   * @returns {Array<Object>} Empty when ``props`` has no ``regionID``.
+   * @returns {SearchEntry[]} Empty when ``props`` has no ``regionID``.
    */
   function buildEntries(props, resorts) {
     var region = buildRegionEntry(props);
@@ -225,17 +240,17 @@
    * region id), and each extra character only narrows the set — so the
    * best match stays pinned at the top instead of drifting down it.
    *
-   * @param {Array<{primaryKey: string, searchable: string, primary: string,
-   *   regionID: string}>} index
+   * @param {SearchEntry[]} index
    * @param {string} query Raw user input; normalised here.
    * @param {number} [maxResults] Defaults to ``MAX_RESULTS``.
-   * @returns {Array<Object>} Empty for a blank query — an empty box must
+   * @returns {SearchEntry[]} Empty for a blank query — an empty box must
    *   not read as "no matches".
    */
   function runSearch(index, query, maxResults) {
     var q = normalise(query).trim();
     if (!q) return [];
     var cap = typeof maxResults === 'number' ? maxResults : MAX_RESULTS;
+    /** @type {Array<{item: SearchEntry, score: number}>} */
     var scored = [];
     (index || []).forEach(function (item) {
       if (!item || !item.searchable || !item.primaryKey) return;

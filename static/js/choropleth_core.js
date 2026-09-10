@@ -34,6 +34,8 @@
  *   repaintDateForStyleSwap(committed, urlParam)
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 
