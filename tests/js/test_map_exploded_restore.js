@@ -175,6 +175,12 @@ beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function showModal() {
     this.setAttribute('open', '');
   };
+  // jsdom ships neither method. `close()` models what the UA does for the
+  // close button AND for Escape: clear the open state, then fire `close`.
+  HTMLDialogElement.prototype.close = function close() {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
     value: 900,
@@ -184,6 +190,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  window.history.replaceState({}, '', '/');
   document.body.innerHTML = '';
   delete window.snowdeskLayerExplainer;
   delete window.snowdeskMapState;
@@ -336,6 +343,37 @@ describe('map_exploded.js lists the ladder in one fixed order', () => {
     const fixed = document.querySelectorAll('.exploded-label[data-fixed="true"]');
     expect(fixed).toHaveLength(1);
     expect(fixed[0].querySelector('strong').textContent).toBe('Swisstopo');
+  });
+});
+
+describe('map_exploded.js hands the URL back too', () => {
+  /*
+   * ``layers=exploded`` is what opens the demo and what makes map.js force
+   * the Swiss winter basemap. Closing the dialog has to take it off the
+   * address bar as well, or the demo returns on the next reload, on a
+   * back/forward step, and in any link the visitor copies out of the bar.
+   */
+  const at = (search) => window.history.replaceState({}, '', `/${search}`);
+
+  it('drops the parameter when the demo is closed', async () => {
+    at('?layers=exploded&d=2026-03-12');
+    mount();
+    await runDemo();
+
+    document.querySelector('.exploded-close').click();
+
+    // Every other parameter is the visitor's, and survives untouched.
+    expect(window.location.search).toBe('?d=2026-03-12');
+  });
+
+  it('drops it on Escape as well, which closes the dialog without the button', async () => {
+    at('?layers=exploded');
+    mount();
+    await runDemo();
+
+    document.querySelector('.map-exploded').close();
+
+    expect(window.location.search).toBe('');
   });
 });
 
