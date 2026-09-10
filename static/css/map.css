@@ -1073,8 +1073,9 @@
    uncluttered. The card is absolutely positioned relative to the toggle
    and opens to the right so it never collides with the scrubber.
    Stacking: scrubber=2, legend=3 (also season-ribbon at top-left),
-   utility cluster=4. (The off-season notice is no longer a #map chip — it's
-   the full-width #map-offseason-bar above the map, SNOW-445.) */
+   utility cluster=4. (The off-season notice is not a #map chip — SNOW-445
+   moved it to a bar above the map, and that bar has since been dropped;
+   the note now lives only inside #home-intro.) */
 
 .map-legend {
     position: absolute;
@@ -2954,14 +2955,13 @@
    height down; that traded height for a 640px measure, which is too long a
    line for 13px body text. The copy is short enough to stack instead. */
 
-/* SNOW-445: the persistent off-season archive notice is now a full-width bar
-   above the map (#map-offseason-bar, styled with Tailwind status tokens in
-   _map_embed.html), so the old bottom-left .map-offseason-note chip and its
-   styles were removed. */
+/* SNOW-445 removed the old bottom-left .map-offseason-note chip in favour of
+   a full-width #map-offseason-bar above the map; that bar has since been
+   dropped as well, so neither set of styles remains. */
 
 /* Off-season reference line inside the intro card — rendered only when
-   is_offseason is True. The full-width #map-offseason-bar above the map is
-   the persistent counterpart that survives #home-intro dismissal. */
+   is_offseason is True, and now the only surface carrying the archive
+   notice. */
 .home-intro-offseason-ref {
     font-size: 11px;
     line-height: 1.4;

@@ -45,10 +45,11 @@ Optional context:
                         (static/js/map_help.js), and the panel's CTA carries
                         on into the tour from there.
   is_offseason        — bool: True when today is past the season end.
-                        Drives the persistent #map-offseason-note chip
-                        (bottom-left, beside the legend toggle) so that
-                        returning off-season visitors see the archive
-                        notice even after dismissing #home-intro.
+                        Drives the archive note inside #home-intro. The
+                        full-width #map-offseason-bar it also carried
+                        (SNOW-445) is gone — the strip stated a resume
+                        month the data no longer supported, and the
+                        panel's line already makes the same guarantee.
   map_help_autostart  — bool (default True): when False, #map-help-overlay
                         carries data-map-help-no-autostart and
                         static/js/map_help.js's first-load auto-start is
@@ -65,29 +66,6 @@ Optional context:
 {# subscription manage page can reuse the same symbols without        #}
 {# duplicating the SVG block.                                         #}
 {% include "includes/country_flags_sprite.html" %}
-{% if is_offseason %}
-    {# SNOW-445: off-season archive notice — a full-width, in-flow bar between #}
-    {# the header and the map. Replaces the old bottom-left #map-offseason-note #}
-    {# chip: same honesty guarantee (the danger shown is archive, not live)     #}
-    {# but far more legible. Server-rendered whenever today is past the season  #}
-    {# end, so a returning off-season visitor always sees it. Mirrors the       #}
-    {# status-warning treatment the offline banner used to share (SNOW-748     #}
-    {# deleted that banner; its state now lives on the header's connectivity    #}
-    {# symbol), rendered in flow so it pushes the map down rather than          #}
-    {# overlaying it.                                                           #}
-    {# SNOW-486: markup delegated to the shared banner primitive               #}
-    {# (includes/_overlay_banner.html, "strip" variant).                        #}
-    {# SNOW-639: dismissable, and deliberately NOT persisted — overlays.js      #}
-    {# adds the `hidden` class to this one live element and a reload brings     #}
-    {# the bar back. Do not "fix" that into a stored dismissal: the bar exists  #}
-    {# to say the danger on screen is an archive rather than today's forecast,  #}
-    {# and that is still true on the next visit. Dismissing clears it from a    #}
-    {# session once it has been read; it does not settle the question forever.  #}
-    {% blocktrans asvar map_offseason_bar_body trimmed with start_month=archived_season_start|date:"F" %}
-        New season starts in {{ start_month }} — currently showing the {{ season_label }} season archive.
-    {% endblocktrans %}
-    {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body dismissible=True %}
-{% endif %}
 <div
     id="map"
     data-regions-url="{% url 'api:regions_geojson' %}"
@@ -1423,9 +1401,9 @@ Optional context:
             </div>
         </div>
     </div>
-    {# SNOW-445: the persistent off-season archive notice (SNOW-343) moved out #}
-    {# of #map to a full-width bar above the map (see #map-offseason-bar at the #}
-    {# top of this partial) — it no longer renders as a bottom-left chip here.  #}
+    {# The off-season archive notice (SNOW-343) has not lived here since      #}
+    {# SNOW-445 moved it to a full-width bar above the map; that bar is now    #}
+    {# gone too, and the #home-intro panel carries the note on its own.        #}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}

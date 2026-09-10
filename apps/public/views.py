@@ -893,12 +893,13 @@ def home(request: HttpRequest) -> HttpResponse:
     # already narrowed to actual data in _base_map_context().
     season_end: datetime.date = base_ctx["season_end"]
     is_offseason = today > season_end
-    # SNOW-445: label + resume-month for the off-season archive bar and the
-    # intro-card reference. Derived from the *data window's* calendar season
-    # (November → May of the season containing season_end), NOT from `today`
-    # (which drifts into the next calendar season over the summer) nor from
-    # the data-narrowed season_start (the first populated date, not the
-    # Nov 1 boundary). Precomputed here rather than via a template filter chain.
+    # Label + resume-month for the intro-card off-season reference (the
+    # full-width archive bar SNOW-445 added has been dropped). Derived from
+    # the *data window's* calendar season (November → May of the season
+    # containing season_end), NOT from `today` (which drifts into the next
+    # calendar season over the summer) nor from the data-narrowed
+    # season_start (the first populated date, not the Nov 1 boundary).
+    # Precomputed here rather than via a template filter chain.
     archived_season_start, _archived_season_end = _season_date_range(season_end)
     season_label = (
         f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
@@ -1462,7 +1463,7 @@ def _base_map_context(
     data when rows exist (SNOW-173), falling back to the calendar window when
     the season has not started or the DB is empty. The same pair is what the
     calendar grid tints as ``in-season`` and what ``home()`` reads for its
-    off-season bar.
+    off-season note.
 
     SNOW-794 briefly gave the scrubber a twelve-month window of its own so it
     could place any day the calendar offers. That was the wrong shape: it
