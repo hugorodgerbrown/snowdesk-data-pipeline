@@ -3681,6 +3681,10 @@
   // Resolves true when the feed answered, i.e. when the country's dot may
   // honestly go green. Never throws.
   const loadCountryRatings = async (code) => {
+    // Guarded here as well as at the ``ensureCountryLoaded`` call site: the
+    // country-toggle path calls this directly, and a page with no
+    // ``data-ratings-url`` would otherwise fetch the string "null".
+    if (!RATINGS_URL) return false;
     const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
       .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
       .catch(() => null);
