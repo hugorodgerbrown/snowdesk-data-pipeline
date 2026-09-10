@@ -63,12 +63,14 @@ endpoint is hit on demand when the user taps a region.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import secrets
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -76,7 +78,13 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseNotModified,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -165,6 +173,19 @@ _GEOJSON_CACHE_MAX_AGE = 86400
 # cannot outlive a restart. Bump it if the FEATURE SHAPE changes mid-deploy.
 _REGION_GEOJSON_CACHE_PREFIX = "region-geojson:v1"
 
+# SNOW-902: how long a region-GeoJSON answer may be REUSED WITHOUT ASKING once
+# it has gone stale — the HTTP ``stale-while-revalidate`` window. Same value as
+# the server-side memo above and a different job: that one bounds how often the
+# DB is walked, this one bounds how long a BROWSER may show an answer it has
+# not checked. They are written separately because they answer to different
+# pressures and only coincide today.
+#
+# It used to be the ``max-age``, with no validator on the response, and that
+# pair has no way back: a browser holding one of these responses cannot ask
+# whether it is still current, so it does not ask for a day. See
+# ``_geojson_response``.
+_GEOJSON_STALE_WHILE_REVALIDATE = 86400
+
 
 def _region_geojson_cache_key(tier: str, country: str) -> str:
     """Build the cache key for one boundary tier and country.
@@ -252,6 +273,140 @@ _RATING_TO_INT: dict[str, int] = {
     RegionDayRating.Rating.HIGH: 4,
     RegionDayRating.Rating.VERY_HIGH: 5,
 }
+
+
+def _geojson_response(
+    request: HttpRequest, payload: dict[str, Any], *, empty: bool = False
+) -> HttpResponse:
+    """
+    Serialise a region-GeoJSON payload with an ETag and a revalidatable policy.
+
+    SNOW-902. The three region tiers and the per-region tile blob used to be
+    decorated ``@cache_control(public=True, max_age=86400)`` and nothing else,
+    which is a promise with no way back: with no validator on the response, a
+    browser holding one cannot ASK whether it is still current, so it does not
+    ask for a day.
+
+    Three things change here, and only the last is about staleness:
+
+    - an **ETag** over the serialised body, so a client that wants to check can
+      be told "unchanged" in a couple of hundred bytes instead of being sent
+      the geometry again. Compared weakly, per RFC 9110 for GET: Django's
+      ``GZipMiddleware`` (production, perf) marks a compressed response's ETag
+      weak, so the next request offers ``W/"…"`` for a validator this view
+      issued strong, and a byte comparison would answer 200 with the whole
+      payload every time;
+    - ``max-age`` drops to ``_DYNAMIC_CACHE_MAX_AGE`` with the old day-long
+      lifetime moving to ``stale-while-revalidate``. The cached copy is still
+      served instantly for a day — the visitor waits for nothing — but the
+      cache refreshes behind that answer, so a deployment that redraws a
+      boundary reaches a returning visitor in minutes rather than tomorrow;
+    - an **empty FeatureCollection gets no stale window at all**. An empty
+      answer does not mean "this country has no regions", it means "this
+      deployment has no geometry for it yet" — a fixture not loaded, a
+      migration not run, a backfill still to come. Pinning that for a day is
+      how a database that gained the FR/AT/IT fixtures went on drawing Swiss
+      outlines alone until the entry expired, with a hard reload no help
+      (these feeds are re-issued by the service worker, which does not carry
+      the reload's cache mode). ``_cached_region_payload`` applies the same
+      rule to the server-side memo, which would otherwise pin it first.
+
+    Args:
+        request: The incoming request, read for ``If-None-Match``.
+        payload: The FeatureCollection (or tile blob) to serialise.
+        empty: True when the payload carries no geometry, and so must not get
+            a stale window. Passed by the caller rather than sniffed from the
+            payload, because "empty" is not the same shape in every one —
+            ``region_basemap_tiles`` 404s instead of returning a blank blob,
+            so it never takes this branch.
+
+    Returns:
+        A ``JsonResponse``, or ``HttpResponseNotModified`` when the client's
+        ``If-None-Match`` already matches. Both carry the ETag and the cache
+        policy.
+
+    """
+    response: HttpResponse = JsonResponse(payload)
+    etag = f'"{hashlib.blake2b(response.content, digest_size=16).hexdigest()}"'
+    if _if_none_match_matches(request, etag):
+        # A 304 repeats the validator and the policy below — a bare 304 would
+        # leave the client holding an entry it cannot check next time.
+        response = HttpResponseNotModified()
+    response["ETag"] = etag
+    if empty:
+        patch_cache_control(response, public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+    else:
+        patch_cache_control(
+            response,
+            public=True,
+            max_age=_DYNAMIC_CACHE_MAX_AGE,
+            stale_while_revalidate=_GEOJSON_STALE_WHILE_REVALIDATE,
+        )
+    return response
+
+
+def _if_none_match_matches(request: HttpRequest, etag: str) -> bool:
+    """
+    Whether the request's ``If-None-Match`` covers ``etag``, compared weakly.
+
+    RFC 9110 §13.1.2: ``If-None-Match`` on a GET uses the WEAK comparison
+    function, so ``W/"abc"`` and ``"abc"`` are a match. That is not pedantry
+    here — ``GZipMiddleware`` rewrites this view's strong ETag to the weak
+    form when it compresses, which is every production request that accepts
+    gzip, so a strict comparison would never match anything the deployed site
+    hands out.
+
+    Args:
+        request: The incoming request.
+        etag: The validator this view generated, quoted and strong.
+
+    Returns:
+        True when the client already holds this representation.
+
+    """
+    header = request.headers.get("If-None-Match", "")
+    if not header:
+        return False
+    candidates = {value.strip() for value in header.split(",")}
+    if "*" in candidates:
+        return True
+    unweighted = {
+        value[2:] if value.startswith("W/") else value for value in candidates
+    }
+    return etag in unweighted
+
+
+def _cached_region_payload(
+    tier: str, country: str, build: Callable[[], dict[str, Any]]
+) -> dict[str, Any]:
+    """
+    Memoise one tier's payload for a country, briefly when it has no geometry.
+
+    SNOW-896 put these payloads behind a day-long server-side cache. SNOW-902
+    adds the same exception the HTTP policy makes: an EMPTY FeatureCollection
+    is not a durable fact about a country, it is a fact about this deployment
+    not having its geometry yet — and memoising that for a day would pin the
+    blank map a layer below where any cache header could reach it.
+
+    Args:
+        tier: ``micro``, ``major`` or ``sub``.
+        country: The validated upper-case ISO-2 code.
+        build: Builds the payload on a miss.
+
+    Returns:
+        The FeatureCollection, from cache or freshly built.
+
+    """
+    key = _region_geojson_cache_key(tier, country)
+    cached = cache.get(key)
+    if cached is not None:
+        return cast(dict[str, Any], cached)
+    payload = build()
+    timeout = (
+        _DYNAMIC_CACHE_MAX_AGE if not payload["features"] else _GEOJSON_CACHE_MAX_AGE
+    )
+    cache.set(key, payload, timeout=timeout)
+    return payload
 
 
 def _download_summary_or_none(blob: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -684,9 +839,8 @@ def _build_weather_payload(
     return {"type": "FeatureCollection", "features": features}, oldest_fetched_at
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def regions_geojson(request: HttpRequest) -> JsonResponse:
+def regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L4 region polygons for a single country.
 
@@ -714,10 +868,12 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
     covered. That is the right trade for a map (nobody needs it inside the
     hour) but it is a real change, not an oversight.
 
-    The ``@cache_control(public=True, max_age=86400)`` + ``@vary_on_headers``
-    pair prevents Django's ``SessionMiddleware`` from appending
-    ``Vary: Cookie`` on the response.  Region geometry is fixture-backed and
-    anonymous — it is safe to cache publicly for 24 hours.  ``Vary: Cookie``
+    SNOW-902: the response policy comes from ``_geojson_response``, not a
+    decorator — an ETag, a five-minute ``max-age`` over a day-long
+    ``stale-while-revalidate``, and neither the stale window nor the day-long
+    server-side memo on an empty answer. ``@vary_on_headers`` stays, and is
+    what prevents Django's ``SessionMiddleware`` from appending
+    ``Vary: Cookie`` on the response.  ``Vary: Cookie``
     is also suppressed by exempting this path from ``PosthogContextMiddleware``
     via ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``
     (SNOW-299) — without that exemption the middleware would read
@@ -739,12 +895,10 @@ def regions_geojson(request: HttpRequest) -> JsonResponse:
 
     # SNOW-896: validate BEFORE the cache lookup. An unrecognised country must
     # 400 without becoming a cache key of its own.
-    payload = cache.get_or_set(
-        _region_geojson_cache_key("micro", country_param),
-        lambda: _build_micro_regions_payload(country_param),
-        timeout=_GEOJSON_CACHE_MAX_AGE,
+    payload = _cached_region_payload(
+        "micro", country_param, lambda: _build_micro_regions_payload(country_param)
     )
-    return JsonResponse(payload)
+    return _geojson_response(request, payload, empty=not payload["features"])
 
 
 def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
@@ -816,9 +970,8 @@ def _build_micro_regions_payload(country_param: str) -> dict[str, Any]:
     return {"type": "FeatureCollection", "features": features}
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def major_regions_geojson(request: HttpRequest) -> JsonResponse:
+def major_regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L1 EAWS major regions for a single country.
 
@@ -835,9 +988,10 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
     the boot path, so the win is smaller — but leaving two of three uncached
     would recreate exactly the inconsistency that ticket closed.
 
-    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
-    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
-    ``regions_geojson`` for the full rationale.
+    ``@vary_on_headers`` prevents Django's ``SessionMiddleware`` from
+    appending ``Vary: Cookie``; the response policy itself comes from
+    ``_geojson_response`` (SNOW-902).  See ``regions_geojson`` for the full
+    rationale.
 
     Args:
         request: The incoming HTTP request.
@@ -853,12 +1007,10 @@ def major_regions_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    payload = cache.get_or_set(
-        _region_geojson_cache_key("major", country_param),
-        lambda: _build_major_regions_payload(country_param),
-        timeout=_GEOJSON_CACHE_MAX_AGE,
+    payload = _cached_region_payload(
+        "major", country_param, lambda: _build_major_regions_payload(country_param)
     )
-    return JsonResponse(payload)
+    return _geojson_response(request, payload, empty=not payload["features"])
 
 
 def _build_major_regions_payload(country_param: str) -> dict[str, Any]:
@@ -890,9 +1042,8 @@ def _build_major_regions_payload(country_param: str) -> dict[str, Any]:
     return {"type": "FeatureCollection", "features": features}
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
-def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
+def sub_regions_geojson(request: HttpRequest) -> HttpResponse:
     """
     Return a FeatureCollection of L2 EAWS sub-regions for a single country.
 
@@ -909,9 +1060,10 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
     the boot path, so the win is smaller — but leaving two of three uncached
     would recreate exactly the inconsistency that ticket closed.
 
-    The ``@cache_control`` + ``@vary_on_headers`` pair prevents Django's
-    ``SessionMiddleware`` from appending ``Vary: Cookie``.  See
-    ``regions_geojson`` for the full rationale.
+    ``@vary_on_headers`` prevents Django's ``SessionMiddleware`` from
+    appending ``Vary: Cookie``; the response policy itself comes from
+    ``_geojson_response`` (SNOW-902).  See ``regions_geojson`` for the full
+    rationale.
 
     Args:
         request: The incoming HTTP request.
@@ -927,12 +1079,10 @@ def sub_regions_geojson(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    payload = cache.get_or_set(
-        _region_geojson_cache_key("sub", country_param),
-        lambda: _build_sub_regions_payload(country_param),
-        timeout=_GEOJSON_CACHE_MAX_AGE,
+    payload = _cached_region_payload(
+        "sub", country_param, lambda: _build_sub_regions_payload(country_param)
     )
-    return JsonResponse(payload)
+    return _geojson_response(request, payload, empty=not payload["features"])
 
 
 def _build_sub_regions_payload(country_param: str) -> dict[str, Any]:
@@ -971,10 +1121,9 @@ def _build_sub_regions_payload(country_param: str) -> dict[str, Any]:
     return {"type": "FeatureCollection", "features": features}
 
 
-@cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
 @require_GET
-def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
+def region_basemap_tiles(request: HttpRequest) -> HttpResponse:
     """
     Return the full precomputed ``basemap_download`` blob for one MicroRegion.
 
@@ -991,10 +1140,11 @@ def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
     download for most regions.
 
     Region geometry — and therefore this blob — is static reference
-    data, so the same ``@cache_control(public=True, max_age=86400)`` +
-    ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the
-    geojson endpoints applies. See ``regions_geojson`` for the full
-    ``Vary: Cookie`` rationale.
+    data, so it takes the same ``_geojson_response`` policy (SNOW-902) and the
+    same ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the
+    geojson endpoints. It never reaches that helper's empty branch: a region
+    with no computed blob 404s above rather than returning a blank one. See
+    ``regions_geojson`` for the full ``Vary: Cookie`` rationale.
 
     Args:
         request: The incoming HTTP request.
@@ -1012,7 +1162,7 @@ def region_basemap_tiles(request: HttpRequest) -> JsonResponse:
     if region is None or not region.basemap_download:
         raise Http404(f"No computed basemap_download for region {region_id!r}")
 
-    return JsonResponse(region.basemap_download)
+    return _geojson_response(request, region.basemap_download)
 
 
 @vary_on_headers("Accept-Encoding")

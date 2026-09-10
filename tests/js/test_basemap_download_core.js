@@ -76,9 +76,8 @@
  * SNOW-583 adds ``zoomRows`` — the accessor that lets every consumer of a
  * blob's ``z`` (``rangesToTileURLs``, ``tileCount``, ``tileGridPlan``,
  * ``blobFullyCached``) handle both shapes a zoom level's entry can now be:
- * ``buildBlob``'s 4-int rectangle (custom area; also what a stale
- * `max-age=86400` region response can still be for up to 24h after a
- * deploy) or a clipped region blob's ``{"<y>": [xmin, xmax]}`` row-span
+ * ``buildBlob``'s 4-int rectangle (custom area; also what a region
+ * response served from its stale window can still be — SNOW-902) or a clipped region blob's ``{"<y>": [xmin, xmax]}`` row-span
  * map (``apps.regions.services.basemap_tiles.build_region_blob``).
  *
  * SNOW-868 adds the per-basemap price at the end — a tile is not one size
@@ -582,9 +581,9 @@ describe('hasStorageHeadroom', () => {
  * SNOW-583: one accessor for a blob's z, whichever shape it arrived in.
  * A custom-area blob's z is still buildBlob's 4-int rectangle; a region
  * blob fetched from /api/region-basemap-tiles/ is now a row-span map
- * (apps.regions.services.basemap_tiles.build_region_blob), and a stale
- * `max-age=86400` response can still hand back the old rectangle for up
- * to 24h after a deploy — zoomRows is what makes every consumer below
+ * (apps.regions.services.basemap_tiles.build_region_blob), and a response
+ * served from the stale window can still hand back the old rectangle
+ * (SNOW-902) — zoomRows is what makes every consumer below
  * (rangesToTileURLs, tileCount, tileGridPlan, blobFullyCached) handle
  * both without knowing which one it got.
  */

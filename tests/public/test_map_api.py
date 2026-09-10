@@ -796,13 +796,17 @@ def test_region_basemap_tiles_missing_id_returns_400() -> None:
 
 @pytest.mark.django_db
 def test_region_basemap_tiles_cache_control_header() -> None:
-    """The endpoint sets the same public/24h Cache-Control as the geojson feeds."""
+    """The endpoint sets the same Cache-Control as the geojson feeds."""
     blob = build_blob([6.9, 46.4, 7.0, 46.5], *MICRO_BAND)
     MicroRegionFactory.create(region_id="CH-4115", basemap_download=blob)
     client = Client()
     response = client.get(reverse("api:region_basemap_tiles") + "?id=CH-4115")
     assert "public" in response["Cache-Control"]
-    assert "max-age=86400" in response["Cache-Control"]
+    # SNOW-902: the day-long lifetime moved from max-age to the stale window,
+    # so a returning client still gets an instant answer but can be told when
+    # a deploy has redrawn the blob.
+    assert "max-age=300" in response["Cache-Control"]
+    assert "stale-while-revalidate=86400" in response["Cache-Control"]
 
 
 # ---------------------------------------------------------------------------
@@ -1737,10 +1741,13 @@ def test_regions_geojson_accepts_country_case_insensitive() -> None:
 @pytest.mark.django_db
 def test_regions_geojson_sets_cache_control() -> None:
     """The Cache-Control header is set on region GeoJSON responses."""
+    _ch_region_with_boundary()
     client = Client()
     response = client.get(reverse("api:regions_geojson") + "?country=ch")
     assert response.status_code == 200
-    assert "max-age=86400" in response.get("Cache-Control", "")
+    # SNOW-902: max-age is short and the day is spent in the stale window.
+    assert "max-age=300" in response.get("Cache-Control", "")
+    assert "stale-while-revalidate=86400" in response.get("Cache-Control", "")
 
 
 @pytest.mark.django_db
@@ -1756,6 +1763,7 @@ def test_geojson_endpoints_have_public_cache_headers(url_name: str) -> None:
     appending ``Vary: Cookie``, which would prevent cross-navigation caching
     in most browsers even for identical requests.
     """
+    _ch_region_with_boundary()
     client = Client()
     url = reverse(url_name) + "?country=ch"
     response = client.get(url)
@@ -1764,8 +1772,8 @@ def test_geojson_endpoints_have_public_cache_headers(url_name: str) -> None:
     assert "public" in cache_control, (
         f"Expected 'public' in Cache-Control; got: {cache_control!r}"
     )
-    assert "max-age=86400" in cache_control, (
-        f"Expected 'max-age=86400' in Cache-Control; got: {cache_control!r}"
+    assert "stale-while-revalidate=86400" in cache_control, (
+        f"Expected the day-long stale window; got: {cache_control!r}"
     )
     vary = response.get("Vary", "")
     assert "Cookie" not in vary, (
@@ -2965,3 +2973,205 @@ def test_region_geojson_invalid_country_is_not_cached(url_name: str, tier: str) 
     # And the valid request DID write, so the assertion above is a real
     # negative rather than a key nothing ever populates.
     assert cache.get(public_api._region_geojson_cache_key(tier, "CH")) is not None
+
+
+# ---------------------------------------------------------------------------
+# Region GeoJSON caching (SNOW-902)
+# ---------------------------------------------------------------------------
+#
+# These four endpoints used to carry ``public, max-age=86400`` and no
+# validator, which a client cannot revalidate: it does not ask again until the
+# day is out. That pinned an EMPTY answer just as hard as a populated one, so
+# a deployment that had not loaded a country's geometry yet kept serving "no
+# regions" for a day after it did.
+
+
+def _ch_region_with_boundary(region_id: str = "CH-4115") -> None:
+    """Create one Swiss region at every tier, each carrying a boundary.
+
+    All three, because the L1 and L2 endpoints filter on ``boundary__isnull``
+    too — a fixture with geometry only at L4 makes those two answer empty and
+    take the empty-payload branch this section is distinguishing from.
+    """
+    boundary = {
+        "type": "Polygon",
+        "coordinates": [
+            [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+        ],
+    }
+    suffix = region_id[-1]
+    major = MajorRegionFactory.create(
+        prefix=f"CH-{suffix}", country="CH", boundary=boundary
+    )
+    sub = SubRegionFactory.create(
+        prefix=f"CH-4{suffix}", major=major, boundary=boundary
+    )
+    MicroRegionFactory.create(
+        region_id=region_id,
+        slug=region_id.lower(),
+        subregion=sub,
+        boundary=boundary,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_geojson_populated_response_is_revalidatable(url_name: str) -> None:
+    """A populated tier carries an ETag, a short max-age and a day's stale window."""
+    _ch_region_with_boundary()
+
+    response = Client().get(reverse(url_name) + "?country=ch")
+
+    assert response.status_code == 200
+    assert response["ETag"].startswith('"')
+    cache_control = response["Cache-Control"]
+    assert "max-age=300" in cache_control
+    assert "stale-while-revalidate=86400" in cache_control
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_geojson_matching_if_none_match_returns_304(url_name: str) -> None:
+    """A client offering the current ETag is told "unchanged", not sent the geometry."""
+    _ch_region_with_boundary()
+    client = Client()
+    url = reverse(url_name) + "?country=ch"
+    etag = client.get(url)["ETag"]
+
+    response = client.get(url, headers={"if-none-match": etag})
+
+    assert response.status_code == 304
+    assert response.content == b""
+    # The 304 repeats both, or the client is left holding an entry it cannot
+    # check again.
+    assert response["ETag"] == etag
+    assert "stale-while-revalidate=86400" in response["Cache-Control"]
+
+
+@pytest.mark.django_db
+def test_geojson_etag_changes_when_the_geometry_does() -> None:
+    """The validator tracks the payload: a new region invalidates the old ETag."""
+    _ch_region_with_boundary()
+    client = Client()
+    url = reverse("api:regions_geojson") + "?country=ch"
+    first = client.get(url)["ETag"]
+
+    _ch_region_with_boundary("CH-4116")
+    # SNOW-896 memoises the payload server-side for a day, and region geometry
+    # only changes when an operator runs a fixture import — which is a deploy,
+    # and a deploy restarts the process. Clearing stands in for that here: what
+    # this test pins is that a CHANGED payload gets a different validator, not
+    # how long the memo holds the old one.
+    cache.clear()
+    second = client.get(url)
+
+    assert second["ETag"] != first
+    # And the stale validator no longer satisfies the request.
+    assert client.get(url, headers={"if-none-match": first}).status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url_name",
+    ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
+)
+def test_geojson_empty_collection_gets_no_stale_window(url_name: str) -> None:
+    """An empty answer is transient — this deployment has no geometry for that
+    country YET — so it never gets the day-long stale window a populated one does.
+    """
+    response = Client().get(reverse(url_name) + "?country=it")
+
+    assert response.status_code == 200
+    assert response.json()["features"] == []
+    cache_control = response["Cache-Control"]
+    assert "max-age=300" in cache_control
+    assert "stale-while-revalidate" not in cache_control
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "offered",
+    ["W/{etag}", '{etag}, W/"other"', "*"],
+    ids=["weak", "one-of-several", "star"],
+)
+def test_geojson_if_none_match_is_compared_weakly(offered: str) -> None:
+    """RFC 9110 §13.1.2: If-None-Match on a GET uses the WEAK comparison.
+
+    Not pedantry: ``GZipMiddleware`` (production, perf) marks a compressed
+    response's ETag weak, so every production client that accepts gzip offers
+    ``W/"…"`` back for a validator this view issued strong. A byte comparison
+    would answer 200 with the whole payload every time, and the validator
+    would save nothing where it matters.
+    """
+    _ch_region_with_boundary()
+    client = Client()
+    url = reverse("api:regions_geojson") + "?country=ch"
+    etag = client.get(url)["ETag"]
+
+    response = client.get(url, headers={"if-none-match": offered.format(etag=etag)})
+
+    assert response.status_code == 304
+
+
+@pytest.mark.django_db
+def test_geojson_empty_payload_is_not_memoised_for_a_day() -> None:
+    """The server-side memo makes the same exception the HTTP policy does.
+
+    SNOW-896 caches these payloads for a day. Applied to an empty one that
+    would pin the blank map a layer below where any cache header can reach it:
+    the country's geometry lands, and the map keeps drawing nothing because
+    the process is still answering from its own memo.
+    """
+    url = reverse("api:regions_geojson") + "?country=ch"
+    client = Client()
+
+    with freeze_time("2026-01-15 09:00:00") as frozen:
+        assert client.get(url).json()["features"] == []
+
+        # The fixtures land — an operator import, a migration, a backfill.
+        _ch_region_with_boundary()
+        # Still inside the short window the empty answer was given.
+        assert client.get(url).json()["features"] == []
+
+        frozen.tick(301)
+        assert len(client.get(url).json()["features"]) == 1
+
+
+@pytest.mark.django_db
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_geojson_304_still_suppresses_cookie_vary() -> None:
+    """SNOW-299's Vary contract holds on the revalidation path too."""
+    _ch_region_with_boundary()
+    client = Client()
+    url = reverse("api:regions_geojson") + "?country=ch"
+    etag = client.get(url)["ETag"]
+
+    response = client.get(url, headers={"if-none-match": etag})
+
+    assert response.status_code == 304
+    vary = response.get("Vary", "")
+    assert "Accept-Encoding" in vary
+    assert "Cookie" not in vary
+
+
+@pytest.mark.django_db
+def test_region_basemap_tiles_is_revalidatable() -> None:
+    """The per-region tile blob takes the same policy as the geojson tiers."""
+    blob = build_blob([6.9, 46.4, 7.0, 46.5], *MICRO_BAND)
+    MicroRegionFactory.create(region_id="CH-4115", basemap_download=blob)
+    client = Client()
+    url = reverse("api:region_basemap_tiles") + "?id=CH-4115"
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert "stale-while-revalidate=86400" in response["Cache-Control"]
+    assert (
+        client.get(url, headers={"if-none-match": response["ETag"]}).status_code == 304
+    )
