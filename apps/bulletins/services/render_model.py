@@ -1470,7 +1470,9 @@ def _drop_untyped_problems(
 
     ``problemType`` stopped being a required CAAML field in SLF's 2026/27
     interface (SNOW-900) — the reduced next-day bulletin has no avalanche
-    problem to name. A trait is keyed by problem type, and an aggregation
+    problem to name. Absent means the key is missing or explicitly null; a
+    present-but-empty value is malformed and is left in place to fail
+    validation. A trait is keyed by problem type, and an aggregation
     entry lists the types it covers, so an untyped problem has nothing to
     key on and is excluded from both rather than rendering a card with no
     heading. Whether such an entry should render at all is SNOW-900's
@@ -1488,7 +1490,10 @@ def _drop_untyped_problems(
         every payload issued to date, which is the case worth keeping cheap.
 
     """
-    typed = [p for p in avalanche_problems if p.get("problemType")]
+    # Test for None, not truthiness: an empty-string problemType is a present
+    # value outside the enum, so it must reach _validate_problems and fail the
+    # build rather than being quietly dropped as though it were absent.
+    typed = [p for p in avalanche_problems if p.get("problemType") is not None]
     untyped_count = len(avalanche_problems) - len(typed)
     if untyped_count:
         logger.warning(

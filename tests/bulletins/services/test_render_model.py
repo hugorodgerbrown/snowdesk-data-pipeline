@@ -529,6 +529,23 @@ class TestUntypedAvalancheProblem:
 
         assert any("no problemType" in rec.getMessage() for rec in caplog.records)
 
+    def test_explicit_null_problem_type_is_treated_as_absent(self) -> None:
+        """An explicit null is absent — the filter tests None, not truthiness."""
+        props = _untyped_problem_props()
+        props["avalancheProblems"][1]["problemType"] = None
+
+        rm = build_render_model(props)
+
+        assert len(rm["traits"]) == 1
+
+    def test_empty_string_problem_type_raises(self) -> None:
+        """A present-but-empty problemType is malformed, not absent."""
+        props = _untyped_problem_props()
+        props["avalancheProblems"][1]["problemType"] = ""
+
+        with pytest.raises(RenderModelBuildError, match="Unknown problemType"):
+            build_render_model(props)
+
     def test_unknown_problem_type_still_raises(self) -> None:
         """Absent is tolerated; a type outside the EAWS enum is still fatal."""
         props = _untyped_problem_props()
