@@ -35,6 +35,7 @@ dependencies = [
     "cryptography>=50.0.0,<51",
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",
+    "django-persistent-messages>=0.5",
 ]
 
 [dependency-groups]

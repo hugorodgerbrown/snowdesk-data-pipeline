@@ -81,6 +81,12 @@ urlpatterns = [
     path("api/telemetry", include("apps.analytics.urls")),
     path("api/", include("apps.public.api_urls")),
     path("csp/", include("csp.urls")),
+    # Dismissal endpoint for the admin-managed site banners
+    # (django-persistent-messages). One DELETE route, login_required by the
+    # package: an anonymous reader's dismissal is client-side only. The
+    # banners themselves need no route — a context processor puts them on
+    # every page (see apps/public/banners.py).
+    path("messages/", include("persistent_messages.urls")),
     path("sw.js", serve_sw, name="service_worker"),
     # Kill-switch SW (SNOW-373, spec §6.3 Mechanism B). Always present so
     # ops can point ``SW_URL=/sw-kill.js`` in Render env when the real SW

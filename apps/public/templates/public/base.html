@@ -219,6 +219,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}
+        {# Admin-managed site banners. In flow directly under the nav, so a #}
+        {# notice pushes the page down rather than covering it — the        #}
+        {# position the hard-coded off-season bar held on the map. Renders  #}
+        {# nothing when no banner is active, which is the normal state.     #}
+        {% include "includes/_persistent_banners.html" %}
         {% block content %}{% endblock %}
         {% block site_footer %}
             {% include "public/_site_footer.html" %}
@@ -255,6 +260,13 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# below — loads first among them so it's registered before any   #}
         {# overlay could plausibly be revealed and clicked.                #}
         <script src="{% static 'js/overlays.js' %}" defer></script>
+        {# The other half of an admin banner's "×": overlays.js hides the  #}
+        {# strip for this page view, this records the dismissal against a #}
+        {# signed-in reader's account so it does not come back. Listens   #}
+        {# for overlays.js's overlay:dismissed event, so it loads after   #}
+        {# it — both are deferred, and the listener only has to be bound  #}
+        {# before a click, not before the element paints.                 #}
+        <script src="{% static 'js/persistent_messages.js' %}" defer></script>
         {# SNOW-375: IndexedDB wrapper must load BEFORE any consumer that #}
         {# calls window.pwaDb — currently pwa_reset.js (for the CTA bind) #}
         {# and telemetry.js (queue:events + context helper).              #}
