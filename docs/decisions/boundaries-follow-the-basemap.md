@@ -67,16 +67,30 @@ sizes the offline base layer the same way
   ratings — so this costs three extra countries' feeds (~40 KB of ratings
   each). All of it is off the critical path (which stays CH-L4 + ratings +
   resorts), publicly cacheable, and lands in Cache Storage, which is what
-  makes the outlines readable offline. Splitting the ratings leg out would
-  mean tracking geometry-loaded and ratings-loaded separately inside a
-  function whose failure path does a group-atomic revert; measure before
-  taking that on.
-- **A country can now be loaded before its provider row is switched on.**
-  `ensureCountryLoaded` short-circuits on `loadedCountries`, and its
-  choropleth paint is part of the load it skips, so the toggle that
-  reveals the country runs the ratings leg on its own
-  (`loadCountryRatings`) — otherwise those regions sit grey until the next
-  date change.
+  makes the outlines readable offline. Whether the ratings leg should be
+  skipped for a country no provider claims is a separate, measurable
+  question; it is one unit here.
+- **A country can now be loaded before its provider row is switched on**,
+  so the ratings need a memo of their own. `ensureCountryLoaded`
+  short-circuits on `loadedCountries` and its choropleth paint is part of
+  the load it skips, so the toggle that reveals the country calls
+  `loadCountryRatings` for that paint. Every switch-on needs the paint;
+  none after the first needs the payload, so the feed is kept per country
+  in `COUNTRY_RATINGS` and a row switched off and on again repaints from
+  it. `loadedCountries` cannot serve as that guard — it is set by the
+  boundary load, before any provider row claims the country. The merge
+  into the shared season cache is tracked separately again
+  (`mergedRatings`), because that cache does not exist yet when boot loads
+  the outlined countries and the merge has to be retried on a later call
+  rather than skipped for the session.
+- **The layer explainer's Swiss capture still reads Swiss.**
+  `?layers=exploded` forces the initial basemap to `swisstopo_winter`
+  (`initialBasemapKey` in `map.js`), whose coverage is CH, so the outlines
+  are Swiss by construction whatever basemap the visitor prefers.
+  `focusSwitzerland` therefore no longer governs the L1 / L2 / L4 sheets —
+  it turns CH's *fill* and grouping boundary back on, and nothing more. A
+  future change to what the explainer opens on has to move the basemap,
+  not `countryState`.
 - **The `l1` / `l2` / `l4` sync dots probe the basemap's countries.** They
   report whether a tier is available offline, and the tier is only fetched
   for the countries it is drawn for. `map_layer_sync_status.js` listens for

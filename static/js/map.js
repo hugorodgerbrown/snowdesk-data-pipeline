@@ -590,6 +590,15 @@
   // loadedCountries tracks which countries' GeoJSON has been fetched already
   // so we don't re-fetch on each toggle-on.
   const loadedCountries = new Set();
+  // SNOW-891: each country's season ratings, kept once fetched, and which of
+  // them have been merged into the shared season cache. Separate from
+  // ``loadedCountries`` because the two are no longer the same question:
+  // boot loads the GEOMETRY of every country the basemap outlines, whether
+  // or not a provider row claims it, so a country can be loaded with its
+  // ratings still unfetched — and a provider row can be switched off and on
+  // repeatedly, each time needing the paint but not the payload.
+  const COUNTRY_RATINGS = new Map();
+  const mergedRatings = new Set();
 
   // SNOW-63: restore auto-zoom preference from localStorage.
   AUTOZOOM = readBoolStorage(AUTOZOOM_STORAGE_KEY, false);
@@ -3685,13 +3694,31 @@
     // country-toggle path calls this directly, and a page with no
     // ``data-ratings-url`` would otherwise fetch the string "null".
     if (!RATINGS_URL) return false;
-    const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
+    // SNOW-891: the feed is fetched once per country per session and kept.
+    // A provider row can be switched off and on repeatedly, and every
+    // switch-on needs this function for its PAINT — the regions the filter
+    // has only now revealed would otherwise sit grey until the next date
+    // change. Re-fetching a season payload (~40 KB) to redraw a frame the
+    // session already holds is the cost this memo removes; it is not
+    // ``loadedCountries``' job, which answers about geometry and is set
+    // before any provider row claims the country.
+    const memoised = COUNTRY_RATINGS.get(code);
+    const countryRatings = memoised || await fetch(RATINGS_URL + '?country=' + code)
       .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
       .catch(() => null);
     const ok = !!countryRatings;
     if (countryRatings) {
+      COUNTRY_RATINGS.set(code, countryRatings);
       // Merge into SEASON_RATINGS_PROMISE payload if it has resolved.
-      if (SEASON_RATINGS_PROMISE) {
+      //
+      // SNOW-891: guarded on ``mergedRatings`` because this function now runs
+      // more than once per country. The cache may not exist on the first run
+      // — boot loads every country the basemap outlines, before anything has
+      // asked for a season — so the merge is retried on a later call rather
+      // than skipped for the session; merging the same payload twice is
+      // harmless but pointless.
+      if (SEASON_RATINGS_PROMISE && !mergedRatings.has(code)) {
+        mergedRatings.add(code);
         SEASON_RATINGS_PROMISE.then((cache) => {
           for (const [dateKey, regions] of Object.entries(countryRatings)) {
             if (!cache[dateKey]) cache[dateKey] = {};
@@ -4282,9 +4309,18 @@
       // SNOW-172: the explainer captures a fixed Swiss view, but the country
       // filters belong to the user. Someone following only France or ALBINA
       // has ``ch`` off, and ``applyCountryFilters`` then keeps every Swiss
-      // region, bulletin, L1, L2 and L4 feature out of the style — so the
-      // capture would photograph blank sheets. Turn CH on for the duration and
-      // hand back a restore function. Deliberately mutates the in-memory state
+      // region and bulletin feature out of the style — so the capture would
+      // photograph blank sheets. Turn CH on for the duration and hand back a
+      // restore function.
+      //
+      // SNOW-891 narrowed what this covers: the L1, L2 and L4 OUTLINES no
+      // longer read ``countryState`` at all — they follow the basemap. They
+      // are Swiss here for a different reason, and by construction rather
+      // than by this call: ``?layers=exploded`` forces the initial basemap to
+      // ``swisstopo_winter`` (see ``initialBasemapKey``), whose declared
+      // coverage is CH alone. So the geometry this turns back on is the fill
+      // and the grouping boundary, and the outlines are Swiss whatever the
+      // visitor's own basemap preference is. Deliberately mutates the in-memory state
       // only: ``COUNTRY_STORAGE_KEY`` is never written, so the preference
       // survives the demo untouched, and ``ensureCountryLoaded`` is called
       // without ``userInitiated`` so a failed fetch degrades silently rather
@@ -5681,7 +5717,9 @@
         // part of the load it just skipped, so the regions the filter has
         // only now revealed would sit grey until the next date change. Run
         // the ratings leg on its own instead — the same call that load would
-        // have made, against a feed the session has already cached.
+        // have made. It memoises the payload per country, so a row switched
+        // off and on again repaints from what the session already holds
+        // rather than re-fetching the season.
         const alreadyLoaded = loadedCountries.has(code);
         ensureCountryLoaded(code, { userInitiated: true }).then(() => {
           applyCountryFilters();

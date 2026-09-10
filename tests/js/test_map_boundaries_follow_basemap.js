@@ -293,6 +293,38 @@ describe('the boundary outlines and the bulletin fill are filtered separately', 
     }
   });
 
+  it('fetches a country\'s season ratings once however often its row is toggled', async () => {
+    // Boot outlines every country the global basemap draws, so all four are
+    // in `loadedCountries` before any provider row is switched on, and
+    // `ensureCountryLoaded` short-circuits on the toggle that reveals one —
+    // taking its choropleth paint with it. `loadCountryRatings` supplies that
+    // paint, and memoises the payload, so the second switch-on costs nothing:
+    // a row switched off and on repeatedly used to re-fetch the season every
+    // time.
+    await boot({ providers: '', countries: 'ch fr at it' });
+
+    const atRatings = () => globalThis.fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/ratings.json') && url.includes('country=at'))
+      .length;
+
+    const toggle = async (next) => {
+      document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+        detail: { code: 'at', next },
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    };
+
+    await toggle(true);
+    const afterFirst = atRatings();
+    expect(afterFirst).toBeGreaterThan(0);
+
+    await toggle(false);
+    await toggle(true);
+
+    expect(atRatings()).toBe(afterFirst);
+  });
+
   it("loads the basemap's countries, not just the enabled providers'", async () => {
     // The filter alone is not enough: a country whose geometry was never
     // fetched draws no outline however the filter reads. SLF alone on the
