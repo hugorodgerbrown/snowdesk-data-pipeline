@@ -590,6 +590,15 @@
   // loadedCountries tracks which countries' GeoJSON has been fetched already
   // so we don't re-fetch on each toggle-on.
   const loadedCountries = new Set();
+  // SNOW-891: each country's season ratings, kept once fetched, and which of
+  // them have been merged into the shared season cache. Separate from
+  // ``loadedCountries`` because the two are no longer the same question:
+  // boot loads the GEOMETRY of every country the basemap outlines, whether
+  // or not a provider row claims it, so a country can be loaded with its
+  // ratings still unfetched — and a provider row can be switched off and on
+  // repeatedly, each time needing the paint but not the payload.
+  const COUNTRY_RATINGS = new Map();
+  const mergedRatings = new Set();
 
   // SNOW-63: restore auto-zoom preference from localStorage.
   AUTOZOOM = readBoolStorage(AUTOZOOM_STORAGE_KEY, false);
@@ -3499,28 +3508,6 @@
   // with — rather than overwrites — any pre-existing layer filter.
   const BASE_LAYER_FILTERS = {};
 
-  // SNOW-172: Compute the MapLibre filter expression that shows only
-  // enabled countries on all region layers.  Any layer that was given a
-  // filter at install time has its base filter preserved by composing
-  // ['all', baseFilter, countryFilter]; layers with no base filter
-  // receive the country filter alone.
-  //
-  // Note: 'regions-line-selected' is intentionally excluded from this list.
-  // It has no filter — selection visibility is driven entirely via paint
-  // (line-opacity with a feature-state case expression), since MapLibre v4
-  // does not support feature-state expressions inside layer filters.  The
-  // selection ring only appears on features the user has actually clicked
-  // (which must already be present in regions-fill), so skipping the country
-  // filter here is safe — a user cannot click a fill feature the country
-  // FILTER has excluded, which is what matters here. SNOW-656 made the fill
-  // hideable by opacity rather than visibility, and a transparent feature IS
-  // still clickable — deliberately, so borders stay tappable with the colour
-  // off — but that is orthogonal: filtering removes the feature outright.
-  //
-  // 'match' is used instead of 'in' for the country filter because MapLibre's
-  // 'in' expression requires a literal keyword as its first argument; passing
-  // ['get', 'country'] (an expression) as the keyword causes the filter to
-  // evaluate incorrectly in MapLibre v4, hiding all features.
   // SNOW-524: append ``incoming``'s features onto ``existing``, skipping any
   // whose ``properties.prefix`` is already present.
   //
@@ -3542,41 +3529,111 @@
     return { ...existing, features: [...existing.features, ...fresh] };
   };
 
+  // SNOW-891: the countries the EAWS boundary outlines are drawn for — the
+  // ACTIVE BASEMAP's coverage, read off the checked picker row's
+  // ``data-basemap-countries`` (rendered from settings.BASEMAP_COUNTRIES).
+  //
+  // The basemap owns this scope because the basemap is what runs out at the
+  // border: swisstopo, IGN and basemap.at each render blank outside their
+  // own country, so an outline past it would delineate ground no tile
+  // covers. The Bulletins rows are a different question entirely — they say
+  // whose FORECAST to paint, and someone reading ALBINA on the Swiss basemap
+  // is a normal combination, not a contradiction.
+  //
+  // Read from the DOM rather than a JS constant for the same reason the
+  // country rows carry ``data-country-codes``: the picker is server-rendered
+  // and its ``aria-checked`` is the live answer at both moments this is
+  // asked. The boot IIFE marks the active row before the Map is constructed
+  // (map.js:~215), and map_basemap_picker.js updates it synchronously on
+  // click, before ``setStyle`` — so the ``styledata`` re-filter below reads
+  // the NEW basemap, never the one being left.
+  //
+  // A missing, empty or unrecognised attribute falls back to all four codes.
+  // The safe direction is drawing outlines nobody asked for; the unsafe one
+  // is the blank map this ticket fixed.
+  const boundaryCountryCodes = () => {
+    const active = document.querySelector(
+      '#basemap-menu .basemap-menu-item[data-basemap-key][aria-checked="true"]',
+    );
+    const declared = ((active && active.dataset.basemapCountries) || '').trim();
+    if (!declared) return [...COUNTRY_KEYS];
+    const codes = declared.split(/\s+/).filter(code => COUNTRY_KEYS.includes(code));
+    return codes.length > 0 ? codes : [...COUNTRY_KEYS];
+  };
+
+  // ['match', input, [values...], true, false] evaluates to true when the
+  // feature's country property is in the given list, false otherwise. An
+  // empty list becomes an always-false expression so the layer empties
+  // cleanly rather than showing stale data.
+  //
+  // That always-false form must be a real EXPRESSION. It used to be
+  // ``['==', false, true]``, which MapLibre parses as the LEGACY ``==``
+  // filter — whose second element has to be a property name — so it
+  // rejected the whole style with "layers.regions-fill.filter[1]: string
+  // expected, boolean found" and the map rendered blank. Untick every
+  // country and the map never came back. ``['in', x, ['literal', []]]`` is
+  // unambiguously an expression and is always false.
+  //
+  // 'match' is used instead of 'in' because MapLibre's 'in' expression
+  // requires a literal keyword as its first argument; passing
+  // ['get', 'country'] (an expression) as the keyword causes the filter to
+  // evaluate incorrectly in MapLibre v4, hiding all features.
+  const countryMatchFilter = (codes) => (
+    codes.length > 0
+      ? ['match', ['get', 'country'], codes.map(code => code.toUpperCase()), true, false]
+      : ['in', ['get', 'country'], ['literal', []]]
+  );
+
+  // SNOW-891: the two halves of the split. The Bulletins provider rows filter
+  // the bulletin DATA — the choropleth fill and the per-provider grouping
+  // boundary (handled separately below, on its array property). The EAWS
+  // boundary tiers are filtered by the basemap instead.
+  //
+  // Before this they were one list, so unticking every provider fed the
+  // always-false expression to all seven layers and the map drew nothing at
+  // all — Major / Minor / Micro still ticked, no outlines anywhere. SNOW-658
+  // relabelled these rows from countries to providers without narrowing what
+  // they filtered, and this is that narrowing.
+  const BULLETIN_DATA_LAYER_IDS = ['regions-fill'];
+  const BOUNDARY_LAYER_IDS = [
+    'regions-line', 'regions-label',
+    'sub-regions-line', 'sub-regions-label',
+    'major-regions-line', 'major-regions-label',
+  ];
+
+  // SNOW-172: Apply the country filters to every region layer. Any layer
+  // that was given a filter at install time has its base filter preserved by
+  // composing ['all', baseFilter, countryFilter]; layers with no base filter
+  // receive the country filter alone.
+  //
+  // Note: 'regions-line-selected' is intentionally excluded from both lists.
+  // It has no filter — selection visibility is driven entirely via paint
+  // (line-opacity with a feature-state case expression), since MapLibre v4
+  // does not support feature-state expressions inside layer filters.  The
+  // selection ring only appears on features the user has actually clicked
+  // (which must already be present in regions-fill), so skipping the country
+  // filter here is safe — a user cannot click a fill feature the country
+  // FILTER has excluded, which is what matters here. SNOW-656 made the fill
+  // hideable by opacity rather than visibility, and a transparent feature IS
+  // still clickable — deliberately, so borders stay tappable with the colour
+  // off — but that is orthogonal: filtering removes the feature outright.
   const applyCountryFilters = () => {
-    const enabled = COUNTRY_KEYS
-      .filter(code => countryState[code])
-      .map(code => code.toUpperCase());
-    // ['match', input, [values...], true, false] evaluates to true when the
-    // feature's country property is in the enabled list, false otherwise.
-    // When no countries are enabled use an always-false expression so every
-    // layer empties cleanly rather than showing stale data.
-    //
-    // That always-false form must be a real EXPRESSION. It used to be
-    // ``['==', false, true]``, which MapLibre parses as the LEGACY ``==``
-    // filter — whose second element has to be a property name — so it
-    // rejected the whole style with "layers.regions-fill.filter[1]: string
-    // expected, boolean found" and the map rendered blank. Untick every
-    // country and the map never came back. ``['in', x, ['literal', []]]`` is
-    // unambiguously an expression and is always false.
-    const countryFilter = enabled.length > 0
-      ? ['match', ['get', 'country'], enabled, true, false]
-      : ['in', ['get', 'country'], ['literal', []]];
-    const layerIds = [
-      'regions-fill', 'regions-line', 'regions-label',
-      'sub-regions-line', 'sub-regions-label',
-      'major-regions-line', 'major-regions-label',
-    ];
-    for (const layerId of layerIds) {
-      if (!map.getLayer(layerId)) continue;
+    const enabled = COUNTRY_KEYS.filter(code => countryState[code]);
+    const providerFilter = countryMatchFilter(enabled);
+    const boundaryFilter = countryMatchFilter(boundaryCountryCodes());
+    const setComposed = (layerId, countryFilter) => {
+      if (!map.getLayer(layerId)) return;
       const base = BASE_LAYER_FILTERS[layerId];
       const composed = base ? ['all', base, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);
-    }
-    // regions-line-selected is intentionally absent from layerIds above.
+    };
+    for (const layerId of BULLETIN_DATA_LAYER_IDS) setComposed(layerId, providerFilter);
+    for (const layerId of BOUNDARY_LAYER_IDS) setComposed(layerId, boundaryFilter);
+    // regions-line-selected is intentionally absent from both lists above.
     // It has no filter — selection visibility is paint-driven via line-opacity
     // and feature-state, which cannot appear in filter expressions (MapLibre v4).
     // Country filtering is implicit: only features visible through regions-fill
-    // (which does carry the country filter) can be clicked and selected.
+    // (which does carry the provider filter) can be clicked and selected.
 
     // SNOW-323: bulletin-groupings-line carries a ``countries`` JSON *array*
     // rather than a scalar ``country`` string, so the scalar 'match' filter
@@ -3584,9 +3641,14 @@
     // 'in' expression (value, array form — first arg is the needle, second
     // is ['get', 'countries'] which resolves to the feature's array).
     // Compose with its base filter if one was snapshotted at install time.
+    //
+    // SNOW-891: this is bulletin DATA — the boundary between one provider's
+    // bulletins and the next — so it takes the PROVIDER filter, not the
+    // basemap's. It is the second half of BULLETIN_DATA_LAYER_IDS, separate
+    // only because its property is an array.
     if (map.getLayer('bulletin-groupings-line')) {
       const arrayFilter = enabled.length > 0
-        ? ['any', ...enabled.map(c => ['in', c, ['get', 'countries']])]
+        ? ['any', ...enabled.map(c => ['in', c.toUpperCase(), ['get', 'countries']])]
         : ['in', ['get', 'country'], ['literal', []]];
       const base = BASE_LAYER_FILTERS['bulletin-groupings-line'];
       const composed = base ? ['all', base, arrayFilter] : arrayFilter;
@@ -3618,6 +3680,113 @@
     return fetch(url).then(r => r.ok).catch(() => false);
   };
 
+  // SNOW-891: fetch one country's season ratings, merge them into the shared
+  // season cache, and paint the day on screen with them. Lifted out of
+  // ``ensureCountryLoaded`` unchanged, because a country can now be LOADED
+  // before its provider row is switched on — boot loads every country the
+  // basemap outlines — and the toggle that reveals it then needs this leg on
+  // its own, without the geometry fetch that carried it before.
+  //
+  // Resolves true when the feed answered, i.e. when the country's dot may
+  // honestly go green. Never throws.
+  const loadCountryRatings = async (code) => {
+    // Guarded here as well as at the ``ensureCountryLoaded`` call site: the
+    // country-toggle path calls this directly, and a page with no
+    // ``data-ratings-url`` would otherwise fetch the string "null".
+    if (!RATINGS_URL) return false;
+    // SNOW-891: the feed is fetched once per country per session and kept.
+    // A provider row can be switched off and on repeatedly, and every
+    // switch-on needs this function for its PAINT — the regions the filter
+    // has only now revealed would otherwise sit grey until the next date
+    // change. Re-fetching a season payload (~40 KB) to redraw a frame the
+    // session already holds is the cost this memo removes; it is not
+    // ``loadedCountries``' job, which answers about geometry and is set
+    // before any provider row claims the country.
+    const memoised = COUNTRY_RATINGS.get(code);
+    const countryRatings = memoised || await fetch(RATINGS_URL + '?country=' + code)
+      .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
+      .catch(() => null);
+    const ok = !!countryRatings;
+    if (countryRatings) {
+      COUNTRY_RATINGS.set(code, countryRatings);
+      // Merge into SEASON_RATINGS_PROMISE payload if it has resolved.
+      //
+      // SNOW-891: guarded on ``mergedRatings`` because this function now runs
+      // more than once per country. The cache may not exist on the first run
+      // — boot loads every country the basemap outlines, before anything has
+      // asked for a season — so the merge is retried on a later call rather
+      // than skipped for the session; merging the same payload twice is
+      // harmless but pointless.
+      if (SEASON_RATINGS_PROMISE && !mergedRatings.has(code)) {
+        mergedRatings.add(code);
+        SEASON_RATINGS_PROMISE.then((cache) => {
+          for (const [dateKey, regions] of Object.entries(countryRatings)) {
+            if (!cache[dateKey]) cache[dateKey] = {};
+            Object.assign(cache[dateKey], regions);
+          }
+          // SNOW-236: Notify the scrubber that the merged cache now includes
+          // this country's ratings so it can re-derive effectiveTodayKey.
+          document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+            detail: { code },
+          }));
+        }).catch(() => {});
+      }
+      // Paint the currently-displayed date for the new country's regions.
+      // We use the display date from countryRatings directly rather than
+      // relying on the season cache promise completing first.
+      // Which date is currently being displayed — the committed date
+      // first, ``?d=`` behind it, exactly as a basemap swap resolves it.
+      //
+      // SNOW-660: this used to read ``readUrlDateParam()`` alone, on the
+      // reasoning that ``commitDate`` now writes ``?d=`` for every
+      // chosen day. It does — but it is not the only thing that commits
+      // one. The timelapse paints a frame per tick and only syncs the
+      // URL where playback settles, so a country toggled on mid-playback
+      // would find a bare URL, skip its paint, and leave the new
+      // country's regions grey beside correctly-graded neighbours. The
+      // precedence helper is the codebase's existing answer to exactly
+      // this question, and using it keeps the two callers from drifting.
+      //
+      // ``currentDisplayedDate`` is declared at this IIFE's top level,
+      // below this function but above every call site (a country toggle
+      // click and the map's 'load' handler), so it is initialised by the
+      // time this runs.
+      //
+      // Null still means nothing has been chosen: the paint is skipped
+      // rather than invented — and only the paint, so the caller's sync-dot
+      // bookkeeping still runs.
+      const paintDate = self.pwaChoroplethCore.repaintDateForStyleSwap(
+        currentDisplayedDate, readDisplayDate(),
+      );
+      if (MAP && paintDate) {
+        const frame = countryRatings[paintDate] || {};
+        // Mirror the paintTodayRatings guard: setFeatureState is a no-op
+        // if the source has not finished loading. Gate on isSourceLoaded
+        // and defer via a one-shot sourcedata listener if not yet ready.
+        // SNOW-623: `clearMissing: false` — this frame names only the
+        // newly-loaded country's regions, so clearing the ones it
+        // omits would wipe every country already on the map.
+        const paintNewCountry = () => {
+          self.pwaChoroplethCore.paintRatingsFrame(choroplethDeps(), frame, {
+            clearMissing: false,
+          });
+        };
+        if (MAP.isSourceLoaded('regions')) {
+          paintNewCountry();
+        } else {
+          const onSourceReady = (e) => {
+            if (e.sourceId === 'regions' && MAP.isSourceLoaded('regions')) {
+              MAP.off('sourcedata', onSourceReady);
+              paintNewCountry();
+            }
+          };
+          MAP.on('sourcedata', onSourceReady);
+        }
+      }
+    }
+    return ok;
+  };
+
   // SNOW-524: ``isBootCountry`` marks the one country the boot block has
   // already partly loaded on the critical path (CH). It is NOT a
   // default-country exemption — boot runs this function for CH exactly as for
@@ -3630,7 +3799,7 @@
   //   - Season ratings are already fetched into ``SEASON_RATINGS_PROMISE``,
   //     which IS the cache this function otherwise merges into — so there is
   //     nothing to merge and no second fetch to make.
-  const ensureCountryLoaded = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
+  const _loadCountry = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
     // SNOW-898: which of this country's four feeds this load must actually
@@ -3767,78 +3936,10 @@
         // absent, which costs one request on a first visit and none after.
         ratingsOk = await ensureRatingsCached(code);
       } else if (plan.ratings === 'fetch') {
-        const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
-          .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
-          .catch(() => null);
-        ratingsOk = !!countryRatings;
-        if (countryRatings) {
-          // Merge into SEASON_RATINGS_PROMISE payload if it has resolved.
-          if (SEASON_RATINGS_PROMISE) {
-            SEASON_RATINGS_PROMISE.then((cache) => {
-              for (const [dateKey, regions] of Object.entries(countryRatings)) {
-                if (!cache[dateKey]) cache[dateKey] = {};
-                Object.assign(cache[dateKey], regions);
-              }
-              // SNOW-236: Notify the scrubber that the merged cache now includes
-              // this country's ratings so it can re-derive effectiveTodayKey.
-              document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
-                detail: { code },
-              }));
-            }).catch(() => {});
-          }
-          // Paint the currently-displayed date for the new country's regions.
-          // We use the display date from countryRatings directly rather than
-          // relying on the season cache promise completing first.
-          // Which date is currently being displayed — the committed date
-          // first, ``?d=`` behind it, exactly as a basemap swap resolves it.
-          //
-          // SNOW-660: this used to read ``readUrlDateParam()`` alone, on the
-          // reasoning that ``commitDate`` now writes ``?d=`` for every
-          // chosen day. It does — but it is not the only thing that commits
-          // one. The timelapse paints a frame per tick and only syncs the
-          // URL where playback settles, so a country toggled on mid-playback
-          // would find a bare URL, skip its paint, and leave the new
-          // country's regions grey beside correctly-graded neighbours. The
-          // precedence helper is the codebase's existing answer to exactly
-          // this question, and using it keeps the two callers from drifting.
-          //
-          // ``currentDisplayedDate`` is declared at this IIFE's top level,
-          // below this function but above every call site (a country toggle
-          // click and the map's 'load' handler), so it is initialised by the
-          // time this runs.
-          //
-          // Null still means nothing has been chosen: the paint is skipped
-          // rather than invented — and only the paint, so the sync-dot
-          // bookkeeping below still runs.
-          const paintDate = self.pwaChoroplethCore.repaintDateForStyleSwap(
-            currentDisplayedDate, readDisplayDate(),
-          );
-          if (MAP && paintDate) {
-            const frame = countryRatings[paintDate] || {};
-            // Mirror the paintTodayRatings guard: setFeatureState is a no-op
-            // if the source has not finished loading. Gate on isSourceLoaded
-            // and defer via a one-shot sourcedata listener if not yet ready.
-            // SNOW-623: `clearMissing: false` — this frame names only the
-            // newly-loaded country's regions, so clearing the ones it
-            // omits would wipe every country already on the map.
-            const paintNewCountry = () => {
-              self.pwaChoroplethCore.paintRatingsFrame(choroplethDeps(), frame, {
-                clearMissing: false,
-              });
-            };
-            if (MAP.isSourceLoaded('regions')) {
-              paintNewCountry();
-            } else {
-              const onSourceReady = (e) => {
-                if (e.sourceId === 'regions' && MAP.isSourceLoaded('regions')) {
-                  MAP.off('sourcedata', onSourceReady);
-                  paintNewCountry();
-                }
-              };
-              MAP.on('sourcedata', onSourceReady);
-            }
-          }
-        }
+        // SNOW-891 extracted this body into `loadCountryRatings`; SNOW-898
+        // replaced the `RATINGS_URL &&` guard with the plan, which is the
+        // same condition named rather than re-derived at the call site.
+        ratingsOk = await loadCountryRatings(code);
       }
       // SNOW-898: green the country's own dot, or hand off to a real probe.
       // The two rules that decide it — SNOW-524's "a feed boot already
@@ -3931,6 +4032,52 @@
     }
   };
 
+  // SNOW-891: the in-flight loads, keyed by country code — the same shape
+  // ``overlayLoading`` gives the lazy overlay tiers, and for the same reason
+  // (SNOW-493 P1).
+  //
+  // ``loadedCountries`` only flips true once a load SETTLES, so it cannot
+  // answer "is this already happening". Two calls that overlap therefore both
+  // pass its guard and both merge their L4 answer into ``geojsonCache`` — a
+  // plain concat, not the prefix-deduped ``mergeRegionFeatures`` the L1/L2
+  // caches use — so every polygon in that country is drawn twice, with its
+  // ratings and L1/L2 feeds fetched twice for good measure.
+  //
+  // The overlap was rare while only the boot loop and a provider toggle
+  // called this. Binding the boundaries to the basemap gave it a third
+  // caller that fires on every swap, over a set of countries the swap itself
+  // chooses: opening on OpenFreeMap (all four loading) and switching basemap
+  // twice before they settle is now an ordinary thing to do.
+  const countryLoading = {};
+
+  /**
+   * Load one country's geometry and ratings, at most once at a time.
+   *
+   * @param {string} code A ``COUNTRY_KEYS`` member.
+   * @param {{isBootCountry?: boolean, userInitiated?: boolean}} [opts]
+   * @returns {Promise<void>}
+   */
+  const ensureCountryLoaded = (code, opts = {}) => {
+    if (loadedCountries.has(code)) return Promise.resolve();
+    const start = () => {
+      const work = _loadCountry(code, opts).finally(() => {
+        delete countryLoading[code];
+      });
+      countryLoading[code] = work;
+      return work;
+    };
+    const pending = countryLoading[code];
+    if (!pending) return start();
+    // A user-initiated call must not lose its revert-on-failure by joining a
+    // load it did not ask for: the boot and basemap paths pass no
+    // ``userInitiated``, so a failure there leaves the provider row switched
+    // on and empty. Wait for the load in flight, and take over only if it did
+    // not leave the country loaded — which is the failure case, and the only
+    // one where the revert has anything to do.
+    if (!opts.userInitiated) return pending;
+    return pending.then(() => (loadedCountries.has(code) ? undefined : start()));
+  };
+
   // SNOW-492: reveal the per-overlay "unavailable offline" toast by id —
   // remove `hidden`, add `flex` (per _toast.html's display note; the base
   // class list deliberately omits `flex` so both idioms that toggle it,
@@ -3993,12 +4140,34 @@
     routeShareSourceDataListener = null;
   };
 
+  // SNOW-891: fetch one boundary tier's GeoJSON for every country the ACTIVE
+  // BASEMAP draws. Both tier endpoints REQUIRE a single ``?country=`` and 400
+  // without one (apps/public/api.py) — there is no all-countries form — so the
+  // client asks per code and merges the answers.
+  //
+  // This replaced a hardcoded ``?country=ch``, which was correct only while
+  // the tiers were Swiss by default: enabling Major on the Austrian basemap
+  // fetched Switzerland and drew nothing where the user was looking.
+  //
+  // Resolves to the collections that answered, which may be fewer than were
+  // asked for — one country's feed uncached and the device offline, say. A
+  // partial answer is still worth drawing: outlines for the countries that
+  // did load beat no outlines at all, which is the failure this ticket is
+  // about. Only an empty result is treated as a failure by the callers.
+  const fetchBoundaryTier = async (url) => {
+    const results = await Promise.all(
+      boundaryCountryCodes().map(code => fetch(url + '?country=' + code)
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null)),
+    );
+    return results.filter(Boolean);
+  };
+
   const _loadOverlay = async (key) => {
     if (key === 'l1') {
       if (!MAJOR_REGIONS_URL) return;
-      const data = await fetch(MAJOR_REGIONS_URL + '?country=ch')
-        .then(r => r.json()).catch(() => null);
-      if (!data) {
+      const collections = await fetchBoundaryTier(MAJOR_REGIONS_URL);
+      if (collections.length === 0) {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
@@ -4007,18 +4176,21 @@
       // first enable) rather than overwriting it — otherwise this first
       // fetch would wipe out data for a country that's already loaded and
       // will never be re-fetched.
-      majorGeojsonCache = mergeRegionFeatures(majorGeojsonCache, data);
+      for (const data of collections) {
+        majorGeojsonCache = mergeRegionFeatures(majorGeojsonCache, data);
+      }
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l2') {
       if (!SUB_REGIONS_URL) return;
-      const data = await fetch(SUB_REGIONS_URL + '?country=ch')
-        .then(r => r.json()).catch(() => null);
-      if (!data) {
+      const collections = await fetchBoundaryTier(SUB_REGIONS_URL);
+      if (collections.length === 0) {
         revealOfflineToast('map-offline-toast-layer');
         return;
       }
       // SNOW-493 finding 5: same merge as L1 above, for L2's retained data.
-      subGeojsonCache = mergeRegionFeatures(subGeojsonCache, data);
+      for (const data of collections) {
+        subGeojsonCache = mergeRegionFeatures(subGeojsonCache, data);
+      }
       installOverlayLayers(majorGeojsonCache, subGeojsonCache);
     } else if (key === 'l3') {
       // Fetch the currently-displayed day's boundary and draw it immediately
@@ -4203,9 +4375,18 @@
       // SNOW-172: the explainer captures a fixed Swiss view, but the country
       // filters belong to the user. Someone following only France or ALBINA
       // has ``ch`` off, and ``applyCountryFilters`` then keeps every Swiss
-      // region, bulletin, L1, L2 and L4 feature out of the style — so the
-      // capture would photograph blank sheets. Turn CH on for the duration and
-      // hand back a restore function. Deliberately mutates the in-memory state
+      // region and bulletin feature out of the style — so the capture would
+      // photograph blank sheets. Turn CH on for the duration and hand back a
+      // restore function.
+      //
+      // SNOW-891 narrowed what this covers: the L1, L2 and L4 OUTLINES no
+      // longer read ``countryState`` at all — they follow the basemap. They
+      // are Swiss here for a different reason, and by construction rather
+      // than by this call: ``?layers=exploded`` forces the initial basemap to
+      // ``swisstopo_winter`` (see ``initialBasemapKey``), whose declared
+      // coverage is CH alone. So the geometry this turns back on is the fill
+      // and the grouping boundary, and the outlines are Swiss whatever the
+      // visitor's own basemap preference is. Deliberately mutates the in-memory state
       // only: ``COUNTRY_STORAGE_KEY`` is never written, so the preference
       // survives the demo untouched, and ``ensureCountryLoaded`` is called
       // without ``userInitiated`` so a failed fetch degrades silently rather
@@ -5594,12 +5775,47 @@
     }
     if (map) {
       if (next) {
+        // SNOW-891: a country's feeds can already be loaded before its
+        // provider row is switched on — boot loads every country the basemap
+        // OUTLINES, whether or not a provider row claims it, so on the global
+        // basemap all four are in ``loadedCountries`` from the start.
+        // ``ensureCountryLoaded`` then returns immediately, and its paint is
+        // part of the load it just skipped, so the regions the filter has
+        // only now revealed would sit grey until the next date change. Run
+        // the ratings leg on its own instead — the same call that load would
+        // have made. It memoises the payload per country, so a row switched
+        // off and on again repaints from what the session already holds
+        // rather than re-fetching the season.
+        const alreadyLoaded = loadedCountries.has(code);
         ensureCountryLoaded(code, { userInitiated: true }).then(() => {
           applyCountryFilters();
+          if (alreadyLoaded) loadCountryRatings(code);
         }).catch(() => {});
       } else {
         applyCountryFilters();
       }
+    }
+  });
+
+  // SNOW-891: the boundary outlines follow the ACTIVE BASEMAP, so a swap can
+  // ask for geometry this session never fetched — opening on swisstopo and
+  // moving to OpenFreeMap needs three countries whose features are not in any
+  // cache yet. The ``styledata`` re-install handler already re-runs
+  // ``applyCountryFilters`` before dispatching this event, and by then the
+  // picker has written the new row's ``aria-checked``, so the FILTER half is
+  // correct on arrival; this listener owns the FETCH half, re-filtering as
+  // each country's features are merged in.
+  //
+  // Deliberately NOT ``userInitiated``: the user asked for a basemap, not for
+  // a country, so a failed feed must not fire ``ensureCountryLoaded``'s
+  // group-atomic revert and switch a bulletin provider off. It re-probes the
+  // dots and leaves the preference alone, which is the boot path's posture.
+  document.addEventListener('snowdesk:basemap-changed', () => {
+    for (const code of boundaryCountryCodes()) {
+      if (loadedCountries.has(code)) continue;
+      ensureCountryLoaded(code).then(() => {
+        applyCountryFilters();
+      }).catch(() => {});
     }
   });
 
@@ -5920,8 +6136,18 @@
     // work the boot block above already did (L4 geometry, season ratings).
     // The L1/L2 fetches still run, landing in the offline cache off the
     // critical path so SNOW-235's trimmed first paint is preserved.
+    //
+    // SNOW-891: the UNION of the enabled providers' countries and the active
+    // basemap's. The boundary outlines are now scoped to the basemap, and a
+    // country whose geometry was never fetched draws no outline however the
+    // filter reads — so opening on OpenFreeMap with SLF alone must still load
+    // all four. Still un-awaited and still off the critical path, which stays
+    // CH-L4 + ratings + resorts.
+    const bootCountries = new Set(boundaryCountryCodes());
     for (const code of COUNTRY_KEYS) {
-      if (!countryState[code]) continue;
+      if (countryState[code]) bootCountries.add(code);
+    }
+    for (const code of bootCountries) {
       ensureCountryLoaded(code, { isBootCountry: code === 'ch' }).catch(() => {});
     }
 
