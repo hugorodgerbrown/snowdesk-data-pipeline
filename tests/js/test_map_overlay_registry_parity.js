@@ -28,11 +28,23 @@
  * is source text: the contract is a correspondence between what the menu
  * renders and what the registry knows.
  *
- * The ``country.*`` keys are deliberately excluded: the handler returns for
- * them before reaching the loop (they dispatch snowdesk:country-toggle
- * instead), so they need no entry. Every other key does — a lazy overlay
- * needs it for its toggle-OFF path even though the layer is installed by
- * the main IIFE.
+ * Two sets of keys are deliberately excluded, both because the handler
+ * RETURNS before reaching that loop:
+ *
+ *   - ``country.*``, which dispatch snowdesk:country-toggle instead;
+ *   - ``downloads`` (SNOW-904), which is routed to
+ *     ``window.pwaDownloadedOverlay``. That bridge owns the
+ *     ``cached-tiles-*`` layers directly and paints them itself, so the
+ *     key has never been in this registry and must not be added to it —
+ *     a basemap swap re-seeds ``overlayState`` wholesale, and this
+ *     overlay's whole point is surviving that untouched.
+ *
+ * The three other rows SNOW-904 added — favourites, community_reports and
+ * routes — are NOT excluded. They are routed to bridges too, but those
+ * bridges hide their layers through ``OVERLAY_LAYERS`` and so genuinely
+ * need an entry. Every remaining key does as well: a lazy overlay needs one
+ * for its toggle-OFF path even though the layer is installed by the main
+ * IIFE.
  */
 
 import { readFileSync } from 'node:fs';
@@ -62,10 +74,14 @@ function templateOverlayKeys() {
   return keys;
 }
 
+// SNOW-904: keys whose click is handed to a bridge that owns its own layer
+// ids. See the module docstring for why this is one key and not four.
+const BRIDGE_OWNED_LAYERS = new Set(['downloads']);
+
 describe('layers-menu overlay registry parity', () => {
   it('every non-country row has an entry in OVERLAY_LAYERS', () => {
     const rows = [...templateOverlayKeys()].filter(
-      (k) => !k.startsWith('country.'),
+      (k) => !k.startsWith('country.') && !BRIDGE_OWNED_LAYERS.has(k),
     );
 
     expect(rows.length).toBeGreaterThan(0);
