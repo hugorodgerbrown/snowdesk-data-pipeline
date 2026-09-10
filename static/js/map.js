@@ -1737,7 +1737,7 @@
   // Visibility is owned by ``overlayState.resorts`` and applied at
   // install time; toggle clicks (handled in the basemap-picker IIFE)
   // call ``setLayoutProperty`` on the pin and label layer ids via
-  // ``OVERLAY_LAYER_IDS.resorts``.
+  // ``OVERLAY_LAYERS.resorts`` (map_state.js, SNOW-897).
   const installResortsLayer = (geojson) => {
     if (!geojson || map.getSource('resorts')) return;
     map.addSource('resorts', { type: 'geojson', data: geojson });
@@ -4212,61 +4212,19 @@
       },
     };
   }
-
-  // SNOW-235: Layer IDs for the lazily-loaded overlay tiers, restricted
-  // to l1 / l2 / resorts. l4 is not lazy — its layers are installed
-  // eagerly in installRegionsLayers; the other tiers fetch their
-  // GeoJSON on first enable.
-  //
-  // SNOW-656: there is no ``bulletins`` entry here and there is no
-  // ``regions-fill`` entry anywhere in this map. The Bulletins row's two
-  // layers are driven differently from every other overlay — the fill by
-  // opacity (it must stay hit-testable), the groupings boundary through the
-  // ``l3`` entry below via OVERLAY_VISIBILITY_GOVERNOR — so both go through
-  // applyBulletinsVisibility rather than the generic visibility loop this
-  // table feeds.
-  // Mirrors OVERLAY_LAYER_IDS in basemapPickerInit but scoped here so
-  // the snowdesk:overlay-load handler below can reach them without
-  // crossing IIFE boundaries.
-  const OVERLAY_LAYER_IDS_MAIN = {
-    l1: ['major-regions-line', 'major-regions-label'],
-    l2: ['sub-regions-line', 'sub-regions-label'],
-    // SNOW-323: l3 has only a line layer (no label layer — groupings
-    // don't carry a user-facing name property).
-    l3: ['bulletin-groupings-line'],
-    resorts: ['resorts-pin', 'resorts-label'],
-    favourites: ['favourites-pin', 'favourites-label'],
-    community_reports: [
-      'community-reports-clusters',
-      'community-reports-cluster-count',
-      'community-reports-point',
-    ],
-    // SNOW-761: one symbol layer, not a pin+label pair — the condition
-    // glyph is an inline `image` section inside `text-field`, so there is
-    // a single layer to toggle rather than the pin+label pairs favourites
-    // and resorts use.
-    weather: ['weather-point'],
-    // SNOW-687: the coloured line FIRST and the casing second — deliberately
-    // the inverse of the order installRoutesLayer adds them in, where the
-    // casing has to be added first to paint underneath. This list's order is
-    // read by panelOverlayPainted below, which answers for the whole group
-    // from element [0], and that has to be the layer the user actually sees.
-    // SNOW-764 adds 'routes-line-pending'. It is NOT first: panelOverlayPainted
-    // answers for the whole group from element [0], and that has to be the
-    // layer every routes user has — a visitor with only a pending share is
-    // the exception, not the case the roundel ring is painted from.
-    routes: [
-      'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
-    ],
-    // SNOW-691: one layer — the raster. The coverage outline that rode
-    // alongside it was removed; see slope_overlay_core.js's header.
-    slope: ['slope-raster'],
-  };
+  // SNOW-897: the layer ids for each overlay now live in ONE table,
+  // ``OVERLAY_LAYERS`` in map_state.js, which map_basemap_picker.js reads
+  // too. There used to be a near-identical copy here and another there —
+  // five entries duplicated verbatim, four only here, one only there — and
+  // telling a partition from a copy meant reading sixty lines of comment
+  // across two files. Neither consumer enumerates the table; both look keys
+  // up, so one table serves both and each resolves the keys it drives.
 
   /**
    * Whether a panel-driven overlay is actually drawn on the map right now.
    *
-   * SNOW-658: the FIRST id in each group above is that overlay's principal
+   * SNOW-658: the FIRST id in each group of ``OVERLAY_LAYERS`` is that
+   * overlay's principal
    * layer — the one carrying its markers ('favourites-pin',
    * 'community-reports-clusters'). Every id in a group is installed by one
    * function and flipped by one loop, so the principal layer answers for the
@@ -4276,7 +4234,7 @@
    * @param {string} key - ``'favourites'`` or ``'community_reports'``.
    * @returns {boolean} True when that overlay's layers are on the map.
    */
-  const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYER_IDS_MAIN[key][0]);
+  const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYERS[key][0]);
 
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
   // the user enables an overlay tier that hasn't been fetched yet.
@@ -4331,7 +4289,7 @@
         overlayState[gov] = stillEnabled;
       }
       const visibility = stillEnabled ? 'visible' : 'none';
-      for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+      for (const layerId of OVERLAY_LAYERS[key]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', visibility);
         }
@@ -5058,7 +5016,7 @@
   const hidePanelOverlay = (key) => {
     writeStorage(OVERLAY_STORAGE_KEY[key], 'false');
     overlayState[key] = false;
-    for (const layerId of OVERLAY_LAYER_IDS_MAIN[key]) {
+    for (const layerId of OVERLAY_LAYERS[key]) {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', 'none');
       }

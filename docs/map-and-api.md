@@ -404,8 +404,8 @@ It differs from every other opt-in overlay in one way worth knowing before
 you go looking for the missing code: **it is installed eagerly and hidden,
 not lazy-loaded.** MapLibre requests no tiles for a source whose layers are
 all `visibility: none`, so a hidden raster costs one source entry and no
-network at all — which is why `slope` appears in `OVERLAY_LAYER_IDS` (both
-copies) but not in the picker's lazy branch, and why there is no
+network at all — which is why `slope` appears in `OVERLAY_LAYERS` but not
+in the picker's lazy branch, and why there is no
 `ensureOverlayLoaded` case and no `snowdesk:overlay-load` handling for it.
 The generic `setLayoutProperty` path is the whole toggle.
 
@@ -514,9 +514,11 @@ layer hangs off a `geojson` source this app adds, and every basemap layer
 hangs off a `vector`/`raster` source (or is a sourceless `background`
 layer, as in the offline fallback style), so the module hides exactly the
 geojson-sourced layers. A new overlay is covered without touching the
-module — unlike the `OVERLAY_LAYER_IDS` lists (`map_basemap_picker.js`,
-and `OVERLAY_LAYER_IDS_MAIN` in `map.js`), which must
-enumerate ids because they map *menu rows* to layers.
+module — unlike `OVERLAY_LAYERS` (`map_state.js`, SNOW-897), which must
+enumerate ids because it maps *overlay keys* to layers. That was two
+near-identical tables until SNOW-897 merged them: `OVERLAY_LAYER_IDS` in
+`map_basemap_picker.js` and `OVERLAY_LAYER_IDS_MAIN` in `map.js`, with five
+entries duplicated verbatim, four unique to one and one to the other.
 
 `regions-fill` appears in neither of those lists (SNOW-656). It is the only
 overlay layer driven by **opacity** rather than visibility, because it is the

@@ -185,57 +185,11 @@
       toggle.focus();
     }
   });
-
-  // SNOW-59 overlay layer ids, mirrored from the main IIFE. Each tier
-  // owns a line layer (the outline, where applicable) and a symbol
-  // layer (the zoom-banded label) — toggling the overlay flips both in
-  // lockstep so a hidden tier never leaves an orphan label floating
-  // with no boundary.
-  //
-  // The picker mutates layer visibility via setLayoutProperty rather
-  // than reaching into the main IIFE's overlayState — the layer state
-  // on the map IS the source of truth, and the localStorage key is
-  // the persistence shadow.
-  const OVERLAY_LAYER_IDS = {
-    l1: ['major-regions-line', 'major-regions-label'],
-    l2: ['sub-regions-line', 'sub-regions-label'],
-    // SNOW-656: ``l4`` is the micro-region GEOGRAPHY alone now — the boundary
-    // and its label. The choropleth (``regions-fill``) and the dissolved
-    // bulletin boundary (``bulletin-groupings-line``) that used to ride in
-    // this list are the BULLETINS row, and they are not in this table at all:
-    // both are driven by map.js's applyBulletinsVisibility, because the fill
-    // is hidden by opacity rather than visibility (it has to stay
-    // hit-testable) and the boundary answers to a suppression the picker
-    // knows nothing about. There is no ``l3`` entry for the same reason there
-    // never was one.
-    l4: ['regions-line', 'regions-label'],
-    resorts: ['resorts-pin', 'resorts-label'],
-    // SNOW-658: the 'favourites' and 'community_reports' entries went with
-    // their menu rows. Both overlays are switched from the panel their own
-    // roundel opens now, through window.pwaFavouritesOverlay /
-    // window.pwaCommunityReportsOverlay — bridges INSIDE map.js's main IIFE,
-    // which is why they need nothing here at all: the visibility loop below
-    // exists only to let this separate IIFE reach layers it cannot otherwise
-    // touch.
-    // SNOW-645: the 'downloaded' entry that lived here (cached-tiles-fill/
-    // -line) went with the layers-menu row — the overlay is now bound to
-    // the "Manage downloads" sheet being open, not a togglable layer (see
-    // map_downloads_manager.js's open()/close handling and
-    // window.pwaDownloadedOverlay's show/hide in map.js).
-    // SNOW-691: the slope raster. Deliberately NOT in the lazy-load branch
-    // below: the source is installed eagerly with its layer hidden, and
-    // MapLibre requests no tiles for a source whose layers are all
-    // ``visibility: none`` — so there is nothing to fetch on first enable
-    // and this takes the direct setLayoutProperty path.
-    slope: ['slope-raster'],
-    // SNOW-761: the weather symbols. Lazy like l1/l2/resorts — the layer
-    // does not exist until the first enable fetches the feed, which is why
-    // 'weather' is also in the lazy-load branch below. This entry is what
-    // the toggle-OFF path needs; without it that path throws
-    // "OVERLAY_LAYER_IDS[overlayKey] is not iterable" before any of the
-    // work happens, and the row goes aria-checked with nothing on the map.
-    weather: ['weather-point'],
-  };
+  // SNOW-897: the layer ids for each overlay live in ``OVERLAY_LAYERS``
+  // (map_state.js), shared with map.js. This file used to carry its own
+  // near-identical copy; see that table's comment for why there were two and
+  // why one is enough. The rows this picker drives are a subset of its keys,
+  // and looking up a key no row uses simply never happens.
 
   for (const item of items) {
     item.addEventListener('click', (e) => {
@@ -317,7 +271,7 @@
             // here moved to the Bulletins branch above, with the layer it
             // belongs to. Enabling the micro-region GEOGRAPHY says nothing
             // about whether that day's bulletin grouping should be drawn.
-            for (const layerId of OVERLAY_LAYER_IDS[overlayKey]) {
+            for (const layerId of OVERLAY_LAYERS[overlayKey]) {
               if (MAP.getLayer(layerId)) {
                 MAP.setLayoutProperty(
                   layerId, 'visibility', next ? 'visible' : 'none',
