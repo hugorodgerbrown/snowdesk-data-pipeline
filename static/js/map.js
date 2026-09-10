@@ -564,7 +564,29 @@
     MAP_DEFAULTS.opacityStep,
   );
   bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
-  overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+  /**
+   * The favourites overlay's boot preference, gated on eligibility.
+   *
+   * Favourites is the one overlay that defaults ON, so an ineligible visitor
+   * would otherwise start with it "enabled" over a layer that can never load:
+   * the lazy-load path returns early without a ``FAVOURITES_URL`` and nothing
+   * is drawn. That was invisible while the only control was a switch inside
+   * the favourites panel, which already said "sign in" beside it — but
+   * SNOW-904 put the row in the layers menu next to a header that counts the
+   * layers reported on, and a count of one over an empty map is a false
+   * statement about the map.
+   *
+   * The gate is on the READ rather than on the render, so ``isEnabled()`` is
+   * honest for the roundel rings too. Nothing here writes storage, so a real
+   * preference survives signing out and back in.
+   *
+   * @returns {boolean} True when the overlay may start visible.
+   */
+  const readFavouritesPreference = () =>
+    FAVOURITES_ELIGIBLE &&
+    readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+
+  overlayState.favourites = readFavouritesPreference();
 
   // SNOW-172: Country toggle state — which country's geometry is shown.
   // Each key maps to a boolean (visible/hidden), persisted in localStorage
@@ -8126,7 +8148,7 @@
       bulletinsVisibility = BULLETINS_CORE.setPreference(
         bulletinsVisibility, overlayState.bulletins,
       );
-      overlayState.favourites = readBoolStorage(OVERLAY_STORAGE_KEY.favourites, true);
+      overlayState.favourites = readFavouritesPreference();
 
       // SNOW-478: the new basemap has its own glyph server and fonts, so
       // re-derive the overlay label font before re-installing any layer.

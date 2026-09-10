@@ -357,6 +357,42 @@ describe('the four rows driven by a bridge', () => {
     expect(rowFor('downloads').getAttribute('aria-checked')).toBe('true');
     expect(count()).toBe('1 layer on');
   });
+
+  it('follows the other three when something outside the menu moves them', async () => {
+    // SNOW-904 review: the menu is the only CONTROL, but not the only
+    // CALLER. row_focus.js's reveal() turns a layer on when someone focuses
+    // or creates a favourite, route or observation while it is off, and the
+    // deep-link paths do the same. Without this the row's aria-checked went
+    // stale, so the header undercounted and the row's next click called
+    // show() on an already-shown layer — a wasted click for the user.
+    await loadPicker();
+    expect(rowFor('routes').getAttribute('aria-checked')).toBe('false');
+
+    window.pwaRoutesOverlay.isEnabled = vi.fn(() => true);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:overlay-visibility-changed'),
+    );
+
+    expect(rowFor('routes').getAttribute('aria-checked')).toBe('true');
+    expect(count()).toBe('1 layer on');
+  });
+
+  it('re-seeds every bridge-backed row, not just the one that moved', async () => {
+    // The listener reads all four rather than trusting an event payload to
+    // say which changed — the bridges are the state, so reading them all is
+    // both simpler and correct whichever one moved.
+    await loadPicker();
+
+    window.pwaFavouritesOverlay.isEnabled = vi.fn(() => true);
+    window.pwaCommunityReportsOverlay.isEnabled = vi.fn(() => true);
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:overlay-visibility-changed'),
+    );
+
+    expect(rowFor('favourites').getAttribute('aria-checked')).toBe('true');
+    expect(rowFor('community_reports').getAttribute('aria-checked')).toBe('true');
+    expect(count()).toBe('2 layers on');
+  });
 });
 
 describe('the sign-in hand-off', () => {

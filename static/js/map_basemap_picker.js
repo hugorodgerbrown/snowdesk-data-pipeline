@@ -391,6 +391,38 @@
     refreshReadout();
   });
 
+  // SNOW-904 review: the menu is the only CONTROL for these overlays, but it
+  // is not the only CALLER of their bridges. row_focus.js turns a layer on
+  // when someone focuses or creates a favourite, route or observation while
+  // it is off (its ``reveal()`` calls ``overlay.show()``), and the deep-link
+  // paths in map.js do the same. Nothing wrote that back to the row, so its
+  // ``aria-checked`` went stale: the header undercounted, the section summary
+  // omitted a layer that was plainly on the map, and the row's next click
+  // called ``show()`` on an already-shown overlay — costing the user a
+  // second click to turn something off.
+  //
+  // Re-seed from the bridges rather than from the event's payload: the
+  // bridges are the state, ``isEnabled()`` is the preference every row
+  // renders, and reading all four keeps this correct no matter which one
+  // moved. Cheap enough to do unconditionally — four property reads and at
+  // most four attribute writes, on an event that fires only when a layer
+  // actually changes.
+  const syncRowsFromBridges = () => {
+    for (const [key, resolve] of Object.entries(OVERLAY_BRIDGES)) {
+      const row = menu.querySelector(`[data-overlay-key="${key}"]`);
+      if (!row) continue;
+      const bridge = resolve();
+      if (!bridge || typeof bridge.isEnabled !== 'function') continue;
+      row.setAttribute('aria-checked', bridge.isEnabled() ? 'true' : 'false');
+    }
+    refreshReadout();
+  };
+
+  document.addEventListener(
+    'snowdesk:overlay-visibility-changed',
+    syncRowsFromBridges,
+  );
+
   // Seed the header and the summaries from the state map.js has already
   // written onto the rows (it runs before this file — see home.html).
   refreshReadout();
