@@ -10,6 +10,9 @@ Covers:
     to appear and disappear with the ``routes`` waffle flag; SNOW-724
     retired it, so the entry is now asserted unconditionally like its
     siblings.
+  - The anonymous "Sign in" button, which since SNOW-826 carries the page
+    the visitor is on as ``?next=`` so signing in from the nav returns them
+    to it.
   - The SNOW-748 offline surfaces, which are split the way a phone splits
     aeroplane mode: a header SYMBOL every viewer gets, and an "Offline
     mode" switch in the account menu that only a signed-in user gets.
@@ -164,6 +167,37 @@ class TestNavAuthArea:
         html = render_to_string("includes/nav.html", {}, request=request)
         assert reverse("accounts:sign_in") in html
         assert "Sign in" in html
+
+    def test_the_sign_in_button_carries_the_current_page_as_next(
+        self, rf: RequestFactory
+    ) -> None:
+        """SNOW-826: signing in from the nav returns the visitor here.
+
+        The sibling above asserts only that the sign-in URL appears, which
+        a bare link satisfies just as well as one carrying a destination —
+        so it cannot catch this regressing. The path is asserted encoded
+        and in full, query string included: an unencoded ``?`` would end
+        the ``next`` value at the destination's own query string and land
+        the visitor on the map for that day rather than this one.
+        """
+        request = rf.get("/", {"d": "2026-04-08"})
+        request.user = AnonymousUser()
+
+        html = render_to_string("includes/nav.html", {}, request=request)
+
+        expected = f'href="{reverse("accounts:sign_in")}?next=/%3Fd%3D2026-04-08"'
+        assert expected in html
+
+    def test_the_sign_in_button_carries_a_page_with_no_query_string(
+        self, rf: RequestFactory
+    ) -> None:
+        """The common case, where the path is its own whole destination."""
+        request = rf.get("/trips/")
+        request.user = AnonymousUser()
+
+        html = render_to_string("includes/nav.html", {}, request=request)
+
+        assert f'href="{reverse("accounts:sign_in")}?next=/trips/"' in html
 
     def test_anonymous_sees_no_register_link(self, rf: RequestFactory) -> None:
         """...and no standalone Register link (registration lives on sign-in)."""

@@ -1,4 +1,4 @@
-{% load i18n components %}
+{% load i18n components accounts_tags %}
 {% comment %}
 trips/partials/_trip_save.html — "Save this trip" (SNOW-848, replacing
 _trip_roster.html).
@@ -58,10 +58,8 @@ Context:
                 the link they were sent.
             {% endcomment %}
             {% trans "Save this trip" as trip_save_signin_label %}
-            {% url 'accounts:sign_in' as trip_save_signin_path %}
-            {% with trip_save_next=request.get_full_path|urlencode %}
-                {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_path|add:"?next="|add:trip_save_next variant="accent" size="compact" extra_classes="shrink-0 whitespace-nowrap" %}
-            {% endwith %}
+            {% sign_in_href as trip_save_signin_href %}
+            {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_href variant="accent" size="compact" extra_classes="shrink-0 whitespace-nowrap" %}
             <span class="text-xs leading-normal text-text-3">
                 {% trans "Sign in and it's kept in your trips, with the route and meeting point." %}
             </span>
