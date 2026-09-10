@@ -424,6 +424,121 @@ class TestBuildRenderModelNoAggregation:
 
 
 # ---------------------------------------------------------------------------
+# build_render_model — problems with no problemType (SNOW-901)
+# ---------------------------------------------------------------------------
+
+
+def _untyped_problem_props(
+    *,
+    typed: bool = True,
+    custom_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Build SLF-shaped properties carrying one problem with no problemType.
+
+    Args:
+        typed: When True the payload also carries a typed ``new_snow``
+            problem and a matching aggregation entry, so the untyped one
+            is the only thing the builder has to tolerate.
+        custom_data: Override for ``customData`` (defaults to the SLF
+            marker plus an aggregation matching the typed problem).
+
+    Returns:
+        A CAAML properties dict.
+
+    """
+    problems: list[dict[str, Any]] = []
+    if typed:
+        problems.append(
+            {"problemType": "new_snow", "validTimePeriod": "all_day", "aspects": ["N"]}
+        )
+    problems.append({"comment": "Prose without a named problem type."})
+
+    aggregation: list[dict[str, Any]] = []
+    if typed:
+        aggregation = [
+            {
+                "category": "dry",
+                "validTimePeriod": "all_day",
+                "problemTypes": ["new_snow"],
+                "title": "New snow",
+            }
+        ]
+
+    return {
+        "bulletinID": "untyped-001",
+        "dangerRatings": [{"mainValue": "moderate", "validTimePeriod": "all_day"}],
+        "avalancheProblems": problems,
+        "customData": custom_data
+        if custom_data is not None
+        else {"CH": {"aggregation": aggregation}},
+    }
+
+
+class TestUntypedAvalancheProblem:
+    """A problem with no problemType is tolerated, not fatal (SNOW-901).
+
+    SLF made ``problemType`` optional in its 2026/27 CAAML interface. Such a
+    problem has nothing to key a trait on, so it is dropped from aggregation
+    and traits — but it must never raise, and must never fail the build.
+    """
+
+    def test_untyped_problem_does_not_raise(self) -> None:
+        """A payload mixing a typed and an untyped problem builds cleanly."""
+        rm = build_render_model(_untyped_problem_props())
+
+        assert rm["version"] == RENDER_MODEL_VERSION
+
+    def test_only_the_typed_problem_becomes_a_trait(self) -> None:
+        """The untyped problem produces no trait — a trait is keyed by type."""
+        rm = build_render_model(_untyped_problem_props())
+
+        assert len(rm["traits"]) == 1
+        assert [p["problem_type"] for p in rm["traits"][0]["problems"]] == ["new_snow"]
+
+    def test_untyped_problem_alone_yields_no_traits(self) -> None:
+        """An untyped problem with no typed sibling leaves traits empty."""
+        rm = build_render_model(_untyped_problem_props(typed=False))
+
+        assert rm["traits"] == []
+
+    def test_untyped_problem_is_excluded_from_albina_synthesis(self) -> None:
+        """ALBINA synthesises aggregation from problems — untyped ones are skipped."""
+        props = _untyped_problem_props(custom_data={"ALBINA": {}})
+
+        rm = build_render_model(props)
+
+        assert len(rm["traits"]) == 1
+        assert [p["problem_type"] for p in rm["traits"][0]["problems"]] == ["new_snow"]
+
+    def test_untyped_problem_is_logged(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dropping an untyped problem is visible in the logs, not silent."""
+        import logging
+
+        # The bulletins logger sets propagate=False in config/settings/base.py.
+        monkeypatch.setattr(logging.getLogger("apps.bulletins"), "propagate", True)
+
+        with caplog.at_level(
+            logging.WARNING, logger="apps.bulletins.services.render_model"
+        ):
+            build_render_model(_untyped_problem_props())
+
+        assert any("no problemType" in rec.getMessage() for rec in caplog.records)
+
+    def test_unknown_problem_type_still_raises(self) -> None:
+        """Absent is tolerated; a type outside the EAWS enum is still fatal."""
+        props = _untyped_problem_props()
+        props["avalancheProblems"][0]["problemType"] = "alien_snow_type"
+
+        with pytest.raises(RenderModelBuildError, match="alien_snow_type"):
+            build_render_model(props)
+
+
+# ---------------------------------------------------------------------------
 # build_render_model — prose-only geography
 # ---------------------------------------------------------------------------
 
