@@ -109,8 +109,11 @@ including a variable. Replaced with the two typed booleans above — the
 only two things `extra_attrs` was ever actually used for (the third use,
 a bare data-attribute hook for map_downloads_manager.js's own JS to
 select this instance, was dropped entirely: `id="{{ id }}"` already gives
-JS a real hook, so the caller now selects `#map-downloads-overlay-toggle`
-directly instead of `[data-downloads-overlay-toggle]`).
+JS a real hook, so that caller selected `#map-downloads-overlay-toggle`
+directly instead of `[data-downloads-overlay-toggle]`). That particular
+caller is gone — SNOW-904 removed the four map-overlay switches — but the
+argument for typed booleans over a raw passthrough holds for every caller
+this partial has left.
 {% endcomment %}
 <label
     for="{{ id }}"

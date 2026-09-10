@@ -10,9 +10,10 @@ share one shape, and rendering the same component four times shows it
 rather than asserting it.
 
 The panel is a plain flex column, so it needs no map and no sheet chrome to
-sit in a document flow. Nothing here binds a listener: the switch at its
-foot carries a namespaced id from the previews module precisely so that
-map.js, which finds the real switch by id, can never find this one.
+sit in a document flow. Nothing here binds a listener, and since SNOW-904
+there is nothing to bind one to: the panels no longer carry a "Display on
+the map" switch, so the namespaced-id trick that once kept map.js from
+finding the illustration's copy of it has nothing left to protect.
 
 Context expected:
   panel — one entry from component_previews._PANELS.

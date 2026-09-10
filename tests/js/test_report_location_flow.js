@@ -68,7 +68,6 @@ document.body.innerHTML = `
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
       <button type="button" data-panel-add>Report an observation</button>
-      <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
 `;

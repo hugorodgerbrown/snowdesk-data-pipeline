@@ -163,7 +163,6 @@ function buildFixture() {
     <template id="favourite-list-template">
       <div><div data-favourites-rows></div>
         <button type="button" data-panel-add></button>
-        <input id="map-favourites-overlay-toggle" type="checkbox" role="switch"></div>
     </template>
     <template id="favourite-create-template">
       <form id="favourite-create-form">
@@ -179,7 +178,6 @@ function buildFixture() {
     <template id="report-list-template">
       <div><div data-report-rows></div>
         <button type="button" data-panel-add></button>
-        <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch"></div>
     </template>
     <button id="route-add-btn"
             data-routes-eligible="true"

@@ -5196,9 +5196,11 @@
   // whole of this overlay's life until placement focus (which clears every
   // app layer off the map without touching any bridge). They also disagree,
   // legitimately, while the overlay is on and the active basemap has no
-  // downloads: the switch reads ON (the preference took) over an empty
+  // downloads: the row reads ON (the preference took) over an empty
   // source. ``isEnabled()`` publishes the flag itself, which is what the
-  // in-sheet switch reads on every open.
+  // layers menu's "Display downloaded areas" row seeds its ``aria-checked``
+  // from on every render (SNOW-904 — the in-sheet switch this used to name
+  // is gone, along with the other three).
   window.pwaDownloadedOverlay = Object.freeze({
     refresh: refreshDownloadedOverlay,
     show: showDownloadedOverlay,
@@ -5207,23 +5209,27 @@
     isEnabled: () => downloadedOverlayVisible,
   });
 
-  // ==== SNOW-658: the two user-data overlays, driven from their own panels ====
+  // ==== The user-data overlays, driven from the layers menu ====
   //
-  // Favourites and Community reports lost their layers-menu rows this ticket.
-  // The switch that drives each now lives in the panel its own roundel opens —
-  // the pattern SNOW-634 set for downloads — so the callers are favourites.js
-  // and report.js, separate IIFEs that reach this one through a frozen bridge
-  // of the same shape ``pwaDownloadedOverlay`` already publishes.
+  // SNOW-658 moved Favourites and Community reports out of the layers menu and
+  // onto a switch in the panel each roundel opens, so the callers were
+  // favourites.js and report.js. SNOW-904 reversed that: all four switches are
+  // gone and the menu is the only control, so the caller is once again
+  // map_basemap_picker.js, routing a row click through the frozen bridges
+  // published below.
   //
-  // Being INSIDE this IIFE, these do directly what map_basemap_picker.js had
-  // to ask for across the boundary: write the persisted preference, dispatch
-  // the lazy load, and — for favourites — recompute the favourited-resort
-  // exclusion. (``snowdesk:favourites-visibility-changed`` stays: other
-  // callers still fire it, and its listener is the same one-line call.)
+  // The bridges are what the picker calls rather than the storage write and
+  // the lazy-load dispatch directly, because being INSIDE this IIFE they also
+  // recompute the favourited-resort exclusion and announce visibility to the
+  // roundel rings — effects the picker cannot reach across the boundary, and
+  // which a row that only wrote localStorage would silently drop.
+  // (``snowdesk:favourites-visibility-changed`` stays: other callers still
+  // fire it, and its listener is the same one-line call.)
   //
-  // Unlike the downloads overlay these ARE persisted, exactly as the rows
-  // were: same localStorage key, same default, so a device carrying a
-  // preference from before this ticket keeps it.
+  // All four preferences persist, downloads included since SNOW-857 — though
+  // that one is a TRI-STATE read raw at :490, where an untouched key means
+  // "follow the connection" rather than "off". Nothing here may write it at
+  // seed time.
 
   /**
    * Show a panel-driven overlay: persist the preference, then hand off to the

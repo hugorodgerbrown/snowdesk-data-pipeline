@@ -103,8 +103,6 @@ document.body.innerHTML = `
     <div>
       <div data-routes-rows><p>Loading your routes…</p></div>
       <button type="button" data-panel-add>Add a route</button>
-      <label for="map-routes-overlay-toggle">Display on the map</label>
-      <input id="map-routes-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
   <form id="route-upload-form" hidden>
@@ -124,11 +122,6 @@ await import('../../static/js/routes.js');
 const btn = document.getElementById('route-add-btn');
 const sheet = document.getElementById('route-sheet');
 const uploadInput = document.getElementById('route-upload-input');
-
-/** The overlay switch inside the currently-rendered panel body. */
-function overlaySwitch() {
-  return sheet.querySelector('#map-routes-overlay-toggle');
-}
 
 /** The panel's add CTA, inside the currently-rendered body. */
 function addCta() {

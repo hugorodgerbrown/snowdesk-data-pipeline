@@ -66,8 +66,6 @@ document.body.innerHTML = `
     <div>
       <div data-favourites-rows><p>Loading your favourites…</p></div>
       <button type="button" data-panel-add>Add a favourite</button>
-      <label for="map-favourites-overlay-toggle">Display on the map</label>
-      <input id="map-favourites-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
   <template id="favourite-create-template">
@@ -91,11 +89,6 @@ await import('../../static/js/favourites.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
-
-/** The switch inside the currently-rendered panel body. */
-function overlaySwitch() {
-  return sheet.querySelector('#map-favourites-overlay-toggle');
-}
 
 /**
  * Close the panel and open it again.

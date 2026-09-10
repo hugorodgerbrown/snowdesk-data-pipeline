@@ -105,9 +105,11 @@ Context expected:
     {# shared.                                                              #}
     {% trans "Routes are private unless you share one." as routes_context_line %}
     {% trans "Tracks" as routes_section_label %}
-    {# SNOW-687: the switch the panel shipped without. Its id is the hook  #}
-    {# routes.js delegates on; the LABEL is fixed inside _ugc_panel.html,  #}
-    {# not passed, so it cannot be restated per panel.                      #}
+    {# SNOW-687 gave this panel a "Display on the map" switch at its foot; #}
+    {# SNOW-904 took it away again, along with the three beside it on the  #}
+    {# other panels. The layers menu is the only control for the routes    #}
+    {# overlay now, so no toggle_id is passed and routes.js delegates on   #}
+    {# nothing here.                                                        #}
     {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label %}
 </template>
 {# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}

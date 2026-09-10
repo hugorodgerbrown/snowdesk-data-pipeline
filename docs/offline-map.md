@@ -2013,8 +2013,8 @@ whose record names no dependencies is skipped, not accused — the third
 case of the resolution rule in
 [`decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md).
 
-**It drives the map overlay through its switch, and only through its switch
-(SNOW-645, reworked twice more; SNOW-656).** Opening the sheet used to call
+**It does not drive the map overlay at all (SNOW-645, reworked twice more;
+SNOW-656; SNOW-904).** Opening the sheet used to call
 `window.pwaDownloadedOverlay.show()` unconditionally, so the overlay appeared
 the moment the sheet did. SNOW-656 removed that: the squares and the danger
 choropleth were mutually exclusive at the time, so the auto-show meant merely
@@ -2025,18 +2025,19 @@ not come back: an implicit repaint of the map is still a poor trade for
 discoverability. The overlay waits to be asked, and comes back at whatever
 the user last asked for.
 
-Closing the sheet does NOT call `.hide()` either — the
-`#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is
-the only thing that does. `render()` sets it from
-`window.pwaDownloadedOverlay.isEnabled()` on every open, so the sheet always
-reflects the overlay's real state rather than one it just imposed. That is
-`isEnabled()`, not `isVisible()`, since SNOW-658's review split the bridge's
-two questions: `isVisible()` now answers from the squares MapLibre is
-actually drawing (the roundel ring's question), while `isEnabled()` is the
-persisted preference `show()`/`hide()` write — what this switch states the
-user asked for. The two disagree legitimately when the overlay is on and the
-active basemap has nothing downloaded: the switch reads ON over an empty
-source.
+Closing the sheet does NOT call `.hide()` either. Until SNOW-904 the sheet
+carried a `#map-downloads-overlay-toggle` switch that was the only thing
+which did; that switch is gone, along with the three beside it on the other
+panels, and the **layers menu's "Display downloaded areas" row is now the
+only control** — see [`map-page-functional-spec.md`](map-page-functional-spec.md).
+The sheet neither shows nor hides the squares.
+
+The bridge still publishes two questions, split by SNOW-658's review:
+`isVisible()` answers from the squares MapLibre is actually drawing (the
+roundel ring's question), while `isEnabled()` is the persisted preference
+`show()`/`hide()` write — what the menu row seeds its `aria-checked` from.
+The two disagree legitimately when the overlay is on and the active basemap
+has nothing downloaded: the row reads ON over an empty source.
 
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:
@@ -2062,9 +2063,7 @@ group" (SNOW-645, Hugo's design).** Top to bottom:
    have" list) — worth recording so a future reader does not assume
    SNOW-641's reasoning still holds; Hugo's design reads the budget as
    part of what the sheet fundamentally IS, not a footnote below the list.
-3. **The overlay switch**, in its own `bg-tag` (light-grey) rounded panel
-   — see below.
-4. **Rows, grouped by BASEMAP (SNOW-832)** — one heading per basemap this
+3. **Rows, grouped by BASEMAP (SNOW-832)** — one heading per basemap this
    device holds something for, in the order the PICKER offers them
    (`map_basemap_downloads.js`'s `basemapOrder()`, read off the picker's
    own `[data-basemap-key]` DOM so `_BASEMAP_LABELS` stays the single
@@ -2073,7 +2072,7 @@ group" (SNOW-645, Hugo's design).** Top to bottom:
    (`uppercase` is a Tailwind transform, never typed into the msgid), this
    device's total for the group, and a 2px identity rule under the line.
    See "Grouping by basemap" below for what replaced what, and why.
-5. **The add-custom-area CTA**, full-width and outlined, in its own
+4. **The add-custom-area CTA**, full-width and outlined, in its own
    bordered group at the foot (see "Running order" below).
 
 **Grouping by basemap (SNOW-832, Hugo's handoff).** SNOW-645 split the
