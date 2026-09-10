@@ -218,3 +218,67 @@ describe('the idle warm', () => {
     vi.unstubAllGlobals();
   });
 });
+
+/**
+ * Drive one idle warm for `key` against a stubbed fetch returning `body`.
+ *
+ * jsdom ships no requestIdleCallback, so the module's timeout fallback is
+ * the path taken here — the same one the test above documents.
+ *
+ * @param {string} key The panel key to warm.
+ * @param {string} body The response body the warm will receive.
+ * @returns {Promise<void>}
+ */
+async function runWarm(key, body) {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+    ok: true,
+    text: () => Promise.resolve(body),
+  })));
+  vi.useFakeTimers();
+  window.pwaPanelRows.warm(key, LIST_URL);
+  await vi.advanceTimersByTimeAsync(1300);
+  vi.useRealTimers();
+  await Promise.resolve();
+  vi.unstubAllGlobals();
+}
+
+describe('a warm handler that fails', () => {
+  // Three panels register against this hook, and their handlers all write
+  // to IndexedDB — the one dependency here that genuinely does fail in the
+  // field, on a browser that has revoked storage or latched Reset Required.
+  // A warm is best effort, so one failing handler must cost nothing: not
+  // the cache entry, and not the OTHER panels' handlers for the same key.
+  it('still caches the body, and still reaches a later handler', async () => {
+    const later = vi.fn();
+    window.pwaPanelRows.onWarmed('throwing-panel', () => {
+      throw new Error('storage unavailable');
+    });
+    window.pwaPanelRows.onWarmed('throwing-panel', later);
+
+    await runWarm('throwing-panel', '<ul><li>Thrown past</li></ul>');
+
+    expect(later).toHaveBeenCalledWith('<ul><li>Thrown past</li></ul>');
+    window.pwaPanelRows.load('throwing-panel', LIST_URL, rows, { cached: true });
+    expect(rows.innerHTML).toContain('Thrown past');
+  });
+
+  it('swallows a handler that returns a rejecting promise', async () => {
+    // The likelier shape of the two: every registered handler is async, so
+    // its failure arrives as a rejection rather than a throw. Unhandled, it
+    // would surface as an error on a page that is doing background work the
+    // user never asked for.
+    const later = vi.fn();
+    window.pwaPanelRows.onWarmed('rejecting-panel', () =>
+      Promise.reject(new Error('storage unavailable')),
+    );
+    window.pwaPanelRows.onWarmed('rejecting-panel', later);
+
+    await runWarm('rejecting-panel', '<ul><li>Rejected past</li></ul>');
+    // Give the rejection a turn to become unhandled, which Vitest fails on.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(later).toHaveBeenCalledWith('<ul><li>Rejected past</li></ul>');
+    window.pwaPanelRows.load('rejecting-panel', LIST_URL, rows, { cached: true });
+    expect(rows.innerHTML).toContain('Rejected past');
+  });
+});

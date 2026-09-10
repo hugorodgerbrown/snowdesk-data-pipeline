@@ -27,6 +27,9 @@
  *                     service-worker decisions the map's silent
  *                     fallbacks would otherwise swallow, trimmed to the
  *                     newest 500 rows (SNOW-812; autoIncrement id)
+ *   data:panel_rows  the rendered rows of a map UGC panel, kept so the
+ *                     panel can repaint itself offline (SNOW-661;
+ *                     keyPath: 'key', one row per panel)
  *   data:*           reserved namespace for further cached server-data
  *                     copies; added on demand by consumers.
  *
@@ -68,7 +71,11 @@
   // fact, and gating its CREATION on a per-user flag would mean two
   // populations running the same DB_VERSION with different schemas, which
   // no later migration could tell apart. Empty costs nothing.
-  const DB_VERSION = 5;
+  // v6 (SNOW-661): added 'data:panel_rows' — the rendered rows of a map UGC
+  // panel, so the field-observation panel can repaint itself from its last
+  // good response instead of reporting a failure the user can do nothing
+  // about. See observations_offline.js.
+  const DB_VERSION = 6;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -93,6 +100,11 @@
     // (page) and relayed from sw.js (worker). Trimmed to the newest 500
     // rows by appendDebugLogBatch below.
     'log:debug': { keyPath: 'id', autoIncrement: true },
+    // SNOW-661 (v6) — the rendered rows of a map UGC panel, keyed by that
+    // panel's key ('observations'). Named for the PANEL rather than for the
+    // thing it lists because a row here is a response body, not a record:
+    // see observations_offline.js for why the markup is what is kept.
+    'data:panel_rows': { keyPath: 'key' },
   });
 
   // Session state — single-page-load lifetime.

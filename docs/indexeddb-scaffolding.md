@@ -1,8 +1,8 @@
 ---
 name: indexeddb-scaffolding
-description: IndexedDB wrapper (window.pwaDb, db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, log:debug, data:map_overlays
+description: IndexedDB wrapper (window.pwaDb, db.js) — schema, queue:mutations, meta:app, data:favourites/map_overlays/panel_rows, log:sync, log:debug
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-09
 ---
 
 # IndexedDB scaffolding
@@ -23,9 +23,9 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **5** (SNOW-812 added `log:debug`; SNOW-492
-  added `data:map_overlays`; SNOW-482 added `log:sync`; v2 added
-  `data:favourites`).
+- Current schema version: **6** (SNOW-661 added `data:panel_rows`;
+  SNOW-812 added `log:debug`; SNOW-492 added `data:map_overlays`;
+  SNOW-482 added `log:sync`; v2 added `data:favourites`).
 
 ## Object stores
 
@@ -42,6 +42,7 @@ never removed.
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
+| `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
 | `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
 
 Alongside `basemap.origins` and `sw.devShellCache`, `meta:app` also
@@ -51,11 +52,12 @@ and restarted can rehydrate it (`sw.js`'s `_hydrateDebugLogEnabled()`).
 
 `data:*` is a reserved namespace for cached server-data copies.
 `data:favourites` (v2) was its first occupant; `data:map_overlays` (v4,
-SNOW-492) is the second — see
-[`docs/offline-first.md`](offline-first.md) §12.6 for the
-cached-with-explicit-staleness contract it follows. When a further
-consumer adds a store, bump `DB_VERSION` + add a migration branch in
-`_runMigrations`.
+SNOW-492) is the second and `data:panel_rows` (v6, SNOW-661) the third —
+see [`docs/offline-first.md`](offline-first.md) §12.6 for the
+cached-with-explicit-staleness contract they follow. When a further
+consumer adds a store, bump `DB_VERSION` — `_runMigrations` creates any
+store in `STORES` the open DB is missing, so an addition needs no branch
+of its own.
 
 ### `data:map_overlays` row shape (SNOW-492)
 
@@ -69,6 +71,29 @@ consumer adds a store, bump `DB_VERSION` + add a migration branch in
               // in static/js/map.js's dropExpiredCommunityReports)
 }
 ```
+
+### `data:panel_rows` row shape (SNOW-661)
+
+```js
+{
+  key,        // 'observations' — the PANEL, not the thing it lists
+  body,       // the list endpoint's last successful response, verbatim:
+              // the server's rendered rows, translations and all
+  cached_at,  // ISO 8601 timestamp — what report.js stamps its "last
+              // updated HH:MM" line with
+  principal,  // the signed-in account (SNOW-493's partitioning), or null
+              // for an anonymous session. A row whose principal does not
+              // match the current one reads back as null
+}
+```
+
+The markup rather than a record per observation: the row's meta line is
+server-translated and carries a region name, a `<time datetime>` element
+and a what3words line, so rebuilding it client-side would mean assembling
+a translated, markup-bearing sentence in JavaScript — the string class
+`i18n-lint` exists to catch. See the module header for the whole
+argument, and [`offline-first.md`](offline-first.md) §12.6 for the
+relaxation it sits under.
 
 ### `meta:app` row shape — `basemap.customAreas` (SNOW-522, SNOW-586, SNOW-635)
 
@@ -318,13 +343,13 @@ the wipe covers it even without the enumeration API.
 see [`client-side-tests.md`](client-side-tests.md)) covers:
 
 1. Fresh open — all static stores exist at the current version
-   (currently 4), including `log:sync` and `data:map_overlays`.
+   (currently 6), including `log:sync`, `data:map_overlays` and
+   `data:panel_rows`.
 2. Round-trip — `put/get/delete/getAll/count/clear` on `queue:events`.
 3. `context()` returns the expected seven envelope-context keys with
    sane defaults, and is stable within a page load.
-4. v1→v4, v2→v4, and v3→v4 migrations — open an older-version DB,
-   upgrade, and assert the new store(s) exist without disturbing
-   existing rows.
+4. v1→v6 through v5→v6 migrations — open an older-version DB, upgrade,
+   and assert the new store(s) exist without disturbing existing rows.
 5. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
    order.
 
