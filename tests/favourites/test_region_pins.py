@@ -313,6 +313,10 @@ class TestRegionPinSurfaces:
         assert 'id="map-region-pin-control"' in anonymous
         assert 'data-pin-state="signin"' in anonymous
         assert reverse("accounts:sign_in") in anonymous
+        # SNOW-826: the roundel's way in returns the visitor to the map they
+        # were reading, not to a bare map. Asserted on the ?next= rather than
+        # the sign-in URL above, which passes either way.
+        assert f'href="{reverse("accounts:sign_in")}?next=/"' in anonymous
 
         client.force_login(UserFactory.create())
         signed_in = client.get(reverse("public:home")).content.decode()

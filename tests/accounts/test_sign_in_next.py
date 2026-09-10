@@ -335,7 +335,16 @@ class TestPasskeyAuthResponseEchoesNext:
 
 @pytest.mark.django_db
 class TestSignInRefusesToBounceOffItself:
-    """A ``next`` pointing back at the sign-in page is dropped."""
+    """A ``next`` naming an auth-entry page is dropped.
+
+    It was the sign-in page alone until SNOW-826 put a ``?next=`` on the
+    nav's "Sign in" button, which made it reachable from the register and
+    forgotten-password pages too. The three are dropped for two different
+    reasons — sign-in and register bounce, reset-password merely wastes the
+    visitor's time — and ``reset_password_confirm`` is dropped for neither,
+    which the last test in this class states so that a future tightening
+    has to delete an assertion of intent rather than add one.
+    """
 
     URL = reverse("accounts:sign_in")
 
@@ -364,6 +373,54 @@ class TestSignInRefusesToBounceOffItself:
         body = client.get(self.URL, {"next": self.URL}).content.decode()
 
         assert f'name="next" value="{self.URL}"' not in body
+
+    def test_a_next_naming_the_register_page_is_dropped(self, client: Client) -> None:
+        """The same bounce, one page over.
+
+        ``register_view`` redirects an authenticated visitor to the
+        homepage unconditionally, so a ``next`` pointing there spends two
+        redirects reaching where none reaches it in one.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(self.URL, {"next": reverse("accounts:register")})
+
+        assert response.headers["Location"] == reverse("public:home")
+
+    def test_a_next_naming_the_password_reset_page_is_dropped(
+        self, client: Client
+    ) -> None:
+        """Not a bounce — a useless destination.
+
+        ``reset_password_request_view`` has no authenticated branch, so
+        this ``next`` would be honoured and land a visitor on a
+        forgotten-password form seconds after signing in successfully.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        response = client.get(self.URL, {"next": reverse("accounts:reset_password")})
+
+        assert response.headers["Location"] == reverse("public:home")
+
+    def test_a_next_naming_the_reset_confirm_page_survives(
+        self, client: Client
+    ) -> None:
+        """The auth page that is a legitimate destination.
+
+        ``reset_password_confirm_view`` renders the set-password form for a
+        live token and the link-expired page for a spent one, whatever the
+        session — so coming back to it after signing in is a page whose job
+        is not yet done, not a bounce. Guarding it would strip that.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        target = reverse("accounts:reset_password_confirm", args=["a-token"])
+
+        response = client.get(self.URL, {"next": target})
+
+        assert response.headers["Location"] == target
 
     def test_a_query_string_on_the_self_reference_is_dropped_too(
         self, client: Client

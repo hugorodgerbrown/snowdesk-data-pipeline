@@ -9,11 +9,12 @@ CTA now sends ``?next=`` pointing at the page the visitor is on, which
 every sign-in path honours after validating it.
 
 **IT WAS TWO CTAs UNTIL SNOW-848** — "Sign in to join this trip" and "Sign
-in to save this route" — and the page now asks one question, so there is
-one. ``test_the_page_asks_once`` is what was
-``test_both_ctas_ask_and_neither_asks_twice``, and it still counts rather
-than asserting no bare sign-in link exists: the nav carries one of its
-own.
+in to save this route" — and the page now asks one question, so the page's
+own CTA is one. The count is nonetheless two, because SNOW-826 gave the
+nav's "Sign in" button the same return trip: a visitor who signs in from
+the header is owed the page they were reading exactly as one who signs in
+from the CTA is. Counting rather than asserting presence is what still
+catches a CTA rendered twice.
 
 These tests assert the LINK, not the redirect: the redirect is
 ``tests/accounts/test_sign_in_next.py``'s subject, and asserting it here
@@ -62,10 +63,13 @@ class TestShareCtasCarryNext:
         assert "Save this trip" in html
         assert expected in html
 
-    def test_the_page_asks_once(self, client: Client) -> None:
-        """One CTA, one return trip — and the nav's own bare sign-in link
-        is left alone, which is why this counts the parameter rather than
-        asserting no bare link exists on the page.
+    def test_the_page_asks_twice_the_cta_and_the_nav(self, client: Client) -> None:
+        """One CTA and one nav button, each carrying the same return trip.
+
+        It was one until SNOW-826 stopped the nav's "Sign in" from
+        discarding the page it was clicked from. Counting is what catches
+        the failure this file exists for — a CTA duplicated, or one that
+        forgets to ask — which asserting presence would not.
         """
         html, url = self._page(client)
-        assert html.count(f"?next={url}") == 1
+        assert html.count(f"?next={url}") == 2
