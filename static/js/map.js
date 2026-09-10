@@ -3633,17 +3633,31 @@
   const ensureCountryLoaded = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
+    // SNOW-898: which of this country's four feeds this load must actually
+    // fetch. Pure, and unit-tested in country_load_core.js — the rule it
+    // carries is SNOW-524's, and it is one character away from the bug that
+    // ticket fixed (see that module's header).
+    const plan = self.pwaCountryLoadCore.planCountryFeeds({
+      isBootCountry,
+      hasRegionsUrl: !!REGIONS_URL,
+      hasMajorUrl: !!MAJOR_REGIONS_URL,
+      hasSubUrl: !!SUB_REGIONS_URL,
+      hasRatingsUrl: !!RATINGS_URL,
+    });
     try {
       const [newRegions, newMajor, newSub] = await Promise.all([
-        REGIONS_URL && !isBootCountry ? fetch(REGIONS_URL + '?country=' + code).then(r => {
+        plan.regions ? fetch(REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('regions fetch failed');
           return r.json();
         }) : Promise.resolve(null),
-        MAJOR_REGIONS_URL ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
+        // The two optional legs swallow their own failure so a partial load
+        // degrades rather than rejecting — which is exactly why the sync-dot
+        // decision below cannot read a successful CALL as complete data.
+        plan.major ? fetch(MAJOR_REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('major fetch failed');
           return r.json();
         }).catch(() => null) : Promise.resolve(null),
-        SUB_REGIONS_URL ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
+        plan.sub ? fetch(SUB_REGIONS_URL + '?country=' + code).then(r => {
           if (!r.ok) throw new Error('sub fetch failed');
           return r.json();
         }).catch(() => null) : Promise.resolve(null),
@@ -3744,7 +3758,7 @@
       // load doesn't reject — which means the country dot must not be greened
       // off a successful *call*, only off complete data.
       let ratingsOk = false;
-      if (RATINGS_URL && isBootCountry) {
+      if (plan.ratings === 'ensure-cached') {
         // Boot already fetched this country's season ratings into
         // SEASON_RATINGS_PROMISE, so there is nothing to fetch or merge — but
         // that fetch can still be missing from Cache Storage: on a first-ever
@@ -3752,7 +3766,7 @@
         // never intercepted and never cached. Top it up only when it really is
         // absent, which costs one request on a first visit and none after.
         ratingsOk = await ensureRatingsCached(code);
-      } else if (RATINGS_URL) {
+      } else if (plan.ratings === 'fetch') {
         const countryRatings = await fetch(RATINGS_URL + '?country=' + code)
           .then(r => { if (!r.ok) throw new Error('ratings fetch failed'); return r.json(); })
           .catch(() => null);
@@ -3826,28 +3840,31 @@
           }
         }
       }
-      // SNOW-524: green the country's own dot, but only once all four of its
-      // feeds have actually flowed through the SW cache — a skipped feed was
-      // already fetched by boot, so it counts. Optimistic on purpose: the SW's
-      // ``cache.put`` isn't awaited inside ``_staleWhileRevalidate``, so an
-      // immediate re-probe would race the write; the next popover-open
-      // ``refresh()`` re-verifies against real cache state and self-corrects.
-      const allFeedsLoaded =
-        (isBootCountry || !!newRegions) && !!newMajor && !!newSub && ratingsOk;
-      if (allFeedsLoaded) {
-        // SNOW-658: the ROW's key, not the code's — AT and IT share the ALBINA
-        // row, whose dot may only green once both have landed. markCached is
-        // optimistic for a single-country row and would be a lie for this one,
-        // so a grouped row hands off to a real probe instead.
-        const rowKey = overlayKeyForCountry(code);
-        if (countryCodesFor(rowKey).length === 1) {
-          window.pwaLayerSyncStatus?.markCached(rowKey);
-        } else {
-          window.pwaLayerSyncStatus?.refresh();
-        }
+      // SNOW-898: green the country's own dot, or hand off to a real probe.
+      // The two rules that decide it — SNOW-524's "a feed boot already
+      // fetched counts as landed, but a successful CALL is not complete
+      // data", and SNOW-658's "an optimistic mark is a lie for a grouped
+      // provider row" — live in country_load_core.js, where they are named
+      // and tested rather than being a conditional under a comment.
+      //
+      // Marking is optimistic on purpose: the SW's ``cache.put`` isn't
+      // awaited inside ``_staleWhileRevalidate``, so an immediate re-probe
+      // would race the write. The next popover-open ``refresh()`` re-verifies
+      // against real cache state and self-corrects. A ``refresh`` here is
+      // also what stops a partial load leaving the row pulsing forever after
+      // its optimistic markSyncing.
+      const rowKey = overlayKeyForCountry(code);
+      const dotAction = self.pwaCountryLoadCore.syncDotAction({
+        isBootCountry,
+        regionsLoaded: !!newRegions,
+        majorLoaded: !!newMajor,
+        subLoaded: !!newSub,
+        ratingsOk,
+        rowCountryCount: countryCodesFor(rowKey).length,
+      });
+      if (dotAction === 'mark-cached') {
+        window.pwaLayerSyncStatus?.markCached(rowKey);
       } else {
-        // Partial load — let a real probe decide, rather than leaving the row
-        // pulsing forever after an optimistic markSyncing.
         window.pwaLayerSyncStatus?.refresh();
       }
     } catch (err) {
