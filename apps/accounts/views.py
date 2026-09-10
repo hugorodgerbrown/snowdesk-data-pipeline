@@ -151,6 +151,18 @@ _VERIFIED_LANDING_URL = "/?panel=favourites"
 # delete_account once the row is gone and the session has been dropped.
 _ACCOUNT_DELETED_URL = "/account/deleted/"
 
+# The auth-entry pages a post-sign-in ``next`` is never allowed to name
+# (SNOW-826). Names rather than paths: they are reversed inside the view, at
+# call time, so no URL resolution happens while the app registry loads. The
+# reason each one is here differs — see the comment at the guard in
+# ``sign_in_view``, which is also where ``reset_password_confirm``'s absence
+# is explained.
+_AUTH_ENTRY_URL_NAMES: tuple[str, ...] = (
+    "accounts:sign_in",
+    "accounts:register",
+    "accounts:reset_password",
+)
+
 
 def _get_account(request: HttpRequest) -> Account | None:
     """Return the authenticated Account profile from request.user, or None.
@@ -253,14 +265,34 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         else request.POST.get("next"),
     )
 
-    # A ``next`` pointing back at THIS page is a bounce rather than a
-    # destination: the already-authenticated branch below would redirect
-    # here, and this page would then redirect onward carrying no ``next``
-    # at all. It terminates — each hop consumes one level — but it spends
-    # two redirects to land exactly where a missing ``next`` lands in none.
-    # Dropped here rather than in ``safe_next``, which answers "is this
-    # destination safe" and not "is it worth going to".
-    if next_url and urlsplit(next_url).path == reverse("accounts:sign_in"):
+    # SNOW-826: a ``next`` naming any of the three AUTH-ENTRY pages is
+    # dropped. They are guarded for two different reasons, and the
+    # difference matters to anyone changing this list.
+    #
+    #   sign_in / register — a BOUNCE. Both redirect to the homepage
+    #     unconditionally when the visitor is authenticated, so the
+    #     already-authenticated branch below would redirect there, and that
+    #     page would redirect onward carrying no ``next`` at all. It
+    #     terminates — each hop consumes one level — but it spends two
+    #     redirects to land exactly where a missing ``next`` lands in none.
+    #   reset_password — NOT a bounce. It has no authenticated branch at
+    #     all; a GET always renders the form. It is dropped because the
+    #     DESTINATION IS USELESS: it puts a visitor on a forgotten-password
+    #     form seconds after they successfully signed in.
+    #
+    # ``reset_password_confirm`` is deliberately absent. It has no
+    # authenticated branch either, and what it renders — the set-password
+    # form for a live token, or the link-expired page for a spent one — is
+    # the correct answer whatever the session. Landing back on it is a page
+    # whose job is not yet done, so guarding it would strip a legitimate
+    # destination.
+    #
+    # Reversed here rather than at module scope so nothing resolves a URL
+    # during app loading. Dropped here rather than in ``safe_next``, which
+    # answers "is this destination safe" and not "is it worth going to".
+    if next_url and urlsplit(next_url).path in {
+        reverse(name) for name in _AUTH_ENTRY_URL_NAMES
+    }:
         next_url = None
 
     if request.user.is_authenticated:
