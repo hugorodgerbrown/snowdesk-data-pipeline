@@ -34,6 +34,8 @@
  *   tilesSeamlessly(size, period)
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 

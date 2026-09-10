@@ -64,6 +64,8 @@
  *     now the only thing the cache is read for here.
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 

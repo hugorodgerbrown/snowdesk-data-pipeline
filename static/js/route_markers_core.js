@@ -41,6 +41,8 @@
  *   finishFlagPixels(r, g, b)
  */
 
+// @ts-check
+
 (function () {
   'use strict';
 
@@ -112,9 +114,9 @@
    * epsilon would additionally swallow a short there-and-back that ends a
    * few metres from its start, which has two ends and should show two.
    *
-   * @param {object} collection The routes FeatureCollection, as served by
-   *   `routes:geojson` (LineStrings; positions may carry a third
-   *   elevation ordinate, which is dropped here).
+   * @param {?{features?: Array<any>}} collection The routes
+   *   FeatureCollection, as served by `routes:geojson` (LineStrings;
+   *   positions may carry a third elevation ordinate, dropped here).
    * @returns {{type: string, features: Array<object>}} A point
    *   FeatureCollection. Each feature carries `role` (`'start'` or
    *   `'end'`), plus the route's `uuid` and `name` so a marker can be
@@ -136,6 +138,11 @@
       if (!isPosition(first) || !isPosition(last)) continue;
 
       const props = route.properties || {};
+      /**
+       * @param {number[]} position A `[lon, lat]` (or `[lon, lat, ele]`).
+       * @param {string} role `'start'` or `'end'`.
+       * @returns {object} One point Feature.
+       */
       const marker = (position, role) => ({
         type: 'Feature',
         // Longitude and latitude only: a symbol layer has no use for the

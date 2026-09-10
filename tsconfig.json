@@ -1,0 +1,33 @@
+{
+  "//": [
+    "SNOW-899 — type-check static/js without compiling it.",
+    "",
+    "The Python side has ruff and mypy enforced on every commit. The browser",
+    "side had three bespoke guards, each aimed at one historical bug class,",
+    "and nothing general. js-globals-lint in particular exists to catch reads",
+    "of a window global nothing assigns — a misspelled or wrongly-scoped",
+    "identifier, which is precisely what a type checker catches for free.",
+    "",
+    "NOT a build step. noEmit is set, nothing here feeds bin/minify-js or",
+    "collectstatic, and no source file changes syntax: types are expressed as",
+    "JSDoc comments. See CLAUDE.md and docs/client-side-tests.md.",
+    "",
+    "checkJs is FALSE on purpose. Opt-in is per file via a `// @ts-check`",
+    "line, so this lands green on thirteen files rather than red on 75 with a",
+    "suppression list. A new file is unchecked until someone opts it in."
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["static/js/**/*.js", "static/js/globals.d.ts"],
+  "exclude": ["static/js/*.min.js", "node_modules"]
+}

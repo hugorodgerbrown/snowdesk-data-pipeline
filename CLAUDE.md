@@ -449,7 +449,25 @@ via `bin/i18n-lint --show-allows` — staff-only surfaces are the legitimate use
 Full pattern, including the `|escapejs` rule for `{% trans %}` values
 interpolated into JS literals: [`docs/i18n.md`](docs/i18n.md).
 
-**Fourth guard: `tox -e fidelity-lint`.** Not a design-system guard, but
+**Fourth guard: `tox -e js-types`.** `tsc --checkJs --noEmit` over
+`static/js`, with types written as JSDoc comments — no syntax change, no
+build step, nothing emitted. It is the first GENERAL check the browser side
+has had: the three guards above each catch one historical bug class, and
+`js-globals-lint` in particular exists to catch a read of a global nothing
+assigns, which is a misspelled identifier and exactly what a type checker
+catches for free. `checkJs` is **false** project-wide, so a file is checked
+only once someone adds `// @ts-check` to it — nine `*_core.js` modules today,
+with `basemap_download_core`, `map_weather_core`, `layer_visibility_core` and
+`elevation_profile_core` still to come (SNOW-899 landed the infrastructure and
+the cheap files; those four carry 115 of the original 128 errors between
+them). `static/js/globals.d.ts` declares the `window.pwa*` publish channel,
+which is the first time that surface has been written down anywhere. It runs
+in `js.yml` rather than the `lint-guards` matrix (those jobs set up no Node)
+and is deliberately **not** in the default envlist — it would cost a second
+`npm ci` on every local `tox` for a check that only moves when an opted-in
+file changes.
+
+**Fifth guard: `tox -e fidelity-lint`.** Not a design-system guard, but
 the same family. Snowdesk claims to show the provider's bulletin in full
 rather than a simplified subset; `tests/sentinels/fidelity.py` holds one
 row per dotted CAAML path across the nine sentinels, each either declared
@@ -493,6 +511,7 @@ uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); 
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
 uv run tox -e js              # Vitest JS-unit tests (in default envlist; fast, see docs/client-side-tests.md)
+uv run tox -e js-types        # tsc --checkJs over static/js via JSDoc (CI-only, not in the default envlist)
 uv run tox --recreate         # rebuild envs from scratch after a deps change
 ```
 
