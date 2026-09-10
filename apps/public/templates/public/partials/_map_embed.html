@@ -874,6 +874,12 @@ Optional context:
                         class="basemap-menu-item hover-affordance"
                         data-basemap-key="{{ bm.key }}"
                         data-basemap-url="{{ bm.url }}"
+                        {# SNOW-891: the countries this style actually draws.  #}
+                        {# map.js scopes the EAWS boundary outlines to them so #}
+                        {# an outline never covers ground the tiles leave      #}
+                        {# blank; map_layer_sync_status.js probes the same     #}
+                        {# codes for the boundary tiers' dots.                 #}
+                        data-basemap-countries="{{ bm.countries }}"
                         aria-checked="false"
                     >
                         {# Offline-integrity: sync-status dot per basemap —  #}

@@ -1259,6 +1259,54 @@ BASEMAP_STYLES = {
     "basemap_at": "https://mapsneu.wien.gv.at/basemapvectorneu/root.json",
 }
 
+# SNOW-891: the ground each basemap actually draws, as EAWS country codes.
+# The EAWS boundary outlines (Major / Minor / Micro) follow this rather than
+# the layers menu's Bulletins rows — a national style renders blank past its
+# own border, so outlines beyond it delineate ground the tiles do not cover.
+# The Bulletins rows keep filtering the bulletin DATA, which is a separate
+# question: someone on the Swiss basemap may still follow ALBINA.
+#
+# Every ``BASEMAP_STYLES`` key must appear here and every code must be one of
+# the four countries the map carries, both checked at import below — a new
+# basemap that forgets its coverage fails the boot rather than silently
+# drawing no outlines, which is the bug this ticket fixed.
+BASEMAP_COUNTRIES = {
+    # Global style: all four, so the outlines cover the whole map.
+    "openfreemap_liberty": ("ch", "fr", "at", "it"),
+    "swisstopo_winter": ("ch",),
+    "swisstopo_light": ("ch",),
+    "ign_plan": ("fr",),
+    "basemap_at": ("at",),
+}
+
+# The countries the map carries geometry for — the same four
+# ``COUNTRY_KEYS`` in static/js/map_state.js lists. Italy has no national
+# basemap of its own (see BASEMAP_STYLES above), so it is reachable only
+# through the global style.
+MAP_COUNTRY_CODES = ("ch", "fr", "at", "it")
+
+_uncovered_basemaps = sorted(set(BASEMAP_STYLES) - set(BASEMAP_COUNTRIES))
+if _uncovered_basemaps:
+    raise ImproperlyConfigured(
+        f"BASEMAP_COUNTRIES is missing {_uncovered_basemaps}. Every basemap "
+        f"must declare the country codes it draws, or its EAWS boundary "
+        f"outlines cannot be scoped to what the tiles cover."
+    )
+
+_unknown_basemap_countries = sorted(
+    {
+        code
+        for codes in BASEMAP_COUNTRIES.values()
+        for code in codes
+        if code not in MAP_COUNTRY_CODES
+    }
+)
+if _unknown_basemap_countries:
+    raise ImproperlyConfigured(
+        f"BASEMAP_COUNTRIES names {_unknown_basemap_countries}, which are not "
+        f"countries the map carries. Valid codes: {list(MAP_COUNTRY_CODES)}"
+    )
+
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")
 
 # SNOW-791: which drawing of the weather icons to serve. Snowdesk draws its

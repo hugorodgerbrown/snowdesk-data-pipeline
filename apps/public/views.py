@@ -1395,16 +1395,29 @@ def _season_date_range(reference: datetime.date) -> tuple[datetime.date, datetim
 
 
 def _basemaps_for_picker() -> list[dict[str, Any]]:
-    """Build the ordered ``{key, label, url}`` catalogue for the picker.
+    """Build the ordered ``{key, label, url, countries}`` catalogue for the picker.
 
     Order follows ``_BASEMAP_LABELS`` (the user-facing intent), not the
     iteration order of ``settings.BASEMAP_STYLES`` — the labels dict is
     where the picker's display order is curated. Any key in settings
     that has no label here is dropped from the picker (still usable as
     a ``BASEMAP=`` env override on the deployed default).
+
+    SNOW-891: ``countries`` is the space-separated coverage from
+    ``settings.BASEMAP_COUNTRIES``, rendered onto the row as
+    ``data-basemap-countries`` for ``static/js/map.js`` to scope the EAWS
+    boundary outlines by. It has to travel through the DOM rather than a
+    shared JS constant because ``map_layer_sync_status.js`` loads before the
+    map bundle and cannot read one — the same constraint that put
+    ``data-country-codes`` on the country rows.
     """
     return [
-        {"key": key, "label": label, "url": settings.BASEMAP_STYLES[key]}
+        {
+            "key": key,
+            "label": label,
+            "url": settings.BASEMAP_STYLES[key],
+            "countries": " ".join(settings.BASEMAP_COUNTRIES[key]),
+        }
         for key, label in _BASEMAP_LABELS.items()
         if key in settings.BASEMAP_STYLES
     ]
