@@ -29,7 +29,7 @@
  * "hide the layers whose source is a geojson source" is an exact,
  * self-maintaining definition of the app's own overlays: a new overlay
  * added later is covered without touching this module, and no basemap
- * layer is ever hidden. Contrast the hand-maintained ``OVERLAY_LAYER_IDS``
+ * layer is ever hidden. Contrast the hand-maintained ``OVERLAY_LAYERS``
  * lists in static/js/map.js, which have to enumerate ids because they map
  * *menu rows* to layers — a mapping that can't be derived.
  *
