@@ -435,6 +435,64 @@ def test_map_view_passes_basemap_catalogue() -> None:
     assert ctx["default_basemap_key"] == settings.BASEMAP
 
 
+def test_every_basemap_style_declares_its_countries() -> None:
+    """
+    SNOW-891: every ``BASEMAP_STYLES`` key declares its coverage.
+
+    The EAWS boundary outlines are scoped to the active basemap's countries,
+    so a style with no entry would draw no outlines at all — the bug this
+    ticket fixed, reintroduced through the back door. ``config.settings.base``
+    raises at import on a missing key; this pins the same contract from the
+    test suite so the omission is named rather than surfacing as a boot
+    failure on deploy.
+    """
+    assert set(settings.BASEMAP_COUNTRIES) == set(settings.BASEMAP_STYLES)
+
+
+def test_basemap_countries_are_countries_the_map_carries() -> None:
+    """
+    SNOW-891: every declared code is one of the four the map holds geometry
+    for. A code outside ``MAP_COUNTRY_CODES`` has no ``?country=`` feed
+    behind it, so the boundary load would fetch a 400 and draw nothing.
+    """
+    declared = {code for codes in settings.BASEMAP_COUNTRIES.values() for code in codes}
+    assert declared <= set(settings.MAP_COUNTRY_CODES)
+
+
+@pytest.mark.django_db
+def test_map_page_renders_basemap_countries_on_every_picker_row() -> None:
+    """
+    SNOW-891: each picker row carries ``data-basemap-countries``.
+
+    ``map.js`` reads it off the checked row to scope the boundary outlines,
+    and ``map_layer_sync_status.js`` reads it to probe the boundary tiers'
+    dots. It travels through the DOM rather than a JS constant because the
+    sync-status module loads before the map bundle.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+    for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
+        codes = " ".join(settings.BASEMAP_COUNTRIES[key])
+        assert f'data-basemap-countries="{codes}"' in content
+
+
+@pytest.mark.django_db
+def test_map_view_passes_basemap_countries_in_context() -> None:
+    """
+    SNOW-891: ``_basemaps_for_picker`` carries the coverage as a
+    space-separated string, matching the ``data-country-codes`` shape the
+    provider rows already use.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    by_key = {bm["key"]: bm for bm in response.context["basemaps"]}
+    assert by_key["openfreemap_liberty"]["countries"] == "ch fr at it"
+    assert by_key["swisstopo_winter"]["countries"] == "ch"
+    assert by_key["ign_plan"]["countries"] == "fr"
+    assert by_key["basemap_at"]["countries"] == "at"
+
+
 def test_basemap_styles_openfreemap_liberty_matches_style_url_setting() -> None:
     """
     SNOW-242: ``BASEMAP_STYLES["openfreemap_liberty"]`` and

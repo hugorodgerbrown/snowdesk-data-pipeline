@@ -5,10 +5,12 @@ templates/includes/_overlay_banner.html — Persistent banner primitive (SNOW-48
 Two positional variants sharing one set of conventions (icon + copy +
 optional CTA + optional dismiss):
 
-  "strip"    — full-width, in-flow edge bar (e.g. the off-season archive
-               notice). Honours ``dismissible`` (SNOW-639) using the same
-               hooks as "floating"; without it, visible for as long as it
-               is rendered.
+  "strip"    — full-width, in-flow edge bar (the admin-managed site
+               banners — see includes/_persistent_banners.html; formerly
+               the hard-coded off-season archive notice). Honours
+               ``dismissible`` (SNOW-639) using the same hooks as
+               "floating"; without it, visible for as long as it is
+               rendered.
   "floating" — fixed bottom-centre card (default). Used by JS-revealed
                nudges: the service-worker update banner, the Android/
                Chromium install prompt.
@@ -72,11 +74,20 @@ Optional context:
                 never the HTML5 attribute). Honoured by BOTH variants
                 since SNOW-639 — it was floating-only before, so a
                 ``strip`` caller passing it was silently ignored.
-                Dismissal is never persisted: the class is added to one
-                live element and a reload brings the banner back. That is
-                deliberate for the off-season strip, which exists to say
-                the data on screen is an archive — a fact that is just as
-                true on the next visit.
+                This handler never persists the dismissal: the class is
+                added to one live element and a reload brings the banner
+                back. Persisting it is the caller's business — see
+                ``dismiss_url`` below for the admin banners, which record
+                a signed-in reader's dismissal server-side and so do not
+                return.
+  dismiss_url — Optional URL rendered as ``data-dismiss-url`` on the outer
+                element (strip only, and only alongside ``dismissible``).
+                A hook for a dismissal that must also be recorded on the
+                server: static/js/persistent_messages.js DELETEs it after
+                the shared handler has hidden the strip, so an admin
+                banner a signed-in reader dismisses stays dismissed.
+                Omitted for a banner whose dismissal is client-side only,
+                which is every other caller.
   static      — Bool; default False. When True the floating variant
                 renders inline (no ``hidden``, no ``fixed``, no z-index)
                 for the component library. No effect on "strip" (already
@@ -86,7 +97,11 @@ Optional context:
     <div
         {% if id %}id="{{ id }}"{% endif %}
         role="{{ role|default:'note' }}"
-        {% if dismissible %}data-overlay data-overlay-hide="class"{% endif %}
+        {% if dismissible %}
+            data-overlay
+            data-overlay-hide="class"
+            {% if dismiss_url %}data-dismiss-url="{{ dismiss_url }}"{% endif %}
+        {% endif %}
         class="flex items-center gap-2 border-b border-border bg-status-{{ kind|default:'warning' }}-bg px-4 py-2 text-sm text-status-{{ kind|default:'warning' }}-text"
     >
         {% if icon == "calendar" %}

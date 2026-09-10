@@ -400,8 +400,8 @@ published data**. Its sections say what their rows are:
 
 | Section | Rows | What a row switches |
 |---------|------|---------------------|
-| **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for |
-| **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
+| **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for — the choropleth and the groupings boundary, and nothing else (SNOW-891) |
+| **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
 | **Locations** | Resorts | Named places geocoded onto regions |
 | **Terrain** | Slope angle (absent without `SLOPE_TILE_URL`) | Steepness shading |
 | **Base map** | one row per basemap | The geographic backdrop |

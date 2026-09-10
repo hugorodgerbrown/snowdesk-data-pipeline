@@ -183,6 +183,13 @@ def test_signed_in_cost_is_one_query(client: Client) -> None:
     quoted in ``docs/feature-flags.md``, and pinning it here is what stops
     a later change to the context processor — dropping the
     ``SimpleLazyObject``, say — from quietly turning one query into four.
+
+    Scoped to the flag's own join rather than every query naming that
+    table: the admin-managed site banners also target auth Groups, so
+    their lookup carries a ``user.groups`` subquery of its own (see
+    ``apps.public.banners``). That is a different gate's cost, counted in
+    ``docs/query-counts.md``, and it must not be able to satisfy — or
+    break — this assertion.
     """
     group = _install_group_scoped_flag()
     user = User.objects.create_user("debugger", password="unused-in-this-test")
@@ -198,7 +205,12 @@ def test_signed_in_cost_is_one_query(client: Client) -> None:
 
     assert response.status_code == 200
     assert 'data-testid="debug-log-panel"' in response.content.decode()
-    group_queries = [q for q in ctx.captured_queries if "auth_user_groups" in q["sql"]]
+    group_queries = [
+        q
+        for q in ctx.captured_queries
+        if "auth_user_groups" in q["sql"]
+        and "persistent_messages_persistentmessage" not in q["sql"]
+    ]
     assert len(group_queries) == 1
 
 
