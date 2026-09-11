@@ -266,10 +266,21 @@ fi
 echo "$LOG_PREFIX: verified with manage.py check — 'uv run tox' should now work"
 
 # ── 5. Seed the development database ───────────────────────────────────────
-# Mirrors bin/init-worktree's recipe (migrate → region fixtures →
-# seed_test_data), which cannot run here: it refuses to execute in the main
-# worktree, and a cloud session clones exactly that. Same data as CI, so the
-# SNOW-13 query-count baseline holds.
+# Mirrors bin/init-worktree's recipe (migrate → waffle flags → region
+# fixtures → resorts → seed_test_data), which cannot run here: it refuses to
+# execute in the main worktree, and a cloud session clones exactly that. Same
+# data as CI, so the SNOW-13 query-count baseline holds.
+#
+# The recipe is COPIED, not called, so the two can drift — and had. This one
+# ran `loaddata eaws_CH resorts`, and `resorts` is not a fixture: the resort
+# sheet is curated and arrives through `import_resorts`, which is a command
+# with a `--commit` flag. `loaddata` failed on the missing name, the whole
+# `&&` chain stopped, the database was removed as half-built, and every
+# remote session since started with no data at all — visible only as one
+# WARNING line in a hook log nobody reads on a green session.
+#
+# So: when init-worktree's recipe changes, change it here too. The steps are
+# in the same order for exactly that reason — read them side by side.
 #
 # Asks Django where the database is rather than assuming ./db.sqlite3, so the
 # path stays correct if BASE_DIR ever moves. The is-it-SQLite branch cannot
@@ -323,10 +334,12 @@ if [ -z "$sqlite_path" ]; then
 elif [ "$db_seeded" = "yes" ]; then
     echo "$LOG_PREFIX: $(basename "$sqlite_path") already holds data, leaving it alone"
 else
-    echo "$LOG_PREFIX: seeding $(basename "$sqlite_path") (migrate + region fixtures + seed_test_data)"
+    echo "$LOG_PREFIX: seeding $(basename "$sqlite_path") (migrate + waffle flags + region fixtures + resorts + seed_test_data)"
     if seed_log=$(
         "${DJANGO_ENV[@]}" .venv/bin/python manage.py migrate --noinput 2>&1 &&
-        "${DJANGO_ENV[@]}" .venv/bin/python manage.py loaddata eaws_CH resorts 2>&1 &&
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py sync_waffle_flags --commit 2>&1 &&
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py loaddata eaws_CH 2>&1 &&
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py import_resorts --commit 2>&1 &&
         "${DJANGO_ENV[@]}" .venv/bin/python manage.py seed_test_data --all --commit 2>&1
     ); then
         # Pull just the row count out of seed_test_data's log line rather than
