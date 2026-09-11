@@ -2076,15 +2076,9 @@ html.pwa-launching .pwa-launch-shell {
    the row — a plain `1fr` refuses to shrink below its content. */
 [data-offline-audit] [data-audit-check] {
   display: grid;
-  grid-template-columns: 6ch minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem;
   align-items: baseline;
-}
-
-[data-offline-audit] [data-audit-at] {
-  color: var(--color-text-3);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 [data-offline-audit] [data-audit-label] {
@@ -2106,20 +2100,30 @@ html.pwa-launching .pwa-launch-shell {
    whole row amber reads as a warning about the subject rather than about
    the reading. Every state is also spelled out in the summary and in the
    copied text form, so nothing here is colour-only. */
-[data-offline-audit] [data-audit-check][data-audit-status='ok'] [data-audit-value] {
+[data-offline-audit] [data-audit-check][data-audit-status='yes'] [data-audit-value] {
   color: var(--color-sync-ok);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='warn'] [data-audit-value] {
+[data-offline-audit] [data-audit-check][data-audit-status='no'] [data-audit-value] {
   color: var(--color-sync-partial);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='fail'] [data-audit-value] {
+[data-offline-audit] [data-audit-check][data-audit-status='blocked'] [data-audit-value] {
   color: var(--color-sync-blocked);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='unknown'] [data-audit-value] {
+[data-offline-audit] [data-audit-check][data-audit-status='unknown'] [data-audit-value],
+[data-offline-audit] [data-audit-check][data-audit-status='pending'] [data-audit-value] {
   color: var(--color-text-3);
+}
+
+/* A row whose answer has not landed reads as not-yet rather than as
+   absent: the label recedes with it, and both come back at full strength
+   the moment the answer arrives. No transition — thirteen rows each
+   fading in over 150ms is a second of motion nobody asked for, on top of
+   the cadence that is already the point. */
+[data-offline-audit] [data-audit-check][data-audit-status='pending'] [data-audit-label] {
+  opacity: 0.45;
 }
 
 [data-offline-audit] [data-audit-summary] {

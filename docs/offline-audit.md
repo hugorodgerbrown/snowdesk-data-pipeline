@@ -55,76 +55,95 @@ The app-side markup and its `{% trans %}` strings are
 the same markup contract inline, and English copy comes from the
 module's own `FALLBACKS`.
 
+## What it asks
+
+A **fixed** list of capabilities, each answered Yes or No. Not an
+inventory — how many program files are cached, how many reports are
+stored, how many saved places there are is not a question anyone has.
+"Will the bulletins I have opened still open?" is.
+
+| Section | Rows |
+|---|---|
+| Getting in | Offline mode is on · The app opens · The app is complete |
+| The map | Danger ratings · Region outlines · Zoomed-out overview |
+| Regions you downloaded | one row per region, by name |
+| Drop zones you downloaded | one row per drop zone, by name |
+| Areas you drew | one row per custom area, by name |
+| Your content | Bulletins you have opened · Your saved places · Community reports · Weather |
+| Keeping it | Safe from browser cleanup · Room for more · Changes you make are kept |
+
+`ROWS` in `offline_audit_core.js` is a constant, declared before
+anything is read, so a device with nothing stored produces the same rows
+as a device with everything, all reading No. That is what makes the
+table scannable, comparable between runs, and paintable before the first
+reading lands.
+
+**The downloads are the exception, deliberately.** One row saying the map
+draws is no use to someone whose Verbier download is the broken one, so
+every download gets a named row grouped by kind — which regions, which
+drop zones, which areas they drew. A kind with no downloads renders no
+section; a device with none of any kind gets a single "Map areas
+downloaded — No".
+
+Several rows are answered from more than one reading. "The app opens" is
+the map page's HTML being in the shell cache **and** its
+`X-SW-Principal` stamp matching the account signed in now — the two
+halves of the failure that produced the ticket. The user does not care
+which half; the summary says, the row does not.
+
 ## Two halves, doing two jobs
 
-**The log is evidence.** One line per check, and strictly one: elapsed,
-label, answer. Its job is to show that eighteen separate things were
-actually looked at, which is what makes the conclusion believable —
-nobody trusts a single green tick from the app that just failed them.
-Monospace, in a recessed panel, deliberately terse.
+**The log is evidence.** One line per capability, and strictly one: label
+and answer. Its job is to show that thirteen-odd separate things were
+looked at, which is what makes the conclusion believable — nobody trusts
+a single green tick from the app that just failed them.
 
 **The summary is the answer.** A verdict sentence plus one paragraph of
 ordinary prose saying what to expect and what fixes it, on a ground
-tinted by the verdict. This is the part written for a person, and the
-part most readers read *instead of* the log rather than as well as it.
-Under both sits the count — "18 checks · 5 need attention".
+tinted by the verdict. It is where detail a row cannot hold goes: which
+area is incomplete, which account the saved page belongs to. Under both
+sits the tally — "7 of 14 available offline".
 
 The rule that keeps them apart: **a row never carries its own
 explanation.** Per-row helper text made the log three times taller,
 turned scanning into reading, and printed one shared remedy once per
-row. Everything a failing row would have said is composed into the
-summary by `composeSummary`, which can fold three faults with one remedy
-into a single sentence — "Saved pages will look plain and may be missing
-danger ratings — styling and data feeds are not saved yet. Opening the
-map once while connected fixes both." Fifteen independent helper lines
-never could.
+row. `composeSummary` folds Nos with one shared remedy into a single
+sentence — "Without a signal the app will show no danger ratings and
+will draw no region outlines. Opening the map once while connected fixes
+both." — and caps the loose clauses after it at three, because the table
+above is already the inventory.
 
-Each non-ok check contributes either a `group` (a shared remedy, with a
-`subject` and an `effect` the composer joins) or a standalone `note`.
-Whatever the verdict already said is excluded outright: saying it twice
+Whatever the verdict said is excluded from the paragraph: saying it twice
 in three lines is how a summary starts reading like an error log.
 
-### The elapsed column is measured, not staged
+### The build is an animation, and carries no timings
 
-The collector marks the clock as each reading completes and the core
-hands each row the mark behind it. Rows produced by ONE reading share a
-figure — every page row comes out of a single cache walk — and on a fast
-device several read `0.00s`. A staggered reveal would look better and
-would be measuring the animation instead of the work, which is the one
-thing a diagnostic must not do. A reading that was never taken leaves
-the column blank rather than printing a zero.
+Every reading is taken before a single answer is painted. The rows then
+fill in on a fixed `ROW_INTERVAL_MS` cadence. An earlier cut printed each
+row's real elapsed time; on any ordinary device that was fifteen rows of
+`0.00s`, which looked like precision and conveyed nothing.
 
-## The five sections
+What the build is for: the list of questions is on screen in full,
+unanswered, from the first frame, and the reader watches each one get
+settled. `prefers-reduced-motion` skips the cadence and paints the
+finished report in one go — nothing is lost, because the report is
+complete before the reveal starts.
 
-Each check resolves to **ok / warn / fail / unknown**, and the verdict is
-the worst thing that is true, said in one line.
+## A No is not always a fault
 
-1. **This device** — is a worker registered and in control; is an update
-   waiting; `storage.estimate()` and `persisted()`; whether the
-   connection is forced off (the user's choice) or latched off (the
-   worker gave up after three timeouts).
-2. **Pages saved for offline** — every `text/html` entry in the shell
-   cache, each with its principal stamp and whether that matches
-   `meta:app`'s `mutations.principal`. `/` is checked by name and drives
-   the verdict. **This is the check that explains the tube.**
-3. **App files** — the shell-cache inventory by kind. A page whose HTML
-   is cached and whose scripts are not opens blank, which to a user is
-   indistinguishable from not being saved at all.
-4. **Downloaded maps** — one row per record in `basemap.regions`,
-   `basemap.customAreas` and `basemap.baseLayers`: tiles present in the
-   bucket, missing render dependencies from the record's own `deps`,
-   size, and the two ways a device and its own records disagree (a
-   record with no bucket, a bucket with no record).
-5. **Saved data** — row counts for `data:favourites`,
-   `data:map_overlays`, `data:panel_rows`, and the depth of
-   `queue:mutations`.
+Four rows are `critical`: offline mode, the app opening, the app being
+complete, and having anything downloaded. A No on one of those blocks the
+headline verdict and paints red — there is no point telling someone their
+bulletins are saved if the app will not open. Every other No is amber: a
+capability this device does not have offline, which is worth knowing and
+is not an error.
 
 ## Three rules worth keeping
 
-**A reading that could not be taken is `unknown`, never `ok`.** The
+**A reading that could not be taken is `unknown`, never `yes`.** The
 report is read by someone already let down once by a surface that said
-everything was fine. `unknown` counts towards neither the verdict nor
-the "needs attention" figure — a browser with no `storage.estimate()`, an
+everything was fine. An `unknown` row shows a dash and counts towards
+neither half of the tally — a browser with no `storage.estimate()`, an
 unreadable IndexedDB, an area whose record names no dependencies (one
 downloaded before SNOW-844) each say so on their own row.
 

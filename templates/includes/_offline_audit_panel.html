@@ -86,132 +86,117 @@ of a settings page nobody came here to audit.
     {# renders. tests/accounts/test_settings_offline_audit.py fails if #}
     {# the two key sets drift. #}
     <template id="offline-audit-strings-template">
-        <span data-string="section-device">{% translate "This device" %}</span>
-        <span data-string="section-pages">{% translate "Pages saved for offline" %}</span>
-        <span data-string="section-files">{% translate "App files" %}</span>
-        <span data-string="section-maps">{% translate "Downloaded maps" %}</span>
-        <span data-string="section-data">{% translate "Saved data" %}</span>
+        <span data-string="section-access">{% translate "Getting in" %}</span>
+        <span data-string="section-map">{% translate "The map" %}</span>
+        <span data-string="section-regions">{% translate "Regions you downloaded" %}</span>
+        <span data-string="section-dropzones">{% translate "Drop zones you downloaded" %}</span>
+        <span data-string="section-custom">{% translate "Areas you drew" %}</span>
+        <span data-string="section-content">{% translate "Your content" %}</span>
+        <span data-string="section-keeping">{% translate "Keeping it" %}</span>
 
-        <span data-string="label-service-worker">{% translate "Offline mode" %}</span>
-        <span data-string="sw-controlling">{% translate "active" %}</span>
-        <span data-string="sw-registered-not-controlling">{% translate "starting up" %}</span>
-        <span data-string="sw-absent">{% translate "not set up" %}</span>
-        <span data-string="sw-unsupported">{% translate "not supported" %}</span>
-        <span data-string="note-service-worker">{% translate "offline mode is not running on this device yet" %}</span>
-        <span data-string="label-update">{% translate "Update" %}</span>
-        <span data-string="update-waiting">{% translate "waiting to install" %}</span>
-        <span data-string="note-update">{% translate "a newer version is waiting to install" %}</span>
-        <span data-string="label-network-mode">{% translate "Connection" %}</span>
-        <span data-string="mode-forced">{% translate "offline mode is on" %}</span>
-        <span data-string="mode-latched">{% translate "no usable connection" %}</span>
-        <span
-            data-string="note-forced"
-        >{% translate "offline mode is switched on, so nothing new will be fetched" %}</span>
-        <span
-            data-string="note-latched"
-        >{% translate "the app has stopped trying to reach the network after repeated timeouts" %}</span>
-        <span data-string="label-storage">{% translate "Space used" %}</span>
-        <span data-string="storage-of">{% translate "%(used)s of %(total)s" %}</span>
-        <span
-            data-string="note-storage-tight"
-        >{% translate "storage is nearly full, so the browser may start deleting downloads" %}</span>
-        <span data-string="label-persisted">{% translate "Protected from cleanup" %}</span>
-        <span data-string="persisted-yes">{% translate "yes" %}</span>
-        <span data-string="persisted-no">{% translate "no" %}</span>
-        <span data-string="note-persisted">{% translate "downloads are not protected from browser cleanup" %}</span>
+        <span data-string="row-offline-mode">{% translate "Offline mode is on" %}</span>
+        <span data-string="row-app-opens">{% translate "The app opens" %}</span>
+        <span data-string="row-app-complete">{% translate "The app is complete" %}</span>
+        <span data-string="row-danger-ratings">{% translate "Danger ratings" %}</span>
+        <span data-string="row-region-shapes">{% translate "Region outlines" %}</span>
+        <span data-string="row-overview">{% translate "Zoomed-out overview" %}</span>
+        <span data-string="row-no-downloads">{% translate "Map areas downloaded" %}</span>
+        <span data-string="row-bulletins">{% translate "Bulletins you have opened" %}</span>
+        <span data-string="row-saved-places">{% translate "Your saved places" %}</span>
+        <span data-string="row-reports">{% translate "Community reports" %}</span>
+        <span data-string="row-weather">{% translate "Weather" %}</span>
+        <span data-string="row-protected">{% translate "Safe from browser cleanup" %}</span>
+        <span data-string="row-room">{% translate "Room for more" %}</span>
+        <span data-string="row-unsent">{% translate "Changes you make are kept" %}</span>
 
-        <span data-string="label-map-page">{% translate "The map page" %}</span>
-        <span data-string="page-saved">{% translate "saved" %}</span>
-        <span data-string="page-not-saved">{% translate "not saved" %}</span>
-        <span data-string="page-other-account">{% translate "another account" %}</span>
-        <span data-string="label-pages-saved">{% translate "Pages you can open offline" %}</span>
-        <span data-string="page-entry-usable">{% translate "ready" %}</span>
+        <span data-string="answer-yes">{% translate "Yes" %}</span>
+        <span data-string="answer-no">{% translate "No" %}</span>
+        <span data-string="answer-unknown">{% translate "—" %}</span>
+        <span data-string="answer-pending">{% translate "…" %}</span>
 
-        <span data-string="label-scripts">{% translate "Program files" %}</span>
-        <span data-string="label-styles">{% translate "Styling" %}</span>
-        <span data-string="label-feeds">{% translate "Data feeds" %}</span>
-        <span data-string="label-other-files">{% translate "Fonts and images" %}</span>
-        <span data-string="subject-scripts">{% translate "program files" %}</span>
-        <span data-string="subject-styles">{% translate "styling" %}</span>
-        <span data-string="subject-feeds">{% translate "data feeds" %}</span>
-        <span data-string="effect-scripts">{% translate "will open blank" %}</span>
-        <span data-string="effect-styles">{% translate "will look plain" %}</span>
-        <span data-string="effect-feeds">{% translate "may be missing danger ratings" %}</span>
+        <span data-string="note-sw-unsupported">{% translate "this browser has no offline mode at all" %}</span>
         <span
-            data-string="group-open-map-lead"
-        >{% translate "Saved pages %(effects)s — %(subjects)s are not saved yet." %}</span>
+            data-string="note-sw-starting"
+        >{% translate "offline mode is starting up and will be ready on the next load" %}</span>
+        <span data-string="note-sw-absent">{% translate "offline mode has not been set up on this device" %}</span>
+        <span data-string="note-other-account">{% translate "the saved copy belongs to %(stamped)s" %}</span>
         <span
-            data-string="group-open-map-remedy"
-        >{% translate "Opening the map once while connected fixes %(count)s." %}</span>
-
-        <span data-string="label-areas">{% translate "Downloaded areas" %}</span>
-        <span data-string="areas-none">{% translate "none" %}</span>
+            data-string="note-no-areas"
+        >{% translate "no map area is downloaded, so there is no ground to draw" %}</span>
         <span
-            data-string="note-areas-none"
-        >{% translate "no map area is downloaded, so there will be nothing to show in the map" %}</span>
-        <span data-string="area-tiles">{% translate "%(tiles)s tiles, %(size)s" %}</span>
-        <span data-string="area-incomplete">{% translate "incomplete, %(count)s missing" %}</span>
-        <span data-string="area-missing">{% translate "not on this device" %}</span>
-        <span data-string="area-empty">{% translate "empty" %}</span>
+            data-string="note-no-overview"
+        >{% translate "zooming out past a downloaded area will show nothing" %}</span>
         <span
             data-string="note-area-incomplete"
         >{% translate "%(name)s will not draw until you repair it from the map’s Manage downloads sheet" %}</span>
         <span
             data-string="note-area-missing"
         >{% translate "%(name)s is recorded as downloaded but nothing is stored, so download it again" %}</span>
-        <span data-string="label-base-layer">{% translate "Zoomed-out overview (%(basemap)s)" %}</span>
-        <span data-string="label-orphan">{% translate "Unnamed area %(id)s" %}</span>
-        <span data-string="orphan-value">{% translate "no record" %}</span>
         <span
-            data-string="note-orphan"
-        >{% translate "some tiles are taking up space with nothing pointing at them" %}</span>
-
-        <span data-string="label-favourites">{% translate "Saved places" %}</span>
-        <span data-string="label-overlays">{% translate "Map overlays" %}</span>
-        <span data-string="label-panel-rows">{% translate "Reports" %}</span>
-        <span data-string="label-mutations">{% translate "Changes waiting to send" %}</span>
+            data-string="note-area-unverifiable"
+        >{% translate "%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked" %}</span>
+        <span data-string="note-no-bulletins">{% translate "no bulletin has been opened on this device yet" %}</span>
         <span
-            data-string="note-mutations"
-        >{% translate "%(n)s of your changes have not reached the server yet" %}</span>
-        <span data-string="label-db">{% translate "Local database" %}</span>
+            data-string="note-no-favourites"
+        >{% translate "none of your saved places has been loaded here yet" %}</span>
+        <span
+            data-string="note-no-reports"
+        >{% translate "community reports have not been loaded on this device" %}</span>
+        <span
+            data-string="note-no-weather"
+        >{% translate "the weather overlay has not been opened on this device" %}</span>
+        <span
+            data-string="note-not-persisted"
+        >{% translate "the browser may delete downloads when space runs low, and installing Snowdesk to the home screen usually stops that" %}</span>
+        <span
+            data-string="note-no-room"
+        >{% translate "only %(used)s of %(total)s is left, so the browser may start deleting downloads" %}</span>
+        <span
+            data-string="note-no-db"
+        >{% translate "the local database would not open, so nothing can be saved here" %}</span>
+        <span data-string="note-unsent">{% translate "%(n)s of your changes are waiting to be sent" %}</span>
 
-        <span data-string="principal-anonymous">{% translate "signed-out visitor" %}</span>
+        <span data-string="effect-styles">{% translate "will look plain" %}</span>
+        <span data-string="effect-ratings">{% translate "will show no danger ratings" %}</span>
+        <span data-string="effect-shapes">{% translate "will draw no region outlines" %}</span>
+        <span data-string="group-open-map-lead">{% translate "Without a signal the app %(effects)s." %}</span>
+        <span
+            data-string="group-open-map-remedy"
+        >{% translate "Opening the map once while connected fixes %(count)s." %}</span>
+
+        <span data-string="principal-anonymous">{% translate "a signed-out visitor" %}</span>
         <span data-string="principal-account">{% translate "account %(id)s…" %}</span>
-        <span data-string="principal-unknown">{% translate "unknown account" %}</span>
-        <span data-string="unknown">{% translate "unknown" %}</span>
+        <span data-string="principal-unknown">{% translate "an unknown account" %}</span>
 
-        <span data-string="verdict-ok">{% translate "The map will open offline." %}</span>
+        <span data-string="verdict-ok">{% translate "Everything you need is on this device." %}</span>
         <span data-string="verdict-no-worker">{% translate "This device is not set up for offline use yet." %}</span>
         <span
             data-string="verdict-no-page"
-        >{% translate "The map page is not saved. Open it once while connected." %}</span>
+        >{% translate "The app will not open without a signal. Open the map once while connected." %}</span>
         <span
             data-string="verdict-other-account"
-        >{% translate "The saved map page belongs to another account. Open the map once while connected." %}</span>
+        >{% translate "The saved app belongs to another account. Open the map once while connected." %}</span>
         <span
-            data-string="verdict-no-scripts"
-        >{% translate "The app’s program files are not saved, so pages will open blank." %}</span>
+            data-string="verdict-incomplete-app"
+        >{% translate "The app would open blank without a signal. Open the map once while connected." %}</span>
+        <span data-string="verdict-no-map">{% translate "The app opens, but there is no map to show in it." %}</span>
         <span
-            data-string="verdict-map-incomplete"
-        >{% translate "The map page will open, but a downloaded area is incomplete." %}</span>
-        <span
-            data-string="verdict-map-missing"
-        >{% translate "The map page will open, but no area is downloaded to show in it." %}</span>
+            data-string="verdict-downloads-broken"
+        >{% translate "The app opens, but none of your downloads will draw." %}</span>
 
         <span data-string="notes-sentence">{% translate "Also worth knowing: %(notes)s." %}</span>
         <span data-string="list-pair">{% translate "%(first)s and %(last)s" %}</span>
-        <span data-string="list-separator">{% translate ", " %}</span>
+        <span data-string="list-join">{% translate "%(first)s, %(rest)s" %}</span>
         <span data-string="count-one">{% translate "it" %}</span>
         <span data-string="count-two">{% translate "both" %}</span>
         <span data-string="count-many">{% translate "all %(n)s of them" %}</span>
 
-        <span data-string="counts-line">{% translate "%(total)s checks · %(attention)s need attention" %}</span>
-        <span data-string="counts-line-clear">{% translate "%(total)s checks · nothing needs attention" %}</span>
+        <span data-string="counts-line">{% translate "%(yes)s of %(total)s available offline" %}</span>
 
         <span data-string="running">{% translate "Checking…" %}</span>
         <span data-string="copied">{% translate "copied" %}</span>
         <span data-string="copy-failed">{% translate "copy failed" %}</span>
-        <span data-string="saving">{% translate "Saving the map page…" %}</span>
+        <span data-string="saving">{% translate "Saving the app…" %}</span>
         <span data-string="saved">{% translate "Saved. Re-checking…" %}</span>
         <span data-string="save-failed">{% translate "That could not be saved. Try again while connected." %}</span>
     </template>

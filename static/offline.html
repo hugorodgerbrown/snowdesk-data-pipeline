@@ -268,14 +268,9 @@
                instead of pushing the answer off the row. */
             [data-audit-check] {
                 display: grid;
-                grid-template-columns: 6ch minmax(0, 1fr) auto;
+                grid-template-columns: minmax(0, 1fr) auto;
                 align-items: baseline;
                 gap: 0.75rem;
-            }
-            [data-audit-at] {
-                font-variant-numeric: tabular-nums;
-                text-align: right;
-                opacity: 0.45;
             }
             [data-audit-label] {
                 overflow: hidden;
@@ -294,17 +289,24 @@
                nothing here is colour-only. A recovery page cannot reach
                the design tokens, so these are literal: the one place in
                the project where that is the only option. */
-            [data-audit-check][data-audit-status='ok'] [data-audit-value] {
+            [data-audit-check][data-audit-status='yes'] [data-audit-value] {
                 color: #2f7a3f;
             }
-            [data-audit-check][data-audit-status='warn'] [data-audit-value] {
+            [data-audit-check][data-audit-status='no'] [data-audit-value] {
                 color: #b4700a;
             }
-            [data-audit-check][data-audit-status='fail'] [data-audit-value] {
+            [data-audit-check][data-audit-status='blocked'] [data-audit-value] {
                 color: #cc0000;
             }
-            [data-audit-check][data-audit-status='unknown'] [data-audit-value] {
-                opacity: 0.45;
+            [data-audit-check][data-audit-status='unknown'] [data-audit-value],
+            [data-audit-check][data-audit-status='pending'] [data-audit-value] {
+                opacity: 0.4;
+            }
+            /* A row whose answer has not landed reads as not-yet rather
+               than as absent; both cells come back at full strength the
+               moment it arrives. */
+            [data-audit-check][data-audit-status='pending'] [data-audit-label] {
+                opacity: 0.4;
             }
             [data-audit-summary] {
                 margin-top: 0.75rem;
@@ -363,13 +365,13 @@
                 [data-audit-log] {
                     border-color: rgb(255 255 255 / 0.15);
                 }
-                [data-audit-check][data-audit-status='ok'] [data-audit-value] {
+                [data-audit-check][data-audit-status='yes'] [data-audit-value] {
                     color: #6fbf7f;
                 }
-                [data-audit-check][data-audit-status='warn'] [data-audit-value] {
+                [data-audit-check][data-audit-status='no'] [data-audit-value] {
                     color: #e0a740;
                 }
-                [data-audit-check][data-audit-status='fail'] [data-audit-value] {
+                [data-audit-check][data-audit-status='blocked'] [data-audit-value] {
                     color: #ff6b6b;
                 }
                 [data-audit-summary] {

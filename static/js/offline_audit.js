@@ -26,24 +26,34 @@
  *
  * ## The log is one line per check
  *
- * Strictly one, and nothing under it. A row is elapsed, label, answer,
- * and everything a failing row would want to explain is composed into
- * the summary instead (``composeSummary``). The rule is not stylistic:
+ * Strictly one, and nothing under it. A row is label and answer, and
+ * everything a failing row would want to explain is composed into the
+ * summary instead (``composeSummary``). The rule is not stylistic:
  * per-row helper text made this panel three times taller, turned
  * scanning into reading, and repeated one remedy across three rows
  * rather than saying it once. The renderer enforces it by having nowhere
  * to put a second line, and ``tests/js/test_offline_audit.js`` asserts a
  * row never grows one.
  *
- * ## Timings are measured, not staged
+ * ## The build is an animation, and says nothing about timing
  *
- * The elapsed column is real: the collector marks the clock as each
- * reading completes, and the core hands each row the mark behind it. Rows
- * produced by ONE reading therefore share a figure — every page row comes
- * out of a single cache walk — and on a fast device several will read
- * ``0.00s``. A staggered reveal would look better and would be measuring
- * the animation instead of the work, which is the one thing a diagnostic
- * must not do.
+ * Every reading is taken before a single answer is painted. The rows then
+ * fill in on a fixed ``ROW_INTERVAL_MS`` cadence — a reveal, not a
+ * measurement, and deliberately carrying no numbers that could be read as
+ * one. An earlier cut printed each row's real elapsed time; on any
+ * ordinary device that was fifteen rows of ``0.00s``, which looked like
+ * precision and conveyed nothing.
+ *
+ * What the build IS for: the list of questions is on screen in full,
+ * unanswered, from the first frame, and the reader watches each one get
+ * answered. That is the whole confidence argument — thirteen separate
+ * things were asked, and here is each of them being settled — and it is
+ * why the skeleton is painted before the answers rather than the rows
+ * appearing one at a time out of nothing.
+ *
+ * ``prefers-reduced-motion`` skips the cadence and paints the answered
+ * report in one go. Nothing is lost: the reveal is decoration over a
+ * report that is complete before it starts.
  *
  * ## It reads storage, it does not ask another module
  *
@@ -87,6 +97,12 @@
   // precise.
   var VERSION_PROBE_MS = 1500;
 
+  // How long between one row's answer and the next. Thirteen rows plus
+  // however many downloads, at 70ms, is about a second — long enough to
+  // read as deliberate, short enough that nobody waits for it. It is an
+  // animation over an already-finished report; see the header.
+  var ROW_INTERVAL_MS = 70;
+
   // SNOW-620: server-translated copy where a template provides it, the
   // English literal everywhere else. `pwaStrings` is not loaded on the
   // offline page, so the fallbacks are not a safety net there — they are
@@ -96,115 +112,94 @@
   //   section-* / label-*   the log's section rules and its left column
   //   the answers           what a row's right column says
   //   note-*                one standalone clause for the summary
-  //   group-* / subject-*
-  //     / effect-*          the parts the summary composes into a single
-  //                         sentence when several faults share a remedy
+  //   group-* / effect-*    the parts the summary composes into a single
+  //                         sentence when several Nos share one remedy
   var FALLBACKS = {
-    'section-device': 'This device',
-    'section-pages': 'Pages saved for offline',
-    'section-files': 'App files',
-    'section-maps': 'Downloaded maps',
-    'section-data': 'Saved data',
+    'section-access': 'Getting in',
+    'section-map': 'The map',
+    'section-regions': 'Regions you downloaded',
+    'section-dropzones': 'Drop zones you downloaded',
+    'section-custom': 'Areas you drew',
+    'section-content': 'Your content',
+    'section-keeping': 'Keeping it',
 
-    'label-service-worker': 'Offline mode',
-    'sw-controlling': 'active',
-    'sw-registered-not-controlling': 'starting up',
-    'sw-absent': 'not set up',
-    'sw-unsupported': 'not supported',
-    'note-service-worker': 'offline mode is not running on this device yet',
-    'label-update': 'Update',
-    'update-waiting': 'waiting to install',
-    'note-update': 'a newer version is waiting to install',
-    'label-network-mode': 'Connection',
-    'mode-forced': 'offline mode is on',
-    'mode-latched': 'no usable connection',
-    'note-forced': 'offline mode is switched on, so nothing new will be fetched',
-    'note-latched':
-      'the app has stopped trying to reach the network after repeated timeouts',
-    'label-storage': 'Space used',
-    'storage-of': '%(used)s of %(total)s',
-    'note-storage-tight':
-      'storage is nearly full, so the browser may start deleting downloads',
-    'label-persisted': 'Protected from cleanup',
-    'persisted-yes': 'yes',
-    'persisted-no': 'no',
-    'note-persisted': 'downloads are not protected from browser cleanup',
+    'row-offline-mode': 'Offline mode is on',
+    'row-app-opens': 'The app opens',
+    'row-app-complete': 'The app is complete',
+    'row-danger-ratings': 'Danger ratings',
+    'row-region-shapes': 'Region outlines',
+    'row-overview': 'Zoomed-out overview',
+    'row-no-downloads': 'Map areas downloaded',
+    'row-bulletins': 'Bulletins you have opened',
+    'row-saved-places': 'Your saved places',
+    'row-reports': 'Community reports',
+    'row-weather': 'Weather',
+    'row-protected': 'Safe from browser cleanup',
+    'row-room': 'Room for more',
+    'row-unsent': 'Changes you make are kept',
 
-    'label-map-page': 'The map page',
-    'page-saved': 'saved',
-    'page-not-saved': 'not saved',
-    'page-other-account': 'another account',
-    'label-pages-saved': 'Pages you can open offline',
-    'page-entry-usable': 'ready',
+    'answer-yes': 'Yes',
+    'answer-no': 'No',
+    'answer-unknown': '—',
+    'answer-pending': '…',
 
-    'label-scripts': 'Program files',
-    'label-styles': 'Styling',
-    'label-feeds': 'Data feeds',
-    'label-other-files': 'Fonts and images',
-    'subject-scripts': 'program files',
-    'subject-styles': 'styling',
-    'subject-feeds': 'data feeds',
-    'effect-scripts': 'will open blank',
-    'effect-styles': 'will look plain',
-    'effect-feeds': 'may be missing danger ratings',
-    'group-open-map-lead': 'Saved pages %(effects)s — %(subjects)s are not saved yet.',
-    'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
-
-    'label-areas': 'Downloaded areas',
-    'areas-none': 'none',
-    'note-areas-none':
-      'no map area is downloaded, so there will be nothing to show in the map',
-    'area-tiles': '%(tiles)s tiles, %(size)s',
-    'area-incomplete': 'incomplete, %(count)s missing',
-    'area-missing': 'not on this device',
-    'area-empty': 'empty',
+    'note-sw-unsupported': 'this browser has no offline mode at all',
+    'note-sw-starting': 'offline mode is starting up and will be ready on the next load',
+    'note-sw-absent': 'offline mode has not been set up on this device',
+    'note-other-account': 'the saved copy belongs to %(stamped)s',
+    'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
+    'note-no-overview': 'zooming out past a downloaded area will show nothing',
     'note-area-incomplete':
       '%(name)s will not draw until you repair it from the map’s Manage downloads sheet',
     'note-area-missing':
       '%(name)s is recorded as downloaded but nothing is stored, so download it again',
-    'label-base-layer': 'Zoomed-out overview (%(basemap)s)',
-    'label-orphan': 'Unnamed area %(id)s',
-    'orphan-value': 'no record',
-    'note-orphan': 'some tiles are taking up space with nothing pointing at them',
+    'note-area-unverifiable':
+      '%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked',
+    'note-no-bulletins': 'no bulletin has been opened on this device yet',
+    'note-no-favourites': 'none of your saved places has been loaded here yet',
+    'note-no-reports': 'community reports have not been loaded on this device',
+    'note-no-weather': 'the weather overlay has not been opened on this device',
+    'note-not-persisted':
+      'the browser may delete downloads when space runs low, and installing Snowdesk to the home screen usually stops that',
+    'note-no-room':
+      'only %(used)s of %(total)s is left, so the browser may start deleting downloads',
+    'note-no-db': 'the local database would not open, so nothing can be saved here',
+    'note-unsent': '%(n)s of your changes are waiting to be sent',
 
-    'label-favourites': 'Saved places',
-    'label-overlays': 'Map overlays',
-    'label-panel-rows': 'Reports',
-    'label-mutations': 'Changes waiting to send',
-    'note-mutations': '%(n)s of your changes have not reached the server yet',
-    'label-db': 'Local database',
+    'effect-styles': 'will look plain',
+    'effect-ratings': 'will show no danger ratings',
+    'effect-shapes': 'will draw no region outlines',
+    'group-open-map-lead': 'Without a signal the app %(effects)s.',
+    'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
 
-    'principal-anonymous': 'signed-out visitor',
+    'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
-    'principal-unknown': 'unknown account',
-    unknown: 'unknown',
+    'principal-unknown': 'an unknown account',
 
-    'verdict-ok': 'The map will open offline.',
+    'verdict-ok': 'Everything you need is on this device.',
     'verdict-no-worker': 'This device is not set up for offline use yet.',
-    'verdict-no-page': 'The map page is not saved. Open it once while connected.',
+    'verdict-no-page':
+      'The app will not open without a signal. Open the map once while connected.',
     'verdict-other-account':
-      'The saved map page belongs to another account. Open the map once while connected.',
-    'verdict-no-scripts':
-      'The app’s program files are not saved, so pages will open blank.',
-    'verdict-map-incomplete':
-      'The map page will open, but a downloaded area is incomplete.',
-    'verdict-map-missing':
-      'The map page will open, but no area is downloaded to show in it.',
+      'The saved app belongs to another account. Open the map once while connected.',
+    'verdict-incomplete-app':
+      'The app would open blank without a signal. Open the map once while connected.',
+    'verdict-no-map': 'The app opens, but there is no map to show in it.',
+    'verdict-downloads-broken': 'The app opens, but none of your downloads will draw.',
 
     'notes-sentence': 'Also worth knowing: %(notes)s.',
     'list-pair': '%(first)s and %(last)s',
-    'list-separator': ', ',
+    'list-join': '%(first)s, %(rest)s',
     'count-one': 'it',
     'count-two': 'both',
     'count-many': 'all %(n)s of them',
 
-    'counts-line': '%(total)s checks · %(attention)s need attention',
-    'counts-line-clear': '%(total)s checks · nothing needs attention',
+    'counts-line': '%(yes)s of %(total)s available offline',
 
     running: 'Checking…',
     copied: 'copied',
     'copy-failed': 'copy failed',
-    saving: 'Saving the map page…',
+    saving: 'Saving the app…',
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
   };
@@ -219,36 +214,6 @@
       return self.pwaStrings.read('offline-audit-strings-template', FALLBACKS);
     }
     return FALLBACKS;
-  }
-
-  /**
-   * A clock that measures this run, starting now.
-   *
-   * ``performance.now()`` where it exists, ``Date.now()`` otherwise — the
-   * figures render to 10ms, so the difference in resolution never shows,
-   * and the fallback keeps the column honest rather than blank on a
-   * browser without the API.
-   *
-   * @returns {{mark: (name: string) => void, marks: Record<string, number>,
-   *   elapsed: () => number}}
-   */
-  function clock() {
-    var now = function () {
-      return typeof performance !== 'undefined' && performance.now
-        ? performance.now()
-        : Date.now();
-    };
-    var start = now();
-    var marks = /** @type {Record<string, number>} */ ({});
-    return {
-      marks: marks,
-      mark: function (name) {
-        marks[name] = Math.round(now() - start);
-      },
-      elapsed: function () {
-        return Math.round(now() - start);
-      },
-    };
   }
 
   /**
@@ -480,6 +445,43 @@
   }
 
   /**
+   * The keys a keyPath-addressed store holds.
+   *
+   * ``data:map_overlays`` and ``data:panel_rows`` each hold one row per
+   * RESOURCE, so the key is the answer: 'weather' being present is what
+   * makes "will the weather show" a Yes. A row count would say three and
+   * mean nothing.
+   *
+   * @param {IDBDatabase} db
+   * @param {string} name
+   * @returns {Promise<string[]>} ``[]`` where the store does not exist or
+   *   cannot be read.
+   */
+  function readKeys(db, name) {
+    return new Promise(function (resolve) {
+      try {
+        if (!db.objectStoreNames.contains(name)) {
+          resolve([]);
+          return;
+        }
+        var request = db.transaction(name, 'readonly').objectStore(name).getAllKeys();
+        request.onsuccess = function () {
+          resolve(
+            (request.result || []).map(function (key) {
+              return String(key);
+            }),
+          );
+        };
+        request.onerror = function () {
+          resolve([]);
+        };
+      } catch (_err) {
+        resolve([]);
+      }
+    });
+  }
+
+  /**
    * Every URL in one pinned bucket, and whether the bucket exists at all.
    *
    * ``caches.has`` first, deliberately: ``caches.open`` CREATES a bucket
@@ -546,6 +548,10 @@
         areas.push({
           id: record.id,
           kind: 'custom',
+          // SNOW-XXX: a drop zone is its own kind, not a custom area with
+          // a particular name — `basemap_manage_core.js` reads the same
+          // field for the same reason, and the report groups by it.
+          type: record.type === 'dropzone' ? 'dropzone' : 'custom',
           name: record.name || record.id,
           basemapKey: record.basemapKey || null,
           bytes: record.bytes,
@@ -583,7 +589,6 @@
    *   documents.
    */
   async function collect() {
-    var run = clock();
     var swSupported = 'serviceWorker' in navigator;
     var registration = null;
     if (swSupported) {
@@ -593,7 +598,6 @@
         registration = null;
       }
     }
-    run.mark('worker');
 
     var live = await liveShellCacheName();
     var names = await cacheNames();
@@ -603,19 +607,12 @@
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
     var shellEntries = shellNames.length ? await readShellEntries(shellNames) : [];
-    run.mark('shell');
 
     var db = await openDb();
-    run.mark('db');
     var areaRecords = await readAreaRecords(db);
-    run.mark('areas');
     var areas = [];
     for (var i = 0; i < areaRecords.length; i += 1) {
       var bucket = await readBucket(areaRecords[i].id);
-      // One mark per area, because one area IS one bucket read — this is
-      // the part of the column that genuinely varies, and on a device
-      // holding several downloads it is where the time goes.
-      run.mark('area:' + areaRecords[i].id);
       areas.push(
         Object.assign({}, areaRecords[i], {
           bucketPresent: bucket.present,
@@ -639,20 +636,22 @@
       .filter(function (id) {
         return id && !recordedIds.has(id);
       });
-    run.mark('orphans');
 
     var stores = {};
     if (db) {
       for (var j = 0; j < DATA_STORES.length; j += 1) {
         stores[DATA_STORES[j]] = await countStore(db, DATA_STORES[j]);
-        run.mark('store:' + DATA_STORES[j]);
       }
     }
+    // WHICH overlays are cached, not how many rows there are. The store
+    // holds one row per resource — 'favourites', 'community_reports',
+    // 'weather', 'routes' — so a count answers nothing a user asked, and
+    // the key answers "will the weather show".
+    var overlayKeys = db ? await readKeys(db, 'data:map_overlays') : [];
+    var panelKeys = db ? await readKeys(db, 'data:panel_rows') : [];
     var mutations = db ? await countStore(db, 'queue:mutations') : null;
-    run.mark('mutations');
     var currentPrincipal = db ? await readMeta(db, 'mutations.principal') : null;
     var networkMode = db ? await readMeta(db, 'network.mode') : null;
-    run.mark('network');
     if (db) {
       try {
         db.close();
@@ -665,7 +664,6 @@
     try {
       if (navigator.storage && typeof navigator.storage.estimate === 'function') {
         storage = await navigator.storage.estimate();
-        run.mark('storage');
         if (typeof navigator.storage.persisted === 'function') {
           storage = Object.assign({}, storage, {
             persisted: await navigator.storage.persisted(),
@@ -675,7 +673,6 @@
     } catch (_err) {
       storage = null;
     }
-    run.mark('persisted');
 
     return {
       now: new Date().toISOString(),
@@ -698,81 +695,61 @@
       areas: areas,
       orphanBuckets: orphanBuckets,
       stores: stores,
+      overlayKeys: overlayKeys,
+      panelKeys: panelKeys,
       mutations: { count: mutations },
       dbAvailable: !!db,
-      timings: run.marks,
-      elapsedMs: run.elapsed(),
     };
   }
 
   /**
-   * One log line: elapsed, label, answer. Never more.
+   * One log row: label, answer. Never more.
+   *
+   * Two cells and no third, which is what stops per-row explanation
+   * growing back. ``data-audit-row`` is the handle the reveal uses to
+   * find this row again once its answer is known.
    *
    * @param {Object} check
    * @param {Document} doc
    * @returns {HTMLElement}
    */
-  function renderLine(check, doc) {
-    var core = self.pwaOfflineAuditCore;
+  function renderRow(check, doc) {
     var row = doc.createElement('li');
     row.setAttribute('data-audit-check', '');
+    row.setAttribute('data-audit-row', check.id);
     row.setAttribute('data-audit-status', check.status);
-
-    var at = doc.createElement('span');
-    at.setAttribute('data-audit-at', '');
-    at.textContent = core.formatElapsed(check.at);
 
     var label = doc.createElement('span');
     label.setAttribute('data-audit-label', '');
     label.textContent = check.label;
-    // The label is the one field with no length bound (a cached URL, a
-    // region name), and the row must stay one line — so CSS truncates and
-    // the full text goes in the title for anyone who needs it.
+    // The label is the one field with no length bound (a region name, an
+    // area the user named themselves), and the row must stay one line —
+    // so CSS truncates and the full text goes in the title.
     label.title = check.label;
 
     var value = doc.createElement('span');
     value.setAttribute('data-audit-value', '');
     value.textContent = check.value;
 
-    row.appendChild(at);
     row.appendChild(label);
     row.appendChild(value);
     return row;
   }
 
   /**
-   * "15 checks · 6 need attention", or the all-clear form.
+   * Paint the log — every section, every row — with whatever answers the
+   * report carries.
    *
-   * What makes the log's evidence legible at a glance: it says how many
-   * separate things were looked at without the reader counting rows,
-   * which is the whole reason the log is there.
-   *
-   * @param {Object} report
-   * @param {Record<string, string>} t
-   * @returns {string}
-   */
-  function countsLine(report, t) {
-    var key = report.counts.attention > 0 ? 'counts-line' : 'counts-line-clear';
-    var template = t[key] || FALLBACKS[key];
-    return String(template)
-      .replace('%(total)s', String(report.counts.total))
-      .replace('%(attention)s', String(report.counts.attention));
-  }
-
-  /**
-   * Paint the report into ``target``, replacing whatever was there.
-   *
-   * Three parts, in the order they are read: the log (the evidence), the
-   * summary (the answer), and the count (how much was looked at).
+   * Called once with the answers blanked and once, implicitly, as each
+   * one arrives: the DOM built here is what ``revealRow`` updates in
+   * place, so the row list never changes shape mid-build.
    *
    * @param {HTMLElement} target
    * @param {Object} report
-   * @param {Record<string, string>} t
    */
-  function render(target, report, t) {
+  function renderLog(target, report) {
     var doc = target.ownerDocument;
     target.textContent = '';
-
     var log = doc.createElement('div');
     log.setAttribute('data-audit-log', '');
     report.sections.forEach(function (section) {
@@ -784,13 +761,55 @@
       el.appendChild(heading);
       var list = doc.createElement('ol');
       section.checks.forEach(function (check) {
-        list.appendChild(renderLine(check, doc));
+        list.appendChild(renderRow(check, doc));
       });
       el.appendChild(list);
       log.appendChild(el);
     });
     target.appendChild(log);
+  }
 
+  /**
+   * Fill one row's answer into the row already on screen.
+   *
+   * @param {HTMLElement} target
+   * @param {Object} check
+   */
+  function revealRow(target, check) {
+    var row = target.querySelector('[data-audit-row="' + cssEscape(check.id) + '"]');
+    if (!row) return;
+    row.setAttribute('data-audit-status', check.status);
+    var value = row.querySelector('[data-audit-value]');
+    if (value) value.textContent = check.value;
+  }
+
+  /**
+   * Quote a row id for use inside an attribute selector.
+   *
+   * Area rows are keyed ``area:region-CH-4115``, and a colon in a
+   * selector is a pseudo-class. ``CSS.escape`` where the browser has it,
+   * a backslash before every non-word character otherwise — this runs on
+   * the offline page, which is the one surface with no polyfills at all.
+   *
+   * @param {string} value
+   * @returns {string}
+   */
+  function cssEscape(value) {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(value);
+    }
+    return String(value).replace(/[^\w-]/g, '\\$&');
+  }
+
+  /**
+   * The summary and the count, appended under the finished log.
+   *
+   * @param {HTMLElement} target
+   * @param {Object} report
+   * @param {Record<string, string>} t
+   */
+  function renderSummary(target, report, t) {
+    var doc = target.ownerDocument;
     var summary = doc.createElement('div');
     summary.setAttribute('data-audit-summary', '');
     summary.setAttribute('data-audit-status', report.verdict.status);
@@ -808,8 +827,99 @@
 
     var counts = doc.createElement('p');
     counts.setAttribute('data-audit-counts', '');
-    counts.textContent = countsLine(report, t);
+    counts.textContent = String(t['counts-line'] || FALLBACKS['counts-line'])
+      .replace('%(yes)s', String(report.counts.yes))
+      .replace('%(total)s', String(report.counts.total));
     target.appendChild(counts);
+  }
+
+  /**
+   * Paint a finished report in one go, no build.
+   *
+   * The reduced-motion path, and the one the tests drive: the reveal is
+   * decoration over a report that is complete before it starts, so
+   * skipping it loses nothing.
+   *
+   * @param {HTMLElement} target
+   * @param {Object} report
+   * @param {Record<string, string>} t
+   */
+  function render(target, report, t) {
+    renderLog(target, report);
+    if (!report.pending) renderSummary(target, report, t);
+  }
+
+  /**
+   * Whether this device has asked for less animation.
+   *
+   * @returns {boolean}
+   */
+  function prefersReducedMotion() {
+    try {
+      return !!(
+        self.matchMedia && self.matchMedia('(prefers-reduced-motion: reduce)').matches
+      );
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * Wait, as a promise.
+   *
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  /**
+   * Paint the log unanswered, then fill each answer in on a fixed
+   * cadence, then the summary.
+   *
+   * The order matters: the whole list of questions is on screen before
+   * the first answer lands, so the reader sees what is being asked rather
+   * than watching rows appear out of nothing. Every reading was taken
+   * before this was called.
+   *
+   * @param {HTMLElement} target
+   * @param {Object} report
+   * @param {Record<string, string>} t
+   * @returns {Promise<void>}
+   */
+  async function build(target, report, t) {
+    if (prefersReducedMotion()) {
+      render(target, report, t);
+      return;
+    }
+    var blanked = {
+      sections: report.sections.map(function (section) {
+        return {
+          id: section.id,
+          title: section.title,
+          checks: section.checks.map(function (check) {
+            return {
+              id: check.id,
+              label: check.label,
+              value: t['answer-pending'] || FALLBACKS['answer-pending'],
+              status: 'pending',
+            };
+          }),
+        };
+      }),
+    };
+    renderLog(target, blanked);
+    for (var i = 0; i < report.sections.length; i += 1) {
+      var checks = report.sections[i].checks;
+      for (var j = 0; j < checks.length; j += 1) {
+        await wait(ROW_INTERVAL_MS);
+        revealRow(target, checks[j]);
+      }
+    }
+    renderSummary(target, report, t);
   }
 
   /**
@@ -838,10 +948,16 @@
 
     var run = async function () {
       say(t.running || FALLBACKS.running);
+      // The fixed questions, unanswered, before anything is read. The
+      // downloads are not among them yet — nothing knows what this device
+      // holds — so the list grows once by however many areas there are,
+      // and then stops moving.
+      output.hidden = false;
+      renderLog(output, self.pwaOfflineAuditCore.pendingReport(t));
       var readings = await collect();
       lastReport = self.pwaOfflineAuditCore.buildReport(readings, t);
-      render(output, lastReport, t);
       output.hidden = false;
+      await build(output, lastReport, t);
       say('');
       if (copyButton) copyButton.hidden = false;
       if (saveButton) {
@@ -941,6 +1057,7 @@
   self.pwaOfflineAudit = Object.freeze({
     collect: collect,
     render: render,
+    build: build,
     init: init,
   });
 

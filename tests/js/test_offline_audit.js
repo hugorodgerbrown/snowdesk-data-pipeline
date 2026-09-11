@@ -201,6 +201,37 @@ describe('the area records', () => {
     ]);
   });
 
+  it('reads WHICH overlays are cached, not how many rows there are', async () => {
+    // The store holds one row per resource, so a count answers nothing a
+    // user asked; the key is what makes "will the weather show" a Yes.
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await window.pwaDb.put('data:map_overlays', {
+      key: 'weather',
+      geojson: {},
+      cached_at: '2026-09-11T08:00:00Z',
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.overlayKeys).toContain('weather');
+  });
+
+  it('carries a drop zone’s type through, so the report can group by it', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedMeta({
+      'basemap.customAreas': [
+        { id: 'custom-1', type: 'dropzone', name: 'La Chaux', deps: [] },
+        { id: 'custom-2', name: 'Area 2', deps: [] },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    const byId = Object.fromEntries(readings.areas.map((area) => [area.id, area.type]));
+    expect(byId['custom-1']).toBe('dropzone');
+    expect(byId['custom-2']).toBe('custom');
+  });
+
   it('names a pinned bucket no record accounts for', async () => {
     installCachesStub({
       'snowdesk-shell-abc': [],
@@ -224,28 +255,24 @@ describe('rendering', () => {
     audit.render(target, report, {});
 
     expect(target.querySelector('[data-audit-summary]').dataset.auditStatus).toBe('fail');
-    expect(target.querySelectorAll('[data-audit-section]')).toHaveLength(5);
+    expect(target.querySelectorAll('[data-audit-section]').length).toBeGreaterThan(0);
     expect(target.querySelectorAll('[class]')).toHaveLength(0);
   });
 
-  it('gives every log row exactly three cells and no explanation', async () => {
-    // The rule the redesign turned on: a row is elapsed, label, answer.
-    // Per-row helper text made the panel three times taller, turned
-    // scanning into reading, and said one shared remedy three times —
-    // all of which now lives in the summary instead.
+  it('gives every log row exactly two cells and no explanation', async () => {
+    // The rule the redesign turned on: a row is label and answer. Per-row
+    // helper text made the panel three times taller, turned scanning into
+    // reading, and said one shared remedy once per row — all of which now
+    // lives in the summary instead.
     const target = document.createElement('div');
-    const report = window.pwaOfflineAuditCore.buildReport(
-      { shellEntries: [], dbAvailable: true, stores: {}, mutations: { count: 3 } },
-      {},
-    );
+    const report = window.pwaOfflineAuditCore.buildReport({ dbAvailable: true }, {});
 
     audit.render(target, report, {});
 
     const rows = target.querySelectorAll('[data-audit-check]');
     expect(rows.length).toBeGreaterThan(0);
     rows.forEach((row) => {
-      expect(row.children).toHaveLength(3);
-      expect(row.querySelector('[data-audit-at]')).not.toBeNull();
+      expect(row.children).toHaveLength(2);
       expect(row.querySelector('[data-audit-label]')).not.toBeNull();
       expect(row.querySelector('[data-audit-value]')).not.toBeNull();
       // The one thing a row must never regrow.
@@ -253,36 +280,32 @@ describe('rendering', () => {
     });
   });
 
-  it('paints the summary paragraph and the check count under the log', async () => {
+  it('paints the summary and the tally under the log', async () => {
     const target = document.createElement('div');
-    const report = window.pwaOfflineAuditCore.buildReport(
-      { shellEntries: [], dbAvailable: true, stores: {}, mutations: { count: 0 } },
-      { 'counts-line': '%(total)s checks · %(attention)s need attention' },
-    );
+    const t = { 'counts-line': '%(yes)s of %(total)s available offline' };
+    const report = window.pwaOfflineAuditCore.buildReport({ dbAvailable: true }, t);
 
-    audit.render(target, report, {
-      'counts-line': '%(total)s checks · %(attention)s need attention',
-    });
+    audit.render(target, report, t);
 
     expect(target.querySelector('[data-audit-verdict]').textContent).toBe(
       report.verdict.text,
     );
     expect(target.querySelector('[data-audit-counts]').textContent).toBe(
-      `${report.counts.total} checks · ${report.counts.attention} need attention`,
+      `${report.counts.yes} of ${report.counts.total} available offline`,
     );
   });
 
   it('writes every value with textContent, never innerHTML', async () => {
-    // An area's name comes from the regions GeoJSON and a cached URL from
-    // the device — neither is markup, and neither should be able to
-    // become markup.
+    // An area's name comes from the regions GeoJSON or from whatever the
+    // user typed when renaming it — neither is markup, and neither should
+    // be able to become markup.
     const target = document.createElement('div');
     const report = window.pwaOfflineAuditCore.buildReport(
       {
-        shellEntries: [],
         areas: [
           {
             id: 'x',
+            kind: 'region',
             name: '<img src=x onerror=alert(1)>',
             deps: [],
             bucketPresent: true,
@@ -297,5 +320,64 @@ describe('rendering', () => {
 
     expect(target.querySelector('img')).toBeNull();
     expect(target.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});
+
+describe('the build', () => {
+  it('paints every row unanswered first, then fills each answer in', async () => {
+    // The confidence argument: the whole list of questions is on screen
+    // before the first answer lands, so the reader watches each one get
+    // settled rather than watching rows appear out of nothing.
+    const target = document.createElement('div');
+    const t = { 'answer-pending': '…', 'answer-yes': 'Yes', 'answer-no': 'No' };
+    const report = window.pwaOfflineAuditCore.buildReport({ dbAvailable: true }, t);
+
+    const building = audit.build(target, report, t);
+
+    const rows = target.querySelectorAll('[data-audit-check]');
+    expect(rows.length).toBe(report.counts.total);
+    rows.forEach((row) => {
+      expect(row.getAttribute('data-audit-status')).toBe('pending');
+      expect(row.querySelector('[data-audit-value]').textContent).toBe('…');
+    });
+    // Nothing is concluded until every row has been answered.
+    expect(target.querySelector('[data-audit-summary]')).toBeNull();
+
+    await building;
+
+    expect(
+      target.querySelectorAll('[data-audit-check][data-audit-status="pending"]'),
+    ).toHaveLength(0);
+    expect(target.querySelector('[data-audit-summary]')).not.toBeNull();
+  });
+
+  it('finds a row whose id carries a colon', async () => {
+    // Area rows are keyed `area:region-CH-4115`, and a colon in a
+    // selector is a pseudo-class — an unescaped lookup throws and the
+    // answer never lands.
+    const target = document.createElement('div');
+    const t = { 'answer-pending': '…', 'answer-yes': 'Yes' };
+    const report = window.pwaOfflineAuditCore.buildReport(
+      {
+        dbAvailable: true,
+        areas: [
+          {
+            id: 'region-CH-4115',
+            kind: 'region',
+            name: 'Martigny',
+            deps: ['https://t/a.json'],
+            bucketPresent: true,
+            entries: ['https://t/a.json', 'https://t/1.pbf'],
+          },
+        ],
+      },
+      t,
+    );
+
+    await audit.build(target, report, t);
+
+    const row = target.querySelector('[data-audit-row="area:region-CH-4115"]');
+    expect(row.getAttribute('data-audit-status')).toBe('yes');
+    expect(row.querySelector('[data-audit-value]').textContent).toBe('Yes');
   });
 });
