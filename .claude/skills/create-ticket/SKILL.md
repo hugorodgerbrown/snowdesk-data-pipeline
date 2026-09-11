@@ -189,10 +189,9 @@ first rather than guessing. Guessing wastes a round trip when the call fails.
 
 `save_issue` takes `blocks`, `blockedBy`, `relatedTo` and `parentId`, each as
 an array of identifiers (`["SNOW-693", "SNOW-839"]`) — `parentId` as a single
-one. Verified 2026-09-11 on SNOW-908/909: `relatedTo` on create, and `blocks`
-and `parentId` on update, all landed, confirmed by reading the issue back with
-`get_issue` + `includeRelations: true`. `blockedBy` was not exercised; it is
-the same surface as `blocks`, so read it back the first time you use it.
+one. All four verified 2026-09-11 across SNOW-908/909/910/911 — `relatedTo`
+and `blockedBy` on create, `blocks` and `parentId` on update — each confirmed
+by reading the issue back with `get_issue` + `includeRelations: true`.
 
 An earlier revision of this guide said `blocks` "does not reliably accept any
 known format" and prescribed prose in the description instead. That is out of
