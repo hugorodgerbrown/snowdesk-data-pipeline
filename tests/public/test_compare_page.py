@@ -29,7 +29,9 @@ Covers:
     (slope angle, national topo basemaps). The doc went stale on both;
     the page is checked against the code instead, and this test is what
     stops the stale claim being reintroduced from the doc.
-  * The footer links to it, and ``public:compare`` resolves.
+  * ``public:compare`` resolves. Nothing in the site links to the
+    page any more — the footer link SNOW-836 added was removed — so
+    it is reached from the sitemap and from a direct URL only.
 
 Sharing metadata is covered by ``tests/public/test_page_meta.py``, which
 carries ``compare`` in its hand-maintained ``sharing_pages`` fixture.
@@ -234,20 +236,19 @@ class TestSnowdeskEntryMatchesTheCode:
         assert "a trip is a shared object" in page
 
 
-class TestComparePageIsLinked:
-    """A page nothing links to is a page nobody reads."""
+class TestComparePageIsNotLinkedFromTheFooter:
+    """The footer link SNOW-836 added was removed again.
 
-    def test_footer_links_to_it(self, page: str) -> None:
-        """The global footer carries the link, so every page reaches it.
+    The page stays and the sitemap still carries it, but no surface links
+    to it. This pins the removal so a later edit re-adding the link is a
+    deliberate one rather than a revert nobody noticed.
+    """
 
-        Asserted on /compare/ rather than on the homepage deliberately.
-        ``_site_footer.html`` is included by ``public/base.html``, so any
-        page extending it proves the link the same way — and the homepage
-        needs a database this module otherwise does not touch, which would
-        make a footer assertion depend on bulletin fixtures.
-        """
-        assert reverse("public:compare") in page
-        assert "Compare apps" in page
+    def test_footer_does_not_link_to_it(self, page: str) -> None:
+        """``_site_footer.html`` is on every page extending base.html."""
+        footer = page[page.index('data-testid="site-footer"') :]
+        assert reverse("public:compare") not in footer
+        assert "Compare apps" not in footer
 
 
 class TestFeatureMatrix:
