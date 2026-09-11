@@ -1996,3 +1996,174 @@ html.pwa-launching .pwa-launch-shell {
   .pwa-launch-shell--done { transition: none; }
   .pwa-launch-shell { animation: pwa-launch-failsafe 1ms linear 10s forwards; }
 }
+
+/* —————————————————————————————————————————
+   Offline-content audit (SNOW-907)
+   —————————————————————————————————————————
+
+   The report painted by static/js/offline_audit.js into
+   [data-offline-audit-output], on /account/settings/.
+
+   Custom CSS rather than Tailwind utilities, and that is the rule
+   applying rather than an exception to it: the module emits NO class
+   strings at all, because its OTHER host is static/offline.html — a
+   page whose whole design constraint is that it loads no external
+   asset, so a Tailwind class there would be inert. What it emits is
+   semantic elements carrying [data-audit-status], and each host styles
+   them. That page has its own inline copy of this block; the two are
+   allowed to differ, which is the point of the split.
+
+   Two halves, doing two jobs (see offline_audit_core.js's header):
+
+   [data-audit-log] is EVIDENCE. Monospace, one line per check, in a
+   recessed panel — it should read as a machine's output, because its
+   job is to show that fifteen separate things were genuinely looked at.
+   Every row is one line: the label truncates rather than wraps, and
+   there is nowhere to put a second line, which is what stops per-row
+   helper text growing back.
+
+   [data-audit-summary] is the ANSWER. Ordinary prose in the body face,
+   on a tinted ground, because this is the part written for a person.
+
+   Every colour is a token. The four states map onto the sync-status
+   family (--color-sync-*) rather than the status-* flash severities,
+   because they are the same question those dots answer — is this
+   available offline — asked about a different subject. */
+[data-offline-audit] [data-audit-log] {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.9;
+}
+
+[data-offline-audit] [data-audit-section] + [data-audit-section] {
+  margin-top: 1rem;
+}
+
+/* The section rule is drawn by the heading itself — a label, then a line
+   running to the right edge — so a section costs one row rather than a
+   heading plus a separator. */
+[data-offline-audit] [data-audit-section] h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.25rem;
+  font-weight: 400;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+}
+
+[data-offline-audit] [data-audit-section] h3::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+[data-offline-audit] [data-audit-section] ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Three columns and no wrapping: elapsed, label, answer. `minmax(0, 1fr)`
+   on the label is what lets it truncate instead of pushing the answer off
+   the row — a plain `1fr` refuses to shrink below its content. */
+[data-offline-audit] [data-audit-check] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+[data-offline-audit] [data-audit-label] {
+  overflow: hidden;
+  color: var(--color-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-offline-audit] [data-audit-value] {
+  color: var(--color-text-1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Colour carries the state on the ANSWER only, never on the label: the
+   label is what is being checked and does not change, and colouring a
+   whole row amber reads as a warning about the subject rather than about
+   the reading. Every state is also spelled out in the summary and in the
+   copied text form, so nothing here is colour-only. */
+[data-offline-audit] [data-audit-check][data-audit-status='yes'] [data-audit-value] {
+  color: var(--color-sync-ok);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='no'] [data-audit-value] {
+  color: var(--color-sync-partial);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='blocked'] [data-audit-value] {
+  color: var(--color-sync-blocked);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='unknown'] [data-audit-value],
+[data-offline-audit] [data-audit-check][data-audit-status='pending'] [data-audit-value] {
+  color: var(--color-text-3);
+}
+
+/* A row whose answer has not landed reads as not-yet rather than as
+   absent: the label recedes with it, and both come back at full strength
+   the moment the answer arrives. No transition — thirteen rows each
+   fading in over 150ms is a second of motion nobody asked for, on top of
+   the cadence that is already the point. */
+[data-offline-audit] [data-audit-check][data-audit-status='pending'] [data-audit-label] {
+  opacity: 0.45;
+}
+
+[data-offline-audit] [data-audit-summary] {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--radius-card);
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info-text);
+}
+
+[data-offline-audit] [data-audit-summary][data-audit-status='ok'] {
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success-text);
+}
+
+[data-offline-audit] [data-audit-summary][data-audit-status='warn'] {
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning-text);
+}
+
+[data-offline-audit] [data-audit-summary][data-audit-status='fail'] {
+  background: var(--color-status-error-bg);
+  color: var(--color-status-error-text);
+}
+
+[data-offline-audit] [data-audit-verdict] {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+[data-offline-audit] [data-audit-detail] {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+[data-offline-audit] [data-audit-counts] {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-3);
+}

@@ -388,6 +388,31 @@ because the repository is the authority and the mock is a drawing:
                     </div>
 
                     {% comment %}
+                        SNOW-907: the offline-content audit.
+
+                        Above Reset rather than below it, and that is the
+                        whole point of where it sits: the two rows answer the
+                        same question — "the app is not behaving offline, what
+                        now?" — and until this one existed, Reset was the only
+                        answer on the page. Wiping every downloaded area is a
+                        poor first move when the actual fault is usually a
+                        single missing thing, and a user who has just been let
+                        down has no way to tell which. This row names the
+                        fault; the one below is what you reach for when it
+                        cannot be named.
+
+                        The same panel is on static/offline.html, which is the
+                        copy that matters when the device is stuck: this page
+                        is a Django view, so it loads only if it happens to be
+                        in the shell cache for this account. Neither is a
+                        duplicate of the other — one module paints both, from
+                        the same markup contract.
+                    {% endcomment %}
+                    <div class="p-4" data-testid="offline-audit-panel">
+                        {% include "includes/_offline_audit_panel.html" %}
+                    </div>
+
+                    {% comment %}
                         SNOW-378: Reset local data escape hatch.
                         Discoverable, not hidden. Wipes cached bulletins,
                         the SW, cache storage, IndexedDB, and web storage;
@@ -643,6 +668,15 @@ because the repository is the authority and the mock is a drawing:
             <script src="{% static 'js/basemap_downloaded_areas.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             <script src="{% static 'js/reset_data_summary_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             <script src="{% static 'js/reset_data_summary.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+            {# SNOW-907: the offline-content audit. Deliberately shares none   #}
+            {# of the four files above — it re-reads Cache Storage and         #}
+            {# IndexedDB itself rather than asking their readers, because a    #}
+            {# report whose job is to catch storage and the app disagreeing    #}
+            {# must not take the app's word for what storage holds. It is also #}
+            {# the same pair of files the service worker precaches for         #}
+            {# static/offline.html, where none of the four exists.             #}
+            <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+            <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             {% if sync_log_visible %}
                 {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
                 <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>

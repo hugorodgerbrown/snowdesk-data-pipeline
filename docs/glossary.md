@@ -151,6 +151,8 @@ Which coordinate on which model is exact, approximate or derived:
 |------|---------|------|
 | Area id | The unit a pinned basemap download's Cache Storage bucket and budget record are both keyed on — `region-<region_id>` for a region download, `custom` for the one custom-area download (SNOW-586) | `areaIdForRegion()`, `CUSTOM_AREA_ID` in `static/js/basemap_download_core.js` |
 | Download budget | The standing byte ceiling across every pinned area (`DOWNLOAD_BUDGET_MB`, 500 MB, device-local — overridable via `meta:app`'s `basemap.budgetMb`), distinct from `DOWNLOAD_CEILING_MB` (200 MB, per single run) (SNOW-586) | `planEviction()` in `static/js/basemap_download_core.js`; [per-area-pinned-basemap-caches.md](decisions/per-area-pinned-basemap-caches.md) |
+| Principal stamp | The `X-SW-Principal` header the worker writes onto every cached navigation, naming the account its HTML was rendered for. An entry is served offline only to that same principal — a mismatch, or an absent stamp, falls through to `offline.html` with no error anywhere | `_stampPrincipal()` / `_principalMatches()` in `static/js/sw.js`; reported by `static/js/offline_audit_core.js` |
+| Offline-content report | The on-device audit of what this browser can actually show without a signal — the shell cache's pages and their principal stamps, each area's bucket and render dependencies, the `data:*` stores and the mutation queue — under one verdict. On `/account/settings/` and on the offline fallback page | `static/js/offline_audit_core.js` / `offline_audit.js`; [offline-audit.md](offline-audit.md) |
 
 ## Testing
 

@@ -39,6 +39,18 @@ READ_CALL_RE = re.compile(
     re.S,
 )
 
+# The same call with the fallbacks passed as a NAMED constant rather than
+# an object literal — `pwaStrings.read('<id>', FALLBACKS)`. SNOW-907's
+# offline audit is the first module that needs the object in its own right:
+# it also runs on static/offline.html, where `pwaStrings` is not loaded at
+# all, and there the fallbacks are not a safety net but the copy. Inlining
+# seventy strings at the call site to satisfy the scan above would be the
+# tail wagging the dog, so the scan follows the name instead.
+READ_CALL_NAMED_RE = re.compile(
+    r"pwaStrings\.read\(\s*['\"](?P<template_id>[^'\"]+)['\"]\s*,\s*"
+    r"(?P<name>[A-Z][A-Z0-9_]*)\s*\)"
+)
+
 # A key in that object literal: bare (`close:`) or quoted (`'no-coverage':`).
 # Anchored to the start of a line so a `:` inside a string value cannot
 # masquerade as one. The indent varies — map.js reads at module scope, the
@@ -71,7 +83,42 @@ def _js_read_calls() -> dict[str, tuple[Path, set[str]]]:
                 for m in FALLBACK_KEY_RE.finditer(match.group("body"))
             }
             out[match.group("template_id")] = (path, keys)
+        for match in READ_CALL_NAMED_RE.finditer(text):
+            body = _named_object_body(text, match.group("name"))
+            if body is None:
+                pytest.fail(
+                    f"{path.name} reads '{match.group('template_id')}' with "
+                    f"{match.group('name')}, which is not declared as an object "
+                    f"literal in the same file — the scan cannot see its keys."
+                )
+            keys = {
+                m.group("quoted") or m.group("bare")
+                for m in FALLBACK_KEY_RE.finditer(body)
+            }
+            out[match.group("template_id")] = (path, keys)
     return out
+
+
+def _named_object_body(text: str, name: str) -> str | None:
+    """The body of a `var <name> = { … };` object literal in `text`.
+
+    Brace-counted rather than matched by regex: the fallback objects hold
+    apostrophes and braces inside their copy, and a lazy `.*?` would stop
+    at the first `}` in a sentence.
+    """
+    start = text.find(f"var {name} = {{")
+    if start == -1:
+        return None
+    open_at = text.index("{", start)
+    depth = 0
+    for index in range(open_at, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at + 1 : index]
+    return None
 
 
 def _template_blocks() -> dict[str, tuple[Path, set[str]]]:

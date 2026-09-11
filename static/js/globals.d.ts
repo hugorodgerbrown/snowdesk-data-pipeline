@@ -62,6 +62,8 @@ interface Window {
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
   pwaBasemapDownloadCore: any;
+  /** static/js/offline_audit_core.js — the offline-content report model. */
+  pwaOfflineAuditCore: any;
 
   // ---- the shared map state channel --------------------------------------
   /** static/js/map_state.js — the frozen accessor surface over map state. */
@@ -72,6 +74,10 @@ interface Window {
   pwaStrings: any;
   /** static/js/telemetry.js — the first-party event buffer. */
   pwaTelemetry: any;
+  /** static/js/offline_audit.js — the collector and DOM half of the report. */
+  pwaOfflineAudit: any;
+  /** static/js/sw_register.js — asks the worker to warm a URL list. */
+  pwaWarmCache: any;
 }
 
 /**

@@ -889,6 +889,20 @@ const OFFLINE_FALLBACK = '/static/offline.html';
 const RESET_SCRIPT = '/static/js/pwa_reset.js';
 const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
 
+// SNOW-907: the offline-content audit, carried onto the offline page for
+// the same reason RESET_SCRIPT is — the moment a user most needs to know
+// what this device has stored is the moment the only page they can open
+// is the one telling them nothing is.
+//
+// Deliberately NOT in PRECACHE_URLS. That list goes through one atomic
+// ``cache.addAll``, where a single failed entry rejects the whole call,
+// fails ``install``, and leaves the device with no worker at all — so
+// everything in it has to be load-bearing enough to be worth that. These
+// two are not: without them the audit panel stays hidden (the same
+// self-guard the reset panel uses) and every other offline path is
+// untouched. They are warmed individually below, failures and all.
+const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_audit.js'];
+
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
 // to network-only. The list deliberately excludes ``.json`` —
@@ -1077,6 +1091,10 @@ self.addEventListener('install', (event) => {
       // miss (e.g. user opens a never-visited page while offline).
       const cache = await caches.open(CACHE_VERSION);
       await cache.addAll(PRECACHE_URLS);
+      // SNOW-907: the audit scripts, one at a time and tolerantly — see
+      // AUDIT_SCRIPTS for why they are not in the atomic list above. An
+      // install must not fail over a diagnostic.
+      await Promise.allSettled(AUDIT_SCRIPTS.map((url) => cache.add(url)));
       // SNOW-384: the browser fires 'install' once per successful
       // install cycle (a failed install can retry). Emitting after
       // cache.addAll() resolves means we only record successful
