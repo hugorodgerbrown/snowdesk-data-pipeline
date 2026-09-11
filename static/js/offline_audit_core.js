@@ -112,6 +112,12 @@
    * @property {AuditSection[]} sections
    * @property {{total: number, yes: number, no: number}} counts
    * @property {string} generatedAt ISO 8601.
+   * @property {{timedOut: string[], latched?: boolean}|null} [degraded]
+   *   Which readings did not answer, where some did not. Carried for
+   *   ``reportText``: on a phone with no devtools, a copied report is the
+   *   only place this ever exists.
+   * @property {string|null} [failure] Set where the collection threw
+   *   rather than returning readings.
    * @property {boolean} pending True for the skeleton painted before any
    *   reading has landed.
    */
@@ -137,6 +143,11 @@
    * @property {number} [bytes]
    * @property {string[]} [deps]
    * @property {boolean} [bucketPresent]
+   * @property {boolean} [bucketReadable] False where the bucket read did
+   *   not answer. Distinct from ``bucketPresent: false``, which is a
+   *   bucket that WAS read and is not there — the difference between "this
+   *   download is gone" and "we could not look", and the report may only
+   *   say the first of those.
    * @property {string[]} [entries]
    */
 
@@ -177,6 +188,20 @@
    * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
    * @property {{count?: number|null}} [mutations]
    * @property {boolean} [dbAvailable]
+   * @property {boolean} [cachesReadable] False where Cache Storage could
+   *   not be LISTED. Every row read out of it then answers unknown: an
+   *   empty ``shellEntries`` is indistinguishable from an unread one, and
+   *   the No it would otherwise produce is this panel's loudest claim.
+   * @property {boolean} [shellPartial] True where the listing came back
+   *   but opening a page in it did not — a narrower failure costing only
+   *   the rows that need a page's stamp or its body.
+   * @property {{timedOut: string[], latched?: boolean}|null} [degraded]
+   *   Which readings overran their budget. See ``bounded`` in
+   *   offline_audit.js and
+   *   docs/decisions/bounded-offline-read-paths.md.
+   * @property {string|null} [failure] Set where the collection threw. Every
+   *   row then answers unknown — a check that did not run diagnoses
+   *   nothing.
    */
 
   // The fixed list. Its order is the order it paints, and it is the order
@@ -809,7 +834,7 @@
    * "nothing was recorded" but "there is nothing to record".
    *
    * @param {AreaReading} area
-   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable',
+   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable',
    *   missingDeps: string[], tiles: number}}
    */
   function areaState(area) {
@@ -1396,6 +1421,8 @@
    *
    * @param {AuditSection[]} sections
    * @param {Record<string, string>} t
+   * @param {AuditReadings} [readings] For the one verdict that is not read
+   *   off the rows: a collection that threw has no rows worth reading.
    * @returns {{status: 'ok'|'warn'|'fail', text: string, covers: string[]}}
    *   ``covers`` names the rows this sentence has accounted for, so
    *   ``composeSummary`` does not say them a second time.
@@ -1499,6 +1526,8 @@
    * @param {AuditSection[]} sections
    * @param {{status?: string, covers: string[]}} verdict
    * @param {Record<string, string>} t
+   * @param {AuditReadings} [readings] For the leading clause naming why
+   *   some rows are dashes.
    * @returns {string} ``''`` when nothing is left to say, and always for
    *   a ``fail`` verdict — see the first branch.
    */
