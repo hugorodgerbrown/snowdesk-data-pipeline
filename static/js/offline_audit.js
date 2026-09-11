@@ -173,6 +173,12 @@
     'note-no-routes': 'none of your routes has been loaded on this device',
     'note-no-reports': 'community reports have not been loaded on this device',
     'note-no-weather': 'the weather overlay has not been opened on this device',
+    // SNOW-914: the row is readable and there is simply nothing in it —
+    // neither a capability nor a fault, so neither Yes nor No.
+    'note-empty-favourites': 'you have not saved any places yet',
+    'note-empty-routes': 'you have not uploaded any routes yet',
+    'note-empty-reports': 'there are no community reports in what has been loaded here',
+    'note-empty-weather': 'the weather that was loaded here holds nothing to draw',
 
     'effect-styles': 'will look plain',
     'effect-ratings': 'will show no danger ratings',
@@ -385,6 +391,7 @@
   async function readShellEntries(names, mapPath) {
     var entries = [];
     var mapDependencies = null;
+    var mapDay = null;
     for (var i = 0; i < names.length; i += 1) {
       var cache;
       try {
@@ -423,15 +430,19 @@
               mapDependencies = core
                 ? core.pageDependencies(html, self.location.origin)
                 : null;
+              // SNOW-914: and the day that page will open on, which is the
+              // day whose ratings it will ask the cache for.
+              mapDay = core ? core.pageDay(html) : null;
             } catch (_err) {
               mapDependencies = null;
+              mapDay = null;
             }
           }
         }
         entries.push({ url: url, isPage: isPage, principal: principal });
       }
     }
-    return { entries: entries, mapDependencies: mapDependencies };
+    return { entries: entries, mapDependencies: mapDependencies, mapDay: mapDay };
   }
 
   /**
@@ -542,12 +553,65 @@
   }
 
   /**
+   * What each ``data:map_overlays`` row actually holds (SNOW-914/915).
+   *
+   * The key alone used to be the answer — 'weather' being present made
+   * "will the weather show" a Yes. It does not: ``getOverlay`` in
+   * map_overlay_offline_cache.js returns null for a row whose
+   * ``principal`` does not match the account signed in now (favourites and
+   * routes are account-scoped), and a row holding an empty
+   * FeatureCollection draws nothing at all. Both read as Yes and showed
+   * the user nothing.
+   *
+   * @param {IDBDatabase} db
+   * @param {string} name
+   * @returns {Promise<Record<string, {features: number|null,
+   *   principal: string|null}>>} Empty where the store cannot be read.
+   *   ``features`` is null when the row holds no readable
+   *   FeatureCollection, which answers unknown rather than either way.
+   */
+  function readOverlayRows(db, name) {
+    return new Promise(function (resolve) {
+      try {
+        if (!db.objectStoreNames.contains(name)) {
+          resolve({});
+          return;
+        }
+        var request = db.transaction(name, 'readonly').objectStore(name).getAll();
+        request.onsuccess = function () {
+          var rows = {};
+          (request.result || []).forEach(function (row) {
+            if (!row || !row.key) return;
+            var features =
+              row.geojson && Array.isArray(row.geojson.features)
+                ? row.geojson.features.length
+                : null;
+            rows[String(row.key)] = {
+              features: features,
+              // Undefined on a public resource, which never carries one;
+              // null on an account row written before SNOW-493. The core
+              // tells the two apart — an absent stamp on an account-scoped
+              // resource is one `getOverlay` refuses.
+              principal: row.principal === undefined ? undefined : row.principal,
+            };
+          });
+          resolve(rows);
+        };
+        request.onerror = function () {
+          resolve({});
+        };
+      } catch (_err) {
+        resolve({});
+      }
+    });
+  }
+
+  /**
    * The keys a keyPath-addressed store holds.
    *
-   * ``data:map_overlays`` and ``data:panel_rows`` each hold one row per
-   * RESOURCE, so the key is the answer: 'weather' being present is what
-   * makes "will the weather show" a Yes. A row count would say three and
-   * mean nothing.
+   * ``data:panel_rows`` holds one row per RESOURCE, so the key is the
+   * answer: 'observations' being present is what makes the reports row
+   * reachable. A row count would say three and mean nothing.
    *
    * @param {IDBDatabase} db
    * @param {string} name
@@ -714,7 +778,7 @@
     var mapPath = '/';
     var shell = shellNames.length
       ? await readShellEntries(shellNames, mapPath)
-      : { entries: [], mapDependencies: null };
+      : { entries: [], mapDependencies: null, mapDay: null };
     var shellEntries = shell.entries;
 
     var db = await openDb();
@@ -752,11 +816,11 @@
         stores[DATA_STORES[j]] = await countStore(db, DATA_STORES[j]);
       }
     }
-    // WHICH overlays are cached, not how many rows there are. The store
-    // holds one row per resource — 'favourites', 'community_reports',
-    // 'weather', 'routes' — so a count answers nothing a user asked, and
-    // the key answers "will the weather show".
-    var overlayKeys = db ? await readKeys(db, 'data:map_overlays') : [];
+    // SNOW-914/915: the ROWS, not their keys. "Is there a weather row" and
+    // "will the weather show" turned out to be different questions — a row
+    // stamped for another account is refused by the reader, and a row
+    // holding an empty FeatureCollection draws nothing.
+    var overlays = db ? await readOverlayRows(db, 'data:map_overlays') : {};
     var panelKeys = db ? await readKeys(db, 'data:panel_rows') : [];
     var mutations = db ? await countStore(db, 'queue:mutations') : null;
     var currentPrincipal = db ? await readMeta(db, 'mutations.principal') : null;
@@ -800,6 +864,10 @@
       // there is no page to read. The core verifies "The app opens"
       // against this rather than against a count of cached scripts.
       mapDependencies: shell.mapDependencies,
+      // SNOW-914: the day the cached page will boot on — its own
+      // ``data-today``, not this device's clock. The ratings it asks the
+      // cache for are that day's.
+      mapDay: shell.mapDay,
       // SNOW-913: the style on screen. The basemap rows are otherwise a
       // roll-up of what the device has STORED, which is a different
       // question from the one the reader is asking.
@@ -809,7 +877,9 @@
       areas: areas,
       orphanBuckets: orphanBuckets,
       stores: stores,
-      overlayKeys: overlayKeys,
+      // SNOW-914/915: the rows, not their keys — whether each overlay is
+      // readable by this account and whether it has anything in it.
+      overlays: overlays,
       panelKeys: panelKeys,
       mutations: { count: mutations },
       dbAvailable: !!db,

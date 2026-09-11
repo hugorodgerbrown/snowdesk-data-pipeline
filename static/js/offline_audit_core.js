@@ -158,6 +158,9 @@
    * @property {string[]|null} [mapDependencies] SNOW-912: the same-origin
    *   modules the cached map page's HTML boots from. Null when there is no
    *   page to read, or its body could not be read — answered No, not Yes.
+   * @property {string|null} [mapDay] SNOW-914: the day the cached map page
+   *   will open on — its own ``data-today``, which is the date its boot
+   *   fetch puts in the ratings URL. Null where no page carries one.
    * @property {string|null} [selectedBasemap] SNOW-913: the basemap key the
    *   reader is looking at — their stored choice, or the deployed default
    *   where a server could say. Null only where neither is knowable
@@ -165,8 +168,12 @@
    *   be the current one.
    * @property {AreaReading[]} [areas]
    * @property {Record<string, number|null>} [stores] Row counts by store.
-   * @property {string[]} [overlayKeys] Which ``data:map_overlays`` rows
-   *   exist — 'favourites', 'community_reports', 'weather', 'routes'.
+   * @property {Record<string, {features: number|null,
+   *   principal?: string|null}>} [overlays] SNOW-914: each
+   *   ``data:map_overlays`` row — how many features it holds, and the
+   *   principal it was stamped with. Presence alone is not an answer: a row
+   *   stamped for another account is refused by the reader, and an empty
+   *   FeatureCollection draws nothing.
    * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
    * @property {{count?: number|null}} [mutations]
    * @property {boolean} [dbAvailable]
@@ -350,6 +357,39 @@
   }
 
   /**
+   * The day a cached map page will open on (SNOW-914).
+   *
+   * ``#season-scrubber``'s ``data-today``, read out of the HTML the device
+   * actually holds. That is deliberately NOT the device's clock: the map
+   * reads the same attribute (``readTodayDateParam`` in map_shared.js), so
+   * a page cached on Tuesday boots on Tuesday's date however long it sits
+   * there, and the feed it asks for is Tuesday's.
+   *
+   * This is what makes "Danger ratings" answerable at all. The row used to
+   * prefix-match ``/api/ratings/`` and say Yes for ANY day's cached feed,
+   * while the boot fetch asks for one specific day and
+   * ``_staleWhileRevalidate`` matches exact URLs — so a device holding last
+   * week's ratings opened to a blank choropleth under a green row.
+   *
+   * @param {string} html
+   * @returns {string|null} ``YYYY-MM-DD``, or null where the page carries
+   *   no readable attribute — answered unknown rather than guessed at.
+   */
+  function pageDay(html) {
+    if (typeof html !== 'string' || !html) return null;
+    var match = /id=["']season-scrubber["'][^>]*?data-today=["'](\d{4}-\d{2}-\d{2})["']/i.exec(
+      html,
+    );
+    if (match) return match[1];
+    // Attribute order is not guaranteed — djangofmt may put `data-today`
+    // ahead of `id`, and a future template edit certainly may.
+    match = /data-today=["'](\d{4}-\d{2}-\d{2})["'][^>]*?id=["']season-scrubber["']/i.exec(
+      html,
+    );
+    return match ? match[1] : null;
+  }
+
+  /**
    * The path part of a URL, query dropped.
    *
    * @param {string} url
@@ -507,6 +547,125 @@
    * @param {AuditReadings} r
    * @returns {Set<string>}
    */
+  /**
+   * The dependencies of one kind, by file extension (SNOW-914).
+   *
+   * ``pageDependencies`` returns one flat list so it can be held to the
+   * same answers as ``sw.js``'s ``_shellSubresources`` — the warm fetches
+   * both kinds and has no reason to tell them apart. The report does: the
+   * scripts decide whether the app opens and the stylesheets decide whether
+   * it looks right, which are two rows with two different consequences.
+   *
+   * @param {string[]} deps
+   * @param {'js'|'css'} kind
+   * @returns {string[]}
+   */
+  function dependenciesOfKind(deps, kind) {
+    var suffix = '.' + kind;
+    return (Array.isArray(deps) ? deps : []).filter(function (url) {
+      return pathOf(url).slice(-suffix.length).toLowerCase() === suffix;
+    });
+  }
+
+  // SNOW-915: the region-id shape Django routes bulletins on —
+  // ``RegionIdConverter.regex`` in apps/regions/converters.py, which is
+  // deliberately tight enough to reject ``wp-login`` and every other
+  // alphabetic probe. Restated rather than shared: there is no way to hand
+  // a Python converter's regex to a module that also runs on a static page
+  // with no server behind it.
+  var REGION_ID = /^[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(-[a-z0-9]+)*$/i;
+
+  /**
+   * Whether a cached page's path is a bulletin (SNOW-915).
+   *
+   * Three forms, all served by ``bulletin_detail``: ``/<region_id>/``,
+   * ``/<region_id>/<slug>/`` and ``/<region_id>/<slug>/<date>/``. Only the
+   * first segment decides it — the region id is the discriminator, and the
+   * legal pages registered ahead of those patterns (``/help/``,
+   * ``/privacy/``, ``/compare/``) cannot match it.
+   *
+   * @param {string} path
+   * @returns {boolean}
+   */
+  function isBulletinPath(path) {
+    var segments = String(path || '')
+      .split('/')
+      .filter(Boolean);
+    if (segments.length === 0 || segments.length > 3) return false;
+    return REGION_ID.test(segments[0]);
+  }
+
+  // SNOW-914: the overlays ``map_overlay_offline_cache.js`` stamps with a
+  // principal and refuses to read back for anyone else. Restated here for
+  // the reason everything in this module is restated — the report must not
+  // take the app's word for what the app will manage to read.
+  var PRINCIPAL_SCOPED_OVERLAYS = ['favourites', 'routes'];
+
+  /**
+   * What one cached overlay will actually give the user (SNOW-914).
+   *
+   * Three answers, where the row used to have one. ``getOverlay`` returns
+   * null for a row whose ``principal`` does not match the account signed in
+   * now, so an account-scoped row from another session is on the device and
+   * invisible — the row said Yes and the map drew nothing. A row holding an
+   * empty FeatureCollection is readable and equally empty; that is not a
+   * fault and not a capability, so it is neither Yes nor No.
+   *
+   * @param {AuditReadings} r
+   * @param {string} key
+   * @returns {{status: 'yes'|'no'|'empty', reason?: string,
+   *   principal?: string|null}}
+   */
+  function overlayState(r, key) {
+    var row = (r.overlays || {})[key];
+    if (!row) return { status: 'no', reason: 'absent' };
+    if (PRINCIPAL_SCOPED_OVERLAYS.indexOf(key) >= 0) {
+      var stamped = row.principal === undefined ? null : row.principal;
+      if (stamped !== (r.currentPrincipal || null)) {
+        return { status: 'no', reason: 'principal', principal: stamped };
+      }
+    }
+    if (row.features === null || row.features === undefined) {
+      return { status: 'no', reason: 'unreadable' };
+    }
+    return row.features > 0 ? { status: 'yes' } : { status: 'empty' };
+  }
+
+  /**
+   * One overlay row's answer, with the note that explains a No.
+   *
+   * @param {{status: string, reason?: string, principal?: string|null}} state
+   * @param {Record<string, string>} t
+   * @param {string} noteKey Which ``note-no-*`` / ``note-empty-*`` pair
+   *   this row uses.
+   * @returns {{status: AuditStatus, reason?: string, note?: string}}
+   */
+  function overlayAnswer(state, t, noteKey) {
+    if (state.status === 'yes') return { status: 'yes' };
+    if (state.status === 'empty') {
+      // Nothing stored because there is nothing to store. Unknown rather
+      // than Yes (nothing will appear) or No (nothing is broken), and it
+      // counts towards neither side of the tally.
+      return { status: 'unknown', reason: 'empty', note: s(t, 'note-empty-' + noteKey) };
+    }
+    if (state.reason === 'principal') {
+      return {
+        status: 'no',
+        reason: 'principal',
+        note: fill(s(t, 'note-other-account'), {
+          stamped: describePrincipal(state.principal, t),
+        }),
+      };
+    }
+    return { status: 'no', reason: state.reason, note: s(t, 'note-no-' + noteKey) };
+  }
+
+  /**
+   * Every URL the shell cache holds, as a Set.
+   *
+   * @param {AuditReadings} r
+   * @returns {Set<string>}
+   */
   function urlsIn(r) {
     var urls = new Set();
     (Array.isArray(r.shellEntries) ? r.shellEntries : []).forEach(function (entry) {
@@ -532,20 +691,42 @@
     return counts;
   }
 
+  // SNOW-914: the two feeds the map's COLD OPEN asks for, exactly as
+  // map.js builds them:
+  //
+  //     fetch(REGIONS_URL + '?country=ch')
+  //     fetch(RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch')
+  //
+  // ``_staleWhileRevalidate`` matches exact URLs — no ``ignoreSearch`` —
+  // so any other day's ratings, or any other country's outlines, are a
+  // miss and the map paints nothing. The country is hard-coded there and
+  // so it is here; a grep for this constant finds both sides the day that
+  // changes.
+  var BOOT_COUNTRY = 'ch';
+
   /**
-   * Whether one same-origin feed is in the shell cache.
-   *
-   * Prefix-matched, because ``/api/ratings/`` is cached with its
-   * ``?country=&date=`` window in the key — the URL encodes the day, which
-   * is why the worker is allowed to cache it at all.
+   * Whether the shell cache holds a feed the boot will actually ask for.
    *
    * @param {AuditReadings} r
-   * @param {string} prefix
+   * @param {string} path The feed's pathname.
+   * @param {Record<string, string>} params Query parameters that must
+   *   match. Order-independent, because a URL's parameters are.
    * @returns {boolean}
    */
-  function hasFeed(r, prefix) {
+  function hasBootFeed(r, path, params) {
     return (Array.isArray(r.shellEntries) ? r.shellEntries : []).some(function (entry) {
-      return entry && !entry.isPage && pathOf(entry.url).indexOf(prefix) === 0;
+      if (!entry || !entry.url || pathOf(entry.url) !== path) return false;
+      var query = /** @type {URLSearchParams|null} */ (null);
+      try {
+        query = new URL(entry.url, 'https://snowdesk.info').searchParams;
+      } catch (_err) {
+        return false;
+      }
+      if (!query) return false;
+      var found = query;
+      return Object.keys(params).every(function (key) {
+        return found.get(key) === params[key];
+      });
     });
   }
 
@@ -662,14 +843,18 @@
       if (r.mapDependencies === null || r.mapDependencies === undefined) {
         return { status: 'no', reason: 'unreadable' };
       }
-      var missing = missingFrom(r.mapDependencies, urlsIn(r));
-      if (missing.length > 0) {
+      // Scripts only. The stylesheets are the next row's question, and an
+      // app that opens unstyled is ugly and usable where one that does not
+      // open is neither — folding them together would block the verdict
+      // over a missing stylesheet.
+      var scripts = dependenciesOfKind(r.mapDependencies, 'js');
+      if (missingFrom(scripts, urlsIn(r)).length > 0) {
         return { status: 'no', reason: 'scripts' };
       }
-      if (r.mapDependencies.length === 0 && fileCounts(r).script === 0) {
-        // A page that names nothing, on a device holding no script at all.
-        // Unknown, not Yes — the same reading `missingFrom` gives an area
-        // that claimed no render dependencies.
+      if (scripts.length === 0) {
+        // A page that names no JavaScript at all. Unknown, not Yes — the
+        // same reading `missingFrom` gives an area that claimed no render
+        // dependencies.
         return { status: 'unknown' };
       }
       return { status: 'yes' };
@@ -679,7 +864,18 @@
       // Styling on its own, and NOT critical: an unstyled app is ugly and
       // usable, where an app that will not open is neither. This is the
       // row that tells someone why the thing they opened looks wrong.
-      return fileCounts(r).style > 0
+      //
+      // SNOW-914: the map page's OWN stylesheets, for the same reason the
+      // row above asks for its own scripts. `fileCounts(r).style > 0` was
+      // "is any CSS cached", which the settings page's own stylesheet makes
+      // true on the very device reading this panel — so the row said the
+      // app would look right while the map's stylesheet was absent.
+      if (r.mapDependencies === null || r.mapDependencies === undefined) {
+        return { status: 'unknown' };
+      }
+      var styles = dependenciesOfKind(r.mapDependencies, 'css');
+      if (styles.length === 0) return { status: 'unknown' };
+      return missingFrom(styles, urlsIn(r)).length === 0
         ? { status: 'yes' }
         : { status: 'no', group: 'open-map', effect: s(t, 'effect-styles') };
     }
@@ -689,7 +885,15 @@
     }
 
     if (id === 'danger-ratings') {
-      return hasFeed(r, '/api/ratings/')
+      // The feed for the day the cached page will OPEN ON — its own
+      // ``data-today``, which is the date its boot fetch will put in the
+      // URL. Not this device's clock and not "any ratings at all": the row
+      // prefix-matched ``/api/ratings/`` and said Yes for a feed from any
+      // day, on a device whose map would open to a blank choropleth. Open
+      // the app at home on Tuesday, open it on the mountain on Wednesday —
+      // that is the journey this app is for, and the row was wrong in it.
+      if (!r.mapDay) return { status: 'unknown' };
+      return hasBootFeed(r, '/api/ratings/', { d: r.mapDay, country: BOOT_COUNTRY })
         ? { status: 'yes' }
         : {
             status: 'no',
@@ -699,7 +903,9 @@
     }
 
     if (id === 'region-shapes') {
-      return hasFeed(r, '/api/regions.geojson')
+      // The boot asks for one country's outlines. A device holding only
+      // another country's would have read Yes and drawn nothing.
+      return hasBootFeed(r, '/api/regions.geojson', { country: BOOT_COUNTRY })
         ? { status: 'yes' }
         : {
             status: 'no',
@@ -709,12 +915,13 @@
     }
 
     if (id === 'bulletins') {
-      // Any cached page that is neither the map nor an account page. A
-      // bulletin URL is /<region>/<resort>/<date>/ and there is no need to
-      // parse it — what matters is that something readable is there.
+      // SNOW-915: a bulletin URL, not "a cached page that is not the map".
+      // The old test counted every other public page — /help/, /privacy/,
+      // /colophon/, /compare/, /trips/, a shared trip — so reading Help
+      // once told the user their bulletins were saved. The row says
+      // "Bulletins you have opened", and a reader takes it at its word.
       var readable = pages(r).usable.filter(function (entry) {
-        var path = pathOf(entry.url);
-        return path !== (r.mapPath || '/') && path.indexOf('/account/') !== 0;
+        return isBulletinPath(pathOf(entry.url));
       });
       return readable.length > 0
         ? { status: 'yes' }
@@ -724,31 +931,34 @@
     if (id === 'saved-places') {
       if (!r.dbAvailable) return { status: 'unknown' };
       var stored = Number((r.stores || {})['data:favourites']);
-      var overlay = (r.overlayKeys || []).indexOf('favourites') >= 0;
-      if (overlay || (Number.isFinite(stored) && stored > 0)) return { status: 'yes' };
-      return { status: 'no', note: s(t, 'note-no-favourites') };
+      var favourites = overlayState(r, 'favourites');
+      if (favourites.status === 'yes') return { status: 'yes' };
+      // The dedicated favourites store is a second, independent copy: the
+      // pins sheet reads it whether or not the map overlay was ever
+      // fetched, so rows there are shown even when the overlay is absent.
+      if (Number.isFinite(stored) && stored > 0) return { status: 'yes' };
+      return overlayAnswer(favourites, t, 'favourites');
     }
 
     if (id === 'routes') {
       if (!r.dbAvailable) return { status: 'unknown' };
-      return (r.overlayKeys || []).indexOf('routes') >= 0
-        ? { status: 'yes' }
-        : { status: 'no', note: s(t, 'note-no-routes') };
+      return overlayAnswer(overlayState(r, 'routes'), t, 'routes');
     }
 
     if (id === 'reports') {
       if (!r.dbAvailable) return { status: 'unknown' };
-      var cached =
-        (r.overlayKeys || []).indexOf('community_reports') >= 0 ||
-        (r.panelKeys || []).indexOf('observations') >= 0;
-      return cached ? { status: 'yes' } : { status: 'no', note: s(t, 'note-no-reports') };
+      var reports = overlayState(r, 'community_reports');
+      if (reports.status === 'yes') return { status: 'yes' };
+      // The observations panel is its own cached surface, and having read
+      // one is having something to read offline whatever the map overlay
+      // holds.
+      if ((r.panelKeys || []).indexOf('observations') >= 0) return { status: 'yes' };
+      return overlayAnswer(reports, t, 'reports');
     }
 
     if (id === 'weather') {
       if (!r.dbAvailable) return { status: 'unknown' };
-      return (r.overlayKeys || []).indexOf('weather') >= 0
-        ? { status: 'yes' }
-        : { status: 'no', note: s(t, 'note-no-weather') };
+      return overlayAnswer(overlayState(r, 'weather'), t, 'weather');
     }
 
     return { status: 'unknown' };
@@ -1348,6 +1558,7 @@
     missingFrom: missingFrom,
     classifyEntry: classifyEntry,
     pageDependencies: pageDependencies,
+    pageDay: pageDay,
     formatBytes: formatBytes,
     principalMatches: principalMatches,
     areaState: areaState,

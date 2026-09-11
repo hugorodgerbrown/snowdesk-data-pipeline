@@ -110,6 +110,11 @@ beforeEach(async () => {
   for (const key of ['basemap.regions', 'basemap.customAreas', 'basemap.baseLayers']) {
     await db.delete('meta:app', key);
   }
+  // SNOW-914: the overlay rows are read for their contents now, so a row
+  // left behind by one test is a reading the next one did not ask for.
+  for (const key of ['favourites', 'community_reports', 'weather', 'routes']) {
+    await db.delete('data:map_overlays', key);
+  }
 });
 
 describe('the shell-cache reading', () => {
@@ -317,9 +322,34 @@ describe('the area records', () => {
     ]);
   });
 
-  it('reads WHICH overlays are cached, not how many rows there are', async () => {
-    // The store holds one row per resource, so a count answers nothing a
-    // user asked; the key is what makes "will the weather show" a Yes.
+  it('reads what each overlay holds, not just that a row exists', async () => {
+    // SNOW-914: the key used to be the answer, and it is not one. A row
+    // with an empty FeatureCollection draws nothing, and a row stamped for
+    // another account is refused by the reader — both read as Yes.
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await window.pwaDb.put('data:map_overlays', {
+      key: 'weather',
+      geojson: { type: 'FeatureCollection', features: [{}, {}] },
+      cached_at: '2026-09-11T08:00:00Z',
+    });
+    await window.pwaDb.put('data:map_overlays', {
+      key: 'routes',
+      geojson: { type: 'FeatureCollection', features: [] },
+      principal: 'acct-1',
+      cached_at: '2026-09-11T08:00:00Z',
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.overlays.weather.features).toBe(2);
+    expect(readings.overlays.routes.features).toBe(0);
+    expect(readings.overlays.routes.principal).toBe('acct-1');
+  });
+
+  it('reads a payload with no feature array as unreadable, not as empty', async () => {
+    // Null rather than 0: "there is nothing in it" and "this is not a
+    // FeatureCollection" are different answers, and only the first is
+    // something to tell the user about their own content.
     installCachesStub({ 'snowdesk-shell-abc': [] });
     await window.pwaDb.put('data:map_overlays', {
       key: 'weather',
@@ -329,7 +359,7 @@ describe('the area records', () => {
 
     const readings = await audit.collect();
 
-    expect(readings.overlayKeys).toContain('weather');
+    expect(readings.overlays.weather.features).toBeNull();
   });
 
   it('carries a drop zone’s type through, so the report can group by it', async () => {

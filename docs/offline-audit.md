@@ -155,7 +155,57 @@ Two more rows are answered from more than one reading:
   page that will not open.
 - **The app looks right** is the styling on its own, and is *not*
   critical: an unstyled app is ugly and usable, where an app that will
-  not open is neither.
+  not open is neither. It asks the same list for its **stylesheets** that
+  the row above asks for its scripts (SNOW-914) — `fileCounts(r).style > 0`
+  was "is any CSS cached", which the settings page's own stylesheet makes
+  true on the very device reading the panel.
+
+## Every row answers about what the user will SEE
+
+A row that says Yes to someone looking at a blank map costs more than the
+row is worth, and a false green is the only failure this panel cannot
+survive. Four rows were counting something adjacent to the question, and
+each of them read Yes on a device that would have shown the user nothing
+(SNOW-914/915):
+
+| Row | Counted | Asks now |
+|---|---|---|
+| Danger ratings | any `/api/ratings/` entry | the feed for the day the cached page will open on |
+| Region outlines | any `/api/regions.geojson` entry | the country the cold open asks for |
+| Bulletins you have opened | any cached page that is not the map or an account page | a page whose path is a bulletin |
+| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something |
+
+**The ratings row is the one that mattered most.** The map's cold open
+fetches `RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch'`, and
+`readDisplayDate()` falls back to `#season-scrubber`'s `data-today` — the
+day the **cached page** was rendered on, not the device's clock.
+`_staleWhileRevalidate` matches exact URLs, so any other day's feed is a
+miss and the choropleth paints nothing. The row prefix-matched the path
+and said Yes for a feed from any day at all. Open the app at home on
+Tuesday, open it on the mountain on Wednesday: blank map, green row —
+which is the journey this app exists for. The collector now reads
+`data-today` out of the cached HTML (`pageDay`) and the row asks for that
+day's feed. `BOOT_COUNTRY` mirrors the country hard-coded in `map.js`; a
+grep for it finds both sides.
+
+**The bulletins row** counted every other public page, because every one
+of them is cached by the visit that renders it — so reading `/help/` once
+told the user their bulletins were saved. It now matches the region-id
+shape Django routes bulletins on (`isBulletinPath`, restating
+`RegionIdConverter.regex`, which is tight enough to reject `wp-login` and
+so tight enough to reject `help`).
+
+**The four content overlays** were answered by the presence of a row in
+`data:map_overlays`. Presence is not readability: `getOverlay` returns
+null for a row whose `principal` does not match the account signed in now
+(favourites and routes are account-scoped, SNOW-493), so a row from
+another session is on the device and invisible. Nor is presence content:
+a row holding an empty FeatureCollection draws nothing. Both read Yes.
+The collector now reads each row's feature count and stamp, and the three
+states are told apart — Yes, No (absent, or another account's, with the
+note saying which), and **unknown** for a row that is readable and empty,
+because "you have no routes" is neither a capability nor a fault and
+belongs on neither side of the tally.
 
 ## Two halves, doing two jobs
 
