@@ -283,7 +283,20 @@ describe('rendering', () => {
   it('paints the summary and the tally under the log', async () => {
     const target = document.createElement('div');
     const t = { 'counts-line': '%(yes)s of %(total)s available offline' };
-    const report = window.pwaOfflineAuditCore.buildReport({ dbAvailable: true }, t);
+    // A readings set with no blocking failure, so the ordinary tally line
+    // is the one used — the blocked form is asserted below.
+    const report = window.pwaOfflineAuditCore.buildReport(
+      {
+        dbAvailable: true,
+        serviceWorker: { supported: true, registered: true, controlled: true },
+        shellEntries: [
+          { url: 'https://x/', isPage: true, principal: 'anonymous' },
+          { url: 'https://x/a.js', isPage: false },
+          { url: 'https://x/a.css', isPage: false },
+        ],
+      },
+      t,
+    );
 
     audit.render(target, report, t);
 
@@ -292,6 +305,29 @@ describe('rendering', () => {
     );
     expect(target.querySelector('[data-audit-counts]').textContent).toBe(
       `${report.counts.yes} of ${report.counts.total} available offline`,
+    );
+  });
+
+  it('refuses to claim availability under a blocking failure', async () => {
+    // "11 of 12 available offline" under "this device is not set up for
+    // offline use" is the tally contradicting the verdict directly above
+    // it: every one of those eleven is conditional on the thing that
+    // just failed.
+    const target = document.createElement('div');
+    const t = {
+      'counts-line': '%(yes)s of %(total)s available offline',
+      'counts-line-blocked': '%(yes)s of %(total)s saved, none of it reachable yet',
+    };
+    const report = window.pwaOfflineAuditCore.buildReport(
+      { dbAvailable: true, serviceWorker: { supported: true, registered: false } },
+      t,
+    );
+
+    audit.render(target, report, t);
+
+    expect(report.verdict.status).toBe('fail');
+    expect(target.querySelector('[data-audit-counts]').textContent).toContain(
+      'none of it reachable yet',
     );
   });
 

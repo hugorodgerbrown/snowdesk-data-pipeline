@@ -1014,14 +1014,22 @@
     // Nothing critical is broken, but "everything you need is here" over
     // a table with six Nos in it is the exact species of reassurance this
     // whole feature exists to stop being given. The all-clear is the
-    // all-clear, and anything less says so.
+    // all-clear, and anything less says so — including a row nothing
+    // could read. An unknown is not a Yes, and a device whose IndexedDB
+    // would not open has not been checked, whatever the rest of the table
+    // says.
     var anyNo = false;
+    var anyUnknown = false;
     sections.forEach(function (section) {
       section.checks.forEach(function (check) {
         if (check.status === 'no' || check.status === 'blocked') anyNo = true;
+        if (check.status === 'unknown') anyUnknown = true;
       });
     });
     if (anyNo) return { status: 'warn', text: s(t, 'verdict-partial'), covers: [] };
+    if (anyUnknown) {
+      return { status: 'warn', text: s(t, 'verdict-unchecked'), covers: [] };
+    }
     return { status: 'ok', text: s(t, 'verdict-ok'), covers: [] };
   }
 
@@ -1044,11 +1052,20 @@
    * Whatever the verdict already said is left out entirely (``covers``).
    *
    * @param {AuditSection[]} sections
-   * @param {{covers: string[]}} verdict
+   * @param {{status?: string, covers: string[]}} verdict
    * @param {Record<string, string>} t
-   * @returns {string} ``''`` when nothing is left to say.
+   * @returns {string} ``''`` when nothing is left to say, and always for
+   *   a ``fail`` verdict — see the first branch.
    */
   function composeSummary(sections, verdict, t) {
+    // Nothing below a blocked critical row is reachable, so nothing below
+    // it is worth advising on. A device with no service worker was being
+    // told to open the map once while connected to fix its styling — true
+    // in the abstract, useless in the specific, and three sentences of it
+    // under a verdict that had already named the one thing to do. The log
+    // still shows every row; the paragraph stops pretending the rest is
+    // actionable.
+    if (verdict.status === 'fail') return '';
     var covered = new Set(verdict.covers || []);
     var groups = /** @type {Record<string, AuditCheck[]>} */ ({});
     var notes = /** @type {string[]} */ ([]);

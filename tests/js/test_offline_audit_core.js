@@ -344,6 +344,14 @@ describe('the verdict', () => {
     expect(report.verdict.status).toBe('ok');
   });
 
+  it('refuses the all-clear when a row could not be read at all', () => {
+    // An unknown is not a Yes. A device whose IndexedDB would not open
+    // has not been checked, whatever the rest of the table says.
+    const report = core.buildReport(healthy({ dbAvailable: false }), {});
+    expect(report.verdict.status).toBe('warn');
+    expect(report.verdict.text).toBe('verdict-unchecked');
+  });
+
   it('refuses the all-clear when anything at all answers No', () => {
     // "Everything you need is here" over a table with six Nos in it is
     // the exact species of reassurance this whole feature exists to stop
@@ -532,15 +540,31 @@ describe('the summary paragraph', () => {
     expect(report.summary).toContain('Opening the map once while connected fixes both.');
   });
 
+  it('says nothing at all under a verdict that names a blocking failure', () => {
+    // Nothing below a blocked critical row is reachable, so nothing below
+    // it is worth advising on. A device with no service worker was being
+    // told to open the map once while connected to fix its styling — true
+    // in the abstract, useless in the specific.
+    const report = core.buildReport(
+      healthy({
+        serviceWorker: { supported: true, registered: false, controlled: false },
+      }),
+      COPY,
+    );
+    expect(report.verdict.status).toBe('fail');
+    expect(report.summary).toBe('');
+  });
+
   it('never repeats what the verdict already said', () => {
     // The verdict names the primary failure; saying it again three lines
     // later is how a summary starts reading like an error log.
     const report = core.buildReport(
-      healthy({ shellEntries: [] }),
-      Object.assign({}, COPY, { 'verdict-no-page': 'The app will not open.' }),
+      healthy({ overlayKeys: ['favourites', 'community_reports', 'routes'] }),
+      Object.assign({}, COPY, { 'verdict-partial': 'Not everything is here.' }),
     );
-    expect(report.verdict.text).toBe('The app will not open.');
-    expect(report.summary).not.toContain('The app will not open');
+    expect(report.verdict.text).toBe('Not everything is here.');
+    expect(report.summary).not.toContain('Not everything is here');
+    expect(report.summary).toContain('the weather overlay has not been opened here');
   });
 
   it('is empty when the verdict is the whole truth', () => {

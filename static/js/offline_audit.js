@@ -179,6 +179,8 @@
 
     'verdict-ok': 'Everything you need is on this device.',
     'verdict-partial': 'The app will open, but not everything will be there.',
+    'verdict-unchecked':
+      'The app will open, but some things could not be checked on this device.',
     'verdict-no-worker': 'This device is not set up for offline use yet.',
     'verdict-no-page':
       'The app will not open without a signal. Open the map once while connected.',
@@ -195,6 +197,7 @@
     'count-many': 'all of them',
 
     'counts-line': '%(yes)s of %(total)s available offline',
+    'counts-line-blocked': '%(yes)s of %(total)s saved, none of it reachable yet',
 
     running: 'Checking…',
     copied: 'copied',
@@ -827,7 +830,13 @@
 
     var counts = doc.createElement('p');
     counts.setAttribute('data-audit-counts', '');
-    counts.textContent = String(t['counts-line'] || FALLBACKS['counts-line'])
+    // "11 of 12 available offline" under "this device is not set up for
+    // offline use" is the tally contradicting the verdict directly above
+    // it. Every one of those eleven is CONDITIONAL on the thing that just
+    // failed — the data is there and none of it is reachable — so a
+    // blocked device gets a line that says exactly that instead.
+    var key = report.verdict.status === 'fail' ? 'counts-line-blocked' : 'counts-line';
+    counts.textContent = String(t[key] || FALLBACKS[key])
       .replace('%(yes)s', String(report.counts.yes))
       .replace('%(total)s', String(report.counts.total));
     target.appendChild(counts);
