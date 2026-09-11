@@ -13,16 +13,14 @@ runtime geometry math (per the project's pre-compute-over-runtime
 preference).
 
 Boundary computation uses ``shapely.ops.unary_union`` to merge L4
-polygons into a single Polygon (or MultiPolygon if disjoint). Shapely
-is a **dev-only** dependency for this L1/L2 helper — fixtures are always
-rebuilt locally and committed, so the runtime never imports it via this
-command. The import lives inside the helper that needs it; running this
-command in an environment that lacks shapely raises a friendly
-RuntimeError pointing at ``uv sync``. (The L4 ``basemap_download`` pass
-below uses ``apps.regions.services.basemap_tiles.build_region_blob``,
-which imports shapely the same lazy way — but that module's caller,
-``compute_basemap_download``, DOES run at runtime, where shapely is an
-ordinary top-level project dependency; see that module's docstring.)
+polygons into a single Polygon (or MultiPolygon if disjoint). Shapely is
+an ordinary runtime dependency — SNOW-323 promoted it out of the dev
+group when grouping dissolves started running at ingest time, and the
+GPX simplify on route upload (``apps/routes/services/gpx.py``) puts it on
+a request path too. The import still lives inside the helper that needs
+it, because shapely pulls in GEOS and a function-local import keeps that
+off the module import path; running this command in an environment that
+lacks shapely raises a friendly RuntimeError pointing at ``uv sync``.
 
 This command does NOT:
   * Fetch from ``regions.avalanches.org`` — the authoritative dataset is
@@ -257,9 +255,11 @@ def _bbox_from_children(children: list[dict[str, Any]]) -> list[float]:
 def _boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     """Merge L4 child polygons into a single GeoJSON Polygon/MultiPolygon.
 
-    Imports ``shapely`` lazily so the runtime (which never calls this
-    helper) doesn't need the package installed. If shapely is missing,
-    raises a RuntimeError pointing at the dev install command.
+    Imports ``shapely`` lazily to keep GEOS off the module import path,
+    the convention documented in ``apps/regions/services/basemap_tiles.py``.
+    Shapely is an ordinary runtime dependency (promoted from dev-only in
+    SNOW-323), so a missing package means a broken environment; the
+    RuntimeError points at ``uv sync``.
 
     Returns a plain ``dict`` (GeoJSON shape) ready to be written to the
     fixture's ``boundary`` field.
@@ -267,9 +267,9 @@ def _boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     try:
         from shapely.geometry import mapping, shape
         from shapely.ops import unary_union
-    except ImportError as exc:  # pragma: no cover — dev-only dependency
+    except ImportError as exc:  # pragma: no cover — shapely is always installed
         raise RuntimeError(
-            "refresh_eaws_fixtures requires the dev-only `shapely` "
+            "refresh_eaws_fixtures requires the `shapely` "
             "dependency. Install it with `uv sync`."
         ) from exc
 

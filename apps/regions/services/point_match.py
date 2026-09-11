@@ -5,10 +5,12 @@ Provides ``point_in_polygon`` (ray-casting) and ``region_for_point`` (global
 point→MicroRegion resolver, used by the GPS-gated field-report feature and
 by favourite placement).
 
-Deliberately uses no Shapely or GDAL.  Shapely is a dev-only dependency
-(used lazily by ``audit_resort_regions``); promoting it to the request path
-would add a non-trivial C extension to the production image for a task that
-a 20-line implementation handles adequately.  See
+Deliberately uses no Shapely or GDAL — but NOT because Shapely is absent.
+It is a declared runtime dependency (SNOW-323) and is already on a request
+path in ``apps/routes/services/gpx.py``.  The reason is that GeoLite2
+coordinates are kilometre-accurate, so a 20-line ray-cast over the raw
+GeoJSON is as precise as this test can meaningfully be, and it avoids
+constructing a geometry object per request.  See
 ``docs/decisions/pure-python-point-in-polygon.md`` for full rationale.
 
 GeoJSON coordinate convention: [longitude, latitude] pairs.

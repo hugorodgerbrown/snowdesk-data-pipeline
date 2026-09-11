@@ -182,14 +182,18 @@ class Command(BaseCommand):
 def _build_region_polygons() -> list[tuple[str, Any]]:
     """Return [(region_id, shapely_polygon), ...] for all MicroRegions with boundary.
 
-    Imports shapely lazily so the runtime path (which never calls this
-    function directly) doesn't need shapely installed.
+    Imports shapely lazily, matching the project convention documented in
+    ``apps/regions/services/basemap_tiles.py``: shapely pulls in GEOS, and
+    a function-local import keeps that off the module import path. It is an
+    ordinary runtime dependency (promoted from dev-only in SNOW-323), so
+    the ImportError branch below is a guard against a broken environment,
+    not against a deployment that legitimately lacks the package.
     """
     try:
         from shapely.geometry import shape
     except ImportError as exc:
         raise RuntimeError(
-            "audit_resort_regions requires the dev-only `shapely` dependency. "
+            "audit_resort_regions requires the `shapely` dependency. "
             "Install it with `uv sync`."
         ) from exc
 
@@ -215,7 +219,7 @@ def _find_containing_region(
         from shapely.geometry import Point
     except ImportError as exc:  # pragma: no cover — tested via _build_region_polygons
         raise RuntimeError(
-            "audit_resort_regions requires the dev-only `shapely` dependency."
+            "audit_resort_regions requires the `shapely` dependency."
         ) from exc
 
     point = Point(lon, lat)

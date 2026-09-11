@@ -155,9 +155,9 @@ def boundary_from_children(children: list[dict[str, Any]]) -> dict[str, Any]:
     try:
         from shapely.geometry import mapping, shape as shp
         from shapely.ops import unary_union
-    except ImportError as exc:  # pragma: no cover — dev-only dependency
+    except ImportError as exc:  # pragma: no cover — shapely is always installed
         raise RuntimeError(
-            "boundary_from_children requires the dev-only `shapely` dependency. "
+            "boundary_from_children requires the `shapely` dependency. "
             "Install it with `uv sync`."
         ) from exc
 
