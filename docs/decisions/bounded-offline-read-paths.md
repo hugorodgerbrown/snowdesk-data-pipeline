@@ -1,8 +1,8 @@
 ---
 name: bounded-offline-read-paths
-description: sw.js read paths are time-bounded and latch offline — _boundedFetch, OFFLINE_LATCH_THRESHOLD, /livez probe; a dead radio hangs, not rejects
+description: sw.js read paths and the page's storage reads are time-bounded and latch — _boundedFetch, OFFLINE_LATCH_THRESHOLD, /livez, bounded()
 status: current
-last-reviewed: 2026-09-06
+last-reviewed: 2026-09-11
 ---
 
 # Offline read paths are bounded, and latch
@@ -211,6 +211,56 @@ A live page's `network-mode` message outranks the row, exactly as an explicit
 `register-basemap-origins` message outranks `_hydrateBasemapOrigins`. The row
 is only as fresh as its last write, so a user pressing "use the network again"
 while the read is in flight must not be forced offline again by it.
+
+## Extended to storage reads
+
+**The same rule now governs the page's own reads of Cache Storage and
+IndexedDB**, in `offline_audit.js` (`bounded`, `READ_BUDGET_MS`,
+`READ_LATCH_THRESHOLD`) and in `reset_data_summary.js`.
+
+The reasoning transfers exactly, and it took a second incident to notice
+that it does. Everything above is about a network that hangs instead of
+rejecting; **storage does the same thing**, for the same reason — the
+failure is a request accepted and never completed, not one refused. A
+wedged WebKit IndexedDB hands back a request whose `onsuccess`, `onerror`
+*and* `onblocked` never fire; `indexedDB.databases()` and the tee a
+`Response.clone()` opens can each leave a promise pending for the life of
+the page. Every `try`/`catch` in those two modules — and there are a
+dozen, each carefully degrading its one reading — is written against a
+rejection, so on such a device **not one of them runs**.
+
+The report is the same shape as the Tube journey above. An iPad, an app
+update, an app frozen insisting it was offline, local data reset to
+recover. Then the offline-content panel reading "Checking…" over its
+unanswered skeleton and — in the same screenshot, a few hundred pixels
+below — the reset panel reading "Loading…". Two surfaces, two independent
+implementations, one unbounded `await` each, neither with anything to
+say. The one diagnostic the app has for "why is this device not working
+offline" could not survive a device that was not working offline.
+
+The differences from the worker's version all run the same way:
+
+- **The latch lives for the run, and there is no probe.** The worker's
+  latch is standing state that has to be recovered from. A report is one
+  pass over storage, so `READ_LATCH_THRESHOLD` (3 consecutive overruns,
+  the same number, chosen for the same reason) dies with the run and
+  none of the three recovery mechanisms above is needed.
+- **A fallback is `unknown`, never an absence.** This is the whole
+  difference between a bound that helps and a bound that lies. `[]` from
+  an unread Cache Storage answers "The app opens: **No**" — the loudest
+  claim this panel can make, about a device whose app opens perfectly.
+  So `cacheNames()` returns `null` rather than `[]`, a bucket reading
+  carries `readable`, and `cachesReadable: false` makes the five
+  cache-derived rows read `unknown`. Same rule for a download: a bucket
+  that did not answer must never produce "nothing is stored, download it
+  again" about 200 MB the user still has.
+- **A run that throws is a report, not a silence.** `run()` is called
+  unawaited from a click handler, so a throw anywhere in the collection
+  was an unhandled rejection — invisible on a phone — and left the
+  skeleton on screen for ever. It now paints a report whose every row is
+  `unknown` and whose verdict says the check could not run, with Copy
+  offered: a phone with no devtools is the only place that evidence
+  exists.
 
 ## Consequences
 

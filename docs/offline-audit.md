@@ -1,6 +1,6 @@
 ---
 name: offline-audit
-description: Offline-content report — offline_audit.js, offline_audit_core.js, X-SW-Principal page check, AUDIT_SCRIPTS precache, offline.html panel
+description: Offline-content report — offline_audit.js, offline_audit_core.js, bounded storage reads, X-SW-Principal check, AUDIT_SCRIPTS precache
 status: current
 last-reviewed: 2026-09-11
 ---
@@ -277,6 +277,56 @@ the verdict to "The app will open, but not everything will be there" —
 in it is the exact species of reassurance this feature exists to stop
 being given.
 
+## It always finishes
+
+The report shipped able to hang. Every reading was an unbounded `await`
+on Cache Storage or IndexedDB, `run()` was called unawaited from a click
+handler with no `catch`, and the two together have exactly one visible
+symptom: the skeleton rows on screen, unanswered, under a status line
+reading **"Checking…"**, for ever.
+
+Which is what happened, on an iPad, to the one reader this panel was
+written for — someone whose app had frozen after an update insisting it
+was offline, and who had already had to reset local data to recover.
+Below it in the same screenshot, the reset panel read "Loading…". The two
+have no code in common; what they share is a store that had stopped
+answering and a `catch` written against a rejection it never sent.
+
+Three rules now hold, and each one is a test:
+
+**Every reading is time-bounded.** `bounded()` wraps every call into
+Cache Storage, IndexedDB and `navigator.storage`: `READ_BUDGET_MS` (4s)
+each, `COLLECT_BUDGET_MS` (20s) for the run, and a latch at
+`READ_LATCH_THRESHOLD` (3) consecutive overruns so a device with a wedged
+store and twelve downloads says so in about twelve seconds rather than
+paying the budget once per read. Any reading that lands resets the count.
+This is `sw.js`'s rule for the network, applied to storage — see
+[`docs/decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md),
+whose "Extended to storage reads" section is the reasoning.
+
+**A reading that overran is `unknown`, never an absence.** The rule three
+sections down, which the bound had to be built around rather than
+through. `cacheNames()` returns `null` rather than `[]` for a Cache
+Storage it could not list, a bucket reading carries `readable`, and
+`cachesReadable: false` sends the five cache-derived rows — `app-opens`,
+`app-looks-right`, `danger-ratings`, `region-shapes`, `bulletins` — to
+`unknown`. A bound that fell back to an absence would print **"The app
+will not open without a signal"** over an app that opens perfectly, and
+tell a user with 200 MB of downloaded maps that nothing was stored and
+they should download them again. Those are worse than the hang.
+
+**A run that throws is a report.** The collector's failure is caught,
+every row reads `unknown`, the verdict is "This check could not run on
+this device", and **Copy is offered** — carrying the thrown message and
+the list of readings that did not answer. A phone with no devtools is the
+only place that evidence will ever exist, which is what makes the copied
+report the deliverable of a failed run rather than a consolation.
+
+What the panel will not do is guess. A crashed run with no readings would
+otherwise answer "offline mode has not been set up on this device" — a
+confident, wrong diagnosis of a worker that is running fine, from a check
+that never ran.
+
 ## Three rules worth keeping
 
 **A reading that could not be taken is `unknown`, never `yes`.** The
@@ -359,6 +409,7 @@ guards on `window.pwaResetLocalData`.
 |---|---|
 | The report model — verdicts, statuses, every degraded reading | `tests/js/test_offline_audit_core.js` |
 | The collector and the rendered DOM | `tests/js/test_offline_audit.js` |
+| Storage that hangs rather than rejecting — the bounds, the latch, the throw | `tests/js/test_offline_audit.js` ("a device whose storage stops answering") |
 | Both hosts' markup, the strings-template drift check, the precache | `tests/accounts/test_settings_offline_audit.py` |
 
 No Playwright test. Everything here is either arithmetic or a DOM

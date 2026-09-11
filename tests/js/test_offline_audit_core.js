@@ -1072,3 +1072,172 @@ describe('byte formatting', () => {
     expect(core.formatBytes(input)).toBe(expected);
   });
 });
+
+describe('readings that could not be taken', () => {
+  /*
+   * The collector is time-bounded (see `bounded` in offline_audit.js),
+   * which turns a device whose storage hangs into a device with missing
+   * readings. The rule those readings meet here is the report's oldest
+   * one: an absence of evidence is `unknown`, never a No.
+   *
+   * It matters more here than anywhere else in the file. "The app will
+   * not open without a signal" is the loudest thing this panel can say,
+   * and saying it over an app that opens perfectly well — because a read
+   * overran on a busy phone — would cost the report every bit of the
+   * credibility it exists to earn.
+   */
+
+  it('answers every cache-read row unknown when Cache Storage did not answer', () => {
+    const report = core.buildReport(
+      healthy({ cachesReadable: false, shellEntries: [], mapDependencies: null }),
+      {},
+    );
+
+    [
+      'app-opens',
+      'app-looks-right',
+      'danger-ratings',
+      'region-shapes',
+      'bulletins',
+    ].forEach((id) => {
+      expect(row(report, id).status).toBe('unknown');
+    });
+    // And it must not read as an all-clear either: unknowns downgrade the
+    // verdict, they do not pass.
+    expect(report.verdict.status).not.toBe('ok');
+  });
+
+  it('costs only the page rows when the listing was fine and a page was not', () => {
+    // The narrower flag. A `match` or a body that did not come back says
+    // nothing about the boot feeds, which are answered from the entry
+    // URLs alone — blanking those too would turn one unread body into
+    // five dashes.
+    const report = core.buildReport(healthy({ shellPartial: true }), {});
+
+    expect(row(report, 'app-opens').status).toBe('unknown');
+    expect(row(report, 'bulletins').status).toBe('unknown');
+    expect(row(report, 'danger-ratings').status).toBe('yes');
+    expect(row(report, 'region-shapes').status).toBe('yes');
+  });
+
+  it('does not accuse a download of being gone when its bucket did not answer', () => {
+    // The worst false negative available: "nothing is stored, download it
+    // again" about 200 MB the user chose on purpose and still has.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'region-ch-4115',
+            kind: 'region',
+            name: 'Martigny',
+            basemapKey: 'openfreemap',
+            deps: ['https://t/style.json'],
+            bucketPresent: false,
+            bucketReadable: false,
+            entries: [],
+          },
+        ],
+      }),
+      {},
+    );
+
+    const area = row(report, 'area:region-ch-4115');
+    expect(area.status).toBe('unknown');
+    expect(area.reason).toBe('unreadable');
+  });
+
+  it('still calls a genuinely empty bucket missing', () => {
+    // The guard above must not swallow the finding the feature was built
+    // for: a bucket that was read, and is empty, is a broken download.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'region-ch-4115',
+            kind: 'region',
+            name: 'Martigny',
+            basemapKey: 'openfreemap',
+            deps: ['https://t/style.json'],
+            bucketPresent: false,
+            bucketReadable: true,
+            entries: [],
+          },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'area:region-ch-4115').reason).toBe('missing');
+  });
+
+  it('says in the summary why some rows are dashes', () => {
+    const report = core.buildReport(
+      healthy({
+        cachesReadable: false,
+        shellEntries: [],
+        mapDependencies: null,
+        degraded: { timedOut: ['caches.keys'], latched: true },
+      }),
+      { 'note-storage-slow': 'storage stopped answering' },
+    );
+
+    // Leading, not appended: a reader who does not know the report is
+    // partial reads a partial report as a complete one.
+    expect(report.summary.indexOf('storage stopped answering')).toBe(0);
+  });
+
+  it('carries what did not answer into the copied report', () => {
+    // The only route this evidence has off a phone with no devtools.
+    const report = core.buildReport(
+      healthy({
+        degraded: { timedOut: ['indexeddb.open', 'caches.keys'], latched: true },
+      }),
+      {},
+    );
+
+    const text = core.reportText(report, {});
+    expect(text).toContain('indexeddb.open');
+    expect(text).toContain('caches.keys');
+  });
+});
+
+describe('a collection that threw', () => {
+  /*
+   * `run()` is called unawaited from a click handler, so a throw was an
+   * unhandled rejection nobody on a phone could see, and the panel kept
+   * its skeleton and its "Checking…" for ever. It now paints a report
+   * about the failure — which means the report must not diagnose a device
+   * it never read.
+   */
+
+  it('answers nothing at all rather than guessing', () => {
+    const report = core.buildReport({ failure: 'TypeError: boom' }, {});
+
+    report.sections.forEach((section) => {
+      section.checks.forEach((check) => {
+        expect(check.status).toBe('unknown');
+      });
+    });
+  });
+
+  it('does not tell a working device its offline mode is missing', () => {
+    // The specific danger: with no readings, `serviceWorker` is absent and
+    // the row would otherwise have read "offline mode has not been set up
+    // on this device" — a confident, wrong diagnosis of a worker that is
+    // running, produced by a check that never ran.
+    const report = core.buildReport(
+      { failure: 'TypeError: boom' },
+      { 'verdict-failed': 'could not run' },
+    );
+
+    expect(row(report, 'offline-mode').status).toBe('unknown');
+    expect(report.verdict.status).toBe('fail');
+    expect(report.verdict.text).toBe('could not run');
+  });
+
+  it('names the failure in the copied report', () => {
+    const report = core.buildReport({ failure: 'TypeError: boom' }, {});
+
+    expect(core.reportText(report, {})).toContain('TypeError: boom');
+  });
+});
