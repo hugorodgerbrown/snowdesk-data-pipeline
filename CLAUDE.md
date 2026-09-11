@@ -649,6 +649,7 @@ Read these when working in the relevant area:
 | Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, why glyphs are excluded) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
 | Why a region holds one basemap at a time while a custom area can hold the same ground twice (areaIdForRegion, generateCustomAreaId, confirmBasemapReplace; SNOW-864 declined) | [`docs/decisions/one-basemap-per-region-download.md`](docs/decisions/one-basemap-per-region-download.md) |
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
+| Why `activate` re-warms the map page and its scripts (_rewarmShell, _shellSubresources, SHELL_PAGE; a deploy used to leave the app unopenable offline) | [`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](docs/decisions/the-shell-is-rewarmed-after-an-activation.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |

@@ -198,7 +198,17 @@ actually missing for this account. It goes through the worker's own
 `warm-cache` message rather than a `cache.put` from the page because
 SNOW-624 made `_warmCache` stamp a same-origin HTML response with the
 principal its body declares, and an unstamped entry is one the worker
-refuses for ever.
+refuses for ever. SNOW-912 made that same path pull the page's
+same-origin scripts and stylesheets too, so what the button saves is a
+map page that opens rather than one that paints a blank frame.
+
+The gate reads the `app-opens` check's `status` and `reason` from
+`offline_audit_core.js`. It once read a row called `map-page` and a
+status of `ok`, neither of which the core has ever produced, so the
+lookup found nothing and the button was hidden on every device —
+including the one whose verdict was telling its owner, in red, to go and
+open the map. Any future gate here names ids and statuses the core
+actually emits (`tests/js/test_offline_audit.js` holds the line).
 
 **Copy report** puts the whole thing on the clipboard as text, for the
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is

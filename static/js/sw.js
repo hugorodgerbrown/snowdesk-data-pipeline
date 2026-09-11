@@ -903,6 +903,56 @@ const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
 // untouched. They are warmed individually below, failures and all.
 const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_audit.js'];
 
+// SNOW-912: the page the app IS, re-warmed by ``activate``.
+//
+// ``activate`` deletes every shell cache that is not the version now
+// live, which is the whole point of it — stale HTML pointing at hashed
+// assets that no longer exist is worse than no HTML at all. What nothing
+// did afterwards was put the map page BACK, so from the moment a deploy
+// activated until the user next opened ``/`` while connected, the app
+// could not open offline at all. It was silent, it happened on every
+// deploy, and the only surface that ever said so was SNOW-907's report —
+// which is how it was found: a device nine minutes past a deploy, on a
+// train, reporting that the app it was running would not open.
+//
+// Re-warmed rather than precached on install for two reasons. Install
+// runs against the OLD worker's cache generation, so a page fetched there
+// would have to be re-fetched here anyway; and ``_warmCache`` already
+// knows how to stamp a same-origin HTML response with the principal its
+// body declares (SNOW-624), which is what makes the entry servable at all.
+const SHELL_PAGE = '/';
+
+// The subresources of a warmed page: same-origin scripts and stylesheets,
+// by attribute. A page whose HTML is saved and whose JavaScript is not
+// does not open — it paints a blank frame — so warming one without the
+// other would move the audit's "The app opens" row to Yes while leaving
+// the user with exactly the failure the row exists to catch. See
+// ``_warmShellSubresources``.
+//
+// Matched on the URL's own extension rather than on the tag, because a
+// regex over HTML cannot reliably pair an attribute with its element and
+// does not need to: a same-origin ``.js`` or ``.css`` in a ``src`` or
+// ``href`` is shell either way, and anything else on the page (a preload,
+// an icon, the manifest, a canonical link) is not something the map needs
+// to boot.
+const SHELL_SUBRESOURCE_PATTERN = /(?:src|href)=["']([^"'\s]+\.(?:js|css))(?:\?[^"']*)?["']/gi;
+
+// The ceiling on that list. The map page loads a few dozen modules; a
+// hundred and twenty is well clear of it and still bounds what a
+// malformed or hostile page could make the worker fetch.
+const SHELL_SUBRESOURCE_LIMIT = 120;
+
+// How long ``activate`` waits for the re-warm before it stops waiting.
+//
+// ``_warmCache``'s own fetches are deliberately unbounded — a basemap
+// download of several thousand tiles must not start failing at the read
+// paths' five-second budget — so the bound belongs here, on the one caller
+// that runs inside a lifecycle handler. It is a stop-WAITING, not a
+// cancel: whatever is in flight still writes if it lands. Without it a
+// radio that hangs rather than rejecting (SNOW-742's whole subject) holds
+// the activation's ``waitUntil`` open for as long as the browser allows.
+const SHELL_REWARM_BUDGET_MS = 30000;
+
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
 // to network-only. The list deliberately excludes ``.json`` —
@@ -1168,6 +1218,11 @@ self.addEventListener('activate', (event) => {
         // SNOW-384: the browser fires 'activate' exactly once per SW
         // instance — no extra gating needed for idempotency here.
         _postTelemetry('pwa.sw.activated', { cache_version: CACHE_VERSION });
+        // SNOW-912: put the map page back. AFTER the claim, so the reload
+        // a claiming worker triggers is never waiting on a fetch, and
+        // inside the same waitUntil so the worker is not recycled
+        // mid-warm. Never throws — see _rewarmShell.
+        await _rewarmShell();
       } catch (err) {
         // SNOW-384: pwa.sw.activation_failed is a critical event
         // (telemetry.js CRITICAL_EVENTS) — fires sendBeacon immediately
@@ -2089,6 +2144,12 @@ async function _warmCacheResponseBytes(response) {
  * failure (``failed`` only counts URLs that were actually attempted and
  * did not succeed).
  *
+ * SNOW-912: a same-origin HTML response also pulls in the scripts and
+ * stylesheets its body references (``_warmShellSubresources``) — warming a
+ * page without them saves something that opens to a blank frame. Only the
+ * HTML branch does this, so the feed and tile callers are unchanged, and a
+ * subresource that fails is not a failure of the page.
+ *
  * @param {string[]} urls
  * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
  *   total: number, settled: number[], bytes: number) => void,
@@ -2239,6 +2300,10 @@ async function _warmCache(urls, options) {
           url.toString(),
           _stampPrincipal(response.clone(), _principalFromHtml(html)),
         );
+        // SNOW-912: and what that page needs in order to be more than a
+        // blank frame. Only the HTML branch does this, so the feed and
+        // tile callers are untouched — see _warmShellSubresources.
+        bytes += await _warmShellSubresources(html, cache);
       } else {
         await cache.put(url.toString(), response.clone());
       }
@@ -3144,6 +3209,128 @@ function _principalMatches(cached, current) {
 function _isHtmlResponse(response) {
   const type = (response.headers && response.headers.get('Content-Type')) || '';
   return type.split(';')[0].trim().toLowerCase() === 'text/html';
+}
+
+/**
+ * The same-origin scripts and stylesheets ``html`` asks for (SNOW-912).
+ *
+ * Deduplicated, absolute, and capped at ``SHELL_SUBRESOURCE_LIMIT``.
+ * Cross-origin entries are dropped rather than fetched: they are somebody
+ * else's cache policy, they answer opaquely, and the shell cache is
+ * same-origin by contract.
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
+function _shellSubresources(html) {
+  const urls = [];
+  const seen = new Set();
+  // A fresh RegExp rather than the shared literal: a /g regex carries
+  // ``lastIndex`` between calls, so reusing the constant would make the
+  // second page warmed in a worker's life start matching halfway down its
+  // own HTML.
+  const pattern = new RegExp(SHELL_SUBRESOURCE_PATTERN.source, 'gi');
+  let match = pattern.exec(html);
+  while (match && urls.length < SHELL_SUBRESOURCE_LIMIT) {
+    let url = null;
+    try {
+      url = new URL(match[1], self.location.origin);
+    } catch (_err) {
+      url = null;
+    }
+    if (url && url.origin === self.location.origin) {
+      const absolute = url.toString();
+      if (!seen.has(absolute)) {
+        seen.add(absolute);
+        urls.push(absolute);
+      }
+    }
+    match = pattern.exec(html);
+  }
+  return urls;
+}
+
+/**
+ * Fetch whatever ``html`` needs and this cache does not already hold
+ * (SNOW-912), returning the bytes written.
+ *
+ * Cache-checked first, and that is the load-bearing half rather than an
+ * optimisation: on any device that has simply opened the app, every one
+ * of these is already there from ``_staleWhileRevalidate``, and the run
+ * costs one ``match`` per entry and no network at all. The fetches happen
+ * on the one occasion they are the point — the generation after a deploy,
+ * where the cache is empty because ``activate`` emptied it.
+ *
+ * Every failure is swallowed. The page itself is the unit of work; a
+ * missing stylesheet is a page that looks wrong, which the audit reports
+ * as its own row, and neither is worth failing the warm over.
+ *
+ * @param {string} html
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmShellSubresources(html, cache) {
+  const urls = _shellSubresources(html);
+  if (urls.length === 0) return 0;
+  let bytes = 0;
+  let written = 0;
+  await _warmCacheRunPool(urls, WARM_CACHE_CONCURRENCY, async (url) => {
+    try {
+      if (await cache.match(url)) return;
+      const response = await _boundedFetch(url, SHELL_FETCH_BUDGET_MS);
+      if (!response || !response.ok || response.type !== 'basic') return;
+      await cache.put(url, response.clone());
+      written += 1;
+      bytes += await _warmCacheResponseBytes(response);
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+  });
+  _debugLog('shell.subresources', { asked: urls.length, written, bytes });
+  return bytes;
+}
+
+/**
+ * Put the map page back in the shell cache after an activation emptied it
+ * (SNOW-912).
+ *
+ * Runs inside ``activate``'s ``waitUntil``, after ``clients.claim()``, so
+ * a tab reloading onto the new worker is never held up by it. Bounded by
+ * the same offline mode every other network path in this file consults:
+ * a device the user has switched to offline, or one that has latched
+ * there, spends nothing here — the shell is re-warmed on the next
+ * activation, or by the audit panel's own Save control, whichever comes
+ * first.
+ *
+ * Never throws: an activation that fails leaves the device with no worker
+ * at all, and this is a convenience, not a precondition. And it stops
+ * waiting after ``SHELL_REWARM_BUDGET_MS`` — see that constant for why the
+ * bound is here rather than on ``_warmCache``'s own fetches.
+ *
+ * @returns {Promise<void>}
+ */
+async function _rewarmShell() {
+  try {
+    if (!(await _shouldUseNetwork())) {
+      _debugLog('shell.rewarm', { result: 'skipped-offline' });
+      return;
+    }
+    const result = await Promise.race([
+      _warmCache([SHELL_PAGE]),
+      new Promise((resolve) => setTimeout(() => resolve(null), SHELL_REWARM_BUDGET_MS)),
+    ]);
+    if (!result) {
+      _debugLog('shell.rewarm', { result: 'still-running' });
+      return;
+    }
+    _debugLog('shell.rewarm', {
+      ok: result.ok,
+      failed: result.failed,
+      bytes: result.bytes,
+    });
+  } catch (_err) {
+    // Best-effort, per the docstring.
+  }
 }
 
 /**

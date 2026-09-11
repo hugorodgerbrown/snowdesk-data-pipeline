@@ -73,6 +73,13 @@ const SW_EXPORTS = [
   '_basemapStaleWhileRevalidate',
   '_warmCache',
   '_isHtmlResponse',
+  // SNOW-912: the shell re-warm — what a page needs to open, and the
+  // activation-time call that puts it back after the old cache is reaped.
+  '_shellSubresources',
+  '_warmShellSubresources',
+  '_rewarmShell',
+  'SHELL_PAGE',
+  'SHELL_SUBRESOURCE_LIMIT',
   'BASEMAP_CACHE_TRIM_INTERVAL',
   'BASEMAP_CACHE_MAX_ENTRIES',
   '_INLINE_MUTATION_QUEUE_CORE',
@@ -3229,5 +3236,181 @@ describe('an unpopulated region tier is never written to the shell cache (SNOW-9
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(cachesStub.size('snowdesk-shell-UNSUBSTITUTED')).toBe(1);
+  });
+});
+
+describe('re-warming the shell after an activation (SNOW-912)', () => {
+  // `activate` deletes every shell cache that is not the version now live,
+  // and until this ticket nothing put the map page back. Between a deploy
+  // activating and the user's next connected visit to `/`, the app could
+  // not open offline at all — silently, on every deploy. These tests are
+  // about the two halves of the repair: what a page needs in order to be
+  // more than a blank frame, and the activation-time call that fetches it.
+  const SHELL_CACHE = 'snowdesk-shell-UNSUBSTITUTED';
+  const MAP_URL = `${ORIGIN}/`;
+  const SCRIPT_URL = `${ORIGIN}/static/js/map.abc123.js`;
+  const STYLE_URL = `${ORIGIN}/static/css/output.def456.css`;
+  const MAP_HTML = [
+    '<meta name="pwa-user-id" content="acct-9">',
+    `<link rel="stylesheet" href="${STYLE_URL}">`,
+    '<script src="/static/js/map.abc123.js"></script>',
+    '<script src="https://cdn.example/vendor.js"></script>',
+    '<link rel="icon" href="/static/img/icon.png">',
+  ].join('\n');
+
+  /** A same-origin response of a chosen type, which `_warmCache` requires. */
+  function typed(body, contentType) {
+    return basicResponse(body, { headers: { 'Content-Type': contentType } });
+  }
+
+  /** A fetch stub answering the map page with HTML and everything else with bytes. */
+  function shellFetch(seen) {
+    return async (request) => {
+      const url = typeof request === 'string' ? request : request.url;
+      if (seen) seen.push(url);
+      if (url === MAP_URL) return typed(MAP_HTML, 'text/html; charset=utf-8');
+      return typed('asset bytes', 'text/javascript');
+    };
+  }
+
+  it('names the same-origin scripts and styles the page asks for', () => {
+    const sw = loadSw();
+
+    expect(sw._shellSubresources(MAP_HTML)).toEqual([STYLE_URL, SCRIPT_URL]);
+  });
+
+  it('drops the cross-origin ones rather than fetching somebody else’s cache policy', () => {
+    const sw = loadSw();
+
+    expect(sw._shellSubresources(MAP_HTML)).not.toContain('https://cdn.example/vendor.js');
+  });
+
+  it('reads the same page the same way twice', () => {
+    // The shared /g literal carries `lastIndex` between calls, so a reused
+    // regex would start the second page halfway down its own HTML — and
+    // the second page is every activation after the first in a worker's life.
+    const sw = loadSw();
+
+    expect(sw._shellSubresources(MAP_HTML)).toEqual(sw._shellSubresources(MAP_HTML));
+  });
+
+  it('caps what one page can send the worker after', () => {
+    const sw = loadSw();
+    const many = Array.from(
+      { length: sw.SHELL_SUBRESOURCE_LIMIT + 40 },
+      (_unused, i) => `<script src="/static/js/mod-${i}.js"></script>`,
+    ).join('\n');
+
+    expect(sw._shellSubresources(many)).toHaveLength(sw.SHELL_SUBRESOURCE_LIMIT);
+  });
+
+  it('warms the page AND what it needs to open', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub, fetch: shellFetch() });
+
+    await sw._warmCache([MAP_URL]);
+
+    const cache = await stub.open(SHELL_CACHE);
+    // The page alone is the failure this ticket is about in miniature:
+    // HTML with no JavaScript paints a blank frame, which to the person
+    // holding the phone is a page that did not open.
+    expect(await cache.match(MAP_URL)).toBeTruthy();
+    expect(await cache.match(SCRIPT_URL)).toBeTruthy();
+    expect(await cache.match(STYLE_URL)).toBeTruthy();
+  });
+
+  it('leaves the warmed page’s principal stamp alone', async () => {
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub, fetch: shellFetch() });
+
+    await sw._warmCache([MAP_URL]);
+
+    const cache = await stub.open(SHELL_CACHE);
+    const hit = await cache.match(MAP_URL);
+    expect(hit.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-9');
+  });
+
+  it('does not re-fetch what the cache already holds', async () => {
+    const stub = makeCaches();
+    stub.seed(SHELL_CACHE, SCRIPT_URL, basicResponse('already here'));
+    stub.seed(SHELL_CACHE, STYLE_URL, basicResponse('already here'));
+    const seen = [];
+    const sw = loadSw({ caches: stub, fetch: shellFetch(seen) });
+
+    await sw._warmCache([MAP_URL]);
+
+    // On any device that has simply opened the app these are all present,
+    // and the run costs one `match` each and no network at all.
+    expect(seen).toEqual([MAP_URL]);
+  });
+
+  it('leaves a feed warm untouched — only HTML pulls subresources', async () => {
+    const stub = makeCaches();
+    const seen = [];
+    const sw = loadSw({
+      caches: stub,
+      fetch: async (request) => {
+        const url = typeof request === 'string' ? request : request.url;
+        seen.push(url);
+        return typed('{"ok":true}', 'application/json');
+      },
+    });
+
+    await sw._warmCache([`${ORIGIN}/api/ratings/`]);
+
+    expect(seen).toEqual([`${ORIGIN}/api/ratings/`]);
+  });
+
+  it('spends nothing on a device the user has switched offline', async () => {
+    await resetDb();
+    const stub = makeCaches();
+    const fetchSpy = vi.fn(async () => typed(MAP_HTML, 'text/html'));
+    const sw = loadSw({ caches: stub, fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    await sw._rewarmShell();
+
+    // The user said not to use this connection. The shell is re-warmed on
+    // the next activation, or by the audit panel's own Save control.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting on a radio that hangs rather than rejecting', async () => {
+    // SNOW-742's subject, reached from a lifecycle handler: `_warmCache`'s
+    // own fetches are deliberately unbounded (a thousand-tile download
+    // must not fail at the read paths' budget), so a fetch that never
+    // settles would hold `activate`'s waitUntil open for as long as the
+    // browser allows.
+    await resetDb();
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub, fetch: () => new Promise(() => {}) });
+    // Hydrated BEFORE the clock is faked: the hydration is memoised, and
+    // fake-indexeddb schedules its own work on real timers, so a database
+    // read taken under a fake clock never settles.
+    await sw._hydrateNetworkMode();
+    vi.useFakeTimers();
+    try {
+      const rewarming = sw._rewarmShell();
+      await vi.advanceTimersByTimeAsync(60000);
+
+      await expect(rewarming).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('puts the map page back when there is a connection to do it on', async () => {
+    await resetDb();
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub, fetch: shellFetch() });
+    await sw._hydrateNetworkMode();
+
+    await sw._rewarmShell();
+
+    const cache = await stub.open(SHELL_CACHE);
+    expect(new URL(sw.SHELL_PAGE, ORIGIN).toString()).toBe(MAP_URL);
+    expect(await cache.match(MAP_URL)).toBeTruthy();
+    expect(await cache.match(SCRIPT_URL)).toBeTruthy();
   });
 });

@@ -75,6 +75,12 @@
  * page into the shell cache — goes through the worker's existing
  * ``warm-cache`` message rather than writing a cache entry from here.
  * A diagnostic that changes what it is diagnosing is worse than none.
+ *
+ * SNOW-912: that message now warms the page's own same-origin scripts and
+ * stylesheets alongside its HTML, because a page whose JavaScript is
+ * missing does not open — so saving the HTML alone would have moved this
+ * report's own "The app opens" row to Yes while leaving the user with
+ * exactly the failure the row exists to catch.
  */
 
 (function () {
@@ -973,17 +979,35 @@
         // Offered only when it could actually work, and only when it is
         // the thing that would help: a controlled page, a connection, and
         // a map page that is not already saved for this account.
+        //
+        // The id and the status are the core's, not this module's
+        // vocabulary. Both were once invented here — a row called
+        // `map-page` and a status of `ok`, neither of which the core has
+        // ever produced — so the lookup found nothing, the gate read
+        // `hidden = true` on every device, and the one control that fixes
+        // the verdict it is sitting under could not be reached. The real
+        // names are `app-opens` (offline_audit_core.js's ROWS) and the
+        // AuditStatus union, whose pass value is `yes` and whose failing
+        // value on a critical row is `blocked`.
+        //
+        // `reason` narrows it once more. Warming fetches the map page's
+        // HTML, so it answers a missing entry ('absent') and one stamped
+        // for another account ('principal'), which re-fetching restamps.
+        // It cannot answer 'scripts' — the page is already saved and it
+        // is the JavaScript that is missing — and offering a button there
+        // would run, report success, and leave the row exactly as it was.
         var pageCheck = null;
         lastReport.sections.forEach(function (section) {
           section.checks.forEach(function (check) {
-            if (check.id === 'map-page') pageCheck = check;
+            if (check.id === 'app-opens') pageCheck = check;
           });
         });
         saveButton.hidden = !(
           readings.online &&
           readings.serviceWorker.controlled &&
           pageCheck &&
-          pageCheck.status !== 'ok'
+          pageCheck.status !== 'yes' &&
+          pageCheck.reason !== 'scripts'
         );
       }
     };

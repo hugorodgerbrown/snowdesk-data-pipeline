@@ -21,7 +21,7 @@
  * test_map_download_eviction.js makes.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/offline_audit_core.js';
 import '../../static/js/offline_audit.js';
@@ -415,5 +415,132 @@ describe('the build', () => {
     const row = target.querySelector('[data-audit-row="area:region-CH-4115"]');
     expect(row.getAttribute('data-audit-status')).toBe('yes');
     expect(row.querySelector('[data-audit-value]').textContent).toBe('Yes');
+  });
+});
+
+describe('the Save control (SNOW-912)', () => {
+  // The panel's one action, and for the whole of SNOW-907 it could not be
+  // reached: the gate looked up a check id (`map-page`) and a status
+  // (`ok`) that the core has never produced, so `pageCheck` was null on
+  // every device and the button stayed hidden — including on the device
+  // whose verdict was telling its owner, in red, to go and open the map.
+  const SHELL = 'snowdesk-shell-abc';
+  const SCRIPT = { url: 'https://snowdesk.info/static/js/map.abc.js', headers: {} };
+  const STYLE = { url: 'https://snowdesk.info/static/css/output.abc.css', headers: {} };
+
+  /**
+   * A controlling worker that answers the version probe at once.
+   *
+   * Without the reply `liveShellCacheName` waits out its 1.5s timeout
+   * before falling back, which is a real 1.5s in a test.
+   */
+  function installController(version) {
+    const listeners = new Set();
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: {
+          postMessage: (message) => {
+            if (message !== 'version') return;
+            listeners.forEach((fn) => fn({ data: { type: 'version', version } }));
+          },
+        },
+        addEventListener: (type, fn) => {
+          if (type === 'message') listeners.add(fn);
+        },
+        removeEventListener: (_type, fn) => listeners.delete(fn),
+        getRegistration: async () => ({ waiting: null }),
+      },
+    });
+  }
+
+  beforeEach(() => {
+    // The reveal is a fixed 70ms per row over a report that is complete
+    // before it starts, so the tests take the reduced-motion path and
+    // read the finished thing.
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: true }),
+    });
+  });
+
+  afterEach(() => {
+    delete navigator.serviceWorker;
+    document.body.innerHTML = '';
+  });
+
+  /** The panel's markup contract, bound and run. */
+  async function runPanel() {
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <button data-offline-audit-save hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    // The reveal is a fixed cadence per row; let it finish before asking
+    // what the panel decided.
+    await vi.waitUntil(
+      () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
+      { timeout: 5000 },
+    );
+    return document.querySelector('[data-offline-audit-save]');
+  }
+
+  it('is offered when the map page is missing and there is a connection to fetch it on', async () => {
+    installController(SHELL);
+    installCachesStub({ [SHELL]: [SCRIPT, STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
+  });
+
+  it('is offered when the saved copy belongs to another account', async () => {
+    // Re-fetching restamps it for whoever is signed in now, so the button
+    // is the remedy here too.
+    installController(SHELL);
+    installCachesStub({
+      [SHELL]: [
+        { url: 'https://snowdesk.info/', headers: { 'X-SW-Principal': 'acct-someone-else' } },
+        SCRIPT,
+        STYLE,
+      ],
+    });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
+  });
+
+  it('stays hidden once the map page is saved for this account', async () => {
+    installController(SHELL);
+    installCachesStub({
+      [SHELL]: [
+        { url: 'https://snowdesk.info/', headers: { 'X-SW-Principal': 'anonymous' } },
+        SCRIPT,
+        STYLE,
+      ],
+    });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(true);
+  });
+
+  it('stays hidden with no worker to warm through', async () => {
+    // Deleted rather than set to undefined: a browser without service
+    // workers has no such property at all, and `'serviceWorker' in
+    // navigator` is what the collector asks.
+    delete navigator.serviceWorker;
+    installCachesStub({ [SHELL]: [SCRIPT, STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(true);
   });
 });

@@ -407,6 +407,14 @@ before the page runs.
 
 ## Cache strategy
 
+Note first what `activate` does before any of this: it deletes every shell
+cache that is not the version now live, and then **re-warms the map page**
+(`_rewarmShell`, SNOW-912) along with the same-origin scripts and
+stylesheets that page references. Without the re-warm, every deploy left
+the device unable to open the app offline until its owner next visited `/`
+while connected — see
+[`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](decisions/the-shell-is-rewarmed-after-an-activation.md).
+
 The SW classifies every fetch into one of four buckets:
 
 - **`static`** — same-origin requests for assets in
