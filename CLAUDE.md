@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
+apps/            Parent package for the fourteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -493,7 +493,7 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, i18n-lint, docs-lint, fidelity-lint, test, js)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, fidelity-lint, migrations-lint, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks
@@ -684,7 +684,7 @@ Read these when working in the relevant area:
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
 | Region centroid Locations — not re-linked on deploy; an operator runs `link_region_centroid_locations --commit` and `link_resort_locations --commit` ([`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md)) | [`docs/runbooks/region-centroid-backfill.md`](docs/runbooks/region-centroid-backfill.md) |
-| Refresh staging's bulletins from production (bin/sync-staging-data, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
+| Refresh staging's bulletins from production (bin/sync-staging-data, run by hand since the cron was disabled 2026-08-27, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |

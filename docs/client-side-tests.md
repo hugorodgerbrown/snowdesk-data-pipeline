@@ -2,7 +2,7 @@
 name: client-side-tests
 description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop, tox -e e2e / js / js-types, JSDoc types
 status: current
-last-reviewed: 2026-09-10
+last-reviewed: 2026-09-11
 ---
 
 # Client-side test harness
@@ -366,7 +366,8 @@ misses the thing you actually meant to test:
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
   adrift, or abandoned" invariant. Use this when the test IS about the SW
   lifecycle itself: install, update, offline, kill switch, or reset — see
-  `tests/e2e/test_pwa_lifecycle_*.py` and `test_pwa_push_journey.py`.
+  `tests/e2e/test_pwa_lifecycle_offline.py`, the one module of that
+  family SNOW-649 kept.
 
 Two Playwright/Chromium quirks surfaced while building the real-SW
 suite, worth knowing before adding another one:
@@ -382,9 +383,9 @@ suite, worth knowing before adding another one:
    call, issued while an earlier SW-driven promise is still settling,
    can read back empty** even though the underlying IndexedDB write was
    there moments before. Fold every condition a test needs into ONE
-   `wait_for_function()` predicate rather than chaining separate waits —
-   see `test_pwa_push_journey.py`'s module docstring for the specific
-   case that surfaced this.
+   `wait_for_function()` predicate rather than chaining separate waits.
+   The module that surfaced this, `test_pwa_push_journey.py`, went with
+   the rest of the real-SW suite in SNOW-649; the rule outlived it.
 
 The spike that shaped this design (SNOW-389) recorded its findings in
 `tests/e2e/_spike_results.py`, which was removed with the suite it described

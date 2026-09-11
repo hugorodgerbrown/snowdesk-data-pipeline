@@ -28,7 +28,14 @@ Swiss region choropleth and back the per-region tooltip:
   itself is gated on authentication.
 * ``/api/community-reports.geojson``       — anonymised, clustered
   ``FieldObservation`` pins from the last 48 hours (SNOW-419).
-* ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
+* ``/api/weather.geojson``                 — the weather overlay's pins.
+* ``/api/weather/<short_id>/detail/``      — one location's weather detail
+  (``/api/weather/<int:location_id>/detail/`` survives as a legacy alias).
+
+Bulletin payloads and the share endpoint live here too
+(``/api/bulletins/<bulletin_id>/``, ``/api/bulletins/<bulletin_id>.caaml.json``,
+``/api/bulletins/share/``, ``/api/bulletin-groupings.geojson``). The full
+routing table is ``apps/public/api_urls.py``; this list is a map of it.
 
 Superuser-only endpoints powering the in-map resort editor (SNOW-74,
 ``?edit=resorts`` on /map/). Every one of these views checks
@@ -53,7 +60,7 @@ resort so Mont Fort stays one row that four resorts share:
   re-classify an existing location.
 * ``POST /api/edit/locations/<short_id>/link/`` — attach it to
   another resort.
-* ``POST /api/edit/locations/links/<int:link_id>/unlink/`` — drop one
+* ``POST /api/edit/locations/links/<uuid:link_uuid>/unlink/`` — drop one
   link, keeping the location.
 
 Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its

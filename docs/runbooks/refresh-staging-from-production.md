@@ -1,8 +1,8 @@
 ---
 name: refresh-staging-from-production
-description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins + weather to staging
+description: bin/sync-staging-data — production bulletins + weather to staging; run by hand, the snowdesk-staging-data-sync cron is disabled
 status: current
-last-reviewed: 2026-08-27
+last-reviewed: 2026-09-11
 ---
 
 # Runbook — refresh staging's data from production
@@ -10,8 +10,10 @@ last-reviewed: 2026-08-27
 Staging runs one web dyno with no scheduler and no task worker
 ([`render.yaml`](../../render.yaml)), so its database never ingests a
 bulletin of its own. [`bin/sync-staging-data`](../../bin/sync-staging-data)
-copies the provider-derived tables out of production instead, and the
-`snowdesk-staging-data-sync` Render cron job runs it nightly at 07:20 UTC.
+copies the provider-derived tables out of production instead. It is run **by
+hand**: the `snowdesk-staging-data-sync` Render cron job that ran it nightly
+at 07:20 UTC was disabled on 2026-08-27 and its `render.yaml` block is
+commented out.
 
 It is a `pg_dump`/`psql` replace, not an incremental merge: every run clears
 the target tables and reloads them, preserving production's primary keys.
@@ -72,7 +74,7 @@ read and then discarded.
 `centroid_location_id` is released before the clear and **copied back from
 production** afterwards. Copying beats recomputing on both counts:
 `link_region_centroid_locations --commit` would make one live Open-Meteo
-elevation call per region on every nightly run, and copying leaves staging
+elevation call per region on every run, and copying leaves staging
 pointing at the same centroids production does.
 
 ### `weather.Weather` rides on the same filter
@@ -254,13 +256,16 @@ Region centroids are released before the clear
 (`regions_microregion.centroid_location_id`) and rebuilt at the end by
 `link_region_centroid_locations --commit`, which the script runs for you.
 
-## The nightly job
+## The nightly job — currently disabled
 
-`snowdesk-staging-data-sync` (see [`render.yaml`](../../render.yaml)) runs
+`snowdesk-staging-data-sync` (see [`render.yaml`](../../render.yaml)) ran
 at 07:20 UTC — after the hourly
 `fetch_bulletins` run that picks up the morning issue
-([`schedule.py`](../../schedule.py)) — so staging opens the working day
-already current.
+([`schedule.py`](../../schedule.py)) — so staging opened the working day
+already current. It was **disabled on 2026-08-27**; the service definition is
+commented out rather than deleted, and re-enabling it means uncommenting that
+block *and* confirming Render has not kept a previously-created cron job
+firing against `main`. Until then the command below is a manual step.
 
 ```
 ./bin/sync-staging-data --commit

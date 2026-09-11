@@ -2,7 +2,7 @@
 name: feature-flags
 description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-09-11
 ---
 
 # Feature flags (django-waffle)
@@ -51,7 +51,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
-| `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
+| `sync_log` | `superusers=True` | The `/account/settings/` "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `debug_log` | `groups=["GRP_DEBUG"]` | The on-device debug trace on every public page — the panel and the `static/js/debug_log.js` recorder behind it ([`debug-log.md`](debug-log.md)). | SNOW-812. |
 | `what3words` | `superusers=True` | A trip's meeting point rendered as `///filled.count.soap` on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), and its matching `/help/` section. | SNOW-840. |
 
@@ -377,7 +377,7 @@ vacuously.
 which lets you force a flag's value for the current request via
 querystring:
 
-* `https://localhost:8000/account/manage/?dwf_sync_log=1` — flag
+* `https://localhost:8000/account/settings/?dwf_sync_log=1` — flag
   forced **on** for this request, regardless of the DB row.
 * `…&dwf_sync_log=0` — forced **off**.
 

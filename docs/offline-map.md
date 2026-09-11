@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-09-11
 ---
 
 # PWA shell
@@ -626,9 +626,11 @@ mechanism changed with the move.
 
 `@never_cache` was the first shape of this fix and was backed out. The
 offline favourites roster is built on that page being in the shell cache,
-so `no-store` took a shipped feature offline with it. The guard is now
-`tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`, which
-fails the moment that page answers `no-store`.
+so `no-store` took a shipped feature offline with it. The page that must
+stay cacheable is now the map at `/` (SNOW-803 moved the roster there), and
+**no test currently pins that** — the guard named here,
+`tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`, went
+with the account pages it covered.
 Guard 2 already closes the leak on its own: a page stamped for user A is
 refused to anyone whose current principal is not A, which is the whole
 of what C1 asked for. Cache-**partitioned**, not cache-**avoided** — the
@@ -638,12 +640,13 @@ under SNOW-493.
 Do not add `@never_cache` back. It reads as belt-and-braces and is not:
 it buys nothing guard 2 doesn't already provide, and it breaks two
 shipped e2e cases. That round trip has already happened once on this
-branch. `manage_view`'s docstring and
-`tests/accounts/test_views.py::test_response_is_not_no_store` pin the
-choice at the source.
+branch. `apps.accounts.views._ACCOUNT_PAGE_CACHE_NOTE` pins the choice at
+the source; the test that used to back it,
+`tests/accounts/test_views.py::test_response_is_not_no_store`, went with the
+account pages it covered.
 
 Partitioned is not the same as dependable, and the difference decides
-where offline-facing controls live. The manage page's entry exists only
+where offline-facing controls live. A cached page's entry exists only
 after that account has loaded the page online in this browser, and it is
 refused to every other principal — so a user who is stuck *and* offline
 cannot be assumed to reach it. §12.7's "Reset local data" hatch therefore
@@ -2491,7 +2494,7 @@ and the map is the one page guaranteed to be in the shell cache.
 The decisive argument, though, is that the budget is **device-local**.
 Cache Storage is per-browser, so a signed-in user with a phone and a
 laptop has two independent sets of downloads and two independent budgets.
-Putting that on `/account/manage/` would read as an account setting and
+Putting that on `/account/settings/` would read as an account setting and
 imply the list follows the user between devices, which would simply be
 untrue. Every string in the sheet is written to say otherwise;
 `tests/js/test_map_downloads_manager.js` asserts the sheet's behaviour and

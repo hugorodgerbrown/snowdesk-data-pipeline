@@ -30,13 +30,12 @@ plus one JSON endpoint the owner's Share button calls:
 - ``route_share_create`` (POST) — SNOW-764: mints a share link for one of
   the requesting user's own routes and returns its absolute URL.
 
-Alongside them sits one full page, which shares none of the fragment rules
-because it is not a fragment:
-
-- ``my_routes`` (GET) — SNOW-713: ``/account/routes/``, the account area's
-  list of the signed-in user's own routes. No ``@require_htmx``; anonymous
-  redirects to sign-in rather than answering 403. Authentication is the
-  only gate since SNOW-724 retired the ``routes`` rollout flag.
+There is no full page here. ``my_routes`` (SNOW-713) rendered
+``/account/routes/`` as the account area's own list until SNOW-803 found it
+to be a second rendering of the map's routes sheet; the view is gone and the
+URL is a permanent redirect to ``/?panel=routes``
+(``docs/decisions/two-documents-and-a-map.md``). Authentication remains the
+only gate since SNOW-724 retired the ``routes`` rollout flag.
 
 All the fragment endpoints are authentication-gated (403 for anonymous) and
 owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns

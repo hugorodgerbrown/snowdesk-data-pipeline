@@ -2,9 +2,10 @@
 apps/public/_component_fixtures.py — Synthetic context for the component library.
 
 Hand-curated variant fixtures consumed by ``kind="components"`` panels in
-the design-system page at ``/_components/``. Each component lists a
-``VARIANTS`` tuple of context dicts ready to feed straight to its partial
-via ``{% include partial with **variant.context %}``.
+the design-system page at ``/_components/``. Each component gets a
+``<COMPONENT>_VARIANTS`` tuple of context dicts (``BUTTON_VARIANTS``,
+``CHIP_VARIANTS``, ``DAY_WINDOWS_VARIANTS``, …) ready to feed straight to its
+partial via ``{% include partial with **variant.context %}``.
 
 Lives outside ``design_tokens.py`` so the registry stays free of
 data-construction logic — token panels iterate the registry, component
