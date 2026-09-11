@@ -44,8 +44,21 @@ cannot import Django, seeds a throwaway `.env` with a random `SECRET_KEY`,
 verifies the result with `manage.py check`, then seeds `db.sqlite3` and builds
 `static/css/output.css`.
 
+The seed is `bin/init-worktree`'s recipe **copied**, step for step — migrate
+→ `sync_waffle_flags` → region fixtures → `import_resorts` →
+`seed_test_data` — because that script refuses to run in the main worktree
+and a cloud session clones exactly that. Copied means the two can drift, and
+they had: this one ran `loaddata eaws_CH resorts`, and `resorts` is not a
+fixture (the curated sheet arrives through `import_resorts --commit`). The
+chain stopped there, the half-built database was removed, and every remote
+session started with no data — announced only as one WARNING in a hook log
+that nobody reads on a session that otherwise looks fine. **Change one
+recipe, change the other.**
+
 Idempotent: every step checks whether it is already done, so a warm container
-costs about a second.
+costs about a second. The database check asks whether region rows exist
+rather than whether the file does, because the `manage.py check` above has
+already created an empty SQLite file by connecting to it.
 
 ### `bin/init-worktree`
 
