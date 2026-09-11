@@ -21,7 +21,7 @@
  * test_map_download_eviction.js makes.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/offline_audit_core.js';
 import '../../static/js/offline_audit.js';
@@ -52,9 +52,18 @@ function installCachesStub(buckets) {
           const url = typeof request === 'string' ? request : request.url;
           const found = entries.filter((entry) => entry.url === url)[0];
           if (!found) return undefined;
-          return {
+          // SNOW-912: a body as well as headers. The collector reads the
+          // map page's HTML to learn which modules that page boots from,
+          // and a stub with no body would make every page unreadable.
+          const response = {
             headers: { get: (name2) => (found.headers || {})[name2] || null },
+            text: async () => {
+              if (found.onText) found.onText();
+              return found.body || '';
+            },
+            clone: () => response,
           };
+          return response;
         },
       };
     }),
@@ -89,6 +98,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  // SNOW-913: the basemap choice is per-device state that would otherwise
+  // leak from one test into the next.
+  window.localStorage.removeItem('snowdesk.map.basemap');
   // No controller in jsdom, so `liveShellCacheName` resolves null at once
   // and the collector falls back to reading every `snowdesk-shell-*`
   // bucket — the documented degraded path, and the one every test here
@@ -97,6 +109,11 @@ beforeEach(async () => {
   const db = window.pwaDb;
   for (const key of ['basemap.regions', 'basemap.customAreas', 'basemap.baseLayers']) {
     await db.delete('meta:app', key);
+  }
+  // SNOW-914: the overlay rows are read for their contents now, so a row
+  // left behind by one test is a reading the next one did not ask for.
+  for (const key of ['favourites', 'community_reports', 'weather', 'routes']) {
+    await db.delete('data:map_overlays', key);
   }
 });
 
@@ -121,6 +138,135 @@ describe('the shell-cache reading', () => {
     // would turn a listing into one round trip per entry.
     const asset = readings.shellEntries.filter((entry) => !entry.isPage)[0];
     expect(asset.principal).toBeNull();
+  });
+
+  it('reads the map page’s own modules out of its cached HTML', async () => {
+    // What makes "The app opens" an answer about the page rather than
+    // about the cache in general. Seeded at the document's own origin,
+    // which is what a shell cache holds — the page's relative hrefs
+    // resolve against it, and in a browser the two always coincide.
+    const origin = window.location.origin;
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: `${origin}/`,
+          headers: { 'X-SW-Principal': 'anonymous' },
+          body: '<link rel="stylesheet" href="/static/css/o.css"><script src="/static/js/map.js"></script>',
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.mapDependencies).toEqual([
+      `${origin}/static/css/o.css`,
+      `${origin}/static/js/map.js`,
+    ]);
+  });
+
+  it('reads no body but the map page’s', async () => {
+    // One extra body read, on one entry. A device holding hundreds of
+    // cached pages must not pay a read for each.
+    const read = [];
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        { url: 'https://snowdesk.info/', headers: {}, body: '', onText: () => read.push('/') },
+        {
+          url: 'https://snowdesk.info/ch-4115/verbier/2026-02-16/',
+          headers: {},
+          body: '<script src="/static/js/bulletin.js"></script>',
+          onText: () => read.push('bulletin'),
+        },
+      ],
+    });
+
+    await audit.collect();
+
+    expect(read).toEqual(['/']);
+  });
+
+  it('keeps the stamp when the body cannot be read', async () => {
+    // Two reads off one response, and a failure of the second says
+    // nothing about the first. Folded together, an unreadable body would
+    // report a perfectly good page as unstamped — which the worker treats
+    // as "never serve this".
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: 'https://snowdesk.info/',
+          headers: { 'X-SW-Principal': 'acct-1' },
+          onText: () => {
+            throw new Error('unreadable');
+          },
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.shellEntries[0].principal).toBe('acct-1');
+    expect(readings.mapDependencies).toBeNull();
+  });
+
+  it('reads the basemap the reader is looking at', async () => {
+    // SNOW-913: the stored choice wins. A reader on Swisstopo must not be
+    // answered about OpenFreeMap.
+    window.localStorage.setItem('snowdesk.map.basemap', 'swisstopo_winter');
+    installCachesStub({});
+
+    const readings = await audit.collect();
+
+    expect(readings.selectedBasemap).toBe('swisstopo_winter');
+  });
+
+  it('falls back to the deployed default when nobody has chosen', async () => {
+    // localStorage is written only when someone opens the picker and picks,
+    // so an untouched device is looking at settings.BASEMAP with nothing
+    // stored to say so. The panel carries it.
+    window.localStorage.removeItem('snowdesk.map.basemap');
+    const root = document.createElement('div');
+    root.setAttribute('data-offline-audit', '');
+    root.setAttribute('data-default-basemap-key', 'ign_plan');
+    installCachesStub({});
+
+    const readings = await audit.collect(root);
+
+    expect(readings.selectedBasemap).toBe('ign_plan');
+  });
+
+  it('ignores a stored basemap the cached page no longer offers', async () => {
+    // SNOW-913, from the review: map.js validates the stored key against
+    // the catalogue it renders and falls back to the deployed default, so
+    // a retired style left behind in localStorage is not what the reader
+    // is looking at.
+    window.localStorage.setItem('snowdesk.map.basemap', 'retired_style');
+    const origin = window.location.origin;
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: `${origin}/`,
+          headers: { 'X-SW-Principal': 'anonymous' },
+          body:
+            '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>' +
+            '<button data-basemap-key="openfreemap_liberty"></button>' +
+            '<button data-basemap-key="swisstopo_winter"></button>',
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.selectedBasemap).toBe('openfreemap_liberty');
+  });
+
+  it('names no basemap where neither is knowable', async () => {
+    // static/offline.html, on a device that has never opened the picker.
+    window.localStorage.removeItem('snowdesk.map.basemap');
+    installCachesStub({});
+
+    const readings = await audit.collect(document.createElement('div'));
+
+    expect(readings.selectedBasemap).toBeNull();
   });
 
   it('reports an unstamped page as unstamped rather than guessing', async () => {
@@ -201,9 +347,34 @@ describe('the area records', () => {
     ]);
   });
 
-  it('reads WHICH overlays are cached, not how many rows there are', async () => {
-    // The store holds one row per resource, so a count answers nothing a
-    // user asked; the key is what makes "will the weather show" a Yes.
+  it('reads what each overlay holds, not just that a row exists', async () => {
+    // SNOW-914: the key used to be the answer, and it is not one. A row
+    // with an empty FeatureCollection draws nothing, and a row stamped for
+    // another account is refused by the reader — both read as Yes.
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await window.pwaDb.put('data:map_overlays', {
+      key: 'weather',
+      geojson: { type: 'FeatureCollection', features: [{}, {}] },
+      cached_at: '2026-09-11T08:00:00Z',
+    });
+    await window.pwaDb.put('data:map_overlays', {
+      key: 'routes',
+      geojson: { type: 'FeatureCollection', features: [] },
+      principal: 'acct-1',
+      cached_at: '2026-09-11T08:00:00Z',
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.overlays.weather.features).toBe(2);
+    expect(readings.overlays.routes.features).toBe(0);
+    expect(readings.overlays.routes.principal).toBe('acct-1');
+  });
+
+  it('reads a payload with no feature array as unreadable, not as empty', async () => {
+    // Null rather than 0: "there is nothing in it" and "this is not a
+    // FeatureCollection" are different answers, and only the first is
+    // something to tell the user about their own content.
     installCachesStub({ 'snowdesk-shell-abc': [] });
     await window.pwaDb.put('data:map_overlays', {
       key: 'weather',
@@ -213,7 +384,7 @@ describe('the area records', () => {
 
     const readings = await audit.collect();
 
-    expect(readings.overlayKeys).toContain('weather');
+    expect(readings.overlays.weather.features).toBeNull();
   });
 
   it('carries a drop zone’s type through, so the report can group by it', async () => {
@@ -294,6 +465,9 @@ describe('rendering', () => {
           { url: 'https://x/a.js', isPage: false },
           { url: 'https://x/a.css', isPage: false },
         ],
+        // SNOW-912: the page's own modules, both held here — without them
+        // the app-opens row blocks and the tally takes its blocked form.
+        mapDependencies: ['https://x/a.js', 'https://x/a.css'],
       },
       t,
     );
@@ -415,5 +589,152 @@ describe('the build', () => {
     const row = target.querySelector('[data-audit-row="area:region-CH-4115"]');
     expect(row.getAttribute('data-audit-status')).toBe('yes');
     expect(row.querySelector('[data-audit-value]').textContent).toBe('Yes');
+  });
+});
+
+describe('the Save control (SNOW-912)', () => {
+  // The panel's one action, and for the whole of SNOW-907 it could not be
+  // reached: the gate looked up a check id (`map-page`) and a status
+  // (`ok`) that the core has never produced, so `pageCheck` was null on
+  // every device and the button stayed hidden — including on the device
+  // whose verdict was telling its owner, in red, to go and open the map.
+  const SHELL = 'snowdesk-shell-abc';
+  // Seeded at the document's own origin, which is what a shell cache holds:
+  // the page's relative hrefs resolve against it, and a cross-origin
+  // fixture made "the app opens" read `scripts` — so this block once
+  // asserted the button's state in a case it was not aiming at.
+  const ORIGIN = window.location.origin;
+  const SCRIPT = { url: `${ORIGIN}/static/js/map.abc.js`, headers: {} };
+  const STYLE = { url: `${ORIGIN}/static/css/output.abc.css`, headers: {} };
+  // A map page that boots from exactly the two entries above, so a device
+  // holding both is a device whose page opens.
+  const MAP_HTML =
+    '<link rel="stylesheet" href="/static/css/output.abc.css">' +
+    '<script src="/static/js/map.abc.js"></script>';
+  const mapPage = (principal) => ({
+    url: `${ORIGIN}/`,
+    headers: { 'X-SW-Principal': principal },
+    body: MAP_HTML,
+  });
+
+  /**
+   * A controlling worker that answers the version probe at once.
+   *
+   * Without the reply `liveShellCacheName` waits out its 1.5s timeout
+   * before falling back, which is a real 1.5s in a test.
+   */
+  function installController(version) {
+    const listeners = new Set();
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: {
+          postMessage: (message) => {
+            if (message !== 'version') return;
+            listeners.forEach((fn) => fn({ data: { type: 'version', version } }));
+          },
+        },
+        addEventListener: (type, fn) => {
+          if (type === 'message') listeners.add(fn);
+        },
+        removeEventListener: (_type, fn) => listeners.delete(fn),
+        getRegistration: async () => ({ waiting: null }),
+      },
+    });
+  }
+
+  beforeEach(() => {
+    // The reveal is a fixed 70ms per row over a report that is complete
+    // before it starts, so the tests take the reduced-motion path and
+    // read the finished thing.
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: true }),
+    });
+  });
+
+  afterEach(() => {
+    delete navigator.serviceWorker;
+    document.body.innerHTML = '';
+  });
+
+  /** The panel's markup contract, bound and run. */
+  async function runPanel() {
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <button data-offline-audit-save hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    // The reveal is a fixed cadence per row; let it finish before asking
+    // what the panel decided.
+    await vi.waitUntil(
+      () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
+      { timeout: 5000 },
+    );
+    return document.querySelector('[data-offline-audit-save]');
+  }
+
+  it('is offered when the map page is missing and there is a connection to fetch it on', async () => {
+    installController(SHELL);
+    installCachesStub({ [SHELL]: [SCRIPT, STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
+  });
+
+  it('is offered when the saved copy belongs to another account', async () => {
+    // Re-fetching restamps it for whoever is signed in now, so the button
+    // is the remedy here too.
+    installController(SHELL);
+    installCachesStub({
+      [SHELL]: [mapPage('acct-someone-else'), SCRIPT, STYLE],
+    });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
+  });
+
+  it('stays hidden once the map page is saved for this account', async () => {
+    installController(SHELL);
+    installCachesStub({
+      [SHELL]: [mapPage('anonymous'), SCRIPT, STYLE],
+    });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(true);
+  });
+
+  it('is offered when the page is saved but its scripts are not', async () => {
+    // The state the repair was built for. `_warmCache(['/'])` re-fetches
+    // the page and `_warmShellSubresources` then fetches the modules it
+    // names and the cache is missing — so hiding the control here left the
+    // one failure warming can definitely fix with no way to reach it.
+    installController(SHELL);
+    installCachesStub({ [SHELL]: [mapPage('anonymous'), STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
+  });
+
+  it('stays hidden with no worker to warm through', async () => {
+    // Deleted rather than set to undefined: a browser without service
+    // workers has no such property at all, and `'serviceWorker' in
+    // navigator` is what the collector asks.
+    delete navigator.serviceWorker;
+    installCachesStub({ [SHELL]: [SCRIPT, STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(true);
   });
 });

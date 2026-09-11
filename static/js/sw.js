@@ -903,6 +903,61 @@ const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
 // untouched. They are warmed individually below, failures and all.
 const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_audit.js'];
 
+// SNOW-912: the page the app IS, re-warmed by ``activate``.
+//
+// ``activate`` deletes every shell cache that is not the version now
+// live, which is the whole point of it — stale HTML pointing at hashed
+// assets that no longer exist is worse than no HTML at all. What nothing
+// did afterwards was put the map page BACK, so from the moment a deploy
+// activated until the user next opened ``/`` while connected, the app
+// could not open offline at all. It was silent, it happened on every
+// deploy, and the only surface that ever said so was SNOW-907's report —
+// which is how it was found: a device nine minutes past a deploy, on a
+// train, reporting that the app it was running would not open.
+//
+// Re-warmed rather than precached on install for two reasons. Install
+// runs against the OLD worker's cache generation, so a page fetched there
+// would have to be re-fetched here anyway; and ``_warmCache`` already
+// knows how to stamp a same-origin HTML response with the principal its
+// body declares (SNOW-624), which is what makes the entry servable at all.
+const SHELL_PAGE = '/';
+
+// The subresources of a warmed page: same-origin scripts and stylesheets,
+// by attribute. A page whose HTML is saved and whose JavaScript is not
+// does not open — it paints a blank frame — so warming one without the
+// other would move the audit's "The app opens" row to Yes while leaving
+// the user with exactly the failure the row exists to catch. See
+// ``_warmShellSubresources``.
+//
+// Matched on the URL's own extension rather than on the tag, because a
+// regex over HTML cannot reliably pair an attribute with its element and
+// does not need to: a same-origin ``.js`` or ``.css`` in a ``src`` or
+// ``href`` is shell either way, and anything else on the page (a preload,
+// an icon, the manifest, a canonical link) is not something the map needs
+// to boot.
+const SHELL_SUBRESOURCE_PATTERN = /(?:src|href)=["']([^"'\s]+\.(?:js|css))(?:\?[^"']*)?["']/gi;
+
+// The ceiling on that list. The map page loads a few dozen modules; a
+// hundred and twenty is well clear of it and still bounds what a
+// malformed or hostile page could make the worker fetch.
+const SHELL_SUBRESOURCE_LIMIT = 120;
+
+// How long ``activate`` waits for the re-warm before it stops waiting.
+//
+// ``_warmCache``'s own fetches are deliberately unbounded — a basemap
+// download of several thousand tiles must not start failing at the read
+// paths' five-second budget — so the bound belongs here, on the one caller
+// that runs inside a lifecycle handler. It is a stop-WAITING, not a
+// cancel: whatever is in flight still writes if it lands. Without it a
+// radio that hangs rather than rejecting (SNOW-742's whole subject) holds
+// the activation's ``waitUntil`` open for as long as the browser allows.
+const SHELL_REWARM_BUDGET_MS = 30000;
+
+// SNOW-912: the country both of ``map.js``'s boot fetches hard-code. Named
+// here so a grep finds the worker's copy alongside the report's own
+// ``BOOT_COUNTRY`` (offline_audit_core.js) the day that changes.
+const BOOT_FEED_COUNTRY = 'ch';
+
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
 // to network-only. The list deliberately excludes ``.json`` —
@@ -1168,6 +1223,11 @@ self.addEventListener('activate', (event) => {
         // SNOW-384: the browser fires 'activate' exactly once per SW
         // instance — no extra gating needed for idempotency here.
         _postTelemetry('pwa.sw.activated', { cache_version: CACHE_VERSION });
+        // SNOW-912: put the map page back. AFTER the claim, so the reload
+        // a claiming worker triggers is never waiting on a fetch, and
+        // inside the same waitUntil so the worker is not recycled
+        // mid-warm. Never throws — see _rewarmShell.
+        await _rewarmShell();
       } catch (err) {
         // SNOW-384: pwa.sw.activation_failed is a critical event
         // (telemetry.js CRITICAL_EVENTS) — fires sendBeacon immediately
@@ -2089,6 +2149,12 @@ async function _warmCacheResponseBytes(response) {
  * failure (``failed`` only counts URLs that were actually attempted and
  * did not succeed).
  *
+ * SNOW-912: a same-origin HTML response also pulls in the scripts and
+ * stylesheets its body references (``_warmShellSubresources``) — warming a
+ * page without them saves something that opens to a blank frame. Only the
+ * HTML branch does this, so the feed and tile callers are unchanged, and a
+ * subresource that fails is not a failure of the page.
+ *
  * @param {string[]} urls
  * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
  *   total: number, settled: number[], bytes: number) => void,
@@ -2239,6 +2305,14 @@ async function _warmCache(urls, options) {
           url.toString(),
           _stampPrincipal(response.clone(), _principalFromHtml(html)),
         );
+        // SNOW-912: and what that page needs in order to be more than a
+        // blank frame. Only the HTML branch does this, so the feed and
+        // tile callers are untouched — see _warmShellSubresources.
+        bytes += await _warmShellSubresources(html, cache);
+        // SNOW-912: and the feeds its own boot will ask the cache for. The
+        // page names the day and the day names the feed, so the two are
+        // warmed as one unit or the map opens grey.
+        bytes += await _warmShellFeeds(html, cache);
       } else {
         await cache.put(url.toString(), response.clone());
       }
@@ -3144,6 +3218,249 @@ function _principalMatches(cached, current) {
 function _isHtmlResponse(response) {
   const type = (response.headers && response.headers.get('Content-Type')) || '';
   return type.split(';')[0].trim().toLowerCase() === 'text/html';
+}
+
+/**
+ * The same-origin scripts and stylesheets ``html`` asks for (SNOW-912).
+ *
+ * Deduplicated, absolute, and capped at ``SHELL_SUBRESOURCE_LIMIT``.
+ * Cross-origin entries are dropped rather than fetched: they are somebody
+ * else's cache policy, they answer opaquely, and the shell cache is
+ * same-origin by contract.
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
+function _shellSubresources(html) {
+  const urls = [];
+  const seen = new Set();
+  // A fresh RegExp rather than the shared literal: a /g regex carries
+  // ``lastIndex`` between calls, so reusing the constant would make the
+  // second page warmed in a worker's life start matching halfway down its
+  // own HTML.
+  const pattern = new RegExp(SHELL_SUBRESOURCE_PATTERN.source, 'gi');
+  let match = pattern.exec(html);
+  while (match && urls.length < SHELL_SUBRESOURCE_LIMIT) {
+    let url = null;
+    try {
+      url = new URL(match[1], self.location.origin);
+    } catch (_err) {
+      url = null;
+    }
+    if (url && url.origin === self.location.origin) {
+      const absolute = url.toString();
+      if (!seen.has(absolute)) {
+        seen.add(absolute);
+        urls.push(absolute);
+      }
+    }
+    match = pattern.exec(html);
+  }
+  return urls;
+}
+
+/**
+ * The day a page will open on — its ``#season-scrubber``'s ``data-today``
+ * (SNOW-912).
+ *
+ * Server-rendered per request, so a cached page carries the day it was
+ * FETCHED on, for as long as it sits there. That is the day its boot will
+ * put in the ratings URL, whatever today's date turns out to be when
+ * somebody opens it.
+ *
+ * ``offline_audit_core.js``'s ``pageDay`` reads the same attribute the same
+ * way, and ``tests/js/test_sw.js`` holds the two to identical answers — the
+ * report must verify the feed the warm actually fetches.
+ *
+ * @param {string} html
+ * @returns {string|null} ``YYYY-MM-DD``, or null where no readable
+ *   attribute is present.
+ */
+function _shellPageDay(html) {
+  if (typeof html !== 'string' || !html) return null;
+  let match = /id=["']season-scrubber["'][^>]*?data-today=["'](\d{4}-\d{2}-\d{2})["']/i.exec(
+    html,
+  );
+  if (match) return match[1];
+  match = /data-today=["'](\d{4}-\d{2}-\d{2})["'][^>]*?id=["']season-scrubber["']/i.exec(
+    html,
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * The feeds a warmed map page's cold open will ask the cache for
+ * (SNOW-912).
+ *
+ * The country is the one ``map.js`` hard-codes in both boot legs; a grep
+ * for this constant finds every side of it.
+ *
+ *   fetch(REGIONS_URL + '?country=ch')
+ *   fetch(RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch')
+ *
+ * plus the undated season payload ``ensureRatingsCached`` fetches on the
+ * same load, which is what the scrubber and the timelapse read — warming
+ * the day and leaving the scrubber blank would fix a row the report can
+ * see and leave the user tripping over one it cannot.
+ *
+ * Deliberately NOT the whole of ``COUNTRY_FEED_PATHS``: the boundary tiers
+ * (major/sub-regions) and ``/api/resorts.geojson`` are loaded by paths this
+ * warm is not standing in for, and widening a repair is how a repair
+ * becomes a second thing to reason about.
+ *
+ * @param {string} html
+ * @returns {string[]} Absolute URLs, most consequential first.
+ */
+function _shellBootFeeds(html) {
+  const feeds = [
+    `${self.location.origin}/api/regions.geojson?country=${BOOT_FEED_COUNTRY}`,
+    `${self.location.origin}/api/ratings/?country=${BOOT_FEED_COUNTRY}`,
+  ];
+  const day = _shellPageDay(html);
+  // No day means the boot has none either — `readDisplayDate()` returns
+  // null and the map paints nothing whatever is cached, so there is no
+  // dated feed worth fetching.
+  if (day) {
+    feeds.unshift(
+      `${self.location.origin}/api/ratings/?d=${day}&country=${BOOT_FEED_COUNTRY}`,
+    );
+  }
+  return feeds;
+}
+
+/**
+ * Warm the feeds that page will ask for, alongside the page itself
+ * (SNOW-912).
+ *
+ * The invariant this exists to hold: **a cached page and the feeds its own
+ * boot will ask for are cached together, or the map opens grey.**
+ *
+ * ``activate`` deletes every feed along with the rest of the old shell, and
+ * the first cut of this re-warm put the PAGE back and nothing else — which
+ * would have drawn a map with no danger ratings and no region outlines on
+ * every deploy. The page and its feeds have to move as one unit, because
+ * the page names the day and the day names the feed.
+ *
+ * The same hole opens without a deploy: a flaky connection can land the
+ * navigation (``_networkFirst`` caches it) and lose the feed fetches that
+ * follow, leaving a page dated ahead of anything stored. Warming here
+ * closes that too, on the next activation or the next press of the audit
+ * panel's Save control.
+ *
+ * Failures are swallowed, one at a time: a feed that does not land is a row
+ * the report will show as No, which is the honest outcome and not a reason
+ * to fail the page's own warm.
+ *
+ * @param {string} html
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmShellFeeds(html, cache) {
+  const feeds = _shellBootFeeds(html);
+  let bytes = 0;
+  let written = 0;
+  await _warmCacheRunPool(feeds, WARM_CACHE_CONCURRENCY, async (url) => {
+    try {
+      // Skipped when already held, like the subresources — with one
+      // difference worth naming: a feed's content CAN change under a URL a
+      // hashed asset's cannot. That is `_staleWhileRevalidate`'s job on the
+      // next online open, not this one's; this warm exists to put back what
+      // an activation deleted, and there is nothing to skip on that path.
+      if (await cache.match(url)) return;
+      const response = await _boundedFetch(url, SHELL_FETCH_BUDGET_MS);
+      if (!response || !response.ok || response.type !== 'basic') return;
+      await cache.put(url, response.clone());
+      written += 1;
+      bytes += await _warmCacheResponseBytes(response);
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+  });
+  _debugLog('shell.feeds', { asked: feeds.length, written, bytes });
+  return bytes;
+}
+
+/**
+ * Fetch whatever ``html`` needs and this cache does not already hold
+ * (SNOW-912), returning the bytes written.
+ *
+ * Cache-checked first, and that is the load-bearing half rather than an
+ * optimisation: on any device that has simply opened the app, every one
+ * of these is already there from ``_staleWhileRevalidate``, and the run
+ * costs one ``match`` per entry and no network at all. The fetches happen
+ * on the one occasion they are the point — the generation after a deploy,
+ * where the cache is empty because ``activate`` emptied it.
+ *
+ * Every failure is swallowed. The page itself is the unit of work; a
+ * missing stylesheet is a page that looks wrong, which the audit reports
+ * as its own row, and neither is worth failing the warm over.
+ *
+ * @param {string} html
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmShellSubresources(html, cache) {
+  const urls = _shellSubresources(html);
+  if (urls.length === 0) return 0;
+  let bytes = 0;
+  let written = 0;
+  await _warmCacheRunPool(urls, WARM_CACHE_CONCURRENCY, async (url) => {
+    try {
+      if (await cache.match(url)) return;
+      const response = await _boundedFetch(url, SHELL_FETCH_BUDGET_MS);
+      if (!response || !response.ok || response.type !== 'basic') return;
+      await cache.put(url, response.clone());
+      written += 1;
+      bytes += await _warmCacheResponseBytes(response);
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+  });
+  _debugLog('shell.subresources', { asked: urls.length, written, bytes });
+  return bytes;
+}
+
+/**
+ * Put the map page back in the shell cache after an activation emptied it
+ * (SNOW-912).
+ *
+ * Runs inside ``activate``'s ``waitUntil``, after ``clients.claim()``, so
+ * a tab reloading onto the new worker is never held up by it. Bounded by
+ * the same offline mode every other network path in this file consults:
+ * a device the user has switched to offline, or one that has latched
+ * there, spends nothing here — the shell is re-warmed on the next
+ * activation, or by the audit panel's own Save control, whichever comes
+ * first.
+ *
+ * Never throws: an activation that fails leaves the device with no worker
+ * at all, and this is a convenience, not a precondition. And it stops
+ * waiting after ``SHELL_REWARM_BUDGET_MS`` — see that constant for why the
+ * bound is here rather than on ``_warmCache``'s own fetches.
+ *
+ * @returns {Promise<void>}
+ */
+async function _rewarmShell() {
+  try {
+    if (!(await _shouldUseNetwork())) {
+      _debugLog('shell.rewarm', { result: 'skipped-offline' });
+      return;
+    }
+    const result = await Promise.race([
+      _warmCache([SHELL_PAGE]),
+      new Promise((resolve) => setTimeout(() => resolve(null), SHELL_REWARM_BUDGET_MS)),
+    ]);
+    if (!result) {
+      _debugLog('shell.rewarm', { result: 'still-running' });
+      return;
+    }
+    _debugLog('shell.rewarm', {
+      ok: result.ok,
+      failed: result.failed,
+      bytes: result.bytes,
+    });
+  } catch (_err) {
+    // Best-effort, per the docstring.
+  }
 }
 
 /**

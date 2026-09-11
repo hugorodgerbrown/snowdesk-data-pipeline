@@ -34,7 +34,20 @@ of a settings page nobody came here to audit.
 {% endcomment %}
 {% load i18n components %}
 
-<div data-offline-audit>
+{% comment %}
+    SNOW-913: the deployed default basemap, for the one case the device
+    cannot answer for itself. The report names the style the reader is
+    looking at, which is ``localStorage['snowdesk.map.basemap']`` — but
+    that key is written only when someone opens the picker and chooses,
+    so a visitor who never has is looking at ``settings.BASEMAP`` with
+    nothing on the device to say so.
+
+    Absent on static/offline.html, which is a static file with no server
+    to ask. There the report falls back to the stored choice, and names no
+    current basemap at all when there is none — an omission rather than a
+    guess.
+{% endcomment %}
+<div data-offline-audit data-default-basemap-key="{{ default_basemap_key|default:'' }}">
     {% comment %}
         The row, in the shape every other row in this card takes:
         heading and description left, one control on the trailing edge,
@@ -121,6 +134,10 @@ of a settings page nobody came here to audit.
         <span data-string="row-danger-ratings">{% translate "Danger ratings" %}</span>
         <span data-string="row-region-shapes">{% translate "Region outlines" %}</span>
         <span data-string="row-basemap">{% translate "%(name)s basemap" %}</span>
+        {# SNOW-913: the style on screen, told apart from one the device merely #}
+        {# holds bytes for. A reader on Swisstopo being answered about #}
+        {# OpenFreeMap is the report disagreeing with what they can see. #}
+        <span data-string="row-basemap-current">{% translate "%(name)s basemap (on screen)" %}</span>
         <span data-string="row-no-downloads">{% translate "Anything downloaded at all" %}</span>
         <span data-string="label-dropzone">{% translate "%(name)s (drop zone)" %}</span>
         <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
@@ -176,6 +193,15 @@ of a settings page nobody came here to audit.
         <span
             data-string="note-no-weather"
         >{% translate "the weather overlay has not been opened on this device" %}</span>
+        {# SNOW-914: readable, and empty. Neither a capability nor a fault. #}
+        <span data-string="note-empty-favourites">{% translate "you have not saved any places yet" %}</span>
+        <span data-string="note-empty-routes">{% translate "you have not uploaded any routes yet" %}</span>
+        <span
+            data-string="note-empty-reports"
+        >{% translate "there are no community reports in what has been loaded here" %}</span>
+        <span
+            data-string="note-empty-weather"
+        >{% translate "the weather that was loaded here holds nothing to draw" %}</span>
 
         <span data-string="effect-styles">{% translate "will look plain" %}</span>
         <span data-string="effect-ratings">{% translate "will show no danger ratings" %}</span>

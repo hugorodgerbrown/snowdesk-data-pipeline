@@ -75,6 +75,12 @@
  * page into the shell cache — goes through the worker's existing
  * ``warm-cache`` message rather than writing a cache entry from here.
  * A diagnostic that changes what it is diagnosing is worse than none.
+ *
+ * SNOW-912: that message now warms the page's own same-origin scripts and
+ * stylesheets alongside its HTML, because a page whose JavaScript is
+ * missing does not open — so saving the HTML alone would have moved this
+ * report's own "The app opens" row to Yes while leaving the user with
+ * exactly the failure the row exists to catch.
  */
 
 (function () {
@@ -126,6 +132,7 @@
     'row-danger-ratings': 'Danger ratings',
     'row-region-shapes': 'Region outlines',
     'row-basemap': '%(name)s basemap',
+    'row-basemap-current': '%(name)s basemap (on screen)',
     'row-no-downloads': 'Anything downloaded at all',
     'label-dropzone': '%(name)s (drop zone)',
     'label-custom': '%(name)s (area you drew)',
@@ -166,6 +173,12 @@
     'note-no-routes': 'none of your routes has been loaded on this device',
     'note-no-reports': 'community reports have not been loaded on this device',
     'note-no-weather': 'the weather overlay has not been opened on this device',
+    // SNOW-914: the row is readable and there is simply nothing in it —
+    // neither a capability nor a fault, so neither Yes nor No.
+    'note-empty-favourites': 'you have not saved any places yet',
+    'note-empty-routes': 'you have not uploaded any routes yet',
+    'note-empty-reports': 'there are no community reports in what has been loaded here',
+    'note-empty-weather': 'the weather that was loaded here holds nothing to draw',
 
     'effect-styles': 'will look plain',
     'effect-ratings': 'will show no danger ratings',
@@ -295,17 +308,98 @@
     return !!core && core.classifyEntry(url) === 'page';
   }
 
+  // SNOW-913: where map_state.js keeps the visitor's basemap choice. Named
+  // here rather than imported because this module runs on static/offline.html
+  // too, where map_state.js is not loaded — the same reason every other
+  // reading in this file is taken from storage directly.
+  var BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+
   /**
-   * Every entry in the shell cache, with a principal stamp on the pages.
+   * The basemap the reader is looking at (SNOW-913).
+   *
+   * The stored choice, or the deployed default the host page was rendered
+   * with when nobody has chosen. ``localStorage`` is written only when
+   * someone opens the picker and picks, so an untouched device has no key
+   * and is looking at ``settings.BASEMAP``.
+   *
+   * Null on ``offline.html``, which is a static file with no server to ask
+   * for that default: the report then names no current basemap rather than
+   * guessing at one, which is the same rule every other reading here
+   * follows.
+   *
+   * @param {HTMLElement|null} root The panel element, which carries the
+   *   deployed default as ``data-default-basemap-key`` where a server
+   *   rendered it.
+   * @param {{keys: string[], fallback: string|null}|null} catalogue The
+   *   basemaps the CACHED map page offers, read out of its own markup — the
+   *   set the map's own resolution will run against.
+   * @returns {string|null}
+   */
+  function selectedBasemap(root, catalogue) {
+    var stored = null;
+    try {
+      stored = self.localStorage ? self.localStorage.getItem(BASEMAP_STORAGE_KEY) : null;
+    } catch (_err) {
+      // A private window, or site data blocked outright. Falls through to
+      // the default, which is still true for a device that cannot remember
+      // a choice.
+      stored = null;
+    }
+    var core = self.pwaOfflineAuditCore;
+    var serverDefault = root ? root.getAttribute('data-default-basemap-key') : null;
+    if (!core) return stored || serverDefault || null;
+    // Resolved the way the map resolves it: a stored key the cached page's
+    // picker no longer offers is not what the map will show — it falls back
+    // to the deployed default and leaves the preference behind.
+    return core.resolveBasemap(catalogue, stored, serverDefault);
+  }
+
+  /**
+   * Whether a cached URL is the map page, by pathname.
+   *
+   * Query dropped, for the reason the core's ``pages()`` drops it: the map
+   * writes ``?d=YYYY-MM-DD`` with ``history.replaceState`` while the user
+   * scrubs, and those URLs are never fetched and never cached.
+   *
+   * @param {string} url
+   * @param {string} mapPath
+   * @returns {boolean}
+   */
+  function isMapPage(url, mapPath) {
+    try {
+      return new URL(url, self.location.origin).pathname === mapPath;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * Every entry in the shell cache, with a principal stamp on the pages
+   * and — for the map page alone — the list of modules its HTML boots
+   * from (SNOW-912).
+   *
+   * The map page's body is read because "The app opens" has to be an
+   * answer about THAT page. A device holding the HTML and none of its
+   * JavaScript opens to a blank frame, and the row read Yes on a count of
+   * any cached script at all — a count two precached audit modules make
+   * true on every device. One extra body read, on one entry, is what makes
+   * the row's Yes mean what the reader takes it to mean.
    *
    * @param {string[]} names Which shell caches to read. More than one
    *   means the worker did not answer and every candidate is being read,
    *   which overstates rather than understates.
-   * @returns {Promise<Array<{url: string, isPage: boolean,
-   *   principal: string|null}>>}
+   * @param {string} mapPath
+   * @returns {Promise<{entries: Array<{url: string, isPage: boolean,
+   *   principal: string|null}>, mapDependencies: string[]|null}>}
+   *   ``mapDependencies`` is null when there is no map page to read, or
+   *   when its body could not be read — which the core answers No to
+   *   rather than guessing.
    */
-  async function readShellEntries(names) {
+  async function readShellEntries(names, mapPath) {
     var entries = [];
+    var mapDependencies = null;
+    var mapDay = null;
+    var mapBasemaps = null;
     for (var i = 0; i < names.length; i += 1) {
       var cache;
       try {
@@ -324,8 +418,9 @@
         var isPage = looksLikePage(url);
         var principal = null;
         if (isPage) {
+          var response = null;
           try {
-            var response = await cache.match(requests[j]);
+            response = await cache.match(requests[j]);
             // The same header ``sw.js``'s ``_principalMatches`` reads. An
             // entry with no stamp is one the worker will refuse to serve,
             // and the core treats a null stamp exactly that way.
@@ -333,11 +428,38 @@
           } catch (_err) {
             principal = null;
           }
+          // Its own try: a body that cannot be read says nothing about the
+          // stamp already read off the same response, and folding the two
+          // together would report a perfectly good page as unstamped.
+          if (response && mapDependencies === null && isMapPage(url, mapPath)) {
+            try {
+              var core = self.pwaOfflineAuditCore;
+              var html = await response.clone().text();
+              mapDependencies = core
+                ? core.pageDependencies(html, self.location.origin)
+                : null;
+              // SNOW-914: and the day that page will open on, which is the
+              // day whose ratings it will ask the cache for.
+              mapDay = core ? core.pageDay(html) : null;
+              // SNOW-913: and the basemaps its picker offers, which is the
+              // catalogue the map's own choice-resolution runs against.
+              mapBasemaps = core ? core.pageBasemaps(html) : null;
+            } catch (_err) {
+              mapDependencies = null;
+              mapDay = null;
+              mapBasemaps = null;
+            }
+          }
         }
         entries.push({ url: url, isPage: isPage, principal: principal });
       }
     }
-    return entries;
+    return {
+      entries: entries,
+      mapDependencies: mapDependencies,
+      mapDay: mapDay,
+      mapBasemaps: mapBasemaps,
+    };
   }
 
   /**
@@ -448,12 +570,65 @@
   }
 
   /**
+   * What each ``data:map_overlays`` row actually holds (SNOW-914/915).
+   *
+   * The key alone used to be the answer — 'weather' being present made
+   * "will the weather show" a Yes. It does not: ``getOverlay`` in
+   * map_overlay_offline_cache.js returns null for a row whose
+   * ``principal`` does not match the account signed in now (favourites and
+   * routes are account-scoped), and a row holding an empty
+   * FeatureCollection draws nothing at all. Both read as Yes and showed
+   * the user nothing.
+   *
+   * @param {IDBDatabase} db
+   * @param {string} name
+   * @returns {Promise<Record<string, {features: number|null,
+   *   principal: string|null}>>} Empty where the store cannot be read.
+   *   ``features`` is null when the row holds no readable
+   *   FeatureCollection, which answers unknown rather than either way.
+   */
+  function readOverlayRows(db, name) {
+    return new Promise(function (resolve) {
+      try {
+        if (!db.objectStoreNames.contains(name)) {
+          resolve({});
+          return;
+        }
+        var request = db.transaction(name, 'readonly').objectStore(name).getAll();
+        request.onsuccess = function () {
+          var rows = {};
+          (request.result || []).forEach(function (row) {
+            if (!row || !row.key) return;
+            var features =
+              row.geojson && Array.isArray(row.geojson.features)
+                ? row.geojson.features.length
+                : null;
+            rows[String(row.key)] = {
+              features: features,
+              // Undefined on a public resource, which never carries one;
+              // null on an account row written before SNOW-493. The core
+              // tells the two apart — an absent stamp on an account-scoped
+              // resource is one `getOverlay` refuses.
+              principal: row.principal === undefined ? undefined : row.principal,
+            };
+          });
+          resolve(rows);
+        };
+        request.onerror = function () {
+          resolve({});
+        };
+      } catch (_err) {
+        resolve({});
+      }
+    });
+  }
+
+  /**
    * The keys a keyPath-addressed store holds.
    *
-   * ``data:map_overlays`` and ``data:panel_rows`` each hold one row per
-   * RESOURCE, so the key is the answer: 'weather' being present is what
-   * makes "will the weather show" a Yes. A row count would say three and
-   * mean nothing.
+   * ``data:panel_rows`` holds one row per RESOURCE, so the key is the
+   * answer: 'observations' being present is what makes the reports row
+   * reachable. A row count would say three and mean nothing.
    *
    * @param {IDBDatabase} db
    * @param {string} name
@@ -588,10 +763,15 @@
    * Take every reading the report is built from, marking the clock as
    * each one lands.
    *
+   * @param {HTMLElement|null} [root] The panel being painted, which carries
+   *   the deployed default basemap where a server rendered it (SNOW-913).
+   *   Defaults to the first panel on the page, so a bare ``collect()`` —
+   *   the console, a test — still reads the same thing the panel does.
    * @returns {Promise<Object>} The readings object ``buildReport``
    *   documents.
    */
-  async function collect() {
+  async function collect(root) {
+    var panel = root || document.querySelector(ROOT_SELECTOR);
     var swSupported = 'serviceWorker' in navigator;
     var registration = null;
     if (swSupported) {
@@ -609,7 +789,14 @@
       : names.filter(function (name) {
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
-    var shellEntries = shellNames.length ? await readShellEntries(shellNames) : [];
+    // The map is the site root. Hard-coded rather than derived from the
+    // current location, because this panel is reached from two pages and
+    // neither of them is the one being asked about.
+    var mapPath = '/';
+    var shell = shellNames.length
+      ? await readShellEntries(shellNames, mapPath)
+      : { entries: [], mapDependencies: null, mapDay: null, mapBasemaps: null };
+    var shellEntries = shell.entries;
 
     var db = await openDb();
     var areaRecords = await readAreaRecords(db);
@@ -646,11 +833,11 @@
         stores[DATA_STORES[j]] = await countStore(db, DATA_STORES[j]);
       }
     }
-    // WHICH overlays are cached, not how many rows there are. The store
-    // holds one row per resource — 'favourites', 'community_reports',
-    // 'weather', 'routes' — so a count answers nothing a user asked, and
-    // the key answers "will the weather show".
-    var overlayKeys = db ? await readKeys(db, 'data:map_overlays') : [];
+    // SNOW-914/915: the ROWS, not their keys. "Is there a weather row" and
+    // "will the weather show" turned out to be different questions — a row
+    // stamped for another account is refused by the reader, and a row
+    // holding an empty FeatureCollection draws nothing.
+    var overlays = db ? await readOverlayRows(db, 'data:map_overlays') : {};
     var panelKeys = db ? await readKeys(db, 'data:panel_rows') : [];
     var mutations = db ? await countStore(db, 'queue:mutations') : null;
     var currentPrincipal = db ? await readMeta(db, 'mutations.principal') : null;
@@ -690,15 +877,26 @@
       storage: storage,
       shellCacheNames: shellNames,
       shellEntries: shellEntries,
+      // SNOW-912: what the cached map page itself boots from, or null when
+      // there is no page to read. The core verifies "The app opens"
+      // against this rather than against a count of cached scripts.
+      mapDependencies: shell.mapDependencies,
+      // SNOW-914: the day the cached page will boot on — its own
+      // ``data-today``, not this device's clock. The ratings it asks the
+      // cache for are that day's.
+      mapDay: shell.mapDay,
+      // SNOW-913: the style on screen. The basemap rows are otherwise a
+      // roll-up of what the device has STORED, which is a different
+      // question from the one the reader is asking.
+      selectedBasemap: selectedBasemap(panel, shell.mapBasemaps),
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
-      // The map is the site root. Hard-coded rather than derived from the
-      // current location, because this panel is reached from two pages and
-      // neither of them is the one being asked about.
-      mapPath: '/',
+      mapPath: mapPath,
       areas: areas,
       orphanBuckets: orphanBuckets,
       stores: stores,
-      overlayKeys: overlayKeys,
+      // SNOW-914/915: the rows, not their keys — whether each overlay is
+      // readable by this account and whether it has anything in it.
+      overlays: overlays,
       panelKeys: panelKeys,
       mutations: { count: mutations },
       dbAvailable: !!db,
@@ -963,7 +1161,7 @@
       // and then stops moving.
       output.hidden = false;
       renderLog(output, self.pwaOfflineAuditCore.pendingReport(t));
-      var readings = await collect();
+      var readings = await collect(root);
       lastReport = self.pwaOfflineAuditCore.buildReport(readings, t);
       output.hidden = false;
       await build(output, lastReport, t);
@@ -973,17 +1171,38 @@
         // Offered only when it could actually work, and only when it is
         // the thing that would help: a controlled page, a connection, and
         // a map page that is not already saved for this account.
+        //
+        // The id and the status are the core's, not this module's
+        // vocabulary. Both were once invented here — a row called
+        // `map-page` and a status of `ok`, neither of which the core has
+        // ever produced — so the lookup found nothing, the gate read
+        // `hidden = true` on every device, and the one control that fixes
+        // the verdict it is sitting under could not be reached. The real
+        // names are `app-opens` (offline_audit_core.js's ROWS) and the
+        // AuditStatus union, whose pass value is `yes` and whose failing
+        // value on a critical row is `blocked`.
+        //
+        // Every failing state, with no exceptions — because SNOW-912 made
+        // the warm repair every one of them. `_warmCache(['/'])` re-fetches
+        // the page (restamping it for whoever is signed in now, which
+        // answers 'principal', and overwriting an unreadable body), and
+        // `_warmShellSubresources` then fetches the modules that page names
+        // and the cache is missing, which answers 'scripts'. An earlier cut
+        // of this gate excluded 'scripts' on the reasoning that warming
+        // fetched only HTML. It has not fetched only HTML since the commit
+        // that introduced the gate, and the exclusion left the one state
+        // the repair was built for with no way to reach the repair.
         var pageCheck = null;
         lastReport.sections.forEach(function (section) {
           section.checks.forEach(function (check) {
-            if (check.id === 'map-page') pageCheck = check;
+            if (check.id === 'app-opens') pageCheck = check;
           });
         });
         saveButton.hidden = !(
           readings.online &&
           readings.serviceWorker.controlled &&
           pageCheck &&
-          pageCheck.status !== 'ok'
+          pageCheck.status !== 'yes'
         );
       }
     };

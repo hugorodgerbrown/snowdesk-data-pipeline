@@ -88,7 +88,49 @@ a basemap and records which, and the shared low-zoom layer is stored per
 basemap too — rolling them up answers the question the per-area rows
 cannot reach: *which map style will I actually see*. A device could hold
 a complete Swisstopo download and be sitting on OpenFreeMap, and nothing
-said so. The row is Yes only when both halves are there: the style
+said so.
+
+**The style on screen always gets a row, and says so** (SNOW-913). The
+roll-up above is over what the device has *stored*, and on its own that
+answered a question nobody asked. A reader who had switched to Swisstopo
+— whose wide-band warm had not completed, so no record for it existed —
+was shown one row, "OpenFreeMap basemap: No", about a style they were not
+looking at, and no row at all for the one they were. The report has to
+agree with what the reader can see; a row naming a basemap they are not
+using corrodes the panel faster than a missing row would.
+
+So `selectedBasemap` is a reading like any other: `localStorage`'s
+`snowdesk.map.basemap` (`BASEMAP_STORAGE_KEY`, written only when someone
+opens the picker and chooses), falling back to the deployed default the
+host page carries as `data-default-basemap-key` — `settings.BASEMAP`,
+which only a server can say, and which is what an untouched device is
+actually looking at.
+
+**Resolved the way the map resolves it**, not just read. `map.js` checks a
+stored key against the catalogue it renders and falls back to the default
+when it no longer appears:
+
+```js
+const preferred = (stored && BASEMAP_OPTIONS[stored]) ? stored : DEFAULT_BASEMAP_KEY;
+```
+
+A style retired from the picker leaves its preference behind in
+`localStorage`, so a report that read the key alone would label a basemap
+"on screen" that the map will not show — the same defect this row exists
+to fix, one level down. `pageBasemaps()` reads the catalogue and the
+default out of the **cached** page's own markup (its `data-basemap-key`
+buttons and `#map`'s `data-default-basemap-key`), because that page is the
+one that will boot, and `resolveBasemap()` mirrors the line above against
+it. With no cached page there is no catalogue to check against and the
+stored key stands — the page being absent is already the blocking row. It is first in the list whether or not a byte is
+stored for it, and its label is `row-basemap-current` ("… (on screen)")
+rather than `row-basemap`, because two rows reading "X basemap" and "Y
+basemap" leave the reader no way to tell which is theirs.
+
+`static/offline.html` is a static file with no server to ask, so on a
+device that has never opened the picker it names no current basemap at
+all — an omission rather than a guess, which is the rule every other
+reading here follows. The row is Yes only when both halves are there: the style
 document, TileJSON and sprite (without which MapLibre cannot learn a
 single tile URL — SNOW-843), and the z0–7 tiles (without which the map
 falls off the edge of every downloaded area the moment the camera pulls
@@ -99,16 +141,89 @@ because it is not a place anyone chose.
 Two more rows are answered from more than one reading:
 
 - **The app opens** is the map page's HTML being in the shell cache, its
-  `X-SW-Principal` stamp matching the account signed in now, *and* the
-  shell's scripts being there. The user does not care which of the three
-  failed; the summary says, the row does not. A page whose HTML is saved
-  and whose scripts are not paints a blank frame, which is
-  indistinguishable from never having been saved — so it is one question,
-  not two. (It was two, and the second was labelled "The app is
-  complete", which meant nothing to anyone.)
+  `X-SW-Principal` stamp matching the account signed in now, *and* every
+  same-origin module that page's HTML boots from being cached too. The
+  user does not care which of the three failed; the summary says, the row
+  does not. A page whose HTML is saved and whose scripts are not paints a
+  blank frame, which is indistinguishable from never having been saved —
+  so it is one question, not two. (It was two, and the second was
+  labelled "The app is complete", which meant nothing to anyone.)
+
+  **The third clause is the page's own list, not a count** (SNOW-912).
+  It read `fileCounts(r).script > 0` — *is any script cached* — which is
+  true on every device that has a worker at all, because `AUDIT_SCRIPTS`
+  precaches two modules on install. So a device holding the HTML and none
+  of the map's JavaScript read Yes and opened to a blank frame. The
+  collector now reads the cached page's body, `pageDependencies()` pulls
+  the same-origin `.js`/`.css` out of it, and `missingFrom()` answers it
+  the way a download row is answered — the rule in
+  [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md),
+  applied to the page. An unreadable body is No (`reason: 'unreadable'`),
+  because warming overwrites the entry and the panel's own Save control
+  is therefore still the remedy; a page that names nothing on a device
+  holding nothing is `unknown`, because an empty claim is not a pass.
+
+  `sw.js` has a second implementation of the extraction
+  (`_shellSubresources`) — the worker is a classic script and would have
+  to `importScripts` this whole module to share one. They are held to the
+  same answers by a shared fixture table in `tests/js/test_sw.js`, the
+  same shape that keeps sw.js's inline core fallbacks honest. A drift
+  between them means the report verifies a page against a different list
+  from the one the warm fetches, which is how a row goes green over a
+  page that will not open.
 - **The app looks right** is the styling on its own, and is *not*
   critical: an unstyled app is ugly and usable, where an app that will
-  not open is neither.
+  not open is neither. It asks the same list for its **stylesheets** that
+  the row above asks for its scripts (SNOW-914) — `fileCounts(r).style > 0`
+  was "is any CSS cached", which the settings page's own stylesheet makes
+  true on the very device reading the panel.
+
+## Every row answers about what the user will SEE
+
+A row that says Yes to someone looking at a blank map costs more than the
+row is worth, and a false green is the only failure this panel cannot
+survive. Four rows were counting something adjacent to the question, and
+each of them read Yes on a device that would have shown the user nothing
+(SNOW-914/915):
+
+| Row | Counted | Asks now |
+|---|---|---|
+| Danger ratings | any `/api/ratings/` entry | the feed for the day the cached page will open on |
+| Region outlines | any `/api/regions.geojson` entry | the country the cold open asks for |
+| Bulletins you have opened | any cached page that is not the map or an account page | a page whose path is a bulletin |
+| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something |
+
+**The ratings row is the one that mattered most.** The map's cold open
+fetches `RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch'`, and
+`readDisplayDate()` falls back to `#season-scrubber`'s `data-today` — the
+day the **cached page** was rendered on, not the device's clock.
+`_staleWhileRevalidate` matches exact URLs, so any other day's feed is a
+miss and the choropleth paints nothing. The row prefix-matched the path
+and said Yes for a feed from any day at all. Open the app at home on
+Tuesday, open it on the mountain on Wednesday: blank map, green row —
+which is the journey this app exists for. The collector now reads
+`data-today` out of the cached HTML (`pageDay`) and the row asks for that
+day's feed. `BOOT_COUNTRY` mirrors the country hard-coded in `map.js`; a
+grep for it finds both sides.
+
+**The bulletins row** counted every other public page, because every one
+of them is cached by the visit that renders it — so reading `/help/` once
+told the user their bulletins were saved. It now matches the region-id
+shape Django routes bulletins on (`isBulletinPath`, restating
+`RegionIdConverter.regex`, which is tight enough to reject `wp-login` and
+so tight enough to reject `help`).
+
+**The four content overlays** were answered by the presence of a row in
+`data:map_overlays`. Presence is not readability: `getOverlay` returns
+null for a row whose `principal` does not match the account signed in now
+(favourites and routes are account-scoped, SNOW-493), so a row from
+another session is on the device and invisible. Nor is presence content:
+a row holding an empty FeatureCollection draws nothing. Both read Yes.
+The collector now reads each row's feature count and stamp, and the three
+states are told apart — Yes, No (absent, or another account's, with the
+note saying which), and **unknown** for a row that is readable and empty,
+because "you have no routes" is neither a capability nor a fault and
+belongs on neither side of the tally.
 
 ## Two halves, doing two jobs
 
@@ -198,7 +313,26 @@ actually missing for this account. It goes through the worker's own
 `warm-cache` message rather than a `cache.put` from the page because
 SNOW-624 made `_warmCache` stamp a same-origin HTML response with the
 principal its body declares, and an unstamped entry is one the worker
-refuses for ever.
+refuses for ever. SNOW-912 made that same path pull the page's
+same-origin scripts and stylesheets too, so what the button saves is a
+map page that opens rather than one that paints a blank frame.
+
+The gate reads the `app-opens` check's `status` from
+`offline_audit_core.js`, and offers the control for **every** failing
+state. It once read a row called `map-page` and a status of `ok`, neither
+of which the core has ever produced, so the lookup found nothing and the
+button was hidden on every device — including the one whose verdict was
+telling its owner, in red, to go and open the map. Any future gate here
+names ids and statuses the core actually emits
+(`tests/js/test_offline_audit.js` holds the line).
+
+It also briefly excluded `reason: 'scripts'`, on the reasoning that
+warming fetched only HTML. It has not fetched only HTML since the commit
+that introduced the gate — `_warmShellSubresources` fetches the modules
+the page names and the cache is missing — so the exclusion left the one
+state the repair was built for with no way to reach the repair. Every
+failing state is offered the control; the re-run afterwards is what says
+whether it worked.
 
 **Copy report** puts the whole thing on the clipboard as text, for the
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is

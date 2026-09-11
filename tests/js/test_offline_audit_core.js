@@ -39,11 +39,30 @@ function healthy(overrides) {
         },
         { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
         { url: 'https://snowdesk.info/static/css/output.abc.css', isPage: false },
-        { url: 'https://snowdesk.info/api/ratings/?c=CH', isPage: false },
-        { url: 'https://snowdesk.info/api/regions.geojson', isPage: false },
+        // SNOW-914: the URLs the map's COLD OPEN asks for, which is what
+        // the rows are answered against — any other day's ratings, or any
+        // other country's outlines, are a cache miss and a blank map.
+        {
+          url: 'https://snowdesk.info/api/ratings/?d=2026-09-11&country=ch',
+          isPage: false,
+        },
+        {
+          url: 'https://snowdesk.info/api/regions.geojson?country=ch',
+          isPage: false,
+        },
       ],
       currentPrincipal: null,
       mapPath: '/',
+      // SNOW-912: what the cached map page boots from. A healthy device
+      // holds every one of them; the row is answered against this list,
+      // not against "is any script cached".
+      mapDependencies: [
+        'https://snowdesk.info/static/js/map.abc.js',
+        'https://snowdesk.info/static/css/output.abc.css',
+      ],
+      // SNOW-914: the day the cached page will boot on, off its own
+      // ``data-today``. The ratings entry above is that day's.
+      mapDay: '2026-09-11',
       areas: [
         {
           id: 'base-openfreemap',
@@ -70,7 +89,16 @@ function healthy(overrides) {
         },
       ],
       stores: { 'data:favourites': 3 },
-      overlayKeys: ['favourites', 'community_reports', 'weather', 'routes'],
+      // SNOW-914: rows, not keys. `favourites` and `routes` are
+      // account-scoped, so their stamp has to match `currentPrincipal`
+      // (null here) or the reader refuses them; an empty FeatureCollection
+      // is readable and still draws nothing.
+      overlays: {
+        favourites: { features: 2, principal: null },
+        community_reports: { features: 3 },
+        weather: { features: 4 },
+        routes: { features: 1, principal: null },
+      },
       panelKeys: ['observations'],
       mutations: { count: 0 },
       dbAvailable: true,
@@ -357,7 +385,13 @@ describe('the verdict', () => {
     // the exact species of reassurance this whole feature exists to stop
     // being given.
     const report = core.buildReport(
-      healthy({ overlayKeys: ['favourites', 'community_reports', 'routes'] }),
+      healthy({
+        overlays: {
+          favourites: { features: 2, principal: null },
+          community_reports: { features: 3 },
+          routes: { features: 1, principal: null },
+        },
+      }),
       {},
     );
     expect(row(report, 'weather').status).toBe('no');
@@ -425,6 +459,312 @@ describe('the verdict', () => {
   });
 });
 
+describe('the rows that answer about what the user will see', () => {
+  // SNOW-914/915. Each of these read Yes on a device that would have shown
+  // the user nothing — the panel disagreeing with the screen, which is the
+  // only way it loses its value.
+
+  it('refuses ratings cached for a day other than the one the page opens on', () => {
+    // The journey this app is for: open it at home on Tuesday, open it on
+    // the mountain on Wednesday. The boot fetch asks for the cached page's
+    // own `data-today` and `_staleWhileRevalidate` matches exact URLs, so
+    // last week's feed paints nothing — under a green row.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+          { url: 'https://snowdesk.info/static/css/output.abc.css', isPage: false },
+          {
+            url: 'https://snowdesk.info/api/ratings/?d=2026-09-02&country=ch',
+            isPage: false,
+          },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'danger-ratings').status).toBe('no');
+  });
+
+  it('accepts the feed for the day the cached page will open on', () => {
+    expect(row(core.buildReport(healthy(), {}), 'danger-ratings').status).toBe('yes');
+  });
+
+  it('answers unknown for ratings when the page names no day', () => {
+    const report = core.buildReport(healthy({ mapDay: null }), {});
+
+    expect(row(report, 'danger-ratings').status).toBe('unknown');
+  });
+
+  it('refuses region outlines cached for another country', () => {
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+          { url: 'https://snowdesk.info/static/css/output.abc.css', isPage: false },
+          {
+            url: 'https://snowdesk.info/api/regions.geojson?country=fr',
+            isPage: false,
+          },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'region-shapes').status).toBe('no');
+  });
+
+  it('does not count the Help page as a bulletin', () => {
+    // SNOW-915: every public page is cached by the visit that renders it,
+    // and the row counted all of them. Reading Help once told the user
+    // their bulletins were saved.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/help/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/privacy/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/trips/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'bulletins').status).toBe('no');
+  });
+
+  it('counts a bulletin in each of its three URL forms', () => {
+    // /<region_id>/, /<region_id>/<slug>/ and /<region_id>/<slug>/<date>/,
+    // all served by bulletin_detail.
+    for (const path of ['/ch-4115/', '/ch-4115/verbier/', '/ch-4115/verbier/2026-02-16/']) {
+      const report = core.buildReport(
+        healthy({
+          shellEntries: [
+            { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+            { url: `https://snowdesk.info${path}`, isPage: true, principal: 'anonymous' },
+            { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+          ],
+        }),
+        {},
+      );
+
+      expect(row(report, 'bulletins').status, path).toBe('yes');
+    }
+  });
+
+  it('refuses an overlay stamped for another account', () => {
+    // `getOverlay` returns null for it, so the row IS on the device and
+    // invisible — the map draws nothing and the panel said Yes.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: { routes: { features: 4, principal: 'acct-2' } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+    expect(row(report, 'routes').reason).toBe('principal');
+  });
+
+  it('answers unknown for an overlay that is readable and empty', () => {
+    // Nothing stored because there is nothing to store. Not Yes (nothing
+    // will appear) and not No (nothing is broken).
+    const report = core.buildReport(
+      healthy({ overlays: { weather: { features: 0 } } }),
+      {},
+    );
+
+    expect(row(report, 'weather').status).toBe('unknown');
+    expect(row(report, 'weather').reason).toBe('empty');
+  });
+
+  it('counts an empty overlay towards neither side of the tally', () => {
+    const report = core.buildReport(
+      healthy({ overlays: { weather: { features: 0 } } }),
+      {},
+    );
+
+    const weather = row(report, 'weather');
+    expect(weather.status).not.toBe('yes');
+    expect(weather.status).not.toBe('no');
+  });
+
+  it('asks the app-opens row for scripts and the looks-right row for styles', () => {
+    // Two rows, two consequences: an app that opens unstyled is ugly and
+    // usable, where one that does not open is neither. Folding them
+    // together would block the verdict over a missing stylesheet.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'app-opens').status).toBe('yes');
+    expect(row(report, 'app-looks-right').status).toBe('no');
+  });
+
+  it('does not call the app styled because some other page’s CSS is cached', () => {
+    // `fileCounts(r).style > 0` was "is any CSS cached", which the settings
+    // page's own stylesheet makes true on the very device reading this.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+          { url: 'https://snowdesk.info/static/css/settings.abc.css', isPage: false },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'app-looks-right').status).toBe('no');
+  });
+});
+
+describe('resolving which basemap is on screen (SNOW-913)', () => {
+  // The map resolves a stored preference against the catalogue it actually
+  // renders and falls back to the deployed default. The report has to do
+  // the same, or it labels a style "on screen" that the map will not show —
+  // which is the failure this whole ticket is about, one level down.
+  const CATALOGUE = {
+    keys: ['openfreemap_liberty', 'swisstopo_winter'],
+    fallback: 'openfreemap_liberty',
+  };
+
+  it('reads the catalogue and the default out of a cached page', () => {
+    const html = [
+      '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>',
+      '<button class="basemap-menu-item" data-basemap-key="openfreemap_liberty"></button>',
+      '<button class="basemap-menu-item" data-basemap-key="swisstopo_winter"></button>',
+      '<button class="basemap-menu-item" data-basemap-key="swisstopo_winter"></button>',
+    ].join('\n');
+
+    expect(core.pageBasemaps(html)).toEqual(CATALOGUE);
+  });
+
+  it('keeps a stored choice the catalogue still offers', () => {
+    expect(core.resolveBasemap(CATALOGUE, 'swisstopo_winter', null)).toBe(
+      'swisstopo_winter',
+    );
+  });
+
+  it('drops a stored choice the catalogue no longer offers', () => {
+    // A style removed from the picker leaves its preference behind in
+    // localStorage, and map.js quietly falls back to the default — so the
+    // stale key is precisely NOT what the reader is looking at.
+    expect(core.resolveBasemap(CATALOGUE, 'retired_style', null)).toBe(
+      'openfreemap_liberty',
+    );
+  });
+
+  it('falls back to the host page’s default when the catalogue has no own', () => {
+    expect(core.resolveBasemap({ keys: ['a'], fallback: null }, 'gone', 'ign_plan')).toBe(
+      'ign_plan',
+    );
+  });
+
+  it('trusts the stored choice when there is no catalogue to check it against', () => {
+    // No cached page means no catalogue — and the page being absent is
+    // already the blocking row above.
+    expect(core.resolveBasemap(null, 'swisstopo_winter', 'ign_plan')).toBe(
+      'swisstopo_winter',
+    );
+  });
+
+  it('names nothing when nothing is stored, offered or defaulted', () => {
+    expect(core.resolveBasemap(null, null, null)).toBeNull();
+  });
+});
+
+describe('the basemap rows (SNOW-913)', () => {
+  // The report has to answer about the style the reader is LOOKING AT. It
+  // used to roll up only what the device had stored, so someone who had
+  // switched to Swisstopo was told about OpenFreeMap — a row naming a
+  // basemap they were not using, and none for the one they were.
+  const COPY = {
+    'row-basemap': '%(name)s basemap',
+    'row-basemap-current': '%(name)s basemap (on screen)',
+    'basemap-swisstopo_winter': 'Swisstopo (CH)',
+    'basemap-openfreemap': 'OpenFreeMap',
+  };
+
+  /** The basemap rows, in the order the report paints them. */
+  function basemapRows(report) {
+    const rows = [];
+    report.sections.forEach((section) => {
+      section.checks.forEach((check) => {
+        if (check.id.indexOf('basemap:') === 0) rows.push(check);
+      });
+    });
+    return rows;
+  }
+
+  it('names the basemap on screen even with nothing stored for it', () => {
+    // The field report exactly: switched to Swisstopo, whose wide-band warm
+    // never completed, so no record for it exists anywhere on the device.
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    const rows = basemapRows(report);
+    expect(rows[0].label).toBe('Swisstopo (CH) basemap (on screen)');
+    expect(rows[0].status).toBe('no');
+  });
+
+  it('puts it first, ahead of a basemap the device merely holds bytes for', () => {
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    expect(basemapRows(report).map((check) => check.id)).toEqual([
+      'basemap:swisstopo_winter',
+      'basemap:openfreemap',
+    ]);
+  });
+
+  it('leaves the stored-but-unselected one plainly labelled', () => {
+    // Both rows saying "X basemap" would give the reader no way to tell
+    // which one is theirs, which is the whole failure being fixed.
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    expect(basemapRows(report)[1].label).toBe('OpenFreeMap basemap');
+  });
+
+  it('does not duplicate a selected basemap the device also holds', () => {
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'openfreemap' }),
+      COPY,
+    );
+
+    const rows = basemapRows(report);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('OpenFreeMap basemap (on screen)');
+  });
+
+  it('claims no current basemap where neither choice nor default is known', () => {
+    // static/offline.html: a static file, no server to name the deployed
+    // default, and nobody has opened the picker. An omission, not a guess.
+    const report = core.buildReport(healthy({ selectedBasemap: null }), COPY);
+
+    const rows = basemapRows(report);
+    expect(rows.map((check) => check.id)).toEqual(['basemap:openfreemap']);
+    expect(rows[0].label).toBe('OpenFreeMap basemap');
+  });
+});
+
 describe('the app-opens row', () => {
   it('ignores the query string, as the worker does', () => {
     // map.js writes ?d=YYYY-MM-DD with history.replaceState while the
@@ -441,10 +781,63 @@ describe('the app-opens row', () => {
           { url: 'https://snowdesk.info/static/js/a.js', isPage: false },
           { url: 'https://snowdesk.info/static/css/a.css', isPage: false },
         ],
+        mapDependencies: [
+          'https://snowdesk.info/static/js/a.js',
+          'https://snowdesk.info/static/css/a.css',
+        ],
       }),
       {},
     );
     expect(row(report, 'app-opens').status).toBe('yes');
+  });
+
+  it('refuses a page whose own modules are not cached', () => {
+    // The false green this row existed to prevent and did not. A device
+    // holding the HTML and none of the JavaScript it boots from opens to
+    // a blank frame, which to the person holding the phone is a page that
+    // did not open — and the row used to pass on a count of ANY cached
+    // script, which the two precached audit modules make true everywhere.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/offline_audit.js', isPage: false },
+          { url: 'https://snowdesk.info/static/js/offline_audit_core.js', isPage: false },
+        ],
+        mapDependencies: ['https://snowdesk.info/static/js/map.abc.js'],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').status).toBe('blocked');
+    expect(row(report, 'app-opens').reason).toBe('scripts');
+  });
+
+  it('refuses a page whose body could not be read', () => {
+    // Unreadable is not verified. No rather than unknown, because warming
+    // overwrites the entry — so the remedy this report offers still
+    // applies, and a reader told No and given a working button is better
+    // served than one told Yes about a page nobody could check.
+    const report = core.buildReport(healthy({ mapDependencies: null }), {});
+
+    expect(row(report, 'app-opens').status).toBe('blocked');
+    expect(row(report, 'app-opens').reason).toBe('unreadable');
+  });
+
+  it('answers unknown for a page that names nothing on a device holding nothing', () => {
+    // `missingFrom`'s rule, applied to a page instead of an area: an empty
+    // claim is not a pass. The same three-row resolution the download rows
+    // answer to.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+        ],
+        mapDependencies: [],
+      }),
+      {},
+    );
+
+    expect(row(report, 'app-opens').status).toBe('unknown');
   });
 
   it('refuses an entry with no stamp at all', () => {
@@ -530,6 +923,7 @@ describe('the summary paragraph', () => {
           { url: 'https://snowdesk.info/a.js', isPage: false },
           { url: 'https://snowdesk.info/a.css', isPage: false },
         ],
+        mapDependencies: ['https://snowdesk.info/a.js', 'https://snowdesk.info/a.css'],
       }),
       COPY,
     );
@@ -559,7 +953,13 @@ describe('the summary paragraph', () => {
     // The verdict names the primary failure; saying it again three lines
     // later is how a summary starts reading like an error log.
     const report = core.buildReport(
-      healthy({ overlayKeys: ['favourites', 'community_reports', 'routes'] }),
+      healthy({
+        overlays: {
+          favourites: { features: 2, principal: null },
+          community_reports: { features: 3 },
+          routes: { features: 1, principal: null },
+        },
+      }),
       Object.assign({}, COPY, { 'verdict-partial': 'Not everything is here.' }),
     );
     expect(report.verdict.text).toBe('Not everything is here.');
