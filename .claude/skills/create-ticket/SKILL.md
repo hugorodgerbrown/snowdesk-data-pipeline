@@ -9,9 +9,9 @@ description: >
   decomposition rule (one ticket per independently-shippable unit), the
   four-section scoping comment contract, the rule that only a clean scoping
   comment promotes a ticket to `Ready for dev`, and the Linear MCP parameter
-  traps (priority/estimate enums, exact state names, the unreliable `blocks`
-  relationship). Do NOT use to scope a ticket that already exists (`scope`) or
-  to implement one that is already scoped (`implement`).
+  traps (priority/estimate enums, exact state names, how to set blocks /
+  blockedBy / relatedTo / parentId). Do NOT use to scope a ticket that already
+  exists (`scope`) or to implement one that is already scoped (`implement`).
 allowed-tools: Read, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
@@ -185,17 +185,44 @@ No `4`, no `8`. Stick to the scale.
 spacing, punctuation. If unsure, call `list_issue_statuses` for the team
 first rather than guessing. Guessing wastes a round trip when the call fails.
 
-### The `blocks` relationship is unreliable via MCP
+### Relationships: set them, don't only describe them
 
-The `blocks` relationship parameter does not reliably accept any known format
-through the current MCP surface. **Don't use it.** Instead, document the
-blocking relationship in the ticket description or a comment:
+`save_issue` takes `blocks`, `blockedBy`, `relatedTo` and `parentId`, each as
+an array of identifiers (`["SNOW-693", "SNOW-839"]`) — `parentId` as a single
+one. All four verified 2026-09-11 across SNOW-908/909/910/911 — `relatedTo`
+and `blockedBy` on create, `blocks` and `parentId` on update — each confirmed
+by reading the issue back with `get_issue` + `includeRelations: true`.
 
-> Blocks SNOW-108 — the API contract lands here first.
+An earlier revision of this guide said `blocks` "does not reliably accept any
+known format" and prescribed prose in the description instead. That is out of
+date, and prose is not a substitute: a mention gets you an undirected
+`relatedTo` (see below), never the direction. "A blocks B" and "B blocks A"
+are the same sentence to Linear unless you set the relation. Set it **and**
+say it in the description — the relation drives the UI, the sentence carries
+the reason:
 
-> Blocked by SNOW-95 (must ship before this can be picked up).
+> Blocked by SNOW-95 — the API contract lands there first.
 
-This is a workaround, not a preference. Revisit if the MCP surface changes.
+Four things worth knowing:
+
+- **A bare `SNOW-NNN` in a description creates a `relatedTo` relation.** The
+  server rewrites the identifier into an issue element and links the pair —
+  no relation parameter involved. Deleting the mention afterwards does **not**
+  unlink them; only `removeRelatedTo` does, and it clears both edges. Probed
+  2026-09-11 on SNOW-908/692 and reverted. Two consequences: a ticket that
+  discusses its neighbours in prose acquires relations to all of them, and a
+  relation you did not set is not evidence of a bug.
+- **`blocks` and `relatedTo` are one slot per pair.** Setting `blocks` on a
+  pair already linked as `relatedTo` converts it; the pair does not end up
+  carrying both.
+- **Relationship params are append-only.** Existing links are never removed by
+  a later call. Use `removeBlocks` / `removeBlockedBy` / `removeRelatedTo` to
+  take one off.
+- **`parentId` does not confer the parent's project.** A child keeps whatever
+  project it had — including none, which puts it outside every project view
+  its siblings appear in. Set `project` explicitly when parenting.
+
+Always read the issue back with `includeRelations: true` after setting one.
 
 ### Project updates are not a comment, not a document
 
