@@ -132,6 +132,7 @@
     'row-danger-ratings': 'Danger ratings',
     'row-region-shapes': 'Region outlines',
     'row-basemap': '%(name)s basemap',
+    'row-basemap-current': '%(name)s basemap (on screen)',
     'row-no-downloads': 'Anything downloaded at all',
     'label-dropzone': '%(name)s (drop zone)',
     'label-custom': '%(name)s (area you drew)',
@@ -299,6 +300,45 @@
   function looksLikePage(url) {
     var core = self.pwaOfflineAuditCore;
     return !!core && core.classifyEntry(url) === 'page';
+  }
+
+  // SNOW-913: where map_state.js keeps the visitor's basemap choice. Named
+  // here rather than imported because this module runs on static/offline.html
+  // too, where map_state.js is not loaded — the same reason every other
+  // reading in this file is taken from storage directly.
+  var BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+
+  /**
+   * The basemap the reader is looking at (SNOW-913).
+   *
+   * The stored choice, or the deployed default the host page was rendered
+   * with when nobody has chosen. ``localStorage`` is written only when
+   * someone opens the picker and picks, so an untouched device has no key
+   * and is looking at ``settings.BASEMAP``.
+   *
+   * Null on ``offline.html``, which is a static file with no server to ask
+   * for that default: the report then names no current basemap rather than
+   * guessing at one, which is the same rule every other reading here
+   * follows.
+   *
+   * @param {HTMLElement|null} root The panel element, which carries the
+   *   deployed default as ``data-default-basemap-key`` where a server
+   *   rendered it.
+   * @returns {string|null}
+   */
+  function selectedBasemap(root) {
+    var stored = null;
+    try {
+      stored = self.localStorage ? self.localStorage.getItem(BASEMAP_STORAGE_KEY) : null;
+    } catch (_err) {
+      // A private window, or site data blocked outright. Falls through to
+      // the server default, which is still true for a device that cannot
+      // remember a choice.
+      stored = null;
+    }
+    if (stored) return stored;
+    var fallback = root ? root.getAttribute('data-default-basemap-key') : null;
+    return fallback || null;
   }
 
   /**
@@ -642,10 +682,15 @@
    * Take every reading the report is built from, marking the clock as
    * each one lands.
    *
+   * @param {HTMLElement|null} [root] The panel being painted, which carries
+   *   the deployed default basemap where a server rendered it (SNOW-913).
+   *   Defaults to the first panel on the page, so a bare ``collect()`` —
+   *   the console, a test — still reads the same thing the panel does.
    * @returns {Promise<Object>} The readings object ``buildReport``
    *   documents.
    */
-  async function collect() {
+  async function collect(root) {
+    var panel = root || document.querySelector(ROOT_SELECTOR);
     var swSupported = 'serviceWorker' in navigator;
     var registration = null;
     if (swSupported) {
@@ -755,6 +800,10 @@
       // there is no page to read. The core verifies "The app opens"
       // against this rather than against a count of cached scripts.
       mapDependencies: shell.mapDependencies,
+      // SNOW-913: the style on screen. The basemap rows are otherwise a
+      // roll-up of what the device has STORED, which is a different
+      // question from the one the reader is asking.
+      selectedBasemap: selectedBasemap(panel),
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
       mapPath: mapPath,
       areas: areas,
@@ -1025,7 +1074,7 @@
       // and then stops moving.
       output.hidden = false;
       renderLog(output, self.pwaOfflineAuditCore.pendingReport(t));
-      var readings = await collect();
+      var readings = await collect(root);
       lastReport = self.pwaOfflineAuditCore.buildReport(readings, t);
       output.hidden = false;
       await build(output, lastReport, t);

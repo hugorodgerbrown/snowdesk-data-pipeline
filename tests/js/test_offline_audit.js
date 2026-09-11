@@ -98,6 +98,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  // SNOW-913: the basemap choice is per-device state that would otherwise
+  // leak from one test into the next.
+  window.localStorage.removeItem('snowdesk.map.basemap');
   // No controller in jsdom, so `liveShellCacheName` resolves null at once
   // and the collector falls back to reading every `snowdesk-shell-*`
   // bucket — the documented degraded path, and the one every test here
@@ -198,6 +201,42 @@ describe('the shell-cache reading', () => {
 
     expect(readings.shellEntries[0].principal).toBe('acct-1');
     expect(readings.mapDependencies).toBeNull();
+  });
+
+  it('reads the basemap the reader is looking at', async () => {
+    // SNOW-913: the stored choice wins. A reader on Swisstopo must not be
+    // answered about OpenFreeMap.
+    window.localStorage.setItem('snowdesk.map.basemap', 'swisstopo_winter');
+    installCachesStub({});
+
+    const readings = await audit.collect();
+
+    expect(readings.selectedBasemap).toBe('swisstopo_winter');
+  });
+
+  it('falls back to the deployed default when nobody has chosen', async () => {
+    // localStorage is written only when someone opens the picker and picks,
+    // so an untouched device is looking at settings.BASEMAP with nothing
+    // stored to say so. The panel carries it.
+    window.localStorage.removeItem('snowdesk.map.basemap');
+    const root = document.createElement('div');
+    root.setAttribute('data-offline-audit', '');
+    root.setAttribute('data-default-basemap-key', 'ign_plan');
+    installCachesStub({});
+
+    const readings = await audit.collect(root);
+
+    expect(readings.selectedBasemap).toBe('ign_plan');
+  });
+
+  it('names no basemap where neither is knowable', async () => {
+    // static/offline.html, on a device that has never opened the picker.
+    window.localStorage.removeItem('snowdesk.map.basemap');
+    installCachesStub({});
+
+    const readings = await audit.collect(document.createElement('div'));
+
+    expect(readings.selectedBasemap).toBeNull();
   });
 
   it('reports an unstamped page as unstamped rather than guessing', async () => {

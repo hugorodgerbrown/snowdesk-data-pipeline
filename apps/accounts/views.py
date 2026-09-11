@@ -1124,6 +1124,15 @@ def settings_view(request: HttpRequest) -> HttpResponse:
                             for this request (SNOW-482). Gates the sync-log
                             panel, which reads ``window.pwaDb.getSyncLog()``
                             client-side — nothing server-side to query here.
+        default_basemap_key — the deployed default basemap
+                            (``settings.BASEMAP``), the same value the map
+                            page renders as ``data-default-basemap-key``
+                            (SNOW-913). The offline-content report names the
+                            basemap the reader is actually looking at, and a
+                            visitor who has never opened the basemap picker
+                            has written no ``localStorage`` preference — so
+                            the only way to know which style they will see is
+                            to be told the default that stands in for it.
 
     Args:
         request: Incoming HTTP request.
@@ -1141,6 +1150,7 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         {
             "account": _get_account(request),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+            "default_basemap_key": settings.BASEMAP,
         },
     )
 

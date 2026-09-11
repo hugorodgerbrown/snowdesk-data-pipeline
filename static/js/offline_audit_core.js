@@ -158,6 +158,11 @@
    * @property {string[]|null} [mapDependencies] SNOW-912: the same-origin
    *   modules the cached map page's HTML boots from. Null when there is no
    *   page to read, or its body could not be read — answered No, not Yes.
+   * @property {string|null} [selectedBasemap] SNOW-913: the basemap key the
+   *   reader is looking at — their stored choice, or the deployed default
+   *   where a server could say. Null only where neither is knowable
+   *   (static/offline.html, nothing chosen), in which case no row claims to
+   *   be the current one.
    * @property {AreaReading[]} [areas]
    * @property {Record<string, number|null>} [stores] Row counts by store.
    * @property {string[]} [overlayKeys] Which ``data:map_overlays`` rows
@@ -823,7 +828,20 @@
       if (!key || keys.indexOf(key) >= 0) return;
       keys.push(key);
     });
-    return keys.sort();
+    keys.sort();
+    // SNOW-913: the style ON SCREEN comes first, and is present whether or
+    // not this device has stored a byte for it. Rolling up only what is
+    // stored answered a question nobody asked: a reader who has switched to
+    // Swisstopo was told about OpenFreeMap — a row naming a basemap they are
+    // not looking at, and no row at all for the one they are. A report that
+    // disagrees with what the reader can see is worth less than no report.
+    var current = r.selectedBasemap;
+    if (!current) return keys;
+    return [current].concat(
+      keys.filter(function (key) {
+        return key !== current;
+      }),
+    );
   }
 
   /**
@@ -940,11 +958,18 @@
       // is drawn ON, so it belongs with the other things the map needs
       // rather than in the list of places the user downloaded.
       basemapsFor(readings).forEach(function (key) {
+        // SNOW-913: the row for the style on screen says so. Two rows
+        // reading "X basemap" and "Y basemap" give a reader no way to tell
+        // which one is theirs, and the whole point of naming the current
+        // one is that it cannot be mistaken for the other.
+        var current = key === readings.selectedBasemap;
         rows.push({
           id: 'basemap:' + key,
           section: 'map',
           critical: false,
-          label: fill(s(t, 'row-basemap'), { name: basemapName(key, t) }),
+          label: fill(s(t, current ? 'row-basemap-current' : 'row-basemap'), {
+            name: basemapName(key, t),
+          }),
           basemap: key,
         });
       });

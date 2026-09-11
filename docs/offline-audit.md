@@ -88,7 +88,31 @@ a basemap and records which, and the shared low-zoom layer is stored per
 basemap too — rolling them up answers the question the per-area rows
 cannot reach: *which map style will I actually see*. A device could hold
 a complete Swisstopo download and be sitting on OpenFreeMap, and nothing
-said so. The row is Yes only when both halves are there: the style
+said so.
+
+**The style on screen always gets a row, and says so** (SNOW-913). The
+roll-up above is over what the device has *stored*, and on its own that
+answered a question nobody asked. A reader who had switched to Swisstopo
+— whose wide-band warm had not completed, so no record for it existed —
+was shown one row, "OpenFreeMap basemap: No", about a style they were not
+looking at, and no row at all for the one they were. The report has to
+agree with what the reader can see; a row naming a basemap they are not
+using corrodes the panel faster than a missing row would.
+
+So `selectedBasemap` is a reading like any other: `localStorage`'s
+`snowdesk.map.basemap` (`BASEMAP_STORAGE_KEY`, written only when someone
+opens the picker and chooses), falling back to the deployed default the
+host page carries as `data-default-basemap-key` — `settings.BASEMAP`,
+which only a server can say, and which is what an untouched device is
+actually looking at. It is first in the list whether or not a byte is
+stored for it, and its label is `row-basemap-current` ("… (on screen)")
+rather than `row-basemap`, because two rows reading "X basemap" and "Y
+basemap" leave the reader no way to tell which is theirs.
+
+`static/offline.html` is a static file with no server to ask, so on a
+device that has never opened the picker it names no current basemap at
+all — an omission rather than a guess, which is the rule every other
+reading here follows. The row is Yes only when both halves are there: the style
 document, TileJSON and sprite (without which MapLibre cannot learn a
 single tile URL — SNOW-843), and the z0–7 tiles (without which the map
 falls off the edge of every downloaded area the moment the camera pulls

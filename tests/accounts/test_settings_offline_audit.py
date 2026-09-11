@@ -58,7 +58,26 @@ class TestPartial:
 
     def test_root_carries_the_binding_attribute(self) -> None:
         """``data-offline-audit`` is what the module looks for."""
-        assert "data-offline-audit>" in render_to_string(PARTIAL, {})
+        assert "data-offline-audit " in render_to_string(PARTIAL, {})
+
+    def test_root_carries_the_deployed_default_basemap(self) -> None:
+        """
+        SNOW-913: the report names the basemap on screen, and a visitor who
+        has never opened the picker has stored no choice — the deployed
+        default is the only thing that can stand in for it, and only a
+        server can say what it is.
+        """
+        html = render_to_string(PARTIAL, {"default_basemap_key": "swisstopo_winter"})
+
+        assert 'data-default-basemap-key="swisstopo_winter"' in html
+
+    def test_the_default_basemap_attribute_is_empty_without_one(self) -> None:
+        """
+        Rendered empty rather than omitted, so the reader (``selectedBasemap``
+        in offline_audit.js) gets a falsy value and names no current basemap
+        instead of guessing at one.
+        """
+        assert 'data-default-basemap-key=""' in render_to_string(PARTIAL, {})
 
     def test_controls_carry_their_binding_attributes(self) -> None:
         """Run, Copy, Save and the status line are each found by attribute."""
@@ -147,6 +166,19 @@ class TestSettingsPage:
         )
         assert "offline_audit_core" in html
         assert "offline_audit." in html
+
+    def test_the_page_names_the_deployed_default_basemap(self) -> None:
+        """
+        SNOW-913: the view is the only half that can say what
+        ``settings.BASEMAP`` is, and the report needs it for a visitor who
+        has never opened the basemap picker.
+        """
+        html = (
+            _client_for(AccountFactory.create())
+            .get(reverse("accounts:settings"))
+            .content.decode()
+        )
+        assert f'data-default-basemap-key="{settings.BASEMAP}"' in html
 
     def test_the_core_is_loaded_before_the_module(self) -> None:
         """``offline_audit.js`` calls into the core at bind time."""

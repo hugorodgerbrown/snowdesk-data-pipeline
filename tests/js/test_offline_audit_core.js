@@ -432,6 +432,87 @@ describe('the verdict', () => {
   });
 });
 
+describe('the basemap rows (SNOW-913)', () => {
+  // The report has to answer about the style the reader is LOOKING AT. It
+  // used to roll up only what the device had stored, so someone who had
+  // switched to Swisstopo was told about OpenFreeMap — a row naming a
+  // basemap they were not using, and none for the one they were.
+  const COPY = {
+    'row-basemap': '%(name)s basemap',
+    'row-basemap-current': '%(name)s basemap (on screen)',
+    'basemap-swisstopo_winter': 'Swisstopo (CH)',
+    'basemap-openfreemap': 'OpenFreeMap',
+  };
+
+  /** The basemap rows, in the order the report paints them. */
+  function basemapRows(report) {
+    const rows = [];
+    report.sections.forEach((section) => {
+      section.checks.forEach((check) => {
+        if (check.id.indexOf('basemap:') === 0) rows.push(check);
+      });
+    });
+    return rows;
+  }
+
+  it('names the basemap on screen even with nothing stored for it', () => {
+    // The field report exactly: switched to Swisstopo, whose wide-band warm
+    // never completed, so no record for it exists anywhere on the device.
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    const rows = basemapRows(report);
+    expect(rows[0].label).toBe('Swisstopo (CH) basemap (on screen)');
+    expect(rows[0].status).toBe('no');
+  });
+
+  it('puts it first, ahead of a basemap the device merely holds bytes for', () => {
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    expect(basemapRows(report).map((check) => check.id)).toEqual([
+      'basemap:swisstopo_winter',
+      'basemap:openfreemap',
+    ]);
+  });
+
+  it('leaves the stored-but-unselected one plainly labelled', () => {
+    // Both rows saying "X basemap" would give the reader no way to tell
+    // which one is theirs, which is the whole failure being fixed.
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'swisstopo_winter' }),
+      COPY,
+    );
+
+    expect(basemapRows(report)[1].label).toBe('OpenFreeMap basemap');
+  });
+
+  it('does not duplicate a selected basemap the device also holds', () => {
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'openfreemap' }),
+      COPY,
+    );
+
+    const rows = basemapRows(report);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('OpenFreeMap basemap (on screen)');
+  });
+
+  it('claims no current basemap where neither choice nor default is known', () => {
+    // static/offline.html: a static file, no server to name the deployed
+    // default, and nobody has opened the picker. An omission, not a guess.
+    const report = core.buildReport(healthy({ selectedBasemap: null }), COPY);
+
+    const rows = basemapRows(report);
+    expect(rows.map((check) => check.id)).toEqual(['basemap:openfreemap']);
+    expect(rows[0].label).toBe('OpenFreeMap basemap');
+  });
+});
+
 describe('the app-opens row', () => {
   it('ignores the query string, as the worker does', () => {
     // map.js writes ?d=YYYY-MM-DD with history.replaceState while the
