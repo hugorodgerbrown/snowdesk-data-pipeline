@@ -222,9 +222,9 @@ describe('the stored camera reaches the constructor', () => {
 
 describe('deep links suppress the restore', () => {
   it('ignores the stored camera for a #REGION-ID hash', async () => {
-    // The hash does not move the camera on its own — selectFeature only
-    // frames a region when AUTOZOOM is on, and it defaults off — so a
-    // restore here would open a popup for a region nowhere near the view.
+    // The hash does not move the camera on its own — selectFeature does not
+    // frame the region — so a restore here would open a popup for a region
+    // nowhere near the view.
     const mapStub = await bootWith('/#CH-4115', JSON.stringify(ECRINS));
     const options = cameraOptions(mapStub);
 

@@ -59,7 +59,6 @@ describe('the channel surface', () => {
       'countryState',
       // SNOW-660 removed 'bootDateKey': nothing computes a cold-open date
       // any more, so there is no shared binding for one to travel on.
-      'autozoom',
       'isPlaying',
     ]) {
       expect(key in channel).toBe(true);
@@ -103,12 +102,6 @@ describe('reads are live, not snapshots', () => {
 });
 
 describe('writes reach the bundle’s own bindings', () => {
-  it('writes autozoom through', () => {
-    expect(channel.autozoom).toBe(false);
-    channel.autozoom = true;
-    expect(channel.autozoom).toBe(true);
-  });
-
   it('writes isPlaying through', () => {
     channel.isPlaying = true;
     expect(channel.isPlaying).toBe(true);

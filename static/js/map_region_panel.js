@@ -665,9 +665,8 @@
   // machinery.
   //
   // Framing is a separate call rather than a consequence: `selectFeature`
-  // only moves the camera when the map's autozoom preference is on, and
-  // somebody who pressed a region's name has asked to be taken there
-  // whatever that preference says — the rule every panel row follows
+  // does not move the camera, and somebody who pressed a region's name has
+  // asked to be taken there — the rule every panel row follows
   // (static/js/row_focus.js).
   //
   // The panel stays OPEN, unlike the sheets' rows, which close on a focus

@@ -117,7 +117,6 @@ export const MAP_BUNDLE = [
   'map_basemap_picker.js',
   'map_region_download.js',
   'map_custom_download.js',
-  'map_autozoom.js',
   'map_geolocate.js',
   'map_season_ribbon.js',
   // SNOW-801: the region + date panel. After `map_season_ribbon.js`, which owns
