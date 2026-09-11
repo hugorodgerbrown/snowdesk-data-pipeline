@@ -174,14 +174,21 @@
                 font-size: 0.75rem;
                 opacity: 0.55;
             }
-            /* Offline-content audit — SNOW-907. Sits between Retry and
-               the recovery panel: it is the non-destructive answer to
-               "what is on this device", and most people who open it
+            /* Offline-content audit — SNOW-907. Sits between Retry
+               and the recovery panel: it is the non-destructive answer
+               to "what is on this device", and most people who open it
                never need the one below. Styled here rather than in a
                shared stylesheet because this page has no external assets
                by design; the app-side copy of the same markup is styled
                by src/css/main.css's [data-offline-audit] block. The
-               module emits no classes precisely so the two can differ. */
+               module emits no classes precisely so the two can differ.
+
+               Two halves, doing two jobs. The LOG is evidence —
+               monospace, one line per check, recessed — and its job is
+               to show that fifteen separate things were genuinely looked
+               at. The SUMMARY is the answer, in ordinary prose on a
+               tinted ground, and is the part most readers read instead
+               of the log rather than as well as it. */
             .audit {
                 width: 100%;
                 max-width: 28rem;
@@ -212,95 +219,126 @@
                 opacity: 0.7;
             }
             .audit-status {
-                margin: 0;
+                margin: 0.75rem 0 0;
                 font-size: 0.75rem;
+                text-align: center;
                 opacity: 0.7;
             }
             [data-offline-audit-output][hidden] {
                 display: none;
             }
+            [data-audit-log] {
+                margin-top: 1.25rem;
+                padding: 0.75rem 1rem;
+                border: 1px solid rgb(0 0 0 / 0.12);
+                border-radius: 0.75rem;
+                font-size: 0.75rem;
+                line-height: 1.9;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            }
+            [data-audit-section] + [data-audit-section] {
+                margin-top: 1rem;
+            }
+            /* The section rule is drawn by the heading itself — a label,
+               then a line to the right edge — so a section costs one row
+               rather than a heading plus a separator. */
+            [data-audit-section] h3 {
+                display: flex;
+                align-items: center;
+                margin: 0 0 0.25rem;
+                gap: 0.75rem;
+                font-weight: 400;
+                font-size: 0.6875rem;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                opacity: 0.5;
+            }
+            [data-audit-section] h3::after {
+                flex: 1;
+                border-top: 1px solid currentColor;
+                content: '';
+            }
+            [data-audit-section] ol {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+            /* Three columns and no wrapping: elapsed, label, answer.
+               `minmax(0, 1fr)` on the label is what lets it truncate
+               instead of pushing the answer off the row. */
+            [data-audit-check] {
+                display: grid;
+                grid-template-columns: 6ch minmax(0, 1fr) auto;
+                align-items: baseline;
+                gap: 0.75rem;
+            }
+            [data-audit-at] {
+                font-variant-numeric: tabular-nums;
+                text-align: right;
+                opacity: 0.45;
+            }
+            [data-audit-label] {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                opacity: 0.75;
+            }
+            [data-audit-value] {
+                font-variant-numeric: tabular-nums;
+                text-align: right;
+                white-space: nowrap;
+            }
+            /* Colour on the ANSWER only, never the label — the label is
+               what is being checked and does not change. Every state is
+               also spelled out in the summary and in the copied text, so
+               nothing here is colour-only. A recovery page cannot reach
+               the design tokens, so these are literal: the one place in
+               the project where that is the only option. */
+            [data-audit-check][data-audit-status='ok'] [data-audit-value] {
+                color: #2f7a3f;
+            }
+            [data-audit-check][data-audit-status='warn'] [data-audit-value] {
+                color: #b4700a;
+            }
+            [data-audit-check][data-audit-status='fail'] [data-audit-value] {
+                color: #cc0000;
+            }
+            [data-audit-check][data-audit-status='unknown'] [data-audit-value] {
+                opacity: 0.45;
+            }
+            [data-audit-summary] {
+                margin-top: 0.75rem;
+                padding: 1rem;
+                border-radius: 0.75rem;
+                background: #e3f0e5;
+                color: #1d4526;
+            }
+            [data-audit-summary][data-audit-status='warn'] {
+                background: #f6ecd8;
+                color: #4a3308;
+            }
+            [data-audit-summary][data-audit-status='fail'] {
+                background: #f7e2e2;
+                color: #5c1414;
+            }
             [data-audit-verdict] {
                 max-width: none;
-                margin: 1.5rem 0 0;
-                padding-left: 0.75rem;
-                border-left: 3px solid currentColor;
+                margin: 0;
                 font-weight: 600;
                 opacity: 1;
             }
-            /* The four states, drawn with the page's own two colours plus
-               the danger-scale red the rest of the app uses. A recovery
-               page cannot reach the design tokens, so these are literal —
-               the one place in the project where that is the only
-               option. */
-            [data-audit-status='ok'] {
-                border-color: #2f7a3f;
-            }
-            [data-audit-status='warn'] {
-                border-color: #b4700a;
-            }
-            [data-audit-status='fail'] {
-                border-color: #cc0000;
-            }
-            [data-audit-section] {
-                margin-top: 1.5rem;
-            }
-            [data-audit-section] h3 {
-                margin: 0 0 0.5rem;
-                font-weight: 600;
-                font-size: 0.8125rem;
-                letter-spacing: 0.02em;
-                text-transform: uppercase;
-                opacity: 0.55;
-            }
-            [data-audit-section] dl {
-                margin: 0;
-                border-top: 1px solid currentColor;
-            }
-            [data-audit-check] {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-between;
-                padding: 0.5rem 0;
-                gap: 0.5rem 1rem;
-                border-bottom: 1px solid currentColor;
-                font-size: 0.8125rem;
-            }
-            [data-audit-check] dt {
-                min-width: 0;
-                overflow-wrap: anywhere;
-                opacity: 0.8;
-            }
-            [data-audit-check] dd {
-                margin: 0;
-                font-variant-numeric: tabular-nums;
-                text-align: right;
-            }
-            /* Colour on the VALUE only, never the label — the label is
-               what is being checked and does not change. Every state is
-               also spelled out in the detail line and in the copied text,
-               so nothing here is colour-only. */
-            [data-audit-check][data-audit-status='ok'] dd {
-                color: #2f7a3f;
-            }
-            [data-audit-check][data-audit-status='warn'] dd {
-                color: #b4700a;
-            }
-            [data-audit-check][data-audit-status='fail'] dd {
-                color: #cc0000;
-            }
-            [data-audit-check][data-audit-status='unknown'] dd {
-                opacity: 0.55;
-            }
             [data-audit-detail] {
-                flex-basis: 100%;
                 max-width: none;
-                margin: 0;
-                font-size: 0.75rem;
-                opacity: 0.6;
+                margin: 0.5rem 0 0;
+                font-size: 0.875rem;
+                line-height: 1.5;
+                opacity: 0.85;
             }
-            [data-audit-generated] {
-                margin: 1rem 0 0;
+            [data-audit-counts] {
+                max-width: none;
+                margin: 0.5rem 0 0;
                 font-size: 0.6875rem;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                 opacity: 0.5;
             }
             @media (prefers-color-scheme: dark) {
@@ -319,26 +357,32 @@
                     background: none;
                     color: inherit;
                 }
-                /* The three status colours again, lightened for the dark
-                   ground. Same reasoning as the light set: literal,
-                   because this page reaches no stylesheet. */
-                [data-audit-status='ok'] {
-                    border-color: #6fbf7f;
+                /* The audit's colours again, for the dark ground. Same
+                   reasoning as the light set: literal, because this page
+                   reaches no stylesheet. */
+                [data-audit-log] {
+                    border-color: rgb(255 255 255 / 0.15);
                 }
-                [data-audit-status='warn'] {
-                    border-color: #e0a740;
-                }
-                [data-audit-status='fail'] {
-                    border-color: #ff6b6b;
-                }
-                [data-audit-check][data-audit-status='ok'] dd {
+                [data-audit-check][data-audit-status='ok'] [data-audit-value] {
                     color: #6fbf7f;
                 }
-                [data-audit-check][data-audit-status='warn'] dd {
+                [data-audit-check][data-audit-status='warn'] [data-audit-value] {
                     color: #e0a740;
                 }
-                [data-audit-check][data-audit-status='fail'] dd {
+                [data-audit-check][data-audit-status='fail'] [data-audit-value] {
                     color: #ff6b6b;
+                }
+                [data-audit-summary] {
+                    background: #1c3322;
+                    color: #cfe8d5;
+                }
+                [data-audit-summary][data-audit-status='warn'] {
+                    background: #3a2f14;
+                    color: #f0dfb4;
+                }
+                [data-audit-summary][data-audit-status='fail'] {
+                    background: #3a1c1c;
+                    color: #f3cccc;
                 }
             }
         </style>

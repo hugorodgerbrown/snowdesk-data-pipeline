@@ -2013,105 +2013,153 @@ html.pwa-launching .pwa-launch-shell {
    them. That page has its own inline copy of this block; the two are
    allowed to differ, which is the point of the split.
 
-   Every colour here is a token. The four states map onto the
-   sync-status family (--color-sync-*) rather than the status-* flash
-   severities, because they are the same question those dots answer —
-   is this available offline — asked about a different subject. */
-[data-offline-audit] [data-audit-verdict] {
-  margin: var(--spacing-4) 0 0;
-  padding-left: var(--spacing-3);
-  border-left: 3px solid var(--color-sync-off);
-  font-weight: 600;
-  font-size: var(--text-sm);
-  color: var(--color-text-1);
+   Two halves, doing two jobs (see offline_audit_core.js's header):
+
+   [data-audit-log] is EVIDENCE. Monospace, one line per check, in a
+   recessed panel — it should read as a machine's output, because its
+   job is to show that fifteen separate things were genuinely looked at.
+   Every row is one line: the label truncates rather than wraps, and
+   there is nowhere to put a second line, which is what stops per-row
+   helper text growing back.
+
+   [data-audit-summary] is the ANSWER. Ordinary prose in the body face,
+   on a tinted ground, because this is the part written for a person.
+
+   Every colour is a token. The four states map onto the sync-status
+   family (--color-sync-*) rather than the status-* flash severities,
+   because they are the same question those dots answer — is this
+   available offline — asked about a different subject. */
+[data-offline-audit] [data-audit-log] {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.9;
 }
 
-[data-offline-audit] [data-audit-section] {
-  margin-top: var(--spacing-5);
+[data-offline-audit] [data-audit-section] + [data-audit-section] {
+  margin-top: 1rem;
 }
 
+/* The section rule is drawn by the heading itself — a label, then a line
+   running to the right edge — so a section costs one row rather than a
+   heading plus a separator. */
 [data-offline-audit] [data-audit-section] h3 {
-  margin: 0 0 var(--spacing-2);
-  font-weight: 600;
-  font-size: var(--text-xs);
-  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.25rem;
+  font-weight: 400;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-3);
 }
 
-[data-offline-audit] [data-audit-section] dl {
-  margin: 0;
+[data-offline-audit] [data-audit-section] h3::after {
+  content: '';
+  flex: 1;
   border-top: 1px solid var(--color-border);
 }
 
-/* A row wraps its own detail line onto a third line rather than into a
-   third column: the detail is a sentence and the value is a number, and
-   at 375px there is no width where both fit beside a label. */
-[data-offline-audit] [data-audit-check] {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-1) var(--spacing-4);
-  justify-content: space-between;
-  padding: var(--spacing-2) 0;
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--text-sm);
-}
-
-[data-offline-audit] [data-audit-check] dt {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--color-text-2);
-}
-
-[data-offline-audit] [data-audit-check] dd {
+[data-offline-audit] [data-audit-section] ol {
   margin: 0;
-  color: var(--color-text-1);
+  padding: 0;
+  list-style: none;
+}
+
+/* Three columns and no wrapping: elapsed, label, answer. `minmax(0, 1fr)`
+   on the label is what lets it truncate instead of pushing the answer off
+   the row — a plain `1fr` refuses to shrink below its content. */
+[data-offline-audit] [data-audit-check] {
+  display: grid;
+  grid-template-columns: 6ch minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+[data-offline-audit] [data-audit-at] {
+  color: var(--color-text-3);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-/* Colour carries the state on the VALUE only, never on the label: the
+[data-offline-audit] [data-audit-label] {
+  overflow: hidden;
+  color: var(--color-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-offline-audit] [data-audit-value] {
+  color: var(--color-text-1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Colour carries the state on the ANSWER only, never on the label: the
    label is what is being checked and does not change, and colouring a
-   whole row amber reads as a warning about the subject rather than
-   about the reading. Status is also spelled out in the detail line and
-   in the copied text form, so nothing here is colour-only. */
-[data-offline-audit] [data-audit-check][data-audit-status='ok'] dd {
+   whole row amber reads as a warning about the subject rather than about
+   the reading. Every state is also spelled out in the summary and in the
+   copied text form, so nothing here is colour-only. */
+[data-offline-audit] [data-audit-check][data-audit-status='ok'] [data-audit-value] {
   color: var(--color-sync-ok);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='warn'] dd {
+[data-offline-audit] [data-audit-check][data-audit-status='warn'] [data-audit-value] {
   color: var(--color-sync-partial);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='fail'] dd {
+[data-offline-audit] [data-audit-check][data-audit-status='fail'] [data-audit-value] {
   color: var(--color-sync-blocked);
 }
 
-[data-offline-audit] [data-audit-check][data-audit-status='unknown'] dd {
+[data-offline-audit] [data-audit-check][data-audit-status='unknown'] [data-audit-value] {
   color: var(--color-text-3);
 }
 
-[data-offline-audit] [data-audit-verdict][data-audit-status='ok'] {
-  border-left-color: var(--color-sync-ok);
+[data-offline-audit] [data-audit-summary] {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--radius-card);
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info-text);
 }
 
-[data-offline-audit] [data-audit-verdict][data-audit-status='warn'] {
-  border-left-color: var(--color-sync-partial);
+[data-offline-audit] [data-audit-summary][data-audit-status='ok'] {
+  background: var(--color-status-success-bg);
+  color: var(--color-status-success-text);
 }
 
-[data-offline-audit] [data-audit-verdict][data-audit-status='fail'] {
-  border-left-color: var(--color-sync-blocked);
+[data-offline-audit] [data-audit-summary][data-audit-status='warn'] {
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning-text);
+}
+
+[data-offline-audit] [data-audit-summary][data-audit-status='fail'] {
+  background: var(--color-status-error-bg);
+  color: var(--color-status-error-text);
+}
+
+[data-offline-audit] [data-audit-verdict] {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 [data-offline-audit] [data-audit-detail] {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--color-text-3);
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-[data-offline-audit] [data-audit-generated] {
-  margin: var(--spacing-3) 0 0;
-  font-size: var(--text-xs);
+[data-offline-audit] [data-audit-counts] {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--color-text-3);
 }

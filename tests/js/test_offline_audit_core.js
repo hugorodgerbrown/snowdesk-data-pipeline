@@ -379,6 +379,164 @@ describe('the text form', () => {
     // this is the only way the data leaves the device.
     expect(text).toContain('[ok]');
   });
+
+  it('leads with the summary and the count, as the panel does', () => {
+    // Whoever is pasted this reads it the same way round the panel is
+    // read: the answer, then how much was looked at, then the evidence.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+        ],
+      }),
+      {},
+    );
+    const text = core.reportText(report, {});
+    expect(text.indexOf(report.summary)).toBeLessThan(text.indexOf('## section-device'));
+    expect(text).toContain('need attention');
+  });
+});
+
+describe('the summary paragraph', () => {
+  const COPY = {
+    'subject-styles': 'styling',
+    'subject-feeds': 'data feeds',
+    'effect-styles': 'will look plain',
+    'effect-feeds': 'may be missing danger ratings',
+    'group-open-map-lead':
+      'Saved pages %(effects)s \u2014 %(subjects)s are not saved yet.',
+    'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
+    'note-update': 'a newer version is waiting to install',
+    'note-persisted': 'downloads are not protected from browser cleanup',
+    'notes-sentence': 'Also worth knowing: %(notes)s.',
+    'list-pair': '%(first)s and %(last)s',
+    'list-separator': ', ',
+    'count-one': 'it',
+    'count-two': 'both',
+    'count-many': 'all %(n)s of them',
+  };
+
+  it('says one shared remedy once, however many faults share it', () => {
+    // The whole reason the rows lost their explanations. Two faults with
+    // one fix used to print that fix twice and leave the reader to
+    // notice it was the same one.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
+        ],
+      }),
+      COPY,
+    );
+
+    expect(report.summary).toBe(
+      'Saved pages will look plain and may be missing danger ratings \u2014 ' +
+        'styling and data feeds are not saved yet. ' +
+        'Opening the map once while connected fixes both.',
+    );
+  });
+
+  it('closes with the faults that share nothing', () => {
+    const report = core.buildReport(
+      healthy({
+        serviceWorker: {
+          supported: true,
+          registered: true,
+          controlled: true,
+          waiting: true,
+        },
+        storage: { usage: 1, quota: 100, persisted: false },
+      }),
+      COPY,
+    );
+
+    expect(report.summary).toBe(
+      'Also worth knowing: a newer version is waiting to install and ' +
+        'downloads are not protected from browser cleanup.',
+    );
+  });
+
+  it('never repeats what the verdict already said', () => {
+    // The verdict names the primary failure; saying it again three lines
+    // later is how a summary starts reading like an error log.
+    const report = core.buildReport(
+      healthy({ shellEntries: [] }),
+      Object.assign({}, COPY, { 'verdict-no-page': 'The map page is not saved.' }),
+    );
+
+    expect(report.verdict.text).toBe('The map page is not saved.');
+    expect(report.summary).not.toContain('map page');
+  });
+
+  it('is empty when the verdict is the whole truth', () => {
+    const report = core.buildReport(healthy(), COPY);
+    expect(report.verdict.status).toBe('ok');
+    expect(report.summary).toBe('');
+  });
+});
+
+describe('the check count', () => {
+  it('counts every line, and only warnings and failures as attention', () => {
+    // `unknown` is in neither figure: a reading that could not be taken
+    // is not a fault anyone can act on, and putting it in the attention
+    // count sends someone hunting for a problem that may not exist.
+    const counts = core.countChecks([
+      {
+        id: 'a',
+        title: 'a',
+        status: 'warn',
+        checks: [
+          { id: '1', label: '', value: '', status: 'ok', at: 0 },
+          { id: '2', label: '', value: '', status: 'warn', at: 0 },
+          { id: '3', label: '', value: '', status: 'fail', at: 0 },
+          { id: '4', label: '', value: '', status: 'unknown', at: 0 },
+        ],
+      },
+    ]);
+    expect(counts).toEqual({ total: 4, attention: 2 });
+  });
+});
+
+describe('prose helpers', () => {
+  const T = { 'list-pair': '%(first)s and %(last)s', 'list-separator': ', ' };
+
+  it.each([
+    [[], ''],
+    [['a'], 'a'],
+    [['a', 'b'], 'a and b'],
+    [['a', 'b', 'c'], 'a, b and c'],
+  ])('joins %s', (items, expected) => {
+    expect(core.joinList(items, T)).toBe(expected);
+  });
+
+  it('quantifies a shared remedy by how many things it fixes', () => {
+    const t = {
+      'count-one': 'it',
+      'count-two': 'both',
+      'count-many': 'all %(n)s of them',
+    };
+    expect(core.quantify(1, t)).toBe('it');
+    expect(core.quantify(2, t)).toBe('both');
+    expect(core.quantify(4, t)).toBe('all 4 of them');
+  });
+});
+
+describe('the elapsed column', () => {
+  it.each([
+    [0, '0.00s'],
+    [240, '0.24s'],
+    [3170, '3.17s'],
+  ])('formats %sms', (ms, expected) => {
+    expect(core.formatElapsed(ms)).toBe(expected);
+  });
+
+  it('is blank, not zero, for a reading that was never taken', () => {
+    // A column reading "0.00s" for a check nothing measured would be the
+    // one thing this panel must not do: present an absence as a figure.
+    expect(core.formatElapsed(null)).toBe('');
+    expect(core.formatElapsed(undefined)).toBe('');
+  });
 });
 
 describe('byte formatting', () => {

@@ -28,7 +28,32 @@
  * ``offline.html`` without saying so anywhere. Nothing on the device
  * reported either condition before this module.
  *
- * ## Two rules the whole report follows
+ * ## The log and the summary do different jobs
+ *
+ * The report has two halves and they are not two views of one thing.
+ *
+ * **The log is evidence.** One line per check, and strictly one line:
+ * elapsed, label, answer. Its job is to show that fifteen separate things
+ * were actually looked at, which is what makes the conclusion believable
+ * — nobody trusts a single green tick from the app that just failed them.
+ * It is deliberately terse and slightly technical. It is not where the
+ * user is told what to do.
+ *
+ * **The summary is the answer.** A verdict sentence plus one paragraph of
+ * ordinary prose that says what to expect and what fixes it. This is the
+ * part written for a person rather than for a debugger, and it is the
+ * part most readers will read instead of the log rather than as well as
+ * it.
+ *
+ * The rule that keeps them apart: a row NEVER carries its own explanation
+ * (SNOW-907 review). Per-row helper text made the log three times taller,
+ * turned scanning into reading, and buried the one sentence that mattered
+ * under fourteen that did not. Everything a failing row would have said
+ * is instead composed into the summary by ``composeSummary`` — which can
+ * group three separate faults with one shared remedy into a single
+ * sentence, where fifteen independent helper lines never could.
+ *
+ * ## Two further rules the whole report follows
  *
  * **A reading that could not be taken is ``unknown``, never ``ok``.** The
  * report is read by someone who has already been let down once by a
@@ -36,12 +61,12 @@
  * four states, and the absence of evidence takes its own one — a browser
  * with no ``storage.estimate()``, a device whose IndexedDB would not
  * open, an area whose record names no dependencies. ``unknown`` never
- * counts towards the verdict in either direction.
+ * counts towards the verdict, and never towards "needs attention".
  *
  * **The verdict is the worst thing that is true, said plainly.** One
- * line, in the user's terms rather than the storage layer's: the page
- * either opens or it does not, and if it does not, the reason names the
- * single thing to do about it.
+ * line, in the user's terms rather than the storage layer's. Whatever the
+ * verdict names is then left OUT of the summary paragraph, which covers
+ * everything still worth mentioning underneath it.
  *
  * Pure: no DOM, no fetch, no storage. Every reading arrives as an
  * argument, collected by ``offline_audit.js``, which is also the only
@@ -56,15 +81,28 @@
   /** @typedef {'ok'|'warn'|'fail'|'unknown'} AuditStatus */
 
   /**
+   * One line of the log.
+   *
    * @typedef {Object} AuditCheck
    * @property {string} id Stable identifier, for tests and the text form.
    * @property {string} label What is being checked, in the user's terms.
-   * @property {string} value The short answer, rendered beside the label.
+   * @property {string} value The short answer. ONE line with the label —
+   *   the renderer truncates rather than wraps, so this stays short.
    * @property {AuditStatus} status
-   * @property {string} [detail] One sentence saying what to do about a
-   *   non-ok status, or naming the evidence behind it.
+   * @property {number|null} at Milliseconds from the start of the run to
+   *   the moment the reading behind this line completed. Null where the
+   *   reading was never taken. Checks sharing a reading share a figure —
+   *   see ``AuditReadings.timings``.
    * @property {string} [reason] An untranslated discriminator, where the
    *   verdict has to tell two failures of the same check apart.
+   * @property {string} [group] Which remedy this check's fault shares
+   *   with others, for ``composeSummary``. Absent on a passing check.
+   * @property {string} [subject] The noun this check is about, as it
+   *   appears in a list inside the summary ("styling", "data feeds").
+   * @property {string} [effect] What the user will notice, as a verb
+   *   phrase completing the group's lead ("will look plain").
+   * @property {string} [note] A standalone summary clause, for a fault
+   *   that shares its remedy with nothing else.
    */
 
   /**
@@ -78,8 +116,12 @@
   /**
    * @typedef {Object} AuditReport
    * @property {{status: AuditStatus, text: string}} verdict
+   * @property {string} summary The paragraph under the verdict. Empty
+   *   when there is genuinely nothing left to say.
    * @property {AuditSection[]} sections
+   * @property {{total: number, attention: number}} counts
    * @property {string} generatedAt ISO 8601.
+   * @property {number|null} elapsedMs How long the whole run took.
    */
 
   /**
@@ -133,13 +175,21 @@
    * @property {Record<string, number|null>} [stores]
    * @property {{count?: number|null}} [mutations]
    * @property {boolean} [dbAvailable]
+   * @property {Record<string, number>} [timings] Milliseconds from the
+   *   start of the run to the completion of each named reading. Keys are
+   *   the mark names used below ('worker', 'shell', 'area:<id>', …).
+   *   Rows sharing one reading share its figure, which is the honest
+   *   answer: one cache walk produces every page row at once, and a
+   *   staggered column would be measuring the animation rather than the
+   *   work.
+   * @property {number} [elapsedMs]
    */
 
   // Worst-first, so `worst()` can pick by index rather than by a chain of
   // comparisons. 'unknown' sits BELOW 'ok' deliberately: a section of
   // unreadable checks must not present as a failure, and one unreadable
   // check among good ones must not drag the section down. It is the
-  // absence of a signal, and the checks say so individually.
+  // absence of a signal, and the log says so on its own line.
   var SEVERITY = ['fail', 'warn', 'ok', 'unknown'];
 
   /**
@@ -178,6 +228,28 @@
     if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
     var mb = n / (1024 * 1024);
     return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
+  }
+
+  /**
+   * The log's elapsed column: seconds to two places.
+   *
+   * Two places rather than one because most of these readings are fast,
+   * and a column reading "0.0s" fifteen times says nothing. Two places
+   * still separates the cache walk from the cheap rows on a device where
+   * the whole run takes 40ms, which is most of them.
+   *
+   * @param {number|null|undefined} ms
+   * @returns {string} ``''`` when the reading was never taken — the
+   *   column is then blank rather than claiming a zero.
+   */
+  function formatElapsed(ms) {
+    // `Number(null)` is 0, so the null check has to come first — without
+    // it a reading nothing took would render "0.00s", which is the one
+    // thing this column must not do: present an absence as a figure.
+    if (ms === null || ms === undefined) return '';
+    var n = Number(ms);
+    if (!Number.isFinite(n) || n < 0) return '';
+    return (n / 1000).toFixed(2) + 's';
   }
 
   /**
@@ -276,6 +348,43 @@
   }
 
   /**
+   * Join a list into readable prose — "a", "a and b", "a, b and c".
+   *
+   * Both the separator and the final pairing come from the strings table,
+   * because neither is universal: a locale may not use a comma, and may
+   * not put its conjunction between the last two items.
+   *
+   * @param {string[]} items
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function joinList(items, t) {
+    var list = (items || []).filter(Boolean);
+    if (list.length === 0) return '';
+    if (list.length === 1) return list[0];
+    var last = list[list.length - 1];
+    var rest = list.slice(0, -1);
+    return fill(s(t, 'list-pair'), {
+      first: rest.join(s(t, 'list-separator')),
+      last: last,
+    });
+  }
+
+  /**
+   * "it" / "both" / "all four of them" — the object of a remedy sentence
+   * that fixes more than one thing at once.
+   *
+   * @param {number} count
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function quantify(count, t) {
+    if (count <= 1) return s(t, 'count-one');
+    if (count === 2) return s(t, 'count-two');
+    return fill(s(t, 'count-many'), { n: count });
+  }
+
+  /**
    * The shell-cache entry for the map page, if one is saved.
    *
    * Matches on pathname alone, ignoring the query string, because the map
@@ -285,9 +394,9 @@
    * ``ignoreSearch`` lookup before giving up. Matching exactly here would
    * report "not saved" for a device that will in fact open the page.
    *
-   * @param {Array<{url: string, principal?: string|null}>} entries
+   * @param {ShellEntry[]} entries
    * @param {string} mapPath
-   * @returns {{url: string, principal?: string|null}|null}
+   * @returns {ShellEntry|null}
    */
   function findPage(entries, mapPath) {
     var list = Array.isArray(entries) ? entries : [];
@@ -353,8 +462,6 @@
       // this run fetched. The tiles are demonstrably there; whether the
       // style, TileJSON and sprite are cannot be answered from here.
       status = 'unknown';
-    } else {
-      status = 'ok';
     }
     return {
       status: status,
@@ -362,6 +469,22 @@
       tiles: entries.length - supporting,
       supporting: supporting,
     };
+  }
+
+  /**
+   * Build one log line.
+   *
+   * @param {Record<string, number>} timings
+   * @param {string} mark Which reading produced this line.
+   * @param {Object} fields The rest of the check.
+   * @returns {AuditCheck}
+   */
+  function line(timings, mark, fields) {
+    var at =
+      timings && Object.prototype.hasOwnProperty.call(timings, mark)
+        ? timings[mark]
+        : null;
+    return /** @type {AuditCheck} */ (Object.assign({ at: at }, fields));
   }
 
   /**
@@ -373,6 +496,7 @@
    */
   function deviceSection(r, t) {
     var sw = r.serviceWorker || {};
+    var timings = r.timings || {};
     var checks = /** @type {AuditCheck[]} */ ([]);
 
     var swStatus = /** @type {AuditStatus} */ ('fail');
@@ -386,26 +510,30 @@
       // Registered but not in control: the very first load of a page
       // before the worker claims it, or a worker that was unregistered
       // and re-registered in this tab. Nothing offline works until the
-      // next load, which is the one thing to say.
+      // next load, which is what the summary says.
       swStatus = 'warn';
       swValue = s(t, 'sw-registered-not-controlling');
     }
-    checks.push({
-      id: 'service-worker',
-      label: s(t, 'label-service-worker'),
-      value: swValue,
-      status: /** @type {AuditStatus} */ (swStatus),
-      detail: swStatus === 'ok' ? '' : s(t, 'detail-service-worker'),
-    });
+    checks.push(
+      line(timings, 'worker', {
+        id: 'service-worker',
+        label: s(t, 'label-service-worker'),
+        value: swValue,
+        status: swStatus,
+        note: swStatus === 'ok' ? undefined : s(t, 'note-service-worker'),
+      }),
+    );
 
     if (sw.waiting) {
-      checks.push({
-        id: 'update-waiting',
-        label: s(t, 'label-update'),
-        value: s(t, 'update-waiting'),
-        status: 'warn',
-        detail: s(t, 'detail-update'),
-      });
+      checks.push(
+        line(timings, 'worker', {
+          id: 'update-waiting',
+          label: s(t, 'label-update'),
+          value: s(t, 'update-waiting'),
+          status: /** @type {AuditStatus} */ ('warn'),
+          note: s(t, 'note-update'),
+        }),
+      );
     }
 
     // The forced mode is a choice the user made and can unmake, so it is
@@ -413,16 +541,16 @@
     // having given up on a dead connection after three timeouts, which is
     // worth surfacing for exactly the journey that produced this report.
     if (r.networkMode === 'offline-forced' || r.networkMode === 'offline') {
-      checks.push({
-        id: 'network-mode',
-        label: s(t, 'label-network-mode'),
-        value: s(t, r.networkMode === 'offline-forced' ? 'mode-forced' : 'mode-latched'),
-        status: 'warn',
-        detail: s(
-          t,
-          r.networkMode === 'offline-forced' ? 'detail-forced' : 'detail-latched',
-        ),
-      });
+      var forced = r.networkMode === 'offline-forced';
+      checks.push(
+        line(timings, 'network', {
+          id: 'network-mode',
+          label: s(t, 'label-network-mode'),
+          value: s(t, forced ? 'mode-forced' : 'mode-latched'),
+          status: /** @type {AuditStatus} */ ('warn'),
+          note: s(t, forced ? 'note-forced' : 'note-latched'),
+        }),
+      );
     }
 
     if (r.storage && Number.isFinite(Number(r.storage.usage))) {
@@ -433,26 +561,29 @@
       // takes the pinned buckets with it. 90% is where warning is still
       // actionable — the Manage downloads sheet can free an area.
       var tight = hasQuota && usage / quota > 0.9;
-      checks.push({
-        id: 'storage',
-        label: s(t, 'label-storage'),
-        value: hasQuota
-          ? fill(s(t, 'storage-of'), {
-              used: formatBytes(usage),
-              total: formatBytes(quota),
-            })
-          : formatBytes(usage),
-        status: tight ? 'warn' : 'ok',
-        detail: tight ? s(t, 'detail-storage-tight') : '',
-      });
+      checks.push(
+        line(timings, 'storage', {
+          id: 'storage',
+          label: s(t, 'label-storage'),
+          value: hasQuota
+            ? fill(s(t, 'storage-of'), {
+                used: formatBytes(usage),
+                total: formatBytes(quota),
+              })
+            : formatBytes(usage),
+          status: /** @type {AuditStatus} */ (tight ? 'warn' : 'ok'),
+          note: tight ? s(t, 'note-storage-tight') : undefined,
+        }),
+      );
     } else {
-      checks.push({
-        id: 'storage',
-        label: s(t, 'label-storage'),
-        value: s(t, 'unknown'),
-        status: 'unknown',
-        detail: s(t, 'detail-storage-unknown'),
-      });
+      checks.push(
+        line(timings, 'storage', {
+          id: 'storage',
+          label: s(t, 'label-storage'),
+          value: s(t, 'unknown'),
+          status: /** @type {AuditStatus} */ ('unknown'),
+        }),
+      );
     }
 
     // Without persistent storage the browser may evict the whole origin
@@ -461,13 +592,15 @@
     // eviction is not certain), but it is the answer to "my download
     // vanished".
     if (r.storage && typeof r.storage.persisted === 'boolean') {
-      checks.push({
-        id: 'persisted',
-        label: s(t, 'label-persisted'),
-        value: s(t, r.storage.persisted ? 'persisted-yes' : 'persisted-no'),
-        status: r.storage.persisted ? 'ok' : 'warn',
-        detail: r.storage.persisted ? '' : s(t, 'detail-persisted-no'),
-      });
+      checks.push(
+        line(timings, 'persisted', {
+          id: 'persisted',
+          label: s(t, 'label-persisted'),
+          value: s(t, r.storage.persisted ? 'persisted-yes' : 'persisted-no'),
+          status: /** @type {AuditStatus} */ (r.storage.persisted ? 'ok' : 'warn'),
+          note: r.storage.persisted ? undefined : s(t, 'note-persisted'),
+        }),
+      );
     }
 
     return {
@@ -493,6 +626,7 @@
    * @returns {AuditSection}
    */
   function pagesSection(r, t) {
+    var timings = r.timings || {};
     var entries = (Array.isArray(r.shellEntries) ? r.shellEntries : []).filter(
       function (entry) {
         return entry && entry.isPage;
@@ -505,58 +639,57 @@
     var mapStatus = /** @type {AuditStatus} */ ('fail');
     var mapReason = 'absent';
     var mapValue = s(t, 'page-not-saved');
-    var mapDetail = s(t, 'detail-page-not-saved');
     if (mapEntry) {
       if (principalMatches(mapEntry.principal, current)) {
         mapStatus = 'ok';
         mapReason = 'saved';
         mapValue = s(t, 'page-saved');
-        mapDetail = '';
       } else {
         mapReason = 'principal';
         mapValue = s(t, 'page-other-account');
-        mapDetail = fill(s(t, 'detail-page-other-account'), {
-          stamped: describePrincipal(mapEntry.principal, t),
-          current: describePrincipal(current, t),
-        });
       }
     }
-    checks.push({
-      id: 'map-page',
-      label: s(t, 'label-map-page'),
-      value: mapValue,
-      status: /** @type {AuditStatus} */ (mapStatus),
-      detail: mapDetail,
-      // Machine-readable, because the verdict needs to tell "never saved"
-      // from "saved for someone else" and the rendered `value` is
-      // translated copy — comparing against that would make the verdict
-      // depend on the locale.
-      reason: mapReason,
-    });
+    checks.push(
+      line(timings, 'shell', {
+        id: 'map-page',
+        label: s(t, 'label-map-page'),
+        value: mapValue,
+        status: mapStatus,
+        // Machine-readable, because the verdict needs to tell "never
+        // saved" from "saved for someone else" and the rendered `value`
+        // is translated copy — comparing against that would make the
+        // verdict depend on the locale.
+        reason: mapReason,
+      }),
+    );
 
     var usable = entries.filter(function (entry) {
       return principalMatches(entry.principal, current);
     });
-    checks.push({
-      id: 'pages-saved',
-      label: s(t, 'label-pages-saved'),
-      value: String(usable.length),
-      status: usable.length > 0 ? 'ok' : 'fail',
-      detail: fill(s(t, 'detail-pages-saved'), { total: entries.length }),
-    });
+    checks.push(
+      line(timings, 'shell', {
+        id: 'pages-saved',
+        label: s(t, 'label-pages-saved'),
+        value: String(usable.length),
+        status: /** @type {AuditStatus} */ (usable.length > 0 ? 'ok' : 'fail'),
+      }),
+    );
 
-    // Listed one per line so the report can be read as an inventory
+    // One line per saved page, so the log can be read as an inventory
     // rather than only as a verdict — "did the page I care about get
-    // saved" is a question this answers and the two checks above do not.
+    // saved" is a question this answers and the two lines above do not.
     entries.forEach(function (entry, index) {
       var match = principalMatches(entry.principal, current);
-      checks.push({
-        id: 'page-' + index,
-        label: shortPath(entry.url),
-        value: s(t, match ? 'page-entry-usable' : 'page-entry-other'),
-        status: /** @type {AuditStatus} */ (match ? 'ok' : 'warn'),
-        detail: match ? '' : describePrincipal(entry.principal, t),
-      });
+      checks.push(
+        line(timings, 'shell', {
+          id: 'page-' + index,
+          label: shortPath(entry.url),
+          value: match
+            ? s(t, 'page-entry-usable')
+            : describePrincipal(entry.principal, t),
+          status: /** @type {AuditStatus} */ (match ? 'ok' : 'warn'),
+        }),
+      );
     });
 
     return {
@@ -581,6 +714,7 @@
    * @returns {AuditSection}
    */
   function filesSection(r, t) {
+    var timings = r.timings || {};
     var entries = Array.isArray(r.shellEntries) ? r.shellEntries : [];
     var counts = { script: 0, style: 0, font: 0, image: 0, feed: 0, other: 0 };
     entries.forEach(function (entry) {
@@ -590,35 +724,43 @@
       counts[kind] = (counts[kind] || 0) + 1;
     });
 
+    // All three share one remedy — opening the map once while connected
+    // refills the whole shell — which is exactly the case the summary's
+    // grouping exists for: three faults, one sentence, one action.
     var checks = /** @type {AuditCheck[]} */ ([
-      {
+      line(timings, 'shell', {
         id: 'scripts',
         label: s(t, 'label-scripts'),
         value: String(counts.script),
         status: /** @type {AuditStatus} */ (counts.script > 0 ? 'ok' : 'fail'),
-        detail: counts.script > 0 ? '' : s(t, 'detail-no-scripts'),
-      },
-      {
+        group: counts.script > 0 ? undefined : 'open-map',
+        subject: s(t, 'subject-scripts'),
+        effect: s(t, 'effect-scripts'),
+      }),
+      line(timings, 'shell', {
         id: 'styles',
         label: s(t, 'label-styles'),
         value: String(counts.style),
         status: /** @type {AuditStatus} */ (counts.style > 0 ? 'ok' : 'warn'),
-        detail: counts.style > 0 ? '' : s(t, 'detail-no-styles'),
-      },
-      {
+        group: counts.style > 0 ? undefined : 'open-map',
+        subject: s(t, 'subject-styles'),
+        effect: s(t, 'effect-styles'),
+      }),
+      line(timings, 'shell', {
         id: 'feeds',
         label: s(t, 'label-feeds'),
         value: String(counts.feed),
         status: /** @type {AuditStatus} */ (counts.feed > 0 ? 'ok' : 'warn'),
-        detail: counts.feed > 0 ? '' : s(t, 'detail-no-feeds'),
-      },
-      {
+        group: counts.feed > 0 ? undefined : 'open-map',
+        subject: s(t, 'subject-feeds'),
+        effect: s(t, 'effect-feeds'),
+      }),
+      line(timings, 'shell', {
         id: 'other-files',
         label: s(t, 'label-other-files'),
         value: String(counts.font + counts.image + counts.other),
         status: /** @type {AuditStatus} */ ('ok'),
-        detail: '',
-      },
+      }),
     ]);
 
     return {
@@ -630,7 +772,7 @@
   }
 
   /**
-   * "Downloaded maps" — one row per area, plus the two ways a device and
+   * "Downloaded maps" — one line per area, plus the two ways a device and
    * its own records disagree.
    *
    * @param {AuditReadings} r
@@ -638,66 +780,67 @@
    * @returns {AuditSection}
    */
   function mapsSection(r, t) {
+    var timings = r.timings || {};
     var areas = Array.isArray(r.areas) ? r.areas : [];
     var checks = /** @type {AuditCheck[]} */ ([]);
 
     if (areas.length === 0) {
-      checks.push({
-        id: 'no-areas',
-        label: s(t, 'label-areas'),
-        value: s(t, 'areas-none'),
-        status: /** @type {AuditStatus} */ ('warn'),
-        detail: s(t, 'detail-areas-none'),
-      });
+      checks.push(
+        line(timings, 'areas', {
+          id: 'no-areas',
+          label: s(t, 'label-areas'),
+          value: s(t, 'areas-none'),
+          status: /** @type {AuditStatus} */ ('warn'),
+          note: s(t, 'note-areas-none'),
+        }),
+      );
     }
 
     areas.forEach(function (area) {
       var state = areaState(area);
+      var name =
+        area.kind === 'base'
+          ? fill(s(t, 'label-base-layer'), { basemap: area.basemapKey || '' })
+          : area.name || area.id;
       var value;
+      var note;
       if (state.status === 'fail') {
         value = s(t, area.bucketPresent === false ? 'area-missing' : 'area-empty');
+        note = fill(s(t, 'note-area-missing'), { name: name });
       } else if (state.status === 'warn') {
-        value = fill(s(t, 'area-incomplete'), {
-          count: state.missingDeps.length,
-        });
+        value = fill(s(t, 'area-incomplete'), { count: state.missingDeps.length });
+        note = fill(s(t, 'note-area-incomplete'), { name: name });
       } else {
         value = fill(s(t, 'area-tiles'), {
           tiles: state.tiles,
           size: formatBytes(area.bytes),
         });
       }
-      var detail = '';
-      if (state.status === 'warn') {
-        detail = s(t, 'detail-area-incomplete');
-      } else if (state.status === 'fail') {
-        detail = s(t, 'detail-area-missing');
-      } else if (state.status === 'unknown') {
-        detail = s(t, 'detail-area-unverifiable');
-      }
-      checks.push({
-        id: 'area-' + area.id,
-        // A base layer's record is keyed by basemap, so its name is a
-        // style key ('openfreemap_liberty') — an internal identifier the
-        // user never chose and has no control over. It is named for what
-        // it does instead, the way the reset panel's one combined row is.
-        label:
-          area.kind === 'base'
-            ? fill(s(t, 'label-base-layer'), { basemap: area.basemapKey || '' })
-            : area.name || area.id,
-        value: value,
-        status: state.status,
-        detail: detail,
-      });
+      checks.push(
+        line(timings, 'area:' + area.id, {
+          // A base layer's record is keyed by basemap, so its name is a
+          // style key ('openfreemap_liberty') — an internal identifier the
+          // user never chose and has no control over. It is named for what
+          // it does instead.
+          id: 'area-' + area.id,
+          label: name,
+          value: value,
+          status: state.status,
+          note: note,
+        }),
+      );
     });
 
     (Array.isArray(r.orphanBuckets) ? r.orphanBuckets : []).forEach(function (id) {
-      checks.push({
-        id: 'orphan-' + id,
-        label: fill(s(t, 'label-orphan'), { id: id }),
-        value: s(t, 'orphan-value'),
-        status: /** @type {AuditStatus} */ ('warn'),
-        detail: s(t, 'detail-orphan'),
-      });
+      checks.push(
+        line(timings, 'orphans', {
+          id: 'orphan-' + id,
+          label: fill(s(t, 'label-orphan'), { id: id }),
+          value: s(t, 'orphan-value'),
+          status: /** @type {AuditStatus} */ ('warn'),
+          note: s(t, 'note-orphan'),
+        }),
+      );
     });
 
     return {
@@ -709,22 +852,24 @@
   }
 
   /**
-   * "Saved data and unsent changes" — the IndexedDB half.
+   * "Saved data" — the IndexedDB half.
    *
    * @param {AuditReadings} r
    * @param {Record<string, string>} t
    * @returns {AuditSection}
    */
   function dataSection(r, t) {
+    var timings = r.timings || {};
     var checks = /** @type {AuditCheck[]} */ ([]);
     if (!r.dbAvailable) {
-      checks.push({
-        id: 'db',
-        label: s(t, 'label-db'),
-        value: s(t, 'unknown'),
-        status: /** @type {AuditStatus} */ ('unknown'),
-        detail: s(t, 'detail-db-unavailable'),
-      });
+      checks.push(
+        line(timings, 'db', {
+          id: 'db',
+          label: s(t, 'label-db'),
+          value: s(t, 'unknown'),
+          status: /** @type {AuditStatus} */ ('unknown'),
+        }),
+      );
       return {
         id: 'data',
         title: s(t, 'section-data'),
@@ -741,26 +886,29 @@
     ].forEach(function (pair) {
       var count = Number(stores[pair[0]]);
       var known = Number.isFinite(count);
-      checks.push({
-        id: pair[0],
-        label: s(t, pair[1]),
-        value: known ? String(count) : s(t, 'unknown'),
-        // Zero rows is not a fault. A user with no favourites has nothing
-        // to cache, and the map draws without any of these.
-        status: /** @type {AuditStatus} */ (known ? 'ok' : 'unknown'),
-        detail: '',
-      });
+      checks.push(
+        line(timings, 'store:' + pair[0], {
+          id: pair[0],
+          label: s(t, pair[1]),
+          value: known ? String(count) : s(t, 'unknown'),
+          // Zero rows is not a fault. A user with no favourites has
+          // nothing to cache, and the map draws without any of these.
+          status: /** @type {AuditStatus} */ (known ? 'ok' : 'unknown'),
+        }),
+      );
     });
 
     var pending = Number(r.mutations && r.mutations.count);
     if (!Number.isFinite(pending)) pending = 0;
-    checks.push({
-      id: 'mutations',
-      label: s(t, 'label-mutations'),
-      value: String(pending),
-      status: /** @type {AuditStatus} */ (pending > 0 ? 'warn' : 'ok'),
-      detail: pending > 0 ? s(t, 'detail-mutations') : '',
-    });
+    checks.push(
+      line(timings, 'mutations', {
+        id: 'mutations',
+        label: s(t, 'label-mutations'),
+        value: String(pending),
+        status: /** @type {AuditStatus} */ (pending > 0 ? 'warn' : 'ok'),
+        note: pending > 0 ? fill(s(t, 'note-mutations'), { n: pending }) : undefined,
+      }),
+    );
 
     return {
       id: 'data',
@@ -780,7 +928,9 @@
    *
    * @param {AuditSection[]} sections
    * @param {Record<string, string>} t
-   * @returns {{status: AuditStatus, text: string}}
+   * @returns {{status: AuditStatus, text: string, covers: string[]}}
+   *   ``covers`` names the check ids this sentence has already accounted
+   *   for, so ``composeSummary`` does not say them a second time.
    */
   function verdictFor(sections, t) {
     var byId = /** @type {Record<string, AuditCheck>} */ ({});
@@ -791,7 +941,11 @@
     });
 
     if (byId['service-worker'] && byId['service-worker'].status === 'fail') {
-      return { status: 'fail', text: s(t, 'verdict-no-worker') };
+      return {
+        status: 'fail',
+        text: s(t, 'verdict-no-worker'),
+        covers: ['service-worker'],
+      };
     }
     var page = byId['map-page'];
     if (page && page.status === 'fail') {
@@ -801,22 +955,129 @@
           t,
           page.reason === 'principal' ? 'verdict-other-account' : 'verdict-no-page',
         ),
+        covers: ['map-page', 'pages-saved'],
       };
     }
     if (byId.scripts && byId.scripts.status === 'fail') {
-      return { status: 'fail', text: s(t, 'verdict-no-scripts') };
+      return { status: 'fail', text: s(t, 'verdict-no-scripts'), covers: ['scripts'] };
     }
 
     var maps = sections.filter(function (section) {
       return section.id === 'maps';
     })[0];
-    if (maps && maps.status === 'warn') {
-      return { status: 'warn', text: s(t, 'verdict-map-incomplete') };
-    }
     if (maps && maps.status === 'fail') {
-      return { status: 'warn', text: s(t, 'verdict-map-missing') };
+      return { status: 'warn', text: s(t, 'verdict-map-missing'), covers: [] };
     }
-    return { status: 'ok', text: s(t, 'verdict-ok') };
+    if (maps && maps.status === 'warn') {
+      return { status: 'warn', text: s(t, 'verdict-map-incomplete'), covers: [] };
+    }
+    return { status: 'ok', text: s(t, 'verdict-ok'), covers: [] };
+  }
+
+  /**
+   * The paragraph under the verdict — what to expect, and what fixes it.
+   *
+   * This is the half a non-technical reader actually reads, and the
+   * reason no log row carries an explanation of its own. It composes
+   * rather than concatenates, in two tiers:
+   *
+   * **The grouped sentence.** Faults that share one remedy are said once:
+   * their effects run together after a shared lead, their subjects run
+   * together in the clause naming what is missing, and one remedy
+   * sentence closes it — "Saved pages will look plain and may be missing
+   * danger ratings — styling and data feeds are not saved yet. Opening
+   * the map once while connected fixes both." Fifteen per-row helper
+   * lines could never have said that; they would have said the same
+   * remedy three times and left the reader to notice it was the same one.
+   *
+   * **The notes.** Everything else contributes one clause, joined into a
+   * closing sentence. These are the faults with nothing in common —
+   * an update waiting, storage unprotected, an area needing repair.
+   *
+   * Whatever the verdict already said is left out entirely (``covers``).
+   * Saying it twice in three lines is how a summary starts reading like
+   * an error log, which is the thing it exists not to be.
+   *
+   * @param {AuditSection[]} sections
+   * @param {{covers: string[]}} verdict
+   * @param {Record<string, string>} t
+   * @returns {string} ``''`` when nothing needs saying — a device where
+   *   the verdict is the whole truth.
+   */
+  function composeSummary(sections, verdict, t) {
+    var covered = new Set(verdict.covers || []);
+    var groups = /** @type {Record<string, AuditCheck[]>} */ ({});
+    var notes = /** @type {string[]} */ ([]);
+
+    sections.forEach(function (section) {
+      section.checks.forEach(function (check) {
+        if (covered.has(check.id)) return;
+        if (check.status !== 'warn' && check.status !== 'fail') return;
+        if (check.group) {
+          if (!groups[check.group]) groups[check.group] = [];
+          groups[check.group].push(check);
+        } else if (check.note) {
+          notes.push(check.note);
+        }
+      });
+    });
+
+    var sentences = /** @type {string[]} */ ([]);
+    Object.keys(groups).forEach(function (key) {
+      var members = groups[key];
+      var effects = /** @type {string[]} */ (
+        members
+          .map(function (check) {
+            return check.effect;
+          })
+          .filter(Boolean)
+      );
+      var subjects = /** @type {string[]} */ (
+        members
+          .map(function (check) {
+            return check.subject;
+          })
+          .filter(Boolean)
+      );
+      sentences.push(
+        fill(s(t, 'group-' + key + '-lead'), {
+          effects: joinList(effects, t),
+          subjects: joinList(subjects, t),
+        }),
+      );
+      sentences.push(
+        fill(s(t, 'group-' + key + '-remedy'), { count: quantify(members.length, t) }),
+      );
+    });
+
+    if (notes.length > 0) {
+      sentences.push(fill(s(t, 'notes-sentence'), { notes: joinList(notes, t) }));
+    }
+
+    return sentences.join(' ');
+  }
+
+  /**
+   * How many lines the log holds, and how many of them want doing
+   * something about.
+   *
+   * ``unknown`` counts towards neither: a reading that could not be taken
+   * is not a fault the user can act on, and putting it in the attention
+   * figure would send someone hunting for a problem that may not exist.
+   *
+   * @param {AuditSection[]} sections
+   * @returns {{total: number, attention: number}}
+   */
+  function countChecks(sections) {
+    var total = 0;
+    var attention = 0;
+    sections.forEach(function (section) {
+      section.checks.forEach(function (check) {
+        total += 1;
+        if (check.status === 'warn' || check.status === 'fail') attention += 1;
+      });
+    });
+    return { total: total, attention: attention };
   }
 
   /**
@@ -826,17 +1087,8 @@
    * is exactly the device whose user is reading this, so a missing input
    * degrades to a stated ``unknown`` rather than a thrown error.
    *
-   * @param {AuditReadings} [readings] Collected by ``offline_audit.js``:
-   *   ``serviceWorker`` ``{supported, registered, controlled, waiting}``;
-   *   ``storage`` ``navigator.storage.estimate()``'s result plus
-   *   ``persisted``; ``networkMode`` the ``meta:app`` ``network.mode``
-   *   row; ``shellEntries`` one ``{url, isPage, principal}`` per shell
-   *   cache entry; ``currentPrincipal`` the ``meta:app``
-   *   ``mutations.principal`` row; ``mapPath`` the map page's path;
-   *   ``areas`` one ``{id, name, deps, entries, bucketPresent, bytes}``
-   *   per downloaded area; ``orphanBuckets`` pinned bucket ids no record
-   *   names; ``stores`` row counts by store name; ``mutations``
-   *   ``{count}``; ``dbAvailable`` whether IndexedDB opened at all.
+   * @param {AuditReadings} [readings] Collected by ``offline_audit.js`` —
+   *   see the ``AuditReadings`` typedef for every field.
    * @param {Record<string, string>} [strings] Translated copy, keyed as
    *   in ``_offline_audit_panel.html``. Falls back to the key itself.
    * @returns {AuditReport}
@@ -851,10 +1103,14 @@
       mapsSection(r, t),
       dataSection(r, t),
     ];
+    var verdict = verdictFor(sections, t);
     return {
-      verdict: verdictFor(sections, t),
+      verdict: { status: verdict.status, text: verdict.text },
+      summary: composeSummary(sections, verdict, t),
       sections: sections,
+      counts: countChecks(sections),
       generatedAt: typeof r.now === 'string' ? r.now : new Date().toISOString(),
+      elapsedMs: Number.isFinite(Number(r.elapsedMs)) ? Number(r.elapsedMs) : null,
     };
   }
 
@@ -862,9 +1118,10 @@
    * The report as plain text, for the Copy control.
    *
    * A phone with no devtools is the only place this data exists, so
-   * getting it off the device is not a convenience. Statuses are spelled
-   * out rather than coloured, and the section structure survives, so a
-   * pasted report reads the same as the panel did.
+   * getting it off the device is not a convenience. The summary comes
+   * first, because whoever is pasted this reads it the same way round the
+   * panel is read; the log follows in full, statuses spelled out rather
+   * than coloured.
    *
    * @param {AuditReport} report
    * @param {{userAgent?: string, appVersion?: string, url?: string}} [context]
@@ -878,12 +1135,25 @@
     if (ctx.userAgent) lines.push(ctx.userAgent);
     lines.push('');
     lines.push(report.verdict.status.toUpperCase() + ': ' + report.verdict.text);
+    if (report.summary) lines.push(report.summary);
+    lines.push('');
+    lines.push(
+      report.counts.total + ' checks, ' + report.counts.attention + ' need attention',
+    );
     report.sections.forEach(function (section) {
       lines.push('');
       lines.push('## ' + section.title + ' [' + section.status + ']');
       section.checks.forEach(function (check) {
-        lines.push('  [' + check.status + '] ' + check.label + ': ' + check.value);
-        if (check.detail) lines.push('      ' + check.detail);
+        lines.push(
+          '  ' +
+            (formatElapsed(check.at) || '     ').padStart(6) +
+            '  [' +
+            check.status +
+            '] ' +
+            check.label +
+            ': ' +
+            check.value,
+        );
       });
     });
     return lines.join('\n');
@@ -919,9 +1189,7 @@
   function describePrincipal(principal, t) {
     if (!principal || principal === 'unknown') return s(t, 'principal-unknown');
     if (principal === 'anonymous') return s(t, 'principal-anonymous');
-    return fill(s(t, 'principal-account'), {
-      id: String(principal).slice(0, 8),
-    });
+    return fill(s(t, 'principal-account'), { id: String(principal).slice(0, 8) });
   }
 
   /**
@@ -952,11 +1220,16 @@
   self.pwaOfflineAuditCore = Object.freeze({
     buildReport: buildReport,
     reportText: reportText,
+    composeSummary: composeSummary,
+    countChecks: countChecks,
     missingFrom: missingFrom,
     classifyEntry: classifyEntry,
     formatBytes: formatBytes,
+    formatElapsed: formatElapsed,
     principalMatches: principalMatches,
     areaState: areaState,
+    joinList: joinList,
+    quantify: quantify,
     worst: worst,
   });
 })();

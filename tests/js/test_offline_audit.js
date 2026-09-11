@@ -223,9 +223,53 @@ describe('rendering', () => {
 
     audit.render(target, report, {});
 
-    expect(target.querySelector('[data-audit-verdict]').dataset.auditStatus).toBe('fail');
+    expect(target.querySelector('[data-audit-summary]').dataset.auditStatus).toBe('fail');
     expect(target.querySelectorAll('[data-audit-section]')).toHaveLength(5);
     expect(target.querySelectorAll('[class]')).toHaveLength(0);
+  });
+
+  it('gives every log row exactly three cells and no explanation', async () => {
+    // The rule the redesign turned on: a row is elapsed, label, answer.
+    // Per-row helper text made the panel three times taller, turned
+    // scanning into reading, and said one shared remedy three times —
+    // all of which now lives in the summary instead.
+    const target = document.createElement('div');
+    const report = window.pwaOfflineAuditCore.buildReport(
+      { shellEntries: [], dbAvailable: true, stores: {}, mutations: { count: 3 } },
+      {},
+    );
+
+    audit.render(target, report, {});
+
+    const rows = target.querySelectorAll('[data-audit-check]');
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((row) => {
+      expect(row.children).toHaveLength(3);
+      expect(row.querySelector('[data-audit-at]')).not.toBeNull();
+      expect(row.querySelector('[data-audit-label]')).not.toBeNull();
+      expect(row.querySelector('[data-audit-value]')).not.toBeNull();
+      // The one thing a row must never regrow.
+      expect(row.querySelector('[data-audit-detail]')).toBeNull();
+    });
+  });
+
+  it('paints the summary paragraph and the check count under the log', async () => {
+    const target = document.createElement('div');
+    const report = window.pwaOfflineAuditCore.buildReport(
+      { shellEntries: [], dbAvailable: true, stores: {}, mutations: { count: 0 } },
+      { 'counts-line': '%(total)s checks · %(attention)s need attention' },
+    );
+
+    audit.render(target, report, {
+      'counts-line': '%(total)s checks · %(attention)s need attention',
+    });
+
+    expect(target.querySelector('[data-audit-verdict]').textContent).toBe(
+      report.verdict.text,
+    );
+    expect(target.querySelector('[data-audit-counts]').textContent).toBe(
+      `${report.counts.total} checks · ${report.counts.attention} need attention`,
+    );
   });
 
   it('writes every value with textContent, never innerHTML', async () => {

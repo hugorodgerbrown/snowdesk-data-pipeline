@@ -55,6 +55,45 @@ The app-side markup and its `{% trans %}` strings are
 the same markup contract inline, and English copy comes from the
 module's own `FALLBACKS`.
 
+## Two halves, doing two jobs
+
+**The log is evidence.** One line per check, and strictly one: elapsed,
+label, answer. Its job is to show that eighteen separate things were
+actually looked at, which is what makes the conclusion believable —
+nobody trusts a single green tick from the app that just failed them.
+Monospace, in a recessed panel, deliberately terse.
+
+**The summary is the answer.** A verdict sentence plus one paragraph of
+ordinary prose saying what to expect and what fixes it, on a ground
+tinted by the verdict. This is the part written for a person, and the
+part most readers read *instead of* the log rather than as well as it.
+Under both sits the count — "18 checks · 5 need attention".
+
+The rule that keeps them apart: **a row never carries its own
+explanation.** Per-row helper text made the log three times taller,
+turned scanning into reading, and printed one shared remedy once per
+row. Everything a failing row would have said is composed into the
+summary by `composeSummary`, which can fold three faults with one remedy
+into a single sentence — "Saved pages will look plain and may be missing
+danger ratings — styling and data feeds are not saved yet. Opening the
+map once while connected fixes both." Fifteen independent helper lines
+never could.
+
+Each non-ok check contributes either a `group` (a shared remedy, with a
+`subject` and an `effect` the composer joins) or a standalone `note`.
+Whatever the verdict already said is excluded outright: saying it twice
+in three lines is how a summary starts reading like an error log.
+
+### The elapsed column is measured, not staged
+
+The collector marks the clock as each reading completes and the core
+hands each row the mark behind it. Rows produced by ONE reading share a
+figure — every page row comes out of a single cache walk — and on a fast
+device several read `0.00s`. A staggered reveal would look better and
+would be measuring the animation instead of the work, which is the one
+thing a diagnostic must not do. A reading that was never taken leaves
+the column blank rather than printing a zero.
+
 ## The five sections
 
 Each check resolves to **ok / warn / fail / unknown**, and the verdict is
@@ -84,8 +123,8 @@ the worst thing that is true, said in one line.
 
 **A reading that could not be taken is `unknown`, never `ok`.** The
 report is read by someone already let down once by a surface that said
-everything was fine. `unknown` never counts towards the verdict in
-either direction — a browser with no `storage.estimate()`, an
+everything was fine. `unknown` counts towards neither the verdict nor
+the "needs attention" figure — a browser with no `storage.estimate()`, an
 unreadable IndexedDB, an area whose record names no dependencies (one
 downloaded before SNOW-844) each say so on their own row.
 

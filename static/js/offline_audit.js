@@ -14,14 +14,36 @@
  * cannot reach the network cannot be relied on to have it cached — the
  * moment a user most needs to know what is stored is the moment the only
  * page they can open is the one telling them nothing is. So this file and
- * its core are in the worker's ``PRECACHE_URLS``, and the offline page
- * loads them by their unhashed ``/static/`` path.
+ * its core are warmed into the shell cache on install (``AUDIT_SCRIPTS``,
+ * static/js/sw.js), and the offline page loads them by their unhashed
+ * ``/static/`` path.
  *
  * Both hosts provide the same markup contract and style it themselves —
  * this module writes classless semantic HTML carrying
  * ``data-audit-status`` and nothing else. A Tailwind class string would
  * be inert on the offline page, whose stylesheet is inline and whose
  * whole design rule is "no external assets".
+ *
+ * ## The log is one line per check
+ *
+ * Strictly one, and nothing under it. A row is elapsed, label, answer,
+ * and everything a failing row would want to explain is composed into
+ * the summary instead (``composeSummary``). The rule is not stylistic:
+ * per-row helper text made this panel three times taller, turned
+ * scanning into reading, and repeated one remedy across three rows
+ * rather than saying it once. The renderer enforces it by having nowhere
+ * to put a second line, and ``tests/js/test_offline_audit.js`` asserts a
+ * row never grows one.
+ *
+ * ## Timings are measured, not staged
+ *
+ * The elapsed column is real: the collector marks the clock as each
+ * reading completes, and the core hands each row the mark behind it. Rows
+ * produced by ONE reading therefore share a figure — every page row comes
+ * out of a single cache walk — and on a fast device several will read
+ * ``0.00s``. A staggered reveal would look better and would be measuring
+ * the animation instead of the work, which is the one thing a diagnostic
+ * must not do.
  *
  * ## It reads storage, it does not ask another module
  *
@@ -69,6 +91,14 @@
   // English literal everywhere else. `pwaStrings` is not loaded on the
   // offline page, so the fallbacks are not a safety net there — they are
   // the copy, exactly as every other string on that page is.
+  //
+  // Four families:
+  //   section-* / label-*   the log's section rules and its left column
+  //   the answers           what a row's right column says
+  //   note-*                one standalone clause for the summary
+  //   group-* / subject-*
+  //     / effect-*          the parts the summary composes into a single
+  //                         sentence when several faults share a remedy
   var FALLBACKS = {
     'section-device': 'This device',
     'section-pages': 'Pages saved for offline',
@@ -80,83 +110,73 @@
     'sw-controlling': 'active',
     'sw-registered-not-controlling': 'starting up',
     'sw-absent': 'not set up',
-    'sw-unsupported': 'not supported by this browser',
-    'detail-service-worker':
-      'Nothing can be read offline until this is active. Reload the page while connected.',
+    'sw-unsupported': 'not supported',
+    'note-service-worker': 'offline mode is not running on this device yet',
     'label-update': 'Update',
     'update-waiting': 'waiting to install',
-    'detail-update': 'A newer version is ready. Reload to install it.',
+    'note-update': 'a newer version is waiting to install',
     'label-network-mode': 'Connection',
     'mode-forced': 'offline mode is on',
     'mode-latched': 'no usable connection',
-    'detail-forced': 'You turned offline mode on. Turn it off to fetch anything new.',
-    'detail-latched':
-      'The app stopped trying after repeated timeouts. It retries on its own when a connection returns.',
+    'note-forced': 'offline mode is switched on, so nothing new will be fetched',
+    'note-latched':
+      'the app has stopped trying to reach the network after repeated timeouts',
     'label-storage': 'Space used',
     'storage-of': '%(used)s of %(total)s',
-    'detail-storage-tight':
-      'Close to the browser limit. Remove a downloaded area to stop the browser evicting one for you.',
-    'detail-storage-unknown':
-      'This browser does not report how much space the app is using.',
+    'note-storage-tight':
+      'storage is nearly full, so the browser may start deleting downloads',
     'label-persisted': 'Protected from cleanup',
     'persisted-yes': 'yes',
     'persisted-no': 'no',
-    'detail-persisted-no':
-      'The browser may delete downloads when space runs low. Installing Snowdesk to the home screen usually grants protection.',
+    'note-persisted': 'downloads are not protected from browser cleanup',
 
     'label-map-page': 'The map page',
     'page-saved': 'saved',
     'page-not-saved': 'not saved',
-    'page-other-account': 'saved for another account',
-    'detail-page-not-saved': 'Open the map once while connected and it will be saved.',
-    'detail-page-other-account':
-      'The saved copy belongs to %(stamped)s and you are signed in as %(current)s. Open the map once while connected to save your own copy.',
+    'page-other-account': 'another account',
     'label-pages-saved': 'Pages you can open offline',
-    'detail-pages-saved': '%(total)s saved on this device in total.',
     'page-entry-usable': 'ready',
-    'page-entry-other': 'another account',
 
     'label-scripts': 'Program files',
     'label-styles': 'Styling',
     'label-feeds': 'Data feeds',
     'label-other-files': 'Fonts and images',
-    'detail-no-scripts':
-      'Without these a saved page opens blank. Reload while connected.',
-    'detail-no-styles': 'Pages will open unstyled.',
-    'detail-no-feeds':
-      'Danger ratings may be missing offline. Open the map while connected.',
+    'subject-scripts': 'program files',
+    'subject-styles': 'styling',
+    'subject-feeds': 'data feeds',
+    'effect-scripts': 'will open blank',
+    'effect-styles': 'will look plain',
+    'effect-feeds': 'may be missing danger ratings',
+    'group-open-map-lead': 'Saved pages %(effects)s — %(subjects)s are not saved yet.',
+    'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
 
     'label-areas': 'Downloaded areas',
     'areas-none': 'none',
-    'detail-areas-none': 'Download an area from the map to see it here without a signal.',
+    'note-areas-none':
+      'no map area is downloaded, so there will be nothing to show in the map',
     'area-tiles': '%(tiles)s tiles, %(size)s',
-    'area-incomplete': 'incomplete — %(count)s files missing',
+    'area-incomplete': 'incomplete, %(count)s missing',
     'area-missing': 'not on this device',
     'area-empty': 'empty',
-    'detail-area-incomplete':
-      'The map will not draw without them. Use Repair in the map’s Manage downloads sheet.',
-    'detail-area-missing':
-      'The record says this was downloaded but nothing is stored. Download it again.',
-    'detail-area-unverifiable':
-      'Downloaded before the app recorded what each area needs, so it cannot be fully checked. Download it again to verify it.',
+    'note-area-incomplete':
+      '%(name)s will not draw until you repair it from the map’s Manage downloads sheet',
+    'note-area-missing':
+      '%(name)s is recorded as downloaded but nothing is stored, so download it again',
     'label-base-layer': 'Zoomed-out overview (%(basemap)s)',
     'label-orphan': 'Unnamed area %(id)s',
-    'orphan-value': 'stored, no record',
-    'detail-orphan':
-      'Tiles are taking up space with nothing pointing at them. Manage downloads on the map can remove them.',
+    'orphan-value': 'no record',
+    'note-orphan': 'some tiles are taking up space with nothing pointing at them',
 
     'label-favourites': 'Saved places',
     'label-overlays': 'Map overlays',
     'label-panel-rows': 'Reports',
     'label-mutations': 'Changes waiting to send',
-    'detail-mutations': 'These will be sent the next time you have a connection.',
+    'note-mutations': '%(n)s of your changes have not reached the server yet',
     'label-db': 'Local database',
-    'detail-db-unavailable':
-      'The local database could not be opened, so saved data cannot be checked. Private browsing blocks it on some browsers.',
 
-    'principal-anonymous': 'a signed-out visitor',
+    'principal-anonymous': 'signed-out visitor',
     'principal-account': 'account %(id)s…',
-    'principal-unknown': 'an unknown account',
+    'principal-unknown': 'unknown account',
     unknown: 'unknown',
 
     'verdict-ok': 'The map will open offline.',
@@ -171,13 +191,22 @@
     'verdict-map-missing':
       'The map page will open, but no area is downloaded to show in it.',
 
+    'notes-sentence': 'Also worth knowing: %(notes)s.',
+    'list-pair': '%(first)s and %(last)s',
+    'list-separator': ', ',
+    'count-one': 'it',
+    'count-two': 'both',
+    'count-many': 'all %(n)s of them',
+
+    'counts-line': '%(total)s checks · %(attention)s need attention',
+    'counts-line-clear': '%(total)s checks · nothing needs attention',
+
     running: 'Checking…',
     copied: 'copied',
     'copy-failed': 'copy failed',
     saving: 'Saving the map page…',
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
-    'generated-at': 'Checked %(time)s',
   };
 
   /**
@@ -190,6 +219,36 @@
       return self.pwaStrings.read('offline-audit-strings-template', FALLBACKS);
     }
     return FALLBACKS;
+  }
+
+  /**
+   * A clock that measures this run, starting now.
+   *
+   * ``performance.now()`` where it exists, ``Date.now()`` otherwise — the
+   * figures render to 10ms, so the difference in resolution never shows,
+   * and the fallback keeps the column honest rather than blank on a
+   * browser without the API.
+   *
+   * @returns {{mark: (name: string) => void, marks: Record<string, number>,
+   *   elapsed: () => number}}
+   */
+  function clock() {
+    var now = function () {
+      return typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now();
+    };
+    var start = now();
+    var marks = /** @type {Record<string, number>} */ ({});
+    return {
+      marks: marks,
+      mark: function (name) {
+        marks[name] = Math.round(now() - start);
+      },
+      elapsed: function () {
+        return Math.round(now() - start);
+      },
+    };
   }
 
   /**
@@ -235,8 +294,9 @@
         resolve(value);
       };
       var onMessage = function (event) {
-        if (event.data && event.data.type === 'version')
+        if (event.data && event.data.type === 'version') {
           finish(event.data.version || null);
+        }
       };
       navigator.serviceWorker.addEventListener('message', onMessage);
       setTimeout(function () {
@@ -272,8 +332,7 @@
    *
    * @param {string[]} names Which shell caches to read. More than one
    *   means the worker did not answer and every candidate is being read,
-   *   which overstates rather than understates — noted on the report by
-   *   the caller.
+   *   which overstates rather than understates.
    * @returns {Promise<Array<{url: string, isPage: boolean,
    *   principal: string|null}>>}
    */
@@ -508,8 +567,7 @@
           savedAt: record.savedAt,
           // A base layer is tiles only — it has no style, TileJSON or
           // sprite of its own, because the area downloads that share it
-          // carry those. An empty list is the core's UNKNOWN, which is the
-          // honest answer rather than a pass.
+          // carry those. `areaState` knows not to read this as unknown.
           deps: [],
         });
       });
@@ -518,12 +576,14 @@
   }
 
   /**
-   * Take every reading the report is built from.
+   * Take every reading the report is built from, marking the clock as
+   * each one lands.
    *
    * @returns {Promise<Object>} The readings object ``buildReport``
    *   documents.
    */
   async function collect() {
+    var run = clock();
     var swSupported = 'serviceWorker' in navigator;
     var registration = null;
     if (swSupported) {
@@ -533,6 +593,7 @@
         registration = null;
       }
     }
+    run.mark('worker');
 
     var live = await liveShellCacheName();
     var names = await cacheNames();
@@ -542,12 +603,19 @@
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
     var shellEntries = shellNames.length ? await readShellEntries(shellNames) : [];
+    run.mark('shell');
 
     var db = await openDb();
+    run.mark('db');
     var areaRecords = await readAreaRecords(db);
+    run.mark('areas');
     var areas = [];
     for (var i = 0; i < areaRecords.length; i += 1) {
       var bucket = await readBucket(areaRecords[i].id);
+      // One mark per area, because one area IS one bucket read — this is
+      // the part of the column that genuinely varies, and on a device
+      // holding several downloads it is where the time goes.
+      run.mark('area:' + areaRecords[i].id);
       areas.push(
         Object.assign({}, areaRecords[i], {
           bucketPresent: bucket.present,
@@ -571,16 +639,20 @@
       .filter(function (id) {
         return id && !recordedIds.has(id);
       });
+    run.mark('orphans');
 
     var stores = {};
     if (db) {
       for (var j = 0; j < DATA_STORES.length; j += 1) {
         stores[DATA_STORES[j]] = await countStore(db, DATA_STORES[j]);
+        run.mark('store:' + DATA_STORES[j]);
       }
     }
     var mutations = db ? await countStore(db, 'queue:mutations') : null;
+    run.mark('mutations');
     var currentPrincipal = db ? await readMeta(db, 'mutations.principal') : null;
     var networkMode = db ? await readMeta(db, 'network.mode') : null;
+    run.mark('network');
     if (db) {
       try {
         db.close();
@@ -593,6 +665,7 @@
     try {
       if (navigator.storage && typeof navigator.storage.estimate === 'function') {
         storage = await navigator.storage.estimate();
+        run.mark('storage');
         if (typeof navigator.storage.persisted === 'function') {
           storage = Object.assign({}, storage, {
             persisted: await navigator.storage.persisted(),
@@ -602,6 +675,7 @@
     } catch (_err) {
       storage = null;
     }
+    run.mark('persisted');
 
     return {
       now: new Date().toISOString(),
@@ -626,37 +700,70 @@
       stores: stores,
       mutations: { count: mutations },
       dbAvailable: !!db,
+      timings: run.marks,
+      elapsedMs: run.elapsed(),
     };
   }
 
   /**
-   * One check, as a definition-list row.
+   * One log line: elapsed, label, answer. Never more.
    *
    * @param {Object} check
    * @param {Document} doc
    * @returns {HTMLElement}
    */
-  function renderCheck(check, doc) {
-    var row = doc.createElement('div');
+  function renderLine(check, doc) {
+    var core = self.pwaOfflineAuditCore;
+    var row = doc.createElement('li');
     row.setAttribute('data-audit-check', '');
     row.setAttribute('data-audit-status', check.status);
-    var term = doc.createElement('dt');
-    term.textContent = check.label;
-    var value = doc.createElement('dd');
+
+    var at = doc.createElement('span');
+    at.setAttribute('data-audit-at', '');
+    at.textContent = core.formatElapsed(check.at);
+
+    var label = doc.createElement('span');
+    label.setAttribute('data-audit-label', '');
+    label.textContent = check.label;
+    // The label is the one field with no length bound (a cached URL, a
+    // region name), and the row must stay one line — so CSS truncates and
+    // the full text goes in the title for anyone who needs it.
+    label.title = check.label;
+
+    var value = doc.createElement('span');
+    value.setAttribute('data-audit-value', '');
     value.textContent = check.value;
-    row.appendChild(term);
+
+    row.appendChild(at);
+    row.appendChild(label);
     row.appendChild(value);
-    if (check.detail) {
-      var detail = doc.createElement('p');
-      detail.setAttribute('data-audit-detail', '');
-      detail.textContent = check.detail;
-      row.appendChild(detail);
-    }
     return row;
   }
 
   /**
+   * "15 checks · 6 need attention", or the all-clear form.
+   *
+   * What makes the log's evidence legible at a glance: it says how many
+   * separate things were looked at without the reader counting rows,
+   * which is the whole reason the log is there.
+   *
+   * @param {Object} report
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function countsLine(report, t) {
+    var key = report.counts.attention > 0 ? 'counts-line' : 'counts-line-clear';
+    var template = t[key] || FALLBACKS[key];
+    return String(template)
+      .replace('%(total)s', String(report.counts.total))
+      .replace('%(attention)s', String(report.counts.attention));
+  }
+
+  /**
    * Paint the report into ``target``, replacing whatever was there.
+   *
+   * Three parts, in the order they are read: the log (the evidence), the
+   * summary (the answer), and the count (how much was looked at).
    *
    * @param {HTMLElement} target
    * @param {Object} report
@@ -666,34 +773,43 @@
     var doc = target.ownerDocument;
     target.textContent = '';
 
-    var verdict = doc.createElement('p');
-    verdict.setAttribute('data-audit-verdict', '');
-    verdict.setAttribute('data-audit-status', report.verdict.status);
-    verdict.textContent = report.verdict.text;
-    target.appendChild(verdict);
-
+    var log = doc.createElement('div');
+    log.setAttribute('data-audit-log', '');
     report.sections.forEach(function (section) {
+      if (section.checks.length === 0) return;
       var el = doc.createElement('section');
       el.setAttribute('data-audit-section', '');
-      el.setAttribute('data-audit-status', section.status);
       var heading = doc.createElement('h3');
       heading.textContent = section.title;
       el.appendChild(heading);
-      var list = doc.createElement('dl');
+      var list = doc.createElement('ol');
       section.checks.forEach(function (check) {
-        list.appendChild(renderCheck(check, doc));
+        list.appendChild(renderLine(check, doc));
       });
       el.appendChild(list);
-      target.appendChild(el);
+      log.appendChild(el);
     });
+    target.appendChild(log);
 
-    var stamp = doc.createElement('p');
-    stamp.setAttribute('data-audit-generated', '');
-    stamp.textContent = String(t['generated-at'] || FALLBACKS['generated-at']).replace(
-      '%(time)s',
-      new Date(report.generatedAt).toLocaleString(),
-    );
-    target.appendChild(stamp);
+    var summary = doc.createElement('div');
+    summary.setAttribute('data-audit-summary', '');
+    summary.setAttribute('data-audit-status', report.verdict.status);
+    var verdict = doc.createElement('p');
+    verdict.setAttribute('data-audit-verdict', '');
+    verdict.textContent = report.verdict.text;
+    summary.appendChild(verdict);
+    if (report.summary) {
+      var detail = doc.createElement('p');
+      detail.setAttribute('data-audit-detail', '');
+      detail.textContent = report.summary;
+      summary.appendChild(detail);
+    }
+    target.appendChild(summary);
+
+    var counts = doc.createElement('p');
+    counts.setAttribute('data-audit-counts', '');
+    counts.textContent = countsLine(report, t);
+    target.appendChild(counts);
   }
 
   /**

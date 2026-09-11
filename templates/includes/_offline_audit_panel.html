@@ -39,13 +39,19 @@ of a settings page nobody came here to audit.
             attribute-injection surface on a reusable component), and
             ``data-offline-audit-run`` is this module's binding contract.
             The tag gives the same class string the partial would.
+
+            SNOW-907 review: PRIMARY, not ghost. It is the only thing on
+            this row that does anything before a report exists, and the
+            two controls beside it are both disabled until it has run —
+            a row of three equally-weighted ghosts gave no clue which one
+            starts.
         {% endcomment %}
         <button
             type="button"
             data-offline-audit-run
-            class="{% button_classes variant='ghost' size='compact' %} whitespace-nowrap"
+            class="{% button_classes variant='primary' size='compact' %} whitespace-nowrap"
         >
-            {% translate "Check what's saved" %}
+            {% translate "Run the check" %}
         </button>
         <button
             type="button"
@@ -90,136 +96,123 @@ of a settings page nobody came here to audit.
         <span data-string="sw-controlling">{% translate "active" %}</span>
         <span data-string="sw-registered-not-controlling">{% translate "starting up" %}</span>
         <span data-string="sw-absent">{% translate "not set up" %}</span>
-        <span data-string="sw-unsupported">{% translate "not supported by this browser" %}</span>
-        <span data-string="detail-service-worker">
-            {% translate "Nothing can be read offline until this is active. Reload the page while connected." %}
-        </span>
+        <span data-string="sw-unsupported">{% translate "not supported" %}</span>
+        <span data-string="note-service-worker">{% translate "offline mode is not running on this device yet" %}</span>
         <span data-string="label-update">{% translate "Update" %}</span>
         <span data-string="update-waiting">{% translate "waiting to install" %}</span>
-        <span data-string="detail-update">{% translate "A newer version is ready. Reload to install it." %}</span>
+        <span data-string="note-update">{% translate "a newer version is waiting to install" %}</span>
         <span data-string="label-network-mode">{% translate "Connection" %}</span>
         <span data-string="mode-forced">{% translate "offline mode is on" %}</span>
         <span data-string="mode-latched">{% translate "no usable connection" %}</span>
-        <span data-string="detail-forced">
-            {% translate "You turned offline mode on. Turn it off to fetch anything new." %}
-        </span>
-        <span data-string="detail-latched">
-            {% translate "The app stopped trying after repeated timeouts. It retries on its own when a connection returns." %}
-        </span>
+        <span
+            data-string="note-forced"
+        >{% translate "offline mode is switched on, so nothing new will be fetched" %}</span>
+        <span
+            data-string="note-latched"
+        >{% translate "the app has stopped trying to reach the network after repeated timeouts" %}</span>
         <span data-string="label-storage">{% translate "Space used" %}</span>
         <span data-string="storage-of">{% translate "%(used)s of %(total)s" %}</span>
-        <span data-string="detail-storage-tight">
-            {% translate "Close to the browser limit. Remove a downloaded area to stop the browser evicting one for you." %}
-        </span>
-        <span data-string="detail-storage-unknown">
-            {% translate "This browser does not report how much space the app is using." %}
-        </span>
+        <span
+            data-string="note-storage-tight"
+        >{% translate "storage is nearly full, so the browser may start deleting downloads" %}</span>
         <span data-string="label-persisted">{% translate "Protected from cleanup" %}</span>
         <span data-string="persisted-yes">{% translate "yes" %}</span>
         <span data-string="persisted-no">{% translate "no" %}</span>
-        <span data-string="detail-persisted-no">
-            {% translate "The browser may delete downloads when space runs low. Installing Snowdesk to the home screen usually grants protection." %}
-        </span>
+        <span data-string="note-persisted">{% translate "downloads are not protected from browser cleanup" %}</span>
 
         <span data-string="label-map-page">{% translate "The map page" %}</span>
         <span data-string="page-saved">{% translate "saved" %}</span>
         <span data-string="page-not-saved">{% translate "not saved" %}</span>
-        <span data-string="page-other-account">{% translate "saved for another account" %}</span>
-        <span data-string="detail-page-not-saved">
-            {% translate "Open the map once while connected and it will be saved." %}
-        </span>
-        <span data-string="detail-page-other-account">
-            {% translate "The saved copy belongs to %(stamped)s and you are signed in as %(current)s. Open the map once while connected to save your own copy." %}
-        </span>
+        <span data-string="page-other-account">{% translate "another account" %}</span>
         <span data-string="label-pages-saved">{% translate "Pages you can open offline" %}</span>
-        <span data-string="detail-pages-saved">
-            {% translate "%(total)s saved on this device in total." %}
-        </span>
         <span data-string="page-entry-usable">{% translate "ready" %}</span>
-        <span data-string="page-entry-other">{% translate "another account" %}</span>
 
         <span data-string="label-scripts">{% translate "Program files" %}</span>
         <span data-string="label-styles">{% translate "Styling" %}</span>
         <span data-string="label-feeds">{% translate "Data feeds" %}</span>
         <span data-string="label-other-files">{% translate "Fonts and images" %}</span>
-        <span data-string="detail-no-scripts">
-            {% translate "Without these a saved page opens blank. Reload while connected." %}
-        </span>
-        <span data-string="detail-no-styles">{% translate "Pages will open unstyled." %}</span>
-        <span data-string="detail-no-feeds">
-            {% translate "Danger ratings may be missing offline. Open the map while connected." %}
-        </span>
+        <span data-string="subject-scripts">{% translate "program files" %}</span>
+        <span data-string="subject-styles">{% translate "styling" %}</span>
+        <span data-string="subject-feeds">{% translate "data feeds" %}</span>
+        <span data-string="effect-scripts">{% translate "will open blank" %}</span>
+        <span data-string="effect-styles">{% translate "will look plain" %}</span>
+        <span data-string="effect-feeds">{% translate "may be missing danger ratings" %}</span>
+        <span
+            data-string="group-open-map-lead"
+        >{% translate "Saved pages %(effects)s — %(subjects)s are not saved yet." %}</span>
+        <span
+            data-string="group-open-map-remedy"
+        >{% translate "Opening the map once while connected fixes %(count)s." %}</span>
 
         <span data-string="label-areas">{% translate "Downloaded areas" %}</span>
         <span data-string="areas-none">{% translate "none" %}</span>
-        <span data-string="detail-areas-none">
-            {% translate "Download an area from the map to see it here without a signal." %}
-        </span>
+        <span
+            data-string="note-areas-none"
+        >{% translate "no map area is downloaded, so there will be nothing to show in the map" %}</span>
         <span data-string="area-tiles">{% translate "%(tiles)s tiles, %(size)s" %}</span>
-        <span data-string="area-incomplete">
-            {% translate "incomplete — %(count)s files missing" %}
-        </span>
+        <span data-string="area-incomplete">{% translate "incomplete, %(count)s missing" %}</span>
         <span data-string="area-missing">{% translate "not on this device" %}</span>
         <span data-string="area-empty">{% translate "empty" %}</span>
-        <span data-string="detail-area-incomplete">
-            {% translate "The map will not draw without them. Use Repair in the map’s Manage downloads sheet." %}
-        </span>
-        <span data-string="detail-area-missing">
-            {% translate "The record says this was downloaded but nothing is stored. Download it again." %}
-        </span>
-        <span data-string="detail-area-unverifiable">
-            {% translate "Downloaded before the app recorded what each area needs, so it cannot be fully checked. Download it again to verify it." %}
-        </span>
+        <span
+            data-string="note-area-incomplete"
+        >{% translate "%(name)s will not draw until you repair it from the map’s Manage downloads sheet" %}</span>
+        <span
+            data-string="note-area-missing"
+        >{% translate "%(name)s is recorded as downloaded but nothing is stored, so download it again" %}</span>
         <span data-string="label-base-layer">{% translate "Zoomed-out overview (%(basemap)s)" %}</span>
         <span data-string="label-orphan">{% translate "Unnamed area %(id)s" %}</span>
-        <span data-string="orphan-value">{% translate "stored, no record" %}</span>
-        <span data-string="detail-orphan">
-            {% translate "Tiles are taking up space with nothing pointing at them. Manage downloads on the map can remove them." %}
-        </span>
+        <span data-string="orphan-value">{% translate "no record" %}</span>
+        <span
+            data-string="note-orphan"
+        >{% translate "some tiles are taking up space with nothing pointing at them" %}</span>
 
         <span data-string="label-favourites">{% translate "Saved places" %}</span>
         <span data-string="label-overlays">{% translate "Map overlays" %}</span>
         <span data-string="label-panel-rows">{% translate "Reports" %}</span>
         <span data-string="label-mutations">{% translate "Changes waiting to send" %}</span>
-        <span data-string="detail-mutations">
-            {% translate "These will be sent the next time you have a connection." %}
-        </span>
+        <span
+            data-string="note-mutations"
+        >{% translate "%(n)s of your changes have not reached the server yet" %}</span>
         <span data-string="label-db">{% translate "Local database" %}</span>
-        <span data-string="detail-db-unavailable">
-            {% translate "The local database could not be opened, so saved data cannot be checked. Private browsing blocks it on some browsers." %}
-        </span>
 
-        <span data-string="principal-anonymous">{% translate "a signed-out visitor" %}</span>
+        <span data-string="principal-anonymous">{% translate "signed-out visitor" %}</span>
         <span data-string="principal-account">{% translate "account %(id)s…" %}</span>
-        <span data-string="principal-unknown">{% translate "an unknown account" %}</span>
+        <span data-string="principal-unknown">{% translate "unknown account" %}</span>
         <span data-string="unknown">{% translate "unknown" %}</span>
 
         <span data-string="verdict-ok">{% translate "The map will open offline." %}</span>
         <span data-string="verdict-no-worker">{% translate "This device is not set up for offline use yet." %}</span>
-        <span data-string="verdict-no-page">
-            {% translate "The map page is not saved. Open it once while connected." %}
-        </span>
-        <span data-string="verdict-other-account">
-            {% translate "The saved map page belongs to another account. Open the map once while connected." %}
-        </span>
-        <span data-string="verdict-no-scripts">
-            {% translate "The app’s program files are not saved, so pages will open blank." %}
-        </span>
-        <span data-string="verdict-map-incomplete">
-            {% translate "The map page will open, but a downloaded area is incomplete." %}
-        </span>
-        <span data-string="verdict-map-missing">
-            {% translate "The map page will open, but no area is downloaded to show in it." %}
-        </span>
+        <span
+            data-string="verdict-no-page"
+        >{% translate "The map page is not saved. Open it once while connected." %}</span>
+        <span
+            data-string="verdict-other-account"
+        >{% translate "The saved map page belongs to another account. Open the map once while connected." %}</span>
+        <span
+            data-string="verdict-no-scripts"
+        >{% translate "The app’s program files are not saved, so pages will open blank." %}</span>
+        <span
+            data-string="verdict-map-incomplete"
+        >{% translate "The map page will open, but a downloaded area is incomplete." %}</span>
+        <span
+            data-string="verdict-map-missing"
+        >{% translate "The map page will open, but no area is downloaded to show in it." %}</span>
+
+        <span data-string="notes-sentence">{% translate "Also worth knowing: %(notes)s." %}</span>
+        <span data-string="list-pair">{% translate "%(first)s and %(last)s" %}</span>
+        <span data-string="list-separator">{% translate ", " %}</span>
+        <span data-string="count-one">{% translate "it" %}</span>
+        <span data-string="count-two">{% translate "both" %}</span>
+        <span data-string="count-many">{% translate "all %(n)s of them" %}</span>
+
+        <span data-string="counts-line">{% translate "%(total)s checks · %(attention)s need attention" %}</span>
+        <span data-string="counts-line-clear">{% translate "%(total)s checks · nothing needs attention" %}</span>
 
         <span data-string="running">{% translate "Checking…" %}</span>
         <span data-string="copied">{% translate "copied" %}</span>
         <span data-string="copy-failed">{% translate "copy failed" %}</span>
         <span data-string="saving">{% translate "Saving the map page…" %}</span>
         <span data-string="saved">{% translate "Saved. Re-checking…" %}</span>
-        <span data-string="save-failed">
-            {% translate "That could not be saved. Try again while connected." %}
-        </span>
-        <span data-string="generated-at">{% translate "Checked %(time)s" %}</span>
+        <span data-string="save-failed">{% translate "That could not be saved. Try again while connected." %}</span>
     </template>
 </div>
