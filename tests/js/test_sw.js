@@ -83,6 +83,11 @@ const SW_EXPORTS = [
   '_rewarmShell',
   'SHELL_PAGE',
   'SHELL_SUBRESOURCE_LIMIT',
+  // SNOW-912: the feeds the warmed page's own boot will ask for. Warmed
+  // with it, or the map opens grey.
+  '_shellPageDay',
+  '_shellBootFeeds',
+  '_warmShellFeeds',
   'BASEMAP_CACHE_TRIM_INTERVAL',
   'BASEMAP_CACHE_MAX_ENTRIES',
   '_INLINE_MUTATION_QUEUE_CORE',
@@ -3253,13 +3258,20 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
   const MAP_URL = `${ORIGIN}/`;
   const SCRIPT_URL = `${ORIGIN}/static/js/map.abc123.js`;
   const STYLE_URL = `${ORIGIN}/static/css/output.def456.css`;
+  const PAGE_DAY = '2026-09-11';
   const MAP_HTML = [
     '<meta name="pwa-user-id" content="acct-9">',
     `<link rel="stylesheet" href="${STYLE_URL}">`,
     '<script src="/static/js/map.abc123.js"></script>',
     '<script src="https://cdn.example/vendor.js"></script>',
     '<link rel="icon" href="/static/img/icon.png">',
+    // SNOW-912: the day this page will open on, whatever the date is when
+    // somebody does. Its boot puts this in the ratings URL.
+    `<div id="season-scrubber" data-today="${PAGE_DAY}"></div>`,
   ].join('\n');
+  const DATED_RATINGS = `${ORIGIN}/api/ratings/?d=${PAGE_DAY}&country=ch`;
+  const SEASON_RATINGS = `${ORIGIN}/api/ratings/?country=ch`;
+  const REGIONS = `${ORIGIN}/api/regions.geojson?country=ch`;
 
   /** A same-origin response of a chosen type, which `_warmCache` requires. */
   function typed(body, contentType) {
@@ -3272,6 +3284,7 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
       const url = typeof request === 'string' ? request : request.url;
       if (seen) seen.push(url);
       if (url === MAP_URL) return typed(MAP_HTML, 'text/html; charset=utf-8');
+      if (url.indexOf('/api/') >= 0) return typed('{"ok":true}', 'application/json');
       return typed('asset bytes', 'text/javascript');
     };
   }
@@ -3371,8 +3384,10 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
     await sw._warmCache([MAP_URL]);
 
     // On any device that has simply opened the app these are all present,
-    // and the run costs one `match` each and no network at all.
-    expect(seen).toEqual([MAP_URL]);
+    // and the run costs one `match` each and no network at all. The feeds
+    // are still fetched — they are this ticket's whole point, and the
+    // fixture seeds only the assets.
+    expect(seen.filter((url) => url.indexOf('/api/') === -1)).toEqual([MAP_URL]);
   });
 
   it('leaves a feed warm untouched — only HTML pulls subresources', async () => {
@@ -3390,6 +3405,71 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
     await sw._warmCache([`${ORIGIN}/api/ratings/`]);
 
     expect(seen).toEqual([`${ORIGIN}/api/ratings/`]);
+  });
+
+  it('warms the feeds the page’s own boot will ask for', async () => {
+    // The invariant: a cached page and the feeds its boot asks for are
+    // cached together, or the map opens grey. `activate` deletes the feeds
+    // with the rest of the old shell, and SNOW-912's re-warm put only the
+    // PAGE back — so an offline open would have drawn a map with no danger
+    // ratings and no region outlines.
+    const stub = makeCaches();
+    const sw = loadSw({ caches: stub, fetch: shellFetch() });
+
+    await sw._warmCache([MAP_URL]);
+
+    const cache = await stub.open(SHELL_CACHE);
+    expect(await cache.match(DATED_RATINGS)).toBeTruthy();
+    expect(await cache.match(SEASON_RATINGS)).toBeTruthy();
+    expect(await cache.match(REGIONS)).toBeTruthy();
+  });
+
+  it('asks for the day the PAGE names, not the day it is warmed on', async () => {
+    // `data-today` is server-rendered per request, so a cached page carries
+    // the day it was fetched on for as long as it sits there — and that is
+    // the day its boot will put in the ratings URL.
+    const sw = loadSw();
+
+    expect(sw._shellBootFeeds(MAP_HTML)).toContain(DATED_RATINGS);
+  });
+
+  it('skips the dated feed for a page that names no day', async () => {
+    // `readDisplayDate()` returns null there and the map paints nothing
+    // whatever is cached, so there is no dated feed worth fetching.
+    const sw = loadSw();
+    const feeds = sw._shellBootFeeds('<html><body>no scrubber</body></html>');
+
+    expect(feeds).toEqual([REGIONS, SEASON_RATINGS]);
+  });
+
+  it('agrees with the audit core about which day a page opens on', async () => {
+    // The report verifies the feed this warm fetches. A drift between the
+    // two readings means the row goes green over a day nothing warmed.
+    const { pageDay } = self.pwaOfflineAuditCore;
+    const sw = loadSw();
+    const CASES = [
+      MAP_HTML,
+      '',
+      '<div id="season-scrubber" data-today="2026-01-02"></div>',
+      "<div data-today='2026-01-02' id='season-scrubber'></div>",
+      '<div id="other" data-today="2026-01-02"></div>',
+      '<div id="season-scrubber" data-today="not-a-date"></div>',
+    ];
+
+    for (const html of CASES) {
+      expect(sw._shellPageDay(html), html.slice(0, 40)).toEqual(pageDay(html));
+    }
+  });
+
+  it('does not re-fetch a feed the cache already holds', async () => {
+    const stub = makeCaches();
+    stub.seed(SHELL_CACHE, DATED_RATINGS, basicResponse('already here'));
+    const seen = [];
+    const sw = loadSw({ caches: stub, fetch: shellFetch(seen) });
+
+    await sw._warmCache([MAP_URL]);
+
+    expect(seen).not.toContain(DATED_RATINGS);
   });
 
   it('spends nothing on a device the user has switched offline', async () => {

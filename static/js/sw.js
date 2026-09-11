@@ -953,6 +953,11 @@ const SHELL_SUBRESOURCE_LIMIT = 120;
 // the activation's ``waitUntil`` open for as long as the browser allows.
 const SHELL_REWARM_BUDGET_MS = 30000;
 
+// SNOW-912: the country both of ``map.js``'s boot fetches hard-code. Named
+// here so a grep finds the worker's copy alongside the report's own
+// ``BOOT_COUNTRY`` (offline_audit_core.js) the day that changes.
+const BOOT_FEED_COUNTRY = 'ch';
+
 // File extensions that count as same-origin static shell. Anything
 // not in this set, and not a same-origin GeoJSON feed, falls through
 // to network-only. The list deliberately excludes ``.json`` —
@@ -2304,6 +2309,10 @@ async function _warmCache(urls, options) {
         // blank frame. Only the HTML branch does this, so the feed and
         // tile callers are untouched — see _warmShellSubresources.
         bytes += await _warmShellSubresources(html, cache);
+        // SNOW-912: and the feeds its own boot will ask the cache for. The
+        // page names the day and the day names the feed, so the two are
+        // warmed as one unit or the map opens grey.
+        bytes += await _warmShellFeeds(html, cache);
       } else {
         await cache.put(url.toString(), response.clone());
       }
@@ -3248,6 +3257,127 @@ function _shellSubresources(html) {
     match = pattern.exec(html);
   }
   return urls;
+}
+
+/**
+ * The day a page will open on — its ``#season-scrubber``'s ``data-today``
+ * (SNOW-912).
+ *
+ * Server-rendered per request, so a cached page carries the day it was
+ * FETCHED on, for as long as it sits there. That is the day its boot will
+ * put in the ratings URL, whatever today's date turns out to be when
+ * somebody opens it.
+ *
+ * ``offline_audit_core.js``'s ``pageDay`` reads the same attribute the same
+ * way, and ``tests/js/test_sw.js`` holds the two to identical answers — the
+ * report must verify the feed the warm actually fetches.
+ *
+ * @param {string} html
+ * @returns {string|null} ``YYYY-MM-DD``, or null where no readable
+ *   attribute is present.
+ */
+function _shellPageDay(html) {
+  if (typeof html !== 'string' || !html) return null;
+  let match = /id=["']season-scrubber["'][^>]*?data-today=["'](\d{4}-\d{2}-\d{2})["']/i.exec(
+    html,
+  );
+  if (match) return match[1];
+  match = /data-today=["'](\d{4}-\d{2}-\d{2})["'][^>]*?id=["']season-scrubber["']/i.exec(
+    html,
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * The feeds a warmed map page's cold open will ask the cache for
+ * (SNOW-912).
+ *
+ * The country is the one ``map.js`` hard-codes in both boot legs; a grep
+ * for this constant finds every side of it.
+ *
+ *   fetch(REGIONS_URL + '?country=ch')
+ *   fetch(RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch')
+ *
+ * plus the undated season payload ``ensureRatingsCached`` fetches on the
+ * same load, which is what the scrubber and the timelapse read — warming
+ * the day and leaving the scrubber blank would fix a row the report can
+ * see and leave the user tripping over one it cannot.
+ *
+ * Deliberately NOT the whole of ``COUNTRY_FEED_PATHS``: the boundary tiers
+ * (major/sub-regions) and ``/api/resorts.geojson`` are loaded by paths this
+ * warm is not standing in for, and widening a repair is how a repair
+ * becomes a second thing to reason about.
+ *
+ * @param {string} html
+ * @returns {string[]} Absolute URLs, most consequential first.
+ */
+function _shellBootFeeds(html) {
+  const feeds = [
+    `${self.location.origin}/api/regions.geojson?country=${BOOT_FEED_COUNTRY}`,
+    `${self.location.origin}/api/ratings/?country=${BOOT_FEED_COUNTRY}`,
+  ];
+  const day = _shellPageDay(html);
+  // No day means the boot has none either — `readDisplayDate()` returns
+  // null and the map paints nothing whatever is cached, so there is no
+  // dated feed worth fetching.
+  if (day) {
+    feeds.unshift(
+      `${self.location.origin}/api/ratings/?d=${day}&country=${BOOT_FEED_COUNTRY}`,
+    );
+  }
+  return feeds;
+}
+
+/**
+ * Warm the feeds that page will ask for, alongside the page itself
+ * (SNOW-912).
+ *
+ * The invariant this exists to hold: **a cached page and the feeds its own
+ * boot will ask for are cached together, or the map opens grey.**
+ *
+ * ``activate`` deletes every feed along with the rest of the old shell, and
+ * the first cut of this re-warm put the PAGE back and nothing else — which
+ * would have drawn a map with no danger ratings and no region outlines on
+ * every deploy. The page and its feeds have to move as one unit, because
+ * the page names the day and the day names the feed.
+ *
+ * The same hole opens without a deploy: a flaky connection can land the
+ * navigation (``_networkFirst`` caches it) and lose the feed fetches that
+ * follow, leaving a page dated ahead of anything stored. Warming here
+ * closes that too, on the next activation or the next press of the audit
+ * panel's Save control.
+ *
+ * Failures are swallowed, one at a time: a feed that does not land is a row
+ * the report will show as No, which is the honest outcome and not a reason
+ * to fail the page's own warm.
+ *
+ * @param {string} html
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<number>} Bytes written.
+ */
+async function _warmShellFeeds(html, cache) {
+  const feeds = _shellBootFeeds(html);
+  let bytes = 0;
+  let written = 0;
+  await _warmCacheRunPool(feeds, WARM_CACHE_CONCURRENCY, async (url) => {
+    try {
+      // Skipped when already held, like the subresources — with one
+      // difference worth naming: a feed's content CAN change under a URL a
+      // hashed asset's cannot. That is `_staleWhileRevalidate`'s job on the
+      // next online open, not this one's; this warm exists to put back what
+      // an activation deleted, and there is nothing to skip on that path.
+      if (await cache.match(url)) return;
+      const response = await _boundedFetch(url, SHELL_FETCH_BUDGET_MS);
+      if (!response || !response.ok || response.type !== 'basic') return;
+      await cache.put(url, response.clone());
+      written += 1;
+      bytes += await _warmCacheResponseBytes(response);
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+  });
+  _debugLog('shell.feeds', { asked: feeds.length, written, bytes });
+  return bytes;
 }
 
 /**
