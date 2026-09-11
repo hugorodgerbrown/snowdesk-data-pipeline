@@ -302,16 +302,49 @@
   }
 
   /**
-   * Every entry in the shell cache, with a principal stamp on the pages.
+   * Whether a cached URL is the map page, by pathname.
+   *
+   * Query dropped, for the reason the core's ``pages()`` drops it: the map
+   * writes ``?d=YYYY-MM-DD`` with ``history.replaceState`` while the user
+   * scrubs, and those URLs are never fetched and never cached.
+   *
+   * @param {string} url
+   * @param {string} mapPath
+   * @returns {boolean}
+   */
+  function isMapPage(url, mapPath) {
+    try {
+      return new URL(url, self.location.origin).pathname === mapPath;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * Every entry in the shell cache, with a principal stamp on the pages
+   * and — for the map page alone — the list of modules its HTML boots
+   * from (SNOW-912).
+   *
+   * The map page's body is read because "The app opens" has to be an
+   * answer about THAT page. A device holding the HTML and none of its
+   * JavaScript opens to a blank frame, and the row read Yes on a count of
+   * any cached script at all — a count two precached audit modules make
+   * true on every device. One extra body read, on one entry, is what makes
+   * the row's Yes mean what the reader takes it to mean.
    *
    * @param {string[]} names Which shell caches to read. More than one
    *   means the worker did not answer and every candidate is being read,
    *   which overstates rather than understates.
-   * @returns {Promise<Array<{url: string, isPage: boolean,
-   *   principal: string|null}>>}
+   * @param {string} mapPath
+   * @returns {Promise<{entries: Array<{url: string, isPage: boolean,
+   *   principal: string|null}>, mapDependencies: string[]|null}>}
+   *   ``mapDependencies`` is null when there is no map page to read, or
+   *   when its body could not be read — which the core answers No to
+   *   rather than guessing.
    */
-  async function readShellEntries(names) {
+  async function readShellEntries(names, mapPath) {
     var entries = [];
+    var mapDependencies = null;
     for (var i = 0; i < names.length; i += 1) {
       var cache;
       try {
@@ -330,8 +363,9 @@
         var isPage = looksLikePage(url);
         var principal = null;
         if (isPage) {
+          var response = null;
           try {
-            var response = await cache.match(requests[j]);
+            response = await cache.match(requests[j]);
             // The same header ``sw.js``'s ``_principalMatches`` reads. An
             // entry with no stamp is one the worker will refuse to serve,
             // and the core treats a null stamp exactly that way.
@@ -339,11 +373,25 @@
           } catch (_err) {
             principal = null;
           }
+          // Its own try: a body that cannot be read says nothing about the
+          // stamp already read off the same response, and folding the two
+          // together would report a perfectly good page as unstamped.
+          if (response && mapDependencies === null && isMapPage(url, mapPath)) {
+            try {
+              var core = self.pwaOfflineAuditCore;
+              var html = await response.clone().text();
+              mapDependencies = core
+                ? core.pageDependencies(html, self.location.origin)
+                : null;
+            } catch (_err) {
+              mapDependencies = null;
+            }
+          }
         }
         entries.push({ url: url, isPage: isPage, principal: principal });
       }
     }
-    return entries;
+    return { entries: entries, mapDependencies: mapDependencies };
   }
 
   /**
@@ -615,7 +663,14 @@
       : names.filter(function (name) {
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
-    var shellEntries = shellNames.length ? await readShellEntries(shellNames) : [];
+    // The map is the site root. Hard-coded rather than derived from the
+    // current location, because this panel is reached from two pages and
+    // neither of them is the one being asked about.
+    var mapPath = '/';
+    var shell = shellNames.length
+      ? await readShellEntries(shellNames, mapPath)
+      : { entries: [], mapDependencies: null };
+    var shellEntries = shell.entries;
 
     var db = await openDb();
     var areaRecords = await readAreaRecords(db);
@@ -696,11 +751,12 @@
       storage: storage,
       shellCacheNames: shellNames,
       shellEntries: shellEntries,
+      // SNOW-912: what the cached map page itself boots from, or null when
+      // there is no page to read. The core verifies "The app opens"
+      // against this rather than against a count of cached scripts.
+      mapDependencies: shell.mapDependencies,
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
-      // The map is the site root. Hard-coded rather than derived from the
-      // current location, because this panel is reached from two pages and
-      // neither of them is the one being asked about.
-      mapPath: '/',
+      mapPath: mapPath,
       areas: areas,
       orphanBuckets: orphanBuckets,
       stores: stores,

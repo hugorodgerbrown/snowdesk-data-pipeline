@@ -44,6 +44,13 @@ function healthy(overrides) {
       ],
       currentPrincipal: null,
       mapPath: '/',
+      // SNOW-912: what the cached map page boots from. A healthy device
+      // holds every one of them; the row is answered against this list,
+      // not against "is any script cached".
+      mapDependencies: [
+        'https://snowdesk.info/static/js/map.abc.js',
+        'https://snowdesk.info/static/css/output.abc.css',
+      ],
       areas: [
         {
           id: 'base-openfreemap',
@@ -441,10 +448,63 @@ describe('the app-opens row', () => {
           { url: 'https://snowdesk.info/static/js/a.js', isPage: false },
           { url: 'https://snowdesk.info/static/css/a.css', isPage: false },
         ],
+        mapDependencies: [
+          'https://snowdesk.info/static/js/a.js',
+          'https://snowdesk.info/static/css/a.css',
+        ],
       }),
       {},
     );
     expect(row(report, 'app-opens').status).toBe('yes');
+  });
+
+  it('refuses a page whose own modules are not cached', () => {
+    // The false green this row existed to prevent and did not. A device
+    // holding the HTML and none of the JavaScript it boots from opens to
+    // a blank frame, which to the person holding the phone is a page that
+    // did not open — and the row used to pass on a count of ANY cached
+    // script, which the two precached audit modules make true everywhere.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/static/js/offline_audit.js', isPage: false },
+          { url: 'https://snowdesk.info/static/js/offline_audit_core.js', isPage: false },
+        ],
+        mapDependencies: ['https://snowdesk.info/static/js/map.abc.js'],
+      }),
+      {},
+    );
+    expect(row(report, 'app-opens').status).toBe('blocked');
+    expect(row(report, 'app-opens').reason).toBe('scripts');
+  });
+
+  it('refuses a page whose body could not be read', () => {
+    // Unreadable is not verified. No rather than unknown, because warming
+    // overwrites the entry — so the remedy this report offers still
+    // applies, and a reader told No and given a working button is better
+    // served than one told Yes about a page nobody could check.
+    const report = core.buildReport(healthy({ mapDependencies: null }), {});
+
+    expect(row(report, 'app-opens').status).toBe('blocked');
+    expect(row(report, 'app-opens').reason).toBe('unreadable');
+  });
+
+  it('answers unknown for a page that names nothing on a device holding nothing', () => {
+    // `missingFrom`'s rule, applied to a page instead of an area: an empty
+    // claim is not a pass. The same three-row resolution the download rows
+    // answer to.
+    const report = core.buildReport(
+      healthy({
+        shellEntries: [
+          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+        ],
+        mapDependencies: [],
+      }),
+      {},
+    );
+
+    expect(row(report, 'app-opens').status).toBe('unknown');
   });
 
   it('refuses an entry with no stamp at all', () => {
@@ -530,6 +590,7 @@ describe('the summary paragraph', () => {
           { url: 'https://snowdesk.info/a.js', isPage: false },
           { url: 'https://snowdesk.info/a.css', isPage: false },
         ],
+        mapDependencies: ['https://snowdesk.info/a.js', 'https://snowdesk.info/a.css'],
       }),
       COPY,
     );

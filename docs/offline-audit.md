@@ -99,13 +99,36 @@ because it is not a place anyone chose.
 Two more rows are answered from more than one reading:
 
 - **The app opens** is the map page's HTML being in the shell cache, its
-  `X-SW-Principal` stamp matching the account signed in now, *and* the
-  shell's scripts being there. The user does not care which of the three
-  failed; the summary says, the row does not. A page whose HTML is saved
-  and whose scripts are not paints a blank frame, which is
-  indistinguishable from never having been saved — so it is one question,
-  not two. (It was two, and the second was labelled "The app is
-  complete", which meant nothing to anyone.)
+  `X-SW-Principal` stamp matching the account signed in now, *and* every
+  same-origin module that page's HTML boots from being cached too. The
+  user does not care which of the three failed; the summary says, the row
+  does not. A page whose HTML is saved and whose scripts are not paints a
+  blank frame, which is indistinguishable from never having been saved —
+  so it is one question, not two. (It was two, and the second was
+  labelled "The app is complete", which meant nothing to anyone.)
+
+  **The third clause is the page's own list, not a count** (SNOW-912).
+  It read `fileCounts(r).script > 0` — *is any script cached* — which is
+  true on every device that has a worker at all, because `AUDIT_SCRIPTS`
+  precaches two modules on install. So a device holding the HTML and none
+  of the map's JavaScript read Yes and opened to a blank frame. The
+  collector now reads the cached page's body, `pageDependencies()` pulls
+  the same-origin `.js`/`.css` out of it, and `missingFrom()` answers it
+  the way a download row is answered — the rule in
+  [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md),
+  applied to the page. An unreadable body is No (`reason: 'unreadable'`),
+  because warming overwrites the entry and the panel's own Save control
+  is therefore still the remedy; a page that names nothing on a device
+  holding nothing is `unknown`, because an empty claim is not a pass.
+
+  `sw.js` has a second implementation of the extraction
+  (`_shellSubresources`) — the worker is a classic script and would have
+  to `importScripts` this whole module to share one. They are held to the
+  same answers by a shared fixture table in `tests/js/test_sw.js`, the
+  same shape that keeps sw.js's inline core fallbacks honest. A drift
+  between them means the report verifies a page against a different list
+  from the one the warm fetches, which is how a row goes green over a
+  page that will not open.
 - **The app looks right** is the styling on its own, and is *not*
   critical: an unstyled app is ugly and usable, where an app that will
   not open is neither.

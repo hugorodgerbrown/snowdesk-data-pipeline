@@ -48,6 +48,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/basemap_cache_core.js';
 import '../../static/js/mutation_queue_core.js';
+// SNOW-912: the audit core's own subresource extractor, held to the same
+// answers as sw.js's — see 'agrees with the audit core' below.
+import '../../static/js/offline_audit_core.js';
 
 const core = self.pwaBasemapCacheCore;
 const coreQueue = self.pwaMutationQueueCore;
@@ -3302,6 +3305,34 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
     ).join('\n');
 
     expect(sw._shellSubresources(many)).toHaveLength(sw.SHELL_SUBRESOURCE_LIMIT);
+  });
+
+  it('agrees with the audit core about what a page needs', async () => {
+    // Two implementations on purpose: the worker is a classic script and
+    // would have to importScripts the whole report module to share one.
+    // So they are held together here instead, over the same inputs — the
+    // shape test_sw.js already uses for sw.js's inline core fallbacks. A
+    // drift means the report verifies a page against a different list
+    // from the one the warm fetches, which is how a row goes green over a
+    // page that will not open.
+    const { pageDependencies } = self.pwaOfflineAuditCore;
+    const sw = loadSw();
+    const CASES = [
+      MAP_HTML,
+      '',
+      '<script src="/a.js"></script><script src="/a.js"></script>',
+      '<link rel="preload" href="/static/css/x.css"><img src="/static/img/y.png">',
+      '<script src="https://cdn.example/v.js"></script>',
+      "<script src='/single.js'></script>",
+      '<link rel="stylesheet" href="/static/css/q.css?v=2">',
+      '<script src="/static/js/a.js"></script><link href="/static/css/a.css">',
+    ];
+
+    for (const html of CASES) {
+      expect(sw._shellSubresources(html), html.slice(0, 40)).toEqual(
+        pageDependencies(html, ORIGIN),
+      );
+    }
   });
 
   it('warms the page AND what it needs to open', async () => {

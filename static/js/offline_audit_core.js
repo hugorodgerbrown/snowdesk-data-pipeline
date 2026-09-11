@@ -155,6 +155,9 @@
    * @property {ShellEntry[]} [shellEntries]
    * @property {string|null} [currentPrincipal]
    * @property {string} [mapPath]
+   * @property {string[]|null} [mapDependencies] SNOW-912: the same-origin
+   *   modules the cached map page's HTML boots from. Null when there is no
+   *   page to read, or its body could not be read — answered No, not Yes.
    * @property {AreaReading[]} [areas]
    * @property {Record<string, number|null>} [stores] Row counts by store.
    * @property {string[]} [overlayKeys] Which ``data:map_overlays`` rows
@@ -284,6 +287,61 @@
     if (/\.(png|jpe?g|svg|webp|ico|avif)$/.test(path)) return 'image';
     if (/\.[a-z0-9]{2,5}$/i.test(path)) return 'other';
     return 'page';
+  }
+
+  /**
+   * The same-origin scripts and stylesheets a cached page's HTML asks for
+   * (SNOW-912).
+   *
+   * This is what makes "The app opens" an answer about the page rather
+   * than about the cache in general. The row used to pass on
+   * ``fileCounts(r).script > 0`` — is there ANY JavaScript here — which is
+   * true on every device with a worker, because ``AUDIT_SCRIPTS``
+   * precaches two scripts on install. A page saved without the modules it
+   * boots from would have read Yes and opened to a blank frame, and a row
+   * that says Yes to someone looking at a blank frame costs more than the
+   * row is worth.
+   *
+   * The same rule the download rows already answer to:
+   * docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md. An
+   * empty list means the page named nothing, which ``missingFrom`` treats
+   * as unknown rather than as a pass.
+   *
+   * Matched on the URL's extension rather than on the tag, for the reason
+   * ``sw.js``'s ``_shellSubresources`` is — a regex over HTML cannot pair
+   * an attribute with its element reliably and does not need to. The two
+   * implementations are held together by a shared fixture table in
+   * tests/js/test_sw.js; they cannot be one function, because the worker
+   * is a classic script that would have to importScripts this whole module
+   * to reach it.
+   *
+   * @param {string} html
+   * @param {string} origin The page's own origin — same-origin is what the
+   *   shell cache holds, and a cross-origin CDN entry is somebody else's
+   *   cache policy.
+   * @returns {string[]} Absolute URLs, deduplicated, in document order.
+   */
+  function pageDependencies(html, origin) {
+    if (typeof html !== 'string' || !html) return [];
+    var urls = /** @type {string[]} */ ([]);
+    var seen = new Set();
+    var pattern = /(?:src|href)=["']([^"'\s]+\.(?:js|css))(?:\?[^"']*)?["']/gi;
+    var match = pattern.exec(html);
+    while (match) {
+      var absolute = /** @type {string|null} */ (null);
+      try {
+        var url = new URL(match[1], origin);
+        if (url.origin === new URL(origin).origin) absolute = url.toString();
+      } catch (_err) {
+        absolute = null;
+      }
+      if (absolute && !seen.has(absolute)) {
+        seen.add(absolute);
+        urls.push(absolute);
+      }
+      match = pattern.exec(html);
+    }
+    return urls;
   }
 
   /**
@@ -439,6 +497,20 @@
   }
 
   /**
+   * Every URL the shell cache holds, as a Set.
+   *
+   * @param {AuditReadings} r
+   * @returns {Set<string>}
+   */
+  function urlsIn(r) {
+    var urls = new Set();
+    (Array.isArray(r.shellEntries) ? r.shellEntries : []).forEach(function (entry) {
+      if (entry && entry.url) urls.add(entry.url);
+    });
+    return urls;
+  }
+
+  /**
    * How many shell-cache entries of each kind are held.
    *
    * @param {AuditReadings} r
@@ -578,7 +650,23 @@
           }),
         };
       }
-      if (fileCounts(r).script === 0) return { status: 'no', reason: 'scripts' };
+      // The page's OWN modules, not "some JavaScript is cached". See
+      // pageDependencies. A null reading is an entry whose body could not
+      // be read at all, which answers No rather than Yes: warming
+      // overwrites it, so the remedy this report offers still applies.
+      if (r.mapDependencies === null || r.mapDependencies === undefined) {
+        return { status: 'no', reason: 'unreadable' };
+      }
+      var missing = missingFrom(r.mapDependencies, urlsIn(r));
+      if (missing.length > 0) {
+        return { status: 'no', reason: 'scripts' };
+      }
+      if (r.mapDependencies.length === 0 && fileCounts(r).script === 0) {
+        // A page that names nothing, on a device holding no script at all.
+        // Unknown, not Yes — the same reading `missingFrom` gives an area
+        // that claimed no render dependencies.
+        return { status: 'unknown' };
+      }
       return { status: 'yes' };
     }
 
@@ -1234,6 +1322,7 @@
     countChecks: countChecks,
     missingFrom: missingFrom,
     classifyEntry: classifyEntry,
+    pageDependencies: pageDependencies,
     formatBytes: formatBytes,
     principalMatches: principalMatches,
     areaState: areaState,

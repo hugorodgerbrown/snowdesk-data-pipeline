@@ -52,9 +52,18 @@ function installCachesStub(buckets) {
           const url = typeof request === 'string' ? request : request.url;
           const found = entries.filter((entry) => entry.url === url)[0];
           if (!found) return undefined;
-          return {
+          // SNOW-912: a body as well as headers. The collector reads the
+          // map page's HTML to learn which modules that page boots from,
+          // and a stub with no body would make every page unreadable.
+          const response = {
             headers: { get: (name2) => (found.headers || {})[name2] || null },
+            text: async () => {
+              if (found.onText) found.onText();
+              return found.body || '';
+            },
+            clone: () => response,
           };
+          return response;
         },
       };
     }),
@@ -121,6 +130,74 @@ describe('the shell-cache reading', () => {
     // would turn a listing into one round trip per entry.
     const asset = readings.shellEntries.filter((entry) => !entry.isPage)[0];
     expect(asset.principal).toBeNull();
+  });
+
+  it('reads the map page’s own modules out of its cached HTML', async () => {
+    // What makes "The app opens" an answer about the page rather than
+    // about the cache in general. Seeded at the document's own origin,
+    // which is what a shell cache holds — the page's relative hrefs
+    // resolve against it, and in a browser the two always coincide.
+    const origin = window.location.origin;
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: `${origin}/`,
+          headers: { 'X-SW-Principal': 'anonymous' },
+          body: '<link rel="stylesheet" href="/static/css/o.css"><script src="/static/js/map.js"></script>',
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.mapDependencies).toEqual([
+      `${origin}/static/css/o.css`,
+      `${origin}/static/js/map.js`,
+    ]);
+  });
+
+  it('reads no body but the map page’s', async () => {
+    // One extra body read, on one entry. A device holding hundreds of
+    // cached pages must not pay a read for each.
+    const read = [];
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        { url: 'https://snowdesk.info/', headers: {}, body: '', onText: () => read.push('/') },
+        {
+          url: 'https://snowdesk.info/ch-4115/verbier/2026-02-16/',
+          headers: {},
+          body: '<script src="/static/js/bulletin.js"></script>',
+          onText: () => read.push('bulletin'),
+        },
+      ],
+    });
+
+    await audit.collect();
+
+    expect(read).toEqual(['/']);
+  });
+
+  it('keeps the stamp when the body cannot be read', async () => {
+    // Two reads off one response, and a failure of the second says
+    // nothing about the first. Folded together, an unreadable body would
+    // report a perfectly good page as unstamped — which the worker treats
+    // as "never serve this".
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: 'https://snowdesk.info/',
+          headers: { 'X-SW-Principal': 'acct-1' },
+          onText: () => {
+            throw new Error('unreadable');
+          },
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.shellEntries[0].principal).toBe('acct-1');
+    expect(readings.mapDependencies).toBeNull();
   });
 
   it('reports an unstamped page as unstamped rather than guessing', async () => {
@@ -294,6 +371,9 @@ describe('rendering', () => {
           { url: 'https://x/a.js', isPage: false },
           { url: 'https://x/a.css', isPage: false },
         ],
+        // SNOW-912: the page's own modules, both held here — without them
+        // the app-opens row blocks and the tally takes its blocked form.
+        mapDependencies: ['https://x/a.js', 'https://x/a.css'],
       },
       t,
     );
@@ -427,6 +507,16 @@ describe('the Save control (SNOW-912)', () => {
   const SHELL = 'snowdesk-shell-abc';
   const SCRIPT = { url: 'https://snowdesk.info/static/js/map.abc.js', headers: {} };
   const STYLE = { url: 'https://snowdesk.info/static/css/output.abc.css', headers: {} };
+  // A map page that boots from exactly the two entries above, so a device
+  // holding both is a device whose page opens.
+  const MAP_HTML =
+    '<link rel="stylesheet" href="/static/css/output.abc.css">' +
+    '<script src="/static/js/map.abc.js"></script>';
+  const mapPage = (principal) => ({
+    url: 'https://snowdesk.info/',
+    headers: { 'X-SW-Principal': principal },
+    body: MAP_HTML,
+  });
 
   /**
    * A controlling worker that answers the version probe at once.
@@ -505,11 +595,7 @@ describe('the Save control (SNOW-912)', () => {
     // is the remedy here too.
     installController(SHELL);
     installCachesStub({
-      [SHELL]: [
-        { url: 'https://snowdesk.info/', headers: { 'X-SW-Principal': 'acct-someone-else' } },
-        SCRIPT,
-        STYLE,
-      ],
+      [SHELL]: [mapPage('acct-someone-else'), SCRIPT, STYLE],
     });
 
     const save = await runPanel();
@@ -520,11 +606,7 @@ describe('the Save control (SNOW-912)', () => {
   it('stays hidden once the map page is saved for this account', async () => {
     installController(SHELL);
     installCachesStub({
-      [SHELL]: [
-        { url: 'https://snowdesk.info/', headers: { 'X-SW-Principal': 'anonymous' } },
-        SCRIPT,
-        STYLE,
-      ],
+      [SHELL]: [mapPage('anonymous'), SCRIPT, STYLE],
     });
 
     const save = await runPanel();
