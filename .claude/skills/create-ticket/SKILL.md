@@ -195,14 +195,23 @@ by reading the issue back with `get_issue` + `includeRelations: true`.
 
 An earlier revision of this guide said `blocks` "does not reliably accept any
 known format" and prescribed prose in the description instead. That is out of
-date; prose alone leaves the dependency invisible to every Linear view that
-reads relations. Set the relationship **and** say it in the description — the
-relation drives the UI, the sentence carries the reason:
+date, and prose is not a substitute: a mention gets you an undirected
+`relatedTo` (see below), never the direction. "A blocks B" and "B blocks A"
+are the same sentence to Linear unless you set the relation. Set it **and**
+say it in the description — the relation drives the UI, the sentence carries
+the reason:
 
 > Blocked by SNOW-95 — the API contract lands there first.
 
-Three things worth knowing:
+Four things worth knowing:
 
+- **A bare `SNOW-NNN` in a description creates a `relatedTo` relation.** The
+  server rewrites the identifier into an issue element and links the pair —
+  no relation parameter involved. Deleting the mention afterwards does **not**
+  unlink them; only `removeRelatedTo` does, and it clears both edges. Probed
+  2026-09-11 on SNOW-908/692 and reverted. Two consequences: a ticket that
+  discusses its neighbours in prose acquires relations to all of them, and a
+  relation you did not set is not evidence of a bug.
 - **`blocks` and `relatedTo` are one slot per pair.** Setting `blocks` on a
   pair already linked as `relatedTo` converts it; the pair does not end up
   carrying both.
