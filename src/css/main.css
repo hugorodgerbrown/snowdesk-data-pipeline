@@ -1996,3 +1996,122 @@ html.pwa-launching .pwa-launch-shell {
   .pwa-launch-shell--done { transition: none; }
   .pwa-launch-shell { animation: pwa-launch-failsafe 1ms linear 10s forwards; }
 }
+
+/* —————————————————————————————————————————
+   Offline-content audit (SNOW-907)
+   —————————————————————————————————————————
+
+   The report painted by static/js/offline_audit.js into
+   [data-offline-audit-output], on /account/settings/.
+
+   Custom CSS rather than Tailwind utilities, and that is the rule
+   applying rather than an exception to it: the module emits NO class
+   strings at all, because its OTHER host is static/offline.html — a
+   page whose whole design constraint is that it loads no external
+   asset, so a Tailwind class there would be inert. What it emits is
+   semantic elements carrying [data-audit-status], and each host styles
+   them. That page has its own inline copy of this block; the two are
+   allowed to differ, which is the point of the split.
+
+   Every colour here is a token. The four states map onto the
+   sync-status family (--color-sync-*) rather than the status-* flash
+   severities, because they are the same question those dots answer —
+   is this available offline — asked about a different subject. */
+[data-offline-audit] [data-audit-verdict] {
+  margin: var(--spacing-4) 0 0;
+  padding-left: var(--spacing-3);
+  border-left: 3px solid var(--color-sync-off);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-text-1);
+}
+
+[data-offline-audit] [data-audit-section] {
+  margin-top: var(--spacing-5);
+}
+
+[data-offline-audit] [data-audit-section] h3 {
+  margin: 0 0 var(--spacing-2);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+}
+
+[data-offline-audit] [data-audit-section] dl {
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+/* A row wraps its own detail line onto a third line rather than into a
+   third column: the detail is a sentence and the value is a number, and
+   at 375px there is no width where both fit beside a label. */
+[data-offline-audit] [data-audit-check] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-4);
+  justify-content: space-between;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+[data-offline-audit] [data-audit-check] dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-2);
+}
+
+[data-offline-audit] [data-audit-check] dd {
+  margin: 0;
+  color: var(--color-text-1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Colour carries the state on the VALUE only, never on the label: the
+   label is what is being checked and does not change, and colouring a
+   whole row amber reads as a warning about the subject rather than
+   about the reading. Status is also spelled out in the detail line and
+   in the copied text form, so nothing here is colour-only. */
+[data-offline-audit] [data-audit-check][data-audit-status='ok'] dd {
+  color: var(--color-sync-ok);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='warn'] dd {
+  color: var(--color-sync-partial);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='fail'] dd {
+  color: var(--color-sync-blocked);
+}
+
+[data-offline-audit] [data-audit-check][data-audit-status='unknown'] dd {
+  color: var(--color-text-3);
+}
+
+[data-offline-audit] [data-audit-verdict][data-audit-status='ok'] {
+  border-left-color: var(--color-sync-ok);
+}
+
+[data-offline-audit] [data-audit-verdict][data-audit-status='warn'] {
+  border-left-color: var(--color-sync-partial);
+}
+
+[data-offline-audit] [data-audit-verdict][data-audit-status='fail'] {
+  border-left-color: var(--color-sync-blocked);
+}
+
+[data-offline-audit] [data-audit-detail] {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-3);
+}
+
+[data-offline-audit] [data-audit-generated] {
+  margin: var(--spacing-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-3);
+}

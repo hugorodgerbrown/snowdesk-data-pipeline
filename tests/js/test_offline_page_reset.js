@@ -99,7 +99,15 @@ describe('the shipped offline page', () => {
       s.getAttribute('src'),
     );
 
-    expect(sources).toEqual([RESET_SCRIPT]);
+    // SNOW-907 added two more, for the offline-content report. Each
+    // subresource here is admitted on the same ground the reset script was:
+    // it carries a control that has to reach a user whose only reachable
+    // page is this one, and the worker precaches it by this exact path.
+    expect(sources).toEqual([
+      RESET_SCRIPT,
+      '/static/js/offline_audit_core.js',
+      '/static/js/offline_audit.js',
+    ]);
     // The six-step wipe belongs to pwa_reset.js alone — a second copy here
     // would drift the moment either side changed.
     expect(OFFLINE_HTML).not.toContain('deleteDatabase');

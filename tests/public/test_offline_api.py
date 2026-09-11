@@ -97,23 +97,36 @@ def test_offline_fallback_page_exists_on_disk() -> None:
     assert '<link rel="stylesheet"' not in stripped
 
 
-def test_offline_fallback_page_loads_only_the_reset_script() -> None:
-    """The one permitted subresource is ``pwa_reset.js`` (SNOW-378 / SNOW-607).
+def test_offline_fallback_page_loads_only_precached_scripts() -> None:
+    """Every subresource is one the worker warms onto the device.
 
-    The page originally carried no external asset at all. It now carries
-    exactly one, because §12.7's escape hatch has to reach a user whose
-    only reachable page is this one, and the escape hatch is
-    ``pwa_reset.js`` — restating the six-step wipe inline would be a
-    second implementation to keep in step with the first.
+    The page originally carried no external asset at all. Each one since
+    has been admitted on the same ground: it carries a control that has to
+    reach a user whose only reachable page is this one, and restating its
+    mechanism inline would be a second implementation to keep in step with
+    the first. ``pwa_reset.js`` is §12.7's escape hatch (SNOW-378 /
+    SNOW-607); the two audit modules are SNOW-907's offline-content report.
 
-    The list is asserted exhaustively so a future edit can't quietly add a
-    second subresource: anything beyond the reset script is an asset the
-    page has no way to fetch when it is doing its job.
+    The list is asserted exhaustively, because the rule is not "few
+    scripts" but "no script this page cannot fetch when it is doing its
+    job". Anything added here must also be added to ``PRECACHE_URLS`` or
+    ``AUDIT_SCRIPTS`` in static/js/sw.js — which the next assertion is
+    what actually holds.
     """
     stripped = _offline_page_source()
-    assert re.findall(r'<script[^>]+src="([^"]+)"', stripped) == [
-        "/static/js/pwa_reset.js"
+    sources = re.findall(r'<script[^>]+src="([^"]+)"', stripped)
+    assert sources == [
+        "/static/js/pwa_reset.js",
+        "/static/js/offline_audit_core.js",
+        "/static/js/offline_audit.js",
     ]
+
+    worker = (Path(settings.BASE_DIR) / "static" / "js" / "sw.js").read_text()
+    for source in sources:
+        assert f"'{source}'" in worker, (
+            f"{source} is loaded by the offline page but never precached — "
+            f"offline it answers with the worker's synthesized 504."
+        )
 
 
 def test_offline_fallback_page_carries_the_reset_trigger() -> None:

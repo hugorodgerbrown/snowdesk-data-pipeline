@@ -642,6 +642,7 @@ Read these when working in the relevant area:
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
+| Offline-content report (offline_audit.js, the X-SW-Principal page check, the five sections, AUDIT_SCRIPTS precache, the two hosts) | [`docs/offline-audit.md`](docs/offline-audit.md) |
 | Why the launch screen is two halves that must match (apple-touch-startup-image, bin/build-pwa-splash, splash-manifest.json, the in-app launch shell; iOS never used background_color) | [`docs/decisions/the-launch-screen-is-two-halves-that-match.md`](docs/decisions/the-launch-screen-is-two-halves-that-match.md) |
 | Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
 | Why the base layer's zoom band follows the basemap's extent (BASE_LAYER_BANDS, baseLayerBand, z0-9 for the national styles, z0-7 for OpenFreeMap) | [`docs/decisions/the-base-layer-band-follows-the-basemap-extent.md`](docs/decisions/the-base-layer-band-follows-the-basemap-extent.md) |
