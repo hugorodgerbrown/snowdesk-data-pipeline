@@ -49,19 +49,14 @@ const COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
 // ``?d=``; there is deliberately no shared fallback for a chosen day to be
 // silently substituted from.
 
-// Whether a single click on a region auto-pans/zooms to fit it into view.
-// Off by default; persisted in localStorage under
-// 'snowdesk.map.autozoom'. The autozoomToggleInit IIFE at the bottom of
-// this file owns the button wiring; selectFeature reads this flag.
-let AUTOZOOM = false;
-
 // SNOW-615: the localStorage keys the map persists its chrome state under,
 // at module scope so each has exactly one owner.
 //
 // `OVERLAY_STORAGE_KEY` was declared three times — once in the main IIFE,
-// once in `basemapPickerInit`, and (as a bare literal) in the autozoom
-// toggle — with the picker's copy silently dropping the two explanatory
-// comments the main one carries. Three literal copies of a key that the
+// once in `basemapPickerInit`, and (as a bare literal) in the since-removed
+// auto-zoom toggle — with the picker's copy silently dropping the two
+// explanatory comments the main one carries. Three literal copies of a key
+// that the
 // reader and the writer must agree on is drift waiting to happen: a typo
 // in one is not a crash, it is a setting that no longer persists.
 const OVERLAY_STORAGE_KEY = {
@@ -314,7 +309,6 @@ function mapDefaults() {
 }
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
-const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
 // SNOW-737: where the visitor last left the camera. ONE key holding a JSON
 // blob of all five numbers, deliberately unlike the boolean-per-key shape
 // above: a centre, a zoom, a bearing and a pitch are only meaningful
@@ -593,8 +587,8 @@ const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 //
 // Splitting this file (SNOW-610) needs this to exist FIRST. The review's plan
 // puts the state promotion in step 2, after extracting the basemap-download
-// block — but that block is where `MAP`, `FEATURE_BY_ID`, `COUNTRY_STATE`
-// and `AUTOZOOM` are declared, so extracting it first would
+// block — but that block is where `MAP`, `FEATURE_BY_ID` and `COUNTRY_STATE`
+// are declared, so extracting it first would
 // take the state out of the file that still needs it and leave the remaining
 // IIFEs reading bare identifiers that no longer exist.
 window.snowdeskMapState = Object.freeze({
@@ -623,14 +617,6 @@ window.snowdeskMapState = Object.freeze({
   /** @returns {Object} Country code → whether its regions are shown. */
   get countryState() {
     return COUNTRY_STATE;
-  },
-
-  /** @returns {boolean} Whether a region click auto-pans to fit. */
-  get autozoom() {
-    return AUTOZOOM;
-  },
-  set autozoom(value) {
-    AUTOZOOM = value;
   },
 
   /** @returns {boolean} Whether timelapse playback is running. */

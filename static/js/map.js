@@ -26,7 +26,7 @@
  * exactly the order they had when they were one file. `home.html` carries
  * the tags in this order:
  *
- *   map_state.js              MAP, FEATURE_BY_*, COUNTRY_STATE, AUTOZOOM,
+ *   map_state.js              MAP, FEATURE_BY_*, COUNTRY_STATE,
  *                             the storage keys, MAP_STRINGS, and
  *                             window.snowdeskMapState — the channel modules
  *                             OUTSIDE this set must use (see its header).
@@ -46,7 +46,6 @@
  *   map_basemap_picker.js     basemap popover and setStyle.
  *   map_region_download.js    per-region download roundel.
  *   map_custom_download.js    custom-area framing overlay.
- *   map_autozoom.js           auto-zoom checkbox.
  *   map_geolocate.js          locate-me roundel.
  *   map_season_ribbon.js      danger ribbon and region readout.
  */
@@ -621,8 +620,6 @@
   const COUNTRY_RATINGS = new Map();
   const mergedRatings = new Set();
 
-  // SNOW-63: restore auto-zoom preference from localStorage.
-  AUTOZOOM = readBoolStorage(AUTOZOOM_STORAGE_KEY, false);
   // Reflect the persisted overlay state on first paint so the popover
   // matches reality before the click handler at the bottom of the file
   // takes over.
@@ -736,8 +733,8 @@
   // so a restore would only make the visitor watch a pointless jump from
   // their old viewport to the target. A `#REGION-ID` hash does NOT move the
   // camera at all — the initial-load handler calls selectFeature, which
-  // frames the region only when AUTOZOOM is on, and that defaults to off —
-  // so restoring would open a popup for a region nowhere near the stored
+  // does not frame the region — so restoring would open a popup for a
+  // region nowhere near the stored
   // view. Falling back to the default frame leaves a shared link behaving
   // exactly as it did before this change.
   //
@@ -6275,9 +6272,10 @@
     // It moved to module scope rather than being copied; the name resolves
     // to the one definition and every call site below is unchanged.
 
-    // Fit the viewport to a region's bounds. Shared between AUTOZOOM click-fits
-    // and the double-click gesture so both use the same padding, maxZoom, and
-    // duration — the extra top padding leaves room for the popup body above.
+    // Fit the viewport to a region's bounds. Shared between the double-click
+    // gesture and the panel rows' focus press so both use the same padding,
+    // maxZoom, and duration — the extra top padding leaves room for the
+    // popup body above.
     const zoomToFeatureBounds = (feature) => {
       map.fitBounds(featureBBox(feature), {
         padding: { top: 60, right: 40, bottom: 40, left: 40 },
@@ -6541,11 +6539,6 @@
           major_name: props.major_name || '',
         },
       }));
-
-      if (AUTOZOOM) {
-        const feature = FEATURE_BY_ID[numericId];
-        if (feature) zoomToFeatureBounds(feature);
-      }
     };
 
     // SNOW-445: favourite / community-observation / report-cluster markers sit
@@ -7501,7 +7494,7 @@
     // fetches and nothing below may wait on a network round trip.
     openTripDeepLink();
 
-    // Double-click always zooms to the region regardless of AUTOZOOM setting,
+    // Double-click zooms to the region — a single click only selects it —
     // and prevents the default map double-click zoom so we control the target.
     map.on('dblclick', 'regions-fill', (e) => {
       e.preventDefault();

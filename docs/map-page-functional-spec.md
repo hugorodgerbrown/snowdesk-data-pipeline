@@ -799,11 +799,6 @@ When the basemap style itself can't be fetched offline, the map falls
 back to a plain background so the SW-cached region colours still paint
 instead of showing a blank canvas.
 
-**Layers as an interaction option.** Beyond visual overlays, the layer
-menu's **Options** section carries interaction toggles (e.g. auto-zoom on
-selection) and the "Cache this area" command. These change behaviour, not
-what is drawn.
-
 **Edit-resorts mode.** `/?edit=resorts`, open to superusers only, is
 the staff tool for placing and correcting resort coordinates (§3.2). The
 URL is safe to bookmark: for everyone else it silently renders the normal

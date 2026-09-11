@@ -209,9 +209,7 @@
   // make no honest claim — its dot had been permanently ``unknown``
   // (display:none) since SNOW-691, and the markup for it is gone now.
   // ``downloads`` draws a list that is local-only, so its answer is always
-  // yes and a dot saying so carries no information. (The comment this
-  // replaces named "the Options rows (autozoom, cache-now)", which have not
-  // been in the template for several tickets.)
+  // yes and a dot saying so carries no information.
   const OVERLAY_RESOURCES = Object.freeze({
     l1: Object.freeze({
       kind: 'geojson',
