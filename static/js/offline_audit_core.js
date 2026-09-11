@@ -174,44 +174,38 @@
   var ROWS = [
     { id: 'offline-mode', section: 'access', critical: true },
     { id: 'app-opens', section: 'access', critical: true },
-    { id: 'app-complete', section: 'access', critical: true },
+    { id: 'app-looks-right', section: 'access', critical: false },
     { id: 'danger-ratings', section: 'map', critical: false },
     { id: 'region-shapes', section: 'map', critical: false },
-    { id: 'overview', section: 'map', critical: false },
     { id: 'bulletins', section: 'content', critical: false },
     { id: 'saved-places', section: 'content', critical: false },
+    { id: 'routes', section: 'content', critical: false },
     { id: 'reports', section: 'content', critical: false },
     { id: 'weather', section: 'content', critical: false },
-    { id: 'protected', section: 'keeping', critical: false },
-    { id: 'room', section: 'keeping', critical: false },
-    { id: 'unsent', section: 'keeping', critical: false },
   ];
 
-  // The download sections are NOT fixed, and they are the one place that
+  // The download rows are NOT fixed, and they are the one place that
   // exception is right: "will the map draw" is not a question about the
   // map, it is a question about the particular ground this user chose to
   // take with them. One row that says Yes because SOME area draws is no
   // use to someone whose Verbier download is the broken one — so every
-  // download gets its own named row, grouped by what kind of thing it is,
-  // because "which regions, which drop zones" is how a user holds them.
+  // download gets its own named row.
   //
-  // A kind with no downloads renders no section at all, rather than an
-  // empty heading. The `no-downloads` row in the map section covers the
-  // device that has none of any kind.
-  var DOWNLOAD_SECTIONS = [
-    { id: 'regions', kind: 'region', key: 'section-regions' },
-    { id: 'dropzones', kind: 'dropzone', key: 'section-dropzones' },
-    { id: 'custom', kind: 'custom', key: 'section-custom' },
-  ];
+  // All of them under ONE heading, whatever kind they are. Three headings
+  // for three kinds put an empty-looking section between every pair of
+  // rows on a device with one of each, and the kind is a property of the
+  // row rather than a place to file it — so it rides along in the label
+  // instead, where a drop zone reads as one.
+  //
+  // Ordered regions first, because a region is what most people download
+  // and the ones they drew themselves are the exceptions.
+  var DOWNLOAD_KIND_ORDER = ['region', 'dropzone', 'custom'];
 
   var SECTIONS = [
     { id: 'access', key: 'section-access' },
     { id: 'map', key: 'section-map' },
-    { id: 'regions', key: 'section-regions' },
-    { id: 'dropzones', key: 'section-dropzones' },
-    { id: 'custom', key: 'section-custom' },
+    { id: 'downloads', key: 'section-downloads' },
     { id: 'content', key: 'section-content' },
-    { id: 'keeping', key: 'section-keeping' },
   ];
 
   /**
@@ -365,8 +359,12 @@
   }
 
   /**
-   * "it" / "both" / "all four of them" — the object of a remedy sentence
-   * that fixes more than one thing at once.
+   * "it" / "both" / "all of them" — the object of a remedy sentence that
+   * fixes more than one thing at once.
+   *
+   * The many case carries no digit on purpose: "fixes all 3 of them" puts
+   * a numeral in the middle of a sentence of prose, and the number is not
+   * the point — the reader can see how many rows said No.
    *
    * @param {number} count
    * @param {Record<string, string>} t
@@ -563,6 +561,12 @@
     }
 
     if (id === 'app-opens') {
+      // The HTML and the scripts together, because separating them was a
+      // row nobody could read: "the app is complete" meant "the shell's
+      // JavaScript is cached", and a page whose HTML is saved and whose
+      // scripts are not does not open — it paints a blank frame, which to
+      // the person holding the phone is indistinguishable from the page
+      // never having been saved.
       var page = pages(r);
       if (!page.mapEntry) return { status: 'no', reason: 'absent' };
       if (!principalMatches(page.mapEntry.principal, r.currentPrincipal)) {
@@ -574,43 +578,17 @@
           }),
         };
       }
+      if (fileCounts(r).script === 0) return { status: 'no', reason: 'scripts' };
       return { status: 'yes' };
     }
 
-    if (id === 'app-complete') {
-      // Scripts and styling together: a page whose HTML is cached and
-      // whose scripts are not opens blank, which to the user is the same
-      // as not being saved at all.
-      var files = fileCounts(r);
-      if (files.script === 0) return { status: 'no', reason: 'scripts' };
-      if (files.style === 0) {
-        return {
-          status: 'no',
-          reason: 'styles',
-          group: 'open-map',
-          effect: s(t, 'effect-styles'),
-        };
-      }
-      return { status: 'yes' };
-    }
-
-    if (id === 'overview') {
-      // The shared low-zoom tile set (SNOW-856) every download reads when
-      // the camera pulls out past its z10 floor. Not a place the user
-      // chose — the app fetched it for itself — but without it the map
-      // falls off the edge of every area they own the moment they zoom
-      // out, which used to happen with no surface saying so.
-      var base = (Array.isArray(r.areas) ? r.areas : []).filter(function (area) {
-        return area && area.kind === 'base';
-      });
-      if (base.length === 0) {
-        return { status: 'no', note: s(t, 'note-no-overview') };
-      }
-      return base.some(function (area) {
-        return areaState(area).status === 'ready';
-      })
+    if (id === 'app-looks-right') {
+      // Styling on its own, and NOT critical: an unstyled app is ugly and
+      // usable, where an app that will not open is neither. This is the
+      // row that tells someone why the thing they opened looks wrong.
+      return fileCounts(r).style > 0
         ? { status: 'yes' }
-        : { status: 'no', note: s(t, 'note-no-overview') };
+        : { status: 'no', group: 'open-map', effect: s(t, 'effect-styles') };
     }
 
     if (id === 'no-downloads') {
@@ -658,6 +636,13 @@
       return { status: 'no', note: s(t, 'note-no-favourites') };
     }
 
+    if (id === 'routes') {
+      if (!r.dbAvailable) return { status: 'unknown' };
+      return (r.overlayKeys || []).indexOf('routes') >= 0
+        ? { status: 'yes' }
+        : { status: 'no', note: s(t, 'note-no-routes') };
+    }
+
     if (id === 'reports') {
       if (!r.dbAvailable) return { status: 'unknown' };
       var cached =
@@ -671,47 +656,6 @@
       return (r.overlayKeys || []).indexOf('weather') >= 0
         ? { status: 'yes' }
         : { status: 'no', note: s(t, 'note-no-weather') };
-    }
-
-    if (id === 'protected') {
-      if (!r.storage || typeof r.storage.persisted !== 'boolean') {
-        return { status: 'unknown' };
-      }
-      // Without the grant the browser may evict the whole origin under
-      // pressure, downloads included, and it does so silently. This is the
-      // answer to "my download vanished".
-      return r.storage.persisted
-        ? { status: 'yes' }
-        : { status: 'no', note: s(t, 'note-not-persisted') };
-    }
-
-    if (id === 'room') {
-      var usage = Number(r.storage && r.storage.usage);
-      var quota = Number(r.storage && r.storage.quota);
-      if (!Number.isFinite(usage) || !Number.isFinite(quota) || quota <= 0) {
-        return { status: 'unknown' };
-      }
-      // Past 90% eviction is the next thing that happens, and it takes the
-      // pinned buckets with it. Still actionable: the Manage downloads
-      // sheet can free an area.
-      return usage / quota > 0.9
-        ? {
-            status: 'no',
-            note: fill(s(t, 'note-no-room'), {
-              used: formatBytes(usage),
-              total: formatBytes(quota),
-            }),
-          }
-        : { status: 'yes' };
-    }
-
-    if (id === 'unsent') {
-      if (!r.dbAvailable) return { status: 'unknown', note: s(t, 'note-no-db') };
-      var pending = Number(r.mutations && r.mutations.count);
-      if (Number.isFinite(pending) && pending > 0) {
-        return { status: 'yes', note: fill(s(t, 'note-unsent'), { n: pending }) };
-      }
-      return { status: 'yes' };
     }
 
     return { status: 'unknown' };
@@ -772,6 +716,115 @@
   }
 
   /**
+   * The basemaps this device holds anything for, in a stable order.
+   *
+   * Every download is made UNDER a basemap and records which one, and the
+   * shared low-zoom layer is stored per basemap too (SNOW-856). Rolling
+   * them up is the answer to the question the per-area rows cannot
+   * reach — *which map style will I actually see* — and that question had
+   * no surface at all before this: a device could hold a complete
+   * Swisstopo download and be sitting on OpenFreeMap, and nothing said so.
+   *
+   * @param {AuditReadings} r
+   * @returns {string[]} Basemap keys.
+   */
+  function basemapsFor(r) {
+    var keys = /** @type {string[]} */ ([]);
+    (Array.isArray(r.areas) ? r.areas : []).forEach(function (area) {
+      var key = area.basemapKey;
+      if (!key || keys.indexOf(key) >= 0) return;
+      keys.push(key);
+    });
+    return keys.sort();
+  }
+
+  /**
+   * Answer one basemap: will this style render offline?
+   *
+   * Two halves, and both have to be there. The STYLE half is its render
+   * dependencies — the style document, each source's TileJSON, the
+   * sprite — without which MapLibre cannot learn a single tile URL and
+   * the map is blank however many tiles are pinned (SNOW-843). The REACH
+   * half is the shared z0–7 base layer: without it the map falls off the
+   * edge of every downloaded area the moment the camera pulls out past
+   * z10, which is SNOW-856's whole bug and is why "zoomed-out overview"
+   * is a real question rather than an implementation detail. It is
+   * answered here, beside the style it belongs to, rather than as a row
+   * of its own among the downloads — it is not a place anyone chose.
+   *
+   * @param {string} key
+   * @param {AuditReadings} r
+   * @param {Record<string, string>} t
+   * @returns {{status: AuditStatus, reason?: string, note?: string}}
+   */
+  function answerBasemap(key, r, t) {
+    var areas = (Array.isArray(r.areas) ? r.areas : []).filter(function (area) {
+      return area.basemapKey === key;
+    });
+    var styled = areas.some(function (area) {
+      return area.kind !== 'base' && areaState(area).status === 'ready';
+    });
+    var reaches = areas.some(function (area) {
+      return area.kind === 'base' && areaState(area).status === 'ready';
+    });
+    var name = basemapName(key, t);
+    if (!styled) {
+      return {
+        status: 'no',
+        reason: 'style',
+        note: fill(s(t, 'note-basemap-unstyled'), { name: name }),
+      };
+    }
+    if (!reaches) {
+      return {
+        status: 'no',
+        reason: 'reach',
+        note: fill(s(t, 'note-basemap-no-overview'), { name: name }),
+      };
+    }
+    return { status: 'yes' };
+  }
+
+  /**
+   * A basemap's name, as the picker says it.
+   *
+   * The strings table carries one ``basemap-<key>`` entry per style, so
+   * the report and the picker cannot drift; an unknown key falls back to
+   * itself rather than being dropped, because a style this device has
+   * tiles for is worth a row whatever it is called.
+   *
+   * @param {string} key
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function basemapName(key, t) {
+    var label = t && t['basemap-' + key];
+    return typeof label === 'string' && label ? label : key;
+  }
+
+  /**
+   * A download's row label — its name, and what kind of thing it is where
+   * that is not obvious.
+   *
+   * A region is labelled by name alone: "Martigny — Verbier" is a place
+   * and reads as one. The two kinds the user made themselves are not, so
+   * they say which they are — the alternative was three section headings
+   * for three kinds, which on a device with one of each put an
+   * empty-looking heading between every pair of rows.
+   *
+   * @param {AreaReading & {type?: string}} area
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function areaLabel(area, t) {
+    var name = area.name || area.id;
+    var kind = areaKind(area);
+    if (kind === 'dropzone') return fill(s(t, 'label-dropzone'), { name: name });
+    if (kind === 'custom') return fill(s(t, 'label-custom'), { name: name });
+    return name;
+  }
+
+  /**
    * Every row of the report, in paint order — the fixed capabilities plus
    * one per downloaded area.
    *
@@ -779,11 +832,12 @@
    *   which cannot know the downloads yet.
    * @param {Record<string, string>} t
    * @returns {Array<{id: string, section: string, critical: boolean,
-   *   label: string, area?: AreaReading}>}
+   *   label: string, area?: AreaReading, basemap?: string}>}
    */
   function rowsFor(readings, t) {
     var rows = /** @type {Array<{id: string, section: string,
-      critical: boolean, label: string, area?: AreaReading}>} */ (
+      critical: boolean, label: string, area?: AreaReading,
+      basemap?: string}>} */ (
       ROWS.map(function (row) {
         return {
           id: row.id,
@@ -793,30 +847,44 @@
         };
       })
     );
+    if (readings) {
+      // In THE MAP, after ratings and outlines: a basemap is what the map
+      // is drawn ON, so it belongs with the other things the map needs
+      // rather than in the list of places the user downloaded.
+      basemapsFor(readings).forEach(function (key) {
+        rows.push({
+          id: 'basemap:' + key,
+          section: 'map',
+          critical: false,
+          label: fill(s(t, 'row-basemap'), { name: basemapName(key, t) }),
+          basemap: key,
+        });
+      });
+    }
     var areas = readings ? chosenAreas(readings) : [];
     if (readings && areas.length === 0) {
       // The one row that exists only when there is nothing to list, so a
       // device with no downloads still gets a line saying so rather than
-      // three silently absent sections.
+      // a heading over a gap.
       rows.push({
         id: 'no-downloads',
-        section: 'map',
+        section: 'downloads',
         critical: false,
         label: s(t, 'row-no-downloads'),
       });
       return rows;
     }
-    DOWNLOAD_SECTIONS.forEach(function (section) {
+    DOWNLOAD_KIND_ORDER.forEach(function (kind) {
       areas
         .filter(function (area) {
-          return areaKind(area) === section.kind;
+          return areaKind(area) === kind;
         })
         .forEach(function (area) {
           rows.push({
             id: 'area:' + area.id,
-            section: section.id,
+            section: 'downloads',
             critical: false,
-            label: area.name || area.id,
+            label: areaLabel(area, t),
             area: area,
           });
         });
@@ -856,7 +924,9 @@
             }
             var resolved = row.area
               ? answerArea(row.area, t)
-              : answer(row.id, readings, t);
+              : row.basemap
+                ? answerBasemap(row.basemap, readings, t)
+                : answer(row.id, readings, t);
             var status = resolved.status;
             // A No on a critical row is the reason the whole thing fails,
             // not one capability being unavailable — the log says so with
@@ -923,13 +993,6 @@
         covers: ['app-opens'],
       };
     }
-    if (blocked('app-complete')) {
-      return {
-        status: 'fail',
-        text: s(t, 'verdict-incomplete-app'),
-        covers: ['app-complete'],
-      };
-    }
     if (byId['no-downloads']) {
       return { status: 'warn', text: s(t, 'verdict-no-map'), covers: ['no-downloads'] };
     }
@@ -948,6 +1011,17 @@
     if (areaRows.length > 0 && drawable.length === 0) {
       return { status: 'warn', text: s(t, 'verdict-downloads-broken'), covers: [] };
     }
+    // Nothing critical is broken, but "everything you need is here" over
+    // a table with six Nos in it is the exact species of reassurance this
+    // whole feature exists to stop being given. The all-clear is the
+    // all-clear, and anything less says so.
+    var anyNo = false;
+    sections.forEach(function (section) {
+      section.checks.forEach(function (check) {
+        if (check.status === 'no' || check.status === 'blocked') anyNo = true;
+      });
+    });
+    if (anyNo) return { status: 'warn', text: s(t, 'verdict-partial'), covers: [] };
     return { status: 'ok', text: s(t, 'verdict-ok'), covers: [] };
   }
 

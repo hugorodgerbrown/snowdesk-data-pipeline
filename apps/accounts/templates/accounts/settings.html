@@ -408,18 +408,8 @@ because the repository is the authority and the mock is a drawing:
                         duplicate of the other — one module paints both, from
                         the same markup contract.
                     {% endcomment %}
-                    <div class="p-4">
-                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                            <div class="min-w-0">
-                                <h3 class="text-sm font-semibold text-text-1">{% trans "Offline content" %}</h3>
-                                <p class="text-sm text-text-2">
-                                    {% trans "Check what this device can show without a signal." %}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="mt-3" data-testid="offline-audit-panel">
-                            {% include "includes/_offline_audit_panel.html" %}
-                        </div>
+                    <div class="p-4" data-testid="offline-audit-panel">
+                        {% include "includes/_offline_audit_panel.html" %}
                     </div>
 
                     {% comment %}

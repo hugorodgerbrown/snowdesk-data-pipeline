@@ -2,13 +2,25 @@
 templates/includes/_offline_audit_panel.html — the offline-content audit,
 app side (SNOW-907).
 
-The controls and the strings <template>; everything inside
-[data-offline-audit-output] is painted by static/js/offline_audit.js, and
-styled by the [data-offline-audit] block in src/css/main.css. That module
-emits NO class strings — a Tailwind class would be inert on
-static/offline.html, which carries the same markup contract and its own
-inline styles, and which is the whole reason this panel has two hosts.
-See the offline page's header comment for why it needs its own copy.
+The whole settings ROW: heading and description on the left, the CTA on
+the trailing edge, the report beneath. That shape is not this partial's
+own invention — it is what every other row in the card does (Sign out,
+Reset local data, Change email), and this one looked like a different
+kind of thing for as long as it put its button under its heading instead
+of beside it.
+
+The row owns its heading rather than taking it from the caller because
+the run control has to live inside ``[data-offline-audit]`` — that
+element is what ``offline_audit.js`` binds to, and it queries only within
+it.
+
+Everything inside [data-offline-audit-output] is painted by
+static/js/offline_audit.js and styled by the [data-offline-audit] block
+in src/css/main.css. That module emits NO class strings — a Tailwind
+class would be inert on static/offline.html, which carries the same
+markup contract and its own inline styles, and which is the whole reason
+this panel has two hosts. See the offline page's header comment for why
+it needs its own copy.
 
 A caller must load both scripts:
 
@@ -24,35 +36,49 @@ of a settings page nobody came here to audit.
 
 <div data-offline-audit>
     {% comment %}
-        The controls, on one row. Copy appears once there is a report to
-        copy and Save once the report says the map page is missing AND the
-        device could do something about it — both are revealed by the
-        module, not by CSS, because both conditions are readings rather
-        than states of this markup.
-    {% endcomment %}
-    <div class="flex flex-wrap items-center gap-3">
-        {% comment %}
-            ``button_classes`` rather than includes/_button.html, for the
-            same reason the Reset and Delete rows on the settings page use
-            it: the partial takes no data-attribute passthrough (SNOW-645
-            removed ``extra_attrs`` after semgrep flagged it as an
-            attribute-injection surface on a reusable component), and
-            ``data-offline-audit-run`` is this module's binding contract.
-            The tag gives the same class string the partial would.
+        The row, in the shape every other row in this card takes:
+        heading and description left, one control on the trailing edge,
+        stacking below sm because that is where a button and a sentence
+        stop fitting side by side.
 
-            SNOW-907 review: PRIMARY, not ghost. It is the only thing on
-            this row that does anything before a report exists, and the
-            two controls beside it are both disabled until it has run —
-            a row of three equally-weighted ghosts gave no clue which one
-            starts.
-        {% endcomment %}
+        ``button_classes`` rather than includes/_button.html, for the same
+        reason the Reset and Delete rows use it: the partial takes no
+        data-attribute passthrough (SNOW-645 removed ``extra_attrs`` after
+        semgrep flagged it as an attribute-injection surface on a reusable
+        component), and ``data-offline-audit-run`` is this module's
+        binding contract. The tag gives the same class string the partial
+        would.
+
+        Ghost, matching Reset and Sign out. A primary fill would make this
+        the loudest thing on a page whose other controls are all quiet,
+        for a read-only check.
+    {% endcomment %}
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div class="min-w-0">
+            <h3 class="text-sm font-semibold text-text-1">{% translate "Offline content" %}</h3>
+            <p class="text-sm text-text-2">
+                {% translate "Check what this device can show without a signal." %}
+            </p>
+        </div>
         <button
             type="button"
             data-offline-audit-run
-            class="{% button_classes variant='primary' size='compact' %} whitespace-nowrap"
+            class="{% button_classes variant='ghost' size='compact' %} self-start shrink-0 whitespace-nowrap"
         >
             {% translate "Run the check" %}
         </button>
+    </div>
+
+    <div class="mt-3" data-offline-audit-output hidden></div>
+
+    {% comment %}
+        Actions ON the report, so they sit under it rather than beside the
+        control that produces it. Both are revealed by the module, not by
+        CSS: Copy needs a report to exist, and Save needs a connection, a
+        controlling worker and a map page that is actually missing — all
+        three are readings rather than states of this markup.
+    {% endcomment %}
+    <div class="mt-3 flex flex-wrap items-center gap-4">
         <button
             type="button"
             data-offline-audit-copy
@@ -78,8 +104,6 @@ of a settings page nobody came here to audit.
         </p>
     </div>
 
-    <div class="mt-2" data-offline-audit-output hidden></div>
-
     {# SNOW-620: server-translated copy, read back by offline_audit.js. #}
     {# Every key here has an English literal in that module's FALLBACKS, #}
     {# which is what the offline page — where pwaStrings is not loaded — #}
@@ -88,26 +112,29 @@ of a settings page nobody came here to audit.
     <template id="offline-audit-strings-template">
         <span data-string="section-access">{% translate "Getting in" %}</span>
         <span data-string="section-map">{% translate "The map" %}</span>
-        <span data-string="section-regions">{% translate "Regions you downloaded" %}</span>
-        <span data-string="section-dropzones">{% translate "Drop zones you downloaded" %}</span>
-        <span data-string="section-custom">{% translate "Areas you drew" %}</span>
+        <span data-string="section-downloads">{% translate "Map downloads" %}</span>
         <span data-string="section-content">{% translate "Your content" %}</span>
-        <span data-string="section-keeping">{% translate "Keeping it" %}</span>
 
         <span data-string="row-offline-mode">{% translate "Offline mode is on" %}</span>
         <span data-string="row-app-opens">{% translate "The app opens" %}</span>
-        <span data-string="row-app-complete">{% translate "The app is complete" %}</span>
+        <span data-string="row-app-looks-right">{% translate "The app looks right" %}</span>
         <span data-string="row-danger-ratings">{% translate "Danger ratings" %}</span>
         <span data-string="row-region-shapes">{% translate "Region outlines" %}</span>
-        <span data-string="row-overview">{% translate "Zoomed-out overview" %}</span>
-        <span data-string="row-no-downloads">{% translate "Map areas downloaded" %}</span>
+        <span data-string="row-basemap">{% translate "%(name)s basemap" %}</span>
+        <span data-string="row-no-downloads">{% translate "Anything downloaded at all" %}</span>
+        <span data-string="label-dropzone">{% translate "%(name)s (drop zone)" %}</span>
+        <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
         <span data-string="row-bulletins">{% translate "Bulletins you have opened" %}</span>
         <span data-string="row-saved-places">{% translate "Your saved places" %}</span>
+        <span data-string="row-routes">{% translate "Your routes" %}</span>
         <span data-string="row-reports">{% translate "Community reports" %}</span>
         <span data-string="row-weather">{% translate "Weather" %}</span>
-        <span data-string="row-protected">{% translate "Safe from browser cleanup" %}</span>
-        <span data-string="row-room">{% translate "Room for more" %}</span>
-        <span data-string="row-unsent">{% translate "Changes you make are kept" %}</span>
+
+        <span data-string="basemap-openfreemap_liberty">{% translate "OpenFreeMap" %}</span>
+        <span data-string="basemap-swisstopo_winter">{% translate "Swisstopo (CH)" %}</span>
+        <span data-string="basemap-swisstopo_light">{% translate "Swisstopo light (CH)" %}</span>
+        <span data-string="basemap-ign_plan">{% translate "IGN (FR)" %}</span>
+        <span data-string="basemap-basemap_at">{% translate "basemap.at (AT)" %}</span>
 
         <span data-string="answer-yes">{% translate "Yes" %}</span>
         <span data-string="answer-no">{% translate "No" %}</span>
@@ -124,8 +151,11 @@ of a settings page nobody came here to audit.
             data-string="note-no-areas"
         >{% translate "no map area is downloaded, so there is no ground to draw" %}</span>
         <span
-            data-string="note-no-overview"
-        >{% translate "zooming out past a downloaded area will show nothing" %}</span>
+            data-string="note-basemap-unstyled"
+        >{% translate "the %(name)s map style is not saved, so nothing drawn on it will appear" %}</span>
+        <span
+            data-string="note-basemap-no-overview"
+        >{% translate "zooming out past a downloaded area on %(name)s will show nothing" %}</span>
         <span
             data-string="note-area-incomplete"
         >{% translate "%(name)s will not draw until you repair it from the map’s Manage downloads sheet" %}</span>
@@ -139,22 +169,13 @@ of a settings page nobody came here to audit.
         <span
             data-string="note-no-favourites"
         >{% translate "none of your saved places has been loaded here yet" %}</span>
+        <span data-string="note-no-routes">{% translate "none of your routes has been loaded on this device" %}</span>
         <span
             data-string="note-no-reports"
         >{% translate "community reports have not been loaded on this device" %}</span>
         <span
             data-string="note-no-weather"
         >{% translate "the weather overlay has not been opened on this device" %}</span>
-        <span
-            data-string="note-not-persisted"
-        >{% translate "the browser may delete downloads when space runs low, and installing Snowdesk to the home screen usually stops that" %}</span>
-        <span
-            data-string="note-no-room"
-        >{% translate "only %(used)s of %(total)s is left, so the browser may start deleting downloads" %}</span>
-        <span
-            data-string="note-no-db"
-        >{% translate "the local database would not open, so nothing can be saved here" %}</span>
-        <span data-string="note-unsent">{% translate "%(n)s of your changes are waiting to be sent" %}</span>
 
         <span data-string="effect-styles">{% translate "will look plain" %}</span>
         <span data-string="effect-ratings">{% translate "will show no danger ratings" %}</span>
@@ -169,6 +190,9 @@ of a settings page nobody came here to audit.
         <span data-string="principal-unknown">{% translate "an unknown account" %}</span>
 
         <span data-string="verdict-ok">{% translate "Everything you need is on this device." %}</span>
+        <span
+            data-string="verdict-partial"
+        >{% translate "The app will open, but not everything will be there." %}</span>
         <span data-string="verdict-no-worker">{% translate "This device is not set up for offline use yet." %}</span>
         <span
             data-string="verdict-no-page"
@@ -176,9 +200,6 @@ of a settings page nobody came here to audit.
         <span
             data-string="verdict-other-account"
         >{% translate "The saved app belongs to another account. Open the map once while connected." %}</span>
-        <span
-            data-string="verdict-incomplete-app"
-        >{% translate "The app would open blank without a signal. Open the map once while connected." %}</span>
         <span data-string="verdict-no-map">{% translate "The app opens, but there is no map to show in it." %}</span>
         <span
             data-string="verdict-downloads-broken"
@@ -189,7 +210,7 @@ of a settings page nobody came here to audit.
         <span data-string="list-join">{% translate "%(first)s, %(rest)s" %}</span>
         <span data-string="count-one">{% translate "it" %}</span>
         <span data-string="count-two">{% translate "both" %}</span>
-        <span data-string="count-many">{% translate "all %(n)s of them" %}</span>
+        <span data-string="count-many">{% translate "all of them" %}</span>
 
         <span data-string="counts-line">{% translate "%(yes)s of %(total)s available offline" %}</span>
 

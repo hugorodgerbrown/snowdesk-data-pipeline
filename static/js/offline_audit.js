@@ -117,26 +117,29 @@
   var FALLBACKS = {
     'section-access': 'Getting in',
     'section-map': 'The map',
-    'section-regions': 'Regions you downloaded',
-    'section-dropzones': 'Drop zones you downloaded',
-    'section-custom': 'Areas you drew',
+    'section-downloads': 'Map downloads',
     'section-content': 'Your content',
-    'section-keeping': 'Keeping it',
 
     'row-offline-mode': 'Offline mode is on',
     'row-app-opens': 'The app opens',
-    'row-app-complete': 'The app is complete',
+    'row-app-looks-right': 'The app looks right',
     'row-danger-ratings': 'Danger ratings',
     'row-region-shapes': 'Region outlines',
-    'row-overview': 'Zoomed-out overview',
-    'row-no-downloads': 'Map areas downloaded',
+    'row-basemap': '%(name)s basemap',
+    'row-no-downloads': 'Anything downloaded at all',
+    'label-dropzone': '%(name)s (drop zone)',
+    'label-custom': '%(name)s (area you drew)',
     'row-bulletins': 'Bulletins you have opened',
     'row-saved-places': 'Your saved places',
+    'row-routes': 'Your routes',
     'row-reports': 'Community reports',
     'row-weather': 'Weather',
-    'row-protected': 'Safe from browser cleanup',
-    'row-room': 'Room for more',
-    'row-unsent': 'Changes you make are kept',
+
+    'basemap-openfreemap_liberty': 'OpenFreeMap',
+    'basemap-swisstopo_winter': 'Swisstopo (CH)',
+    'basemap-swisstopo_light': 'Swisstopo light (CH)',
+    'basemap-ign_plan': 'IGN (FR)',
+    'basemap-basemap_at': 'basemap.at (AT)',
 
     'answer-yes': 'Yes',
     'answer-no': 'No',
@@ -148,7 +151,10 @@
     'note-sw-absent': 'offline mode has not been set up on this device',
     'note-other-account': 'the saved copy belongs to %(stamped)s',
     'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
-    'note-no-overview': 'zooming out past a downloaded area will show nothing',
+    'note-basemap-unstyled':
+      'the %(name)s map style is not saved, so nothing drawn on it will appear',
+    'note-basemap-no-overview':
+      'zooming out past a downloaded area on %(name)s will show nothing',
     'note-area-incomplete':
       '%(name)s will not draw until you repair it from the map’s Manage downloads sheet',
     'note-area-missing':
@@ -157,14 +163,9 @@
       '%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked',
     'note-no-bulletins': 'no bulletin has been opened on this device yet',
     'note-no-favourites': 'none of your saved places has been loaded here yet',
+    'note-no-routes': 'none of your routes has been loaded on this device',
     'note-no-reports': 'community reports have not been loaded on this device',
     'note-no-weather': 'the weather overlay has not been opened on this device',
-    'note-not-persisted':
-      'the browser may delete downloads when space runs low, and installing Snowdesk to the home screen usually stops that',
-    'note-no-room':
-      'only %(used)s of %(total)s is left, so the browser may start deleting downloads',
-    'note-no-db': 'the local database would not open, so nothing can be saved here',
-    'note-unsent': '%(n)s of your changes are waiting to be sent',
 
     'effect-styles': 'will look plain',
     'effect-ratings': 'will show no danger ratings',
@@ -177,13 +178,12 @@
     'principal-unknown': 'an unknown account',
 
     'verdict-ok': 'Everything you need is on this device.',
+    'verdict-partial': 'The app will open, but not everything will be there.',
     'verdict-no-worker': 'This device is not set up for offline use yet.',
     'verdict-no-page':
       'The app will not open without a signal. Open the map once while connected.',
     'verdict-other-account':
       'The saved app belongs to another account. Open the map once while connected.',
-    'verdict-incomplete-app':
-      'The app would open blank without a signal. Open the map once while connected.',
     'verdict-no-map': 'The app opens, but there is no map to show in it.',
     'verdict-downloads-broken': 'The app opens, but none of your downloads will draw.',
 
@@ -192,7 +192,7 @@
     'list-join': '%(first)s, %(rest)s',
     'count-one': 'it',
     'count-two': 'both',
-    'count-many': 'all %(n)s of them',
+    'count-many': 'all of them',
 
     'counts-line': '%(yes)s of %(total)s available offline',
 

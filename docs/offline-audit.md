@@ -64,13 +64,10 @@ stored, how many saved places there are is not a question anyone has.
 
 | Section | Rows |
 |---|---|
-| Getting in | Offline mode is on · The app opens · The app is complete |
-| The map | Danger ratings · Region outlines · Zoomed-out overview |
-| Regions you downloaded | one row per region, by name |
-| Drop zones you downloaded | one row per drop zone, by name |
-| Areas you drew | one row per custom area, by name |
-| Your content | Bulletins you have opened · Your saved places · Community reports · Weather |
-| Keeping it | Safe from browser cleanup · Room for more · Changes you make are kept |
+| Getting in | Offline mode is on · The app opens · The app looks right |
+| The map | Danger ratings · Region outlines · one row per basemap the device holds anything for |
+| Map downloads | one row per download, by name |
+| Your content | Bulletins you have opened · Your saved places · Your routes · Community reports · Weather |
 
 `ROWS` in `offline_audit_core.js` is a constant, declared before
 anything is read, so a device with nothing stored produces the same rows
@@ -80,16 +77,38 @@ reading lands.
 
 **The downloads are the exception, deliberately.** One row saying the map
 draws is no use to someone whose Verbier download is the broken one, so
-every download gets a named row grouped by kind — which regions, which
-drop zones, which areas they drew. A kind with no downloads renders no
-section; a device with none of any kind gets a single "Map areas
-downloaded — No".
+every download gets its own named row — under one heading, with the kind
+in the label where it is not obvious ("La Chaux (drop zone)"). Three
+headings for three kinds put an empty-looking section between every pair
+of rows on a device with one of each. A device with nothing downloaded
+gets a single "Anything downloaded at all — No".
 
-Several rows are answered from more than one reading. "The app opens" is
-the map page's HTML being in the shell cache **and** its
-`X-SW-Principal` stamp matching the account signed in now — the two
-halves of the failure that produced the ticket. The user does not care
-which half; the summary says, the row does not.
+**A basemap gets its own row, in The Map.** Every download is made under
+a basemap and records which, and the shared low-zoom layer is stored per
+basemap too — rolling them up answers the question the per-area rows
+cannot reach: *which map style will I actually see*. A device could hold
+a complete Swisstopo download and be sitting on OpenFreeMap, and nothing
+said so. The row is Yes only when both halves are there: the style
+document, TileJSON and sprite (without which MapLibre cannot learn a
+single tile URL — SNOW-843), and the z0–7 tiles (without which the map
+falls off the edge of every downloaded area the moment the camera pulls
+out past z10 — SNOW-856). That second half is why "zoomed-out" is a real
+question; it is answered here rather than as a download row of its own,
+because it is not a place anyone chose.
+
+Two more rows are answered from more than one reading:
+
+- **The app opens** is the map page's HTML being in the shell cache, its
+  `X-SW-Principal` stamp matching the account signed in now, *and* the
+  shell's scripts being there. The user does not care which of the three
+  failed; the summary says, the row does not. A page whose HTML is saved
+  and whose scripts are not paints a blank frame, which is
+  indistinguishable from never having been saved — so it is one question,
+  not two. (It was two, and the second was labelled "The app is
+  complete", which meant nothing to anyone.)
+- **The app looks right** is the styling on its own, and is *not*
+  critical: an unstyled app is ugly and usable, where an app that will
+  not open is neither.
 
 ## Two halves, doing two jobs
 
@@ -102,7 +121,7 @@ a single green tick from the app that just failed them.
 ordinary prose saying what to expect and what fixes it, on a ground
 tinted by the verdict. It is where detail a row cannot hold goes: which
 area is incomplete, which account the saved page belongs to. Under both
-sits the tally — "7 of 14 available offline".
+sits the tally — "9 of 16 available offline".
 
 The rule that keeps them apart: **a row never carries its own
 explanation.** Per-row helper text made the log three times taller,
@@ -131,12 +150,17 @@ complete before the reveal starts.
 
 ## A No is not always a fault
 
-Four rows are `critical`: offline mode, the app opening, the app being
-complete, and having anything downloaded. A No on one of those blocks the
-headline verdict and paints red — there is no point telling someone their
-bulletins are saved if the app will not open. Every other No is amber: a
-capability this device does not have offline, which is worth knowing and
-is not an error.
+Two rows are `critical`: offline mode being on, and the app opening. A No
+on either blocks the headline verdict and paints red — there is no point
+telling someone their bulletins are saved if the app will not open. Every
+other No is amber: a capability this device does not have offline, which
+is worth knowing and is not an error.
+
+The all-clear is the all-clear, though. A single No anywhere downgrades
+the verdict to "The app will open, but not everything will be there" —
+"everything you need is on this device" printed over a table with six Nos
+in it is the exact species of reassurance this feature exists to stop
+being given.
 
 ## Three rules worth keeping
 

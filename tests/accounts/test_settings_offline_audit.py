@@ -120,7 +120,7 @@ class TestStringsTemplate:
         itself.
         """
         html = render_to_string(PARTIAL, {})
-        assert "%(used)s of %(total)s" in html
+        assert "%(name)s (drop zone)" in html
         assert "%s " not in html.replace("%(", "")
 
 
@@ -129,7 +129,7 @@ class TestSettingsPage:
     """The proactive entry point — the one to use before a journey."""
 
     def test_panel_renders_in_the_device_group(self) -> None:
-        """The row sits in "This device", beside the reset it precedes."""
+        """The row sits in "This device", above the reset it precedes."""
         html = (
             _client_for(AccountFactory.create())
             .get(reverse("accounts:settings"))

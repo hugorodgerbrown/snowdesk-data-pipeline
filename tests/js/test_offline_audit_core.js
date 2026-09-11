@@ -48,6 +48,7 @@ function healthy(overrides) {
         {
           id: 'base-openfreemap',
           kind: 'base',
+          basemapKey: 'openfreemap',
           name: 'overview',
           deps: [],
           bucketPresent: true,
@@ -57,6 +58,7 @@ function healthy(overrides) {
           id: 'region-ch-4115',
           kind: 'region',
           name: 'Martigny',
+          basemapKey: 'openfreemap',
           bytes: 12 * 1024 * 1024,
           deps: ['https://t/style.json', 'https://t/source.json'],
           bucketPresent: true,
@@ -68,7 +70,7 @@ function healthy(overrides) {
         },
       ],
       stores: { 'data:favourites': 3 },
-      overlayKeys: ['favourites', 'community_reports', 'weather'],
+      overlayKeys: ['favourites', 'community_reports', 'weather', 'routes'],
       panelKeys: ['observations'],
       mutations: { count: 0 },
       dbAvailable: true,
@@ -136,10 +138,11 @@ describe('the row list', () => {
 });
 
 describe('the downloads', () => {
-  it('gets one named row per download, split by what kind it is', () => {
-    // "Which maps, which regions, which drop zones" — a single row saying
-    // the map draws is no use to someone whose Verbier download is the
-    // broken one.
+  it('gets one named row per download, all under one heading', () => {
+    // A single row saying the map draws is no use to someone whose
+    // Verbier download is the broken one — but three headings for three
+    // kinds put an empty-looking section between every pair of rows, so
+    // the kind rides along in the label instead.
     const report = core.buildReport(
       healthy({
         areas: [
@@ -170,22 +173,24 @@ describe('the downloads', () => {
           },
         ],
       }),
-      {},
+      {
+        'label-dropzone': '%(name)s (drop zone)',
+        'label-custom': '%(name)s (area you drew)',
+      },
     );
-    const byId = Object.fromEntries(
-      report.sections.map((section) => [section.id, section.checks.map((c) => c.label)]),
-    );
-    expect(byId.regions).toEqual(['Martigny']);
-    expect(byId.dropzones).toEqual(['La Chaux']);
-    expect(byId.custom).toEqual(['Area 2']);
+    const downloads = report.sections.filter((section) => section.id === 'downloads')[0];
+    // Regions first: a region is what most people download, and the ones
+    // they drew themselves are the exceptions.
+    expect(downloads.checks.map((check) => check.label)).toEqual([
+      'Martigny',
+      'La Chaux (drop zone)',
+      'Area 2 (area you drew)',
+    ]);
   });
 
-  it('renders no section at all for a kind with no downloads', () => {
+  it('names a region by name alone, because a place reads as one', () => {
     const report = core.buildReport(healthy(), {});
-    const sections = report.sections.map((section) => section.id);
-    expect(sections).toContain('regions');
-    expect(sections).not.toContain('dropzones');
-    expect(sections).not.toContain('custom');
+    expect(row(report, 'area:region-ch-4115').label).toBe('Martigny');
   });
 
   it('says so on one row when there is nothing downloaded at all', () => {
@@ -254,12 +259,82 @@ describe('the downloads', () => {
     expect(row(report, 'area:r1').status).toBe('unknown');
   });
 
-  it('keeps the shared overview out of the downloads and on its own row', () => {
+  it('keeps the shared overview out of the downloads list entirely', () => {
     // Stored, real, and not a place the user chose: it is the zoomed-out
-    // tiles the app fetched for itself.
+    // tiles the app fetched for itself, so it is answered as half of the
+    // basemap's own row rather than as a download of its own.
     const report = core.buildReport(healthy(), {});
-    expect(row(report, 'overview').status).toBe('yes');
     expect(row(report, 'area:base-openfreemap')).toBeNull();
+  });
+});
+
+describe('the basemap rows', () => {
+  it('rolls the downloads up into one row per style, in THE MAP', () => {
+    // The question the per-area rows cannot reach: WHICH map style will I
+    // actually see. A device could hold a complete Swisstopo download and
+    // be sitting on OpenFreeMap, and nothing said so.
+    const report = core.buildReport(healthy(), {
+      'basemap-openfreemap': 'OpenFreeMap',
+      'row-basemap': '%(name)s basemap',
+    });
+    const map = report.sections.filter((section) => section.id === 'map')[0];
+    expect(map.checks.map((check) => check.id)).toContain('basemap:openfreemap');
+    expect(row(report, 'basemap:openfreemap').label).toBe('OpenFreeMap basemap');
+    expect(row(report, 'basemap:openfreemap').status).toBe('yes');
+  });
+
+  it('answers No when the style itself is not saved, tiles or not', () => {
+    // SNOW-843: without the style document and each source's TileJSON,
+    // MapLibre cannot learn a single tile URL, so a perfect pinned tile
+    // set renders nothing.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'base-x',
+            kind: 'base',
+            basemapKey: 'x',
+            deps: [],
+            bucketPresent: true,
+            entries: ['https://t/4/1/1.pbf'],
+          },
+          {
+            id: 'r1',
+            kind: 'region',
+            name: 'M',
+            basemapKey: 'x',
+            deps: ['https://t/style.json'],
+            bucketPresent: true,
+            entries: ['https://t/12/1/1.pbf'],
+          },
+        ],
+      }),
+      {},
+    );
+    expect(row(report, 'basemap:x').reason).toBe('style');
+  });
+
+  it('answers No when the style is saved but the zoomed-out tiles are not', () => {
+    // SNOW-856: without them the map falls off the edge of every
+    // downloaded area the moment the camera pulls out past z10, which is
+    // why the overview is a real question rather than a detail.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'r1',
+            kind: 'region',
+            name: 'M',
+            basemapKey: 'x',
+            deps: ['https://t/style.json'],
+            bucketPresent: true,
+            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+          },
+        ],
+      }),
+      {},
+    );
+    expect(row(report, 'basemap:x').reason).toBe('reach');
   });
 });
 
@@ -267,6 +342,19 @@ describe('the verdict', () => {
   it('passes a device that holds everything', () => {
     const report = core.buildReport(healthy(), {});
     expect(report.verdict.status).toBe('ok');
+  });
+
+  it('refuses the all-clear when anything at all answers No', () => {
+    // "Everything you need is here" over a table with six Nos in it is
+    // the exact species of reassurance this whole feature exists to stop
+    // being given.
+    const report = core.buildReport(
+      healthy({ overlayKeys: ['favourites', 'community_reports', 'routes'] }),
+      {},
+    );
+    expect(row(report, 'weather').status).toBe('no');
+    expect(report.verdict.status).toBe('warn');
+    expect(report.verdict.text).toBe('verdict-partial');
   });
 
   it('fails when the map page was never cached', () => {
@@ -379,23 +467,9 @@ describe('degraded readings', () => {
 
   it('reports an unreadable database as unknown, never as No', () => {
     const report = core.buildReport(healthy({ dbAvailable: false }), {});
-    ['saved-places', 'reports', 'weather', 'unsent'].forEach((id) => {
+    ['saved-places', 'routes', 'reports', 'weather'].forEach((id) => {
       expect(row(report, id).status).toBe('unknown');
     });
-  });
-
-  it('reports a browser with no storage estimate as unknown', () => {
-    const report = core.buildReport(healthy({ storage: null }), {});
-    expect(row(report, 'protected').status).toBe('unknown');
-    expect(row(report, 'room').status).toBe('unknown');
-  });
-
-  it('answers No on room when the origin is close to its quota', () => {
-    const report = core.buildReport(
-      healthy({ storage: { usage: 95, quota: 100, persisted: true } }),
-      {},
-    );
-    expect(row(report, 'room').status).toBe('no');
   });
 });
 
@@ -422,6 +496,7 @@ describe('the tally', () => {
 
 describe('the summary paragraph', () => {
   const COPY = {
+    'note-no-routes': 'none of your routes has been loaded here',
     'effect-ratings': 'will show no danger ratings',
     'effect-shapes': 'will draw no region outlines',
     'group-open-map-lead': 'Without a signal the app %(effects)s.',
@@ -433,7 +508,7 @@ describe('the summary paragraph', () => {
     'list-join': '%(first)s, %(rest)s',
     'count-one': 'it',
     'count-two': 'both',
-    'count-many': 'all %(n)s of them',
+    'count-many': 'all of them',
   };
 
   it('says one shared remedy once, however many capabilities share it', () => {
@@ -507,11 +582,11 @@ describe('prose helpers', () => {
     const t = {
       'count-one': 'it',
       'count-two': 'both',
-      'count-many': 'all %(n)s of them',
+      'count-many': 'all of them',
     };
     expect(core.quantify(1, t)).toBe('it');
     expect(core.quantify(2, t)).toBe('both');
-    expect(core.quantify(4, t)).toBe('all 4 of them');
+    expect(core.quantify(4, t)).toBe('all of them');
   });
 });
 
