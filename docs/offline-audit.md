@@ -104,7 +104,25 @@ So `selectedBasemap` is a reading like any other: `localStorage`'s
 opens the picker and chooses), falling back to the deployed default the
 host page carries as `data-default-basemap-key` — `settings.BASEMAP`,
 which only a server can say, and which is what an untouched device is
-actually looking at. It is first in the list whether or not a byte is
+actually looking at.
+
+**Resolved the way the map resolves it**, not just read. `map.js` checks a
+stored key against the catalogue it renders and falls back to the default
+when it no longer appears:
+
+```js
+const preferred = (stored && BASEMAP_OPTIONS[stored]) ? stored : DEFAULT_BASEMAP_KEY;
+```
+
+A style retired from the picker leaves its preference behind in
+`localStorage`, so a report that read the key alone would label a basemap
+"on screen" that the map will not show — the same defect this row exists
+to fix, one level down. `pageBasemaps()` reads the catalogue and the
+default out of the **cached** page's own markup (its `data-basemap-key`
+buttons and `#map`'s `data-default-basemap-key`), because that page is the
+one that will boot, and `resolveBasemap()` mirrors the line above against
+it. With no cached page there is no catalogue to check against and the
+stored key stands — the page being absent is already the blocking row. It is first in the list whether or not a byte is
 stored for it, and its label is `row-basemap-current` ("… (on screen)")
 rather than `row-basemap`, because two rows reading "X basemap" and "Y
 basemap" leave the reader no way to tell which is theirs.
@@ -299,13 +317,22 @@ refuses for ever. SNOW-912 made that same path pull the page's
 same-origin scripts and stylesheets too, so what the button saves is a
 map page that opens rather than one that paints a blank frame.
 
-The gate reads the `app-opens` check's `status` and `reason` from
-`offline_audit_core.js`. It once read a row called `map-page` and a
-status of `ok`, neither of which the core has ever produced, so the
-lookup found nothing and the button was hidden on every device —
-including the one whose verdict was telling its owner, in red, to go and
-open the map. Any future gate here names ids and statuses the core
-actually emits (`tests/js/test_offline_audit.js` holds the line).
+The gate reads the `app-opens` check's `status` from
+`offline_audit_core.js`, and offers the control for **every** failing
+state. It once read a row called `map-page` and a status of `ok`, neither
+of which the core has ever produced, so the lookup found nothing and the
+button was hidden on every device — including the one whose verdict was
+telling its owner, in red, to go and open the map. Any future gate here
+names ids and statuses the core actually emits
+(`tests/js/test_offline_audit.js` holds the line).
+
+It also briefly excluded `reason: 'scripts'`, on the reasoning that
+warming fetched only HTML. It has not fetched only HTML since the commit
+that introduced the gate — `_warmShellSubresources` fetches the modules
+the page names and the cache is missing — so the exclusion left the one
+state the repair was built for with no way to reach the repair. Every
+failing state is offered the control; the re-run afterwards is what says
+whether it worked.
 
 **Copy report** puts the whole thing on the clipboard as text, for the
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is

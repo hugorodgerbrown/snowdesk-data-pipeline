@@ -234,6 +234,31 @@ describe('the shell-cache reading', () => {
     expect(readings.selectedBasemap).toBe('ign_plan');
   });
 
+  it('ignores a stored basemap the cached page no longer offers', async () => {
+    // SNOW-913, from the review: map.js validates the stored key against
+    // the catalogue it renders and falls back to the deployed default, so
+    // a retired style left behind in localStorage is not what the reader
+    // is looking at.
+    window.localStorage.setItem('snowdesk.map.basemap', 'retired_style');
+    const origin = window.location.origin;
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        {
+          url: `${origin}/`,
+          headers: { 'X-SW-Principal': 'anonymous' },
+          body:
+            '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>' +
+            '<button data-basemap-key="openfreemap_liberty"></button>' +
+            '<button data-basemap-key="swisstopo_winter"></button>',
+        },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.selectedBasemap).toBe('openfreemap_liberty');
+  });
+
   it('names no basemap where neither is knowable', async () => {
     // static/offline.html, on a device that has never opened the picker.
     window.localStorage.removeItem('snowdesk.map.basemap');
@@ -574,15 +599,20 @@ describe('the Save control (SNOW-912)', () => {
   // every device and the button stayed hidden — including on the device
   // whose verdict was telling its owner, in red, to go and open the map.
   const SHELL = 'snowdesk-shell-abc';
-  const SCRIPT = { url: 'https://snowdesk.info/static/js/map.abc.js', headers: {} };
-  const STYLE = { url: 'https://snowdesk.info/static/css/output.abc.css', headers: {} };
+  // Seeded at the document's own origin, which is what a shell cache holds:
+  // the page's relative hrefs resolve against it, and a cross-origin
+  // fixture made "the app opens" read `scripts` — so this block once
+  // asserted the button's state in a case it was not aiming at.
+  const ORIGIN = window.location.origin;
+  const SCRIPT = { url: `${ORIGIN}/static/js/map.abc.js`, headers: {} };
+  const STYLE = { url: `${ORIGIN}/static/css/output.abc.css`, headers: {} };
   // A map page that boots from exactly the two entries above, so a device
   // holding both is a device whose page opens.
   const MAP_HTML =
     '<link rel="stylesheet" href="/static/css/output.abc.css">' +
     '<script src="/static/js/map.abc.js"></script>';
   const mapPage = (principal) => ({
-    url: 'https://snowdesk.info/',
+    url: `${ORIGIN}/`,
     headers: { 'X-SW-Principal': principal },
     body: MAP_HTML,
   });
@@ -681,6 +711,19 @@ describe('the Save control (SNOW-912)', () => {
     const save = await runPanel();
 
     expect(save.hidden).toBe(true);
+  });
+
+  it('is offered when the page is saved but its scripts are not', async () => {
+    // The state the repair was built for. `_warmCache(['/'])` re-fetches
+    // the page and `_warmShellSubresources` then fetches the modules it
+    // names and the cache is missing — so hiding the control here left the
+    // one failure warming can definitely fix with no way to reach it.
+    installController(SHELL);
+    installCachesStub({ [SHELL]: [mapPage('anonymous'), STYLE] });
+
+    const save = await runPanel();
+
+    expect(save.hidden).toBe(false);
   });
 
   it('stays hidden with no worker to warm through', async () => {

@@ -357,6 +357,70 @@
   }
 
   /**
+   * The basemap catalogue a cached map page carries (SNOW-913).
+   *
+   * Both halves of what ``map.js`` resolves the visitor's choice against:
+   * every ``data-basemap-key`` the picker renders, and the deployed default
+   * on ``#map``'s ``data-default-basemap-key``.
+   *
+   * Read out of the page the device actually holds, for the reason
+   * ``pageDay`` is: that page is the one that will boot, and its catalogue
+   * is the one the resolution will run against — not whatever the server
+   * is serving now.
+   *
+   * @param {string} html
+   * @returns {{keys: string[], fallback: string|null}}
+   */
+  function pageBasemaps(html) {
+    var keys = /** @type {string[]} */ ([]);
+    if (typeof html !== 'string' || !html) return { keys: keys, fallback: null };
+    var pattern = /data-basemap-key=["']([A-Za-z0-9_-]+)["']/gi;
+    var match = pattern.exec(html);
+    while (match) {
+      if (keys.indexOf(match[1]) === -1) keys.push(match[1]);
+      match = pattern.exec(html);
+    }
+    var fallback = /data-default-basemap-key=["']([A-Za-z0-9_-]+)["']/i.exec(html);
+    return { keys: keys, fallback: fallback ? fallback[1] : null };
+  }
+
+  /**
+   * The basemap the reader is looking at, resolved the way the map resolves
+   * it (SNOW-913).
+   *
+   * ``map.js``:
+   *
+   *     const preferred = (stored && BASEMAP_OPTIONS[stored])
+   *       ? stored
+   *       : DEFAULT_BASEMAP_KEY;
+   *
+   * A stored key the catalogue no longer offers is NOT what the map will
+   * show — a style removed from the picker leaves the preference behind in
+   * ``localStorage``, and the map quietly falls back to the deployed
+   * default. Naming the stale key would be this report doing exactly what
+   * this ticket exists to stop: labelling a basemap "on screen" that is
+   * not.
+   *
+   * With no cached page there is no catalogue to check against, and the
+   * stored key is the best available answer — the page being absent is
+   * already the blocking row above.
+   *
+   * @param {{keys: string[], fallback: string|null}|null} catalogue
+   * @param {string|null} stored The visitor's ``localStorage`` choice.
+   * @param {string|null} serverDefault The host page's own
+   *   ``data-default-basemap-key``, where a server rendered one.
+   * @returns {string|null}
+   */
+  function resolveBasemap(catalogue, stored, serverDefault) {
+    var keys = catalogue && Array.isArray(catalogue.keys) ? catalogue.keys : [];
+    if (keys.length > 0) {
+      if (stored && keys.indexOf(stored) >= 0) return stored;
+      return (catalogue && catalogue.fallback) || serverDefault || null;
+    }
+    return stored || serverDefault || null;
+  }
+
+  /**
    * The day a cached map page will open on (SNOW-914).
    *
    * ``#season-scrubber``'s ``data-today``, read out of the HTML the device
@@ -1559,6 +1623,8 @@
     classifyEntry: classifyEntry,
     pageDependencies: pageDependencies,
     pageDay: pageDay,
+    pageBasemaps: pageBasemaps,
+    resolveBasemap: resolveBasemap,
     formatBytes: formatBytes,
     principalMatches: principalMatches,
     areaState: areaState,

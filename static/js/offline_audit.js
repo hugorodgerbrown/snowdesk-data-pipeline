@@ -330,21 +330,28 @@
    * @param {HTMLElement|null} root The panel element, which carries the
    *   deployed default as ``data-default-basemap-key`` where a server
    *   rendered it.
+   * @param {{keys: string[], fallback: string|null}|null} catalogue The
+   *   basemaps the CACHED map page offers, read out of its own markup — the
+   *   set the map's own resolution will run against.
    * @returns {string|null}
    */
-  function selectedBasemap(root) {
+  function selectedBasemap(root, catalogue) {
     var stored = null;
     try {
       stored = self.localStorage ? self.localStorage.getItem(BASEMAP_STORAGE_KEY) : null;
     } catch (_err) {
       // A private window, or site data blocked outright. Falls through to
-      // the server default, which is still true for a device that cannot
-      // remember a choice.
+      // the default, which is still true for a device that cannot remember
+      // a choice.
       stored = null;
     }
-    if (stored) return stored;
-    var fallback = root ? root.getAttribute('data-default-basemap-key') : null;
-    return fallback || null;
+    var core = self.pwaOfflineAuditCore;
+    var serverDefault = root ? root.getAttribute('data-default-basemap-key') : null;
+    if (!core) return stored || serverDefault || null;
+    // Resolved the way the map resolves it: a stored key the cached page's
+    // picker no longer offers is not what the map will show — it falls back
+    // to the deployed default and leaves the preference behind.
+    return core.resolveBasemap(catalogue, stored, serverDefault);
   }
 
   /**
@@ -392,6 +399,7 @@
     var entries = [];
     var mapDependencies = null;
     var mapDay = null;
+    var mapBasemaps = null;
     for (var i = 0; i < names.length; i += 1) {
       var cache;
       try {
@@ -433,16 +441,25 @@
               // SNOW-914: and the day that page will open on, which is the
               // day whose ratings it will ask the cache for.
               mapDay = core ? core.pageDay(html) : null;
+              // SNOW-913: and the basemaps its picker offers, which is the
+              // catalogue the map's own choice-resolution runs against.
+              mapBasemaps = core ? core.pageBasemaps(html) : null;
             } catch (_err) {
               mapDependencies = null;
               mapDay = null;
+              mapBasemaps = null;
             }
           }
         }
         entries.push({ url: url, isPage: isPage, principal: principal });
       }
     }
-    return { entries: entries, mapDependencies: mapDependencies, mapDay: mapDay };
+    return {
+      entries: entries,
+      mapDependencies: mapDependencies,
+      mapDay: mapDay,
+      mapBasemaps: mapBasemaps,
+    };
   }
 
   /**
@@ -778,7 +795,7 @@
     var mapPath = '/';
     var shell = shellNames.length
       ? await readShellEntries(shellNames, mapPath)
-      : { entries: [], mapDependencies: null, mapDay: null };
+      : { entries: [], mapDependencies: null, mapDay: null, mapBasemaps: null };
     var shellEntries = shell.entries;
 
     var db = await openDb();
@@ -871,7 +888,7 @@
       // SNOW-913: the style on screen. The basemap rows are otherwise a
       // roll-up of what the device has STORED, which is a different
       // question from the one the reader is asking.
-      selectedBasemap: selectedBasemap(panel),
+      selectedBasemap: selectedBasemap(panel, shell.mapBasemaps),
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
       mapPath: mapPath,
       areas: areas,
@@ -1165,12 +1182,16 @@
         // AuditStatus union, whose pass value is `yes` and whose failing
         // value on a critical row is `blocked`.
         //
-        // `reason` narrows it once more. Warming fetches the map page's
-        // HTML, so it answers a missing entry ('absent') and one stamped
-        // for another account ('principal'), which re-fetching restamps.
-        // It cannot answer 'scripts' — the page is already saved and it
-        // is the JavaScript that is missing — and offering a button there
-        // would run, report success, and leave the row exactly as it was.
+        // Every failing state, with no exceptions — because SNOW-912 made
+        // the warm repair every one of them. `_warmCache(['/'])` re-fetches
+        // the page (restamping it for whoever is signed in now, which
+        // answers 'principal', and overwriting an unreadable body), and
+        // `_warmShellSubresources` then fetches the modules that page names
+        // and the cache is missing, which answers 'scripts'. An earlier cut
+        // of this gate excluded 'scripts' on the reasoning that warming
+        // fetched only HTML. It has not fetched only HTML since the commit
+        // that introduced the gate, and the exclusion left the one state
+        // the repair was built for with no way to reach the repair.
         var pageCheck = null;
         lastReport.sections.forEach(function (section) {
           section.checks.forEach(function (check) {
@@ -1181,8 +1202,7 @@
           readings.online &&
           readings.serviceWorker.controlled &&
           pageCheck &&
-          pageCheck.status !== 'yes' &&
-          pageCheck.reason !== 'scripts'
+          pageCheck.status !== 'yes'
         );
       }
     };

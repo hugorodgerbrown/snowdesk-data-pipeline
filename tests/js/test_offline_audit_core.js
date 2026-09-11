@@ -629,6 +629,61 @@ describe('the rows that answer about what the user will see', () => {
   });
 });
 
+describe('resolving which basemap is on screen (SNOW-913)', () => {
+  // The map resolves a stored preference against the catalogue it actually
+  // renders and falls back to the deployed default. The report has to do
+  // the same, or it labels a style "on screen" that the map will not show —
+  // which is the failure this whole ticket is about, one level down.
+  const CATALOGUE = {
+    keys: ['openfreemap_liberty', 'swisstopo_winter'],
+    fallback: 'openfreemap_liberty',
+  };
+
+  it('reads the catalogue and the default out of a cached page', () => {
+    const html = [
+      '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>',
+      '<button class="basemap-menu-item" data-basemap-key="openfreemap_liberty"></button>',
+      '<button class="basemap-menu-item" data-basemap-key="swisstopo_winter"></button>',
+      '<button class="basemap-menu-item" data-basemap-key="swisstopo_winter"></button>',
+    ].join('\n');
+
+    expect(core.pageBasemaps(html)).toEqual(CATALOGUE);
+  });
+
+  it('keeps a stored choice the catalogue still offers', () => {
+    expect(core.resolveBasemap(CATALOGUE, 'swisstopo_winter', null)).toBe(
+      'swisstopo_winter',
+    );
+  });
+
+  it('drops a stored choice the catalogue no longer offers', () => {
+    // A style removed from the picker leaves its preference behind in
+    // localStorage, and map.js quietly falls back to the default — so the
+    // stale key is precisely NOT what the reader is looking at.
+    expect(core.resolveBasemap(CATALOGUE, 'retired_style', null)).toBe(
+      'openfreemap_liberty',
+    );
+  });
+
+  it('falls back to the host page’s default when the catalogue has no own', () => {
+    expect(core.resolveBasemap({ keys: ['a'], fallback: null }, 'gone', 'ign_plan')).toBe(
+      'ign_plan',
+    );
+  });
+
+  it('trusts the stored choice when there is no catalogue to check it against', () => {
+    // No cached page means no catalogue — and the page being absent is
+    // already the blocking row above.
+    expect(core.resolveBasemap(null, 'swisstopo_winter', 'ign_plan')).toBe(
+      'swisstopo_winter',
+    );
+  });
+
+  it('names nothing when nothing is stored, offered or defaulted', () => {
+    expect(core.resolveBasemap(null, null, null)).toBeNull();
+  });
+});
+
 describe('the basemap rows (SNOW-913)', () => {
   // The report has to answer about the style the reader is LOOKING AT. It
   // used to roll up only what the device had stored, so someone who had
