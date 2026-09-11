@@ -2,7 +2,7 @@
 name: mutation-queue
 description: Client mutation queue — window.pwaMutationQueue, queue:mutations, Idempotency-Key, backoff, offline drain guard, Background Sync, principal
 status: current
-last-reviewed: 2026-08-03
+last-reviewed: 2026-09-11
 ---
 
 # Client mutation queue
@@ -390,9 +390,11 @@ render immediately, a reconnect drains the queue against the real
 `report_submit` / `favourite_create` view (the latter with the tap-time
 `observed_at` preserved for observations), and a replayed duplicate does
 not create a second row (`apps.core.idempotency.IdempotencyMiddleware`).
-`test_offline_observation_submit.py` additionally covers report.js's
-Reset-Required guard (a report tap must not show the optimistic
-confirmation when IndexedDB is in the terminal Reset Required state). The
+`tests/js/test_observations_offline_reset_required.js` additionally covers
+report.js's Reset-Required guard (a report tap must not show the optimistic
+confirmation when IndexedDB is in the terminal Reset Required state); it is
+where that assertion landed when SNOW-649 retired the Playwright module
+`test_offline_observation_submit.py` that used to hold it. The
 SNOW-462 account-change headline regression against a real
 `report_submit` mutation is folded into
 `tests/js/test_mutation_queue_reconcile_account_change.js` (a synthetic

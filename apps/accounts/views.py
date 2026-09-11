@@ -1,7 +1,7 @@
 """
 apps/accounts/views.py — HTTP views for the accounts application.
 
-Implements the subscription flow built around Django's TimestampSigner:
+Implements the account flow built around Django's TimestampSigner:
 
   sign_in_view        GET/POST — dedicated sign-in page (email entry / passkey).
                                POST: rate-limited (3/m per IP); sends magic link.
@@ -20,35 +20,34 @@ Implements the subscription flow built around Django's TimestampSigner:
   change_email_view   GET/POST — request an account email change (SNOW-433).
   change_email_confirm_view
                       GET/POST — confirm + apply an email change (SNOW-433).
-  subscribe_partial   POST — inline HTMX subscribe CTA on bulletin pages.
-                            Requires a region_id; uses a four-case matrix keyed
-                            on (account_created, subscription_created) and
-                            account.is_verified to decide which email to send
-                            and which fragment to return.
-  add_region          POST — HTMX: authenticated one-click add of a region from
-                            the bulletin page. Idempotent; no email sent.
-  remove_region_from_bulletin
-                      POST — HTMX: authenticated one-click unsubscribe from the
-                            bulletin page. Mirrors remove_region cascade logic.
   account_view        GET/POST — account-access ("magic link") token. GET shows
                             a confirm button (no state change, no login); POST
                             verifies the Account, logs in via Django auth, and
-                            redirects to /account/.
-  manage_view         GET  — authenticated "your subscriptions" page.
-                            Unauthenticated requests redirect to /sign-in/.
-  remove_region       POST — HTMX: remove one subscribed region card.
+                            redirects to /account/?just_confirmed=1.
+  settings_view       GET  — the account area's one page, /account/settings/.
   delete_account      POST — HTMX: hard-delete the account and redirect to the
                             account-deleted page.
   account_deleted_view
                       GET  — post-deletion landing page.
+  sign_out            POST — end the session and return to the sign-in page.
 
-Rate limiting via django-ratelimit (block=False pattern):
-  subscribe_partial:  5 requests/min per IP.
-  add_region:         5 requests/min per IP.
-  sign_in_view POST:  3 requests/min per IP.
-  remove_region POST: 10 requests/min per IP.
-  remove_region_from_bulletin POST: 10 requests/min per IP.
-  delete_account POST: 3 requests/min per IP.
+SNOW-802/803/805/875 removed the subscription estate this module was
+originally built around — ``subscribe_partial``, ``add_region``,
+``remove_region``, ``remove_region_from_bulletin`` and ``manage_view`` are
+all gone, and every URL that reached them is now a permanent redirect in
+``urls.py``. A subscription was a bookmark on a region, and bookmarks are
+region pins on the map (``apps/favourites/``); see ``docs/accounts.md``.
+
+Rate limiting via django-ratelimit:
+  sign_in_view POST:      3 requests/min per IP (``get_usage``).
+  register_view POST:     3 requests/min per IP (``get_usage``).
+  reset_password_request_view POST: 3 requests/min per IP (``get_usage``).
+  change_email_view POST: 3 requests/min per IP (``get_usage``).
+  reset_password_confirm_view:  10 requests/min per IP (decorator).
+  change_email_confirm_view:    10 requests/min per IP (decorator).
+  delete_account POST:     3 requests/min per IP (decorator).
+The decorator form uses the ``block=False`` pattern; the ``get_usage``
+form is used where only POST is limited and the GET must still render.
 
 Authentication uses Django's standard session auth (request.user).  After
 a token is verified in account_view or passkey authentication completes in
@@ -229,16 +228,16 @@ def _password_sign_in(
 @require_http_methods(["GET", "POST"])
 def sign_in_view(request: HttpRequest) -> HttpResponse:
     """
-    Dedicated sign-in page for returning subscribers.
+    Dedicated sign-in page for returning account holders.
 
     GET: render the email entry form with passkey conditional UI.
-    If the user is already authenticated, redirect to the manage page.
+    If the user is already authenticated, redirect to ``next`` or the map.
 
     POST (rate-limited 3/m per IP): with a password supplied, attempt password
-    sign-in (SNOW-431) — success redirects to manage, failure re-renders with a
-    generic error. Without a password, the magic-link flow runs and always
-    returns the same "check your inbox" response regardless of whether the
-    email is known.
+    sign-in (SNOW-431) — success redirects to ``next`` or the map, failure
+    re-renders with a generic error. Without a password, the magic-link flow
+    runs and always returns the same "check your inbox" response regardless
+    of whether the email is known.
 
     ``?next=`` (SNOW-825): a same-site destination to return to after signing
     in, so a recipient who opened a trip share link and signed in lands back

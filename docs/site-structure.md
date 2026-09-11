@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-09-11
 ---
 
 # Snowdesk site structure
@@ -11,8 +11,13 @@ The public URL surface, as routed. Route tables live in
 [`config/urls.py`](../config/urls.py) (project level) and
 [`apps/public/urls.py`](../apps/public/urls.py),
 [`apps/accounts/urls.py`](../apps/accounts/urls.py),
-[`apps/favourites/urls.py`](../apps/favourites/urls.py) and
-[`apps/observations/urls.py`](../apps/observations/urls.py) — this page is the
+[`apps/favourites/urls.py`](../apps/favourites/urls.py),
+[`apps/observations/urls.py`](../apps/observations/urls.py),
+[`apps/routes/urls.py`](../apps/routes/urls.py),
+[`apps/trips/urls.py`](../apps/trips/urls.py),
+[`apps/downloads/urls.py`](../apps/downloads/urls.py),
+[`apps/public/api_urls.py`](../apps/public/api_urls.py) and
+[`apps/mcp_server/urls.py`](../apps/mcp_server/urls.py) — this page is the
 map of them, not a second source of truth.
 
 **Two documents and a map** (SNOW-795,
@@ -85,6 +90,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 | `/_components/` | Component library — the canonical design-system reference ([`docs/design-system.md`](design-system.md)). |
 | `/_sw-version/` | Deployed `CACHE_VERSION` / `APP_VERSION` vs the live service-worker version ([`docs/offline-map.md`](offline-map.md)). |
 | `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
+| `/_icon-sets/` | The candidate weather icon sets side by side, kept for comparison ([`docs/weather-surfaces.md`](weather-surfaces.md)). |
 
 ## HTMX partial routes
 

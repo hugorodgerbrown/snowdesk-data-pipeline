@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-11
 ---
 
 # Accounts
@@ -40,7 +40,7 @@ An account is an email address proven reachable — via a signed-token flow (no 
 One thing to know before touching the caching. `settings_view` is not `@never_cache`, and must not set `Cache-Control: private, no-store`: the account area is cache-*partitioned*, not cache-avoided — `static/js/sw.js` stamps every cached navigation with `X-SW-Principal` and refuses it to any other principal. The posture was first load-bearing on `/account/favourites/`, which the offline favourites roster read out of the shell cache; that page is gone, the roster's write-through keys on the `/favourites/partials/list/` request path the map sheet fetches, and the map at `/` is the navigation the shell caches for it (`apps.accounts.views._ACCOUNT_PAGE_CACHE_NOTE`).
 
 **Models** (SNOW-514 collapsed `Subscriber` into `Account` — there is now a single public-user identity):
-- `Account(user, is_verified, verified_at, display_name, acquisition_request, pending_email, pending_email_requested_at)` — the single public-user identity, OneToOne to `auth.User` (`related_name="account"`). Auto-created at every public entry point (subscribe, sign-in, register) via `Account.objects.get_or_create_for_email(email)` (username == email == lowercased). `is_verified` is the sole "email proven reachable" gate, set by **every** email-proving link (`verify_view`, `account_view`, `change_email_confirm_view`, and `reset_password_confirm_view`); it is deliberately distinct from `User.is_active` (the kill switch). `Account.mark_verified(now)` mutates in memory and returns `self` (idempotent on `verified_at`); the caller owns the `save()` + `login()`. `acquisition_request` (FK to `core.RequestLog`, `SET_NULL`) records the request that first created the account — first-observation wins, never overwritten. `pending_email` / `pending_email_requested_at` (SNOW-433) hold a new address awaiting verification without touching the live `User.email`.
+- `Account(user, is_verified, verified_at, display_name, acquisition_request, pending_email, pending_email_requested_at)` — the single public-user identity, OneToOne to `auth.User` (`related_name="account"`). Auto-created at every public entry point (sign-in, register) via `Account.objects.get_or_create_for_email(email)` (username == email == lowercased). `is_verified` is the sole "email proven reachable" gate, set by **every** email-proving link (`verify_view`, `account_view`, `change_email_confirm_view`, and `reset_password_confirm_view`); it is deliberately distinct from `User.is_active` (the kill switch). `Account.mark_verified(now)` mutates in memory and returns `self` (idempotent on `verified_at`); the caller owns the `save()` + `login()`. `acquisition_request` (FK to `core.RequestLog`, `SET_NULL`) records the request that first created the account — first-observation wins, never overwritten. `pending_email` / `pending_email_requested_at` (SNOW-433) hold a new address awaiting verification without touching the live `User.email`.
 - Region pin — a `Favourite` whose subject is the region: `region` set, `location`/`latitude`/`longitude`/`elevation` null, one per `(user, region)` by partial unique constraint (`Favourite.is_region_pin`, `FavouriteQuerySet.region_pins()`). Created and removed from the map's region panel (`favourites:region_toggle`), listed in the pins sheet, never in `favourites.geojson`.
 - Delete semantics: unpinning a region from the map deletes only that `Favourite` row — the `User` and `Account` survive, even when it was the last pin, and the caller stays signed in. `delete_account` is the **sole** hard-delete path, available to any authenticated account — it deletes the `User`, which cascades to `Account` and everything the user owns.
 
@@ -62,15 +62,21 @@ One thing to know before touching the caching. `settings_view` is not `@never_ca
 - `SALT_EMAIL_CHANGE` — 24h TTL. The signed value is `{user_pk}|{new_email}`, binding the token to both the requesting user and the specific pending address so it can't be replayed against a different user or address (SNOW-433). `generate_email_change_token(user, new_email)` / `verify_email_change_token(token, max_age)`.
 - Cross-salt replay is blocked at the signing layer — a token generated with one salt cannot be verified with another.
 
-**Indistinguishable responses** — `subscribe_partial` returns a byte-equal `subscribe_success_access.html` fragment for the two branches where the submitter cannot already know whether the email is registered: case A (new account) and case B (existing-unverified). This A=B equality is the security-relevant invariant — it stops an unauthenticated submitter from probing whether an address is on the system. The verified-account branches are intentionally distinct: case C (verified, new region) returns `subscribe_success_added.html` and case D (verified, existing region) returns `subscribe_success_already.html`. Distinguishing C from D leaks no new information, because reaching either branch already requires the submitter to know the address is a verified account; the two responses just give a more useful confirmation message. `POST /manage/` (unauthenticated) returns the same "check your inbox" page regardless of whether the email is known. **If you change `subscribe_partial`, preserve A=B byte-equality** — C and D are free to diverge further, but A and B must continue to return the identical fragment.
+**Indistinguishable responses** — every unauthenticated entry point returns the same response for a known and an unknown address, so a submitter cannot probe whether an address is on the system. `sign_in_view`, `register_view` and `reset_password_request_view` each render the same "check your inbox" page (`manage_sent.html` / `register_sent.html` / `reset_password_sent.html`) whichever branch ran, and password sign-in returns one generic error for a wrong password, an unknown email and a passwordless account alike. `change_email_view` is the authenticated counterpart: a request to an address another account already owns is a silent no-op on the same page, not an error. **Preserve that parity when changing any of these views** — the branch that sends an email and the branch that sends nothing must return identical bytes. SNOW-875 removed the inline subscribe CTA (`subscribe_partial`) that used to carry the same invariant across a four-case matrix; nothing replaced it.
 
-**Rate limiting** — `django-ratelimit`, IP-keyed, `block=False` (views check `request.limited` and return 429 manually):
+**Rate limiting** — `django-ratelimit`, IP-keyed. Views using the decorator take the `block=False` pattern (check `request.limited`, return 429 manually); the POST-only limits call `get_usage(..., increment=True)` directly so the GET still renders:
 
-| View | Rate |
-|------|------|
-| `subscribe_partial` | 5/min |
-| `register_view` POST | 3/min |
-| `manage_view` POST (unauthenticated) | 3/min |
+| View | Rate | Mechanism |
+|------|------|-----------|
+| `sign_in_view` POST | 3/min | `get_usage` |
+| `register_view` POST | 3/min | `get_usage` |
+| `reset_password_request_view` POST | 3/min | `get_usage` |
+| `change_email_view` POST | 3/min | `get_usage` |
+| `reset_password_confirm_view` | 10/min | decorator |
+| `change_email_confirm_view` | 10/min | decorator |
+| `delete_account` | 3/min | decorator |
+| `passkey_auth_response` / `passkey_register_response` | 10/min | decorator |
+| `passkey_delete` | 5/min | decorator |
 
 Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit counters are shared across workers. The cache table is created by `apps/accounts/migrations/0002_create_cache_table.py`. Development sets `RATELIMIT_ENABLE = False` so tests are not throttled.
 
@@ -82,7 +88,7 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 - `/account/sign-in/` (`sign_in`) — GET renders the email form with passkey conditional UI; POST (rate-limited 3/min) always returns the same "check your inbox" response whether or not the email is known.
 - JSON API endpoints (`apps/accounts/views_passkey.py`): `/account/webauthn/auth-request/` (GET, challenge), `/account/webauthn/auth-response/` (POST, verifies `navigator.credentials.get()` and logs the `auth.User` in via Django auth; 10/min), `/account/webauthn/register-request/` (GET, requires `request.user.is_authenticated`), `/account/webauthn/register-response/` (POST, persists the new credential; 10/min).
 - `/account/manage/passkeys/<uuid>/delete/` (`passkey_delete`) — HTMX POST, hard-deletes one passkey for the authenticated user (scoped to `user=request.user`; 5/min).
-- **Setup-page CTA (SNOW-434)** — the credential-setup page (`setup.html`) offers a "Save a passkey for this device" card that wires the existing `passkey_register_request`/`passkey_register_response` endpoints via `window.Passkey.registerPasskey`; on `passkey:registered` it auto-advances to manage, on `passkey:unsupported` it hides the card. No new backend. `manage_view` renders for any authenticated user; it no longer redirects non-subscribers to sign-in, which used to loop against `sign_in_view`'s authenticated-user redirect.
+- **Setup-page CTA (SNOW-434)** — the credential-setup page (`setup.html`) offers a "Save a passkey for this device" card that wires the existing `passkey_register_request`/`passkey_register_response` endpoints via `window.Passkey.registerPasskey`; on `passkey:registered` it auto-advances, on `passkey:unsupported` it hides the card. No new backend. The registered-passkey cards themselves live on `/account/settings/` — SNOW-802 turned `/account/manage/`, which used to render them, into a permanent redirect.
 - Signed account-access tokens remain the fallback (and bootstrap) path: an account registers a passkey only after first authenticating via an emailed account link.
 - Server config: `WEBAUTHN_RP_ID` / `WEBAUTHN_RP_NAME` / `WEBAUTHN_ORIGIN` env vars (see `render.yaml`).
 

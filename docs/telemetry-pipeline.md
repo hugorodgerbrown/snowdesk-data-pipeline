@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
-last-reviewed: 2026-09-10
+last-reviewed: 2026-09-11
 ---
 
 # Telemetry pipeline
@@ -156,7 +156,11 @@ change the frozenset + document the property shape here.
 - **Push (client half)**: `pwa.push.received`, `pwa.push.shown`,
   `pwa.push.opened`, `pwa.push.subscription_lost`.
 - **Mutation queue**: `pwa.mutation.enqueued`, `pwa.mutation.drained`,
-  `pwa.mutation.failed_permanent`.
+  `pwa.mutation.failed_permanent`, and `pwa.mutation.discarded` with
+  `properties.reason` (SNOW-462) — a queued row dropped without ever being
+  replayed because its stamped principal no longer matches the current one:
+  `account_change` clears the whole queue, `principal_mismatch` is one row
+  caught by the drain guard.
 - **Reset flow**: `pwa.reset.user_initiated`, `pwa.reset.forced`.
 - **Freshness classifier**: `pwa.freshness.fresh`, `pwa.freshness.stale`,
   `pwa.freshness.unsafe`.
@@ -181,6 +185,23 @@ change the frozenset + document the property shape here.
   `properties.observation_type` (the `community-reports-point` layer's
   click handler — deliberately carries no location or identity data,
   mirroring the anonymisation contract of `api:community_reports_geojson`).
+- **Saved routes** (SNOW-686/687/764, same `map.*` namespace and the same
+  created/deleted pair as favourites, for the same reason):
+  `map.route.created` (`static/js/routes.js`, a successful upload to
+  `routes:create`), `map.route.deleted` (a panel row's Remove form coming
+  back 2xx), `map.route.overlay_toggled` with `properties.visible` (emitted
+  by `window.pwaRoutesOverlay` in `static/js/map.js` on each edge),
+  `map.route.shared` (a share link successfully **minted** — not sent, since
+  what happens after the payload reaches the platform's share sheet is not
+  observable from the page and would over-count every cancelled share), and
+  `map.route.claimed` (a recipient's Save coming back 2xx). None of the five
+  carries a file name, size, geometry, uuid or share token: a GPX track is a
+  record of where somebody went, and a share token is a capability.
+- **Uncaught client errors** (SNOW-894 — `js.error`, deliberately its own
+  namespace): every uncaught exception and unhandled rejection, from
+  `static/js/error_reporting.js`. See the emitter table below for the
+  opted-in and opted-out payload shapes; it is the one CRITICAL event that
+  fires regardless of opt-in.
 - **Basemap download bookkeeping** (SNOW-612, same `map.*` namespace):
   `map.basemap.record_write_failed` with `properties.region_id`
   (`static/js/map.js`'s `_recordRegionDownload`) — a completed download
@@ -376,6 +397,9 @@ below the table.
 | `static/js/map.js` — `window.pwaFavouritesOverlay` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, whatever drives them (the layers menu's Favourites row since SNOW-904, the panel switch before it) |
 | `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
+| `static/js/routes.js` (SNOW-686, SNOW-764) | `map.route.created` (a successful upload to `routes:create`) / `map.route.deleted` (a panel row's Remove form returning 2xx) / `map.route.shared` (a share link minted, not sent) / `map.route.claimed` (a recipient's Save returning 2xx; `static/js/map.js` emits the same event for the map's own claim path). No file name, size, geometry, uuid or token on any of them |
+| `static/js/map.js` — `window.pwaRoutesOverlay` (SNOW-687) | `map.route.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, the favourites sibling the routes set was missing at SNOW-686 |
+| `static/js/mutation_queue.js` (SNOW-462) | `pwa.mutation.discarded` with `properties.reason` — `account_change` (the whole queue cleared on a principal change at load) or `principal_mismatch` (one row caught by the drain guard). A discarded row is never replayed |
 | `static/js/map.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |
 | `static/js/error_reporting.js` (SNOW-894) | `js.error` — every uncaught exception (`window` `error`) and unhandled rejection. **CRITICAL**, so it beacons immediately and fires regardless of opt-in; the payload is what differs. Opted in: `{kind, pathname, message, filename, lineno, colno, stack}`. Opted out: `{kind, pathname}` and nothing more. Never a query string on either branch — the map's URLs carry `?route_share=` / `?trip_share=` tokens, and a share token is a capability. Deduped per page on `message\|filename\|lineno` (3 reports per fault, 20 distinct faults), because a throw inside a MapLibre `moveend` handler fires on every frame of a pan |
 

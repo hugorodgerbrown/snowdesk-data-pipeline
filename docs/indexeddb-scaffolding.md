@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, db.js) — schema, queue:mutations, meta:app, data:favourites/map_overlays/panel_rows, log:sync, log:debug
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-09-11
 ---
 
 # IndexedDB scaffolding
@@ -240,7 +240,7 @@ clean panel before those rows age out:
 newest 100 by deleting the lowest ids via a cursor — `getAll(store,
 limit)` would return the wrong end (lowest ids first), so trim and the
 newest-first `getSyncLog(limit)` read both walk a cursor instead. Read
-out by the manage-page sync-log panel (`static/js/sync_log.js`) behind
+out by the `/account/settings/` sync-log panel (`static/js/sync_log.js`) behind
 the `sync_log` waffle flag.
 
 ### `queue:mutations` row shape (SNOW-376)

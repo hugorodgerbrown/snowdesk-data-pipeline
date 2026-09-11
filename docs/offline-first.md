@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-09-11
 ---
 
 # Offline-first PWA compliance
@@ -39,7 +39,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
-| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user: the manage page is cached but partitioned per account (SNOW-607), so its copy is there only once that account has loaded it online in this browser. The offline copy reveals itself once `pwa_reset.js` has loaded, which `PRECACHE_URLS` (`static/js/sw.js`) guarantees — see [Reset local data](#reset-local-data-snow-378) below. |
+| 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — `/account/settings/` and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user: the settings page is cached but partitioned per account (SNOW-607), so its copy is there only once that account has loaded it online in this browser. The offline copy reveals itself once `pwa_reset.js` has loaded, which `PRECACHE_URLS` (`static/js/sw.js`) guarantees — see [Reset local data](#reset-local-data-snow-378) below. |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
 | 12.10| Client obeys server version verdict                | SNOW-374 / SNOW-609 / SNOW-869 | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html`. The client performs no version comparison — it branches on `update_required` for the modal and on `update_available` for the soft banner, and the modal waits for the user's click |
@@ -433,11 +433,11 @@ offline-facing surfaces the account area carries land differently:
 
 - **§12.7's escape hatch** — the "Reset local data on this device"
   button (`[data-pwa-reset-trigger]`,
-  `apps/accounts/templates/accounts/manage.html:304`) also ships on
+  `apps/accounts/templates/accounts/settings.html`) also ships on
   `static/offline.html`, which is precached, carries no account identity
   and sits outside the principal check. That copy is the one that
   reaches a user whose PWA is stuck *and* whose network is gone — the
-  state §12.7 exists for, and the state in which the manage page's own
+  state §12.7 exists for, and the state in which the settings page's own
   copy may simply not be there. See
   [Reset local data](#reset-local-data-snow-378).
 - **The `log:sync` read-out panel** (`static/js/sync_log.js`, `sync_log`
@@ -450,11 +450,11 @@ offline-facing surfaces the account area carries land differently:
 Qualifying responses (same-origin, un-cached, not a static asset —
 `/api/*` calls and HTML partials/navigations) append a row to the
 `log:sync` IndexedDB store via `window.pwaDb.appendSyncLog()`, trimmed
-to the newest 100. The manage page's "Sync log" panel — and a matching
-`/help/` section — read it back via `window.pwaDb.getSyncLog()`
+to the newest 100. The `/account/settings/` "Sync log" panel — and a
+matching `/help/` section — read it back via `window.pwaDb.getSyncLog()`
 (`static/js/sync_log.js`), both gated on the `sync_log` waffle flag
 (see [`feature-flags.md`](feature-flags.md)). The store keeps filling
-offline; the manage page that reads it back loads offline only for the
+offline; the settings page that reads it back loads offline only for the
 account it was cached under (see
 [`X-SW-Principal`](#x-sw-principal-header-snow-607)). The SNOW-378 reset
 wipes the whole IndexedDB database, so the log clears along with
@@ -474,7 +474,7 @@ mechanism — the attribute is `pwa_reset.js`'s binding contract, and the
 confirmation dialogue, the six-step wipe and the telemetry all live in
 that one module:
 
-- **The manage page** (`apps/accounts/templates/accounts/manage.html`).
+- **The settings page** (`apps/accounts/templates/accounts/settings.html`).
   Cached and stamped per account since SNOW-607, so it does load offline
   — but only for the account it was cached under, and only once that
   account has loaded it online in this browser (see
@@ -603,7 +603,7 @@ Shipped from the observability + IndexedDB track:
   `freshness.last_generated_at` — the latter removed again by SNOW-615,
   having never been read), stamps cache-served responses with
   `X-SW-Cache: hit` (`static/js/sw.js`) so the two can be told apart,
-  and adds a `log:sync` IndexedDB store (schema v3) with a manage-page
+  and adds a `log:sync` IndexedDB store (schema v3) with a settings-page
   read-out panel and matching `/help/` section behind the `sync_log`
   waffle flag. Clears the SNOW-377 "IndexedDB-backed persistence"
   deferred bullet.

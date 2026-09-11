@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, fill_location_elevations, import_resorts, backfill_*
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-11
 ---
 
 # Management commands
@@ -103,16 +103,17 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 
 ## Operational requirements
 
-Four scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, one enforces a data-retention window, and one fills a
-derived column. All four
+Five scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, one enforces a data-retention window, one fills a
+derived column, and one is a read-only detector. All five
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). All run with `--commit`
-so they actually persist; all exit non-zero on failure so a missed run is
-visible in the worker logs.
+and documented in [`render.yaml`](../render.yaml). The four writing jobs run
+with `--commit` so they actually persist; the fifth runs `--check` and writes
+nothing. All five exit non-zero on failure so a missed run is visible in the
+worker logs.
 
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
@@ -830,58 +831,67 @@ the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 `name`/`note`, a duplicate `name`, or an unrecognised key all raise a
 `CommandError` (non-zero exit).
 
-### `sync_from_production` — refresh staging's data from production
+### `bin/sync-staging-data` — refresh staging's data from production
 
-Copies the provider-derived tables out of the **production** database into
-the local one (SNOW-729). Staging has no scheduler and no task worker, so it
-never ingests a bulletin of its own; this is how it gets data. Runs unattended as the `snowdesk-staging-data-sync` Render cron
-job at 07:20 UTC.
+**Not a management command.** SNOW-729 shipped this as `sync_from_production`,
+a row-by-row ORM copy; it pushed ~230 `INSERT … ON CONFLICT` statements
+through Django for `bulletins_regionbulletin` alone and put the staging
+database into crash recovery. SNOW-736 replaced it with
+[`bin/sync-staging-data`](../bin/sync-staging-data), a `pg_dump`/`psql`
+script that moves the same rows with one `COPY` per table. The command is
+gone; the script is the only supported route, and it is listed here because
+this is where an operator looks for it.
 
-Copies `Bulletin`, `RegionBulletin`, `RegionDayRating`, `BulletinGrouping`,
-and the curated resort estate — `Resort`, `ResortLocation`, and the
-`Location` rows a `ResortLocation` references.
+Staging has no scheduler and no task worker, so it never ingests a bulletin
+of its own; this is how it gets data.
+
+Copies `PipelineRun`, `Bulletin`, `RegionBulletin`, `RegionDayRating`,
+`BulletinGrouping`, `Weather`, and the curated resort estate — `Resort`,
+`ResortLocation`, and the `Location` rows a `ResortLocation` or a
+`MicroRegion.centroid_location` references.
 
 Copies **no user data** — no `auth_user`, `Account`, passkeys, push
-subscriptions, favourites, observations, routes, request logs or bulletin
-shares. That is what makes it safe to run unattended with no anonymisation
-step, and it matters because staging sends email inline (`ImmediateBackend`).
-`PipelineRun` is also excluded: it is telemetry about production's own ingest
-runs, and `Bulletin.pipeline_run` is nullable.
+subscriptions, favourites, observations, routes, trips, request logs or
+bulletin shares. `pg_dump --table=` names every table explicitly, so the
+guarantee comes from not selecting those rows rather than from filtering them
+afterwards. That is what makes it safe to run with no anonymisation step, and
+it matters because staging sends email inline (`ImmediateBackend`).
 
-`locations.Location` is the one **mixed** table — a resort's village/mid/peak
-sits alongside a row per saved favourite and per field report — so the plan
-restricts it to rows a `ResortLocation` points at. The filter is a subquery
-inside production, so a user's saved position is never read at all.
+`locations_location` is the one **mixed** table — a resort's village/mid/peak
+and a region centroid sit alongside a row per saved favourite and per field
+report — so it is streamed through a filtered `\copy` restricted to the
+curated ids. The filter is a subquery inside production, so a user's saved
+position is never read at all. `weather_weather` is filtered by the same
+subquery, so the two cannot drift apart.
 
-Every table upserts on its own natural key and foreign keys are translated
-through id maps, so primary keys need not (and do not) match across the two
-databases. `Resort`, `Location` and `ResortLocation` declare no domain-unique
-field, so they key on `BaseModel.uuid`, which nothing ever reassigns.
-Re-running is a no-op.
+Rows are cleared with ordered `DELETE`s, not `TRUNCATE`:
+`regions_microregion.centroid_location_id` references
+`locations_location`, and `TRUNCATE`'s foreign-key check is *structural*, so
+it would refuse unless the region table went too. Staging's own favourites,
+field observations, trips and bulletin shares reference the copied set and
+are cleared without being restored; its user accounts, passkeys and routes
+are untouched.
 
 ```bash
 # Read-only: report what would be copied, write nothing.
-uv run python manage.py sync_from_production
+./bin/sync-staging-data
 
-# First load into an empty staging database — --all is required.
-uv run python manage.py sync_from_production --all --commit
-
-# What the cron job runs: the last seven days of changes.
-uv run python manage.py sync_from_production --commit
-
-# Narrow to one table while triaging.
-uv run python manage.py sync_from_production --all --only bulletins.Bulletin -v 2
+# Persist the copy.
+./bin/sync-staging-data --commit
 ```
 
-Read-only by default; `--commit` persists. `--since-days N` sets the
-`updated_at` window (default 7), `--all` removes it, `--only APP.MODEL`
-(repeatable) limits the run. Respects `--verbosity`.
+Read-only by default; `--commit` persists. There is no `--since-days` or
+`--only` — every listed table is cleared and reloaded whole, which is what
+makes `COPY` viable.
 
-Requires `PRODUCTION_DATABASE_URL` pointing at a **read-only** production
-role; `config/settings/staging.py` is the only settings module that turns it
-into a connection, so the command cannot run from production's own settings.
-Exits non-zero when any row is skipped for an unresolvable foreign key — a
-partial copy is a failure, not a warning. Full setup and triage:
+Requires `DATABASE_URL` and `PRODUCTION_DATABASE_URL`, the latter pointing at
+a **read-only** production role. `regions_microregion` primary keys must match
+across the two databases; the script re-checks that on every run, because a
+mismatch would mis-attribute every bulletin silently.
+
+**The nightly cron is currently off.** `snowdesk-staging-data-sync` ran at
+07:20 UTC until 2026-08-27; its `render.yaml` block is commented out and the
+refresh is run by hand. Full setup and triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
 
 ### One-off operational commands

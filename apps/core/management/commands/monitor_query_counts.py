@@ -20,8 +20,10 @@ Typical use::
     # After an intentional change to a monitored page:
     uv run python manage.py monitor_query_counts --commit
 
-The URL list is defined in ``MONITORED_URLS`` below — add an entry when
-introducing a new page whose query count is worth watching.
+The URL list is built by ``_build_monitored_urls()`` below — add an entry
+there when introducing a new page whose query count is worth watching. It is
+a function rather than a constant because several of the URLs are reversed
+against rows the database has to be queried for.
 """
 
 from __future__ import annotations
