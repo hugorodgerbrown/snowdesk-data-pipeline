@@ -1082,10 +1082,22 @@
           basemapKey: record.basemapKey,
           bytes: record.bytes,
           savedAt: record.savedAt,
-          // A base layer is tiles only — it has no style, TileJSON or
-          // sprite of its own, because the area downloads that share it
-          // carry those. `areaState` knows not to read this as unknown.
-          deps: [],
+          // SNOW-929: a base layer carries the documents that draw it —
+          // its style, each source's TileJSON, the sprite pair and the
+          // glyph ranges, pinned into its own bucket beside the band. So
+          // it is verified by what it renders, exactly like a region or a
+          // custom area.
+          //
+          // This read `deps: []` under a comment saying "a base layer is
+          // tiles only ... the area downloads that share it carry those",
+          // which was false in the way that mattered: the sharing ran the
+          // other way, a user with no downloaded area had no documents at
+          // all, and the report called that bucket ready.
+          //
+          // An empty list now means a record written before SNOW-929 —
+          // `areaState` still reads that as ready rather than
+          // unverifiable, deliberately; see its own comment.
+          deps: Array.isArray(record.deps) ? record.deps : [],
         });
       });
     }
