@@ -382,7 +382,16 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-no-region-select': 'Select a region to download its basemap',
   'download-idle': "Download this region's basemap — up to %(mb)s MB",
   'download-busy': "Downloading this region's basemap — %(pct)s",
-  'download-done': "This region's basemap is downloaded — available offline",
+  // SNOW-924: a downloaded area now carries the bulletins and weather
+  // inside its boundary, and those go stale where the tiles never do — so
+  // the roundel became the way to UPDATE a download rather than the mark
+  // of a finished one, and both labels name the tap. 'download-partial' is
+  // the run where the tile half landed and the content half did not: the
+  // map still draws, which is the question an amber roundel raises.
+  'download-done':
+    'This region is available offline — tap to update its bulletins and weather',
+  'download-partial':
+    "This region's map is available offline but its bulletins are not up to date — tap to update",
   'download-error': "This region's basemap download failed — tap to try again",
   // SNOW-844: the tiles are here and the documents needed to draw them are
   // not. The label says what the tap does, because the state is unfamiliar

@@ -530,6 +530,154 @@ function assembleBasemapDownloadFeedURLs() {
   return urls;
 }
 
+/* -------------------------------------------------------------------- *
+ * SNOW-924: the content half of a download — what sits inside the area.
+ * -------------------------------------------------------------------- */
+
+/**
+ * The four overlay feeds, fetched whole and written to the offline cache.
+ *
+ * WHOLE and unfiltered, deliberately. Each is a single small request that
+ * already covers everything, so narrowing one to the area would save
+ * almost no bytes and would cost a per-area storage model that overlapping
+ * areas make ambiguous. The boundary decides what must VERIFY present, not
+ * what gets stored.
+ *
+ * Not routed through `map.js`'s `ensureOverlayLoaded`, which is the other
+ * writer of these same rows, and the difference is the point: that
+ * function's job is to INSTALL MapLibre layers, with caching as a
+ * write-through side effect. Here the bytes are the whole purpose and the
+ * layers are not wanted — a download must not turn overlays on. Same
+ * store, same principal stamping, different reason to be writing.
+ *
+ * The eligibility gates are `map.js`'s, re-read rather than shared,
+ * because they are page state (`#map`'s dataset) rather than module state.
+ *
+ * @returns {Promise<Object|null>} The weather GeoJSON, which the caller
+ *   needs in order to resolve the area's detail sheets, or ``null`` when
+ *   it could not be fetched. Every other feed's outcome is deliberately
+ *   invisible: a failed favourites fetch must not fail a download.
+ */
+async function cacheOverlayFeedsForDownload() {
+  const mapEl = document.getElementById('map');
+  const cache = window.pwaMapOverlayCache;
+  if (!mapEl || !cache) return null;
+
+  const feeds = [
+    ['weather', mapEl.dataset.weatherUrl],
+    [
+      'community_reports',
+      mapEl.dataset.communityReportsEligible === 'true'
+        ? mapEl.dataset.communityReportsUrl
+        : null,
+    ],
+    [
+      'favourites',
+      mapEl.dataset.favouritesEligible === 'true' ? mapEl.dataset.favouritesUrl : null,
+    ],
+    ['routes', mapEl.dataset.routesEligible === 'true' ? mapEl.dataset.routesUrl : null],
+  ];
+
+  let weather = null;
+  await Promise.all(
+    feeds.map(async ([resource, url]) => {
+      if (!url) return;
+      try {
+        const data = await fetch(url).then((r) => (r.ok ? r.json() : null));
+        if (!data) return;
+        await cache.putOverlay(resource, data);
+        if (resource === 'weather') weather = data;
+      } catch (_e) {
+        // Best-effort, one feed at a time. The tiles are what the user
+        // asked for and they are still worth having.
+      }
+    }),
+  );
+  return weather;
+}
+
+/**
+ * The days an area's bulletins are taken for.
+ *
+ * Reads the same forward bound the scrubber and calendar answer to
+ * (`pwaCalendarCore.latestKnownDate`, SNOW-927) rather than hardcoding
+ * today, so the evening issue — the bulletin someone packing at 5pm
+ * actually needs offline — is picked up the moment it is published,
+ * without this function knowing that is what happened.
+ *
+ * The day on screen is included when it is in the past, because a visitor
+ * who scrubbed back and then downloaded meant that day.
+ *
+ * @returns {Promise<string[]>} Date keys, oldest first. Empty only when
+ *   the page carries no readable `data-today`.
+ */
+async function downloadContentDays() {
+  const today = readTodayDateParam();
+  if (!today) return [];
+
+  let ceiling = today;
+  try {
+    const core = window.pwaCalendarCore;
+    if (core && typeof core.latestKnownDate === 'function') {
+      ceiling = core.latestKnownDate(await getSeasonRatings(), today) || today;
+    }
+  } catch (_e) {
+    // No payload, no ceiling — today alone, which is what this did before
+    // SNOW-927 existed.
+  }
+
+  const days = [];
+  const startMs = Date.parse(today);
+  const endMs = Date.parse(ceiling);
+  if (!Number.isFinite(startMs)) return [];
+  for (let ms = startMs; Number.isFinite(endMs) && ms <= endMs; ms += 86400000) {
+    days.push(new Date(ms).toISOString().slice(0, 10));
+  }
+  if (days.length === 0) days.push(today);
+
+  const onScreen = readUrlDateParam();
+  if (onScreen && !days.includes(onScreen)) days.unshift(onScreen);
+  return days;
+}
+
+/**
+ * Every content URL an area's boundary implies.
+ *
+ * The `contentUrls` dep, and the second half of a download run. Caches the
+ * feeds first because the weather sheets are derived from the feed it
+ * fetches; then asks `areaContentPlan` which regions and which locations
+ * the area's rectangle contains.
+ *
+ * `featureByRegionId` is the map's own loaded `regions.geojson`, so this
+ * costs no request — and an empty one (a country not yet loaded) simply
+ * yields no bulletins for that country rather than a wrong answer.
+ *
+ * @param {Object} blob The run's download blob, for its tile ranges.
+ * @returns {Promise<string[]>} Possibly empty, which every caller reads as
+ *   "nothing to add" rather than as a failure.
+ */
+async function assembleAreaContentURLs(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const mapEl = document.getElementById('map');
+  if (!core || !core.areaContentPlan || !mapEl) return [];
+
+  const weather = await cacheOverlayFeedsForDownload();
+
+  const bbox = core.areaBBox(blob);
+  if (!bbox) return [];
+
+  const state = window.snowdeskMapState;
+  const byRegion = (state && state.featureByRegionId) || {};
+  const plan = core.areaContentPlan({
+    bbox,
+    regionFeatures: Object.keys(byRegion).map((key) => byRegion[key]),
+    weatherFeatures: (weather && weather.features) || [],
+    days: await downloadContentDays(),
+    weatherDetailTemplate: mapEl.dataset.weatherDetailUrl || '',
+  });
+  return [...plan.bulletinUrls, ...plan.weatherDetailUrls];
+}
+
 // SNOW-586: the Cache Storage name prefix every per-area pinned basemap
 // bucket shares. FOUR literals hold this value, one per script-loading
 // context: this one, static/js/sw.js's BASEMAP_PINNED_CACHE_PREFIX,
@@ -2837,6 +2985,10 @@ const PINNED_DOWNLOAD_DEPS = {
   // SNOW-692: takes the blob, because the slope raster covers the same
   // ground and band as the area's own tiles — see `slopeTileURLs`.
   slopeUrls: (blob) => activeSlopeTileURLs(blob),
+  // SNOW-924: the bulletins and weather inside the area's boundary, and
+  // the four overlay feeds cached whole on the way past. Async, alone
+  // among these — see `assembleAreaContentURLs`.
+  contentUrls: (blob) => assembleAreaContentURLs(blob),
   // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
   // active style, captured at run start alongside `tileSources` so the
   // record stores the list this run actually fetched rather than whatever

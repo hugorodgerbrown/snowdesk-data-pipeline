@@ -1749,6 +1749,79 @@ the same reason it excludes an account-only area: the base layer is the zoomed-o
 view, so a basemap holding only a base layer has no ground downloaded at
 any usable zoom and must not read as green.
 
+### What a download contains, besides its tiles (SNOW-924)
+
+A download run posts ONE url list, assembled in
+`basemap_download_runner.js`'s `run`, in this order:
+
+```
+[...contentUrls, ...feedUrls, ...tiles, ...slopeUrls]
+```
+
+`contentUrls` is SNOW-924's — the **perishable** half of an area, where
+everything after it is the permanent half. Tiles are a fixed grid over
+fixed ground and never go out of date; the bulletins for the regions the
+area covers, and the weather for the locations inside it, are new every
+day. Which is also why the roundel on a downloaded area became a REFRESH
+control (below) rather than staying inert.
+
+It resolves after `loadBlob`, because the area's own ground is what it
+resolves against, and it is the one **async** member of the deps bundle:
+its first act is to cache the four overlay feeds, and the weather sheets it
+returns are derived from the weather feed it has just fetched. Which
+bulletins and which locations is
+`basemap_download_core.js`'s `areaContentPlan`, selecting by rectangle —
+read [`decisions/inside-the-boundary-is-complete.md`](decisions/inside-the-boundary-is-complete.md)
+before making that test more precise, because the crudeness is the design.
+
+**Content goes FIRST, and the progress grid's offset absorbs it.**
+`progressGrid` is handed the index at which tile urls start, so anything
+inserted between the feeds and the tiles shifts every tile off its cell —
+which is why SNOW-692 appended slope urls at the END instead. That was only
+ever necessary because the offset was `feedUrls.length`, i.e. assumed. It is
+a parameter, so SNOW-924 widened it to `contentUrls.length + feedUrls.length`
+and put the cheap half where it belongs: first, on the connection this
+feature exists for, a run may not reach the end of the list.
+
+**It never reaches the eviction machinery.** The budget pre-flight prices
+the tiles; content rides along behind it. A bulk of small documents must not
+be able to destroy another area to make room for itself.
+
+**Each area's record gains `contentAt`**, alongside `savedAt`, because the
+two halves age differently — `savedAt` is when the tiles landed and does not
+move on a refresh. Absent means "never", which is every area downloaded
+before this ticket. That is read as "not yet" and never as a fault: the
+tiles are the half that decides whether a map draws, and they are there.
+
+### Refreshing a downloaded area (SNOW-924)
+
+A tap on a `done` roundel re-fetches the content and **not** the tiles.
+
+It goes through the runner's `repair` entry point, never `run` — SNOW-844's
+reasoning, and it applies more strongly here: `run`'s pre-flight exists to
+guard a several-hundred-tile download, and its eviction confirm can destroy
+another area. Asking someone to delete Verbier so that Zermatt's bulletin
+can be updated would be absurd.
+
+The glyph changes with the action: `done` and `partial` show a refresh mark
+where every other state shows the download arrow. **This is not the swap
+SNOW-569 removed.** That one dropped a completion tick because the glyph is
+the control's identity and changing it made a finished download read as a
+different control — sound while the action either side of the swap was the
+same one. It no longer is, so the glyph now reports a real difference
+instead of inventing one.
+
+**`partial`** is a new state: one half of a run landed and the other did
+not. Amber like `incomplete`, because something wants attention and a tap is
+the remedy, and distinct from both `done` (which would claim a completeness
+the area has not got) and `error` (which would raise a fault over a map that
+draws perfectly).
+
+It is a run **outcome** and never a derived state, which is the trap worth
+naming: deriving it from "this record has no `contentAt`" would paint amber
+over every area downloaded before this shipped. Those read `done` and pick
+their content up on the first refresh tap.
+
 ### Download budget and whole-area eviction (SNOW-586)
 
 Both download controls write into their own dedicated Cache Storage
@@ -1827,14 +1900,25 @@ successful write's byte size (`basemap_cache_core.js`'s `responseBytes` —
 `pwaWarmCache`. Both controls record it onto the area's `meta:app` entry
 on success, alongside its display `name` (a region's own name; the custom
 area's translated `data-area-label`) — so the confirm banner's copy never
-depends on `regions.geojson` still being loaded. Recorded `bytes`
-**accumulates rather than replaces** across repeat downloads of the SAME
-area at the SAME bbox: a region's (or the custom area's) bucket is keyed
-on area id alone, not per-basemap, so downloading it again under a
-DIFFERENT basemap adds genuinely new tiles to the one shared bucket, and
-the recorded total has to grow to stay honest against what `planEviction`
-budgets for. See the decision doc for the accepted trade-off this makes
-with a same-basemap RETRY (which re-counts bytes already on disk).
+depends on `regions.geojson` still being loaded.
+
+**Recorded `bytes` is this run's own reported total, recorded outright** —
+never accumulated onto the previous record, never re-measured from the
+bucket. A same-bbox, same-basemap retry re-fetches identical URLs into the
+same bucket and `cache.put` overwrites each key rather than adding to it,
+so the bucket does not grow and this run's own figure is already the right
+answer. A basemap SWITCH does add genuinely new tiles, and that is handled
+by making the switch *replace* the previous basemap's copy rather than by
+arithmetic — see `map_region_download.js:231-254` for the full reasoning
+and `decisions/per-area-pinned-basemap-caches.md` for the curl evidence
+behind "a gzipped tile response carries no `Content-Length`".
+
+> This paragraph said the opposite until SNOW-924 — that `bytes`
+> "accumulates rather than replaces". SNOW-632 changed the behaviour and
+> left the prose behind, and the accumulating version was removed for a
+> specific reason worth keeping visible: the arithmetic could not tell a
+> switch from a retry, so it doubled the recorded total on every repeat
+> download of the same area.
 
 ### Downloaded-tiles overlay (SNOW-570, rings removed SNOW-587, sheet-bound SNOW-645)
 

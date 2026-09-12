@@ -1245,7 +1245,7 @@
       finish: async (
         result,
         runBlob,
-        { core, progressFill, tileSources, basemapKey, renderDeps },
+        { core, progressFill, tileSources, basemapKey, renderDeps, content },
       ) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
@@ -1305,6 +1305,14 @@
             // unloaded style cannot be asked what its sprite is.
             deps: Array.isArray(renderDeps) ? renderDeps : [],
             bytes: Number(result.bytes) || 0,
+            // SNOW-924: when the bulletins and weather inside this box
+            // were last fetched in full. Absent means never — every area
+            // framed before that ticket — which is not a fault: the tiles
+            // decide whether a map draws and they are here. Separate from
+            // `savedAt` because the two halves age differently.
+            ...(content && content.total > 0 && content.ok === content.total
+              ? { contentAt: new Date().toISOString() }
+              : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);

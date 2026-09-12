@@ -67,7 +67,10 @@
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
+   *   slopeUrls?: function(Object): string[],
+   *   contentUrls?: function(Object): Promise<string[]>,
    *   renderDeps?: function(): string[],
+   *   glyphPrefix?: function(): string,
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
@@ -79,6 +82,12 @@
    *   id and the subset of its urls NOT already cached — so a second
    *   download finds nothing to do — and `finishBaseLayer` records what
    *   the top-up fetched. Both optional; see `topUpBaseLayer`.
+   *   SNOW-924 listed three members this block had drifted past —
+   *   `slopeUrls` (SNOW-692) and `glyphPrefix` (SNOW-847) were both read
+   *   by `run` while documented nowhere — alongside its own `contentUrls`,
+   *   the only async one: it caches the overlay feeds before it can say
+   *   which weather sheets the area contains. All optional, each yielding
+   *   its pre-ticket behaviour when a deps bundle predates it.
    * @param {{
    *   areaId: string,
    *   mb: number,
@@ -292,11 +301,36 @@
     // A deps bundle without the member (an older shell mid-rollout) yields
     // `[]`, which is the pre-ticket behaviour: no slope tiles pinned.
     const slopeUrls = typeof deps.slopeUrls === 'function' ? deps.slopeUrls(blob) : [];
-    const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
+
+    // SNOW-924: the bulletin pages and weather sheets inside the area's
+    // boundary — the perishable half of a download, where everything above
+    // is the permanent half. Takes the blob for the same reason `slopeUrls`
+    // does: the area's ground is what it resolves against.
+    //
+    // AWAITED, unlike every other url source here, because its first act is
+    // to cache the four overlay feeds and the weather sheets it returns are
+    // derived from the feed it just fetched. That ordering is the whole
+    // reason it is one member rather than two.
+    //
+    // FIRST in the list, not last like the slope tiles. SNOW-692 put those
+    // at the end because the grid's offset was `feedUrls.length` and
+    // anything inserted ahead of the tiles would shift every one of them
+    // off its cell — but the offset is a PARAMETER, so the fix is to widen
+    // it rather than to reorder around it. Content going first is worth
+    // that: it is the cheap half, and on the connection this feature exists
+    // for the run may not reach the end of the list.
+    //
+    // A deps bundle without the member (an older shell mid-rollout) yields
+    // `[]` — the pre-ticket behaviour, tiles and nothing else.
+    const contentUrls =
+      typeof deps.contentUrls === 'function' ? (await deps.contentUrls(blob)) || [] : [];
+    const urls = [...contentUrls, ...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
-    // as they land.
-    const progressFill = deps.progressGrid(gridPlan, feedUrls.length);
+    // as they land. SNOW-924 widened the offset to cover the content that
+    // now precedes the feeds; the grid only ever needed to know where the
+    // TILES start.
+    const progressFill = deps.progressGrid(gridPlan, contentUrls.length + feedUrls.length);
 
     // SNOW-632: `bytes` — the run's on-disk total so far — rides along as
     // a fourth argument from `deps.warmCache`'s `onProgress` and is passed
@@ -304,9 +338,21 @@
     // show a live MB readout alongside the percentage. `progressFill`
     // stays on the original three-argument shape — it fills tiles, which
     // have nothing to do with bytes.
+    // SNOW-924: how much of the CONTENT half landed, tallied here because
+    // this is the only place it can be known. `warm-cache-done` reports one
+    // `ok`/`failed` pair for the whole posted list, so a caller reading it
+    // cannot tell a missing bulletin from a missing tile — and both
+    // `contentAt` and the `partial` roundel state turn on exactly that
+    // distinction. `settled` carries indices into the list, and content
+    // occupies its first `contentUrls.length` slots, so the split is a
+    // comparison rather than a second source of truth.
+    let contentOk = 0;
     const onProgress = (done, total, settled, bytes) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       paint('busy', pct, bytes);
+      for (const index of settled || []) {
+        if (index < contentUrls.length) contentOk += 1;
+      }
       progressFill.update(done, total, settled);
     };
 
@@ -349,6 +395,11 @@
         basemapKey,
         renderDeps,
         glyphPrefix,
+        // SNOW-924: `{ok, total}` for the content half alone. `total === 0`
+        // means this run had no content to fetch — an older deps bundle, or
+        // an area whose boundary contains nothing — which a caller must read
+        // as "nothing to say" rather than as a failure to record.
+        content: { ok: contentOk, total: contentUrls.length },
       });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a

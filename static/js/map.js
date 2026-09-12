@@ -5653,7 +5653,20 @@
   // a downloads row naming a region. One definition, two scopes — a second
   // copy is how the popup's framing and the panel's would come to disagree
   // about where a region is.
+  //
+  // SNOW-924 moved the walk itself into `basemap_download_core.js`, where
+  // the rest of the pure geometry lives and where the area-content
+  // resolver needs the same answer. What is left here is the shape
+  // adapter: the core speaks the flat `[w, s, e, n]` used throughout that
+  // file, MapLibre's `fitBounds` wants the nested pair. The inline
+  // fallback mirrors the idiom the scrubber uses for its own core — a
+  // transient load failure should cost a fit, not throw.
   const featureBBox = (feature) => {
+    const core = self.pwaBasemapDownloadCore;
+    const flat = core && core.featureBBox
+      ? core.featureBBox(feature)
+      : null;
+    if (flat) return [[flat[0], flat[1]], [flat[2], flat[3]]];
     const coords = feature.geometry.type === 'Polygon'
       ? feature.geometry.coordinates
       : feature.geometry.coordinates.flat();  // MultiPolygon → concat rings

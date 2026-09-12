@@ -2245,7 +2245,21 @@ Optional context:
     {# the caller appends it to the interpolated pct value itself.        #}
     <span data-string="download-busy">{% blocktrans %}Downloading this region's basemap —
             %(pct)s{% endblocktrans %}</span>
-    <span data-string="download-done">{% trans "This region's basemap is downloaded — available offline" %}</span>
+    {# SNOW-924: says what the tap DOES, which changed with the glyph. A   #}
+    {# downloaded area's tiles never go stale, but the bulletins and       #}
+    {# weather inside it are new every day, so the control stopped being a #}
+    {# finished download and became the way to update one. "Available      #}
+    {# offline" alone would now describe a control whose behaviour it does #}
+    {# not mention.                                                        #}
+    <span
+        data-string="download-done"
+    >{% trans "This region is available offline — tap to update its bulletins and weather" %}</span>
+    {# SNOW-924: the tiles are here and the content is behind — a run where #}
+    {# one half landed. Says the map still works, because that is the       #}
+    {# question an amber roundel raises, and names the tap as the remedy.   #}
+    <span
+        data-string="download-partial"
+    >{% trans "This region's map is available offline but its bulletins are not up to date — tap to update" %}</span>
     <span data-string="download-error">{% trans "This region's basemap download failed — tap to try again" %}</span>
     {# SNOW-844: the tiles are all on this device and something the map    #}
     {# needs in order to DRAW them is not — the style document, a vector   #}
