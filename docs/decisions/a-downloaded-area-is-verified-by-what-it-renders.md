@@ -130,6 +130,29 @@ a base layer on exactly the terms above. It costs 0.7–1.5 MB against bands
 of 2.7–12.6 MB, and it is the difference between holding a map and holding
 tiles nothing can read.
 
+**The band dedupes against every bucket; the documents dedupe against
+this one.** The asymmetry is deliberate and the review of #902 caught the
+first cut getting it wrong. A TILE is available offline whichever bucket
+holds it — `sw.js`'s `_searchPinnedBuckets` walks them all — so
+`resolveBaseLayerPlan` filters the band against `pinnedBasemapCacheURLs()`,
+the union, and spends nothing on a second copy of megabytes. A DOCUMENT is
+the *same URL* for every area sharing the basemap, so the same union check
+reads it as cached whenever any region download exists and copies nothing
+into the base layer's bucket. Removing that region then takes the base
+layer's only render dependencies with it — this decision's own defect,
+reached from the other side, and silent: the record declares the full
+list, so `areaState` reads `incomplete`, while a base row has no Repair
+control and is filtered out of the manage panel. So the documents are
+filtered against `_baseLayerBucketURLs(areaId)`, the bucket's own
+contents. Around 1 MB buys the promise that this bucket renders on its own
+and outlives any one area.
+
+That read also replaced the old `_baseLayerBucketIsStale` predicate, which
+opened and enumerated the same bucket to return a boolean. The plan needs
+the entries themselves — for the staleness verdict and for the missing
+documents — and two reads of one bucket is two chances for the answers to
+disagree.
+
 `areaState`'s `deps.length === 0 && area.kind !== 'base'` carve-out stays.
 Its reason has changed rather than gone: an empty list on a base layer is
 now a record written before SNOW-929, and that layer is re-warmed on the

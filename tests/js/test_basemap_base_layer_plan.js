@@ -327,7 +327,14 @@ describe('what the base-layer plan fetches (SNOW-929)', () => {
 });
 
 describe('what the base-layer plan skips (SNOW-929)', () => {
-  it('omits an already-pinned document as well as an already-pinned tile', async () => {
+  // The bucket a region download of this basemap writes into. It holds
+  // the SAME document urls the base layer needs — a style, sprite and
+  // TileJSON are per basemap, not per area — which is what makes the two
+  // dedupe sets below different questions with different answers.
+  const REGION_BUCKET = 'snowdesk-basemap-pinned-region-CH-4115';
+  const REGION_TILE = 'https://tiles.example.invalid/7/66/45.pbf';
+
+  it("omits a document already in the base layer's OWN bucket", async () => {
     // The missing-only half is what makes the base layer a one-off cost
     // rather than a tax on every basemap switch, and it has to hold for
     // both halves of the list — re-fetching a 60 KB style on every switch
@@ -345,6 +352,64 @@ describe('what the base-layer plan skips (SNOW-929)', () => {
     // a document found already on disk is one the bucket needs and has.
     expect(plan.deps).toEqual(expectedDeps());
   });
+
+  it("still fetches a document that is only in ANOTHER area's bucket", async () => {
+    // The regression review caught on #902. `pinnedBasemapCacheURLs()`
+    // unions every pinned bucket, so a device holding one region download
+    // of this basemap already has these urls SOMEWHERE — and filtering
+    // the documents against that union copies none of them here. Removing
+    // that region then takes the base layer's only render dependencies
+    // with it, which is the blank-map defect this ticket exists to fix,
+    // reached by another route.
+    //
+    // It would also be invisible: `recordBaseLayer` declares the full
+    // list, so `areaState` reads the bucket as `incomplete`, and a base
+    // row carries no Repair control and is filtered out of the manage
+    // panel. Nothing the user could act on.
+    cachesStub.buckets.set(
+      REGION_BUCKET,
+      new Set([
+        REGION_TILE,
+        STYLE_URL,
+        TILEJSON_URL,
+        `${SPRITE_BASE}.json`,
+        `${SPRITE_BASE}.png`,
+        `${SPRITE_BASE}@2x.json`,
+        `${SPRITE_BASE}@2x.png`,
+        ...core.glyphURLs(STYLE),
+      ]),
+    );
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    for (const url of expectedDeps()) expect(plan.urls).toContain(url);
+  });
+
+  it("still dedupes a TILE held in another area's bucket", async () => {
+    // The other half of the same decision, and it is deliberately NOT
+    // symmetric: a tile is available offline whichever bucket holds it
+    // (`sw.js`'s `_searchPinnedBuckets` walks them all), and a band is
+    // megabytes where the documents are around one. So the tile trade is
+    // unchanged by the fix above, and this is what proves it.
+    cachesStub.buckets.set(REGION_BUCKET, new Set([REGION_TILE]));
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(plan.urls).not.toContain(REGION_TILE);
+    expect(plan.urls.filter((url) => core.isTileEntryURL(url))).toHaveLength(55);
+  });
+
+  // NOT asserted here: that the base layer's own bucket is read exactly
+  // once per plan. It is a real property of `resolveBaseLayerPlan` —
+  // SNOW-929 lifted the read out of the old `_baseLayerBucketIsStale` so
+  // that staleness and the missing-document list are answered from ONE
+  // set, two reads being two chances for them to disagree — but it is not
+  // observable from here. `pinnedBasemapCacheURLs()` opens EVERY pinned
+  // bucket to build its union, the base layer's included, so the open
+  // count for that bucket is two either way and was two before this
+  // change as well. A count assertion would look like a guard while
+  // guarding nothing; the property is structural, held by there being one
+  // `_baseLayerBucketURLs` call in the function.
 
   it('plans nothing at all once the band and its documents are pinned', async () => {
     // The state every later switch back to this basemap is in, and the
