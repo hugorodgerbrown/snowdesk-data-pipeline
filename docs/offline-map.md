@@ -2658,7 +2658,7 @@ part company here:
 |---|---|---|---|---|
 | `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
 | `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
-| `offline-forced` | the user, from the network menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
+| `offline-forced` | the user, from the network menu's "Offline mode" row **or the same switch on `static/offline.html`** | as `offline` | **no** | the user, and nothing else |
 
 **The two offline values are not interchangeable, and half the comparisons in
 each file turn on which one is meant.** `offline` is the worker inferring there
@@ -2677,6 +2677,15 @@ SNOW-748 split them the way a phone splits aeroplane mode — a mark in the
 status bar, a control in the settings — and SNOW-921 brought the control back
 under the mark, because the only "settings" available to put it in was the
 account dropdown, which quietly made a device preference an account feature.
+
+SNOW-922 added a THIRD copy of that switch, on `static/offline.html` — the
+page a forced mode strands you on, and the one surface the network menu cannot
+reach, because reaching it means opening the app. All of them work one
+mechanism, `static/js/pwa_network_mode.js` (precached in `PRECACHE_URLS`), and
+both the menu and the recovery page guard the ON direction with the worker's
+own `can-open-offline` answer. Why that is not a self-healing worker, and why
+the rule is a module rather than a second copy:
+[`decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md`](decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md).
 
 * `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
   page for every viewer including anonymous ones, and **never hidden**. It

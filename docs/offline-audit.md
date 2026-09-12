@@ -64,7 +64,7 @@ stored, how many saved places there are is not a question anyone has.
 
 | Section | Rows |
 |---|---|
-| Getting in | Offline mode is on · The app opens · The app looks right |
+| Getting in | Offline support is installed · The app may use the network · The app opens · The app looks right |
 | The map | Danger ratings · Region outlines · one row per basemap the device holds anything for |
 | Map downloads | one row per download, by name |
 | Your content | Bulletins you have opened · Your saved places · Your routes · Community reports · Weather |
@@ -74,6 +74,25 @@ anything is read, so a device with nothing stored produces the same rows
 as a device with everything, all reading No. That is what makes the
 table scannable, comparable between runs, and paintable before the first
 reading lands.
+
+**The first two rows were one row until SNOW-922**, and it was called
+"Offline mode is on" while answering from `serviceWorker.controlled` —
+"the offline machinery is installed and running", which is a different
+thing from the account menu's Offline mode switch. A user stranded by
+that switch read the row's green Yes as confirmation of it, and the
+report never corrected them, because the mode had no row at all: the
+`networkMode` reading was collected from the day this feature shipped
+and consumed nowhere. The verdict then told them to "open the map once
+while connected" — the one action a forced mode makes impossible, since
+the worker refuses the network whatever the radio is doing. `network-use`
+is that row, and `verdict-forced-lockout` is the verdict for the
+combination. Full account:
+[`decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md`](decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md).
+
+`network-use` is deliberately **not** `critical`. A forced mode on a
+device whose app is saved is working exactly as asked; it is a fault only
+in combination with `app-opens` answering No, and `verdictFor` is the one
+place those two meet.
 
 **The downloads are the exception, deliberately.** One row saying the map
 draws is no use to someone whose Verbier download is the broken one, so

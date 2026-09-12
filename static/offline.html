@@ -191,6 +191,111 @@
             .map-ready[hidden] {
                 display: none;
             }
+            /* Offline mode — SNOW-922. The switch from the account menu,
+               carried onto this page because this page is where its
+               damage lands: under 'offline-forced' the worker refuses
+               every navigation, so a device with no cached shell page
+               reaches here and nothing else, and the only control that
+               ended that state was inside the app that would not open.
+
+               Sits directly under the primary actions rather than down
+               with the diagnostics. When it is the blocker it IS the way
+               out, and a way out belongs where Retry is, not below two
+               panels the reader has to know to open.
+
+               The geometry is includes/_switch.html's own — a 44×26
+               track, a 20px thumb, 3px inset, 18px travel — restated
+               literally because this page reaches no stylesheet, exactly
+               as the audit colours below are. Anyone reconciling the two
+               should change that partial first and follow it here. */
+            .network-mode {
+                display: flex;
+                align-items: center;
+                width: 100%;
+                max-width: 28rem;
+                margin-top: 2.5rem;
+                padding: 0.75rem 1rem;
+                border: 1px solid currentColor;
+                border-radius: 0.75rem;
+                gap: 1rem;
+                text-align: left;
+            }
+            .network-mode[hidden] {
+                display: none;
+            }
+            .network-mode-text {
+                flex: 1;
+                min-width: 0;
+            }
+            .network-mode-label {
+                font-weight: 500;
+                font-size: 0.9375rem;
+            }
+            .network-mode-hint {
+                max-width: none;
+                margin: 0.25rem 0 0;
+                font-size: 0.8125rem;
+                line-height: 1.4;
+                opacity: 0.7;
+            }
+            /* A real <input type="checkbox" role="switch">, visually
+               hidden but left in the accessibility tree and keyboard
+               focusable — Tab reaches it, Space toggles it, :checked
+               drives the drawing. Same reasoning as the partial's. */
+            .switch {
+                position: relative;
+                display: inline-flex;
+                flex-shrink: 0;
+                align-items: center;
+                width: 44px;
+                min-height: 44px;
+                cursor: pointer;
+            }
+            .switch input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                margin: -1px;
+                padding: 0;
+                overflow: hidden;
+                border: 0;
+                clip-path: inset(50%);
+                white-space: nowrap;
+            }
+            .switch-track {
+                position: absolute;
+                inset: 0;
+                width: 44px;
+                height: 26px;
+                margin: auto;
+                border-radius: 9999px;
+                background: rgb(0 0 0 / 0.16);
+                pointer-events: none;
+                transition: background-color 150ms;
+            }
+            .switch-thumb {
+                position: absolute;
+                inset-block: 0;
+                left: 3px;
+                width: 20px;
+                height: 20px;
+                margin-block: auto;
+                border-radius: 9999px;
+                background: #ffffff;
+                box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+                pointer-events: none;
+                transition: transform 150ms;
+            }
+            .switch input:checked ~ .switch-track {
+                background: #2563eb;
+            }
+            .switch input:checked ~ .switch-thumb {
+                transform: translateX(18px);
+            }
+            .switch input:focus-visible ~ .switch-track {
+                outline: 2px solid currentColor;
+                outline-offset: 2px;
+            }
             /* Recovery panel — the SNOW-378 escape hatch. Quiet by
                design: a destructive action that most visitors to this
                page do not need, sat well below the primary Retry. Its
@@ -451,13 +556,22 @@
                     background: #3a1c1c;
                     color: #f3cccc;
                 }
+                /* SNOW-922: the switch's OFF track, which is the one
+                   colour here that cannot be a single value — a 16%
+                   black wash is invisible on the dark ground. Its ON
+                   colour and its thumb are deliberately unchanged, for
+                   the reason _switch.html gives: an iOS-style switch
+                   reads as white-on-accent in both themes. */
+                .switch-track {
+                    background: rgb(255 255 255 / 0.24);
+                }
             }
         </style>
     </head>
     <body>
         <p class="wordmark">Snowdesk</p>
         <h1>This page isn't available offline</h1>
-        <p>
+        <p id="offline-explainer">
             You're offline, and this page hasn't been opened before, so there's nothing saved to show. The interactive
             map is the one part of Snowdesk built to work offline — open it once while connected and it keeps working
             without a signal. Reconnect and try this page again.
@@ -468,6 +582,20 @@
         <div class="actions" id="offline-actions">
             <a class="open-map" id="open-map-link" href="/" hidden>Open the map</a>
             <button type="button" onclick="location.reload()">Retry</button>
+        </div>
+        <div class="network-mode" id="network-mode-panel" hidden>
+            <div class="network-mode-text">
+                <div class="network-mode-label" id="network-mode-label">Offline mode</div>
+                <p class="network-mode-hint" id="network-mode-hint">
+                    Snowdesk uses the network when it can.
+                </p>
+            </div>
+            <label class="switch" for="offline-mode-switch">
+                <input type="checkbox" role="switch" id="offline-mode-switch"
+                       aria-describedby="network-mode-hint">
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="switch-thumb" aria-hidden="true"></span>
+            </label>
         </div>
         <div class="audit" id="offline-audit-panel" data-offline-audit hidden>
             <div class="audit-controls">
@@ -485,6 +613,7 @@
             </p>
         </div>
         <script src="/static/js/pwa_reset.js" defer></script>
+        <script src="/static/js/pwa_network_mode.js" defer></script>
         <script src="/static/js/offline_audit_core.js" defer></script>
         <script src="/static/js/offline_audit.js" defer></script>
         <script>
@@ -512,6 +641,24 @@
                 reveal('pwa-reset-panel', typeof window.pwaResetLocalData === 'function');
 
                 /*
+                 * SNOW-922 — Offline mode, on the page its damage lands
+                 * on. Same self-guard as the two panels above: the
+                 * control appears only once the module that works it has
+                 * arrived, because a switch bound to nothing is worse
+                 * than no switch on a recovery page.
+                 *
+                 * The switch is shown in BOTH states rather than only
+                 * when it is the blocker. Turning it on here is a real
+                 * thing to want — you are offline, and you would rather
+                 * the app stopped spending a roaming connection — and a
+                 * control that appears only while broken teaches nobody
+                 * where it lives. The lock-out it used to cause is
+                 * headed off by the confirmation below instead, which is
+                 * the same guard the nav switch now takes.
+                 */
+                if (window.pwaNetworkMode) bindNetworkMode(window.pwaNetworkMode);
+
+                /*
                  * And the way forward, when there is one. `canOpenMap` is
                  * time-bounded and answers false on any doubt, so the
                  * worst case is the page this reader already had: the
@@ -533,6 +680,115 @@
                         });
                 }
             });
+
+            /**
+             * Wire the Offline mode switch to the shared module.
+             *
+             * @param {object} api window.pwaNetworkMode.
+             */
+            function bindNetworkMode(api) {
+                var panel = document.getElementById('network-mode-panel');
+                var input = document.getElementById('offline-mode-switch');
+                var hint = document.getElementById('network-mode-hint');
+                if (!panel || !input || !hint) return;
+
+                /*
+                 * Read before revealing. A switch that paints OFF and
+                 * corrects itself a moment later is a switch that has
+                 * just told the reader the opposite of the truth, and
+                 * this reader is already here because the app misled
+                 * them once. `read` is bounded and answers 'auto' on any
+                 * doubt, so the wait is short and always ends.
+                 */
+                api.read().then(function (mode) {
+                    var forced = api.isForced(mode);
+                    input.checked = api.blocksNetwork(mode);
+                    hint.textContent = forced
+                        ? 'Snowdesk is set to never use the network, so it will not load ' +
+                          'even with a signal. Switch this off to reconnect.'
+                        : 'Snowdesk uses the network when it can.';
+                    panel.hidden = false;
+
+                    /*
+                     * When the forced mode is in force it, not the
+                     * connection, is why this page is showing — so the
+                     * headline copy's "you're offline … reconnect and
+                     * try again" is advice that cannot work. Say the
+                     * true thing instead.
+                     */
+                    if (forced) {
+                        var explainer = document.getElementById('offline-explainer');
+                        if (explainer) {
+                            explainer.textContent =
+                                'Offline mode is switched on, so Snowdesk is not using the ' +
+                                'network at all — and this page has not been saved on this ' +
+                                'device, so there is nothing stored to show instead. ' +
+                                'Reconnecting will not help until you switch it off below.';
+                        }
+                    }
+                });
+
+                /*
+                 * SNOW-922 review: which press is the live one. The ON
+                 * path awaits the worker for up to three seconds, so a
+                 * result can land after the reader has changed their
+                 * mind — and acting on it would set the mode against
+                 * their latest instruction, on the one page where that
+                 * instruction is how they get out. A superseded press
+                 * does nothing: not the mode, not the dialogue, not the
+                 * switch's position.
+                 *
+                 * This replaced disabling the input for the duration,
+                 * which stopped the stale write but bought it by making
+                 * the way out unpressable for three seconds. On this
+                 * page that trade is exactly backwards.
+                 */
+                var press = 0;
+                input.addEventListener('change', function () {
+                    var wanted = input.checked ? 'offline-forced' : 'auto';
+                    var mine = (press += 1);
+                    /*
+                     * Switching ON is the move that created this ticket,
+                     * so it asks the worker whether the app would
+                     * actually open first. `canOpenOffline` answers
+                     * false on any doubt, so the worst case is one extra
+                     * press for someone whose map really is saved — much
+                     * the cheaper way to be wrong.
+                     */
+                    var checked = input.checked
+                        ? api.canOpenOffline().then(function (canOpen) {
+                              // Before the dialogue as well as after it: a
+                              // warning about a press already taken back is
+                              // a question with no right answer.
+                              if (mine !== press) return false;
+                              if (canOpen) return true;
+                              return window.confirm(
+                                  'Snowdesk has not been saved on this device yet, so ' +
+                                      'switching Offline mode on will stop it opening at ' +
+                                      'all until you switch it off again.\n\n' +
+                                      'Switch it on anyway?',
+                              );
+                          })
+                        : Promise.resolve(true);
+
+                    checked.then(function (proceed) {
+                        if (mine !== press) return;
+                        if (!proceed) {
+                            input.checked = false;
+                            return;
+                        }
+                        /*
+                         * Reload only after `set` resolves — it persists
+                         * before it announces, so waiting is what stops
+                         * the reload racing this device's own write and
+                         * coming back in the mode just left.
+                         */
+                        api.set(wanted).then(function () {
+                            location.reload();
+                        });
+                    });
+                });
+            }
         </script>
     </body>
 </html>

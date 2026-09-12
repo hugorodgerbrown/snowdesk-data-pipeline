@@ -139,6 +139,11 @@ const SW_EXPORTS = [
   // fix for a forced mode being lost when Chrome recycles an idle worker.
   '_hydrateNetworkMode',
   '_probeNetwork',
+  // SNOW-922: "would a navigation open with no network?", which the page
+  // side asks before it lets the Offline mode switch strand the device.
+  // Answered here rather than on the page because this worker is the thing
+  // that will or will not serve that navigation.
+  '_canOpenOffline',
   // SNOW-852: the synchronous fast-path predicate the fetch handler's
   // network-only branch consults. A `function`, not a `let`, so handing it
   // back is safe where `_networkMode` is not — it reads the live value on
@@ -3523,5 +3528,129 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
     expect(new URL(sw.SHELL_PAGE, ORIGIN).toString()).toBe(MAP_URL);
     expect(await cache.match(MAP_URL)).toBeTruthy();
     expect(await cache.match(SCRIPT_URL)).toBeTruthy();
+  });
+});
+
+describe('answering whether the app would open offline (SNOW-922)', () => {
+  /*
+   * The guard behind the Offline mode switch. Under 'offline-forced' this
+   * worker refuses every navigation and answers from cache, so a device
+   * with no shell page cached for the current principal reaches
+   * static/offline.html and nothing else — and the mode is persisted and
+   * re-hydrated on every boot, so it survives restarts. Until SNOW-922 the
+   * only control that ended that state lived inside the app that would not
+   * open.
+   *
+   * This answers the question `_networkFirstFallback` would answer for a
+   * navigation to `/`, and the tests below are the same four cases that
+   * function has: a hit, a searchless hit, a wrong principal, and nothing
+   * at all. Keeping them here rather than on the page side is the point —
+   * one implementation of the rule, not two that drift.
+   */
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('says yes when the map page is cached for the principal signed in now', async () => {
+    const caches = makeCaches();
+    const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
+    const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
+
+    await sw._networkFirst(navRequest('/'));
+    await flush();
+    await setStoredPrincipal('acct-uuid-a');
+
+    expect(await sw._canOpenOffline()).toBe(true);
+  });
+
+  it('says no when the cached page belongs to another account', async () => {
+    // Exactly the refusal `_networkFirstFallback` makes, and the reason
+    // this cannot be answered by "is there an entry for /".
+    const caches = makeCaches();
+    const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
+    const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
+
+    await sw._networkFirst(navRequest('/'));
+    await flush();
+    await setStoredPrincipal('acct-uuid-b');
+
+    expect(await sw._canOpenOffline()).toBe(false);
+  });
+
+  it('says no on a device with nothing cached at all', async () => {
+    const sw = loadSw({ caches: makeCaches() });
+
+    expect(await sw._canOpenOffline()).toBe(false);
+  });
+
+  it('does not count the offline fallback page as the app opening', async () => {
+    // offline.html is precached, carries no principal, and is the page
+    // whose appearance means the app did NOT open. Counting it would
+    // answer yes on every device that has ever installed the worker —
+    // which is every device that can reach this question.
+    const caches = makeCaches();
+    caches.seed(
+      'snowdesk-shell-UNSUBSTITUTED',
+      '/static/offline.html',
+      new Response("<h1>This page isn't available offline</h1>"),
+    );
+    const sw = loadSw({ caches });
+
+    expect(await sw._canOpenOffline()).toBe(false);
+  });
+
+  it('accepts a shell cached under a dated URL, as the fallback does', async () => {
+    // `/?d=2026-01-23` and `/` share one cached shell — the date is read
+    // back off location.search by page JS. A searchless match is what
+    // `_networkFirstFallback` uses, so this has to agree.
+    const caches = makeCaches();
+    const online = basicResponse(pageHtml('anonymous', 'the map'));
+    const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
+
+    await sw._networkFirst(navRequest('/?d=2026-01-23'));
+    await flush();
+
+    expect(await sw._canOpenOffline()).toBe(true);
+  });
+
+  it('answers false rather than throwing when Cache Storage is unusable', async () => {
+    // A false costs one extra confirmation press; a thrown promise would
+    // leave the switch mid-flight.
+    const sw = loadSw({
+      caches: {
+        open: () => Promise.reject(new Error('no storage')),
+        keys: () => Promise.resolve([]),
+      },
+    });
+
+    expect(await sw._canOpenOffline()).toBe(false);
+  });
+
+  it('replies down the port the asker transferred, not to every client', async () => {
+    // One page's question about its own next action, not worker state
+    // anybody else needs — so it does not go through `_publishNetworkMode`.
+    const sw = loadSw({ caches: makeCaches() });
+    const replies = [];
+
+    sw.__listeners.message({
+      data: { type: 'can-open-offline' },
+      ports: [{ postMessage: (data) => replies.push(data) }],
+      waitUntil: () => {},
+    });
+    await flush();
+
+    expect(replies).toEqual([{ type: 'can-open-offline', canOpen: false }]);
+  });
+
+  it('does not throw when the asker transferred no port', async () => {
+    // A caller with no port gets no reply and falls back to its own
+    // budget, which answers false — the safe direction.
+    const sw = loadSw({ caches: makeCaches() });
+
+    expect(() =>
+      sw.__listeners.message({ data: { type: 'can-open-offline' }, waitUntil: () => {} }),
+    ).not.toThrow();
+    await flush();
   });
 });

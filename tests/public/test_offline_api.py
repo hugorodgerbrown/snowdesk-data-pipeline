@@ -105,7 +105,12 @@ def test_offline_fallback_page_loads_only_precached_scripts() -> None:
     reach a user whose only reachable page is this one, and restating its
     mechanism inline would be a second implementation to keep in step with
     the first. ``pwa_reset.js`` is §12.7's escape hatch (SNOW-378 /
-    SNOW-607); the two audit modules are SNOW-907's offline-content report.
+    SNOW-607); the two audit modules are SNOW-907's offline-content report;
+    ``pwa_network_mode.js`` is SNOW-922's Offline mode switch, admitted on
+    the strongest version of that ground — the state it recovers from is
+    one the worker itself creates, since under ``'offline-forced'`` every
+    navigation is answered from cache and a device with no cached shell
+    page reaches this page and nothing else, across restarts.
 
     The list is asserted exhaustively, because the rule is not "few
     scripts" but "no script this page cannot fetch when it is doing its
@@ -117,6 +122,7 @@ def test_offline_fallback_page_loads_only_precached_scripts() -> None:
     sources = re.findall(r'<script[^>]+src="([^"]+)"', stripped)
     assert sources == [
         "/static/js/pwa_reset.js",
+        "/static/js/pwa_network_mode.js",
         "/static/js/offline_audit_core.js",
         "/static/js/offline_audit.js",
     ]
@@ -144,6 +150,40 @@ def test_offline_fallback_page_carries_the_reset_trigger() -> None:
     assert re.search(r'<div[^>]+id="pwa-reset-panel"[^>]+hidden', stripped)
     # The wipe belongs to pwa_reset.js alone.
     assert "deleteDatabase" not in stripped
+
+
+def test_offline_fallback_page_carries_the_offline_mode_switch() -> None:
+    """The way out of a forced offline mode ships on the page it strands you on.
+
+    Under ``'offline-forced'`` ``sw.js`` refuses the network on every read
+    path, navigations included, and answers from cache instead — so a
+    device with no shell page cached for the account signed in reaches
+    this page and nothing else. The mode is persisted to ``meta:app`` and
+    re-hydrated by the worker on every boot, so it survives the tab, the
+    worker and the device restarting, and a live signal changes nothing:
+    it is the worker refusing, not the radio.
+
+    Before SNOW-922 the only control that ended that state was the switch
+    in the app's own chrome, inside the app that would not open, leaving a
+    full local-data wipe (which also destroys every downloaded region) as
+    the only escape. The switch is here now.
+
+    Hidden until proven, exactly as the reset and audit panels are: the
+    module that works it is a subresource, and a switch bound to nothing
+    is worse than no switch on a recovery page.
+    """
+    stripped = _offline_page_source()
+    assert re.search(r'<div[^>]+id="network-mode-panel"[^>]+hidden', stripped)
+    # A real checkbox with the switch role, matching includes/_switch.html:
+    # Tab reaches it and Space toggles it, none of which has to be written.
+    assert re.search(
+        r'<input[^>]+type="checkbox"[^>]+role="switch"[^>]+id="offline-mode-switch"',
+        stripped,
+    )
+    # The mode itself belongs to pwa_network_mode.js — the page must not
+    # restate the persist-then-announce rule, which is the pair that must
+    # not drift between here and the nav switch.
+    assert "network.mode" not in stripped
 
 
 # ---------------------------------------------------------------------------

@@ -99,12 +99,14 @@ describe('the shipped offline page', () => {
       s.getAttribute('src'),
     );
 
-    // SNOW-907 added two more, for the offline-content report. Each
-    // subresource here is admitted on the same ground the reset script was:
-    // it carries a control that has to reach a user whose only reachable
-    // page is this one, and the worker precaches it by this exact path.
+    // SNOW-907 added two more, for the offline-content report; SNOW-922 a
+    // fourth, for the Offline mode switch. Each subresource here is
+    // admitted on the same ground the reset script was: it carries a
+    // control that has to reach a user whose only reachable page is this
+    // one, and the worker precaches it by this exact path.
     expect(sources).toEqual([
       RESET_SCRIPT,
+      '/static/js/pwa_network_mode.js',
       '/static/js/offline_audit_core.js',
       '/static/js/offline_audit.js',
     ]);

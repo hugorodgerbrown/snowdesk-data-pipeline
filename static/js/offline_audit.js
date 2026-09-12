@@ -253,7 +253,8 @@
     'section-downloads': 'Map downloads',
     'section-content': 'Your content',
 
-    'row-offline-mode': 'Offline mode is on',
+    'row-offline-support': 'Offline support is installed',
+    'row-network-use': 'The app may use the network',
     'row-app-opens': 'The app opens',
     'row-app-looks-right': 'The app looks right',
     'row-danger-ratings': 'Danger ratings',
@@ -283,6 +284,13 @@
     'note-sw-unsupported': 'this browser has no offline mode at all',
     'note-sw-starting': 'offline mode is starting up and will be ready on the next load',
     'note-sw-absent': 'offline mode has not been set up on this device',
+    // SNOW-922: the user's own switch, and the worker's own latch. Two
+    // different Nos with two different remedies — one is a control to
+    // press, the other lifts itself — so they never share a clause.
+    'note-network-forced':
+      'Offline mode is switched on, so the app will not call the server even with a signal',
+    'note-network-latched':
+      'the app stopped calling the server after it went unanswered, and will try again on its own',
     'note-other-account': 'the saved copy belongs to %(stamped)s',
     'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
     'note-basemap-unstyled':
@@ -324,6 +332,9 @@
     'verdict-unchecked':
       'The app will open, but some things could not be checked on this device.',
     'verdict-no-worker': 'This device is not set up for offline use yet.',
+    'verdict-forced-lockout':
+      'Offline mode is on and the app is not saved here, so it will not open. ' +
+      'Switch Offline mode off to reconnect.',
     'verdict-no-page':
       'The app will not open without a signal. Open the map once while connected.',
     'verdict-other-account':

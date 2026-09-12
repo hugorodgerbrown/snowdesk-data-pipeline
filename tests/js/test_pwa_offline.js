@@ -366,6 +366,42 @@ function fireOnline() {
 }
 
 /**
+ * Click the menu switch and let its handler settle.
+ *
+ * SNOW-922 made the ON direction asynchronous: it asks the worker whether
+ * the app would in fact open offline before it lets the mode strand the
+ * device, so the mode change now lands a microtask or two after the click
+ * rather than inside it. The OFF direction is still synchronous, and
+ * deliberately so — that is the recovery direction, and nothing should
+ * stand between a stranded user and the network.
+ */
+async function clickSwitch() {
+  switchInput().click();
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+}
+
+/**
+ * Answer the SNOW-922 lock-out confirmation for the duration of a test.
+ *
+ * Every test in this file runs with no ``window.pwaNetworkMode``, which is
+ * the module-absent fallback path — and on that path the guard cannot ask
+ * the worker anything, so it proceeds without a dialogue. The stub is here
+ * for the tests that DO load the module and need to answer it.
+ *
+ * @param {boolean} answer
+ */
+function stubConfirm(answer) {
+  const real = window.confirm;
+  // A spy, so a test can assert the dialogue was never RAISED — "did not
+  // warn" is a different claim from "was not obeyed", and the first is
+  // the one the guard's cheap path makes.
+  window.confirm = vi.fn().mockReturnValue(answer);
+  return () => {
+    window.confirm = real;
+  };
+}
+
+/**
  * An Error shaped like the DOMException a real ``AbortController`` raises
  * when it cancels an in-flight fetch.
  *
@@ -827,7 +863,7 @@ describe('the menu offline-mode switch (SNOW-748)', () => {
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    switchInput().click();
+    await clickSwitch();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'offline-forced' });
     expect(sw.posted).not.toContainEqual({ type: 'network-mode', mode: 'offline' });
@@ -838,7 +874,7 @@ describe('the menu offline-mode switch (SNOW-748)', () => {
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    switchInput().click();
+    await clickSwitch();
     expect(switchChecked()).toBe(true);
     expect(indicatorState()).toBe('offline');
 
@@ -1018,7 +1054,7 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
     const seen = recordConnectivity();
 
     try {
-      switchInput().click();
+      await clickSwitch();
 
       // The premise of this whole mode: the interface is up throughout.
       expect(window.navigator.onLine).toBe(true);
@@ -1117,6 +1153,231 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
 
     sw.emit({ type: 'network-mode', mode: 'auto' });
     expect(window.pwaConnectivity.isOnline()).toBe(true);
+  });
+});
+
+describe('the lock-out guard on the switch’s ON direction (SNOW-922)', () => {
+  /*
+   * Switching Offline mode ON is the move that produced SNOW-922. Under
+   * 'offline-forced' sw.js refuses every navigation and answers from
+   * cache, so a device with no shell page cached for the current account
+   * reaches static/offline.html and nothing else — and until that ticket
+   * the only control that ended the state was this switch, inside the app
+   * that would not open. A live signal made no difference: the worker
+   * refuses the network, not the radio.
+   *
+   * So the ON direction now asks the worker whether the app would in fact
+   * open before it lets the mode strand the device. The OFF direction
+   * asks nothing and is still synchronous — that is the recovery
+   * direction, and nothing belongs between a stranded user and the
+   * network.
+   */
+
+  /**
+   * Stand in for pwa_network_mode.js.
+   *
+   * A stub rather than the real module because what these tests are about
+   * is the DECISION pwa_offline.js makes with the answer; the module's own
+   * behaviour is pinned in tests/js/test_pwa_network_mode.js.
+   *
+   * @param {boolean} canOpen What the worker would say.
+   */
+  function stubNetworkMode(canOpen) {
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set,
+      canOpenOffline: vi.fn().mockResolvedValue(canOpen),
+    };
+    return { set, api: window.pwaNetworkMode };
+  }
+
+  afterEach(() => {
+    delete window.pwaNetworkMode;
+  });
+
+  it('does not warn when the worker says the app is saved', async () => {
+    const mode = stubNetworkMode(true);
+    const restore = stubConfirm(false);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      await clickSwitch();
+
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(mode.set).toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it('warns, and stands down, when the app is not saved and the user declines', async () => {
+    const mode = stubNetworkMode(false);
+    const restore = stubConfirm(false);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      await clickSwitch();
+
+      // The mode is never entered, and the switch goes back to where the
+      // user left it — assigning `checked` fires no `change`, so this
+      // cannot re-enter the handler.
+      expect(mode.set).not.toHaveBeenCalled();
+      expect(switchChecked()).toBe(false);
+      expect(indicatorState()).toBe('online');
+    } finally {
+      restore();
+    }
+  });
+
+  it('proceeds when the user says yes anyway', async () => {
+    // Someone who genuinely wants aeroplane mode on a fresh device can
+    // still have it. The warning names the consequence; it does not
+    // overrule them.
+    const mode = stubNetworkMode(false);
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      await clickSwitch();
+
+      expect(mode.set).toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it('never asks anything on the way back to the network', async () => {
+    // The recovery direction. A confirmation here would be a dialogue
+    // between a stranded user and the fix.
+    const mode = stubNetworkMode(false);
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      await clickSwitch();
+      mode.api.canOpenOffline.mockClear();
+
+      switchInput().click();
+
+      expect(mode.api.canOpenOffline).not.toHaveBeenCalled();
+      expect(mode.set).toHaveBeenLastCalledWith('auto');
+    } finally {
+      restore();
+    }
+  });
+
+  /*
+   * Found in review by Codex on the first push. The ON path awaits the
+   * worker for up to three seconds; the OFF path answers at once. So a
+   * user who flipped ON and changed their mind inside that window got
+   * 'auto' immediately and then 'offline-forced' when the stale callback
+   * landed — their LAST action losing to their previous one, on the one
+   * switch where that means the app stops calling the server against
+   * their stated wish. A press that has been superseded now does nothing.
+   */
+  it('abandons a pending ON when the user flips back OFF before it answers', async () => {
+    let answer;
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set,
+      // Held open, so the test controls exactly when the worker replies.
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      // ON — the preflight starts and does not settle.
+      switchInput().click();
+      // OFF, while it is still in flight. This is answered at once.
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      expect(set).toHaveBeenLastCalledWith('auto');
+
+      // Now the worker answers the press that has been taken back.
+      answer(true);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      // The stale result changes nothing: not the mode, not the switch.
+      expect(set).toHaveBeenLastCalledWith('auto');
+      expect(set).not.toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(false);
+      expect(indicatorState()).toBe('online');
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
+  });
+
+  it('raises no dialogue for a press the user has already taken back', async () => {
+    // The other half: a warning about a press that is no longer live is a
+    // question with no right answer, so it is never asked.
+    let answer;
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set: vi.fn().mockResolvedValue('auto'),
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      switchInput().click();
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      // `false` is the answer that would otherwise raise the warning.
+      answer(false);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(window.confirm).not.toHaveBeenCalled();
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
+  });
+
+  it('still honours a press the user has NOT taken back', async () => {
+    // The guard must abandon a superseded press without abandoning a slow
+    // one — otherwise the fix quietly removes the feature.
+    let answer;
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set,
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      answer(true);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(set).toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(true);
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
   });
 });
 
