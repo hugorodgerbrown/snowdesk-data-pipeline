@@ -2609,15 +2609,38 @@
     cursor: pointer;
 }
 
+/* SNOW-924: 'partial' — one half of a run landed and the other did not.
+   Amber like 'incomplete' and for the same reason: something here wants
+   attention and a tap is the remedy, so it must not read as the flat green
+   of a finished download nor as the red of one that failed outright.
+
+   It is a run OUTCOME and never a derived state, which is the trap worth
+   naming here. Deriving it from "this record has no content stamp" would
+   paint amber over every area downloaded before this ticket shipped — a
+   warning on thousands of perfectly good downloads, about a half that was
+   not being fetched when they were made. Those read 'done' and pick their
+   content up on the first refresh tap. */
+.map-download-control[data-download-state="partial"] {
+    color: var(--color-sync-partial);
+    cursor: pointer;
+}
+
 /* Only the active state's icon renders; it sits above the busy fill. The
    busy state keeps the download glyph (static) and shows progress as a
    bottom-up fill of the roundel (below), not a numeric percentage.
 
-   SNOW-569: 'done' keeps the download glyph too, white on the green disc,
-   rather than swapping to a tick. The glyph is the control's identity —
-   swapping it made a completed download read as a different control, and
-   the colour inversion already carries "finished" on its own. Only 'error'
-   changes the glyph, because that one genuinely is a different message. */
+   SNOW-569 kept the download glyph on 'done' too, white on the green disc,
+   rather than swapping to a tick: the glyph is the control's identity, and
+   swapping it made a completed download read as a different control while
+   the colour inversion already carried "finished".
+
+   SNOW-924 swaps it after all, to a refresh mark, and the earlier rule is
+   what says when that is allowed. Its objection was to a glyph change
+   across an action that had not changed — a tick over a control that still
+   downloaded. A tap on a done area no longer downloads it: it updates the
+   bulletins and weather inside the boundary and leaves the tiles alone. The
+   glyph is reporting a real difference, which is the case SNOW-569's
+   reasoning leaves open rather than one it forbids. */
 .map-download-control-icon {
     display: none;
     position: relative;
@@ -2638,7 +2661,6 @@
 .map-download-control[data-download-state="disabled"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="offline"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
-.map-download-control[data-download-state="done"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="other-basemap"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="signin"] .map-download-control-icon--idle,
 /* SNOW-844: 'incomplete' reuses the error glyph — the same exclamation,
@@ -2646,7 +2668,19 @@
    the amber above is what tells the two apart. A fourth glyph for a state
    the user meets rarely would be a mark nobody has learnt. */
 .map-download-control[data-download-state="incomplete"] .map-download-control-icon--error,
-.map-download-control[data-download-state="error"] .map-download-control-icon--error {
+.map-download-control[data-download-state="error"] .map-download-control-icon--error,
+/* SNOW-924: 'done' and 'partial' take the REFRESH glyph, not the download
+   arrow. Both are areas whose tiles are on the device, so a tap fetches the
+   perishable half — the bulletins and weather inside the boundary — and
+   never the tiles again. The arrow would promise a download that is not
+   what happens.
+
+   'partial' shares the glyph because it shares the remedy: it is the state
+   of a run where one half landed and the other did not, and the way out of
+   it is the same tap. What tells them apart is the amber below, the same
+   way it tells 'incomplete' from 'error'. */
+.map-download-control[data-download-state="done"] .map-download-control-icon--refresh,
+.map-download-control[data-download-state="partial"] .map-download-control-icon--refresh {
     display: block;
 }
 

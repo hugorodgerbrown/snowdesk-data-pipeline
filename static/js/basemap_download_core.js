@@ -256,6 +256,22 @@
  *     The ground one tile covers, as ``[west, south, east, north]`` —
  *     the inverse of ``lonLatToTile``, and the only place the grid's
  *     squares get their geometry.
+ *   featureBBox(feature) / bboxesOverlap(a, b) / pointInBBox(lon, lat, bbox)
+ *     SNOW-924: the rectangle group behind "what is inside this area".
+ *     ``featureBBox`` moved here from ``map.js`` (SNOW-811's copy, which
+ *     is now a one-line adapter for MapLibre's nested pair). The two
+ *     predicates are INCLUSIVE at the edges, unlike ``intersectBBox``
+ *     above — see ``bboxesOverlap`` for why a shared edge counts.
+ *   bboxFromZoomRanges(z) / areaBBox(area)
+ *     SNOW-924: the ground an area covers, from its stored record alone.
+ *     A custom area is its ``bbox``; a region area has only ``z`` since
+ *     SNOW-583, so its rectangle is derived from the tile rows.
+ *   areaContentPlan({bbox, regionFeatures, weatherFeatures, days,
+ *   weatherDetailTemplate})
+ *     SNOW-924: the bulletin pages and weather sheets inside an area —
+ *     the two sets too large to fetch wholesale. Read its docstring for
+ *     the contract that makes a rectangle the right test, and for why a
+ *     weather sheet is one UNDATED url per location.
  *   cachedTilesFromURLs(spec, cachedURLs, zoom)
  *     The tiles a cache actually holds, read back out of its URLs — the
  *     pure half of the "cached tiles" overlay. A tile counts only when
@@ -2185,6 +2201,266 @@
     return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
   }
 
+  /* ------------------------------------------------------------------ *
+   * SNOW-924: what an area's boundary CONTAINS.
+   *
+   * A download stopped at the tiles; everything else a user needs in the
+   * field arrived only if they happened to tap the overlay that draws it.
+   * These five functions answer "which bulletins and which weather sit
+   * inside this area", and they are all here rather than in `map.js`
+   * because they are pure functions of geometry — the same reason
+   * `bboxPolygon` and `tileGridPlan` are.
+   *
+   * THE CONTRACT, and the reason this group looks cruder than it could:
+   * inside the boundary, everything; outside, whatever happens to be
+   * there. Under-fetching is the only defect — a bulletin the user needed
+   * and does not have. Over-fetching is not: the content half is
+   * kilobytes against a tile half measured in megabytes.
+   *
+   * So the tests below are RECTANGLES, and deliberately so. A rectangle
+   * test can only ever select a SUPERSET of what true geometry would,
+   * which is the correct side to fail on, and it costs no
+   * point-in-polygon, no polygon clipping, no shared-edge or antimeridian
+   * cases. `tests/js/test_basemap_download_core.js` pins the superset
+   * property against real region boundaries; a future reader "fixing"
+   * this into exact geometry would be trading a free over-selection for
+   * a class of bug that leaves someone without a bulletin.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * The lon/lat box a GeoJSON Polygon or MultiPolygon covers.
+   *
+   * SNOW-924 moved this out of `map.js`, where it had been since SNOW-811
+   * serving the region popup's fit and `pwaMapFocus.region()`. It is a
+   * pure function of coordinates, so it belongs with the rest of the
+   * geometry group; `map.js` keeps a one-line adapter because MapLibre's
+   * `fitBounds` wants the nested `[[w, s], [e, n]]` pair while everything
+   * here speaks the flat `[west, south, east, north]` this file uses
+   * throughout.
+   *
+   * @param {Object|null} feature A GeoJSON Feature.
+   * @returns {[number, number, number, number]|null} ``null`` for a
+   *   feature with no usable geometry, which every caller reads as
+   *   "cannot say" rather than "empty".
+   */
+  function featureBBox(feature) {
+    const geometry = feature && feature.geometry;
+    if (!geometry || !Array.isArray(geometry.coordinates)) return null;
+    const rings =
+      geometry.type === 'Polygon'
+        ? geometry.coordinates
+        : geometry.type === 'MultiPolygon'
+          ? geometry.coordinates.flat()
+          : null;
+    if (!rings) return null;
+    let w = Infinity;
+    let s = Infinity;
+    let e = -Infinity;
+    let n = -Infinity;
+    for (const ring of rings) {
+      if (!Array.isArray(ring)) continue;
+      for (const position of ring) {
+        const lon = position && position[0];
+        const lat = position && position[1];
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+        if (lon < w) w = lon;
+        if (lon > e) e = lon;
+        if (lat < s) s = lat;
+        if (lat > n) n = lat;
+      }
+    }
+    return Number.isFinite(w) && Number.isFinite(s) ? [w, s, e, n] : null;
+  }
+
+  /**
+   * Whether two ``[west, south, east, north]`` boxes touch or overlap.
+   *
+   * INCLUSIVE at the edges, which is the one thing separating it from
+   * `intersectBBox` above — that one uses a strict `<` because it returns
+   * the overlapping REGION, and a zero-area overlap is not a region. Here
+   * the question is only "might this region have anything in the area",
+   * and a shared edge costs one HTML page to include and a missing
+   * bulletin to exclude. The contract picks the page.
+   *
+   * @param {number[]} a
+   * @param {number[]} b
+   * @returns {boolean} ``false`` when either is not a well-formed box —
+   *   an unanswerable question is not an overlap.
+   */
+  function bboxesOverlap(a, b) {
+    const ok = (box) => Array.isArray(box) && box.length === 4 && box.every(Number.isFinite);
+    if (!ok(a) || !ok(b)) return false;
+    return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+  }
+
+  /**
+   * Whether a point sits in a ``[west, south, east, north]`` box.
+   *
+   * Inclusive at the edges, for the same reason as `bboxesOverlap`.
+   *
+   * @param {number} lon
+   * @param {number} lat
+   * @param {number[]} bbox
+   * @returns {boolean}
+   */
+  function pointInBBox(lon, lat, bbox) {
+    if (!Array.isArray(bbox) || bbox.length !== 4) return false;
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false;
+    return lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+  }
+
+  /**
+   * The ground a blob's tile ranges cover, as a lon/lat box.
+   *
+   * The way to a rectangle for a REGION area, which stores none: SNOW-583
+   * replaced a region record's `bbox` with `z`, the row spans its tiles
+   * were clipped to, on the reasoning that the region id is the whole
+   * definition. True for re-fetching it; not enough for asking what is
+   * inside it, which is what this ticket needs.
+   *
+   * Reads the DEEPEST zoom present, matching `gridZoomFor`'s choice and
+   * for the same reason — the finest tiles give the tightest box. Any
+   * zoom would be safe, since they all cover the same ground and a
+   * coarser one only over-states it; deepest is simply the least
+   * over-inclusive answer still on the correct side of the contract.
+   *
+   * Goes through `zoomRows`, as everything walking a blob's `z` must, so
+   * both the rectangle and the clipped row-span shapes work here.
+   *
+   * @param {Object|null} z A blob's ``z`` ranges.
+   * @returns {[number, number, number, number]|null} ``null`` for ranges
+   *   that yield no tiles.
+   */
+  function bboxFromZoomRanges(z) {
+    if (!z || typeof z !== 'object') return null;
+    const zooms = Object.keys(z)
+      .map((key) => parseInt(key, 10))
+      .filter(Number.isFinite);
+    if (zooms.length === 0) return null;
+    const zoom = Math.max(...zooms);
+    const rows = zoomRows(z[String(zoom)] !== undefined ? z[String(zoom)] : z[zoom]);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const key of Object.keys(rows || {})) {
+      const y = parseInt(key, 10);
+      const span = rows[key];
+      if (!Number.isFinite(y) || !Array.isArray(span)) continue;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (span[0] < minX) minX = span[0];
+      if (span[1] > maxX) maxX = span[1];
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+    // Mercator y runs southward, so the NORTHERN edge comes from the
+    // smallest y and the southern from the largest.
+    const [west, , , north] = tileBounds(zoom, minX, minY);
+    const [, south, east] = tileBounds(zoom, maxX, maxY);
+    return [west, south, east, north];
+  }
+
+  /**
+   * The rectangle an area covers, from its stored record alone.
+   *
+   * Two area kinds, one answer. A custom or drop-zone area IS its `bbox`;
+   * a region area has only `z`, so it goes through `bboxFromZoomRanges`.
+   * Taking the stored box first matters beyond being cheaper: it is the
+   * box the user actually framed, where the derived one is the tiles that
+   * box happened to land on, which is a hair larger.
+   *
+   * @param {Object|null} area A stored area record, or anything carrying
+   *   a `bbox` or a `z`.
+   * @returns {[number, number, number, number]|null}
+   */
+  function areaBBox(area) {
+    if (!area || typeof area !== 'object') return null;
+    const stored = area.bbox;
+    if (Array.isArray(stored) && stored.length === 4 && stored.every(Number.isFinite)) {
+      return [stored[0], stored[1], stored[2], stored[3]];
+    }
+    return bboxFromZoomRanges(area.z);
+  }
+
+  /**
+   * What an area's boundary contains: bulletin pages and weather sheets.
+   *
+   * The two sets that cannot be fetched wholesale. There are 461
+   * micro-regions across the estate and ~550 public weather locations, so
+   * unlike the four overlay feeds — one small request each, taken whole
+   * and unfiltered — these have to be narrowed to the area. They are
+   * narrowed by rectangle, per the contract at the top of this group.
+   *
+   * A bulletin URL is `/<region_id>/<slug>/<date>/`, built from the two
+   * properties `regions.geojson` carries for exactly this purpose. The id
+   * is LOWERCASED because `bulletin_detail` is wrapped in
+   * `@lowercase_region_id` and 301s a mixed-case one — a redirect the
+   * service worker would cache as the entry for a URL nothing ever
+   * requests again.
+   *
+   * A weather sheet is ONE undated URL per location, not one per day, and
+   * that is a correctness point rather than a saving: `?date=` selects
+   * which `Weather` ROW the page reads, and only today's row exists.
+   * The forward days live inside that row's `forecast[]` and the day
+   * picker selects among them client-side — see
+   * `docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`.
+   * Fetching a URL per day would cache six "no weather was recorded here
+   * for this day" pages out of every seven.
+   *
+   * @param {Object} options
+   * @param {number[]} options.bbox The area's rectangle.
+   * @param {Array<Object>} [options.regionFeatures] `regions.geojson`
+   *   features. Absent or empty yields no bulletins — "cannot say", which
+   *   the caller reports rather than treating as "none inside".
+   * @param {Array<Object>} [options.weatherFeatures] `weather.geojson`
+   *   point features.
+   * @param {string[]} [options.days] Date keys to take a bulletin for,
+   *   supplied by the caller from the same forward bound the scrubber and
+   *   calendar use (SNOW-927), never from a clock in here.
+   * @param {string} [options.weatherDetailTemplate] A URL carrying
+   *   ``__SHORTID__``, as `#map`'s `data-weather-detail-url` does.
+   * @returns {{regionIds: string[], bulletinUrls: string[],
+   *   weatherDetailUrls: string[]}} Each list deduplicated and stable in
+   *   input order, so a run's URL list is reproducible.
+   */
+  function areaContentPlan(options) {
+    const opts = options || {};
+    const bbox = opts.bbox;
+    const out = { regionIds: [], bulletinUrls: [], weatherDetailUrls: [] };
+    if (!Array.isArray(bbox) || bbox.length !== 4) return out;
+
+    const days = Array.isArray(opts.days) ? opts.days.filter(Boolean) : [];
+    const seenRegion = new Set();
+    for (const feature of opts.regionFeatures || []) {
+      const properties = (feature && feature.properties) || {};
+      const regionId = properties.id || properties.regionID;
+      if (!regionId || seenRegion.has(regionId)) continue;
+      if (!bboxesOverlap(bbox, featureBBox(feature))) continue;
+      seenRegion.add(regionId);
+      out.regionIds.push(regionId);
+      const slug = properties.slug;
+      if (!slug) continue;
+      for (const day of days) {
+        out.bulletinUrls.push('/' + String(regionId).toLowerCase() + '/' + slug + '/' + day + '/');
+      }
+    }
+
+    const template = opts.weatherDetailTemplate;
+    if (template) {
+      const seenLocation = new Set();
+      for (const feature of opts.weatherFeatures || []) {
+        const shortId = feature && feature.properties && feature.properties.short_id;
+        const position = feature && feature.geometry && feature.geometry.coordinates;
+        if (!shortId || seenLocation.has(shortId) || !Array.isArray(position)) continue;
+        if (!pointInBBox(position[0], position[1], bbox)) continue;
+        seenLocation.add(shortId);
+        out.weatherDetailUrls.push(template.replace('__SHORTID__', shortId));
+      }
+    }
+
+    return out;
+  }
+
   /**
    * The zoom level to draw a download's progress grid at: the deepest in
    * the blob.
@@ -2594,6 +2870,12 @@
     deviceCeilingMb: deviceCeilingMb,
     bboxPolygon: bboxPolygon,
     tileBounds: tileBounds,
+    featureBBox: featureBBox,
+    bboxesOverlap: bboxesOverlap,
+    pointInBBox: pointInBBox,
+    bboxFromZoomRanges: bboxFromZoomRanges,
+    areaBBox: areaBBox,
+    areaContentPlan: areaContentPlan,
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,

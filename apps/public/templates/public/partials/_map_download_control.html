@@ -80,6 +80,33 @@ no basemap to fetch, which is what the label says.
     >
         <path d="M12 3a9 9 0 1 0 9 9" />
     </svg>
+    {# SNOW-924: a downloaded area's glyph. The roundel still fills, but   #}
+    {# the arrow becomes a refresh mark, because a tap on a done area no   #}
+    {# longer downloads it again — it updates the perishable half, the     #}
+    {# bulletins and weather inside the boundary, and leaves the tiles     #}
+    {# alone.                                                              #}
+    {#                                                                     #}
+    {# This is not the swap SNOW-569 removed. That one dropped a           #}
+    {# completion tick because the glyph is the control's identity and     #}
+    {# changing it made a finished download read as a different control    #}
+    {# — sound while the action either side of the swap was the SAME one.  #}
+    {# It is not any more, so the glyph is now reporting a real            #}
+    {# difference rather than inventing one.                               #}
+    <svg
+        class="map-download-control-icon map-download-control-icon--refresh"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20 11a8 8 0 1 0-.6 4" />
+        <path d="M20 4v7h-7" />
+    </svg>
     {# SNOW-568: the download failed and the region is NOT available       #}
     {# offline. An exclamation, not a cross — a cross next to a Cancel     #}
     {# button reads as "dismiss", and this control is the retry.           #}

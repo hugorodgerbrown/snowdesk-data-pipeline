@@ -773,3 +773,146 @@ describe('base layer top-up', () => {
     expect(d.warmCache).toHaveBeenCalledTimes(1);
   });
 });
+
+/* -------------------------------------------------------------------- *
+ * SNOW-924: the content phase — the bulletins and weather inside the
+ * area's boundary, fetched alongside its tiles.
+ *
+ * The boundary rules this block exists to hold:
+ *
+ *   - content goes FIRST in the posted list, ahead of the feeds, because
+ *     it is the cheap half and a run on a bad connection may not reach the
+ *     end;
+ *   - the progress grid's offset accounts for it, so no tile is shifted
+ *     off its cell — the trap SNOW-692 dodged by appending slope urls at
+ *     the end instead, which was only ever necessary because the offset
+ *     was assumed rather than passed;
+ *   - it never reaches the eviction machinery, which exists to guard a
+ *     several-hundred-tile download;
+ *   - and a deps bundle without the member behaves exactly as before, the
+ *     same guard `renderDeps` and the base-layer members carry.
+ * -------------------------------------------------------------------- */
+
+/**
+ * A deps bundle whose content phase yields `urls`.
+ *
+ * @param {string[]} urls
+ * @param {Object} [overrides]
+ * @returns {Object}
+ */
+function withContent(urls, overrides) {
+  return deps(
+    Object.assign(
+      {
+        contentUrls: vi.fn(async () => {
+          calls.push('contentUrls');
+          return urls;
+        }),
+      },
+      overrides || {},
+    ),
+  );
+}
+
+describe('the content phase', () => {
+  it('posts content first, then the feeds, then the tiles', async () => {
+    const d = withContent(['/ch-4115/verbier/2026-01-06/']);
+
+    await runAndSettle(d, options());
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/ch-4115/verbier/2026-01-06/',
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+    ]);
+  });
+
+  it('resolves it after the blob, which is what it reads the ground from', async () => {
+    const d = withContent(['/ch-4115/verbier/2026-01-06/']);
+
+    await runAndSettle(d, options());
+
+    expect(calls.indexOf('contentUrls')).toBeGreaterThan(calls.indexOf('loadBlob'));
+    expect(calls.indexOf('contentUrls')).toBeLessThan(calls.indexOf('warmCache'));
+  });
+
+  it('widens the progress-grid offset to cover it', async () => {
+    // Two content urls and one feed url, so the tiles start at index 3. An
+    // offset left at `feedUrls.length` would put every tile two cells out.
+    const d = withContent(['/a/', '/b/']);
+
+    await runAndSettle(d, options());
+
+    expect(d.progressGrid).toHaveBeenCalledTimes(1);
+    expect(d.progressGrid.mock.calls[0][1]).toBe(3);
+  });
+
+  it('hands finish the content tally, which no other reading can give', async () => {
+    // `warm-cache-done` reports one ok/failed pair for the whole list, so
+    // without this split a caller cannot tell a missing bulletin from a
+    // missing tile — and both `contentAt` and the roundel's partial state
+    // turn on exactly that.
+    const d = withContent(['/a/', '/b/'], {
+      warmCache: vi.fn(async (urls, opts) => {
+        calls.push('warmCache');
+        // One of the two content urls landed; both tiles did.
+        opts.onProgress(3, 4, [0, 2, 3], 900);
+        return { ok: 3, failed: 1, bytes: 900 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 1, total: 2 });
+  });
+
+  it('reports total 0 when the area contains nothing, not a failure', async () => {
+    const d = withContent([]);
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 0, total: 0 });
+  });
+
+  it('never reaches the eviction machinery', async () => {
+    // A bulk of small documents must not be able to destroy another area.
+    // The pre-flight prices the TILES; content rides along behind it.
+    const d = withContent(['/a/', '/b/', '/c/']);
+
+    await runAndSettle(d, options());
+
+    expect(d.planBudget).toHaveBeenCalledTimes(1);
+    // The estimate the budget was asked about is the tile one, untouched
+    // by the three documents that were added to the run.
+    expect(d.planBudget.mock.calls[0][1]).toBe(12);
+    expect(d.confirmEviction).not.toHaveBeenCalled();
+    expect(d.evict).not.toHaveBeenCalled();
+  });
+
+  it('runs unchanged against a deps bundle with no content member', async () => {
+    const d = deps();
+    delete d.contentUrls;
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
+    expect(d.progressGrid.mock.calls[0][1]).toBe(1);
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 0, total: 0 });
+  });
+
+  it('treats a content resolver that yields nothing usable as empty', async () => {
+    // Best-effort by contract: the tiles are what the user asked for.
+    const d = deps({ contentUrls: vi.fn(async () => null) });
+
+    await runAndSettle(d, options());
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
+  });
+});

@@ -657,7 +657,11 @@
       count: blob.count,
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      finish: async (result, runBlob, { core, progressFill, tileSources, basemapKey, renderDeps }) => {
+      finish: async (
+        result,
+        runBlob,
+        { core, progressFill, tileSources, basemapKey, renderDeps, content },
+      ) => {
         const cancelled = !!(result && result.cancelled);
         const ok = core.downloadSucceeded(result);
         if (cancelled) {
@@ -688,6 +692,12 @@
             basemapKey: basemapKey || null,
             deps: Array.isArray(renderDeps) ? renderDeps : [],
             bytes: Number(result.bytes) || 0,
+            // SNOW-924: as map_custom_download.js — a drop zone records
+            // an ordinary custom area, so it carries the content stamp
+            // on the same terms.
+            ...(content && content.total > 0 && content.ok === content.total
+              ? { contentAt: new Date().toISOString() }
+              : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);
