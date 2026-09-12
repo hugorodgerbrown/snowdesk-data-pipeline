@@ -324,6 +324,17 @@ extra_js        : scripts loaded at end of <body>. Used by
         <script src="{% static 'js/pwa_reset.js' %}" defer></script>
         {# SNOW-374: version-check runs on every JS-issued fetch + HTMX XHR. #}
         <script src="{% static 'js/pwa_version_check.js' %}" defer></script>
+        {# SNOW-922: the lock-out warning pwa_offline.js shows before the   #}
+        {# nav's Offline mode switch is allowed to strand the device.      #}
+        {% include "includes/_network_mode_strings.html" %}
+        {# SNOW-922: the network mode as a value (window.pwaNetworkMode) —  #}
+        {# read it, set it, and ask the worker whether the app would open  #}
+        {# offline. Must load BEFORE pwa_offline.js, which delegates its   #}
+        {# persist-then-announce to this module and takes its pre-flight   #}
+        {# guard from it. Also precached and loaded by static/offline.html, #}
+        {# which is the whole reason it is a module and not a function in  #}
+        {# pwa_offline.js — see its header.                                 #}
+        <script src="{% static 'js/pwa_network_mode.js' %}" defer></script>
         {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
         {# headers feed the banner and network failures reveal it.          #}
         <script src="{% static 'js/pwa_offline.js' %}" defer></script>

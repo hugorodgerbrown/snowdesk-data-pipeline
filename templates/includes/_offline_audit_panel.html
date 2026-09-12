@@ -128,7 +128,13 @@ of a settings page nobody came here to audit.
         <span data-string="section-downloads">{% translate "Map downloads" %}</span>
         <span data-string="section-content">{% translate "Your content" %}</span>
 
-        <span data-string="row-offline-mode">{% translate "Offline mode is on" %}</span>
+        {# SNOW-922: "Offline support is installed" was "Offline mode is on", #}
+        {# which is a different thing from the account menu's Offline mode #}
+        {# switch and was read as that switch by a user stranded by it. This #}
+        {# row answers from serviceWorker.controlled; the switch gets the row #}
+        {# below, which is new. #}
+        <span data-string="row-offline-support">{% translate "Offline support is installed" %}</span>
+        <span data-string="row-network-use">{% translate "The app may use the network" %}</span>
         <span data-string="row-app-opens">{% translate "The app opens" %}</span>
         <span data-string="row-app-looks-right">{% translate "The app looks right" %}</span>
         <span data-string="row-danger-ratings">{% translate "Danger ratings" %}</span>
@@ -163,6 +169,15 @@ of a settings page nobody came here to audit.
             data-string="note-sw-starting"
         >{% translate "offline mode is starting up and will be ready on the next load" %}</span>
         <span data-string="note-sw-absent">{% translate "offline mode has not been set up on this device" %}</span>
+        {# SNOW-922: the two ways the app stops calling the server. Kept #}
+        {# apart because the remedies are nothing alike — one is a switch #}
+        {# to press, the other lifts itself when a probe finds a route. #}
+        <span
+            data-string="note-network-forced"
+        >{% translate "Offline mode is switched on, so the app will not call the server even with a signal" %}</span>
+        <span
+            data-string="note-network-latched"
+        >{% translate "the app stopped calling the server after it went unanswered, and will try again on its own" %}</span>
         <span data-string="note-other-account">{% translate "the saved copy belongs to %(stamped)s" %}</span>
         <span
             data-string="note-no-areas"
@@ -233,6 +248,12 @@ of a settings page nobody came here to audit.
             data-string="verdict-unchecked"
         >{% translate "The app will open, but some things could not be checked on this device." %}</span>
         <span data-string="verdict-no-worker">{% translate "This device is not set up for offline use yet." %}</span>
+        {# SNOW-922: the combination — no network by choice AND no saved #}
+        {# page. It has its own verdict because verdict-no-page below #}
+        {# prescribes the one thing this state makes impossible. #}
+        <span
+            data-string="verdict-forced-lockout"
+        >{% translate "Offline mode is on and the app is not saved here, so it will not open. Switch Offline mode off to reconnect." %}</span>
         <span
             data-string="verdict-no-page"
         >{% translate "The app will not open without a signal. Open the map once while connected." %}</span>

@@ -1333,7 +1333,7 @@ describe('a collection that threw', () => {
     });
   });
 
-  it('does not tell a working device its offline mode is missing', () => {
+  it('does not tell a working device its offline support is missing', () => {
     // The specific danger: with no readings, `serviceWorker` is absent and
     // the row would otherwise have read "offline mode has not been set up
     // on this device" — a confident, wrong diagnosis of a worker that is
@@ -1343,7 +1343,7 @@ describe('a collection that threw', () => {
       { 'verdict-failed': 'could not run' },
     );
 
-    expect(row(report, 'offline-mode').status).toBe('unknown');
+    expect(row(report, 'offline-support').status).toBe('unknown');
     expect(report.verdict.status).toBe('fail');
     expect(report.verdict.text).toBe('could not run');
   });
@@ -1352,5 +1352,105 @@ describe('a collection that threw', () => {
     const report = core.buildReport({ failure: 'TypeError: boom' }, {});
 
     expect(core.reportText(report, {})).toContain('TypeError: boom');
+  });
+});
+
+describe('the network-use row and the lock-out it diagnoses (SNOW-922)', () => {
+  /*
+   * The reading this block is about was collected from the day the report
+   * shipped and consumed by nothing. The consequence was precise: a
+   * device stranded by the account menu's Offline mode switch got a
+   * report that never mentioned the mode, and a verdict telling it to
+   * "open the map once while connected" — the one action that mode makes
+   * impossible, since the worker refuses the network whatever the radio
+   * is doing.
+   *
+   * It was also misread in the other direction. The row above this one
+   * was labelled "Offline mode is on" and answers from
+   * `serviceWorker.controlled`, so its green Yes read as confirmation of
+   * the switch. It is `offline-support` now, and the switch has its own
+   * row.
+   */
+
+  it('answers Yes when nothing is stopping the app calling the server', () => {
+    const report = core.buildReport(healthy({ networkMode: 'auto' }), {});
+    expect(row(report, 'network-use').status).toBe('yes');
+  });
+
+  it('treats a device that has never set a mode as auto', () => {
+    // A missing row genuinely means nobody has ever changed the mode.
+    const report = core.buildReport(healthy({ networkMode: null }), {});
+    expect(row(report, 'network-use').status).toBe('yes');
+  });
+
+  it('answers unknown rather than Yes when the database would not open', () => {
+    // The standing rule: a reading that could not be taken is `unknown`.
+    // An unreadable database cannot tell "never set" from "set to
+    // forced", and the second of those is the state this row exists for.
+    const report = core.buildReport(healthy({ dbAvailable: false, networkMode: null }), {});
+    expect(row(report, 'network-use').status).toBe('unknown');
+  });
+
+  it('tells the user’s own mode apart from the worker’s latch', () => {
+    // Two Nos, two remedies: one is a switch to press, the other lifts
+    // itself when a probe finds a route. They never share a clause.
+    const forced = core.buildReport(healthy({ networkMode: 'offline-forced' }), {});
+    expect(row(forced, 'network-use').status).toBe('no');
+    expect(row(forced, 'network-use').reason).toBe('forced');
+
+    const latched = core.buildReport(healthy({ networkMode: 'offline' }), {});
+    expect(latched && row(latched, 'network-use').reason).toBe('latched');
+  });
+
+  it('is not critical: a forced mode over a saved app is working as asked', () => {
+    // The point of the mode. Someone who turned it on deliberately, on a
+    // device whose app is saved, is getting what they wanted — so the
+    // verdict must not call it a failure.
+    const report = core.buildReport(healthy({ networkMode: 'offline-forced' }), {});
+    expect(row(report, 'network-use').status).toBe('no');
+    expect(report.verdict.status).toBe('warn');
+  });
+
+  it('names the forced mode as the blocker when the app is not saved either', () => {
+    // The trap, and the whole reason for this block. Both halves have to
+    // be true: no network by instruction AND no page to open instead.
+    const report = core.buildReport(
+      healthy({
+        networkMode: 'offline-forced',
+        shellEntries: [],
+        mapDependencies: null,
+      }),
+      { 'verdict-forced-lockout': 'switch it off' },
+    );
+
+    expect(row(report, 'app-opens').status).toBe('blocked');
+    expect(report.verdict.status).toBe('fail');
+    expect(report.verdict.text).toBe('switch it off');
+  });
+
+  it('does not give that verdict for a merely latched worker', () => {
+    // A latch is the worker's own guess from three read-path timeouts,
+    // and it lifts itself. Telling the reader to press a switch for it
+    // would be advice for a state that may already be gone.
+    const report = core.buildReport(
+      healthy({ networkMode: 'offline', shellEntries: [], mapDependencies: null }),
+      { 'verdict-no-page': 'open the map once while connected' },
+    );
+
+    expect(report.verdict.text).toBe('open the map once while connected');
+  });
+
+  it('still prefers the no-worker verdict, which nothing below is reachable past', () => {
+    const report = core.buildReport(
+      healthy({
+        networkMode: 'offline-forced',
+        serviceWorker: { supported: true, registered: false, controlled: false },
+        shellEntries: [],
+        mapDependencies: null,
+      }),
+      { 'verdict-no-worker': 'not set up yet' },
+    );
+
+    expect(report.verdict.text).toBe('not set up yet');
   });
 });

@@ -1,0 +1,34 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_network_mode_strings.html — copy for the Offline mode
+switch's lock-out warning (SNOW-922).
+
+``static/js/pwa_offline.js`` puts this in a ``window.confirm`` before it
+lets the nav menu's "Offline mode" switch enter ``'offline-forced'`` on a
+device whose app is not saved. ``makemessages`` scans templates and
+Python, never JavaScript, so written as a JS literal it would ship as
+English to every locale (docs/i18n.md).
+
+Included from ``public/base.html`` rather than beside the switch in
+``nav.html`` for the same reason the favourites-offline copy is: the
+warning has to already be on the page when it is needed, and the switch
+lives in the nav on every page. It is one hidden span.
+
+Whitespace is collapsed on read, so the wrapping ``djangofmt`` applies
+here does not reach the dialogue — see static/js/i18n_strings.js. The
+paragraph break is written as an explicit ``\n\n`` in the JS fallback
+rather than here for that same reason; a confirm() dialogue is plain text
+and a collapsed newline would run the two halves together.
+
+NOT rendered on ``static/offline.html``. That page is a static file the
+service worker precaches — it reaches no template, no catalogue and no
+``pwaStrings``, so its copy is English literals by construction, exactly
+as every other string on it is. Keep the two wordings in step by hand.
+{% endcomment %}
+<template id="network-mode-strings-template">
+    <span data-string="lockout-warning">
+        {% blocktrans %}Snowdesk has not been saved on this device yet, so switching Offline mode on will stop it
+            opening at all until you switch it off again.{% endblocktrans %}
+    </span>
+    <span data-string="lockout-confirm">{% trans "Switch it on anyway?" %}</span>
+</template>

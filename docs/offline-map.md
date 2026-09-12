@@ -2658,7 +2658,7 @@ part company here:
 |---|---|---|---|---|
 | `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
 | `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
-| `offline-forced` | the user, from the account menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
+| `offline-forced` | the user, from the account menu's "Offline mode" row **or the same switch on `static/offline.html`** | as `offline` | **no** | the user, and nothing else |
 
 **The two offline values are not interchangeable, and half the comparisons in
 each file turn on which one is meant.** `offline` is the worker inferring there
@@ -2671,7 +2671,14 @@ comparison in `sw.js` and `pwa_offline.js` carries a comment saying which sense
 it is in.
 
 **Where the symbol and the switch live.** Both are in
-`templates/includes/nav.html`, split the way a phone splits aeroplane mode.
+`templates/includes/nav.html`, split the way a phone splits aeroplane mode —
+and since SNOW-922 the switch is **also** on `static/offline.html`, which is
+the page a forced mode strands you on. Both work one mechanism,
+`static/js/pwa_network_mode.js` (precached in `PRECACHE_URLS`), and both guard
+the ON direction with the worker's own `can-open-offline` answer. Why that is
+not a self-healing worker, and why the rule is a module rather than a second
+copy:
+[`decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md`](decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md).
 
 * `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
   page for every viewer including anonymous ones, and **never hidden**. It

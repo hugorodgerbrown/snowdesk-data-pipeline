@@ -187,6 +187,12 @@
    *   FeatureCollection draws nothing.
    * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
    * @property {{count?: number|null}} [mutations]
+   * @property {string|null} [networkMode] SNOW-922: the ``meta:app``
+   *   ``network.mode`` row — ``'auto'``, ``'offline'`` (the worker's own
+   *   latch) or ``'offline-forced'`` (the user's switch). Collected since
+   *   SNOW-907 and read by nothing until SNOW-922, which is why a device
+   *   the forced mode had stranded got a report that never mentioned it.
+   *   ``null`` is genuinely "never set" only when ``dbAvailable`` is true.
    * @property {boolean} [dbAvailable]
    * @property {boolean} [cachesReadable] False where Cache Storage could
    *   not be LISTED. Every row read out of it then answers unknown: an
@@ -212,7 +218,21 @@
   // all, as opposed to one capability being unavailable. Only four rows
   // are: everything else is a limitation worth knowing, not a fault.
   var ROWS = [
-    { id: 'offline-mode', section: 'access', critical: true },
+    // SNOW-922: was `offline-mode`, labelled "Offline mode is on". It has
+    // only ever answered from `serviceWorker.controlled` — "the offline
+    // machinery is installed and running" — and that name collided head-on
+    // with the account menu's "Offline mode" switch, which is a different
+    // thing entirely. A user stranded BY that switch read this row's green
+    // Yes as confirmation of it and the report never corrected them, because
+    // the mode had no row at all. It has one now, immediately below.
+    { id: 'offline-support', section: 'access', critical: true },
+    // The user's own switch, and the first row in this list whose No is not
+    // necessarily a fault: someone who deliberately turned Offline mode on,
+    // on a device whose app is saved, is getting exactly what they asked for.
+    // It is a fault only in combination — no network AND no saved page — and
+    // `verdictFor` is where those two meet, which is why this row is not
+    // `critical` despite being the reason the app will not open.
+    { id: 'network-use', section: 'access', critical: false },
     { id: 'app-opens', section: 'access', critical: true },
     { id: 'app-looks-right', section: 'access', critical: false },
     { id: 'danger-ratings', section: 'map', critical: false },
@@ -940,7 +960,7 @@
       return { status: 'unknown' };
     }
 
-    if (id === 'offline-mode') {
+    if (id === 'offline-support') {
       if (!sw.supported) return { status: 'unknown', note: s(t, 'note-sw-unsupported') };
       if (sw.controlled) return { status: 'yes' };
       return {
@@ -948,6 +968,31 @@
         reason: sw.registered ? 'starting' : 'absent',
         note: s(t, sw.registered ? 'note-sw-starting' : 'note-sw-absent'),
       };
+    }
+
+    // SNOW-922: the mode the worker is actually in, read from the same
+    // ``meta:app`` row it hydrates itself from on every boot. The reading was
+    // collected from the day the report shipped and consumed by nothing, so
+    // the one state that makes every other row's remedy unreachable — "the
+    // app is set never to call the server" — was invisible here.
+    if (id === 'network-use') {
+      // Unreadable, not absent. A missing row genuinely means 'auto' (nobody
+      // has ever changed the mode on this device), but a DB that would not
+      // open cannot tell the two apart, and this report's standing rule is
+      // that a reading it could not take is `unknown` rather than a Yes.
+      if (r.dbAvailable === false) return { status: 'unknown' };
+      var mode = typeof r.networkMode === 'string' ? r.networkMode : 'auto';
+      if (mode === 'offline-forced') {
+        return { status: 'no', reason: 'forced', note: s(t, 'note-network-forced') };
+      }
+      if (mode === 'offline') {
+        // The worker's own latch, from three read-path timeouts. Told apart
+        // from the forced mode because the remedies differ completely: this
+        // one lifts itself when a probe finds a route, so there is nothing
+        // for the reader to press.
+        return { status: 'no', reason: 'latched', note: s(t, 'note-network-latched') };
+      }
+      return { status: 'yes' };
     }
 
     if (id === 'app-opens') {
@@ -1497,11 +1542,29 @@
       return byId[id] && byId[id].status === 'blocked';
     };
 
-    if (blocked('offline-mode')) {
+    if (blocked('offline-support')) {
       return {
         status: 'fail',
         text: s(t, 'verdict-no-worker'),
-        covers: ['offline-mode'],
+        covers: ['offline-support'],
+      };
+    }
+    // SNOW-922: the trap, and it has to be named BEFORE the plain
+    // no-saved-page verdict below, because that one's remedy — "open the map
+    // once while connected" — is the exact advice this state makes
+    // impossible. Under 'offline-forced' the worker refuses every navigation
+    // whatever the radio is doing, so reconnecting changes nothing; the user
+    // reads a sentence telling them to do the one thing that cannot work,
+    // which is how this ticket was reported.
+    //
+    // Both halves have to be true. A forced mode over a saved app is not a
+    // fault at all (the app opens, which is what the mode is FOR), and a
+    // missing page in 'auto' is the ordinary case the next branch handles.
+    if (blocked('app-opens') && byId['network-use'] && byId['network-use'].reason === 'forced') {
+      return {
+        status: 'fail',
+        text: s(t, 'verdict-forced-lockout'),
+        covers: ['app-opens', 'network-use'],
       };
     }
     if (blocked('app-opens')) {

@@ -532,6 +532,39 @@
   }
 
   /**
+   * SNOW-922: the lock-out warning, as one ``window.confirm`` body.
+   *
+   * Read from ``includes/_network_mode_strings.html`` rather than written
+   * inline, because ``makemessages`` never sees a JS literal (docs/i18n.md).
+   * Read lazily rather than at load: this module is deferred and the template
+   * is markup, so it is always there by the time a user presses the switch,
+   * and reading it per press costs nothing measurable against a dialogue.
+   *
+   * The blank line between the two halves is joined HERE, not in the
+   * template: ``pwaStrings.read`` collapses whitespace on read (so the
+   * formatter's wrapping cannot reach the dialogue), which would flatten a
+   * paragraph break written there into a single space.
+   *
+   * @returns {string}
+   */
+  function networkLockoutWarning() {
+    const strings = window.pwaStrings
+      ? window.pwaStrings.read('network-mode-strings-template', {
+          'lockout-warning':
+            'Snowdesk has not been saved on this device yet, so switching Offline mode on ' +
+            'will stop it opening at all until you switch it off again.',
+          'lockout-confirm': 'Switch it on anyway?',
+        })
+      : {};
+    const warning =
+      strings['lockout-warning'] ||
+      'Snowdesk has not been saved on this device yet, so switching Offline mode on will ' +
+        'stop it opening at all until you switch it off again.';
+    const confirm = strings['lockout-confirm'] || 'Switch it on anyway?';
+    return warning + '\n\n' + confirm;
+  }
+
+  /**
    * SNOW-748: narrow an arbitrary value to one of the three known modes.
    *
    * Used on both inbound paths — the worker's announcement and the persisted
@@ -544,6 +577,11 @@
    * @returns {'auto'|'offline'|'offline-forced'}
    */
   function coerceNetworkMode(value) {
+    // SNOW-922: one narrowing rule, owned by pwa_network_mode.js, which
+    // static/offline.html also reads it from. The inline fallback stays for
+    // the load-order case only — this module is deferred behind that one in
+    // base.html, so in practice the delegate is always there.
+    if (window.pwaNetworkMode) return window.pwaNetworkMode.coerce(value);
     if (value === 'offline' || value === 'offline-forced') return value;
     return 'auto';
   }
@@ -556,7 +594,19 @@
    */
   function requestNetworkMode(mode) {
     networkMode = mode;
-    persistMeta(NETWORK_MODE_KEY, mode);
+    // SNOW-922: the persist-then-announce pair is pwa_network_mode.js's,
+    // because static/offline.html has to perform exactly the same pair and
+    // two copies of it would drift. The ORDER is the part that matters —
+    // announcing first leaves a window in which the worker holds the new mode
+    // and the disk the old one, and an idle worker recycled inside it comes
+    // back in the mode the user just left. `set` persists first, and the
+    // module's storage adapter prefers `window.pwaDb` where it is loaded, so
+    // an app-side write still goes through the real database layer.
+    if (window.pwaNetworkMode) {
+      window.pwaNetworkMode.set(mode);
+    } else {
+      persistMeta(NETWORK_MODE_KEY, mode);
+    }
     renderConnectionUi(navigator.onLine);
     // SNOW-748: the page's own mode changes are broadcast too, not just the
     // worker's. The toggle's click lands here, and it must not wait for the
@@ -564,6 +614,9 @@
     // the worker activated has none.
     syncNetworkRequired(effectiveOnline());
     broadcastConnectivity();
+    // SNOW-922: only on the fallback path — `pwaNetworkMode.set` above has
+    // already announced, in the right order relative to its own write.
+    if (window.pwaNetworkMode) return;
     try {
       navigator.serviceWorker?.controller?.postMessage({ type: 'network-mode', mode });
     } catch (_err) {
@@ -608,7 +661,40 @@
     // Space and a click on the <label> both arrive here, and the browser has
     // already flipped ``checked`` by the time it does.
     document.getElementById(NETWORK_SWITCH_ID)?.addEventListener('change', (event) => {
-      requestNetworkMode(event.target.checked ? 'offline-forced' : 'auto');
+      const input = event.target;
+      if (!input.checked) {
+        requestNetworkMode('auto');
+        return;
+      }
+      // SNOW-922: switching ON is the move that can strand the user, so it
+      // asks the worker whether the app would in fact open first. Under
+      // 'offline-forced' every navigation is answered from cache, so a device
+      // with no shell page cached for this account reaches offline.html and
+      // nothing else — and until this ticket the only control that ended that
+      // state was this switch, inside the app that would not open.
+      //
+      // `canOpenOffline` answers false on any doubt (no worker, no reply
+      // inside its budget), so the worst case is one extra press for someone
+      // whose map really is saved. That is much the cheaper way to be wrong,
+      // and the confirmation names the consequence rather than warning
+      // vaguely: someone who genuinely wants aeroplane mode on a fresh device
+      // can still have it, having been told what it costs.
+      const proceed = window.pwaNetworkMode
+        ? window.pwaNetworkMode.canOpenOffline().then((canOpen) => {
+            if (canOpen) return true;
+            return window.confirm(networkLockoutWarning());
+          })
+        : Promise.resolve(true);
+      proceed.then((confirmed) => {
+        if (!confirmed) {
+          // Put the switch back where the user left it. Assigning `checked`
+          // fires no `change`, so this cannot re-enter.
+          input.checked = false;
+          renderConnectionUi(navigator.onLine);
+          return;
+        }
+        requestNetworkMode('offline-forced');
+      });
     });
     // ``navigator.serviceWorker``'s message queue is disabled until something
     // enables it — setting ``onmessage``, or calling this. An

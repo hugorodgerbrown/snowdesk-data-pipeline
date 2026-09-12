@@ -78,6 +78,10 @@ interface Window {
   pwaOfflineAudit: any;
   /** static/js/sw_register.js — asks the worker to warm a URL list. */
   pwaWarmCache: any;
+  /** static/js/db.js — the IndexedDB layer (schema version, upgrades). */
+  pwaDb: any;
+  /** static/js/pwa_network_mode.js — reads and sets the network mode. */
+  pwaNetworkMode: any;
 }
 
 /**

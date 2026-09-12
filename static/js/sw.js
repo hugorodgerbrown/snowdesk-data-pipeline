@@ -885,9 +885,21 @@ const DEBUG_LOG_MAX_PENDING = 200;
 // broken and the network is gone, so the script that binds it has to survive
 // exactly that — without it the control renders bound to nothing, which is
 // worse than absent.
+//
+// SNOW-922: NETWORK_MODE_SCRIPT is in this atomic list for exactly the same
+// argument, and it is the stronger case of the two. It carries the Offline
+// mode switch onto the recovery page, and the state it exists for is one this
+// worker CREATES: under ``'offline-forced'`` every navigation is refused here
+// and answered from cache, so a device with no cached shell page for the
+// current principal reaches ``offline.html`` and nothing else, for as long as
+// the mode persists — which is across restarts, because ``_hydrateNetworkMode``
+// restores it. Without this script the one control that ends that state renders
+// bound to nothing, and the only exits left are a full local-data wipe or the
+// browser's own site-data settings.
 const OFFLINE_FALLBACK = '/static/offline.html';
 const RESET_SCRIPT = '/static/js/pwa_reset.js';
-const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT];
+const NETWORK_MODE_SCRIPT = '/static/js/pwa_network_mode.js';
+const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT, NETWORK_MODE_SCRIPT];
 
 // SNOW-907: the offline-content audit, carried onto the offline page for
 // the same reason RESET_SCRIPT is — the moment a user most needs to know
@@ -2761,6 +2773,47 @@ async function _probeNetwork() {
 }
 
 /**
+ * SNOW-922: would a navigation to the app open, right now, with no network?
+ *
+ * Answered HERE rather than on the page, because this worker is the thing
+ * that will or will not serve that navigation. The question is precisely
+ * "would ``_networkFirstFallback`` find a page for it", and every input —
+ * the live shell cache, the entry, its ``X-SW-Principal`` stamp, the account
+ * signed in now — is already in this file. A page-side copy would be a second
+ * answer to a question that has one, and the two would drift the first time
+ * either side of the principal rule changed.
+ *
+ * Its caller is ``pwa_network_mode.js``'s ``canOpenOffline``, which uses it to
+ * decide whether switching ON Offline mode would strand the user — the state
+ * SNOW-922 exists to stop anyone else reaching. Both matches below mirror
+ * ``_networkFirstFallback``'s own: the exact request first, then the
+ * searchless one, because ``/?d=2026-01-23`` and ``/`` share a cached shell.
+ *
+ * Answers false on anything it cannot establish. A false here costs one extra
+ * confirmation press; a wrong true costs the app.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function _canOpenOffline() {
+  try {
+    const cache = await caches.open(CACHE_VERSION);
+    const current = await _currentPrincipal();
+    const request = new Request(new URL(SHELL_PAGE, self.location.origin).toString());
+    const cached =
+      (await cache.match(request)) || (await cache.match(request, { ignoreSearch: true }));
+    // The offline fallback is deliberately not a hit: it is precached,
+    // carries no principal, and is the page whose appearance means the app
+    // did NOT open. Counting it would answer yes to every device.
+    if (!cached) return false;
+    return _principalMatches(cached, current);
+  } catch (_err) {
+    // No Cache Storage, an unreadable entry, a DB that would not open for the
+    // principal: all of them mean the same thing to the caller.
+    return false;
+  }
+}
+
+/**
  * Tell every client which mode the worker is in, so ``pwa_offline.js`` can
  * render the banner and persist the mode to ``meta:app``.
  *
@@ -3840,6 +3893,23 @@ self.addEventListener('message', (event) => {
     // warm-cache handler below takes. Guarded because not every dispatcher is
     // an ExtendableMessageEvent.
     if (typeof event.waitUntil === 'function') event.waitUntil(answered);
+  }
+  // SNOW-922: "would the app open with no network?", asked by
+  // pwa_network_mode.js before it lets anyone switch Offline mode ON. Replies
+  // down the MessagePort the caller transferred rather than to every client:
+  // this is one page's question about its own next action, not worker state
+  // anybody else needs. A caller that sent no port gets no reply and falls
+  // back to its own budget, which answers false — the safe direction.
+  if (event.data && event.data.type === 'can-open-offline') {
+    const port = event.ports && event.ports[0];
+    const replied = _canOpenOffline()
+      .then((canOpen) => {
+        port?.postMessage({ type: 'can-open-offline', canOpen: canOpen });
+      })
+      .catch(() => {
+        port?.postMessage({ type: 'can-open-offline', canOpen: false });
+      });
+    if (typeof event.waitUntil === 'function') event.waitUntil(replied);
   }
   // The page sends this when the user clicks "Reload" on the update
   // banner. Activating the waiting worker triggers ``activate`` (and its
