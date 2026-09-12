@@ -13,7 +13,7 @@ last-reviewed: 2026-09-11
 expiries **latch** the worker into an offline mode in which read paths do not
 call the network at all. The latch lifts on a bounded probe to `/livez`, on the
 `online` event, or on the user's own control — the "Offline mode" row in the
-account menu. `_warmCache` is exempt from both — from the **latch**, not from the
+network menu (the account menu until SNOW-921). `_warmCache` is exempt from both — from the **latch**, not from the
 user's own offline mode (see below).
 
 **Amended by SNOW-748.** The mode has three values, not two: `auto`, `offline`
@@ -126,8 +126,8 @@ staleness — is the one state this mode cannot be in.
 enough to matter (an hour, a day) fires precisely when the user is least able
 to notice, and the cost lands on the connection they were protecting.
 
-The user's way back is present in both places at all times: the account menu's
-"Offline mode" row and the banner's "Use the network again" button.
+The user's way back is present in both places at all times: the network menu's
+"Offline mode" row and, in the same menu, the "Use the network again" button.
 
 ## Why `_warmCache` is exempt from the latch — and not from a forced mode
 

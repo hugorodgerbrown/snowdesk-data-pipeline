@@ -2658,7 +2658,7 @@ part company here:
 |---|---|---|---|---|
 | `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
 | `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
-| `offline-forced` | the user, from the account menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
+| `offline-forced` | the user, from the network menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
 
 **The two offline values are not interchangeable, and half the comparisons in
 each file turn on which one is meant.** `offline` is the worker inferring there
@@ -2670,8 +2670,13 @@ probe. SNOW-742 had two values and routed the user's request into
 comparison in `sw.js` and `pwa_offline.js` carries a comment saying which sense
 it is in.
 
-**Where the symbol and the switch live.** Both are in
-`templates/includes/nav.html`, split the way a phone splits aeroplane mode.
+**Where the symbol and the switch live.** The symbol is in
+`templates/includes/nav.html` and the switch is in
+`templates/includes/_connection_panel.html`, the menu that symbol opens.
+SNOW-748 split them the way a phone splits aeroplane mode — a mark in the
+status bar, a control in the settings — and SNOW-921 brought the control back
+under the mark, because the only "settings" available to put it in was the
+account dropdown, which quietly made a device preference an account feature.
 
 * `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
   page for every viewer including anonymous ones, and **never hidden**. It
@@ -2685,16 +2690,30 @@ it is in.
   pressing it cannot change the network mode. Anonymous viewers get it because
   the worker latches itself for anybody, so the state it reports is one they
   can be in.
-* `[data-network-toggle]` — the **switch**, an "Offline mode" row at the top
-  of the account menu's `<details>` dropdown, between the subscribed regions
-  and "Subscriptions". Signed-in only: turning the mode on is a device
-  preference. It is an `includes/_switch.html` checkbox — a real
+* `[data-network-toggle]` — the **switch**, an "Offline mode" row inside the
+  menu the symbol discloses, first among its controls and directly under the
+  rule that separates what is true from what you can do. **Every viewer gets
+  it**, signed in or not (SNOW-921): the mode is a `meta:app` row and a
+  service-worker flag, and it was signed-in only for as long as the account
+  dropdown was the only menu available to put it in. It is an
+  `includes/_switch.html` checkbox — a real
   `<input type="checkbox" role="switch">` — so keyboard activation, focus and
-  `aria-checked` come from the platform. Its wrapper carries `role="none"`,
-  because a `role="switch"` is not a valid child of `role="menu"` and marking
-  the wrapper presentational is the conformant way to seat one there; the
-  alternative, `role="menuitemcheckbox"`, would mean reimplementing by hand
-  everything the input already does.
+  `aria-checked` come from the platform. It no longer carries `role="none"`:
+  that existed because a `role="switch"` is not a valid child of `role="menu"`
+  and the account dropdown claims that role, while this panel claims no ARIA
+  role at all.
+* `[data-traffic-arrow]` — the **traffic pair** (SNOW-921), a 12px column
+  beside the symbol: up when a request goes out, down when a response comes
+  back, each lit for ~450ms by `pwa_offline.js` setting `data-active` and
+  painted from `src/css/main.css`. `aria-hidden`, and deliberately
+  approximate — they answer "is anything moving", which nothing in this header
+  answered before, and not "how much". `shouldPulseFor` applies the sync log's
+  own exclusions so the pair does not blink at the telemetry flush on an idle
+  tab; cross-origin requests always pulse, because basemap tiles are the case
+  worth watching.
+* `[data-network-debug-log]` — the **way into the on-device trace**
+  (SNOW-812/921), rendered in the same menu behind the `debug_log` waffle flag
+  and bound by `static/js/debug_log_panel.js`.
 
 The row is rendered `hidden` and revealed by `pwa_offline.js`, the same
 contract the sync badge has with `mutation_queue.js`: it drives a service

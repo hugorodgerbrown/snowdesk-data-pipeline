@@ -10,15 +10,18 @@
  *       failed (an ``AbortError`` is a caller cancelling its own request,
  *       not a connectivity failure, so it is excluded), OR the service
  *       worker is in an offline mode.
- *   (2) Freshness on demand — pressing that symbol opens the
- *       connection-status panel (``includes/_connection_panel.html``),
- *       anchored beneath it in the header, which shows how long ago this
- *       device last reached the server, explains the current state, and
- *       offers the way back to the network.
+ *   (2) Freshness on demand — pressing that symbol opens the network menu
+ *       (``includes/_connection_panel.html``), anchored beneath it in the
+ *       header, which shows how long ago this device last reached the
+ *       server, explains the current state, carries the "Offline mode"
+ *       switch, and offers the way back to the network.
  *   (3) Network-required buttons — any element carrying
  *       ``data-network-required`` is set ``disabled`` when offline and
  *       re-enabled when back online. Non-button elements get an
  *       ``aria-disabled="true"`` + ``pointer-events: none`` fallback.
+ *   (4) Traffic arrows (SNOW-921) — the ``[data-traffic-arrow]`` pair
+ *       beside that symbol, lit for ~450ms per edge: up when a request
+ *       goes out, down when a response comes back.
  *
  * The banner is gone (SNOW-748)
  * ------------------------------
@@ -117,13 +120,21 @@
  *     step, and nav.html's own script adds outside-click, Escape and the
  *     panel's close control. That is why nothing here binds a click on the
  *     symbol, and why the panel needs no help from ``overlays.js``.
- *   * ``[data-network-toggle]`` — the "Offline mode" row at the top of the
- *     subscriber menu, an ``includes/_switch.html`` checkbox. Revealed here,
- *     its ``checked`` state painted here, its ``change`` event bound here.
+ *   * ``[data-network-toggle]`` — the "Offline mode" row, an
+ *     ``includes/_switch.html`` checkbox. Revealed here, its ``checked``
+ *     state painted here, its ``change`` event bound here.
  *
- * The two are found independently, and each is optional: the row renders only
- * for a signed-in user, so on an anonymous page the symbol must still be
- * painted with no row present.
+ * The two are found independently, and each is optional — a page served from
+ * a shell cached before either ticket renders one and not the other, so
+ * neither may assume the other is on the page.
+ *
+ * SNOW-921 moved the row out of the subscriber menu and into the panel the
+ * symbol discloses, which is where the state it sets is already reported. The
+ * consequence worth knowing here: the row is no longer signed-in only. It was
+ * only ever so because the account dropdown was the only menu available to put
+ * it in — the mode itself is a ``meta:app`` row and a service-worker flag, and
+ * has never had anything to do with an account. Nothing in this module changes
+ * for that; the selectors are unchanged and the row was already optional.
  *
  * The two do NOT paint the same predicate, and that is the point. The symbol
  * answers "is this app reaching the server", so a dead interface turns it
@@ -166,6 +177,33 @@
  * which is what ``bin/i18n-lint`` fails on. The menu switch needs no string
  * from here at all: its label is fixed ("Offline mode").
  *
+ * The traffic arrows (SNOW-921)
+ * ------------------------------
+ * The header said whether the app COULD reach the server and when it last
+ * DID, and nothing at all about whether anything was moving right now. A
+ * pan over a downloaded region and a pan spending a roaming connection
+ * looked identical.
+ *
+ * So: two arrows beside the glyph, one lit per edge — ``pulseTraffic('up')``
+ * from the fetch wrapper's entry and htmx's ``beforeRequest``,
+ * ``pulseTraffic('down')`` from a resolved response and ``afterOnLoad``. A
+ * failed fetch pulses neither on the way back, because nothing came back.
+ *
+ * Approximate ON PURPOSE, and the ticket says so: they answer "is anything
+ * moving", not "how much". There is no counter, no queue depth and no byte
+ * total. The one thing they are careful about is what they DON'T show —
+ * ``shouldPulseFor`` applies the sync log's own exclusions, so the pair does
+ * not blink at ``/api/telemetry``'s 30-second flush on an idle tab, which
+ * would turn an activity lamp into a metronome. Cross-origin requests always
+ * pulse, because basemap tiles are the bulkiest thing this app fetches and
+ * telling a cached pan from a paid one is the whole point.
+ *
+ * They are painted by a data attribute, never a class string built here:
+ * ``src/css/main.css``'s ``[data-traffic-arrow]`` rules own the rest state,
+ * the lit state and the transition, and ``includes/nav.html`` marks the pair
+ * ``aria-hidden`` — a screen reader gets the symbol's accessible name and the
+ * panel's summary line, which say the same things in words.
+ *
  * Deferred to SNOW-375 / follow-ups:
  *   * Pull-to-refresh explicit-network path.
  *   * "Updated HH:MM" post-refresh toast.
@@ -202,7 +240,7 @@
   //
   // SNOW-748: three values, not two — ``'auto'``, ``'offline'`` (the worker
   // latched itself after three read timeouts) and ``'offline-forced'`` (the
-  // user switched on "Offline mode" in the account menu). Only the middle one
+  // user switched on "Offline mode" in the network menu). Only the middle one
   // is ever probed, which
   // is why the user's choice survives being online.
   const NETWORK_MODE_KEY = 'network.mode';
@@ -214,6 +252,18 @@
   // either exists depends on the page and on who is reading it.
   const NETWORK_INDICATOR_SELECTOR = '[data-network-indicator]';
   const NETWORK_TOGGLE_SELECTOR = '[data-network-toggle]';
+
+  // SNOW-921: the traffic arrows beside the header glyph — up for a request
+  // going out, down for a response coming back (``includes/nav.html``).
+  const TRAFFIC_UP_SELECTOR = '[data-traffic-arrow="up"]';
+  const TRAFFIC_DOWN_SELECTOR = '[data-traffic-arrow="down"]';
+  // How long an arrow stays lit after the edge that lit it. Long enough for
+  // a 40ms round trip to register as a deliberate blink rather than a
+  // flicker, short enough that the pair is dark again by the time a user
+  // looks up from a finished page. A second edge inside the window restarts
+  // the clock rather than queueing, so a burst of tile fetches holds the
+  // arrow on — see ``pulseTraffic``.
+  const TRAFFIC_PULSE_MS = 450;
   // The switch input inside that row. ``includes/_switch.html`` renders only
   // an ``id`` — SNOW-645 removed its raw attribute passthrough as a SAST
   // finding — so its callers select it by id, as the downloads sheet does.
@@ -715,6 +765,98 @@
     }
   }
 
+  // SNOW-921: the live timer per direction, so a second request inside the
+  // window extends the existing pulse instead of stacking a second one that
+  // would put the arrow out early.
+  const trafficTimers = { up: null, down: null };
+
+  /**
+   * SNOW-921: light one traffic arrow for ``TRAFFIC_PULSE_MS``.
+   *
+   * Deliberately approximate. The pair answers "is anything moving", not
+   * "how much" — the ticket says so — so there is no counting, no queue
+   * depth and no byte total anywhere in here. It is a modem's activity
+   * lamp: an edge lights it, a beat of silence puts it out, and a burst
+   * holds it on because each edge restarts the timer.
+   *
+   * The arrow is painted by a data attribute, not by a class this module
+   * builds. ``src/css/main.css``'s ``[data-traffic-arrow]`` rules own the
+   * rest state, the lit state and the transition between them, which keeps
+   * every colour and duration in the one file the design system asks for
+   * them to live in — and means this function cannot introduce a raw
+   * Tailwind palette utility for ``bin/ds-lint`` to find.
+   *
+   * A no-op on a page that renders no arrows, which is any page served
+   * from a shell cached before this ticket.
+   *
+   * @param {'up'|'down'} direction
+   * @returns {void}
+   */
+  function pulseTraffic(direction) {
+    const selector = direction === 'up' ? TRAFFIC_UP_SELECTOR : TRAFFIC_DOWN_SELECTOR;
+    const arrow = document.querySelector(selector);
+    if (!arrow) return;
+    arrow.setAttribute('data-active', '');
+    if (trafficTimers[direction] !== null) window.clearTimeout(trafficTimers[direction]);
+    trafficTimers[direction] = window.setTimeout(() => {
+      trafficTimers[direction] = null;
+      arrow.removeAttribute('data-active');
+    }, TRAFFIC_PULSE_MS);
+  }
+
+  /**
+   * SNOW-921: the URL a ``fetch`` call is for, as a string.
+   *
+   * ``fetch`` takes a string, a ``URL`` or a ``Request``, and the traffic
+   * arrows are the only caller that needs to know which — everything else
+   * in this module reads the RESPONSE. Returns an empty string for
+   * anything unrecognised, which ``shouldPulseFor`` treats as "pulse
+   * anyway": an unidentifiable request is still a request, and guessing
+   * wrong here costs one blink.
+   *
+   * @param {*} input — the first argument passed to ``fetch``.
+   * @returns {string}
+   */
+  function requestUrlOf(input) {
+    if (typeof input === 'string') return input;
+    if (input && typeof input.url === 'string') return input.url;
+    if (input && typeof input.href === 'string') return input.href;
+    return '';
+  }
+
+  /**
+   * SNOW-921: whether a request is worth lighting an arrow for.
+   *
+   * The same exclusions the sync log applies, and for the same reason:
+   * ``static/js/telemetry.js`` flushes its buffer every 30 seconds and on
+   * every lifecycle event, so without this the arrows would blink at the
+   * page talking to itself, for ever, on an idle tab — which is precisely
+   * the impression an activity lamp must not give. Static assets go the
+   * same way; a cold boot pulling forty of them says nothing a user
+   * wanted to know.
+   *
+   * CROSS-ORIGIN requests always pulse, and that is the interesting half.
+   * Basemap tiles are a different origin, they are the bulkiest thing this
+   * app fetches, and a pan that is quietly serving everything from a
+   * pinned bucket looks exactly like one that is spending a roaming
+   * connection. The arrows are the only surface that can tell those apart.
+   *
+   * @param {string} rawUrl — as returned by ``requestUrlOf``.
+   * @returns {boolean}
+   */
+  function shouldPulseFor(rawUrl) {
+    if (!rawUrl) return true;
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      if (parsed.origin !== window.location.origin) return true;
+      return isLoggableSyncPath(parsed.pathname);
+    } catch (_err) {
+      // Unparseable — treat it as traffic. One stray blink is a cheaper
+      // failure than a dark lamp on a page that is busy.
+      return true;
+    }
+  }
+
   /**
    * Whether a same-origin pathname is a static-asset request that
    * should never be recorded as a "sync" (CSS/JS/images/fonts/the
@@ -829,8 +971,28 @@
     if (typeof window.fetch !== 'function') return;
     const original = window.fetch.bind(window);
     window.fetch = async function (...args) {
+      // SNOW-921: the OUTBOUND edge, read from the request rather than the
+      // response, because it is the only place the request is still the
+      // only thing that has happened. Wrapped in its own try: an activity
+      // lamp must never be able to stop a fetch.
+      let pulsing = false;
+      try {
+        pulsing = shouldPulseFor(requestUrlOf(args[0]));
+        if (pulsing) pulseTraffic('up');
+      } catch (_err) {
+        // Ignore — the arrows are decoration.
+      }
       try {
         const response = await original(...args);
+        // The INBOUND edge. Gated on the same decision the outbound one
+        // took, so a request that did not light the up arrow cannot light
+        // the down one and leave the pair looking like traffic arrived
+        // from nowhere.
+        try {
+          if (pulsing) pulseTraffic('down');
+        } catch (_err) {
+          // Ignore.
+        }
         try {
           absorbFreshness(
             (name) => response.headers.get(name),
@@ -852,6 +1014,12 @@
         if (err && err.name === 'AbortError') throw err;
         // Network failure — repaint as offline. Rethrow so callers can
         // still handle the failure themselves.
+        //
+        // SNOW-921: deliberately NO down pulse here. Nothing came back, and
+        // an arrow that lit on a failure would say the opposite of what the
+        // struck-through glyph this line paints is about to say. The up
+        // arrow stays lit for its window and goes out on its own, which is
+        // exactly the right reading: something went out, nothing returned.
         renderConnectionUi(false);
         throw err;
       }
@@ -864,7 +1032,16 @@
    * mutation reaches the symbol immediately.
    */
   function wrapHtmx() {
+    // SNOW-921: htmx drives XHR, not fetch, so the wrapper above never sees
+    // it. Its two edges are these events — and unlike the fetch path there
+    // is no filtering to do: htmx only ever requests same-origin fragment
+    // endpoints a user's own interaction asked for, which is the definition
+    // of traffic worth showing.
+    document.body?.addEventListener('htmx:beforeRequest', () => {
+      pulseTraffic('up');
+    });
     document.body?.addEventListener('htmx:afterOnLoad', (evt) => {
+      pulseTraffic('down');
       const xhr = evt?.detail?.xhr;
       if (!xhr || typeof xhr.getResponseHeader !== 'function') return;
       try {

@@ -1,7 +1,7 @@
 {% load i18n components %}
 {% comment %}
-templates/includes/_connection_panel.html — the connection-status panel
-(SNOW-748), anchored to the header's connectivity symbol in
+templates/includes/_connection_panel.html — the NETWORK MENU (SNOW-748,
+rebuilt by SNOW-921), anchored to the header's connectivity symbol in
 ``includes/nav.html``.
 
 An ANCHORED POPOVER, not a toast. The first pass built this surface on
@@ -13,24 +13,40 @@ either side of it — the same ``absolute right-0 top-full mt-1.5 rounded-card
 border border-border bg-card shadow-md z-50`` chrome the account and admin
 menus use.
 
-Neutral card tokens, deliberately. The toast version passed ``kind="info"``,
-which painted the panel ``status-info`` blue while the header symbol beside
-it was painted ``status-warning`` amber for the same state — two surfaces
-disagreeing about one bit. The SYMBOL carries the status colour, because it
-is the thing that has to be legible without being opened; the panel is where
-the detail is read, so it is the card it sits on.
+SNOW-921: one surface, not three
+--------------------------------
+It used to say things and do one thing. Everything a user might actually
+want to DO about the network lived somewhere else: the "Offline mode"
+switch was in the account dropdown (and so existed only for signed-in
+readers), and the on-device debug trace was a separate floating pill at the
+bottom-left of the page with no relationship to the header at all. The
+symbol that reports the network now opens the one place you act on it.
 
-It is not ``includes/_overflow_menu.html`` either: that partial is
-``role="menu"``, which is a list of commands, and this is a paragraph of
-information with one button at the end of it.
+So the panel is two halves with a rule between them:
+
+  * ABOVE — what is true. The summary line, the per-state explanation. Read,
+    not operated. Unchanged from SNOW-748 bar the wording of its own header.
+  * BELOW — what you can do. "Offline mode", the debug-log entry, and the
+    way back to the network. In the order the account menu already
+    established: the row you open the menu to OPERATE first, then the
+    destination, then the terminal action last.
+
+Still NOT ``role="menu"`` / ``includes/_overflow_menu.html``, and SNOW-921
+makes that firmer rather than softer. An ARIA ``menu`` admits only
+menuitem / menuitemcheckbox / menuitemradio as children, so a
+``role="switch"`` checkbox is not a valid child of one — and this surface
+now has a switch as its first control, plus a paragraph of prose above it.
+It is a disclosure holding a small form, which is what it has always
+actually been.
 
 Structure and dismissal come from the wrapper, not from here. The panel is
 included inside a ``<details class="relative" data-network-panel>`` in
 nav.html whose ``<summary>`` IS the connectivity symbol, so open, close,
 Enter/Space and focus are the browser's, exactly as they are for the
 account and admin menus; nav.html's shared ``enhanceDisclosure`` script adds
-outside-click and Escape, and closes on the ``[data-disclosure-close]``
-control below. Nothing here needs ``static/js/overlays.js``.
+outside-click and Escape, and closes on EVERY ``[data-disclosure-close]``
+control below (SNOW-921 made that selector plural — there are two now).
+Nothing here needs ``static/js/overlays.js``.
 
 The close control is that script's ``[data-disclosure-close]``, drawn with
 the ``icon_button_classes`` tag — the project's 44×44 icon-button idiom
@@ -78,27 +94,29 @@ The other three are carried over unchanged:
     attached but has no route — the Underground), which is why nothing here
     keys off ``onLine`` alone.
   * forced (``latched-message`` / ``forced-explainer``) — the same
-    behaviour, asked for by the user from the "Offline mode" switch in the
-    account menu (``includes/nav.html``). It shares the summary line,
-    because the summary answers "is this app contacting the server" and the
-    answer is the same; it does NOT share the explanation, because the
-    latched one asserts there is no usable connection and here there may
-    well be one. Nothing probes this state, so nothing will end it but the
-    user.
+    behaviour, asked for by the user from the "Offline mode" switch BELOW.
+    It shares the summary line, because the summary answers "is this app
+    contacting the server" and the answer is the same; it does NOT share the
+    explanation, because the latched one asserts there is no usable
+    connection and here there may well be one. Nothing probes this state, so
+    nothing will end it but the user.
 
 The online state is also what the panel renders BEFORE any script runs,
 which is the right default rather than a lucky one: both offline modes are
 service-worker decisions, and a page that got here without JavaScript has no
 worker and just came off the network.
 
-The CTA is load-bearing. It asks for ``'auto'`` and it is the ONLY exit from
-an auto-latched state for a signed-out reader, who has no account menu and
-so no "Offline mode" switch. One button, two labels: the action is identical
-but "Try reconnecting" reads as a repair, which is the wrong verb when
-nothing is broken and the user simply chose offline mode.
-``pwa_offline.js`` hides the button in ``'auto'`` — where the app is already
-using the network — and while the app is merely struggling and still
-retrying on its own.
+The CTA is still load-bearing, and SNOW-921 does not collapse it into the
+switch above it even though, in both offline modes, the two do the same
+thing. That redundancy is older than this surface: a signed-in user has had
+both controls since SNOW-748, in two different menus, and co-locating them
+reveals the duplication rather than creating it. Which of the two should
+survive is a product call, not a side effect of a move — see the ticket's
+"out of scope".  One button, two labels: the action is identical but "Try
+reconnecting" reads as a repair, which is the wrong verb when nothing is
+broken and the user simply chose offline mode. ``pwa_offline.js`` hides the
+button in ``'auto'`` — where the app is already using the network — and
+while the app is merely struggling and still retrying on its own.
 
 Every user-facing string is rendered here and toggled by ``hidden`` rather
 than assigned from JavaScript: ``makemessages`` never scans ``static/js``,
@@ -164,7 +182,7 @@ stopped asking the server has to say so.
                 It will check again periodically, and reconnect on its own once there is signal.
             {% endblocktrans %}
         </span>
-        {# The explanation for the mode the USER chose in the account menu. The #}
+        {# The explanation for the mode the USER chose on the switch below. The #}
         {# latched copy above is false here — there may well be a usable        #}
         {# connection, and nothing will check for one, because being left alone #}
         {# is the point of asking.                                              #}
@@ -175,6 +193,119 @@ stopped asking the server has to say so.
             {% endblocktrans %}
         </span>
     </span>
+    {# ── The rule between "what is true" and "what you can do" ── #}
+    <div class="my-3 border-t border-border" aria-hidden="true"></div>
+    {% comment %}
+        SNOW-748/921: offline mode — the switch half of the aeroplane-mode
+        model, whose status-bar half is the connectivity symbol this menu
+        hangs off.
+
+        It stops the app calling the server at all, so the page runs from
+        what has already been downloaded.
+
+        MOVED HERE from the account dropdown, and that move changes who has
+        it. SNOW-748 reasoned the switch was a device preference and so
+        belonged with the other device preferences — but the only menu it
+        could sit in was the signed-in one, so "device preference" quietly
+        became "account feature", and the anonymous reader who gets latched
+        on a lift had no way to CHOOSE the mode, only the CTA below as a way
+        out of a mode chosen for them. Nothing about the mode ever needed an
+        account: it is a row in this device's IndexedDB and a flag in this
+        device's service worker. It is rendered for every viewer now.
+
+        FIRST among the controls, directly under the rule. Everything below
+        it is somewhere you go; this is the one row you open the menu to
+        operate, so it goes where the thumb lands — the same order the
+        account menu established and the design system's consistency rule
+        asks a new menu to adopt.
+
+        A real switch, on includes/_switch.html — the project's
+        checkbox-with-role="switch" primitive — rather than a
+        role="menuitemcheckbox" button. A checkbox gives keyboard
+        activation, focus and checked-state bookkeeping for free, and the
+        visible state is the switch itself rather than a tick that has to be
+        kept in step with an attribute.
+
+        SNOW-921 drops the ``role="none"`` this row carried in the account
+        menu. That attribute existed for one reason: a role="switch"
+        checkbox is not a valid child of role="menu", and the account
+        dropdown claims that role. This panel claims no ARIA role at all —
+        it is a disclosure holding a small form — so there is no invalid
+        parent/child relationship to neutralise, and an extra role="none"
+        would be noise asserting a fix for a problem that is not here.
+
+        The label is a <label for="…"> and a SIBLING of the include, never a
+        wrapper: _switch.html's own outer element is itself a <label>, and
+        labels must not nest. Get it wrong and the track and thumb are
+        pointer-events-none, so only the text is clickable — silently, with
+        every server-side test still green. See that partial's docstring.
+
+        Hidden at rest and revealed by static/js/pwa_offline.js — it drives
+        a service worker, so a row that appeared without the script would be
+        a dead control.
+    {% endcomment %}
+    <div
+        data-network-toggle
+        data-testid="network-toggle"
+        class="hidden items-center gap-3 py-1"
+    >
+        <label for="nav-offline-mode" class="grow cursor-pointer text-sm text-text-2">
+            {% trans "Offline mode" %}
+        </label>
+        {% include "includes/_switch.html" with id="nav-offline-mode" %}
+    </div>
+    {% if debug_log_visible %}
+        {% comment %}
+            SNOW-812/921: the way into the on-device debug trace.
+
+            Gated on the same ``debug_log`` waffle flag (GRP_DEBUG) that
+            decides whether includes/_debug_log_panel.html and
+            static/js/debug_log.js reach the page at all — so this entry
+            never renders pointing at a panel that is not there.
+
+            Why HERE. The trace is the answer to "the app is not getting
+            what I expect off the network", which is the question this menu
+            exists to answer at every other level of detail: the summary
+            line says when the device last reached the server, the explainer
+            says why it is not reaching it now, and this says exactly which
+            requests were served and by which cache partition. Until
+            SNOW-921 the only way in was a low-contrast pill in the
+            bottom-left corner of the page, discovered by knowing it was
+            there.
+
+            A <button>, not an <a>: the trace has no URL. It is a panel
+            already on the page, and this opens it —
+            static/js/debug_log_panel.js binds this control alongside its
+            own handle, because the surface that owns a panel owns every way
+            into it. That script guards on ``window.pwaDebugLog``, which is
+            the same flag one layer down, so a stale cached page cannot
+            leave a dead row here either.
+
+            ``min-h-11`` for two reasons at once. It is the project's 44px
+            tap-target minimum, which a bare text row would miss — and it
+            is what gives this row the same vertical rhythm as the switch
+            above it, whose own 44px comes from
+            ``includes/_switch.html``'s clickable region. Without it the
+            two controls in this menu sit at visibly different heights,
+            which reads as two kinds of thing rather than two rows of one.
+
+            It carries ``data-disclosure-close`` so pressing it shuts this
+            menu on the way — the trace opens over the page, and leaving the
+            menu hanging above it would cover the first lines of the thing
+            the user just asked to read. That is nav.html's shared
+            mechanism, not a fourth dismissal of its own.
+        {% endcomment %}
+        <button
+            type="button"
+            data-network-debug-log
+            data-testid="network-debug-log"
+            data-disclosure-close
+            class="flex min-h-11 w-full items-center justify-between gap-3 py-1 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            <span>{% trans "Debug log" %}</span>
+            {% include "includes/_icon_chevron.html" with size=14 svg_class="-rotate-90" only %}
+        </button>
+    {% endif %}
     {# The way back to the network. Drawn with the shared button chrome rather #}
     {# than an inline class string; it carries two labels rather than a plain  #}
     {# one, which is why it is not includes/_button.html.                      #}

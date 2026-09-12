@@ -164,7 +164,7 @@
    * is up AND no offline mode is in force.
    *
    * ``navigator.onLine`` answers only the first half, so a mode the user
-   * forced from the account menu's "Offline mode" row (which they switch on
+   * forced from the network menu's "Offline mode" row (which they switch on
    * precisely when they have a connection and do not want it spent) left this
    * CTA's Download button
    * enabled and dispatching runs the worker now refuses. ``pwa_offline.js``

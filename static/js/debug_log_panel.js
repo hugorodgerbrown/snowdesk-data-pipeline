@@ -6,6 +6,13 @@
  * from the recorder in static/js/debug_log.js, and owns the four controls
  * beside it: Record, the source filter, Copy and Clear.
  *
+ * It also owns both ways IN. The pill in the bottom-left corner is one;
+ * SNOW-921 added the network menu's "Debug log" row
+ * (templates/includes/_connection_panel.html) as the other, so the trace is
+ * reachable from the header symbol a user presses when the network is what
+ * they are wondering about, rather than only from a mark they had to be
+ * told about.
+ *
  * Loaded only where that partial is rendered — behind the ``debug_log``
  * waffle flag, i.e. for GRP_DEBUG — so it self-guards on the markup being
  * present and otherwise returns at once.
@@ -171,6 +178,32 @@
 
   handle.addEventListener('click', () => setOpen(body.hidden));
   document.getElementById('debug-log-close')?.addEventListener('click', () => setOpen(false));
+
+  // SNOW-921: the network menu's "Debug log" row
+  // (templates/includes/_connection_panel.html) is the second way in, and
+  // the discoverable one — the pill above is a low-contrast mark in the
+  // bottom-left corner that you find by already knowing it is there, while
+  // the menu is hung off the header symbol a user presses when the network
+  // is the thing they are wondering about.
+  //
+  // Bound HERE rather than in pwa_offline.js, which owns that menu's other
+  // controls, because the surface that owns a panel owns every way into it
+  // — the same rule that keeps this file's own handle and "×" together.
+  // It also means the row cannot outlive the script: both are gated on the
+  // ``debug_log`` waffle flag, but a shell cached across a flag change
+  // could still render one without the other, and the module-level
+  // ``window.pwaDebugLog`` guard at the top of this file already covers
+  // that case for everything below it.
+  //
+  // Always ``setOpen(true)``, never a toggle: the row is behind a menu the
+  // user had to open, so it is a request to READ the trace, not a
+  // request to flip whatever state it happens to be in. The menu closes
+  // itself on the way — the row carries ``data-disclosure-close``, handled
+  // by nav.html's shared disclosure script — so the trace does not open
+  // underneath the menu that asked for it.
+  document
+    .querySelector('[data-network-debug-log]')
+    ?.addEventListener('click', () => setOpen(true));
   filterEl?.addEventListener('change', schedulePaint);
 
   enabledBox?.addEventListener('change', () => {

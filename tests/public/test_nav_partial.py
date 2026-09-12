@@ -13,9 +13,14 @@ Covers:
   - The anonymous "Sign in" button, which since SNOW-826 carries the page
     the visitor is on as ``?next=`` so signing in from the nav returns them
     to it.
-  - The SNOW-748 offline surfaces, which are split the way a phone splits
-    aeroplane mode: a header SYMBOL every viewer gets, and an "Offline
-    mode" switch in the account menu that only a signed-in user gets.
+  - The SNOW-748 offline surfaces, split the way a phone splits aeroplane
+    mode: a header SYMBOL every viewer gets, and an "Offline mode" switch
+    that sets what it reports. SNOW-921 moved that switch out of the
+    account menu and into the network menu the symbol opens, so BOTH are
+    now rendered for every viewer — the asymmetry the earlier tests pinned
+    is the thing this file now pins the removal of.
+  - The SNOW-921 additions to that menu: the traffic arrows beside the
+    symbol, and the flag-gated "Debug log" row.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -46,6 +51,7 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.urls import reverse
+from waffle.testutils import override_flag
 
 from tests.factories import UserFactory
 
@@ -487,8 +493,110 @@ class TestNavConnectivitySymbol:
         """
         html = _render_nav_for(rf, AnonymousUser())
         element = html.split("data-network-indicator", 1)[1].split("</summary>", 1)[0]
-        assert "Connection status: using the network" in element
-        assert "Connection status: offline" in element
+        assert "Network menu: using the network" in element
+        assert "Network menu: offline" in element
+
+
+@pytest.mark.django_db
+class TestNavTrafficArrows:
+    """The SNOW-921 traffic pair, beside the connectivity glyph.
+
+    The header could say whether the app COULD reach the server and when it
+    last DID, and nothing at all about whether anything was moving right
+    now. A pan over a downloaded region and a pan spending a roaming
+    connection looked identical from the top bar.
+
+    Two arrows, one mark rotated, lit for a beat by
+    ``static/js/pwa_offline.js``: up when a request goes out, down when a
+    response comes back. Deliberately approximate — they answer "is
+    anything moving", not "how much" — so nothing here asserts a count.
+
+    What the assertions below pin is the part a refactor would quietly get
+    wrong: that the pair is decoration in the accessibility sense and says
+    so, that it is one partial rather than two drawings of the same idea,
+    and that it is painted by a data attribute rather than a class the
+    script builds.
+    """
+
+    def test_both_directions_render_for_every_viewer(self, rf: RequestFactory) -> None:
+        """Anonymous readers get them too, like the glyph they sit beside.
+
+        The pair belongs to the symbol, and the symbol is permanent for
+        every viewer (see ``TestNavConnectivitySymbol``). Nothing about
+        watching traffic needs an account.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert 'data-traffic-arrow="up"' in html
+        assert 'data-traffic-arrow="down"' in html
+
+    def test_the_pair_is_hidden_from_assistive_technology(
+        self, rf: RequestFactory
+    ) -> None:
+        """``aria-hidden`` on the wrapper, and no string of their own.
+
+        Not an omission. Announcing "sent, received, sent, received" over a
+        tile burst would be noise, and everything the arrows hint at is
+        already said in words by the symbol's own accessible name and the
+        menu's summary line. A future pass that gives them a label should
+        have to delete this test and argue with it.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        wrapper = _opening_tag_around(html, "data-traffic-arrows")
+        assert 'aria-hidden="true"' in wrapper
+
+    def test_the_down_arrow_is_the_up_arrow_rotated(self, rf: RequestFactory) -> None:
+        """One partial, two orientations — never two drawings.
+
+        The same contract ``includes/_icon_chevron.html`` has with the row
+        disclosure, and for the same reason the wifi pair has its own: a
+        reader takes the difference between the two marks as meaning
+        something, so the only difference allowed is the rotation.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        up = html.split('data-traffic-arrow="up"', 1)[1].split("</span>", 1)[0]
+        down = html.split('data-traffic-arrow="down"', 1)[1].split("</span>", 1)[0]
+        # The path data is identical; only the down one carries the rotation.
+        assert 'd="M12 20V5"' in up
+        assert 'd="M12 20V5"' in down
+        assert "rotate-180" not in up
+        assert "rotate-180" in down
+
+    def test_the_pair_is_staggered_and_overlapped(self, rf: RequestFactory) -> None:
+        """Shoulder to shoulder, not stacked in a column.
+
+        The wrapper is a ``flex`` ROW: two arrows in a vertical column read
+        as two separate lamps that happen to be adjacent, and the point of
+        the pair is that they are not independent — a user is meant to read
+        "traffic, in this direction". The stagger and the overlap that turn
+        them into one transfer mark are in ``src/css/main.css`` with the
+        paint, so what is pinned here is the axis, which is the half a
+        stylesheet cannot put back if a later pass restacks them.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        classes = _class_tokens(_opening_tag_around(html, "data-traffic-arrows"))
+        assert "inline-flex" in classes
+        assert "flex-col" not in classes
+
+    def test_arrows_carry_no_class_of_their_own(self, rf: RequestFactory) -> None:
+        """Colour, opacity AND geometry live in ``src/css/main.css``.
+
+        The rest state is 22% opacity with a transition either side of it,
+        which Tailwind cannot express on a JS-driven state — so
+        ``[data-traffic-arrow]`` owns the whole appearance and
+        ``pwa_offline.js`` only sets and clears ``data-active``. That is
+        what keeps a colour out of a JS class string, where ``bin/ds-lint``
+        would have to catch it and a typo would not show up at all.
+
+        The offsets went the same way rather than into Tailwind utilities
+        here: they are chosen against the colour they sit next to, and a
+        mark whose geometry is in one file and whose paint is in another is
+        a mark nobody adjusts correctly.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        for direction in ("up", "down"):
+            assert "class" not in _opening_tag_around(
+                html, f'data-traffic-arrow="{direction}"'
+            )
 
 
 @pytest.mark.django_db
@@ -616,21 +724,25 @@ class TestNavConnectionPanel:
     def test_anonymous_gets_the_panel_and_its_way_back(
         self, rf: RequestFactory
     ) -> None:
-        """The whole panel renders for a signed-out reader, switch or no switch.
+        """The whole menu renders for a signed-out reader.
 
-        This is the asymmetry the feature turns on: the service worker
-        latches offline for anybody, and an anonymous user has no account
-        menu and therefore no "Offline mode" switch, so the panel's CTA is
-        their ONLY exit from that state. A refactor that folded the panel in
-        with the menu would take it away from exactly the people who cannot
-        do without it.
+        The service worker latches offline for anybody, so the state this
+        menu describes is one an anonymous reader can be in, and a refactor
+        that folded it into the account dropdown would take it away from
+        exactly the people who cannot do without it.
+
+        SNOW-748 made the CTA below their ONLY exit from that state,
+        because the "Offline mode" switch was in the account menu. SNOW-921
+        ended that asymmetry by moving the switch in here — see
+        ``TestNavOfflineModeSwitch`` — so an anonymous reader now has both.
+        The CTA is still asserted here because it is what the panel
+        promises in its own right.
         """
         html = _render_nav_for(rf, AnonymousUser())
         assert 'id="pwa-connection-panel"' in html
         assert "data-network-reconnect" in html
         assert "Try reconnecting" in html
         assert "Use the network again" in html
-        assert "data-network-toggle" not in html
 
     def test_panel_ships_closed(self, rf: RequestFactory) -> None:
         """Closed at rest: the <details> has no ``open`` attribute.
@@ -646,56 +758,109 @@ class TestNavConnectionPanel:
 
 @pytest.mark.django_db
 class TestNavOfflineModeSwitch:
-    """The SNOW-748 "Offline mode" switch, in the account menu.
+    """The "Offline mode" switch — in the NETWORK MENU since SNOW-921.
 
-    The settings half of the aeroplane-mode model: turning the mode ON is a
-    device preference, so it sits in the menu rather than in the header.
-    SNOW-742 built this control inside the offline banner, which
-    ``static/js/pwa_offline.js`` revealed only when the connection had
-    already failed — so the user it was built for ("I have signal now and am
-    about to lose it") could never reach it.
+    The settings half of the aeroplane-mode model. SNOW-742 built it inside
+    the offline banner, which ``static/js/pwa_offline.js`` revealed only
+    once the connection had already failed — so the user it was built for
+    ("I have signal now and am about to lose it") could never reach it.
+    SNOW-748 moved it to the account dropdown, on the reasoning that the
+    mode is a device preference and belongs with the other device
+    preferences.
 
-    It sits FIRST in the menu, in its own section above "Settings":
-    everything below it is a destination you browse to, and this is the one
-    row you open the menu to operate.
+    SNOW-921 moved it again, into the menu the connectivity symbol opens,
+    and that move changes WHO HAS IT. The account dropdown was the only
+    menu available to put it in, so "device preference" quietly became
+    "account feature": an anonymous reader who got latched on a lift could
+    only escape a mode chosen for them, never choose one. Nothing about the
+    mode ever needed an account — it is a row in this device's IndexedDB
+    and a flag in this device's service worker.
 
-    Signed-in only, and these assertions pin both halves of that: the row is
-    present for a signed-in user and absent for an anonymous one, who still
-    gets the symbol above.
+    The assertions below pin that reversal explicitly, because it is the
+    kind of thing a later refactor "tidies" back: the switch renders for an
+    anonymous viewer, it is inside the panel rather than the account menu,
+    and the account menu no longer carries it.
     """
 
-    def test_anonymous_does_not_see_the_switch(self, rf: RequestFactory) -> None:
-        """No switch for anonymous viewers — the menu it lives in is theirs."""
+    def test_anonymous_sees_the_switch(self, rf: RequestFactory) -> None:
+        """The reversal, asserted head-on.
+
+        This assertion was ``not in`` until SNOW-921. It is the whole point
+        of the move: the reader most likely to want offline mode — on a
+        lift, one bar of signal, no account — is the one who could not
+        reach it.
+        """
         html = _render_nav_for(rf, AnonymousUser())
-        assert "data-network-toggle" not in html
+        assert "data-network-toggle" in html
 
     def test_authenticated_sees_the_switch(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Signed-in users get it, at the top of their menu."""
+        """And a signed-in user still does, in the same place."""
         html = _render_nav_for(rf, regular_user)
         assert "data-network-toggle" in html
 
-    def test_switch_sits_above_every_destination(
+    def test_switch_lives_in_the_network_menu(self, rf: RequestFactory) -> None:
+        """Inside ``#pwa-connection-panel``, not merely somewhere in the nav.
+
+        Asserted by containment rather than by eye: the row would still be
+        "present" if a refactor left it floating in the header, and the
+        whole argument for the move is that it sits with the surface that
+        reports the state it sets.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+        assert "data-network-toggle" in panel
+
+    def test_account_menu_no_longer_carries_it(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """It comes before Settings and Sign out.
+        """One switch, in one place.
 
-        The menu's order is meaning, not decoration (SNOW-705). Asserted by
-        position rather than by eye, because a later entry inserted in the
-        wrong group reads fine in a diff.
+        The failure this guards against is the obvious one for a move: the
+        new copy lands and the old one is never deleted, leaving two
+        controls driving the same mode, both painted by the same
+        ``pwa_offline.js`` selector — which selects the first only, so the
+        second would be a dead switch that never repaints.
         """
         html = _render_nav_for(rf, regular_user)
-        assert html.index("data-network-toggle") < html.index(
-            reverse("accounts:settings")
-        )
-        assert html.index("data-network-toggle") < html.index(
-            reverse("accounts:sign_out")
+        menu = html.split('id="subscriber-menu"', 1)[1]
+        assert "data-network-toggle" not in menu
+        assert "nav-offline-mode" not in menu
+
+    def test_switch_sits_first_among_the_menu_controls(
+        self, rf: RequestFactory
+    ) -> None:
+        """Before the debug-log row and before the reconnect CTA.
+
+        The menu's order is meaning, not decoration — the design system's
+        consistency rule asks a new menu to adopt the order an existing one
+        established, and the account menu's is: the row you open the menu
+        to OPERATE first, then the destination, then the terminal action
+        last. Asserted by position, because an entry inserted in the wrong
+        group reads fine in a diff.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+        assert panel.index("data-network-toggle") < panel.index(
+            "data-network-reconnect"
         )
 
-    def test_switch_row_renders_hidden(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
+    def test_switch_sits_below_the_explanations(self, rf: RequestFactory) -> None:
+        """What is true, a rule, then what you can do.
+
+        The panel is two halves and the rule between them is load-bearing:
+        a control mixed in among four mutually-exclusive explanatory
+        paragraphs reads as belonging to whichever one happens to be
+        visible.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+        assert panel.index('data-role="forced-explainer"') < panel.index(
+            "data-network-toggle"
+        )
+
+    def test_switch_row_renders_hidden(self, rf: RequestFactory) -> None:
         """It ships hidden, and the script reveals it.
 
         Hidden because ``pwa_offline.js`` reveals it: it drives a service
@@ -703,12 +868,12 @@ class TestNavOfflineModeSwitch:
         control. Unlike the symbol above, which is hidden from nobody —
         the two have opposite contracts and this is where that is pinned.
         """
-        html = _render_nav_for(rf, regular_user)
+        html = _render_nav_for(rf, AnonymousUser())
         opening_tag = _opening_tag_around(html, "data-network-toggle")
         assert "hidden" in opening_tag
 
     def test_switch_is_a_real_checkbox_starting_unchecked(
-        self, rf: RequestFactory, regular_user: User
+        self, rf: RequestFactory
     ) -> None:
         """``includes/_switch.html``, not a ``role="menuitemcheckbox"`` button.
 
@@ -718,7 +883,7 @@ class TestNavOfflineModeSwitch:
         boots in is ``'auto'`` — the script repaints it after reading the
         persisted mode back.
         """
-        html = _render_nav_for(rf, regular_user)
+        html = _render_nav_for(rf, AnonymousUser())
         input_tag = _opening_tag_around(html, 'id="nav-offline-mode"')
         assert 'type="checkbox"' in input_tag
         assert 'role="switch"' in input_tag
@@ -726,28 +891,31 @@ class TestNavOfflineModeSwitch:
         # track and thumb carry — hence the opening tag rather than the row.
         assert "checked" not in input_tag.replace('id="nav-offline-mode"', "")
 
-    def test_switch_row_is_removed_from_the_menu_role_model(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
-        """``role="none"`` on the wrapper.
+    def test_switch_row_needs_no_menu_role_juggling(self, rf: RequestFactory) -> None:
+        """No ``role="none"``, and no ``menuitemcheckbox`` either.
 
-        A ``role="switch"`` checkbox is not a valid child of ``role="menu"``,
-        which admits only menuitem / menuitemcheckbox / menuitemradio (plus
-        group and none). ``role="none"`` takes the wrapper out of the
-        accessibility tree so a bare <div> is not announced as an unexpected
-        menu child, and leaves the switch to announce itself as what it is.
-        Keeping ``menuitemcheckbox`` would have meant re-implementing
-        Space/Enter activation and ``aria-checked`` by hand — the trap
-        ``includes/_switch.html``'s docstring documents.
+        The row carried ``role="none"`` for its whole life in the account
+        dropdown, and for exactly one reason: a ``role="switch"`` checkbox
+        is not a valid child of ``role="menu"``, which admits only
+        menuitem / menuitemcheckbox / menuitemradio (plus group and none),
+        so the wrapper had to be taken out of the accessibility tree to
+        stop a bare <div> being announced as an unexpected menu child.
+
+        The network menu claims no ARIA role at all — it is a disclosure
+        holding a small form, which is what it has always actually been —
+        so there is no invalid parent/child relationship to neutralise and
+        the attribute would now be noise asserting a fix for a problem that
+        is not here. SNOW-921 dropped it, and this is where that is
+        recorded rather than looking like an omission.
         """
         opening_tag = _opening_tag_around(
-            _render_nav_for(rf, regular_user), "data-network-toggle"
+            _render_nav_for(rf, AnonymousUser()), "data-network-toggle"
         )
-        assert 'role="none"' in opening_tag
+        assert 'role="none"' not in opening_tag
         assert "menuitemcheckbox" not in opening_tag
 
     def test_switch_label_is_a_sibling_pointing_at_the_input(
-        self, rf: RequestFactory, regular_user: User
+        self, rf: RequestFactory
     ) -> None:
         """A ``<label for>`` beside the include, never wrapping it.
 
@@ -758,21 +926,115 @@ class TestNavOfflineModeSwitch:
         still green. The label is server-rendered so it is translated:
         ``makemessages`` never scans ``static/js``.
         """
-        html = _render_nav_for(rf, regular_user)
+        html = _render_nav_for(rf, AnonymousUser())
         row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
         assert 'for="nav-offline-mode"' in row
         assert "Offline mode" in row
 
     def test_switch_row_is_words_and_switch_with_no_glyph(
-        self, rf: RequestFactory, regular_user: User
+        self, rf: RequestFactory
     ) -> None:
         """The row carries a label and a switch, and nothing else.
 
         It shipped with a struck-through wifi mark beside the label for one
-        pass, which restated in a glyph what the words already say and put a
-        second copy of the header symbol's offline mark two inches below it
-        — in a menu whose every other row is text.
+        pass, which restated in a glyph what the words already say and put
+        a second copy of the header symbol's offline mark two inches below
+        it — in a menu whose every other row is text.
         """
-        html = _render_nav_for(rf, regular_user)
+        html = _render_nav_for(rf, AnonymousUser())
         row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
         assert "<svg" not in row
+
+
+@pytest.mark.django_db
+class TestNavDebugLogEntry:
+    """The SNOW-921 "Debug log" row in the network menu.
+
+    The on-device trace (SNOW-812) has been reachable only from a
+    low-contrast pill in the bottom-left corner of every page — a mark you
+    find by already knowing it is there. It answers "the app is not getting
+    what I expect off the network", which is the question this menu exists
+    to answer at every other level of detail, so the menu now carries the
+    way in.
+
+    Gated on the same ``debug_log`` waffle flag that decides whether the
+    panel and the recorder reach the page at all, so the row can never
+    point at a panel that is not there. Both halves of that gate are
+    asserted below, because a row rendered unconditionally would be a
+    control that silently does nothing for everyone outside GRP_DEBUG.
+    """
+
+    def test_absent_without_the_flag(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """No flag, no row — not even for a signed-in user."""
+        html = _render_nav_for(rf, regular_user)
+        assert "data-network-debug-log" not in html
+
+    def test_absent_for_anonymous_viewers(self, rf: RequestFactory) -> None:
+        """The gate short-circuits on authentication before it reads waffle.
+
+        ``apps.public.context_processors.debug_log_visible`` evaluates
+        ``request.user.is_authenticated`` first, which is what keeps the
+        homepage's anonymous path at its query baseline
+        (``tests/public/test_debug_log_panel.py``). The row inherits that,
+        and this pins it.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert "data-network-debug-log" not in html
+
+    @override_flag("debug_log", active=True)
+    def test_present_with_the_flag(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """A GRP_DEBUG member gets the row, inside the network menu."""
+        html = _render_nav_for(rf, regular_user)
+        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+        assert "data-network-debug-log" in panel
+        assert "Debug log" in panel
+
+    @override_flag("debug_log", active=True)
+    def test_row_is_a_button_that_closes_the_menu(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """A ``<button>`` carrying ``data-disclosure-close``.
+
+        A button and not an ``<a>`` because the trace has no URL — it is a
+        panel already on the page, opened by
+        ``static/js/debug_log_panel.js``, which binds this control
+        alongside its own handle.
+
+        ``data-disclosure-close`` because the trace opens over the page and
+        a menu left hanging above it would cover the first lines of the
+        thing the user just asked to read. That is nav.html's shared
+        mechanism (see
+        ``TestNavConnectionPanel.test_close_control_uses_the_shared_disclosure_mechanism``),
+        not a fourth dismissal of its own — and it is the reason that
+        script's selector had to become ``querySelectorAll``: the "×" is
+        first in document order, so the singular form bound it and nothing
+        else.
+        """
+        html = _render_nav_for(rf, regular_user)
+        tag = _opening_tag_around(html, "data-network-debug-log")
+        assert tag.startswith("<button")
+        assert 'type="button"' in tag
+        assert "data-disclosure-close" in tag
+
+    @override_flag("debug_log", active=True)
+    def test_row_sits_between_the_switch_and_the_cta(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Operate, then go, then the terminal action — the account menu's order.
+
+        The design system's consistency rule asks a new menu to adopt the
+        order an existing one established and drop what does not apply.
+        "Offline mode" is the row you open the menu to operate, the debug
+        log is the destination, and the way back to the network is last.
+        """
+        html = _render_nav_for(rf, regular_user)
+        panel = html.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+        assert (
+            panel.index("data-network-toggle")
+            < panel.index("data-network-debug-log")
+            < panel.index("data-network-reconnect")
+        )

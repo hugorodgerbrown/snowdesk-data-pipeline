@@ -7,13 +7,14 @@ trigger button, and a right-side auth/admin area.
 Right-side auth area
 --------------------
 Authenticated user:
-  An avatar button (first letter of email) opens a dropdown holding the
-  offline-mode switch, Trips, Settings and a "Sign out" button. SNOW-803
-  removed the Favourites, Routes and Observations entries and SNOW-802 the
-  Subscriptions entry and the subscribed-region links above it — every one
-  of those is a map object now, listed in the map's pins sheet. SNOW-823
-  added Trips, which is not one: a trip is indexed by WHEN, and the map
-  indexes by where.
+  An avatar button (first letter of email) opens a dropdown holding Trips,
+  Settings and a "Sign out" button. SNOW-803 removed the Favourites, Routes
+  and Observations entries and SNOW-802 the Subscriptions entry and the
+  subscribed-region links above it — every one of those is a map object now,
+  listed in the map's pins sheet. SNOW-823 added Trips, which is not one: a
+  trip is indexed by WHEN, and the map indexes by where. SNOW-921 took the
+  offline-mode switch out to the network menu, leaving this dropdown as
+  account machinery only.
 
 Not authenticated:
   A single "Sign in" button routes to /account/sign-in/; that page carries
@@ -31,26 +32,34 @@ Sync badge (SNOW-376):
   colour to the status-error tokens when any queued mutation has
   permanently failed.
 
-Connectivity symbol (SNOW-748):
+Connectivity symbol (SNOW-748, SNOW-921):
   A [data-network-indicator] <summary> beside the sync badge, rendered for
   every viewer including anonymous ones and NEVER hidden — the
   phone-status-bar half of the aeroplane-mode model this feature follows.
   static/js/pwa_offline.js swaps its glyph, its colour and its accessible
   name between "using the network" and "not using the network", and writes
-  the same bit to [data-network-state]. Pressing it opens the
-  connection-status panel (includes/_connection_panel.html) anchored under
-  it, which is why it carries aria-expanded / aria-controls and NOT
-  aria-pressed: it is a disclosure, and it never changes the network mode.
-  A third native <details>, alongside the two dropdowns below.
+  the same bit to [data-network-state]. Pressing it opens the network menu
+  (includes/_connection_panel.html) anchored under it, which is why it
+  carries aria-expanded / aria-controls and NOT aria-pressed: it is a
+  disclosure, and it never changes the network mode itself. A third native
+  <details>, alongside the two dropdowns below.
 
-Offline mode switch (SNOW-748):
-  A [data-network-toggle] row at the TOP of the subscriber menu below, in
-  its own section between the subscribed regions and "Subscriptions" — the
-  other half of that model, where turning aeroplane mode ON lives. Built on
-  includes/_switch.html. Signed-in only, hidden by default;
-  static/js/pwa_offline.js reveals it, drives the checkbox's checked state
-  and binds its change event, which asks the service worker for
-  'offline-forced' or 'auto'.
+  SNOW-921 makes the symbol two marks rather than one. Beside the
+  wifi glyph sits a 12px column of [data-traffic-arrow] arrows — up for a
+  request going out, down for a response coming back — each lit for a beat
+  by pwa_offline.js and painted from src/css/main.css. They are
+  aria-hidden decoration and deliberately approximate: they answer "is
+  anything moving", which nothing in this header answered before, and not
+  "how much", which nothing here should try to.
+
+Offline mode switch (SNOW-748, moved by SNOW-921):
+  A [data-network-toggle] row, built on includes/_switch.html, holding the
+  other half of that model — where turning aeroplane mode ON lives. It sat
+  at the top of the subscriber menu until SNOW-921 moved it into the
+  network menu above, where the state it sets is already reported and where
+  every viewer can reach it. Hidden by default; static/js/pwa_offline.js
+  reveals it, drives the checkbox's checked state and binds its change
+  event, which asks the service worker for 'offline-forced' or 'auto'.
 
 Parameters
 ----------
@@ -221,7 +230,7 @@ Usage
                     data-testid="network-indicator"
                     aria-expanded="false"
                     aria-controls="pwa-connection-panel"
-                    class="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                    class="inline-flex items-center justify-center gap-0.5 h-7 px-1 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
                 >
                     <span data-role="network-online-icon" class="text-sync-ok">
                         {% include "includes/_icon_wifi.html" with size=15 only %}
@@ -229,14 +238,67 @@ Usage
                     <span data-role="network-offline-icon" class="hidden text-sync-off">
                         {% include "includes/_icon_wifi_off.html" with size=15 only %}
                     </span>
+                    {% comment %}
+                        SNOW-921: the traffic pair. One mark, two
+                        orientations — up for "a request went out", down for
+                        "a response came back" — set shoulder to shoulder
+                        beside the state glyph, staggered vertically and
+                        overlapping horizontally so the two read as ONE mark
+                        about movement rather than two lamps that happen to
+                        be adjacent. That is the transfer glyph a file
+                        manager or a phone's data indicator has always used,
+                        and it is the right one here because a user is meant
+                        to read "traffic, in this direction" and not "up
+                        lamp, down lamp". The offsets live with the paint in
+                        src/css/main.css; see the note there for how the two
+                        numbers were chosen.
+
+                        Decoration in the accessibility sense and marked as
+                        such: the wrapper is aria-hidden, so neither arrow
+                        reaches a screen reader and neither needs a string.
+                        That is not an omission. The arrows are a
+                        GLANCEABLE tell, read out of the corner of the eye
+                        while the map loads; announcing "sent, received,
+                        sent, received" over a tile burst would be noise,
+                        and everything they hint at — is this app reaching
+                        the server, how long since it last did — is already
+                        said in words by the state glyph's own accessible
+                        name and by the menu's summary line.
+
+                        Deliberately NOT accurate, and the ticket says so.
+                        They answer "is anything moving", not "how much":
+                        static/js/pwa_offline.js lights one for ~450ms per
+                        edge and lets a burst hold it lit, which is a
+                        modem's activity LED rather than a byte counter.
+
+                        Painted from src/css/main.css's
+                        ``[data-traffic-arrow]`` rules rather than by
+                        swapping Tailwind classes from JS: the rest state is
+                        a 22% opacity with a transition either side of it,
+                        which is a thing Tailwind cannot express on a
+                        JS-driven state, and a data attribute keeps
+                        pwa_offline.js from building any class string at
+                        all. The two arrows carry no class of their own at
+                        all for the same reason — their stagger and overlap
+                        are in that file too, next to the colour they are
+                        offsetting against, rather than split across two.
+                    {% endcomment %}
+                    <span data-traffic-arrows class="inline-flex items-center" aria-hidden="true">
+                        <span data-traffic-arrow="up">
+                            {% include "includes/_icon_traffic_arrow.html" with size=12 only %}
+                        </span>
+                        <span data-traffic-arrow="down">
+                            {% include "includes/_icon_traffic_arrow.html" with size=12 svg_class="rotate-180" only %}
+                        </span>
+                    </span>
                     <span
                         data-role="network-name-online"
                         class="sr-only"
-                    >{% trans "Connection status: using the network" %}</span>
+                    >{% trans "Network menu: using the network" %}</span>
                     <span
                         data-role="network-name-offline"
                         class="sr-only hidden"
-                    >{% trans "Connection status: offline" %}</span>
+                    >{% trans "Network menu: offline" %}</span>
                 </summary>
                 {% include "includes/_connection_panel.html" %}
             </details>
@@ -264,90 +326,17 @@ Usage
                         role="menu"
                         class="absolute right-0 top-full mt-1.5 min-w-[200px] rounded-card border border-border bg-card shadow-md py-1.5 z-50"
                     >
-                        {% comment %}
-                            SNOW-748: offline mode — the switch half of the
-                            aeroplane-mode model, whose status-bar half is the
-                            connectivity symbol in the header above.
-
-                            It stops the app calling the server at all, so the
-                            page runs from what has already been downloaded.
-
-                            FIRST in the menu, in its own section between the
-                            subscribed regions and "Subscriptions". It sat
-                            beside Settings until this pass, on the reasoning
-                            that it is device machinery — true, but it is
-                            device machinery a user reaches for in a hurry, at
-                            the moment they see one bar of signal and a tunnel
-                            ahead. Everything below it is a destination you
-                            browse to; this is the one row you open the menu to
-                            operate, so it goes where the thumb lands.
-
-                            Signed-in only, unlike the symbol in the header:
-                            the symbol reports a state anyone can end up in
-                            (the worker latches itself for anybody), while
-                            CHOOSING the mode is a device preference that
-                            belongs with the rest of them. An anonymous reader
-                            who gets latched still has the toast's "Try
-                            reconnecting" CTA as the way back.
-
-                            A real switch, on includes/_switch.html — the
-                            project's checkbox-with-role="switch" primitive —
-                            rather than the role="menuitemcheckbox" button this
-                            row shipped as. A checkbox gives keyboard
-                            activation, focus and checked-state bookkeeping for
-                            free, and the visible state is the switch itself
-                            rather than a tick that has to be kept in step with
-                            an attribute.
-
-                            ARIA, deliberately: a role="switch" checkbox is NOT
-                            a valid child of role="menu", which admits only
-                            menuitem / menuitemcheckbox / menuitemradio (plus
-                            group and none). So the row's wrapper carries
-                            role="none": it removes the wrapper from the
-                            accessibility tree and stops a bare <div> being
-                            announced as an unexpected menu child, leaving the
-                            switch to announce itself as what it is. The
-                            alternative — keeping role="menuitemcheckbox" —
-                            would mean re-implementing Space/Enter activation
-                            and aria-checked by hand, which is exactly the trap
-                            _switch.html's docstring documents, and it would
-                            still be a half-truth: this <details> dropdown
-                            implements none of the arrow-key roving focus a
-                            real ARIA menu promises, so its role="menu" is
-                            already the looser claim of the two. Correcting
-                            that claim is a separate ticket; adding a control
-                            that lies about its own type is not the way to it.
-
-                            The label is a <label for="…"> and a SIBLING of the
-                            include, never a wrapper: _switch.html's own outer
-                            element is itself a <label>, and labels must not
-                            nest. Get it wrong and the track and thumb are
-                            pointer-events-none, so only the text is clickable
-                            — silently, with every server-side test still
-                            green. See that partial's docstring.
-
-                            Not includes/_map_overlay_toggle.html, which is the
-                            same label-plus-switch pairing: that partial is a
-                            bg-tag box built for a map sheet's footer, and a
-                            rounded grey card inside a flat dropdown would read
-                            as a different kind of thing.
-
-                            Hidden at rest and revealed by
-                            static/js/pwa_offline.js — it drives a service
-                            worker, so a row that appeared without the script
-                            would be a dead control.
-                        {% endcomment %}
-                        <div
-                            role="none"
-                            data-network-toggle
-                            data-testid="network-toggle"
-                            class="hidden items-center gap-3 px-3 py-1.5"
-                        >
-                            <label for="nav-offline-mode" class="grow cursor-pointer text-sm text-text-2">
-                                {% trans "Offline mode" %}
-                            </label>
-                            {% include "includes/_switch.html" with id="nav-offline-mode" %}
-                        </div>
+                        {# SNOW-921: the "Offline mode" switch used to sit here,  #}
+                        {# above this rule, as the settings half of SNOW-748's     #}
+                        {# aeroplane-mode model. It has moved into the network menu #}
+                        {# the header symbol opens (includes/_connection_panel.html) #}
+                        {# — the surface that already reports the state it sets, and #}
+                        {# the one every viewer can reach. The consequence is that  #}
+                        {# choosing offline mode is no longer signed-in only: the   #}
+                        {# mode is a device preference held in IndexedDB and         #}
+                        {# enforced by the service worker, and nothing about it ever #}
+                        {# needed an account. What is left in this menu is account   #}
+                        {# machinery, which is what it is for.                       #}
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         {% comment %}
                             SNOW-705: this menu IS the account-area navigation
@@ -545,14 +534,15 @@ Usage
 {# explicit in-panel close control. All are conveniences; none is          #}
 {# load-bearing.                                                           #}
 {#                                                                         #}
-{# SNOW-748 added the third caller — the connection-status panel — and     #}
-{# with it [data-disclosure-close], the optional control inside a panel    #}
-{# that closes its own disclosure. A popover with no menu items needs a    #}
-{# visible way out that is not "press the thing that opened me": the       #}
-{# account and admin menus close when you pick an entry, and an            #}
-{# information panel has none to pick. Handled here rather than in         #}
-{# static/js/pwa_offline.js so one mechanism owns every way this header's  #}
-{# disclosures close.                                                      #}
+{# SNOW-748 added the third caller — the network menu — and with it        #}
+{# [data-disclosure-close], the optional control inside a panel that       #}
+{# closes its own disclosure. A popover with no menu items needs a visible #}
+{# way out that is not "press the thing that opened me": the account and   #}
+{# admin menus close when you pick an entry, and an information panel has  #}
+{# none to pick. Handled here rather than in static/js/pwa_offline.js so   #}
+{# one mechanism owns every way this header's disclosures close — and      #}
+{# SNOW-921 made that literal, binding every such control rather than the  #}
+{# first one found.                                                        #}
 <script nonce="{{ request.csp_nonce }}">
     (function () {
         function enhanceDisclosure(wrapperAttr, toggleId) {
@@ -571,13 +561,17 @@ Usage
                     toggle.focus();
                 }
             });
-            var closer = details.querySelector('[data-disclosure-close]');
-            if (closer) {
+            // SNOW-921: querySelectorAll, not querySelector. The network
+            // menu has two of these now — the "×" in its header and the
+            // "Debug log" row, which shuts the menu on its way to opening
+            // the trace panel underneath it — and the singular form bound
+            // only the first one in document order.
+            details.querySelectorAll('[data-disclosure-close]').forEach(function (closer) {
                 closer.addEventListener('click', function () {
                     details.open = false;
                     toggle.focus();
                 });
-            }
+            });
         }
         enhanceDisclosure('data-subscriber-menu', 'subscriber-menu-toggle');
         enhanceDisclosure('data-admin-menu', 'admin-menu-toggle');
