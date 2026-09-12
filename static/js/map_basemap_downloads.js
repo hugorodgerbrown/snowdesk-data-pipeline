@@ -648,9 +648,21 @@ async function downloadContentDays() {
  * fetches; then asks `areaContentPlan` which regions and which locations
  * the area's rectangle contains.
  *
- * `featureByRegionId` is the map's own loaded `regions.geojson`, so this
- * costs no request — and an empty one (a country not yet loaded) simply
- * yields no bulletins for that country rather than a wrong answer.
+ * SNOW-931: every country is LOADED first, and awaited. This paragraph used
+ * to read "an empty one (a country not yet loaded) simply yields no
+ * bulletins for that country rather than a wrong answer", which was the
+ * defect written down as a design choice — for this function a missing
+ * bulletin IS the wrong answer, and it was the one
+ * `inside-the-boundary-is-complete.md` promises not to produce.
+ *
+ * `featureByRegionId` is a lazily-built set, not the estate: boot fetches
+ * Switzerland, then the basemap's declared countries un-awaited, and under
+ * `swisstopo_*` (which declares `ch` alone) the other three never arrive at
+ * all. A Swiss border area therefore resolved to zero French bulletins —
+ * silently, because the weather feed is global and still succeeded, so the
+ * run tallied complete and stamped `contentAt` over a plan missing a
+ * country. See `pwaMapCountries.ensureAllLoaded` for why the fix loads all
+ * four rather than the ones a rectangle overlaps.
  *
  * @param {Object} blob The run's download blob, for its tile ranges.
  * @returns {Promise<string[]>} Possibly empty, which every caller reads as
@@ -665,6 +677,24 @@ async function assembleAreaContentURLs(blob) {
 
   const bbox = core.areaBBox(blob);
   if (!bbox) return [];
+
+  // Before the lookup is read, not after: the whole point is that the set
+  // it answers from is complete. Best-effort on the surface being absent,
+  // as every other cross-module reach here is — an older shell mid-rollout
+  // gets the pre-SNOW-931 answer rather than no download.
+  const countries = await window.pwaMapCountries?.ensureAllLoaded();
+  if (countries && countries.failed.length > 0) {
+    // A country the client could not fetch leaves the plan short in exactly
+    // the way this ticket closed, so it is recorded rather than shrugged
+    // off. It is NOT yet reflected in the run's own completeness — that
+    // needs the durable-incompleteness plumbing SNOW-932 adds, since
+    // `contentAt` is write-only today and `partial` is lost on the next
+    // re-render.
+    window.pwaDebugLog?.record('net', 'download.countries.short', {
+      loaded: countries.loaded,
+      failed: countries.failed,
+    });
+  }
 
   const state = window.snowdeskMapState;
   const byRegion = (state && state.featureByRegionId) || {};

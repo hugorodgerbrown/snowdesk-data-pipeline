@@ -73,6 +73,42 @@ Mercator inverse would hide.
 It is checked to fail: tightening `featureBBox` by 0.01° in each direction
 breaks the sweep.
 
+### The invariant is about the test, not the candidate set
+
+**SNOW-931.** A superset of *what you looked at* is not a superset of what
+exists, and SNOW-924 shipped believing otherwise. `areaContentPlan` is
+handed candidate features by `assembleAreaContentURLs`, which read them
+from `snowdeskMapState.featureByRegionId` — the regions the client happens
+to have loaded. That set is built lazily: boot fetches Switzerland, then
+the active basemap's declared countries un-awaited, and `swisstopo_*`
+declares `ch` alone. A Swiss border area resolved to **zero French
+bulletins**, because France was never a candidate for the rectangle to
+over-select.
+
+Two things let it through, and both are worth remembering:
+
+- **Every fixture was complete.** The sweep above hands `areaContentPlan`
+  all 149 CH features directly, and the wiring test preloads one whole
+  `regions.geojson`. A test that supplies the input cannot discover that
+  the real caller supplies less of it.
+- **The failure reported success.** Weather comes from one global feed
+  that is fetched whole regardless of country, so the run still tallied
+  `ok === total`, stamped `contentAt`, and painted the roundel green. The
+  `partial` state could not catch it.
+
+So the plan now loads every country and awaits it
+(`pwaMapCountries.ensureAllLoaded`, published from `map.js`) before it
+reads the lookup. All four rather than the ones the rectangle overlaps:
+the feeds are small, three are usually cached already, and a table of
+country extents would be a second source of truth about where countries
+are — hand-maintained, and able to be wrong in the direction that loses a
+bulletin. Loading is not showing; SNOW-891 already separated the two, so
+this changes nothing about what the map draws.
+
+`tests/js/test_map_download_content_countries.js` pins it with a fixture
+whose region feed is keyed on `?country=` under a CH-only basemap — the
+ordinary Alpine configuration, not a contrived one.
+
 This mirrors `test_basemap_tiles.py`'s
 `test_clip_ranges_is_a_subset_of_the_candidate_rectangle`, which makes the
 same argument at the other end of the pipeline and also runs against every

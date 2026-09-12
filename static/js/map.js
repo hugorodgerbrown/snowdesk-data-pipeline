@@ -5768,6 +5768,59 @@
     },
   });
 
+  window.pwaMapCountries = Object.freeze({
+    /**
+     * SNOW-931: load every country's region geometry, and wait for it.
+     *
+     * `FEATURE_BY_REGION_ID` is a lazily-built set, not the estate: boot
+     * fetches Switzerland on the critical path and then kicks off
+     * `ensureCountryLoaded` for the union of the active basemap's declared
+     * countries and the enabled providers — un-awaited. Under a national
+     * basemap (`swisstopo_*` declares `ch` alone, `ign_plan` `fr`) the
+     * other three are never fetched at all until something toggles them.
+     *
+     * That is invisible to everything that READS the lookup to answer a
+     * question about somewhere the user is looking, which is every other
+     * caller — a region not on the client is a region not on the map, so
+     * the two agree. It is not invisible to a caller asking what exists
+     * inside a boundary: there, a country the client happens not to hold
+     * is a silently missing answer. The offline content plan is that
+     * caller, and `inside-the-boundary-is-complete.md` names under-fetching
+     * as the one defect it may not have.
+     *
+     * ALL of them rather than the ones overlapping some rectangle: the
+     * feeds are small, three of the four are usually already loaded or
+     * cached, and over-fetching is free by that same contract — where a
+     * table of country extents would be a second source of truth about
+     * where countries are, maintained by hand, able to be wrong in the
+     * direction that loses a bulletin.
+     *
+     * Loading is not showing. SNOW-891 separated the two so boot could
+     * fetch the basemap's outlines before any provider row claimed them;
+     * visibility stays with `countryMatchFilter` / `applyCountryFilters`,
+     * so this changes nothing about what the map draws.
+     *
+     * @returns {Promise<{loaded: string[], failed: string[]}>} Which
+     *   countries the client now holds and which could not be fetched.
+     *   Never rejects — a caller gets a short answer it can see, rather
+     *   than an exception in place of a download.
+     */
+    async ensureAllLoaded() {
+      const results = await Promise.all(
+        COUNTRY_KEYS.map((code) =>
+          ensureCountryLoaded(code).then(
+            () => ({ code, ok: loadedCountries.has(code) }),
+            () => ({ code, ok: false }),
+          ),
+        ),
+      );
+      return {
+        loaded: results.filter((r) => r.ok).map((r) => r.code),
+        failed: results.filter((r) => !r.ok).map((r) => r.code),
+      };
+    },
+  });
+
   // SNOW-658: all four bridges now exist, so a listener can safely be told
   // to read them. Announced HERE rather than beside the seed loop near the
   // top of this IIFE, because a listener that hears it will immediately call
