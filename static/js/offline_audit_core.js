@@ -1171,10 +1171,29 @@
    * @returns {string[]} Basemap keys.
    */
   function basemapsFor(r) {
+    var areas = Array.isArray(r.areas) ? r.areas : [];
     var keys = /** @type {string[]} */ ([]);
-    (Array.isArray(r.areas) ? r.areas : []).forEach(function (area) {
+    areas.forEach(function (area) {
       var key = area.basemapKey;
       if (!key || keys.indexOf(key) >= 0) return;
+      // Only a style this device actually holds something for. A record
+      // whose bucket is empty — a warm that was started and never
+      // finished, an area since evicted — used to earn a row of its own,
+      // reading "No" about a basemap the reader is not looking at and has
+      // nothing stored for. Two Nos under THE MAP is how this panel came
+      // to suggest there was no basemap at all, on a device whose map was
+      // drawing perfectly (reported on staging, 2026-09-12).
+      //
+      // `missing` is the only state dropped: `incomplete` and
+      // `unverifiable` are devices that hold real bytes, and `unreadable`
+      // is a reading that did not come back, which is never grounds for
+      // making a row disappear.
+      var holdsSomething = areas.some(function (candidate) {
+        return (
+          candidate.basemapKey === key && areaState(candidate).status !== 'missing'
+        );
+      });
+      if (!holdsSomething) return;
       keys.push(key);
     });
     keys.sort();
@@ -1194,18 +1213,36 @@
   }
 
   /**
-   * Answer one basemap: will this style render offline?
+   * Answer one basemap: **will I see a map at all on this style?**
    *
-   * Two halves, and both have to be there. The STYLE half is its render
-   * dependencies — the style document, each source's TileJSON, the
-   * sprite — without which MapLibre cannot learn a single tile URL and
-   * the map is blank however many tiles are pinned (SNOW-843). The REACH
-   * half is the shared z0–7 base layer: without it the map falls off the
-   * edge of every downloaded area the moment the camera pulls out past
-   * z10, which is SNOW-856's whole bug and is why "zoomed-out overview"
-   * is a real question rather than an implementation detail. It is
-   * answered here, beside the style it belongs to, rather than as a row
-   * of its own among the downloads — it is not a place anyone chose.
+   * That is the whole question, and narrowing it to that is a correction.
+   * The row used to answer two things at once — the style half AND the
+   * shared z0–7 base layer — and returned No if either was missing. On a
+   * device holding a complete Martigny-Verbier download and no base
+   * layer, it therefore printed "Swisstopo (CH) basemap: No" over a map
+   * that was drawing Martigny, Sion and Gstaad on screen at that moment.
+   * A reader shown that concludes the app has no map. This is the second
+   * time this panel has been reported for contradicting what its reader
+   * can see, and a No it cannot support is the one failure it does not
+   * survive.
+   *
+   * So the STYLE half alone decides the row: the style document, each
+   * source's TileJSON and the sprite, without which MapLibre cannot learn
+   * a single tile URL and the map is blank however many tiles are pinned
+   * (SNOW-843). Those travel with an area download, so a ready area is
+   * what makes this Yes.
+   *
+   * The base layer has not stopped mattering — it is what fills the map
+   * outside the boxes the user drew — but it is a CAVEAT on a Yes, not a
+   * No, and it rides in the summary. It cannot be a row of its own: every
+   * label for it either reaches for zoom jargon, or claims something
+   * ("the complete map") that no device ever has, since a basemap is
+   * never downloaded in full. A row whose answer can only ever be No is
+   * not a question worth asking.
+   *
+   * What a reader actually asks is two things, and both already have a
+   * home: *can I see anything at all* is this row, and *can I see detail
+   * where I am going* is the per-download rows under Map downloads.
    *
    * @param {string} key
    * @param {AuditReadings} r
@@ -1224,6 +1261,13 @@
     });
     var name = basemapName(key, t);
     if (!styled) {
+      // A reading that did not come back is not an absence. Without this
+      // a bucket the budget gave up on would answer "the style is not
+      // saved" — a confident No drawn from nothing.
+      var unreadable = areas.some(function (area) {
+        return areaState(area).status === 'unreadable';
+      });
+      if (unreadable) return { status: 'unknown' };
       return {
         status: 'no',
         reason: 'style',
@@ -1231,10 +1275,17 @@
       };
     }
     if (!reaches) {
+      // Yes WITH a caveat, not a No. The map draws — over the areas the
+      // user downloaded. Everywhere else it is drawing from the passive
+      // browsing cache (`snowdesk-basemap-v1`, 600 entries, trimmed
+      // LRU), which is real, is on screen, and is not saved: it goes when
+      // the device next needs the room. The note says exactly that, and
+      // deliberately does not claim the screen will be blank — it very
+      // often is not, which is what made the old No read as a lie.
       return {
-        status: 'no',
-        reason: 'reach',
-        note: fill(s(t, 'note-basemap-no-overview'), { name: name }),
+        status: 'yes',
+        reason: 'downloads-only',
+        note: fill(s(t, 'note-basemap-downloads-only'), { name: name }),
       };
     }
     return { status: 'yes' };

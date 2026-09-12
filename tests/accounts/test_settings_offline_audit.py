@@ -226,6 +226,28 @@ class TestOfflineFallbackPage:
         assert re.search(r'id="offline-audit-panel"[^>]*\shidden', html)
         assert "window.pwaOfflineAudit" in html
 
+    def test_offers_a_way_to_the_map(self) -> None:
+        """The page says the map works offline; it has to offer the map.
+
+        Reported from staging: a device with Martigny-Verbier downloaded
+        landed here and found Retry — the one control that cannot succeed
+        without a signal — and no link to the map that was sitting saved
+        on the device the whole time.
+        """
+        html = OFFLINE_PAGE.read_text()
+        assert 'id="open-map-link"' in html
+        assert re.search(r'id="open-map-link"[^>]*href="/"', html)
+
+    def test_the_map_link_ships_hidden_behind_the_probe(self) -> None:
+        """A link back to this very page is worse than no link at all.
+
+        So it is revealed only once ``canOpenMap`` confirms the map page
+        is cached AND stamped for whoever is signed in here.
+        """
+        html = OFFLINE_PAGE.read_text()
+        assert re.search(r'id="open-map-link"[^>]*\shidden', html)
+        assert "canOpenMap" in html
+
 
 class TestServiceWorkerPrecache:
     """The worker carries the audit onto the offline page, tolerantly."""

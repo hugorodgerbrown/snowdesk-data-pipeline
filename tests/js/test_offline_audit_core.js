@@ -342,10 +342,20 @@ describe('the basemap rows', () => {
     expect(row(report, 'basemap:x').reason).toBe('style');
   });
 
-  it('answers No when the style is saved but the zoomed-out tiles are not', () => {
-    // SNOW-856: without them the map falls off the edge of every
-    // downloaded area the moment the camera pulls out past z10, which is
-    // why the overview is a real question rather than a detail.
+  it('answers Yes, with a caveat, when the style is saved but the base layer is not', () => {
+    // A deliberate reversal of SNOW-856's answer, not a regression of it.
+    //
+    // The row used to read No here, and it was reported from staging over
+    // a device drawing Martigny, Sion and Gstaad on screen at that moment:
+    // a complete Martigny-Verbier download, no pinned base layer, and a
+    // panel saying "Swisstopo (CH) basemap: No". A reader shown that
+    // concludes the app has no map.
+    //
+    // The base layer still matters and is still said — as a note on a
+    // Yes. What it cannot be is a row: every label for it either reaches
+    // for zoom jargon or claims something ("the complete map") no device
+    // ever has, since a basemap is never downloaded in full, and a row
+    // whose answer can only be No is not a question worth asking.
     const report = core.buildReport(
       healthy({
         areas: [
@@ -360,9 +370,112 @@ describe('the basemap rows', () => {
           },
         ],
       }),
+      {
+        'note-basemap-downloads-only': 'outside your downloads %(name)s is not saved',
+        'notes-sentence': 'Also worth knowing: %(notes)s.',
+      },
+    );
+
+    const basemap = row(report, 'basemap:x');
+    expect(basemap.status).toBe('yes');
+    expect(basemap.reason).toBe('downloads-only');
+    // The caveat still reaches the reader, in the one place a row has no
+    // room for: the summary.
+    expect(report.summary).toContain('outside your downloads');
+  });
+
+  it('still answers No when the style itself is missing', () => {
+    // The guard on the reversal above: the map genuinely does not draw
+    // without its style document, and that No must survive.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'base-x',
+            kind: 'base',
+            name: 'overview',
+            basemapKey: 'x',
+            deps: [],
+            bucketPresent: true,
+            entries: ['https://t/4/1/1.pbf'],
+          },
+        ],
+      }),
       {},
     );
-    expect(row(report, 'basemap:x').reason).toBe('reach');
+    expect(row(report, 'basemap:x').status).toBe('no');
+    expect(row(report, 'basemap:x').reason).toBe('style');
+  });
+
+  it('does not list a basemap the device holds nothing for and is not using', () => {
+    // The other half of the staging report. A base-layer record whose
+    // bucket is empty — a warm started and never finished — earned a row
+    // reading "OpenFreeMap basemap: No" beside the reader's own style,
+    // about a map they were not looking at and had nothing stored for.
+    // Two Nos under THE MAP is how the panel came to suggest there was no
+    // basemap at all.
+    const report = core.buildReport(
+      healthy({
+        selectedBasemap: 'x',
+        areas: [
+          {
+            id: 'r1',
+            kind: 'region',
+            name: 'M',
+            basemapKey: 'x',
+            deps: ['https://t/style.json'],
+            bucketPresent: true,
+            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+          },
+          {
+            id: 'base-ghost',
+            kind: 'base',
+            name: 'overview',
+            basemapKey: 'ghost',
+            deps: [],
+            bucketPresent: false,
+            bucketReadable: true,
+            entries: [],
+          },
+        ],
+      }),
+      {},
+    );
+
+    expect(row(report, 'basemap:ghost')).toBeNull();
+    expect(row(report, 'basemap:x')).not.toBeNull();
+  });
+
+  it('still lists the style on screen even when nothing is stored for it', () => {
+    // The reverse guard: a reader looking at a style their device holds
+    // nothing for is exactly who needs to be told (SNOW-913).
+    const report = core.buildReport(
+      healthy({ selectedBasemap: 'nothing-here', areas: [] }),
+      {},
+    );
+    expect(row(report, 'basemap:nothing-here')).not.toBeNull();
+  });
+
+  it('answers unknown, not No, when the bucket did not come back', () => {
+    const report = core.buildReport(
+      healthy({
+        selectedBasemap: 'x',
+        areas: [
+          {
+            id: 'r1',
+            kind: 'region',
+            name: 'M',
+            basemapKey: 'x',
+            deps: ['https://t/style.json'],
+            bucketPresent: false,
+            bucketReadable: false,
+            entries: [],
+          },
+        ],
+      }),
+      {},
+    );
+    expect(row(report, 'basemap:x').status).toBe('unknown');
   });
 });
 

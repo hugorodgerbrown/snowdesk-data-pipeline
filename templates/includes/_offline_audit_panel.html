@@ -133,11 +133,11 @@ of a settings page nobody came here to audit.
         <span data-string="row-app-looks-right">{% translate "The app looks right" %}</span>
         <span data-string="row-danger-ratings">{% translate "Danger ratings" %}</span>
         <span data-string="row-region-shapes">{% translate "Region outlines" %}</span>
-        <span data-string="row-basemap">{% translate "%(name)s basemap" %}</span>
+        <span data-string="row-basemap">{% translate "%(name)s map" %}</span>
         {# SNOW-913: the style on screen, told apart from one the device merely #}
         {# holds bytes for. A reader on Swisstopo being answered about #}
         {# OpenFreeMap is the report disagreeing with what they can see. #}
-        <span data-string="row-basemap-current">{% translate "%(name)s basemap (on screen)" %}</span>
+        <span data-string="row-basemap-current">{% translate "%(name)s map (on screen)" %}</span>
         <span data-string="row-no-downloads">{% translate "Anything downloaded at all" %}</span>
         <span data-string="label-dropzone">{% translate "%(name)s (drop zone)" %}</span>
         <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
@@ -170,9 +170,13 @@ of a settings page nobody came here to audit.
         <span
             data-string="note-basemap-unstyled"
         >{% translate "the %(name)s map style is not saved, so nothing drawn on it will appear" %}</span>
+        {# A caveat on a Yes, not a No. The map DOES draw outside a #}
+        {# download — from the passive browsing cache — so this must not #}
+        {# claim a blank screen. What it must say is that those tiles are #}
+        {# not saved and will go when the device needs the room. #}
         <span
-            data-string="note-basemap-no-overview"
-        >{% translate "zooming out past a downloaded area on %(name)s will show nothing" %}</span>
+            data-string="note-basemap-downloads-only"
+        >{% translate "outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space" %}</span>
         <span
             data-string="note-area-incomplete"
         >{% translate "%(name)s will not draw until you repair it from the map’s Manage downloads sheet" %}</span>
