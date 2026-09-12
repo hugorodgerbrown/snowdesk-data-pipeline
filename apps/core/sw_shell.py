@@ -1,5 +1,12 @@
 """
-apps/core/sw_shell.py — SW shell cache-version derivation (SNOW-517, SNOW-590).
+apps/core/sw_shell.py — SW serve-time substitutions (SNOW-517, SNOW-590, SNOW-933).
+
+Two constants in ``static/js/sw.js`` are placeholders on disk and are
+rewritten per response by ``apps.public.views.serve_sw``: ``CACHE_VERSION``,
+the derived shell cache name this module exists for, and ``BUILD_IDENTITY``,
+the deploy the worker was served from (SNOW-933 — see
+``inject_build_identity`` at the foot of the module). Both raise rather than
+passing an unsubstituted body through.
 
 The service worker names its shell cache with a ``CACHE_VERSION`` string. A
 returning client keeps serving the old shell until that name changes, so the
@@ -49,6 +56,7 @@ now a curiosity rather than a hazard.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from functools import cache
 from pathlib import Path
@@ -67,6 +75,15 @@ _HASH_SLICE: int = 12
 # committed placeholder and any previously-shipped literal are both
 # rewritable at serve time.
 _CACHE_VERSION_LINE_RE: re.Pattern[str] = re.compile(r"const CACHE_VERSION = '[^']*';")
+
+# SNOW-933: the second substituted assignment — the deploy the worker was
+# served from, which is what the update banner names. Matched to the end of
+# the object literal rather than to the end of the line, for the same reason
+# as above: the committed placeholder and any shape a previous deploy shipped
+# are both rewritable.
+_BUILD_IDENTITY_LINE_RE: re.Pattern[str] = re.compile(
+    r"const BUILD_IDENTITY = \{[^}]*\};"
+)
 
 
 def _shell_template_paths() -> tuple[Path, ...]:
@@ -211,5 +228,60 @@ def inject_cache_version(body: str, version: str | None = None) -> str:
             "No `const CACHE_VERSION = '...';` assignment found in the service "
             "worker source. Serving it unmodified would freeze every client's "
             "shell cache name — see apps/core/sw_shell.py."
+        )
+    return new_body
+
+
+def inject_build_identity(body: str, build: str, release: str) -> str:
+    """
+    Return ``body`` with its ``BUILD_IDENTITY`` assignment set (SNOW-933).
+
+    The worker answers a ``build-identity`` message with these two values,
+    and ``sw_register.js`` puts them in the update banner: "You are on
+    073ee8c. Reload to update to 9f21ab4." They name the deploy the
+    *controlling* worker came from, which is the build the update replaces
+    — a thing the page itself cannot know, because navigations are
+    network-first and its own ``<meta>`` already carries the new build.
+
+    Both values are written as JSON string literals, so a release label or
+    build id carrying a quote cannot terminate the literal and change the
+    meaning of the script. ``ensure_ascii`` escapes U+2028/U+2029 along
+    with everything else non-ASCII.
+
+    Args:
+        body: The raw ``sw.js`` source.
+        build: The git SHA of the running build (``settings.APP_VERSION``).
+        release: The human release label (``"v34"``), or ``""`` when the
+            build carries no release number.
+
+    Returns:
+        The body with the assignment rewritten.
+
+    Raises:
+        ValueError: if no ``BUILD_IDENTITY`` assignment is present. Loud
+            for the same reason as ``inject_cache_version`` above, though
+            the failure it prevents is cosmetic rather than structural:
+            the placeholder would reach the banner as "You are on
+            UNSUBST", which reads as a bug in the app rather than as an
+            update. ``apps.core.checks`` catches it at
+            ``manage.py check`` time.
+
+    """
+    assignment = (
+        "const BUILD_IDENTITY = "
+        f"{{ build: {json.dumps(build)}, release: {json.dumps(release)} }};"
+    )
+    # A plain string replacement would be read as a template, and
+    # ``json.dumps`` emits backslashes (`` ``, ``\"``) that ``re``
+    # would then try to interpret as group references. A function
+    # replacement is substituted literally.
+    new_body, count = _BUILD_IDENTITY_LINE_RE.subn(
+        lambda _match: assignment, body, count=1
+    )
+    if count == 0:
+        raise ValueError(
+            "No `const BUILD_IDENTITY = {...};` assignment found in the service "
+            "worker source. Serving it unmodified would put the placeholder in "
+            "the update banner — see apps/core/sw_shell.py."
         )
     return new_body

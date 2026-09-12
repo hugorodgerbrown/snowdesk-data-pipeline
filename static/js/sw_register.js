@@ -54,6 +54,12 @@
  * unnumbered copy the template rendered whenever it cannot confirm both
  * ends — see ``describeUpdate``, which owns that rule.
  *
+ * The build it names as the user's is the CONTROLLING WORKER's, not the
+ * page's (SNOW-933) — see ``controllerIdentity``. Reading the page's
+ * ``<meta>`` made the banner permanently unnumbered on staging, where
+ * every deploy shares one release label and the network-first navigation
+ * had already handed the page the new build.
+ *
  * Clicking "Reload" runs ``handleReloadClick`` below:
  *
  *   * If a fresh SW is waiting → post ``{ type: 'SKIP_WAITING' }``. The
@@ -713,11 +719,84 @@
   }
 
   /**
+   * How long to wait for the controlling worker to name its build.
+   *
+   * The reply is a synchronous read of a constant in the worker's own
+   * scope, so a live worker answers in single-digit milliseconds. The
+   * budget is for the worker that will never answer at all: one that
+   * predates the ``build-identity`` handler, or one wedged in a long
+   * ``waitUntil``. Bounded rather than open-ended for the reason
+   * docs/decisions/bounded-offline-read-paths.md gives — an unanswered
+   * read must resolve, not hang, because the caller is holding a piece
+   * of on-screen copy open while it waits.
+   */
+  const CONTROLLER_IDENTITY_TIMEOUT_MS = 2000;
+
+  /**
+   * Ask the controlling worker which build it was served from (SNOW-933).
+   *
+   * This is the identity the update banner needs and the page cannot
+   * supply. The page's ``<meta name="pwa-app-version">`` names whichever
+   * build served its HTML, and HTML navigations are network-first — so
+   * the first navigation after a deploy already carries the NEW build,
+   * while the worker still controlling that page is the old one. Reading
+   * the meta there compares the new build against itself, which is
+   * exactly the state in which the banner has something to offer and
+   * nothing to say about it.
+   *
+   * Not memoised: a reveal labels the banner once, and a cached ``null``
+   * from a moment when nothing was controlling the page yet would outlive
+   * the condition that produced it.
+   *
+   * @returns {Promise<{build: string, release: string} | null>} ``null``
+   *   when there is no controller, no ``MessageChannel``, or no reply
+   *   inside the budget — all of which mean "ask the page instead".
+   */
+  function controllerIdentity() {
+    return new Promise((resolve) => {
+      const controller = navigator.serviceWorker?.controller;
+      if (!controller || typeof MessageChannel !== 'function') {
+        resolve(null);
+        return;
+      }
+      let settled = false;
+      /** @param {{build: string, release: string} | null} value */
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const timer = setTimeout(() => settle(null), CONTROLLER_IDENTITY_TIMEOUT_MS);
+      try {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => {
+          clearTimeout(timer);
+          const data = event.data;
+          if (!data || data.type !== 'build-identity') {
+            settle(null);
+            return;
+          }
+          settle({
+            build: String(data.build || '').trim(),
+            release: String(data.release || '').trim(),
+          });
+        };
+        controller.postMessage({ type: 'build-identity' }, [channel.port2]);
+      } catch (_err) {
+        clearTimeout(timer);
+        settle(null);
+      }
+    });
+  }
+
+  /**
    * Name both builds in the revealed banner, when they can be named.
    *
-   * Reads ``window.pwaVersionInfo`` (pwa_version_check.js) for the shell's
-   * own identity and one verified ``/api/version`` body. Three states, and
-   * the first two are failures that must not invent an answer:
+   * Reads one verified ``/api/version`` body for the server's identity,
+   * and ``controllerIdentity()`` for the client's — falling back to
+   * ``window.pwaVersionInfo``'s meta values (pwa_version_check.js) when
+   * the controlling worker cannot answer. Three states, and the first two
+   * are failures that must not invent an answer:
    *
    *   * no ``window.pwaVersionInfo`` — admin pages, and any page the
    *     version check did not load on;
@@ -738,17 +817,23 @@
   function labelBanner() {
     const info = window.pwaVersionInfo;
     if (!info || typeof info.verified !== 'function') return;
-    Promise.resolve(info.verified())
-      .then((verdict) => {
+    Promise.all([info.verified(), controllerIdentity()])
+      .then(([verdict, controller]) => {
         if (!verdict) return;
         // The user clicked Reload while the body was in flight.
         // ``showBannerBusy`` owns the copy from that moment on; writing
         // the offer back over it would claim the update had not started.
         if (bannerBusy) return;
+        // SNOW-933: the controlling worker's answer wins WHOLE when it
+        // replies — both fields or neither. It is the shell actually
+        // running the app, which is what an update replaces; the page's
+        // meta is the fallback for a worker that cannot answer. Mixing
+        // the two would pair one build's SHA with the other's label.
+        const client = controller || { build: info.build, release: info.release };
         const pair = describeUpdate({
-          clientRelease: info.release,
+          clientRelease: client.release,
           serverRelease: verdict.release,
-          clientBuild: info.build,
+          clientBuild: client.build,
           serverBuild: verdict.current,
         });
         if (!pair) return;

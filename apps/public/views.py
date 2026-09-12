@@ -106,7 +106,12 @@ from apps.bulletins.services.render_model import (
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
-from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
+from apps.core.sw_shell import (
+    cache_version,
+    cached_cache_version,
+    inject_build_identity,
+    inject_cache_version,
+)
 from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
@@ -124,6 +129,7 @@ from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .headlines import headline_for
+from .release import release_label
 from .season_calendar import (
     SeasonRibbon,
     build_season_grid,
@@ -2131,6 +2137,15 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     ``.py`` edits and would otherwise serve a stale name after a ``.js`` /
     ``.css`` / template change.
 
+    SNOW-933: the ``BUILD_IDENTITY`` literal is rewritten the same way,
+    with the git SHA and release label of the build being served. The
+    worker hands those back when the page asks it ``build-identity``, and
+    the update banner names them — it is the only way the page can learn
+    which build the worker *controlling* it came from, since navigations
+    are network-first and the page's own ``<meta>`` already carries the new
+    build. Required, like the version above: the placeholder would reach a
+    user as "You are on UNSUBST".
+
     SNOW-585: when ``settings.SW_DEV_SHELL_BYPASS`` is on, the on-disk
     ``const DEV_SHELL_BYPASS = false;`` literal is rewritten to ``true`` in
     the response body returned by ``_serve_sw_file`` — deliberately done
@@ -2151,9 +2166,9 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     Raises:
         Http404: If ``js/sw.js`` is not found by staticfiles finders.
         ValueError: If the body carries no substitutable ``CACHE_VERSION``
-            assignment. ``apps.core.checks`` catches this at
-            ``manage.py check`` time so it cannot first appear in
-            production.
+            or ``BUILD_IDENTITY`` assignment. ``apps.core.checks`` catches
+            both at ``manage.py check`` time so neither can first appear
+            in production.
 
     """
     response = _serve_sw_file("js/sw.js")
@@ -2161,6 +2176,9 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
 
     version = cache_version() if settings.DEBUG else cached_cache_version()
     body = inject_cache_version(body, version=version)
+    body = inject_build_identity(
+        body, build=settings.APP_VERSION, release=release_label()
+    )
 
     if settings.SW_DEV_SHELL_BYPASS:
         body = body.replace(

@@ -108,6 +108,28 @@ function stubVersionInfo(release, build, verdict) {
   });
 }
 
+/**
+ * Install a controlling worker that answers `build-identity` with `reply`.
+ *
+ * @param {object | null} reply The message body to post back down the
+ *   transferred port, or null for a worker that never answers at all.
+ * @returns {void}
+ */
+function stubController(reply) {
+  navigator.serviceWorker.controller = {
+    postMessage: (data, transfer) => {
+      if (!reply) return;
+      if (!data || data.type !== 'build-identity') return;
+      transfer[0].postMessage(reply);
+    },
+  };
+}
+
+/** Put the harness back to "no worker is controlling this page". */
+function clearController() {
+  navigator.serviceWorker.controller = null;
+}
+
 /** @returns {string} */
 const titleText = () => document.getElementById('sw-update-banner-title').textContent;
 /** @returns {string} */
@@ -243,6 +265,87 @@ describe('the revealed banner', () => {
     await Promise.resolve();
 
     expect(titleText()).toBe('Update available');
+  });
+});
+
+describe('which build the banner calls yours', () => {
+  // The staging regression (SNOW-933). Every staging deploy shares one
+  // release label, so the copy rule falls through to the SHAs — and
+  // navigations are network-first, so the page already carries the NEW
+  // build's meta while the OLD worker still controls it. Read from the
+  // page, both SHAs match and the banner stays unnumbered forever.
+  it('takes the controlling worker\'s build over the page\'s meta', async () => {
+    resetCopy();
+    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v34' });
+    // The page's own meta is already the server's build.
+    stubVersionInfo('v34', 'bbbbbbb2222', {
+      current: 'bbbbbbb2222',
+      release: 'v34',
+      update_available: true,
+    });
+
+    window.pwaUpdateBanner.reveal();
+
+    await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
+    expect(bodyText()).toBe('You are on aaaaaaa. Reload to update to bbbbbbb.');
+    clearController();
+  });
+
+  it('takes the worker\'s release label too, not the page\'s', async () => {
+    // Production's half of the same gap: a fresh v34 page controlled by
+    // a v33 worker. The answer is taken whole — the worker's label with
+    // the worker's build, never one paired with the other's.
+    resetCopy();
+    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v33' });
+    stubVersionInfo('v34', 'bbbbbbb2222', {
+      current: 'bbbbbbb2222',
+      release: 'v34',
+      update_available: true,
+    });
+
+    window.pwaUpdateBanner.reveal();
+
+    await vi.waitFor(() => expect(titleText()).toBe('Update available (v34)'));
+    expect(bodyText()).toBe('You are on v33. Reload to update to v34.');
+    clearController();
+  });
+
+  it('falls back to the page meta when the worker answers something else', async () => {
+    resetCopy();
+    stubController({ type: 'not-the-answer' });
+    stubVersionInfo('v29', 'aaaaaaa1111', {
+      current: 'bbbbbbb2222',
+      release: 'v30',
+      update_available: true,
+    });
+
+    window.pwaUpdateBanner.reveal();
+
+    await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
+    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
+    clearController();
+  });
+
+  it('falls back to the page meta when the worker never answers', async () => {
+    // A worker that predates the build-identity handler — which every
+    // worker does on the first deploy carrying it. The read is bounded,
+    // so it resolves rather than leaving the copy pending forever.
+    resetCopy();
+    stubController(null);
+    stubVersionInfo('v29', 'aaaaaaa1111', {
+      current: 'bbbbbbb2222',
+      release: 'v30',
+      update_available: true,
+    });
+    vi.useFakeTimers();
+
+    window.pwaUpdateBanner.reveal();
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
+    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
+    clearController();
   });
 });
 
