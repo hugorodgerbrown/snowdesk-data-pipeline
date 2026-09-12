@@ -162,16 +162,51 @@ describe('booting on ?d=<tomorrow>', () => {
     expect(lastCommit(commits)).toBe(TODAY);
   });
 
-  it('leaves today reachable when the payload stops short of it', async () => {
-    // The off-season shape, and the regression that would matter most: a
-    // ceiling taken naively from the data would sit BELOW today and take
-    // today off the range entirely. `latestKnownDate` returns the later of
-    // the two, so today still commits.
-    history.replaceState(null, '', '/?d=' + TODAY);
+  it('leaves the days up to today reachable when the payload stops short', async () => {
+    // The off-season shape: the archive stopped in December, today is the
+    // 6th of January, and the days in between must stay reachable. The date
+    // asked for is deliberately BETWEEN the two — asking for today itself
+    // would prove nothing, since the boot fallback commits today whenever a
+    // date is refused.
+    //
+    // Worth knowing what this does NOT pin. It passes even with
+    // `latestKnownDate`'s "prefer the later of the two" guard removed,
+    // because `ceilingMsFrom` re-clamps with `Math.max(ms, todayMs)` and
+    // catches it — the second lock doing its job. So this covers the
+    // scrubber's own behaviour and the depth of the defence, while the guard
+    // itself is pinned a layer down (test_calendar_core.js, "prefers today
+    // when the archive ends earlier") and a layer across, where there is no
+    // second lock (test_map_calendar.js, "stops at today when the payload
+    // reaches no further"). Removing that guard fails both of those.
+    history.replaceState(null, '', '/?d=2026-01-05');
 
     const { commits } = await loadScrubber({ '2025-12-30': { 'CH-4115': 1 } });
 
-    expect(lastCommit(commits)).toBe(TODAY);
+    expect(lastCommit(commits)).toBe('2026-01-05');
+  });
+});
+
+describe('when another country&apos;s ratings arrive', () => {
+  it('re-reads the ceiling, rather than staying on the Swiss payload', async () => {
+    // `getSeasonRatings` fetches `?country=ch` and nothing else
+    // (map_shared.js), and `map.js` merges every other country into that same
+    // cache object afterwards — adding whole new DATE KEYS, not just regions.
+    // Without a re-read the ceiling is Switzerland's for the life of the
+    // page, so someone following only France would never reach the day this
+    // ticket is about.
+    const cache = { ...RATINGS_TODAY };
+    const { commits } = await loadScrubber(cache);
+
+    // Exactly what the merge does: a new date written into the live object.
+    cache[TOMORROW] = { 'FR-1234': 3 };
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'fr' },
+    }));
+
+    history.replaceState(null, '', '/?d=' + TOMORROW);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(lastCommit(commits)).toBe(TOMORROW);
   });
 });
 

@@ -514,6 +514,26 @@
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     if (!sortedDates || !ratingsCache) return;
     effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
+
+    // SNOW-927: and the ceiling, which without this would be derived from
+    // SWITZERLAND ALONE for the life of the page. ``getSeasonRatings``
+    // fetches ``?country=ch`` and nothing else (map_shared.js); every other
+    // country arrives here, and the merge in ``map.js`` adds whole new DATE
+    // KEYS to the same cache object, not just regions to existing ones. So
+    // for someone following only France the first ceiling is computed from a
+    // payload their country is not in, and the day this ticket exists to
+    // reach would never become reachable.
+    //
+    // Read from ``ratingsCache`` rather than ``sortedDates``: the latter is
+    // ``Object.keys(...)`` taken once when the fetch resolved and does not
+    // grow with the merge, so a new date is invisible to it. (That staleness
+    // predates this ticket and still affects ``effectiveTodayKey`` on the
+    // line above — untouched here rather than fixed in passing.)
+    latestSelectableMs = ceilingMsFrom(
+      window.pwaCalendarCore
+        ? window.pwaCalendarCore.latestKnownDate(ratingsCache, todayKey)
+        : todayKey,
+    );
   });
 
 })();

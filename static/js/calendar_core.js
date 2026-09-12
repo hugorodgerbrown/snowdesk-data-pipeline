@@ -278,7 +278,7 @@
    *       blank: false,
    *       dateKey: '2026-02-16',
    *       day: 16,               // for the visible label
-   *       selectable: true,      // inside [min, max] — i.e. not the future
+   *       selectable: true,      // inside [min, max]
    *       inSeason: true,        // inside the avalanche season: a HIGHLIGHT
    *       rating: 3,             // EAWS danger int for the focused region,
    *                              // or null — SNOW-794
@@ -289,12 +289,15 @@
    * ``inSeason`` is deliberately separate from ``selectable`` rather than
    * folded into it. A day outside the season is still a day the map has
    * weather for — refusing it was the bug this shape exists to prevent.
-   * Only the future is unselectable.
+   * Unselectable means outside ``[min, max]`` and nothing else; SNOW-927
+   * moved ``max`` off the clock, so "not the future" is no longer what it
+   * comes to.
    *
    * @param {string} monthKey A ``YYYY-MM`` month key.
    * @param {Object} opts Grid inputs.
    * @param {string} [opts.min] Earliest reachable day ``YYYY-MM-DD``.
-   * @param {string} [opts.max] Latest reachable day (today) ``YYYY-MM-DD``.
+   * @param {string} [opts.max] Latest reachable day ``YYYY-MM-DD`` — today,
+   *   or the last day the payload covers when that is later (SNOW-927).
    * @param {string} [opts.seasonStart] Season start ``YYYY-MM-DD``.
    * @param {string} [opts.seasonEnd] Season end ``YYYY-MM-DD``.
    * @param {string} [opts.selected] The currently-showing date, or ''.

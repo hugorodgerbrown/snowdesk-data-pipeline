@@ -1,8 +1,8 @@
 ---
 name: map-defaults-to-today-not-the-last-rated-day
-description: Why a bare / on the map page shows today (readDisplayDate, data-today, map_shared.js) and never the last rated day
+description: Why the map defaults to today, never the last rated day (readDisplayDate, data-today); why the ceiling (latestKnownDate) follows the data
 status: current
-last-reviewed: 2026-09-02
+last-reviewed: 2026-09-12
 ---
 
 # The map defaults to today, never to the last rated day

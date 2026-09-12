@@ -366,6 +366,23 @@
     if (isOpen()) render();
   });
 
+  // SNOW-927: the ceiling has to be re-read when another country's ratings
+  // land, for the same reason the scrubber re-reads it — `getSeasonRatings`
+  // fetches Switzerland only, and `map.js`'s merge adds whole new date keys
+  // to the shared cache. Without this the grid would offer tomorrow to a
+  // Swiss visitor and withhold it from a French one on identical data, and
+  // the two surfaces would disagree about which days exist, which is the
+  // one thing this ticket had to avoid.
+  //
+  // `maxKey` only. The floor has the same staleness and always has; widening
+  // this to `minKey` would change paging behaviour the ticket never looked
+  // at, so it is left alone deliberately rather than by oversight.
+  document.addEventListener('snowdesk:country-ratings-loaded', () => {
+    if (!ratingsCache) return;
+    maxKey = core.latestKnownDate(ratingsCache, todayKey);
+    if (isOpen()) render();
+  });
+
   document.addEventListener('click', (e) => {
     if (!isOpen()) return;
     if (root.contains(e.target)) return;

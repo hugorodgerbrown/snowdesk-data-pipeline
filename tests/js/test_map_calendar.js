@@ -286,6 +286,25 @@ describe('which days it offers', () => {
     expect(dayButton('2026-05-16').disabled).toBe(true);
   });
 
+  it('re-reads the ceiling when another country&apos;s ratings arrive', async () => {
+    // The season fetch is `?country=ch` only (map_shared.js); every other
+    // country is merged into that same cache object afterwards, adding whole
+    // new date keys. Without a re-read this grid would offer tomorrow to a
+    // Swiss visitor and withhold it from a French one on identical data —
+    // and would disagree with the scrubber, which does re-read.
+    const cache = { ...RATINGS };
+    await loadCalendar(cache);
+    openPopup();
+    expect(dayButton('2026-05-15').disabled).toBe(true);
+
+    cache['2026-05-15'] = { 'FR-1234': 2 };
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'fr' },
+    }));
+
+    expect(dayButton('2026-05-15').disabled).toBe(false);
+  });
+
   it('caps the ceiling rather than following a wildly future row', async () => {
     // A mis-dated row must widen the grid by days, not by years. The cap is
     // MAX_FORWARD_DAYS from today (2026-05-14), so the 17th is the last day
