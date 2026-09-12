@@ -1273,6 +1273,112 @@ describe('the lock-out guard on the switch’s ON direction (SNOW-922)', () => {
       restore();
     }
   });
+
+  /*
+   * Found in review by Codex on the first push. The ON path awaits the
+   * worker for up to three seconds; the OFF path answers at once. So a
+   * user who flipped ON and changed their mind inside that window got
+   * 'auto' immediately and then 'offline-forced' when the stale callback
+   * landed — their LAST action losing to their previous one, on the one
+   * switch where that means the app stops calling the server against
+   * their stated wish. A press that has been superseded now does nothing.
+   */
+  it('abandons a pending ON when the user flips back OFF before it answers', async () => {
+    let answer;
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set,
+      // Held open, so the test controls exactly when the worker replies.
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      // ON — the preflight starts and does not settle.
+      switchInput().click();
+      // OFF, while it is still in flight. This is answered at once.
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      expect(set).toHaveBeenLastCalledWith('auto');
+
+      // Now the worker answers the press that has been taken back.
+      answer(true);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      // The stale result changes nothing: not the mode, not the switch.
+      expect(set).toHaveBeenLastCalledWith('auto');
+      expect(set).not.toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(false);
+      expect(indicatorState()).toBe('online');
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
+  });
+
+  it('raises no dialogue for a press the user has already taken back', async () => {
+    // The other half: a warning about a press that is no longer live is a
+    // question with no right answer, so it is never asked.
+    let answer;
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set: vi.fn().mockResolvedValue('auto'),
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      switchInput().click();
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      // `false` is the answer that would otherwise raise the warning.
+      answer(false);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(window.confirm).not.toHaveBeenCalled();
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
+  });
+
+  it('still honours a press the user has NOT taken back', async () => {
+    // The guard must abandon a superseded press without abandoning a slow
+    // one — otherwise the fix quietly removes the feature.
+    let answer;
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) =>
+        value === 'offline' || value === 'offline-forced' ? value : 'auto',
+      set,
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    const restore = stubConfirm(true);
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      switchInput().click();
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      answer(true);
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(set).toHaveBeenCalledWith('offline-forced');
+      expect(switchChecked()).toBe(true);
+    } finally {
+      restore();
+      delete window.pwaNetworkMode;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

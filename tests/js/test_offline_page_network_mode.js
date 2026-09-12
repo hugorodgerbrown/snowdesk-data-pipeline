@@ -286,3 +286,104 @@ describe('the guard on the way in', () => {
     expect(mode.set).toHaveBeenCalledWith('offline-forced');
   });
 });
+
+describe('a press the reader takes back (SNOW-922 review)', () => {
+  /*
+   * Found by Codex on the app-side copy of this handler, and the same
+   * shape was here. The ON path awaits the worker for up to three
+   * seconds; a reader who changes their mind inside that window must not
+   * have the mode set on them when the stale result lands — least of all
+   * on this page, where switching OFF is how they get out at all.
+   *
+   * The first version of this handler disabled the input for the
+   * duration instead. That stopped the stale write and bought it by
+   * making the way out unpressable for three seconds, which on this page
+   * is the fault the whole ticket exists to remove, in miniature.
+   */
+
+  /**
+   * Like `stubNetworkMode`, but the worker's answer is held open so the
+   * test decides exactly when it lands.
+   *
+   * @param {string} mode
+   */
+  function stubPendingWorker(mode) {
+    let answer;
+    const set = vi.fn().mockResolvedValue('auto');
+    window.pwaNetworkMode = {
+      coerce: (value) => (value === 'offline' || value === 'offline-forced' ? value : 'auto'),
+      isForced: (value) => value === 'offline-forced',
+      blocksNetwork: (value) => value === 'offline' || value === 'offline-forced',
+      read: vi.fn().mockResolvedValue(mode),
+      set,
+      canOpenOffline: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    };
+    return { set, reply: (value) => answer(value) };
+  }
+
+  it('leaves the way out pressable while the worker is still thinking', async () => {
+    // The property the disable cost, stated on its own: OFF answers at
+    // once even with an ON preflight in flight.
+    const worker = stubPendingWorker('auto');
+    window.confirm = vi.fn().mockReturnValue(true);
+    const bootstrap = mountOfflinePage();
+    runBootstrap(bootstrap);
+    await settle();
+
+    switchInput().checked = true;
+    switchInput().dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(switchInput().disabled).toBe(false);
+
+    switchInput().checked = false;
+    switchInput().dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(worker.set).toHaveBeenCalledWith('auto');
+    expect(window.location.reload).toHaveBeenCalled();
+  });
+
+  it('ignores the worker’s answer to a press already taken back', async () => {
+    const worker = stubPendingWorker('auto');
+    window.confirm = vi.fn().mockReturnValue(true);
+    const bootstrap = mountOfflinePage();
+    runBootstrap(bootstrap);
+    await settle();
+
+    switchInput().checked = true;
+    switchInput().dispatchEvent(new Event('change'));
+    await settle();
+    switchInput().checked = false;
+    switchInput().dispatchEvent(new Event('change'));
+    await settle();
+    worker.set.mockClear();
+
+    worker.reply(true);
+    await settle();
+
+    // The stale press sets nothing and asks nothing.
+    expect(worker.set).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(switchInput().checked).toBe(false);
+  });
+
+  it('still honours a press that was merely slow', async () => {
+    // The guard must abandon a superseded press without abandoning a slow
+    // one, or the fix quietly removes the feature.
+    const worker = stubPendingWorker('auto');
+    window.confirm = vi.fn().mockReturnValue(true);
+    const bootstrap = mountOfflinePage();
+    runBootstrap(bootstrap);
+    await settle();
+
+    switchInput().checked = true;
+    switchInput().dispatchEvent(new Event('change'));
+    await settle();
+
+    worker.reply(true);
+    await settle();
+
+    expect(worker.set).toHaveBeenCalledWith('offline-forced');
+  });
+});

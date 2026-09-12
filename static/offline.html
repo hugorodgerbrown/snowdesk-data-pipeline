@@ -728,9 +728,25 @@
                     }
                 });
 
+                /*
+                 * SNOW-922 review: which press is the live one. The ON
+                 * path awaits the worker for up to three seconds, so a
+                 * result can land after the reader has changed their
+                 * mind — and acting on it would set the mode against
+                 * their latest instruction, on the one page where that
+                 * instruction is how they get out. A superseded press
+                 * does nothing: not the mode, not the dialogue, not the
+                 * switch's position.
+                 *
+                 * This replaced disabling the input for the duration,
+                 * which stopped the stale write but bought it by making
+                 * the way out unpressable for three seconds. On this
+                 * page that trade is exactly backwards.
+                 */
+                var press = 0;
                 input.addEventListener('change', function () {
                     var wanted = input.checked ? 'offline-forced' : 'auto';
-                    input.disabled = true;
+                    var mine = (press += 1);
                     /*
                      * Switching ON is the move that created this ticket,
                      * so it asks the worker whether the app would
@@ -741,6 +757,10 @@
                      */
                     var checked = input.checked
                         ? api.canOpenOffline().then(function (canOpen) {
+                              // Before the dialogue as well as after it: a
+                              // warning about a press already taken back is
+                              // a question with no right answer.
+                              if (mine !== press) return false;
                               if (canOpen) return true;
                               return window.confirm(
                                   'Snowdesk has not been saved on this device yet, so ' +
@@ -752,9 +772,9 @@
                         : Promise.resolve(true);
 
                     checked.then(function (proceed) {
+                        if (mine !== press) return;
                         if (!proceed) {
                             input.checked = false;
-                            input.disabled = false;
                             return;
                         }
                         /*

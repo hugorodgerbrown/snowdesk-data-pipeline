@@ -246,6 +246,13 @@
   const NETWORK_MODE_KEY = 'network.mode';
   let networkMode = 'auto';
 
+  // SNOW-922 review: which press of the "Offline mode" switch is the live
+  // one. The ON direction awaits the worker before it commits, so a result
+  // can land after the user has already changed their mind; the handler
+  // compares the ticket it took against this before acting on anything it
+  // learned. See ``bindNetworkModeControls``.
+  let networkSwitchPress = 0;
+
   // SNOW-748: the two nav surfaces in includes/nav.html — the header symbol
   // (every viewer) and the "Offline mode" row in the subscriber menu
   // (signed-in only). Looked up separately on every paint, because whether
@@ -712,6 +719,20 @@
     // already flipped ``checked`` by the time it does.
     document.getElementById(NETWORK_SWITCH_ID)?.addEventListener('change', (event) => {
       const input = event.target;
+      // SNOW-922 review: every press takes a ticket, and only the newest one
+      // may act on what it learns. The ON path awaits the worker for up to
+      // three seconds, and a user who flips back OFF inside that window used
+      // to get the mode set anyway when the stale callback landed — their
+      // last action silently losing to their previous one, which on this
+      // particular switch means the app stops calling the server against
+      // their stated wish. A press that has been superseded now does nothing
+      // at all: not the mode, not the dialogue, not the switch's position.
+      //
+      // Deliberately NOT `input.disabled` for the duration. OFF is the
+      // recovery direction — it is how someone who has just stranded
+      // themselves gets back — and a control that ignores it for three
+      // seconds is the fault this ticket exists to remove, in miniature.
+      const press = (networkSwitchPress += 1);
       if (!input.checked) {
         requestNetworkMode('auto');
         return;
@@ -731,11 +752,16 @@
       // can still have it, having been told what it costs.
       const proceed = window.pwaNetworkMode
         ? window.pwaNetworkMode.canOpenOffline().then((canOpen) => {
+            // Checked before the dialogue as well as after it: a warning
+            // about a press the user has already taken back is a question
+            // with no right answer.
+            if (press !== networkSwitchPress) return false;
             if (canOpen) return true;
             return window.confirm(networkLockoutWarning());
           })
         : Promise.resolve(true);
       proceed.then((confirmed) => {
+        if (press !== networkSwitchPress) return;
         if (!confirmed) {
           // Put the switch back where the user left it. Assigning `checked`
           // fires no `change`, so this cannot re-enter.
