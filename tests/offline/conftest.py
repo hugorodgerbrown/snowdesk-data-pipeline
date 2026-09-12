@@ -163,21 +163,26 @@ class OfflineMapPage:
     # -- Going offline the way a user does ----------------------------------
 
     def switch_offline_mode(self, on: bool) -> None:
-        """Press the account menu's "Offline mode" switch and wait for it.
+        """Press the network menu's "Offline mode" switch and wait for it.
 
         This is the product's own control (``#nav-offline-mode``,
-        ``includes/nav.html``), not a Playwright API — the distinction is
-        the point of the suite. The wait is on the header connectivity
-        symbol, which ``pwa_offline.js`` repaints only after the service
-        worker has acknowledged the mode change, so returning from here
-        means the WORKER is in the new mode rather than merely that a
+        ``includes/_connection_panel.html``), not a Playwright API — the
+        distinction is the point of the suite. The wait is on the header
+        connectivity symbol, which ``pwa_offline.js`` repaints only after the
+        service worker has acknowledged the mode change, so returning from
+        here means the WORKER is in the new mode rather than merely that a
         checkbox was ticked.
+
+        SNOW-921 moved the switch out of the account dropdown and into the
+        menu the connectivity symbol itself opens, which is why this walks
+        one disclosure rather than the other — and why it no longer needs a
+        signed-in page to reach the control at all.
 
         Args:
             on: Whether offline mode should end up switched on.
 
         """
-        self.open_account_menu()
+        self.open_network_menu()
         row = self.page.locator("[data-network-toggle]")
         row.wait_for(state="visible", timeout=10_000)
         if self.page.locator("#nav-offline-mode").is_checked() != on:
@@ -192,7 +197,7 @@ class OfflineMapPage:
             f'[data-network-indicator][data-network-state="{expected}"]',
             timeout=10_000,
         )
-        self.close_account_menu()
+        self.close_network_menu()
 
     def forget_basemap_origins(self) -> None:
         """Empty the worker's basemap-origin allowlist, durably and in memory.
@@ -331,19 +336,24 @@ class OfflineMapPage:
         self.switch_offline_mode(True)
         self.network.set_mode("reject")
 
-    def open_account_menu(self) -> None:
-        """Open the account menu, which is a native ``<details>``."""
-        menu = self.page.locator("details[data-subscriber-menu]")
+    def open_network_menu(self) -> None:
+        """Open the network menu, which is a native ``<details>``.
+
+        SNOW-921: was ``open_account_menu``, and pressed the avatar. The
+        "Offline mode" switch — this suite's only reason to open a menu at
+        all — now lives behind the connectivity symbol instead.
+        """
+        menu = self.page.locator("details[data-network-panel]")
         if not menu.evaluate("(el) => el.open"):
             menu.locator("summary").click()
         self.page.wait_for_function(
-            "() => document.querySelector('details[data-subscriber-menu]')?.open === true",
+            "() => document.querySelector('details[data-network-panel]')?.open === true",
             timeout=5_000,
         )
 
-    def close_account_menu(self) -> None:
-        """Close the account menu if it is open."""
-        menu = self.page.locator("details[data-subscriber-menu]")
+    def close_network_menu(self) -> None:
+        """Close the network menu if it is open."""
+        menu = self.page.locator("details[data-network-panel]")
         if menu.evaluate("(el) => el.open"):
             menu.locator("summary").click()
 

@@ -1284,8 +1284,10 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Switch (SNOW-645) -----------------------------------------------------------
 # First use was the "Manage downloads" sheet's map-overlay control, which
-# SNOW-904 removed with every other panel switch; the nav's "Offline mode"
-# row and the account settings page are the callers now.
+# SNOW-904 removed with every other panel switch; the network menu's
+# "Offline mode" row (includes/_connection_panel.html, moved out of the nav's
+# account dropdown by SNOW-921) and the account settings page are the callers
+# now.
 # Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
 # states render correctly from the `checked` attribute alone.
 

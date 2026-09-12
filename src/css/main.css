@@ -2167,3 +2167,87 @@ html.pwa-launching .pwa-launch-shell {
   font-size: 0.75rem;
   color: var(--color-text-3);
 }
+
+/* —————————————————————————————————————————
+   Top-bar network traffic arrows (SNOW-921)
+   —————————————————————————————————————————
+
+   The pair of [data-traffic-arrow] marks in the network-menu trigger
+   (templates/includes/nav.html): up for a request going out, down for a
+   response coming back. static/js/pwa_offline.js lights one by setting
+   `data-active` on it and clears the attribute a beat later; it never
+   builds a class string, which is what keeps the whole behaviour out of
+   reach of a JS class-string typo and out of bin/ds-lint's way.
+
+   Here rather than in Tailwind utilities because the REST state is the
+   hard part. An arrow at full strength beside the connectivity glyph
+   would read as a third state indicator; at 22% it reads as a dormant
+   lamp, which is what it is. Expressing "22% by default, 100% while a
+   data attribute is set, with a transition either side" needs a
+   data-attribute selector, which is exactly the exception this file
+   exists for.
+
+   Colour, not just opacity, carries the lit state: --color-sync-ok is
+   the same "this worked" green the connectivity glyph uses when it is
+   reaching the server, so a lit arrow and a coloured wifi mark agree
+   rather than introducing a second vocabulary two pixels apart.
+
+   The fade-out is slower than the fade-in (300ms against 90ms) on
+   purpose. A request that completes in 40ms would otherwise be a flash
+   too short to register as anything but a flicker; letting it decay
+   makes a single round trip legible and a burst of tile fetches read as
+   a steady glow rather than a strobe. */
+[data-traffic-arrow] {
+  color: var(--color-text-3);
+  opacity: 0.22;
+  transition:
+    opacity 300ms ease-out,
+    color 300ms ease-out;
+}
+
+/* Side by side and STAGGERED, not stacked. Two arrows in a vertical column
+   read as two separate lamps that happen to be adjacent; the same pair set
+   shoulder to shoulder, one raised and one dropped, with their boxes
+   overlapping, reads as ONE mark about movement — the transfer glyph every
+   file manager and every phone's data indicator has used for thirty years.
+   That matters here because the two arrows are not independent: a user is
+   meant to read "traffic, in this direction", not "up lamp" and "down lamp".
+
+   The two numbers were picked by looking, against 3/5/7px of overlap at 2
+   and 3px of stagger. The arrow ink spans half of its own 12px box, so the
+   boxes have to be pulled a long way before the marks themselves come near
+   each other: at 5px the shafts still sit far enough apart to read as two
+   marks, and 7px is where they close up into one. The 3px stagger is what
+   keeps that from becoming a knot — it slides the up arrow's head clear of
+   the down arrow's tail, so the two interlock rather than collide, and it
+   is the thing that says at a glance that they point opposite ways.
+
+   Transform rather than margin for the vertical half: the parent is
+   ``items-center``, so a margin would be redistributed by the centring and
+   the offset would not survive a change to either box's height. */
+[data-traffic-arrow='up'] {
+  transform: translateY(-3px);
+}
+
+[data-traffic-arrow='down'] {
+  margin-left: -7px;
+  transform: translateY(3px);
+}
+
+[data-traffic-arrow][data-active] {
+  color: var(--color-sync-ok);
+  opacity: 1;
+  transition:
+    opacity 90ms ease-out,
+    color 90ms ease-out;
+}
+
+/* A reader who has asked for less motion still gets the information —
+   the arrow lights and goes out — without the cross-fade, which is the
+   only moving part here. */
+@media (prefers-reduced-motion: reduce) {
+  [data-traffic-arrow],
+  [data-traffic-arrow][data-active] {
+    transition: none;
+  }
+}

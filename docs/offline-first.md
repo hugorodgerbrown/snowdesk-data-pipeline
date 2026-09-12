@@ -259,6 +259,15 @@ rather than nowhere at all. Anything that needs the timestamp to be
 unprompted — a "your data is now unsafe" escalation, say — is a new
 requirement and needs its own ticket, not a revival of the strip.
 
+**SNOW-921 paid down the "weaker" line above from the other side.** The
+popover behind that one press is now the network MENU: it also carries the
+"Offline mode" switch (moved out of the account dropdown, and no longer
+signed-in only) and, behind the `debug_log` flag, the way into the on-device
+trace. And the thing the permanent symbol still could not say — whether
+anything is moving *right now* — is answered beside it by the
+`[data-traffic-arrow]` pair, lit per request and per response. Permanent
+indicator, one press to everything about it.
+
 `static/js/pwa_offline.js` runs alongside `pwa_version_check.js` on
 every public page. Its responsibilities:
 
@@ -268,7 +277,12 @@ every public page. Its responsibilities:
 - Repaint it on any fetch network failure or HTMX `sendError` event, so
   slow / patchy connections are reported even when the browser still
   says `onLine === true`.
-- Repaint the connection-status panel (`#pwa-connection-panel`,
+- Pulse the `[data-traffic-arrow]` pair beside that symbol (SNOW-921) — up
+  on a request leaving, down on a response arriving, each for ~450ms, from
+  both the `fetch` wrapper and htmx's `beforeRequest` / `afterOnLoad`.
+  Approximate on purpose; the sync log's own exclusions keep it from
+  blinking at the telemetry flush.
+- Repaint the network menu (`#pwa-connection-panel`,
   `includes/_connection_panel.html`) on every state change. It does NOT
   own the panel's visibility: the panel is the content of a native
   `<details data-network-panel>` in `includes/nav.html` whose `<summary>`

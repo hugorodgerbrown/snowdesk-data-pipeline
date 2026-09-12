@@ -1,0 +1,44 @@
+{% comment %}
+templates/includes/_icon_traffic_arrow.html — the network-traffic glyph: a
+plain arrow, drawn pointing UP (SNOW-921).
+
+One mark for both directions. ``includes/nav.html``'s network-menu trigger
+includes it twice — once as it is drawn for "a request went out", once with
+``svg_class="rotate-180"`` for "a response came back" — which is exactly
+the contract ``includes/_icon_chevron.html`` already has with the row
+disclosure: one source, rotated by its caller, so the two orientations
+cannot drift into two different arrows.
+
+A plain shaft-and-head arrow, deliberately NOT
+``includes/_icon_download_arrow.html``. That mark ends on a baseline,
+because it means "fetch this onto the device" — a completed, deliberate
+act. This one means "something is moving in this direction, right now",
+and a line under it would read as an arrival every time the glyph lit.
+
+Sized small by default (12px, against the 15px the connectivity symbol
+beside it uses): the pair is ambient, sitting at low opacity until traffic
+lights it, and it must not compete with the mark that carries the actual
+connection state. The stroke is the house 2 on the house 24 grid, which
+resolves to ~1px at this size — thin on purpose, since the arrows spend
+almost all their time dimmed (src/css/main.css, ``[data-traffic-arrow]``).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 12.
+  svg_class (string, optional) — classes on the <svg>. The nav passes
+            ``rotate-180`` to get the downward arrow.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:12 }}"
+    height="{{ size|default:12 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 20V5" />
+    <path d="m6 11 6-6 6 6" />
+</svg>

@@ -323,7 +323,7 @@ let _basemapPutsSinceTrim = 0;
 // them (SNOW-568).
 //
 // SNOW-748 added a THIRD way into the same steady state: the user asking for
-// it from the "Offline mode" row in the account menu, with no failure
+// it from the "Offline mode" row in the network menu, with no failure
 // involved at all. See
 // ``_networkMode`` below — that mode is not probed, because there is nothing
 // to discover.
@@ -2646,7 +2646,8 @@ function _latchOffline() {
 
 /**
  * SNOW-748: enter offline mode because the USER asked for it, from the
- * "Offline mode" row in the account menu (templates/includes/nav.html).
+ * "Offline mode" row in the network menu
+ * (templates/includes/_connection_panel.html).
  *
  * Sibling to ``_latchOffline`` and identical to it in every way but one: it
  * deliberately does NOT call ``_scheduleProbe()``. That omission IS the fix.
