@@ -226,6 +226,13 @@
  *     cover a country is not what it costs to cover the world — the last
  *     two arguments of ``baseLayerBlob``/``baseLayerTileURLs`` are the
  *     basemap key, and omitting it keeps the default band.
+ *   isTileEntryURL(url) / baseLayerStaleEntries(entries, expectedTiles)
+ *     SNOW-929: a base-layer bucket now holds the documents that draw its
+ *     band as well as the band itself, so the re-banding check has to be
+ *     able to tell a tile from a document and judge only the tiles. See
+ *     ``baseLayerStaleEntries`` for why folding the documents into the
+ *     expected set would let a provider bin a 21 MB band by renaming a
+ *     sprite path.
  *   planEviction(areas, incoming, budgetBytes)
  *     Given the areas currently on disk and an incoming run, decides
  *     whether it fits the standing budget and, if not, which areas to
@@ -1052,6 +1059,111 @@
   function baseLayerTileURLs(spec, cameraBBox, styleBounds, basemapKey) {
     const blob = baseLayerBlob(cameraBBox, styleBounds, basemapKey);
     return blob ? rangesToTileURLs(spec, blob) : [];
+  }
+
+  // SNOW-929: the tail every tile URL these styles emit has, and that no
+  // document they emit has — ``/{z}/{x}/{y}.{ext}``, three numeric path
+  // segments and a tile extension.
+  //
+  // Host-independent and path-only on purpose. The hosts rotate
+  // (``tileURLForSource``), OpenFreeMap's tileset path carries a dated
+  // build id that changes under us (``planet/20260906_080001_pt/…``), and
+  // a tile may arrive with a query string or an API key appended — none of
+  // which this can be allowed to care about. What it must get right is the
+  // NEAR MISSES, which all fail on the numeric triple:
+  //
+  //   /fonts/Noto%20Sans%20Bold/0-255.pbf   glyph range — ``0-255`` is one
+  //                                         segment, not three, and not a
+  //                                         number
+  //   /sprites/ofm_f384/ofm@2x.png          sprite — ``ofm@2x`` is not
+  //   /styles/liberty                       style document — no extension
+  //   /planet, /basemapvectorneu/root.json  TileJSON
+  //
+  // ``.jpg``/``.jpeg`` are here for completeness rather than for a basemap
+  // this project ships: every current style serves ``.pbf`` vector tiles,
+  // and OpenFreeMap's natural-earth source serves ``.png`` rasters.
+  const TILE_ENTRY_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|jpg|jpeg)$/i;
+
+  /**
+   * Whether ``url`` names a TILE rather than one of the documents that
+   * draw it (SNOW-929).
+   *
+   * A pinned bucket holds both since SNOW-929 put the base layer's style,
+   * TileJSON, sprite and glyph ranges in beside its tiles, so any check
+   * over a bucket's contents now has to be able to tell the two apart.
+   * The one that needs it is ``baseLayerStaleEntries`` below — see there
+   * for what goes wrong if a document is judged as a tile.
+   *
+   * Decided from the PATH alone, so a query string, a fragment or an API
+   * key never changes the answer — see ``TILE_ENTRY_PATH`` above for the
+   * near misses this has to reject and why each one does.
+   *
+   * @param {string} url A cache entry's url, absolute or relative.
+   * @returns {boolean} ``false`` for a non-string, an unparseable url, or
+   *   anything without the numeric-triple tail — "not provably a tile",
+   *   which every caller reads as "leave it alone".
+   */
+  function isTileEntryURL(url) {
+    if (typeof url !== 'string' || !url) return false;
+    try {
+      // A base is supplied so a relative entry still parses to a path;
+      // its host is never read, and an absolute url ignores it outright.
+      return TILE_ENTRY_PATH.test(new URL(url, 'https://snowdesk.info').pathname);
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * Which of a base-layer bucket's ``entries`` are tiles the current band
+   * does not ask for (SNOW-929) — the pure half of the re-banding check.
+   *
+   * SNOW-863 evicts a base-layer bucket whole when it holds anything
+   * outside the current band's url set, because SNOW-856 shipped z0-9 and
+   * the default band is z0-7: without that migration every device that
+   * ever ran the old band keeps its z8 and z9 tiles for good (they are a
+   * superset, so the missing-url plan is empty and nothing re-warms).
+   * That check lived inline in ``map_basemap_downloads.js`` and judged
+   * EVERY entry.
+   *
+   * SNOW-929 put the documents that draw the band into the same bucket,
+   * which ends that. Folding the document list into the expected set
+   * instead would hand a provider the ability to bin a 21 MB band by
+   * renaming a sprite path or adding a fontstack — the expected documents
+   * are derived from the LIVE style, so they move whenever the provider
+   * moves them, while the tile set is a pure function of band, camera and
+   * style. So the judgement is tiles only, and a document the current
+   * plan happens not to name is left exactly where it is: it is at worst
+   * a few tens of kilobytes, and it may well be the thing making the
+   * band renderable.
+   *
+   * Pure, exported and given a truth table of its own
+   * (``tests/js/test_basemap_base_layer.js``) rather than staying inline,
+   * because the cost of ``isTileEntryURL`` mis-reading a tile as a
+   * document is silent: SNOW-863's migration would stop firing and the
+   * oversized bucket would sit there with no path out short of a reset.
+   *
+   * @param {string[]} entries The bucket's entry urls, as
+   *   ``cache.keys()`` reports them.
+   * @param {Set<string> | string[]} expectedTiles Every tile url the
+   *   current band asks for, in either shape — the same contract
+   *   ``blobFullyCached`` and ``missingRenderDependencies`` take.
+   * @returns {string[]} The stale tile entries, in the order given.
+   *   ``[]`` for an empty or unusable bucket ("there is nothing to throw
+   *   away") AND for an empty ``expectedTiles``: failing to enumerate the
+   *   band must never read as evidence that everything on disk is stale.
+   */
+  function baseLayerStaleEntries(entries, expectedTiles) {
+    if (!Array.isArray(entries) || entries.length === 0) return [];
+    const wanted = expectedTiles instanceof Set ? expectedTiles : new Set(expectedTiles || []);
+    if (!wanted.size) return [];
+    const stale = [];
+    for (const entry of entries) {
+      if (!isTileEntryURL(entry)) continue;
+      if (wanted.has(entry)) continue;
+      stale.push(entry);
+    }
+    return stale;
   }
 
   /**
@@ -2501,6 +2613,8 @@
     baseLayerBand: baseLayerBand,
     baseLayerBlob: baseLayerBlob,
     baseLayerTileURLs: baseLayerTileURLs,
+    isTileEntryURL: isTileEntryURL,
+    baseLayerStaleEntries: baseLayerStaleEntries,
     pinnedCacheName: pinnedCacheName,
     planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,

@@ -34,6 +34,14 @@
  *     under a host the map never asks for is a bucket full of tiles that
  *     never serve — SNOW-843's failure, one layer down. Asserted against
  *     ``urls[(x + y) % urls.length]`` directly.
+ *   - **A tile is told from a document by its url alone.** SNOW-929 put
+ *     the style, TileJSON, sprite and glyph ranges that DRAW the band into
+ *     the bucket beside it, so SNOW-863's re-banding check — which evicts
+ *     a bucket whole over one unexpected entry — now judges tile entries
+ *     only. ``isTileEntryURL`` gets a truth table of real provider urls
+ *     because both ways of being wrong are silent: read a glyph range as a
+ *     tile and every warm evicts the band it just fetched; read a raster
+ *     tile as a document and the old-band migration quietly stops firing.
  *   - **A base layer is never an eviction candidate.** ``planEviction``
  *     counting it but never proposing it, and — the case that is easy to
  *     get wrong — refusing a run as ``impossible`` when the un-evictable
@@ -280,6 +288,156 @@ describe('baseLayerTileURLs', () => {
 
   it('answers an empty list for a style whose sources have not settled', () => {
     expect(core.baseLayerTileURLs(null, CAMERA, SWISSTOPO)).toEqual([]);
+  });
+});
+
+describe('isTileEntryURL', () => {
+  // Real urls, read off the live styles in the browser rather than
+  // invented: the near misses are the whole point of this predicate, and
+  // an invented sprite or glyph path would be a near miss of a shape no
+  // provider actually emits.
+  it('recognises a vector tile whatever the tileset path carries', () => {
+    // OpenFreeMap's tileset path carries a dated build id that changes
+    // under us, so the match is the TAIL and nothing else.
+    expect(
+      core.isTileEntryURL(
+        'https://tiles.openfreemap.org/planet/20260906_080001_pt/7/66/45.pbf',
+      ),
+    ).toBe(true);
+    expect(core.isTileEntryURL('https://example.invalid/12/2145/1456.mvt')).toBe(true);
+  });
+
+  it('recognises a raster tile', () => {
+    // OpenFreeMap's natural-earth source serves PNGs, so a tiles-only
+    // judgement that read .png as "a document" would stop re-banding the
+    // default basemap's bucket.
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/natural_earth/ne2sr/6/33/22.png'),
+    ).toBe(true);
+    expect(core.isTileEntryURL('https://example.invalid/9/266/180.jpg')).toBe(true);
+    expect(core.isTileEntryURL('https://example.invalid/9/266/180.jpeg')).toBe(true);
+  });
+
+  it('ignores a query string and a fragment', () => {
+    // An api-keyed provider (and MapLibre's own cache-busting) appends to
+    // the url the cache then stores, and the answer must not turn on it.
+    expect(core.isTileEntryURL('https://example.invalid/7/66/45.pbf?key=abc')).toBe(true);
+    expect(core.isTileEntryURL('https://example.invalid/7/66/45.pbf#x')).toBe(true);
+  });
+
+  it('rejects a glyph range, which is the closest miss there is', () => {
+    // `0-255.pbf` is a .pbf under a path of its own, and it is NOT a
+    // numeric triple: one segment, and a hyphenated range rather than a
+    // number. Judging it a tile would make every bucket holding glyphs
+    // permanently stale, which evicts the band on every single warm.
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/fonts/Noto%20Sans%20Bold/0-255.pbf'),
+    ).toBe(false);
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/fonts/Noto%20Sans%20Bold/256-511.pbf'),
+    ).toBe(false);
+  });
+
+  it('rejects the sprite pair, at 1x and 2x', () => {
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.json'),
+    ).toBe(false);
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.png'),
+    ).toBe(false);
+    expect(
+      core.isTileEntryURL('https://tiles.openfreemap.org/sprites/ofm_f384/ofm.png'),
+    ).toBe(false);
+  });
+
+  it('rejects a style document and a TileJSON', () => {
+    expect(core.isTileEntryURL('https://tiles.openfreemap.org/styles/liberty')).toBe(false);
+    expect(core.isTileEntryURL('https://tiles.openfreemap.org/planet')).toBe(false);
+    expect(core.isTileEntryURL('https://mapsneu.wien.gv.at/basemapvectorneu/root.json')).toBe(
+      false,
+    );
+  });
+
+  it('rejects what it cannot parse rather than guessing', () => {
+    expect(core.isTileEntryURL(undefined)).toBe(false);
+    expect(core.isTileEntryURL(null)).toBe(false);
+    expect(core.isTileEntryURL('')).toBe(false);
+    expect(core.isTileEntryURL(42)).toBe(false);
+    expect(core.isTileEntryURL({ url: 'https://example.invalid/7/66/45.pbf' })).toBe(false);
+  });
+});
+
+describe('baseLayerStaleEntries', () => {
+  const A = 'https://a.example.com/{z}/{x}/{y}.pbf';
+  const STYLE = 'https://a.example.com/styles/liberty';
+  const TILEJSON = 'https://a.example.com/planet';
+  const SPRITE_JSON = 'https://a.example.com/sprites/ofm_f384/ofm@2x.json';
+  const SPRITE_PNG = 'https://a.example.com/sprites/ofm_f384/ofm@2x.png';
+  const GLYPH = 'https://a.example.com/fonts/Noto%20Sans%20Bold/0-255.pbf';
+
+  // The band the current plan asks for, and the wider one a device that
+  // ran SNOW-856's z0-9 layer is left holding.
+  const thisBand = core.baseLayerTileURLs([[A]], CAMERA, SWISSTOPO);
+  const oldBand = core.baseLayerTileURLs([[A]], CAMERA, SWISSTOPO, 'swisstopo_winter');
+  const extraTiles = oldBand.filter((url) => !thisBand.includes(url));
+
+  it("reports an older band's tiles, which is what re-banding is for", () => {
+    // SNOW-863's migration, unchanged: the old band is a strict superset,
+    // so the missing-url plan is empty and only this can free the bytes.
+    expect(extraTiles.length).toBeGreaterThan(0);
+    expect(core.baseLayerStaleEntries(oldBand, thisBand)).toEqual(extraTiles);
+  });
+
+  it('reports nothing for this band plus the documents that draw it', () => {
+    // The SNOW-929 case. Every one of these documents is outside the tile
+    // set by construction, and judging them would evict the band on the
+    // very warm that fetched them.
+    const bucket = thisBand.concat([STYLE, TILEJSON, SPRITE_JSON, SPRITE_PNG, GLYPH]);
+
+    expect(core.baseLayerStaleEntries(bucket, thisBand)).toEqual([]);
+  });
+
+  it('never makes a bucket stale over an unrecognised document', () => {
+    // The risk this shape exists to remove: the documents are derived from
+    // the LIVE style, so a provider renaming a sprite path or adding a
+    // fontstack moves them. Under the old all-entries check that renamed
+    // entry was an unexpected entry, and the user paid for the whole band
+    // again. Here it is simply left alone.
+    const bucket = thisBand.concat([
+      'https://a.example.com/sprites/ofm_f999/renamed@2x.png',
+      'https://a.example.com/fonts/Some%20New%20Stack/0-255.pbf',
+      'https://a.example.com/styles/liberty-v2',
+    ]);
+
+    expect(core.baseLayerStaleEntries(bucket, thisBand)).toEqual([]);
+  });
+
+  it('still reports a stale tile sitting beside the documents', () => {
+    const bucket = [STYLE, GLYPH].concat(oldBand);
+
+    expect(core.baseLayerStaleEntries(bucket, thisBand)).toEqual(extraTiles);
+  });
+
+  it('reports nothing for an empty or unusable bucket', () => {
+    // "There is nothing to throw away" — an absent bucket is not a stale
+    // one, and neither is one this cannot read.
+    expect(core.baseLayerStaleEntries([], thisBand)).toEqual([]);
+    expect(core.baseLayerStaleEntries(null, thisBand)).toEqual([]);
+    expect(core.baseLayerStaleEntries(undefined, thisBand)).toEqual([]);
+  });
+
+  it('reports nothing when the expected set is empty', () => {
+    // Failing to enumerate the band is not evidence that every tile on
+    // disk is stale — and the caller's eviction is destructive.
+    expect(core.baseLayerStaleEntries(oldBand, [])).toEqual([]);
+    expect(core.baseLayerStaleEntries(oldBand, null)).toEqual([]);
+    expect(core.baseLayerStaleEntries(oldBand, new Set())).toEqual([]);
+  });
+
+  it('takes the expected tiles as an array or a Set', () => {
+    // Same contract as `blobFullyCached` and `missingRenderDependencies`,
+    // so a caller holding either shape needs no conversion.
+    expect(core.baseLayerStaleEntries(oldBand, new Set(thisBand))).toEqual(extraTiles);
   });
 });
 
