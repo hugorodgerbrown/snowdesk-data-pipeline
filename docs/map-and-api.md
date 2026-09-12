@@ -115,10 +115,20 @@ contract until SNOW-615 retired it: the ribbon cells stopped carrying click
 handlers when they moved into the scrubber track, leaving `map.js` with a
 listener no one dispatched to.
 
-**What it offers is not the season.** Every day from the earliest the site
-holds data for up to *today*; the future is the only hard stop, because
-nothing on the map can answer for a day that has not happened. The season is
-a highlight inside that range, not a fence around it.
+**What it offers is not the season.** Every day the site holds data for,
+earliest to latest — both ends read off the ratings payload
+(`earliestKnownDate` / `latestKnownDate` in `static/js/calendar_core.js`).
+The season is a highlight inside that range, not a fence around it.
+
+SNOW-927 moved the ceiling. It was *today*, on the reasoning that nothing on
+the map can answer for a day that has not happened — but a bulletin can: the
+evening issue forecasts tomorrow, so from about 16:00 the payload carries a
+day the picker was greying out. The ceiling now follows the data, capped a
+few days out as a guard against a mis-dated row, and stays at today off
+season when the payload stops months back. The *default* is still today and
+only today — see
+[`decisions/map-defaults-to-today-not-the-last-rated-day.md`](decisions/map-defaults-to-today-not-the-last-rated-day.md),
+which draws that line.
 
 That distinction is the second thing this ticket got wrong and fixed. The
 first draft made the season the selectable range, which stopped being right

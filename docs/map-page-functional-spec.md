@@ -717,12 +717,18 @@ carries the danger-by-day colour that was the only other thing it offered.
   panels — and picking a day goes there exactly.
 
   **The calendar reaches further than the scrubber does.** The scrubber is a
-  season; the calendar runs from the start of the archive up to today,
-  because the map carries weather as well as bulletins and a day in
-  September has something to show even though no bulletin covers it. The
+  season; the calendar runs from the start of the archive to the last day the
+  data covers, because the map carries weather as well as bulletins and a day
+  in September has something to show even though no bulletin covers it. The
   season is drawn as a highlight inside that range, so the grid tells you
-  where the bulletins are without refusing the days either side. The future
-  is the one thing the calendar will not offer.
+  where the bulletins are without refusing the days either side.
+
+  **Both ends follow the data, including the far one** (SNOW-927). The
+  ceiling was today until the evening bulletin — which forecasts tomorrow —
+  made that the one published day the picker would not open. It reaches
+  tomorrow from about 16:00 and stays at today off season, capped a few days
+  out so a mis-dated row cannot widen the grid by years. Which day the map
+  *defaults* to is a separate question with a separate answer: always today.
 
   **The grid carries the danger colour too** (SNOW-794). Once a region is
   focused, each day is filled with that region's rating in the EAWS palette

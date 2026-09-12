@@ -43,9 +43,12 @@
  *
  * ## What it offers, and what it refuses
  *
- * Every day from the earliest the site holds data for up to TODAY. The
- * future is the only hard stop: nothing on the map can answer for a day
- * that has not happened.
+ * Every day the site holds data for, earliest to latest — both ends read
+ * off the ratings cache. SNOW-927: the ceiling used to be TODAY and nothing
+ * else, on the reasoning that nothing can answer for a day that has not
+ * happened. A bulletin can: the evening issue forecasts tomorrow, so from
+ * about 16:00 the payload holds a day this grid was greying out. Off season,
+ * where the payload stops months back, the ceiling stays at today.
  *
  * The avalanche season is a highlight inside that range, not a fence around
  * it. An earlier draft refused every day outside it, which was wrong the
@@ -86,11 +89,17 @@
 
   const OVERLAY_NAME = 'map-calendar';
 
-  // The reachable range. The ceiling is fixed at today and never moves; the
-  // floor starts at the season and drops to the archive's first day once
-  // the ratings fetch resolves, so paging back is bounded by real data
-  // rather than by an arbitrary constant.
-  const maxKey = todayKey;
+  // The reachable range. Both ends start at a server-rendered guess and
+  // move to what the data actually covers once the ratings fetch resolves,
+  // so paging is bounded by real days rather than by an arbitrary constant.
+  //
+  // SNOW-927: the ceiling used to be the exception — "fixed at today and
+  // never moves", while the floor had always come from the cache. That
+  // asymmetry was the bug: the evening bulletin forecasts tomorrow, so from
+  // about 16:00 the cache holds a day this grid greyed out. It now moves
+  // with the data like the floor does, and off season stays at today
+  // (``latestKnownDate`` prefers the later of the two).
+  let maxKey = todayKey;
   let minKey = seasonStart;
 
   let visibleMonth = core.clampMonthKey(core.monthKeyOf(todayKey), minKey, maxKey);
@@ -158,12 +167,14 @@
     .then((data) => {
       ratingsCache = data || null;
       minKey = core.earliestKnownDate(data, seasonStart);
+      maxKey = core.latestKnownDate(data, todayKey);
       if (isOpen()) render();
     })
     .catch(() => {
       // The picker still works without it: every day up to today stays
       // selectable and the season highlight is server-rendered data, so all
-      // that is lost is a floor tighter than the season start. The scrubber
+      // that is lost is a floor tighter than the season start and, since
+      // SNOW-927, a ceiling later than today. The scrubber
       // reports the fetch failure in its own loading strip, so saying it
       // again here would be a second copy of one message.
     });

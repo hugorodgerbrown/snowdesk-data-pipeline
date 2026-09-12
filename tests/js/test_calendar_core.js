@@ -8,8 +8,10 @@
  * Two ranges run through every case here, and keeping them apart is the
  * point of most of it:
  *
- *   the REACHABLE range — [min, max], where max is today. The only thing
- *   the picker refuses is the future.
+ *   the REACHABLE range — [min, max]. Both ends come from the ratings
+ *   cache: the floor from `earliestKnownDate`, and since SNOW-927 the
+ *   ceiling from `latestKnownDate`, which is today until the evening
+ *   bulletin puts tomorrow in the payload.
  *   the SEASON — a highlight inside it. Days outside the season are still
  *   selectable, because the map has weather for them.
  *
@@ -131,6 +133,58 @@ describe('earliestKnownDate', () => {
     expect(core.earliestKnownDate(null, SEASON_START)).toBe(SEASON_START);
     expect(core.earliestKnownDate({}, SEASON_START)).toBe(SEASON_START);
     expect(core.earliestKnownDate({ nonsense: {} }, SEASON_START)).toBe(SEASON_START);
+  });
+});
+
+describe('latestKnownDate', () => {
+  // SNOW-927. The mirror of earliestKnownDate: the ceiling used to be today
+  // and nothing else, while the floor had always come from the data. From
+  // about 16:00 the evening bulletin puts TOMORROW in the payload
+  // (target_day_for_valid_from), and the picker greyed it out.
+
+  it('takes the latest key in the ratings cache', () => {
+    // The fallback is EARLIER than every key here, so the answer has to come
+    // from the cache — the in-season case, where the payload runs ahead of
+    // the day the caller passes in.
+    const cache = { '2026-01-06': {}, '2025-12-30': {}, '2026-01-07': {} };
+    expect(core.latestKnownDate(cache, '2026-01-06')).toBe('2026-01-07');
+  });
+
+  it('reaches tomorrow once the evening bulletin is in the payload', () => {
+    // The whole point of the ticket, at the unit level.
+    const cache = { '2026-01-06': {}, '2026-01-07': {} };
+    expect(core.latestKnownDate(cache, '2026-01-06')).toBe('2026-01-07');
+  });
+
+  it('prefers today when the archive ends earlier', () => {
+    // THE case that must not regress. Off season the cache stops in April
+    // and today is September; returning the cache's last day would drop the
+    // ceiling below today and make TODAY unselectable, breaking the one rule
+    // SNOW-793 lays down. Mirror image of the season-start clamp above.
+    const cache = { '2026-04-19': {}, '2026-04-20': {} };
+    expect(core.latestKnownDate(cache, TODAY)).toBe(TODAY);
+  });
+
+  it('falls back when the cache is missing or has no usable key', () => {
+    expect(core.latestKnownDate(null, TODAY)).toBe(TODAY);
+    expect(core.latestKnownDate({}, TODAY)).toBe(TODAY);
+    expect(core.latestKnownDate({ nonsense: {} }, TODAY)).toBe(TODAY);
+  });
+
+  it('caps a wildly future row rather than following it', () => {
+    // One mis-dated provider timestamp must not hand the month arrows the
+    // year 2031. The cap is measured from the fallback, not from the cache.
+    const cache = { '2031-01-01': {} };
+    expect(core.latestKnownDate(cache, TODAY)).toBe('2026-09-05');
+  });
+
+  it('caps at exactly MAX_FORWARD_DAYS, and not a day short of it', () => {
+    // The scrubber's boot path assumes this same number before it has any
+    // payload to ask about (map_scrubber.js's MAX_FORWARD_MS), so an
+    // off-by-one here puts the two surfaces back into disagreement.
+    expect(core.MAX_FORWARD_DAYS).toBe(3);
+    expect(core.latestKnownDate({ '2026-09-05': {} }, TODAY)).toBe('2026-09-05');
+    expect(core.latestKnownDate({ '2026-09-06': {} }, TODAY)).toBe('2026-09-05');
   });
 });
 

@@ -58,9 +58,10 @@
  *     if none match, or to ``fallbackKey`` if ``dates`` is empty. Logs an
  *     unexpected-prefix warning (deduped per call) exactly as the original
  *     inline version did.
- *   isSelectableDate(dateKey, todayMs)
- *     True when ``dateKey`` parses and is not in the future — the same set
- *     of days the calendar offers (SNOW-794).
+ *   isSelectableDate(dateKey, maxMs)
+ *     True when ``dateKey`` parses and is not past ``maxMs`` — the same set
+ *     of days the calendar offers (SNOW-794). SNOW-927: the bound is the
+ *     caller's and follows the data; it is no longer always today.
  *   intToKey(n, ratingTable)
  *     Rating int → EAWS key string via ``ratingTable`` (index lookup);
  *     ``'no_rating'`` for ``null``/``undefined``/out-of-range ``n``.
@@ -222,26 +223,34 @@
 
   /**
    * True when ``dateKey`` is a date the map can answer for: parseable, and
-   * not in the future.
+   * not past the caller's ceiling.
    *
    * SNOW-794: this replaced an ``isInSeason`` guard on the scrubber's boot
    * and popstate paths. That guard was narrower than what the calendar
    * offers — the ratings payload is the whole archive, so the picker pages
    * back years — and a ``?d=`` it refused left the map uncoloured while the
-   * URL and the calendar grid both named a day. The future is the only hard
-   * stop, which is the calendar's own rule (see ``buildMonthGrid``'s
-   * ``max``), so the two surfaces now accept exactly the same set of days.
-   * A date outside the track's twelve-month window still parks the thumb at
-   * whichever end it is past — ``dateKeyToPct`` clamps — which is the honest
-   * reading of "that is before this track starts".
+   * URL and the calendar grid both named a day. Both surfaces answer to one
+   * bound (the calendar's ``buildMonthGrid`` ``max``) so they accept exactly
+   * the same set of days. A date outside the track's twelve-month window
+   * still parks the thumb at whichever end it is past — ``dateKeyToPct``
+   * clamps — which is the honest reading of "that is before this track
+   * starts".
+   *
+   * SNOW-927: that bound used to be today, hardcoded at both call sites, and
+   * this function's parameter was named for it. It is now whatever the
+   * CALLER derives from the data (``pwaCalendarCore.latestKnownDate``), which
+   * from about 16:00 is tomorrow — the evening issue forecasts the next day,
+   * and the payload has always carried it. The comparison is unchanged; only
+   * the name was ever wrong.
    *
    * @param {string} dateKey
-   * @param {number} todayMs Timestamp of today, UTC midnight.
+   * @param {number} maxMs Latest reachable day, UTC midnight. Today until
+   *   the ratings payload proves a later day exists.
    * @returns {boolean}
    */
-  function isSelectableDate(dateKey, todayMs) {
+  function isSelectableDate(dateKey, maxMs) {
     var ms = Date.parse(dateKey);
-    return Number.isFinite(ms) && ms <= todayMs;
+    return Number.isFinite(ms) && ms <= maxMs;
   }
 
   /**

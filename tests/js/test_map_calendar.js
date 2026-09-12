@@ -84,11 +84,11 @@ function buildFixture() {
  *   The overlay-registry entry this surface registered, and every
  *   `snowdesk:date-changed` detail the scrubber announced.
  */
-async function loadCalendar() {
+async function loadCalendar(ratings) {
   globalThis.COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
   globalThis.MAP_READY_PROMISE = Promise.resolve();
   globalThis.MAP_STRINGS = { 'season-unavailable': 'Season data unavailable' };
-  globalThis.getSeasonRatings = () => Promise.resolve(RATINGS);
+  globalThis.getSeasonRatings = () => Promise.resolve(ratings || RATINGS);
   globalThis.readUrlDateParam = () => {
     const d = new URL(location.href).searchParams.get('d');
     return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
@@ -259,15 +259,45 @@ describe('the month it opens on', () => {
 });
 
 describe('which days it offers', () => {
-  it('refuses the future, and only the future', async () => {
-    // The one hard stop: nothing on the map can answer for a day that has
-    // not happened.
+  it('stops at today when the payload reaches no further', async () => {
+    // The default RATINGS end on 2026-03-20, two months before TODAY, which
+    // is the off-season shape. SNOW-927 made the ceiling follow the data —
+    // and this is the case where following it naively would be a disaster:
+    // dropping to the archive's last day would put the ceiling BELOW today
+    // and take today itself off the grid. `latestKnownDate` returns the
+    // later of the two, so the ceiling stays here.
     await loadCalendar();
     openPopup();
 
     expect(dayButton(TODAY).disabled).toBe(false);
     expect(dayButton('2026-05-15').disabled).toBe(true);
     expect(dayButton('2026-05-31').disabled).toBe(true);
+  });
+
+  it('reaches tomorrow once the evening bulletin is in the payload', async () => {
+    // SNOW-927, the point of the ticket. Same fixture, same today; the only
+    // difference is a rating row dated tomorrow — which is what the ~16:00
+    // issue produces, since it forecasts the following day. The day after
+    // tomorrow stays shut, so this moved the ceiling rather than removing it.
+    await loadCalendar({ ...RATINGS, '2026-05-15': { 'CH-4115': 2 } });
+    openPopup();
+
+    expect(dayButton('2026-05-15').disabled).toBe(false);
+    expect(dayButton('2026-05-16').disabled).toBe(true);
+  });
+
+  it('caps the ceiling rather than following a wildly future row', async () => {
+    // A mis-dated row must widen the grid by days, not by years. The cap is
+    // MAX_FORWARD_DAYS from today (2026-05-14), so the 17th is the last day
+    // the picker will ever offer however far the bad row reaches — and the
+    // scrubber's boot path assumes the same number, which is why the cap
+    // lives in the shared core rather than in either surface.
+    await loadCalendar({ ...RATINGS, '2031-01-01': { 'CH-4115': 2 } });
+    openPopup();
+
+    expect(dayButton('2026-05-17').disabled).toBe(false);
+    expect(dayButton('2026-05-18').disabled).toBe(true);
+    expect(monthLabel()).toBe('May 2026');
   });
 
   it('offers days outside the season, because the map has weather for them', async () => {

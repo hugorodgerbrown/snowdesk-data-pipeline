@@ -118,3 +118,63 @@ fails. Two tests pin that, one per failure mode.
 
 (`docs/map-and-api.md` claimed the season payload was lazy until first
 scrubber interaction until SNOW-793 measured it. It never was.)
+
+## The default is today; the ceiling is not (SNOW-927)
+
+This document says the map may only ever default to today, and that a
+change reaching for "anything else derived from the ratings payload" is
+reintroducing SNOW-660's bug. **That rule is about which day the map
+PICKS. It says nothing about which days a visitor may pick for
+themselves**, and SNOW-927 changed the second without touching the first.
+
+The distinction is worth being exact about, because the sentence above
+reads like a prohibition on both:
+
+| | Before SNOW-927 | After |
+|---|---|---|
+| Boot with a bare `/` | today | today, unchanged |
+| Boot with `?d=` | that day, if selectable | that day, if selectable |
+| Back step onto a bare URL | today | today, unchanged |
+| The **range** a visitor may select from | archive start → **today** | archive start → **the last day the payload covers** |
+
+Only the last row moved. Nothing derived from the payload became a
+default, `readDisplayDate()` is untouched, and the two tests this
+document's rule rests on —
+`tests/js/test_map_scrubber_no_boot_snap.js` and
+`tests/js/test_map_boot_date_paint.js` — were required to keep passing
+**unedited**, which is how the change proved it had stayed on the right
+side of the line.
+
+### Why the ceiling had to move
+
+The range was data-driven at the floor and wall-clock at the ceiling. The
+ratings payload is the whole archive, so the calendar pages back years;
+but `isSelectableDate` refused anything past `Date.now()`.
+
+Providers publish twice a day and the evening issue forecasts the
+following day — `target_day_for_valid_from` (hour ≥ 12 → next day) — so
+from about 16:00 `RegionDayRating` holds rows dated tomorrow, and
+`_build_ratings_payload`, which applies no upper date bound, had always
+shipped them to the browser. The data was on the client and the UI
+refused to reach it, at exactly the hour someone plans a tour and packs.
+
+The scrubber was already inconsistent about it on its own: `commitDate`
+has no future clamp, so dragging into tomorrow committed it, painted it
+and wrote `?d=<tomorrow>` — a URL the boot path then refused on reload.
+The same defect SNOW-794 fixed at the floor, still present at the
+ceiling.
+
+### The two things that keep it honest
+
+**`latestKnownDate` returns the LATER of the payload's last day and
+today.** Off season the archive ends in April while today is September;
+returning the payload's last day would put the ceiling *below* today and
+make today itself unselectable — which would break this document's actual
+rule, by a route nobody would think to look for. The mirror of the `min`
+`earliestKnownDate` already takes.
+
+**A separate name from `effectiveTodayKey`.** That variable holds a very
+similar number and is precisely the value SNOW-660 removed from the boot
+path. The ceiling is derived independently and lives in
+`latestSelectableMs`, so a boot-default-shaped thing is never sitting one
+careless line away from being one again.
