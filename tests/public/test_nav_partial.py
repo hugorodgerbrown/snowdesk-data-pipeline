@@ -42,6 +42,7 @@ lists regions.)
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -827,6 +828,27 @@ class TestNavOfflineModeSwitch:
         menu = html.split('id="subscriber-menu"', 1)[1]
         assert "data-network-toggle" not in menu
         assert "nav-offline-mode" not in menu
+
+    def test_the_account_menu_keeps_no_orphaned_divider(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """The rule the switch sat above went with it.
+
+        The specific failure this caught: the switch was lifted out of the
+        account dropdown and the ``<div class="border-t">`` that had
+        separated its section from the destinations below was left behind,
+        so the open menu drew a line across its own top with nothing on one
+        side of it. A divider separates two groups; one group is not two.
+
+        Asserted as "the first thing in the menu is a link", which is the
+        claim that actually holds — a later section added back above Trips
+        would bring its own rule and should update this, not delete it.
+        """
+        html = _render_nav_for(rf, regular_user)
+        menu = html.split('id="subscriber-menu"', 1)[1]
+        first_element = re.search(r"<(?!/)([a-z]+)", menu.split(">", 1)[1])
+        assert first_element is not None
+        assert first_element.group(1) == "a"
 
     def test_switch_sits_first_among_the_menu_controls(
         self, rf: RequestFactory

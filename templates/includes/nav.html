@@ -326,18 +326,21 @@ Usage
                         role="menu"
                         class="absolute right-0 top-full mt-1.5 min-w-[200px] rounded-card border border-border bg-card shadow-md py-1.5 z-50"
                     >
-                        {# SNOW-921: the "Offline mode" switch used to sit here,  #}
-                        {# above this rule, as the settings half of SNOW-748's     #}
-                        {# aeroplane-mode model. It has moved into the network menu #}
-                        {# the header symbol opens (includes/_connection_panel.html) #}
-                        {# — the surface that already reports the state it sets, and #}
-                        {# the one every viewer can reach. The consequence is that  #}
-                        {# choosing offline mode is no longer signed-in only: the   #}
+                        {# SNOW-921: the "Offline mode" switch used to open this   #}
+                        {# menu, in its own section above a rule. It has moved into #}
+                        {# the network menu the header symbol opens                 #}
+                        {# (includes/_connection_panel.html) — the surface that      #}
+                        {# already reports the state it sets, and the one every      #}
+                        {# viewer can reach. The consequence worth recording: the    #}
                         {# mode is a device preference held in IndexedDB and         #}
-                        {# enforced by the service worker, and nothing about it ever #}
-                        {# needed an account. What is left in this menu is account   #}
-                        {# machinery, which is what it is for.                       #}
-                        <div class="my-1 border-t border-border" aria-hidden="true"></div>
+                        {# enforced by the service worker, so choosing it is no      #}
+                        {# longer signed-in only. What is left here is account       #}
+                        {# machinery, which is what this menu is for.                #}
+                        {#                                                           #}
+                        {# The rule that section sat above went with it. A divider   #}
+                        {# separates two groups; with the switch gone it had nothing #}
+                        {# on one side of it and drew a line across the top of the   #}
+                        {# open dropdown.                                            #}
                         {% comment %}
                             SNOW-705: this menu IS the account-area navigation
                             — not a placeholder for one, which is how SNOW-667
