@@ -112,6 +112,12 @@
    * @property {AuditSection[]} sections
    * @property {{total: number, yes: number, no: number}} counts
    * @property {string} generatedAt ISO 8601.
+   * @property {{timedOut: string[], latched?: boolean}|null} [degraded]
+   *   Which readings did not answer, where some did not. Carried for
+   *   ``reportText``: on a phone with no devtools, a copied report is the
+   *   only place this ever exists.
+   * @property {string|null} [failure] Set where the collection threw
+   *   rather than returning readings.
    * @property {boolean} pending True for the skeleton painted before any
    *   reading has landed.
    */
@@ -137,6 +143,11 @@
    * @property {number} [bytes]
    * @property {string[]} [deps]
    * @property {boolean} [bucketPresent]
+   * @property {boolean} [bucketReadable] False where the bucket read did
+   *   not answer. Distinct from ``bucketPresent: false``, which is a
+   *   bucket that WAS read and is not there — the difference between "this
+   *   download is gone" and "we could not look", and the report may only
+   *   say the first of those.
    * @property {string[]} [entries]
    */
 
@@ -177,6 +188,20 @@
    * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
    * @property {{count?: number|null}} [mutations]
    * @property {boolean} [dbAvailable]
+   * @property {boolean} [cachesReadable] False where Cache Storage could
+   *   not be LISTED. Every row read out of it then answers unknown: an
+   *   empty ``shellEntries`` is indistinguishable from an unread one, and
+   *   the No it would otherwise produce is this panel's loudest claim.
+   * @property {boolean} [shellPartial] True where the listing came back
+   *   but opening a page in it did not — a narrower failure costing only
+   *   the rows that need a page's stamp or its body.
+   * @property {{timedOut: string[], latched?: boolean}|null} [degraded]
+   *   Which readings overran their budget. See ``bounded`` in
+   *   offline_audit.js and
+   *   docs/decisions/bounded-offline-read-paths.md.
+   * @property {string|null} [failure] Set where the collection threw. Every
+   *   row then answers unknown — a check that did not run diagnoses
+   *   nothing.
    */
 
   // The fixed list. Its order is the order it paints, and it is the order
@@ -809,7 +834,7 @@
    * "nothing was recorded" but "there is nothing to record".
    *
    * @param {AreaReading} area
-   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable',
+   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable',
    *   missingDeps: string[], tiles: number}}
    */
   function areaState(area) {
@@ -822,7 +847,13 @@
       if (declared.has(entries[i])) supporting += 1;
     }
     var status = 'ready';
-    if (area.bucketPresent === false || entries.length === 0) {
+    if (area.bucketReadable === false) {
+      // The bucket read did not come back. "Nothing is stored, download it
+      // again" is a serious thing to say about a 200 MB area the user
+      // chose on purpose, and a read that overran its budget is not
+      // evidence for it — the tiles may be sitting there untouched.
+      status = 'unreadable';
+    } else if (area.bucketPresent === false || entries.length === 0) {
       status = 'missing';
     } else if (missingDeps.length > 0) {
       status = 'incomplete';
@@ -833,7 +864,10 @@
       status = 'unverifiable';
     }
     return {
-      status: /** @type {'ready'|'incomplete'|'missing'|'unverifiable'} */ (status),
+      status:
+        /** @type {'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable'} */ (
+          status
+        ),
       missingDeps: missingDeps,
       tiles: entries.length - supporting,
     };
@@ -871,6 +905,40 @@
    */
   function answer(id, r, t) {
     var sw = r.serviceWorker || {};
+
+    // A run that could not be taken answers nothing. Every row here reads
+    // a field off `r`, and an absent field is indistinguishable from a
+    // field read as empty — so a crashed collection would otherwise have
+    // produced a confident "offline mode has not been set up on this
+    // device" about a device whose worker is running perfectly. The panel
+    // may say it does not know; it may not make something up.
+    if (r.failure) return { status: 'unknown' };
+
+    // The same rule one level down, for the four rows read out of Cache
+    // Storage. `shellEntries` comes back `[]` both for a device holding
+    // nothing and for one whose caches did not answer, and telling
+    // somebody "The app will not open" over an app that opens is the one
+    // failure this panel cannot survive.
+    var CACHE_ROWS = [
+      'app-opens',
+      'app-looks-right',
+      'danger-ratings',
+      'region-shapes',
+      'bulletins',
+    ];
+    if (r.cachesReadable === false && CACHE_ROWS.indexOf(id) >= 0) {
+      return { status: 'unknown' };
+    }
+
+    // The narrower case: the LISTING came back, but opening a page in it
+    // did not. The rows answered from URLs alone (the boot feeds) are
+    // still answerable; the ones needing a page's principal stamp or its
+    // body are not. Kept apart from the flag above so one unread body
+    // does not blank five rows.
+    var PAGE_ROWS = ['app-opens', 'app-looks-right', 'bulletins'];
+    if (r.shellPartial === true && PAGE_ROWS.indexOf(id) >= 0) {
+      return { status: 'unknown' };
+    }
 
     if (id === 'offline-mode') {
       if (!sw.supported) return { status: 'unknown', note: s(t, 'note-sw-unsupported') };
@@ -1056,6 +1124,13 @@
         status: 'no',
         reason: 'missing',
         note: fill(s(t, 'note-area-missing'), { name: name }),
+      };
+    }
+    if (state.status === 'unreadable') {
+      return {
+        status: 'unknown',
+        reason: 'unreadable',
+        note: fill(s(t, 'note-area-unreadable'), { name: name }),
       };
     }
     return {
@@ -1346,11 +1421,21 @@
    *
    * @param {AuditSection[]} sections
    * @param {Record<string, string>} t
+   * @param {AuditReadings} [readings] For the one verdict that is not read
+   *   off the rows: a collection that threw has no rows worth reading.
    * @returns {{status: 'ok'|'warn'|'fail', text: string, covers: string[]}}
    *   ``covers`` names the rows this sentence has accounted for, so
    *   ``composeSummary`` does not say them a second time.
    */
-  function verdictFor(sections, t) {
+  function verdictFor(sections, t, readings) {
+    var r = readings || {};
+    // A collection that threw has no findings, so it gets no diagnosis.
+    // This is `fail` rather than `warn` for the reason `verdict-no-worker`
+    // is: the thing the reader came here to learn is not knowable, and a
+    // warn-tinted verdict over sixteen dashes reads as "mostly fine".
+    if (r.failure) {
+      return { status: 'fail', text: s(t, 'verdict-failed'), covers: [] };
+    }
     var byId = /** @type {Record<string, AuditCheck>} */ ({});
     sections.forEach(function (section) {
       section.checks.forEach(function (check) {
@@ -1441,10 +1526,13 @@
    * @param {AuditSection[]} sections
    * @param {{status?: string, covers: string[]}} verdict
    * @param {Record<string, string>} t
+   * @param {AuditReadings} [readings] For the leading clause naming why
+   *   some rows are dashes.
    * @returns {string} ``''`` when nothing is left to say, and always for
    *   a ``fail`` verdict — see the first branch.
    */
-  function composeSummary(sections, verdict, t) {
+  function composeSummary(sections, verdict, t, readings) {
+    var r = readings || {};
     // Nothing below a blocked critical row is reachable, so nothing below
     // it is worth advising on. A device with no service worker was being
     // told to open the map once while connected to fix its styling — true
@@ -1454,6 +1542,12 @@
     // actionable.
     if (verdict.status === 'fail') return '';
     var covered = new Set(verdict.covers || []);
+    // Why some rows are dashes. It leads rather than joining the notes
+    // sentence because it is the reason the rest of the paragraph is
+    // shorter than it should be, and a reader who does not know that
+    // reads a partial report as a complete one.
+    var lead = /** @type {string[]} */ ([]);
+    if (r.degraded) lead.push(s(t, 'note-storage-slow'));
     var groups = /** @type {Record<string, AuditCheck[]>} */ ({});
     var notes = /** @type {string[]} */ ([]);
 
@@ -1469,7 +1563,7 @@
       });
     });
 
-    var sentences = /** @type {string[]} */ ([]);
+    var sentences = /** @type {string[]} */ (lead.slice());
     Object.keys(groups).forEach(function (key) {
       var members = groups[key];
       var effects = /** @type {string[]} */ (
@@ -1564,10 +1658,14 @@
     var r = readings || {};
     var t = strings || {};
     var sections = buildSections(r, t);
-    var verdict = verdictFor(sections, t);
+    var verdict = verdictFor(sections, t, r);
     return {
       verdict: { status: verdict.status, text: verdict.text },
-      summary: composeSummary(sections, verdict, t),
+      summary: composeSummary(sections, verdict, t, r),
+      // What the run could not read, carried through to `reportText` —
+      // the only route this has off a phone with no devtools.
+      degraded: r.degraded || null,
+      failure: r.failure || null,
       sections: sections,
       counts: countChecks(sections),
       generatedAt: typeof r.now === 'string' ? r.now : new Date().toISOString(),
@@ -1598,6 +1696,24 @@
     if (report.summary) lines.push(report.summary);
     lines.push('');
     lines.push(report.counts.yes + ' of ' + report.counts.total + ' available offline');
+    // The diagnostic half, and the reason Copy is offered on a failed run
+    // at all. Whoever is sent this needs to know that the report is
+    // partial and which reads are the ones that did not come back —
+    // "Checking… for ever" was a bug with no evidence anywhere on the
+    // device, and this is the evidence.
+    if (report.failure) {
+      lines.push('');
+      lines.push('the check did not run: ' + report.failure);
+    }
+    if (report.degraded) {
+      lines.push('');
+      lines.push(
+        'readings that did not answer: ' + (report.degraded.timedOut || []).join(', '),
+      );
+      if (report.degraded.latched) {
+        lines.push('the run stopped early: this device’s storage stopped answering');
+      }
+    }
     report.sections.forEach(function (section) {
       lines.push('');
       lines.push('## ' + section.title);

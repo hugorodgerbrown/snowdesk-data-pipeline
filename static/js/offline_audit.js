@@ -109,6 +109,133 @@
   // animation over an already-finished report; see the header.
   var ROW_INTERVAL_MS = 70;
 
+  // Every reading this module takes is time-bounded, for the reason
+  // docs/decisions/bounded-offline-read-paths.md gives for bounding every
+  // read path in sw.js: storage in trouble HANGS, it does not reject. An
+  // IndexedDB request whose event never fires and a `caches.match` that
+  // never settles have no catch branch — the `await` simply never returns
+  // — so every `try`/`catch` below is written against a failure mode the
+  // broken device does not have.
+  //
+  // That is not hypothetical. This panel was reported reading "Checking…"
+  // for ever on an iPad whose owner had just had to reset local data
+  // after an update left the app frozen and insisting it was offline —
+  // and in the same screenshot the reset panel beside it, which reads the
+  // same two stores through entirely different code, was stuck on
+  // "Loading…". Two surfaces, one unbounded await each, both silent.
+  //
+  // A diagnostic that hangs on exactly the devices it exists for is worse
+  // than no diagnostic. So this file may take longer than it likes, but
+  // it always finishes, and it always says which readings it could not
+  // take.
+  var READ_BUDGET_MS = 4000;
+
+  // The whole collection. A healthy device with four hundred cache
+  // entries finishes well inside a second; this is the point past which
+  // the answer is "this device's storage is not answering", which is
+  // itself a finding and has to be painted rather than waited out.
+  var COLLECT_BUDGET_MS = 20000;
+
+  // Consecutive overruns after which the run stops asking, exactly as
+  // sw.js's OFFLINE_LATCH_THRESHOLD stops it asking the network. Without
+  // it a device with a wedged IndexedDB and twelve downloads pays
+  // READ_BUDGET_MS per read and takes the full COLLECT_BUDGET_MS to say
+  // so. Any reading that lands resets the count, so one slow read never
+  // latches a run on its own.
+  var READ_LATCH_THRESHOLD = 3;
+
+  /**
+   * One run's read budget: its deadline, the readings that overran it,
+   * and the latch.
+   *
+   * @returns {{deadline: number, timedOut: string[], consecutive: number,
+   *   latched: boolean}}
+   */
+  function createBudget() {
+    return {
+      deadline: Date.now() + COLLECT_BUDGET_MS,
+      timedOut: [],
+      consecutive: 0,
+      latched: false,
+    };
+  }
+
+  /**
+   * Record one overrun, and latch the run after enough of them.
+   *
+   * @param {Object} budget
+   * @param {string} label Which reading — it reaches the reader, in the
+   *   copied report, as the list of what could not be checked.
+   * @returns {void}
+   */
+  function recordOverrun(budget, label) {
+    if (budget.timedOut.indexOf(label) < 0) budget.timedOut.push(label);
+    budget.consecutive += 1;
+    if (budget.consecutive >= READ_LATCH_THRESHOLD) budget.latched = true;
+  }
+
+  /**
+   * Take one reading under the budget.
+   *
+   * Resolves with ``fallback`` rather than rejecting, on three paths: the
+   * work threw, the work rejected, or the work never settled. Only the
+   * third counts towards the latch — a device that answers "no" is
+   * answering, and latching on a rejection would stop a run that is
+   * working perfectly well.
+   *
+   * The fallback must mean "could not read", never "read, and there is
+   * nothing there". The report's oldest rule is that an unknown is not a
+   * No (see the module header of offline_audit_core.js), and a bound that
+   * fell back to an absence would print "The app will not open" over an
+   * app that opens perfectly.
+   *
+   * @param {Object} budget
+   * @param {string} label
+   * @param {function(): *} work
+   * @param {*} fallback
+   * @returns {Promise<*>}
+   */
+  function bounded(budget, label, work, fallback) {
+    if (budget.latched || Date.now() >= budget.deadline) {
+      recordOverrun(budget, label);
+      return Promise.resolve(fallback);
+    }
+    var promise;
+    try {
+      promise = work();
+    } catch (_err) {
+      budget.consecutive = 0;
+      return Promise.resolve(fallback);
+    }
+    if (!promise || typeof promise.then !== 'function') {
+      budget.consecutive = 0;
+      return Promise.resolve(promise === undefined ? fallback : promise);
+    }
+    var remaining = Math.max(
+      0,
+      Math.min(READ_BUDGET_MS, budget.deadline - Date.now()),
+    );
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        recordOverrun(budget, label);
+        resolve(fallback);
+      }, remaining);
+      var finish = function (value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        budget.consecutive = 0;
+        resolve(value);
+      };
+      promise.then(finish, function (_err) {
+        finish(fallback);
+      });
+    });
+  }
+
   // SNOW-620: server-translated copy where a template provides it, the
   // English literal everywhere else. `pwaStrings` is not loaded on the
   // offline page, so the fallbacks are not a safety net there — they are
@@ -168,6 +295,8 @@
       '%(name)s is recorded as downloaded but nothing is stored, so download it again',
     'note-area-unverifiable':
       '%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked',
+    'note-area-unreadable':
+      '%(name)s could not be checked because this device’s storage did not answer',
     'note-no-bulletins': 'no bulletin has been opened on this device yet',
     'note-no-favourites': 'none of your saved places has been loaded here yet',
     'note-no-routes': 'none of your routes has been loaded on this device',
@@ -201,6 +330,10 @@
       'The saved app belongs to another account. Open the map once while connected.',
     'verdict-no-map': 'The app opens, but there is no map to show in it.',
     'verdict-downloads-broken': 'The app opens, but none of your downloads will draw.',
+    'verdict-failed': 'This check could not run on this device.',
+
+    'note-storage-slow':
+      'this device’s storage stopped answering part way through, so the rows marked — were not checked',
 
     'notes-sentence': 'Also worth knowing: %(notes)s.',
     'list-pair': '%(first)s and %(last)s',
@@ -218,6 +351,7 @@
     saving: 'Saving the app…',
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
+    'check-failed': 'The check could not run. Copy the report and send it in.',
   };
 
   /**
@@ -233,16 +367,23 @@
   }
 
   /**
-   * Every Cache Storage bucket name, or ``[]`` where the API is absent.
+   * Every Cache Storage bucket name.
    *
-   * @returns {Promise<string[]>}
+   * ``null`` — not ``[]`` — where the API is absent or the listing fails,
+   * because the two are different findings and the report says so. A
+   * device whose Cache Storage cannot be listed has not been checked; one
+   * that lists no buckets has been checked and holds nothing. Returning
+   * ``[]`` for both is how "we could not look" becomes "the app will not
+   * open".
+   *
+   * @returns {Promise<string[]|null>}
    */
   async function cacheNames() {
     try {
-      if (!self.caches || typeof self.caches.keys !== 'function') return [];
+      if (!self.caches || typeof self.caches.keys !== 'function') return null;
       return await self.caches.keys();
     } catch (_err) {
-      return [];
+      return null;
     }
   }
 
@@ -395,22 +536,51 @@
    *   when its body could not be read — which the core answers No to
    *   rather than guessing.
    */
-  async function readShellEntries(names, mapPath) {
+  async function readShellEntries(names, mapPath, budget) {
     var entries = [];
     var mapDependencies = null;
     var mapDay = null;
     var mapBasemaps = null;
+    // Two different kinds of incompleteness, because they cost different
+    // rows and conflating them would send five rows to unknown over one
+    // unread page body.
+    //
+    // `complete` is the LISTING: the buckets opened and their keys read.
+    // A partial listing cannot answer anything at all — the entry that
+    // would have answered it may be in the part that never arrived.
+    var complete = true;
+    // `pagesComplete` is the per-page reads inside an intact listing: a
+    // `match` or a body that did not come back. The entry list is still
+    // good, so the rows read off URLs alone are still answerable; what is
+    // not is anything needing a page's stamp or its contents.
+    var pagesComplete = true;
     for (var i = 0; i < names.length; i += 1) {
-      var cache;
-      try {
-        cache = await self.caches.open(names[i]);
-      } catch (_err) {
+      var cache = await bounded(
+        budget,
+        'caches.open',
+        (function (name) {
+          return function () {
+            return self.caches.open(name);
+          };
+        })(names[i]),
+        null,
+      );
+      if (!cache) {
+        complete = false;
         continue;
       }
-      var requests = [];
-      try {
-        requests = await cache.keys();
-      } catch (_err) {
+      var requests = await bounded(
+        budget,
+        'shell.keys',
+        (function (target) {
+          return function () {
+            return target.keys();
+          };
+        })(cache),
+        null,
+      );
+      if (!requests) {
+        complete = false;
         continue;
       }
       for (var j = 0; j < requests.length; j += 1) {
@@ -418,12 +588,30 @@
         var isPage = looksLikePage(url);
         var principal = null;
         if (isPage) {
-          var response = null;
+          // One bounded `match` per page. This is the loop that made the
+          // panel unusable on the reported device: a shell cache holds
+          // every page the user has visited, and an unbounded `match`
+          // anywhere in it stops the whole report for ever rather than
+          // costing one row its answer.
+          var response = await bounded(
+            budget,
+            'shell.match',
+            (function (target, request) {
+              return function () {
+                return target.match(request);
+              };
+            })(cache, requests[j]),
+            null,
+          );
+          // `null` is the bound's fallback and `undefined` is a genuine
+          // miss, and the difference matters more here than anywhere: an
+          // entry with no stamp is one the worker REFUSES to serve, so a
+          // timed-out `match` read as an unstamped page would tell the
+          // user "the saved copy belongs to another account" about a page
+          // stamped for them all along.
+          if (response === null) pagesComplete = false;
+          // The same header ``sw.js``'s ``_principalMatches`` reads.
           try {
-            response = await cache.match(requests[j]);
-            // The same header ``sw.js``'s ``_principalMatches`` reads. An
-            // entry with no stamp is one the worker will refuse to serve,
-            // and the core treats a null stamp exactly that way.
             principal = response ? response.headers.get('X-SW-Principal') : null;
           } catch (_err) {
             principal = null;
@@ -432,18 +620,42 @@
           // stamp already read off the same response, and folding the two
           // together would report a perfectly good page as unstamped.
           if (response && mapDependencies === null && isMapPage(url, mapPath)) {
+            // `.text()` on the response itself, NOT on a `clone()`. The
+            // clone was free defensiveness over a body nothing else reads
+            // — `cache.match` hands back a fresh Response every call — and
+            // `clone()` tees the stream, which is one of the few
+            // constructs in this file that can leave a body pending
+            // indefinitely rather than failing. Bounded either way now,
+            // but the safest read is the one with nothing to tee.
+            var html = await bounded(
+              budget,
+              'shell.body',
+              (function (target) {
+                return function () {
+                  return target.text();
+                };
+              })(response),
+              null,
+            );
+            // Same distinction: `text()` always resolves a string, so a
+            // null is the bound and nothing else. Without this the core
+            // reads `mapDependencies: null` as "body unreadable", which is
+            // a No — and warming, the remedy it then offers, fixes
+            // nothing about a read that simply did not come back.
+            if (html === null) pagesComplete = false;
             try {
               var core = self.pwaOfflineAuditCore;
-              var html = await response.clone().text();
-              mapDependencies = core
-                ? core.pageDependencies(html, self.location.origin)
-                : null;
+              mapDependencies =
+                core && typeof html === 'string'
+                  ? core.pageDependencies(html, self.location.origin)
+                  : null;
               // SNOW-914: and the day that page will open on, which is the
               // day whose ratings it will ask the cache for.
-              mapDay = core ? core.pageDay(html) : null;
+              mapDay = core && typeof html === 'string' ? core.pageDay(html) : null;
               // SNOW-913: and the basemaps its picker offers, which is the
               // catalogue the map's own choice-resolution runs against.
-              mapBasemaps = core ? core.pageBasemaps(html) : null;
+              mapBasemaps =
+                core && typeof html === 'string' ? core.pageBasemaps(html) : null;
             } catch (_err) {
               mapDependencies = null;
               mapDay = null;
@@ -452,6 +664,18 @@
           }
         }
         entries.push({ url: url, isPage: isPage, principal: principal });
+        // The latch, checked inside the hot loop rather than only between
+        // caches: a shell cache can hold hundreds of pages, and a device
+        // whose Cache Storage has stopped answering must not pay
+        // READ_BUDGET_MS for each of them.
+        if (budget.latched) {
+          complete = false;
+          break;
+        }
+      }
+      if (budget.latched) {
+        complete = false;
+        break;
       }
     }
     return {
@@ -459,6 +683,8 @@
       mapDependencies: mapDependencies,
       mapDay: mapDay,
       mapBasemaps: mapBasemaps,
+      complete: complete,
+      pagesComplete: pagesComplete,
     };
   }
 
@@ -475,39 +701,73 @@
    *
    * @returns {Promise<IDBDatabase|null>}
    */
-  async function openDb() {
+  async function openDb(budget) {
     if (!self.indexedDB) return null;
-    try {
-      if (typeof self.indexedDB.databases === 'function') {
-        var present = await self.indexedDB.databases();
-        var found = (present || []).some(function (entry) {
-          return entry && entry.name === DB_NAME;
-        });
-        if (!found) return null;
-      }
-    } catch (_err) {
-      // `databases()` is rejected or absent in some privacy modes. Fall
-      // through to the open, which is the pre-existing behaviour
-      // everywhere that method was never available.
+    // `databases()` is a read like any other, and on WebKit it is one of
+    // the calls that hangs rather than rejecting when the store is
+    // wedged. Bounded, and a bound that expires falls through to the open
+    // — which is exactly what happens everywhere the method was never
+    // implemented, so the degraded path is the pre-existing one.
+    var present = await bounded(
+      budget,
+      'indexeddb.databases',
+      function () {
+        if (typeof self.indexedDB.databases !== 'function') return null;
+        return self.indexedDB.databases();
+      },
+      null,
+    );
+    if (Array.isArray(present)) {
+      var found = present.some(function (entry) {
+        return entry && entry.name === DB_NAME;
+      });
+      if (!found) return null;
     }
-    return await new Promise(function (resolve) {
-      var request;
-      try {
-        request = self.indexedDB.open(DB_NAME);
-      } catch (_err) {
-        resolve(null);
-        return;
-      }
-      request.onsuccess = function () {
-        resolve(request.result);
-      };
-      request.onerror = function () {
-        resolve(null);
-      };
-      request.onblocked = function () {
-        resolve(null);
-      };
-    });
+    return await bounded(
+      budget,
+      'indexeddb.open',
+      function () {
+        return new Promise(function (resolve) {
+          var request;
+          try {
+            request = self.indexedDB.open(DB_NAME);
+          } catch (_err) {
+            resolve(null);
+            return;
+          }
+          request.onsuccess = function () {
+            var db = request.result;
+            // A versionless open joins the connection queue, so this
+            // connection is now something another context's upgrade can
+            // block on — db.js's own migration after an app update, or
+            // the worker's. Holding it while a report animates would
+            // wedge the very upgrade the user needs; letting go is free,
+            // because every read here has already been taken by then.
+            if (db) {
+              db.onversionchange = function () {
+                try {
+                  db.close();
+                } catch (_err2) {
+                  // Non-fatal.
+                }
+              };
+            }
+            resolve(db);
+          };
+          request.onerror = function () {
+            resolve(null);
+          };
+          // Fires only for an upgrade this open is holding up, which a
+          // versionless open never is. Kept because the reverse — an open
+          // queued BEHIND someone else's upgrade — fires nothing at all,
+          // and is the case the bound above is really for.
+          request.onblocked = function () {
+            resolve(null);
+          };
+        });
+      },
+      null,
+    );
   }
 
   /**
@@ -567,6 +827,31 @@
         resolve(null);
       }
     });
+  }
+
+  /**
+   * ``countStore``, under the budget.
+   *
+   * Its own helper only because the count is taken for four stores and
+   * the closure-per-store is the part that is easy to get wrong in a
+   * loop.
+   *
+   * @param {Object} budget
+   * @param {IDBDatabase} db
+   * @param {string} name
+   * @returns {Promise<number|null>} Null for a store that does not exist,
+   *   cannot be read, or did not answer — all three of which the report
+   *   prints as unknown rather than as zero.
+   */
+  function boundedStore(budget, db, name) {
+    return bounded(
+      budget,
+      'store:' + name,
+      function () {
+        return countStore(db, name);
+      },
+      null,
+    );
   }
 
   /**
@@ -670,21 +955,48 @@
    * @param {string} areaId
    * @returns {Promise<{present: boolean, entries: string[]}>}
    */
-  async function readBucket(areaId) {
+  async function readBucket(areaId, budget) {
     var name = PINNED_CACHE_PREFIX + areaId;
-    try {
-      if (!(await self.caches.has(name))) return { present: false, entries: [] };
-      var cache = await self.caches.open(name);
-      var requests = await cache.keys();
-      return {
-        present: true,
-        entries: requests.map(function (request) {
-          return request.url;
-        }),
-      };
-    } catch (_err) {
-      return { present: false, entries: [] };
-    }
+    // `readable: false` is the important third state. "This area's tiles
+    // are gone, download it again" is a serious thing to tell someone
+    // about a 200 MB download they made on purpose, and a read that never
+    // came back is not evidence for it.
+    var unreadable = { present: false, entries: [], readable: false };
+    var has = await bounded(
+      budget,
+      'bucket.has',
+      function () {
+        return self.caches.has(name);
+      },
+      null,
+    );
+    if (has === null) return unreadable;
+    if (!has) return { present: false, entries: [], readable: true };
+    var cache = await bounded(
+      budget,
+      'bucket.open',
+      function () {
+        return self.caches.open(name);
+      },
+      null,
+    );
+    if (!cache) return unreadable;
+    var requests = await bounded(
+      budget,
+      'bucket.keys',
+      function () {
+        return cache.keys();
+      },
+      null,
+    );
+    if (!requests) return unreadable;
+    return {
+      present: true,
+      readable: true,
+      entries: requests.map(function (request) {
+        return request.url;
+      }),
+    };
   }
 
   /**
@@ -701,10 +1013,20 @@
    * @param {IDBDatabase|null} db
    * @returns {Promise<Array<Object>>}
    */
-  async function readAreaRecords(db) {
+  async function readAreaRecords(db, budget) {
     if (!db) return [];
     var areas = [];
-    var regions = (await readMeta(db, 'basemap.regions')) || [];
+    var meta = function (key) {
+      return bounded(
+        budget,
+        'meta:' + key,
+        function () {
+          return readMeta(db, key);
+        },
+        null,
+      );
+    };
+    var regions = (await meta('basemap.regions')) || [];
     if (Array.isArray(regions)) {
       regions.forEach(function (record) {
         if (!record || !record.region_id) return;
@@ -719,7 +1041,7 @@
         });
       });
     }
-    var custom = (await readMeta(db, 'basemap.customAreas')) || [];
+    var custom = (await meta('basemap.customAreas')) || [];
     if (Array.isArray(custom)) {
       custom.forEach(function (record) {
         if (!record || !record.id) return;
@@ -738,7 +1060,7 @@
         });
       });
     }
-    var baseLayers = (await readMeta(db, 'basemap.baseLayers')) || [];
+    var baseLayers = (await meta('basemap.baseLayers')) || [];
     if (Array.isArray(baseLayers)) {
       baseLayers.forEach(function (record) {
         if (!record || !record.basemapKey) return;
@@ -771,19 +1093,28 @@
    *   documents.
    */
   async function collect(root) {
+    var budget = createBudget();
     var panel = root || document.querySelector(ROOT_SELECTOR);
     var swSupported = 'serviceWorker' in navigator;
     var registration = null;
     if (swSupported) {
-      try {
-        registration = await navigator.serviceWorker.getRegistration();
-      } catch (_err) {
-        registration = null;
-      }
+      registration = await bounded(
+        budget,
+        'serviceworker.registration',
+        function () {
+          return navigator.serviceWorker.getRegistration();
+        },
+        null,
+      );
     }
 
     var live = await liveShellCacheName();
-    var names = await cacheNames();
+    var names = await bounded(budget, 'caches.keys', cacheNames, null);
+    // Null is "could not be listed", which is not the same finding as an
+    // empty Cache Storage and must not be reported as one — see
+    // `cacheNames`. Everything downstream reads the flag, not the array.
+    var cachesReadable = names !== null;
+    names = names || [];
     var shellNames = live
       ? [live]
       : names.filter(function (name) {
@@ -794,18 +1125,27 @@
     // neither of them is the one being asked about.
     var mapPath = '/';
     var shell = shellNames.length
-      ? await readShellEntries(shellNames, mapPath)
-      : { entries: [], mapDependencies: null, mapDay: null, mapBasemaps: null };
+      ? await readShellEntries(shellNames, mapPath, budget)
+      : {
+          entries: [],
+          mapDependencies: null,
+          mapDay: null,
+          mapBasemaps: null,
+          complete: true,
+          pagesComplete: true,
+        };
+    if (!shell.complete) cachesReadable = false;
     var shellEntries = shell.entries;
 
-    var db = await openDb();
-    var areaRecords = await readAreaRecords(db);
+    var db = await openDb(budget);
+    var areaRecords = await readAreaRecords(db, budget);
     var areas = [];
     for (var i = 0; i < areaRecords.length; i += 1) {
-      var bucket = await readBucket(areaRecords[i].id);
+      var bucket = await readBucket(areaRecords[i].id, budget);
       areas.push(
         Object.assign({}, areaRecords[i], {
           bucketPresent: bucket.present,
+          bucketReadable: bucket.readable,
           entries: bucket.entries,
         }),
       );
@@ -830,18 +1170,54 @@
     var stores = {};
     if (db) {
       for (var j = 0; j < DATA_STORES.length; j += 1) {
-        stores[DATA_STORES[j]] = await countStore(db, DATA_STORES[j]);
+        stores[DATA_STORES[j]] = await boundedStore(budget, db, DATA_STORES[j]);
       }
     }
     // SNOW-914/915: the ROWS, not their keys. "Is there a weather row" and
     // "will the weather show" turned out to be different questions — a row
     // stamped for another account is refused by the reader, and a row
     // holding an empty FeatureCollection draws nothing.
-    var overlays = db ? await readOverlayRows(db, 'data:map_overlays') : {};
-    var panelKeys = db ? await readKeys(db, 'data:panel_rows') : [];
-    var mutations = db ? await countStore(db, 'queue:mutations') : null;
-    var currentPrincipal = db ? await readMeta(db, 'mutations.principal') : null;
-    var networkMode = db ? await readMeta(db, 'network.mode') : null;
+    var overlays = db
+      ? await bounded(
+          budget,
+          'store:data:map_overlays',
+          function () {
+            return readOverlayRows(db, 'data:map_overlays');
+          },
+          {},
+        )
+      : {};
+    var panelKeys = db
+      ? await bounded(
+          budget,
+          'store:data:panel_rows',
+          function () {
+            return readKeys(db, 'data:panel_rows');
+          },
+          [],
+        )
+      : [];
+    var mutations = db ? await boundedStore(budget, db, 'queue:mutations') : null;
+    var currentPrincipal = db
+      ? await bounded(
+          budget,
+          'meta:mutations.principal',
+          function () {
+            return readMeta(db, 'mutations.principal');
+          },
+          null,
+        )
+      : null;
+    var networkMode = db
+      ? await bounded(
+          budget,
+          'meta:network.mode',
+          function () {
+            return readMeta(db, 'network.mode');
+          },
+          null,
+        )
+      : null;
     if (db) {
       try {
         db.close();
@@ -850,19 +1226,26 @@
       }
     }
 
-    var storage = null;
-    try {
-      if (navigator.storage && typeof navigator.storage.estimate === 'function') {
-        storage = await navigator.storage.estimate();
-        if (typeof navigator.storage.persisted === 'function') {
-          storage = Object.assign({}, storage, {
-            persisted: await navigator.storage.persisted(),
-          });
+    // `storage.estimate()` walks every origin-scoped store to add up the
+    // bytes, so on a device holding 200 MB of tiles it is the single
+    // slowest reading here — and it answers no row, only the copied
+    // report's context. Bounded like the rest, and the last thing read,
+    // so an overrun costs nothing anyone is looking at.
+    var storage = await bounded(
+      budget,
+      'storage.estimate',
+      async function () {
+        if (!navigator.storage || typeof navigator.storage.estimate !== 'function') {
+          return null;
         }
-      }
-    } catch (_err) {
-      storage = null;
-    }
+        var estimate = await navigator.storage.estimate();
+        if (typeof navigator.storage.persisted !== 'function') return estimate;
+        return Object.assign({}, estimate, {
+          persisted: await navigator.storage.persisted(),
+        });
+      },
+      null,
+    );
 
     return {
       now: new Date().toISOString(),
@@ -892,6 +1275,15 @@
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
       mapPath: mapPath,
       areas: areas,
+      // Whether Cache Storage answered at all. The rows about the saved
+      // page, the bulletins and the boot feeds are all read out of it, and
+      // a device that could not be asked has not been checked — see
+      // `cacheNames`.
+      cachesReadable: cachesReadable,
+      // The narrower of the two: the listing is good, but a page's stamp
+      // or its body did not come back. Costs the rows that need a page
+      // opened, and leaves the ones answered from URLs alone.
+      shellPartial: !shell.pagesComplete,
       orphanBuckets: orphanBuckets,
       stores: stores,
       // SNOW-914/915: the rows, not their keys — whether each overlay is
@@ -900,6 +1292,14 @@
       panelKeys: panelKeys,
       mutations: { count: mutations },
       dbAvailable: !!db,
+      // What could not be read, and whether the run gave up part way. The
+      // report states this rather than quietly reporting a half-read
+      // device as a whole one, and `reportText` carries the list off the
+      // phone — which on a device with no devtools is the only place this
+      // information will ever exist.
+      degraded: budget.timedOut.length
+        ? { timedOut: budget.timedOut.slice(), latched: budget.latched }
+        : null,
     };
   }
 
@@ -1148,25 +1548,88 @@
     if (!output) return;
 
     var lastReport = null;
+    // One run at a time. Two interleaved collections paint the same
+    // output element, and the loser's reveal finishes last — so a second
+    // press part way through the first run could leave rows answered from
+    // a report the summary underneath them did not come from.
+    var running = false;
 
     var say = function (message) {
       if (statusEl) statusEl.textContent = message || '';
     };
 
     var run = async function () {
+      if (running) return;
+      running = true;
+      try {
+        await runOnce();
+      } finally {
+        running = false;
+      }
+    };
+
+    var runOnce = async function () {
+      var core = self.pwaOfflineAuditCore;
+      if (!core) {
+        // The core is precached separately from this file (AUDIT_SCRIPTS,
+        // sw.js) and either can be the one a device is missing. Say so
+        // rather than throwing on the first property read and leaving the
+        // button looking broken.
+        say(t['check-failed'] || FALLBACKS['check-failed']);
+        return;
+      }
       say(t.running || FALLBACKS.running);
       // The fixed questions, unanswered, before anything is read. The
       // downloads are not among them yet — nothing knows what this device
       // holds — so the list grows once by however many areas there are,
       // and then stops moving.
       output.hidden = false;
-      renderLog(output, self.pwaOfflineAuditCore.pendingReport(t));
-      var readings = await collect(root);
-      lastReport = self.pwaOfflineAuditCore.buildReport(readings, t);
-      output.hidden = false;
-      await build(output, lastReport, t);
-      say('');
-      if (copyButton) copyButton.hidden = false;
+      renderLog(output, core.pendingReport(t));
+
+      // Nothing below this point may leave the status line reading
+      // "Checking…". Every reading is already bounded, so a hang cannot
+      // get here — but a THROW could, and did nothing visible when it
+      // did: `run()` is called unawaited from a click handler, so a
+      // rejection became an unhandled promise nobody on a phone can see,
+      // and the panel sat on its skeleton for ever. A report that cannot
+      // be taken is itself a finding, and it gets painted like any other.
+      var readings;
+      try {
+        readings = await collect(root);
+      } catch (err) {
+        readings = { now: new Date().toISOString(), failure: describeError(err) };
+      }
+
+      try {
+        lastReport = core.buildReport(readings, t);
+        output.hidden = false;
+        await build(output, lastReport, t);
+      } catch (err) {
+        // The collector came back and the renderer did not. Fall back to
+        // the report with no reveal — `render` is the same paint without
+        // the animation — and if even that fails there is nothing left to
+        // try but the status line.
+        try {
+          lastReport = core.buildReport(
+            { now: new Date().toISOString(), failure: describeError(err) },
+            t,
+          );
+          render(output, lastReport, t);
+        } catch (_err2) {
+          lastReport = null;
+        }
+      }
+
+      // The status line carries only what the report itself cannot: that
+      // it is a report about a failure. A degraded run needs no line here
+      // — its unknown rows and its summary already say so, in the place
+      // the reader is looking.
+      say(readings.failure ? t['check-failed'] || FALLBACKS['check-failed'] : '');
+
+      // Copy is offered for any report at all, including a failed one.
+      // That is the whole escape route from a phone with no devtools: the
+      // run that went wrong is exactly the one worth sending in.
+      if (copyButton) copyButton.hidden = !lastReport;
       if (saveButton) {
         // Offered only when it could actually work, and only when it is
         // the thing that would help: a controlled page, a connection, and
@@ -1193,13 +1656,16 @@
         // that introduced the gate, and the exclusion left the one state
         // the repair was built for with no way to reach the repair.
         var pageCheck = null;
-        lastReport.sections.forEach(function (section) {
-          section.checks.forEach(function (check) {
-            if (check.id === 'app-opens') pageCheck = check;
+        if (lastReport) {
+          lastReport.sections.forEach(function (section) {
+            section.checks.forEach(function (check) {
+              if (check.id === 'app-opens') pageCheck = check;
+            });
           });
-        });
+        }
         saveButton.hidden = !(
           readings.online &&
+          readings.serviceWorker &&
           readings.serviceWorker.controlled &&
           pageCheck &&
           pageCheck.status !== 'yes'
@@ -1257,6 +1723,22 @@
         }
       });
     }
+  }
+
+  /**
+   * One line naming what went wrong, for the failure report.
+   *
+   * It reaches the reader only through Copy, so it is for whoever is sent
+   * the report rather than for the person holding the phone — which is
+   * why it is the raw message and not a translated sentence.
+   *
+   * @param {*} err
+   * @returns {string}
+   */
+  function describeError(err) {
+    if (!err) return 'unknown error';
+    if (err.name && err.message) return err.name + ': ' + err.message;
+    return String(err.message || err);
   }
 
   /**

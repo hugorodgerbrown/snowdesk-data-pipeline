@@ -276,3 +276,59 @@ describe('the strings contract', () => {
     template.remove();
   });
 });
+
+describe('when the device does not answer at all', () => {
+  /*
+   * The file header already says a failed read must not leave the panel
+   * on "Loading…" — but every test above it makes the read FAIL, and
+   * storage in trouble does not fail. It hangs.
+   *
+   * This panel was photographed reading "Loading…" beside the offline
+   * check reading "Checking…", on the same iPad, in the same session, for
+   * exactly that reason: a `catch` written against a rejection the device
+   * never produced. See docs/decisions/bounded-offline-read-paths.md —
+   * the same rule sw.js applies to the network, applied to storage.
+   */
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Fire the render, run the clock past every budget, and settle. */
+  async function renderPanelUnderFakeClock() {
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await vi.advanceTimersByTimeAsync(60000);
+  }
+
+  it('gives up on a read that never comes back', async () => {
+    stubDevice({});
+    window.pwaBasemapAreas = {
+      downloadedAreas: () => new Promise(() => {}),
+    };
+
+    await renderPanelUnderFakeClock();
+
+    expect(placeholderText()).toBe('Could not read what is stored on this device.');
+  });
+
+  it('still paints the downloads when only the byte total hangs', async () => {
+    // `storage.estimate()` walks every store on the origin, so it is the
+    // slowest read on the page by a distance — and it answers nothing the
+    // reader came for. Losing it must not cost them the list.
+    stubDevice({ areas: [] });
+    Object.defineProperty(navigator, 'storage', {
+      value: { estimate: () => new Promise(() => {}) },
+      configurable: true,
+      writable: true,
+    });
+
+    await renderPanelUnderFakeClock();
+
+    expect(placeholderText()).toBeNull();
+    expect(category('maps')).not.toBeNull();
+  });
+});

@@ -38,6 +38,62 @@
 
   const LIST_ID = 'reset-data-summary-list';
 
+  // Every read here is time-bounded, for the reason
+  // docs/decisions/bounded-offline-read-paths.md gives for bounding every
+  // read path in sw.js: storage in trouble HANGS rather than rejecting.
+  // The `catch` branches below are written against a rejection this
+  // device does not produce, so an IndexedDB request whose event never
+  // fires left this panel reading "Loading…" for ever — reported
+  // alongside the offline check stuck on "Checking…" in the same
+  // screenshot, on the same iPad, in the same session.
+  //
+  // Four seconds because this panel paints on page load rather than on a
+  // press: nobody asked for it, so nobody should wait long for it.
+  const READ_BUDGET_MS = 4000;
+
+  /** The value a read that never came back resolves to. */
+  const NO_ANSWER = Symbol('no-answer');
+
+  /**
+   * Take one reading, or give up on it.
+   *
+   * Resolves with `NO_ANSWER` on overrun — never with an empty result,
+   * because "nothing is downloaded" and "we could not find out" are
+   * different things to tell someone standing over a Reset button.
+   *
+   * @param {function(): Promise<*>} work
+   * @returns {Promise<*>}
+   */
+  function bounded(work) {
+    return new Promise(function (resolve) {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(NO_ANSWER), READ_BUDGET_MS);
+      let promise;
+      try {
+        promise = work();
+      } catch (_err) {
+        clearTimeout(timer);
+        finish(NO_ANSWER);
+        return;
+      }
+      Promise.resolve(promise).then(
+        (value) => {
+          clearTimeout(timer);
+          finish(value);
+        },
+        () => {
+          clearTimeout(timer);
+          finish(NO_ANSWER);
+        },
+      );
+    });
+  }
+
   // SNOW-620: server-translated copy, read back from the template
   // accounts/partials/_reset_data_summary_body.html renders. The literals
   // are the English fallback — see static/js/i18n_strings.js.
@@ -273,7 +329,14 @@
 
     let areas = [];
     if (download && manage && areasApi) {
-      areas = await areasApi.downloadedAreas({ strings: STRINGS });
+      areas = await bounded(() => areasApi.downloadedAreas({ strings: STRINGS }));
+      // The downloads ARE this panel: a list that came back empty because
+      // nothing answered would tell someone their 200 MB of maps had
+      // vanished, on the one surface that offers to delete them. Throwing
+      // puts the panel into its stated `failed` state instead.
+      if (areas === NO_ANSWER) {
+        throw new Error('downloaded areas did not answer');
+      }
     }
     const rows =
       manage && download
@@ -289,22 +352,23 @@
         })
       : [];
 
-    let mutationCount = 0;
-    try {
-      mutationCount = (await window.pwaDb.count('queue:mutations')) || 0;
-    } catch (_err) {
-      // A queue that cannot be read reads as empty — see the core's own
-      // note on why an unknown count must not become a warning.
-    }
+    // A queue that cannot be read — or that does not answer — reads as
+    // empty, which is the pre-existing decision: see the core's own note
+    // on why an unknown count must not become a warning.
+    const counted = await bounded(() => window.pwaDb.count('queue:mutations'));
+    const mutationCount = counted === NO_ANSWER ? 0 : counted || 0;
 
-    let storageEstimate = null;
-    try {
-      if (navigator.storage && typeof navigator.storage.estimate === 'function') {
-        storageEstimate = await navigator.storage.estimate();
+    // `estimate()` adds up every origin-scoped store, so on a device
+    // holding a few hundred megabytes of tiles it is the slowest read on
+    // this page by a distance. Bounded, and a null simply drops the byte
+    // figures the core already prints as unknown.
+    const estimated = await bounded(() => {
+      if (!navigator.storage || typeof navigator.storage.estimate !== 'function') {
+        return Promise.resolve(null);
       }
-    } catch (_err) {
-      // Some browsers reject rather than omitting the method.
-    }
+      return navigator.storage.estimate();
+    });
+    const storageEstimate = estimated === NO_ANSWER ? null : estimated;
 
     return window.pwaResetDataSummaryCore.summarise({
       rows: rows,

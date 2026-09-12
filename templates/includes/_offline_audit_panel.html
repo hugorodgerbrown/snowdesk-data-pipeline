@@ -182,6 +182,12 @@ of a settings page nobody came here to audit.
         <span
             data-string="note-area-unverifiable"
         >{% translate "%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked" %}</span>
+        {# A read that never came back. NOT "nothing is stored, download it #}
+        {# again" — that is a serious thing to say about an area the user #}
+        {# chose, and an unanswered read is no evidence for it. #}
+        <span
+            data-string="note-area-unreadable"
+        >{% translate "%(name)s could not be checked because this device’s storage did not answer" %}</span>
         <span data-string="note-no-bulletins">{% translate "no bulletin has been opened on this device yet" %}</span>
         <span
             data-string="note-no-favourites"
@@ -233,6 +239,14 @@ of a settings page nobody came here to audit.
         <span
             data-string="verdict-downloads-broken"
         >{% translate "The app opens, but none of your downloads will draw." %}</span>
+        <span data-string="verdict-failed">{% translate "This check could not run on this device." %}</span>
+
+        {# Why some rows are dashes. It leads the summary, because a #}
+        {# reader who does not know the report is partial reads it as #}
+        {# complete. #}
+        <span
+            data-string="note-storage-slow"
+        >{% translate "this device’s storage stopped answering part way through, so the rows marked — were not checked" %}</span>
 
         <span data-string="notes-sentence">{% translate "Also worth knowing: %(notes)s." %}</span>
         <span data-string="list-pair">{% translate "%(first)s and %(last)s" %}</span>
@@ -252,5 +266,8 @@ of a settings page nobody came here to audit.
         <span data-string="saving">{% translate "Saving the app…" %}</span>
         <span data-string="saved">{% translate "Saved. Re-checking…" %}</span>
         <span data-string="save-failed">{% translate "That could not be saved. Try again while connected." %}</span>
+        <span
+            data-string="check-failed"
+        >{% translate "The check could not run. Copy the report and send it in." %}</span>
     </template>
 </div>

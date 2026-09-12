@@ -738,3 +738,228 @@ describe('the Save control (SNOW-912)', () => {
     expect(save.hidden).toBe(true);
   });
 });
+
+describe('a device whose storage stops answering', () => {
+  /*
+   * The bug this block exists for: the panel was reported reading
+   * "Checking…" for ever, on an iPad, in the same screenshot as the reset
+   * panel stuck on "Loading…" — two surfaces, one unbounded `await` each.
+   *
+   * Storage in trouble HANGS; it does not reject. Every `try`/`catch` in
+   * the collector is written against a rejection, so none of them runs.
+   * These tests drive the failure the device actually has — a promise
+   * that never settles — which no existing test did, because every stub
+   * in this file resolves.
+   *
+   * Fake timers throughout: the budgets are seconds, and a suite that
+   * waits them out in real time is a suite nobody runs.
+   */
+
+  /** A Cache Storage whose every call hangs for ever. */
+  function installHangingCaches() {
+    const never = () => new Promise(() => {});
+    const stub = { keys: vi.fn(never), has: vi.fn(never), open: vi.fn(never) };
+    Object.defineProperty(window, 'caches', {
+      value: stub,
+      configurable: true,
+      writable: true,
+    });
+    return stub;
+  }
+
+  /** An IndexedDB whose `open` request never fires an event. */
+  function installHangingDb() {
+    Object.defineProperty(window, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: {
+        databases: () => new Promise(() => {}),
+        open: () => ({ onsuccess: null, onerror: null, onblocked: null }),
+      },
+    });
+  }
+
+  const realIndexedDb = window.indexedDB;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Object.defineProperty(window, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: realIndexedDb,
+    });
+    document.body.innerHTML = '';
+  });
+
+  /** Run `collect()` to completion against a clock we drive ourselves. */
+  async function collectUnderFakeClock() {
+    const pending = audit.collect();
+    // Comfortably past COLLECT_BUDGET_MS. The assertion is that the
+    // promise settles at all — the failing version never did, at any
+    // point on any clock.
+    await vi.advanceTimersByTimeAsync(120000);
+    return pending;
+  }
+
+  it('finishes even when every cache read hangs', async () => {
+    installHangingCaches();
+
+    const readings = await collectUnderFakeClock();
+
+    expect(readings.degraded).not.toBeNull();
+    expect(readings.degraded.timedOut).toContain('caches.keys');
+  });
+
+  it('reports an unlistable Cache Storage as unreadable, not as empty', async () => {
+    // The distinction the whole fix turns on. `[]` would answer "The app
+    // opens: No" — telling someone their app will not open when it opens
+    // perfectly well, which is the one failure this panel cannot survive.
+    installHangingCaches();
+
+    const readings = await collectUnderFakeClock();
+
+    expect(readings.cachesReadable).toBe(false);
+    const report = window.pwaOfflineAuditCore.buildReport(readings, {});
+    const row = report.sections
+      .flatMap((section) => section.checks)
+      .filter((check) => check.id === 'app-opens')[0];
+    expect(row.status).toBe('unknown');
+  });
+
+  it('does not read a page whose stamp did not come back as unstamped', async () => {
+    // An entry with no `X-SW-Principal` is one the worker REFUSES to
+    // serve, so a timed-out `match` read as an unstamped page tells the
+    // user "the saved copy belongs to another account" about a page that
+    // is stamped for them and will serve perfectly.
+    const never = () => new Promise(() => {});
+    Object.defineProperty(window, 'caches', {
+      configurable: true,
+      writable: true,
+      value: {
+        keys: async () => ['snowdesk-shell-abc'],
+        has: async () => false,
+        open: async () => ({
+          keys: async () => [{ url: `${window.location.origin}/` }],
+          match: never,
+        }),
+      },
+    });
+
+    const readings = await collectUnderFakeClock();
+
+    expect(readings.shellPartial).toBe(true);
+    const report = window.pwaOfflineAuditCore.buildReport(readings, {});
+    const row = report.sections
+      .flatMap((section) => section.checks)
+      .filter((check) => check.id === 'app-opens')[0];
+    expect(row.status).toBe('unknown');
+  });
+
+  it('finishes even when the database never opens', async () => {
+    installCachesStub({});
+    installHangingDb();
+
+    const readings = await collectUnderFakeClock();
+
+    expect(readings.dbAvailable).toBe(false);
+    expect(readings.degraded.timedOut).toContain('indexeddb.open');
+  });
+
+  it('stops asking once storage has proved it is not answering', async () => {
+    // The latch, and the reason it is not just a per-read timeout: a
+    // device with a wedged store and a dozen downloads would otherwise pay
+    // the budget once per read and take the whole collection budget to
+    // say what it knew after three.
+    installHangingCaches();
+    installHangingDb();
+
+    const readings = await collectUnderFakeClock();
+
+    expect(readings.degraded.latched).toBe(true);
+  });
+
+  it('never leaves the panel saying "Checking…"', async () => {
+    // The symptom exactly as reported: skeleton rows, a status line
+    // reading "Checking…", and no way forward.
+    installHangingCaches();
+    installHangingDb();
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.advanceTimersByTimeAsync(120000);
+
+    const status = document.querySelector('[data-offline-audit-status]');
+    expect(status.textContent).not.toBe('Checking…');
+    // And a report, not an empty box: the rows it could not take are
+    // dashes, which is a finding rather than a blank.
+    expect(document.querySelector('[data-audit-summary]')).not.toBeNull();
+  });
+});
+
+describe('a run that throws outright', () => {
+  /*
+   * `run()` is called unawaited from a click handler, so a throw anywhere
+   * in the collection became an unhandled rejection — invisible on a
+   * phone — and left the skeleton and "Checking…" on screen for ever.
+   * A report that cannot be taken is itself a finding, and gets painted.
+   */
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete navigator.onLine;
+    document.body.innerHTML = '';
+  });
+
+  async function runPanelWithBrokenCollect() {
+    installCachesStub({});
+    // A throw from outside any bounded read — `navigator.onLine` is read
+    // when the readings are assembled, after the last of them. That is
+    // what makes this the complement of the block above: `bounded` covers
+    // the hang, this covers everything else that can go wrong in a
+    // collector nobody is awaiting.
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      get() {
+        throw new TypeError('boom');
+      },
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: true }),
+    });
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <button data-offline-audit-copy hidden></button>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(() => document.querySelector('[data-audit-summary]'), {
+      timeout: 5000,
+    });
+  }
+
+  it('paints a report that says it could not run, and offers Copy', async () => {
+    await runPanelWithBrokenCollect();
+
+    const status = document.querySelector('[data-offline-audit-status]');
+    expect(status.textContent).not.toBe('Checking…');
+    // Copy is the only route this evidence has off a phone with no
+    // devtools, so the run that went wrong is the one that must offer it.
+    expect(document.querySelector('[data-offline-audit-copy]').hidden).toBe(false);
+  });
+});
