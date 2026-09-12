@@ -108,6 +108,21 @@ async function loadScrubber(ratings) {
 /** The date on the last commit the scrubber announced. */
 const lastCommit = (commits) => commits[commits.length - 1].date;
 
+/**
+ * Drag-and-release the thumb to `pct` along the track.
+ *
+ * The fixture's track is 100px wide (see `buildFixture`), so `clientX` is the
+ * percentage. Same helper as `test_map_scrubber_no_boot_snap.js`.
+ *
+ * @param {number} pct
+ * @returns {void}
+ */
+function releaseAt(pct) {
+  const track = document.querySelector('.season-scrubber-track');
+  track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: pct }));
+  document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+}
+
 beforeEach(() => {
   history.replaceState(null, '', '/');
   buildFixture();
@@ -220,6 +235,73 @@ describe('stepping back onto ?d=<tomorrow>', () => {
 
     history.replaceState(null, '', '/?d=' + TOMORROW);
     window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(lastCommit(commits)).toBe(TOMORROW);
+  });
+});
+
+describe('a boot ?d= the Swiss payload cannot answer for yet', () => {
+  it('is held and applied once the country that has it arrives', async () => {
+    // The race is structural, not rare: `getSeasonRatings` resolves with
+    // Switzerland alone, while `map.js` loads every other country the
+    // basemap covers separately and unawaited. A link to a day only France
+    // published therefore reaches the boot check before France's data does.
+    // Refusing it there strands `?d=<tomorrow>` in the address bar over a map
+    // showing today — the scrubber declining a URL it will itself write,
+    // which is the defect this ticket set out to remove.
+    history.replaceState(null, '', '/?d=' + TOMORROW);
+    const cache = { ...RATINGS_TODAY };
+
+    const { commits } = await loadScrubber(cache);
+    // Held rather than discarded; today is what shows meanwhile.
+    expect(lastCommit(commits)).toBe(TODAY);
+
+    cache[TOMORROW] = { 'FR-1234': 3 };
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'fr' },
+    }));
+
+    expect(lastCommit(commits)).toBe(TOMORROW);
+  });
+
+  it('gives way to a day the visitor picked in the meantime', async () => {
+    // The hazard the hold introduces. Someone who scrubs in the second
+    // between boot and the merge has chosen a day, and a late merge applying
+    // the URL's date over it would move the map under them. A non-silent
+    // commit is exactly "the visitor chose one", so it retires the hold.
+    history.replaceState(null, '', '/?d=' + TOMORROW);
+    const cache = { ...RATINGS_TODAY };
+
+    const { commits } = await loadScrubber(cache);
+    releaseAt(50);
+    const chosen = lastCommit(commits);
+    expect(chosen).not.toBe(TOMORROW);
+
+    cache[TOMORROW] = { 'FR-1234': 3 };
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'fr' },
+    }));
+
+    expect(lastCommit(commits)).toBe(chosen);
+  });
+
+  it('can be dragged to, once the merge has brought the day in', async () => {
+    // `snapToNearestDataDay` reads `sortedDates`, which is
+    // `Object.keys(...)` taken once when the Swiss fetch resolved. Left
+    // un-rebuilt, a drag onto the newly reachable day snaps back to the
+    // nearest SWISS day — so the picker would be offering a date the
+    // scrubber physically could not land on.
+    const cache = { ...RATINGS_TODAY };
+    const { commits } = await loadScrubber(cache);
+
+    cache[TOMORROW] = { 'FR-1234': 3 };
+    document.dispatchEvent(new CustomEvent('snowdesk:country-ratings-loaded', {
+      detail: { code: 'fr' },
+    }));
+
+    // The ten-day season runs 2026-01-01..2026-01-11, so the 7th — tomorrow
+    // — sits at 60% along the track.
+    releaseAt(60);
 
     expect(lastCommit(commits)).toBe(TOMORROW);
   });

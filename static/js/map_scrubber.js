@@ -69,6 +69,19 @@
   // reaches for.
   let latestSelectableMs = todayMs;
 
+  // SNOW-927: a boot ``?d=`` that was in range but not yet in the DATA when
+  // the boot check ran, held so the country-merge handler can apply it once
+  // the day actually arrives.
+  //
+  // The race is structural, not a rare one. ``getSeasonRatings`` resolves
+  // with Switzerland alone, while ``map.js`` loads every other country the
+  // basemap covers separately and unawaited. So a link to a day that only
+  // France published resolves its boot check against a payload France is not
+  // in, refuses a perfectly good date, and — because that fallback is silent
+  // — leaves ``?d=<tomorrow>`` in the address bar over a map showing today.
+  // Nothing afterwards looked at the date again.
+  let pendingBootDate = null;
+
   /**
    * A ceiling date key as milliseconds, never earlier than today.
    *
@@ -221,6 +234,11 @@
   // the URL write — used by the popstate handler so re-applying a
   // browser-back-restored ``?d=`` doesn't re-write history.
   const commitDate = (dateKey, opts = {}) => {
+    // SNOW-927: a non-silent commit is the visitor choosing a day, which
+    // retires any boot ``?d=`` still waiting on a country's ratings (see
+    // ``pendingBootDate``). Without this, a merge landing a second after
+    // someone scrubbed would yank the map back to the URL's date.
+    if (!opts.silent) pendingBootDate = null;
     const pct = dateKeyToPct(dateKey);
     thumb.style.left = pct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
@@ -392,6 +410,11 @@
       // same thing an unparseable ``?d=`` gets, and ``commitDate`` moves the
       // thumb back with it.
       if (!isSelectable(bootDate, latestSelectableMs)) {
+        // SNOW-927: "not yet", not "never". This payload is Switzerland's;
+        // the countries `map.js` is still loading may carry the day. Hold it
+        // for the merge handler and show today meanwhile, rather than
+        // discarding a link that is about to become valid.
+        pendingBootDate = bootDate;
         if (todayKey) commitDate(todayKey, { silent: true });
         return;
       }
@@ -447,6 +470,9 @@
   // history, and the bare URL it restores already means today.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
+    // SNOW-927: a back step is the visitor navigating, and it re-reads the
+    // URL itself — so whatever boot was still holding is superseded.
+    pendingBootDate = null;
     // SNOW-927: the authoritative ceiling, directly — no two-phase dance like
     // boot's. Back-nav commits synchronously and deferring it behind the
     // ratings promise would make the button feel slow and could race a second
@@ -513,6 +539,23 @@
   // no day chosen it invented one outright.
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     if (!sortedDates || !ratingsCache) return;
+
+    // SNOW-927: rebuild the key list before re-deriving anything from it.
+    // ``sortedDates`` was ``Object.keys(...)`` taken once when the Swiss
+    // fetch resolved, and the merge adds whole new DATE KEYS to the same
+    // object — so it does not grow, and everything reading it is answering
+    // about Switzerland.
+    //
+    // That made this handler quietly not do its own job: its comment says it
+    // re-runs the effective-last computation for the newly-active country
+    // set, and it was re-running it over a list that could not contain that
+    // country's later days. It matters more now, because
+    // ``snapToNearestDataDay`` reads the same list on every drag — so a day
+    // the ceiling had just made reachable would snap back to the nearest
+    // SWISS day, and the picker would offer a date the scrubber physically
+    // could not land on.
+    sortedDates = Object.keys(ratingsCache).sort();
+
     effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
 
     // SNOW-927: and the ceiling, which without this would be derived from
@@ -534,6 +577,21 @@
         ? window.pwaCalendarCore.latestKnownDate(ratingsCache, todayKey)
         : todayKey,
     );
+
+    // SNOW-927: and now the boot ``?d=`` that was held because this
+    // country's ratings had not arrived when it was checked. Silent, because
+    // the URL already says this — the visitor asked for it by opening the
+    // link, and re-writing it would be writing back what is already there.
+    //
+    // ``pendingBootDate`` is cleared by any non-silent commit and by
+    // popstate, so a drag or a calendar pick in the second before the merge
+    // wins and this does nothing. Cleared here too, so a later merge cannot
+    // apply it a second time over a day the visitor has since chosen.
+    if (pendingBootDate && isSelectable(pendingBootDate, latestSelectableMs)) {
+      const held = pendingBootDate;
+      pendingBootDate = null;
+      commitDate(held, { silent: true });
+    }
   });
 
 })();
