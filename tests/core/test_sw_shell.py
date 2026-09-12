@@ -197,6 +197,80 @@ class TestInjectCacheVersion:
             sw_shell.inject_cache_version('const CACHE_VERSION = "single-only";\n')
 
 
+class TestInjectBuildIdentity:
+    """Tests for the serve-time BUILD_IDENTITY substitution (SNOW-933)."""
+
+    def test_replaces_the_placeholder(self) -> None:
+        """The committed placeholder is rewritten with the build and label."""
+        body = "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };\n"
+
+        result = sw_shell.inject_build_identity(body, build="073ee8c6", release="v34")
+
+        assert result == (
+            'const BUILD_IDENTITY = { build: "073ee8c6", release: "v34" };\n'
+        )
+        assert "UNSUBSTITUTED" not in result
+
+    def test_an_unnumbered_build_injects_an_empty_label(self) -> None:
+        """No APP_RELEASE means an empty label, not a bare ``v``.
+
+        ``describeUpdate`` treats the empty string as "no label here" and
+        falls through to the SHAs, which is the right answer for a build
+        that carries no release number.
+        """
+        body = "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };\n"
+
+        result = sw_shell.inject_build_identity(body, build="073ee8c6", release="")
+
+        assert 'release: ""' in result
+
+    def test_values_are_written_as_json_string_literals(self) -> None:
+        """A quote in either value cannot terminate the literal it sits in.
+
+        Both values come from the environment (``RELEASE_VERSION``, the
+        ``VERSION`` file), so neither is structurally trusted.
+        """
+        body = "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };\n"
+
+        result = sw_shell.inject_build_identity(
+            body, build="a'b\"c", release="v34\u2028"
+        )
+
+        assert "a'b" in result
+        assert "\\u2028" in result
+        assert result.count("const BUILD_IDENTITY = ") == 1
+
+    def test_replaces_any_previously_shipped_literal(self) -> None:
+        """A value a previous deploy substituted is rewritable too."""
+        body = 'const BUILD_IDENTITY = { build: "old", release: "v33" };\n'
+
+        result = sw_shell.inject_build_identity(body, build="new", release="v34")
+
+        assert result == 'const BUILD_IDENTITY = { build: "new", release: "v34" };\n'
+
+    def test_replaces_only_the_first_assignment(self) -> None:
+        """Substitution is bounded — a later mention in a comment is untouched."""
+        body = (
+            "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };\n"
+            "// see const BUILD_IDENTITY = { build: 'x' }; above\n"
+        )
+
+        result = sw_shell.inject_build_identity(body, build="new", release="v34")
+
+        assert "{ build: 'x' }" in result
+
+    def test_raises_when_no_assignment_is_present(self) -> None:
+        """A body with nothing to substitute raises rather than passing through.
+
+        The placeholder would otherwise reach a user as "You are on
+        UNSUBST", which reads as a broken app rather than as an update.
+        """
+        with pytest.raises(ValueError, match="No `const BUILD_IDENTITY"):
+            sw_shell.inject_build_identity(
+                "// no assignment here\n", build="a", release="v1"
+            )
+
+
 class TestRealShellSource:
     """Guards against the real repo drifting out of the substitutable shape."""
 
@@ -212,6 +286,18 @@ class TestRealShellSource:
         result = sw_shell.inject_cache_version(source, version="snowdesk-shell-probe")
 
         assert "const CACHE_VERSION = 'snowdesk-shell-probe';" in result
+
+    def test_committed_sw_js_build_identity_is_substitutable(self) -> None:
+        """The real static/js/sw.js still carries a substitutable BUILD_IDENTITY.
+
+        Same belt-and-braces role as the check above, for SNOW-933's
+        second substitution.
+        """
+        source = sw_shell.SW_JS_PATH.read_text(encoding="utf-8")
+
+        result = sw_shell.inject_build_identity(source, build="abc", release="v1")
+
+        assert 'const BUILD_IDENTITY = { build: "abc", release: "v1" };' in result
 
     def test_committed_sw_js_ships_the_placeholder(self) -> None:
         """The committed value is the inert placeholder, not a real-looking name.

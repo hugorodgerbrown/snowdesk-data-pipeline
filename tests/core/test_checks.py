@@ -189,6 +189,29 @@ def test_sw_cache_version_check_fails_when_the_file_is_missing(
     assert errors[0].id == "core.sw_cache_version.E002"
 
 
+def test_sw_cache_version_check_fails_on_an_unsubstitutable_build_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reshaped BUILD_IDENTITY is an Error too (SNOW-933).
+
+    One check covers both of ``serve_sw``'s substitutions. This one's
+    failure is what a user would read — the update banner naming
+    ``UNSUBST`` as the build they are on.
+    """
+    broken = tmp_path / "sw.js"
+    broken.write_text(
+        "const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';\n"
+        "const BUILD_IDENTITY = [ 'reshaped' ];\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sw_shell, "SW_JS_PATH", broken)
+
+    errors = checks.check_sw_cache_version_substitutable(app_configs=None)
+
+    assert len(errors) == 1
+    assert errors[0].id == "core.sw_cache_version.E003"
+
+
 def test_sw_cache_version_check_is_registered() -> None:
     """The check is wired into Django's registry, not just importable."""
     from django.core.checks import registry
