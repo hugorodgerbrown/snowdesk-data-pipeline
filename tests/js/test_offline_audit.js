@@ -963,3 +963,72 @@ describe('a run that throws outright', () => {
     expect(document.querySelector('[data-offline-audit-copy]').hidden).toBe(false);
   });
 });
+
+describe('canOpenMap — the offline page’s one way forward', () => {
+  /*
+   * `static/offline.html` tells its reader, in its own body copy, that
+   * the interactive map is the part of Snowdesk built to work offline —
+   * and then offers Retry, which is the one control that cannot succeed
+   * without a signal. Someone whose map IS saved was being shown a dead
+   * end. This is the probe that decides whether to offer the way out.
+   *
+   * It answers false on any doubt, because a link that lands the reader
+   * back on this same page is worse than no link at all.
+   */
+  const ORIGIN = window.location.origin;
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('says yes when the map page is saved for whoever is signed in', async () => {
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        { url: `${ORIGIN}/`, headers: { 'X-SW-Principal': 'anonymous' } },
+      ],
+    });
+
+    expect(await audit.canOpenMap()).toBe(true);
+  });
+
+  it('says no when the saved copy belongs to another account', async () => {
+    // The worker refuses such an entry, so following the link would land
+    // the reader straight back on the offline page.
+    installCachesStub({
+      'snowdesk-shell-abc': [
+        { url: `${ORIGIN}/`, headers: { 'X-SW-Principal': 'acct-99' } },
+      ],
+    });
+
+    expect(await audit.canOpenMap()).toBe(false);
+  });
+
+  it('says no when the map page is not cached at all', async () => {
+    installCachesStub({
+      'snowdesk-shell-abc': [{ url: `${ORIGIN}/help/`, headers: {} }],
+    });
+
+    expect(await audit.canOpenMap()).toBe(false);
+  });
+
+  it('says no rather than hanging when storage stops answering', async () => {
+    // Same rule as the report: this runs on page load, on the device
+    // least able to answer, and must not leave the page waiting.
+    vi.useFakeTimers();
+    try {
+      const never = () => new Promise(() => {});
+      Object.defineProperty(window, 'caches', {
+        value: { keys: never, has: never, open: never },
+        configurable: true,
+        writable: true,
+      });
+
+      const pending = audit.canOpenMap();
+      await vi.advanceTimersByTimeAsync(120000);
+
+      expect(await pending).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

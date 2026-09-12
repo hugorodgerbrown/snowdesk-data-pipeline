@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline-content report — offline_audit.js, offline_audit_core.js, bounded storage reads, X-SW-Principal check, AUDIT_SCRIPTS precache
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-12
 ---
 
 # The offline-content report (SNOW-907)
@@ -130,13 +130,49 @@ basemap" leave the reader no way to tell which is theirs.
 `static/offline.html` is a static file with no server to ask, so on a
 device that has never opened the picker it names no current basemap at
 all — an omission rather than a guess, which is the rule every other
-reading here follows. The row is Yes only when both halves are there: the style
-document, TileJSON and sprite (without which MapLibre cannot learn a
-single tile URL — SNOW-843), and the z0–7 tiles (without which the map
-falls off the edge of every downloaded area the moment the camera pulls
-out past z10 — SNOW-856). That second half is why "zoomed-out" is a real
-question; it is answered here rather than as a download row of its own,
-because it is not a place anyone chose.
+reading here follows.
+
+**The row asks one thing: will I see a map at all on this style?** That
+narrowing is a correction. The row used to answer two questions at once
+— the style half AND the shared z0–7 base layer — and read No if either
+was missing. On a device holding a complete Martigny-Verbier download
+and no pinned base layer it therefore printed "Swisstopo (CH) basemap:
+No" over a map that was drawing Martigny, Sion and Gstaad on screen at
+that moment. A reader shown that concludes the app has no map.
+
+So the style half alone decides it: the style document, each source's
+TileJSON and the sprite, without which MapLibre cannot learn a single
+tile URL and the map is blank however many tiles are pinned (SNOW-843).
+Those travel with an area download, so a ready area is what makes this
+Yes.
+
+**The base layer is a caveat on a Yes, not a No.** It still matters —
+it is what fills the map outside the boxes the user drew (SNOW-856) —
+and it still reaches the reader, as a clause in the summary. What it
+cannot be is a row of its own: every label for it either reaches for
+zoom jargon, or claims something ("the complete map") that no device
+ever has, because a basemap is never downloaded in full. A row whose
+answer can only ever be No is not a question worth asking.
+
+The note is also careful not to claim a blank screen, because the screen
+very often is not blank. Outside a download the map draws from
+`snowdesk-basemap-v1` — the passive browsing cache, 600 entries, trimmed
+LRU — which is real, is on screen, and is not saved. So the clause says
+that: *outside your downloads the map is not saved, and may disappear
+when the device needs the space.*
+
+**A style the device holds nothing for gets no row**, unless it is the
+one on screen. A base-layer record with an empty bucket — a warm started
+and never finished — used to earn a row reading "OpenFreeMap basemap:
+No" beside the reader's own style, about a map they were not looking at.
+Two Nos under THE MAP is how the panel came to suggest there was no
+basemap at all. The style on screen is always listed, whatever is
+stored, because a reader looking at a style their device cannot draw is
+exactly who needs telling.
+
+Two questions, then, and each already has a home: *can I see anything at
+all* is this row, and *can I see detail where I am going* is the
+per-download rows under Map downloads.
 
 Two more rows are answered from more than one reading:
 
@@ -354,6 +390,28 @@ bucket read (`caches.open` *creates* on miss, which would turn "this
 area is gone" into "this area is empty" for every run after the first),
 and IndexedDB is opened with no version so it cannot trigger an upgrade.
 The one action goes through the worker.
+
+## The way out of the offline page
+
+`static/offline.html` tells its reader, in its own body copy, that the
+interactive map is the part of Snowdesk built to work offline — and for
+its whole life it then offered **Retry**, the one control that cannot
+succeed without a signal, and no link to the map. Someone whose map was
+saved on the device the whole time was being shown a wall.
+
+`pwaOfflineAudit.canOpenMap()` is the narrow version of the `app-opens`
+row for a caller that needs one boolean on page load: the shell caches,
+the map entry in one of them, its `X-SW-Principal` stamp, and the
+account signed in now. Bounded like every other reading here, and false
+on any doubt — a link that lands the reader straight back on this page
+is worse than no link.
+
+It deliberately does **not** check the page's scripts the way the report
+does. This gates a link, not a claim: a page that half-loads still beats
+a dead end, and the full report is one press away.
+
+When it answers true the map becomes the page's primary action and Retry
+steps back to outlined, because only one of the two can work right now.
 
 ## The one action
 

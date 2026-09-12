@@ -258,8 +258,8 @@
     'row-app-looks-right': 'The app looks right',
     'row-danger-ratings': 'Danger ratings',
     'row-region-shapes': 'Region outlines',
-    'row-basemap': '%(name)s basemap',
-    'row-basemap-current': '%(name)s basemap (on screen)',
+    'row-basemap': '%(name)s map',
+    'row-basemap-current': '%(name)s map (on screen)',
     'row-no-downloads': 'Anything downloaded at all',
     'label-dropzone': '%(name)s (drop zone)',
     'label-custom': '%(name)s (area you drew)',
@@ -287,8 +287,8 @@
     'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
     'note-basemap-unstyled':
       'the %(name)s map style is not saved, so nothing drawn on it will appear',
-    'note-basemap-no-overview':
-      'zooming out past a downloaded area on %(name)s will show nothing',
+    'note-basemap-downloads-only':
+      'outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space',
     'note-area-incomplete':
       '%(name)s will not draw until you repair it from the map’s Manage downloads sheet',
     'note-area-missing':
@@ -1304,6 +1304,103 @@
   }
 
   /**
+   * Can the map page be opened offline, right now, by whoever is signed
+   * in on this device?
+   *
+   * The narrow version of the report's ``app-opens`` row, for a caller
+   * that needs one boolean and cannot afford a whole report.
+   * ``static/offline.html`` is that caller: it is a dead end that tells
+   * its reader "the interactive map is the one part of Snowdesk built to
+   * work offline" and then offers no way to reach it. Someone whose map
+   * IS saved — the exact person the sentence is addressed to — was being
+   * shown a wall with a Retry button that cannot work without a signal.
+   *
+   * A handful of bounded reads rather than ``collect``'s twenty-odd: the
+   * shell caches, the map entry in one of them, its principal stamp, and
+   * the account signed in now. Same rule as everything else here — a
+   * reading that does not come back means false, because offering a link
+   * that lands the reader back on this page is worse than not offering
+   * one.
+   *
+   * It deliberately does NOT check the page's scripts the way the report
+   * does. This gates a LINK, not a claim: a page that half-loads is still
+   * a better answer than a dead end, and the report is one press away for
+   * anyone who wants the full picture.
+   *
+   * @returns {Promise<boolean>}
+   */
+  async function canOpenMap() {
+    var core = self.pwaOfflineAuditCore;
+    if (!core || !self.caches || typeof self.caches.open !== 'function') return false;
+    var budget = createBudget();
+    var live = await liveShellCacheName();
+    var names = await bounded(budget, 'caches.keys', cacheNames, null);
+    var shellNames = live
+      ? [live]
+      : (names || []).filter(function (name) {
+          return name.indexOf(SHELL_CACHE_PREFIX) === 0;
+        });
+    if (!shellNames.length) return false;
+
+    var db = await openDb(budget);
+    var stored = db
+      ? await bounded(
+          budget,
+          'meta:mutations.principal',
+          function () {
+            return readMeta(db, 'mutations.principal');
+          },
+          null,
+        )
+      : null;
+    if (db) {
+      try {
+        db.close();
+      } catch (_err) {
+        // Non-fatal.
+      }
+    }
+    var currentPrincipal = typeof stored === 'string' ? stored : null;
+
+    var mapUrl = self.location.origin + '/';
+    for (var i = 0; i < shellNames.length; i += 1) {
+      var cache = await bounded(
+        budget,
+        'caches.open',
+        (function (name) {
+          return function () {
+            return self.caches.open(name);
+          };
+        })(shellNames[i]),
+        null,
+      );
+      if (!cache) continue;
+      var response = await bounded(
+        budget,
+        'shell.match',
+        (function (target) {
+          return function () {
+            return target.match(mapUrl);
+          };
+        })(cache),
+        null,
+      );
+      if (!response) continue;
+      var principal = null;
+      try {
+        principal = response.headers.get('X-SW-Principal');
+      } catch (_err) {
+        principal = null;
+      }
+      // The worker's own rule, borrowed rather than restated: an entry
+      // stamped for another account is one `_networkFirstFallback`
+      // refuses, so a link to it would land right back here.
+      if (core.principalMatches(principal, currentPrincipal)) return true;
+    }
+    return false;
+  }
+
+  /**
    * One log row: label, answer. Never more.
    *
    * Two cells and no third, which is what stops per-row explanation
@@ -1765,6 +1862,7 @@
   }
 
   self.pwaOfflineAudit = Object.freeze({
+    canOpenMap: canOpenMap,
     collect: collect,
     render: render,
     build: build,

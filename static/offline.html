@@ -137,6 +137,60 @@
                 outline: 2px solid #1a1a1a;
                 outline-offset: 2px;
             }
+            /* The one way forward that can actually work without a
+               signal. This page's copy has always said the map is the
+               part of Snowdesk built to work offline, and then offered
+               no way to it — a dead end whose only control, Retry, is
+               the one thing that cannot succeed while offline.
+
+               Revealed only when the map really is saved for whoever is
+               signed in here (pwaOfflineAudit.canOpenMap), because a
+               link that lands the reader straight back on this page is
+               worse than no link. */
+            .actions {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.75rem;
+            }
+            a.open-map {
+                padding: 0.625rem 1.25rem;
+                border: none;
+                border-radius: 9999px;
+                background: #1a1a1a;
+                color: #f4f1e8;
+                font-weight: 500;
+                text-decoration: none;
+            }
+            a.open-map[hidden] {
+                display: none;
+            }
+            a.open-map:hover {
+                opacity: 0.9;
+            }
+            a.open-map:focus-visible {
+                outline: 2px solid #1a1a1a;
+                outline-offset: 2px;
+            }
+            /* When the map is reachable it becomes the primary action and
+               Retry steps back to outlined. Two solid pills would leave
+               the reader choosing between them; only one of the two can
+               work right now. */
+            .actions.has-map button {
+                border: 1px solid currentColor;
+                background: none;
+                color: inherit;
+            }
+            .map-ready {
+                max-width: 28rem;
+                margin: 0 0 1.5rem;
+                line-height: 1.5;
+                text-align: center;
+                opacity: 0.7;
+            }
+            .map-ready[hidden] {
+                display: none;
+            }
             /* Recovery panel — the SNOW-378 escape hatch. Quiet by
                design: a destructive action that most visitors to this
                page do not need, sat well below the primary Retry. Its
@@ -355,6 +409,17 @@
                 button:focus-visible {
                     outline-color: #f4f1e8;
                 }
+                a.open-map {
+                    background: #f4f1e8;
+                    color: #1a1a1a;
+                }
+                a.open-map:focus-visible {
+                    outline-color: #f4f1e8;
+                }
+                .actions.has-map button {
+                    background: none;
+                    color: inherit;
+                }
                 .recovery button {
                     background: none;
                     color: inherit;
@@ -397,7 +462,13 @@
             map is the one part of Snowdesk built to work offline — open it once while connected and it keeps working
             without a signal. Reconnect and try this page again.
         </p>
-        <button type="button" onclick="location.reload()">Retry</button>
+        <p class="map-ready" id="map-ready-note" hidden>
+            The map is saved on this device, so it will open without a signal.
+        </p>
+        <div class="actions" id="offline-actions">
+            <a class="open-map" id="open-map-link" href="/" hidden>Open the map</a>
+            <button type="button" onclick="location.reload()">Retry</button>
+        </div>
         <div class="audit" id="offline-audit-panel" data-offline-audit hidden>
             <div class="audit-controls">
                 <button type="button" data-offline-audit-run>Check what's saved on this device</button>
@@ -439,6 +510,28 @@
                 };
                 reveal('offline-audit-panel', !!window.pwaOfflineAudit && !!window.pwaOfflineAuditCore);
                 reveal('pwa-reset-panel', typeof window.pwaResetLocalData === 'function');
+
+                /*
+                 * And the way forward, when there is one. `canOpenMap` is
+                 * time-bounded and answers false on any doubt, so the
+                 * worst case is the page this reader already had: the
+                 * link simply never appears. It is never awaited by
+                 * anything — the rest of the page is usable throughout.
+                 */
+                if (window.pwaOfflineAudit && typeof window.pwaOfflineAudit.canOpenMap === 'function') {
+                    window.pwaOfflineAudit
+                        .canOpenMap()
+                        .then(function (ready) {
+                            if (!ready) return;
+                            reveal('map-ready-note', true);
+                            reveal('open-map-link', true);
+                            var actions = document.getElementById('offline-actions');
+                            if (actions) actions.className = 'actions has-map';
+                        })
+                        .catch(function () {
+                            /* No link, same page as before. */
+                        });
+                }
             });
         </script>
     </body>
