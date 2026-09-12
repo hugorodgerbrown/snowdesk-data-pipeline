@@ -806,13 +806,18 @@ function mapCameraBBox(map) {
  * available offline whichever bucket holds it, and re-fetching it into a
  * second bucket would spend bytes to store a duplicate.
  *
+ * SNOW-929: `urls` is the missing TILES plus the missing DOCUMENTS that
+ * draw them, and `deps` states the document list whole so `recordBaseLayer`
+ * can store what this bucket is owed rather than what one top-up happened
+ * to fetch.
+ *
  * @returns {Promise<{areaId: string, basemapKey: string|null,
- *   bandKey: string, bbox: number[], urls: string[]}|null>} `null` when
- *   the style has not settled, when there is no basemap key to file it
- *   under, or when the style's coverage does not meet the map's own
- *   extent. `basemapKey` is the picker's (bucket identity); `bandKey` is
- *   the rendered style's (which band was fetched) — see the inline
- *   comment for why those are two values and not one.
+ *   bandKey: string, bbox: number[], urls: string[], deps: string[]}
+ *   |null>} `null` when the style has not settled, when there is no
+ *   basemap key to file it under, or when the style's coverage does not
+ *   meet the map's own extent. `basemapKey` is the picker's (bucket
+ *   identity); `bandKey` is the rendered style's (which band was fetched)
+ *   — see the inline comment for why those are two values and not one.
  */
 
 async function resolveBaseLayerPlan() {
@@ -897,13 +902,64 @@ async function resolveBaseLayerPlan() {
   //     below tops the bucket up with the two new levels. Only
   //     OpenFreeMap's old z0-9 buckets are supersets, and dropping those
   //     is exactly what this path already existed to do.
-  const stale = await _baseLayerBucketIsStale(areaId, all);
+  //
+  // SNOW-929 lifted the bucket read out of the old `_baseLayerBucketIsStale`
+  // predicate and into this one call, because the plan needs the bucket's
+  // OWN contents twice over — once to judge staleness, and once to decide
+  // which documents are missing from it (see below). Two reads of the same
+  // bucket is two chances for them to disagree.
+  const bucketEntries = await _baseLayerBucketURLs(areaId);
+  const stale = core.baseLayerStaleEntries(bucketEntries, all).length > 0;
   if (stale) {
     await evictBasemapAreas([areaId]);
     await _forgetBaseLayerRecord(basemapKey);
   }
+  // Emptied when the bucket was just dropped: nothing in it is on disk
+  // any more, so every document below has to be planned again.
+  const bucket = stale ? new Set() : new Set(bucketEntries);
+  // SNOW-929: the documents that DRAW the band, planned beside it — the
+  // same list, from the same function, that an area download has pinned
+  // since SNOW-843/847 (style JSON, each vector source's TileJSON, the
+  // sprite JSON+PNG, the glyph ranges).
+  //
+  // Without them the device holds a band it cannot render. Measured on a
+  // cold origin: every base-layer bucket held `.pbf` entries and nothing
+  // else, while the four documents sat in the unpinned
+  // `snowdesk-basemap-v1` passive cache, which is FIFO-trimmed and
+  // evictable — and on a FIRST visit the style and sprite were not cached
+  // at all, because MapLibre requests them before the worker is in
+  // control. The base layer was the one download path still asking the
+  // tiles-only question, and it is the one download nobody chooses: every
+  // user gets it just by being shown a basemap.
+  //
+  // Read once, like `sourceBounds` above, and for the same reason.
+  const deps = activeBasemapRenderDependencyURLs(MAP);
   const cached = stale ? new Set() : await pinnedBasemapCacheURLs();
-  const urls = all.filter((url) => !cached.has(url));
+  // The two halves are deduped against DIFFERENT sets, and that asymmetry
+  // is the point rather than an oversight (reported on #902 by review,
+  // where the first cut of this used the union for both).
+  //
+  //   - TILES against the union of every pinned bucket. A tile is
+  //     genuinely available offline whichever bucket holds it — `sw.js`'s
+  //     `_searchPinnedBuckets` walks them all — so re-fetching one to
+  //     store a second copy spends megabytes to store a duplicate. That
+  //     trade is the one this function has always made; it is unchanged.
+  //   - DOCUMENTS against this bucket's OWN contents. The same reasoning
+  //     inverts, because the documents are the same URLs for every area
+  //     sharing the basemap: a device holding one region download already
+  //     has them in THAT bucket, so a union check reads them as cached
+  //     and copies nothing here — and deleting that region then takes the
+  //     base layer's only render dependencies with it. That is exactly
+  //     the blank-map defect this ticket exists to fix, reached by
+  //     another route, and it would be invisible: `recordBaseLayer`
+  //     declares the full list, so `areaState` would read the bucket as
+  //     `incomplete` while a base row carries no Repair control and is
+  //     filtered out of the manage panel. At 0.7–1.5 MB the second copy
+  //     is worth having; the whole promise of this bucket is that it
+  //     renders on its own and outlives any one area.
+  const urls = all
+    .filter((url) => !cached.has(url))
+    .concat(deps.filter((url) => !bucket.has(url)));
   window.pwaDebugLog?.record('cache', 'baselayer.plan', {
     basemapKey: basemapKey,
     // Logged beside it because the two disagreeing is the race above, and
@@ -911,38 +967,54 @@ async function resolveBaseLayerPlan() {
     bandKey: bandKey,
     bbox: bbox,
     total: all.length,
+    // SNOW-929: how many documents the plan carries, so a trace can tell
+    // "the band was already complete" from "the band was complete and its
+    // style was missing" — which is the state this ticket found devices in.
+    deps: deps.length,
     missing: urls.length,
     rebanded: stale,
   });
-  return { areaId: areaId, basemapKey, bandKey, bbox, urls };
+  return { areaId: areaId, basemapKey, bandKey, bbox, urls, deps };
 }
 
 /**
- * Whether `areaId`'s bucket holds tiles the current band does not want
- * (SNOW-863).
+ * Everything in `areaId`'s OWN pinned bucket (SNOW-929).
  *
- * True only for a bucket that has an entry outside `expected`. An empty
- * or absent bucket is not stale — there is nothing to throw away — and
- * neither is a partial one, which the ordinary missing-url plan completes.
+ * This was `_baseLayerBucketIsStale(areaId, expected)` until SNOW-929 —
+ * the same Cache Storage read with the staleness verdict folded into it.
+ * `resolveBaseLayerPlan`, its only caller, now needs the entries
+ * themselves rather than a boolean: it judges staleness through
+ * `core.baseLayerStaleEntries` (pure and truth-tabled — SNOW-863's
+ * re-banding migration, narrowed to tile entries) AND asks which of the
+ * band's DOCUMENTS this bucket is missing. A second read for the second
+ * question would be a second chance for the two to disagree, so the read
+ * moved out here and the judgements moved up there.
  *
- * Best-effort: a bucket that cannot be read is treated as NOT stale, so a
- * transient Cache Storage failure can never destroy a good download.
+ * Deliberately this bucket alone, NOT `pinnedBasemapCacheURLs`' union
+ * across every pinned bucket. The two are the right answer to two
+ * different questions and `resolveBaseLayerPlan` uses both — see its own
+ * comment for why a document has to be in THIS bucket while a tile may
+ * be in any.
+ *
+ * Best-effort: a bucket that cannot be read reads as EMPTY. Every caller
+ * has to be safe on that, and both are — an empty set is "not stale", so
+ * a transient Cache Storage failure can never destroy a good download,
+ * and it is "plan every document", which at worst re-fetches ~1 MB the
+ * bucket already had.
  *
  * @param {string} areaId
- * @param {string[]} expected Every url the current band asks for.
- * @returns {Promise<boolean>}
+ * @returns {Promise<string[]>} The bucket's entry urls, in Cache
+ *   Storage's own order. `[]` for an absent, empty or unreadable bucket.
  */
-async function _baseLayerBucketIsStale(areaId, expected) {
-  if (!('caches' in window) || !expected.length) return false;
+async function _baseLayerBucketURLs(areaId) {
+  if (!('caches' in window)) return [];
   try {
     const core = self.pwaBasemapDownloadCore;
     const cache = await caches.open(core.pinnedCacheName(areaId));
     const requests = await cache.keys();
-    if (!requests.length) return false;
-    const wanted = new Set(expected);
-    return requests.some((request) => !wanted.has(request.url));
+    return requests.map((request) => request.url);
   } catch (_e) {
-    return false;
+    return [];
   }
 }
 
@@ -985,7 +1057,8 @@ async function _forgetBaseLayerRecord(basemapKey) {
  * is its line in the budget, and the next top-up writes one.
  *
  * @param {Object|null} result The warm run's report.
- * @param {{areaId: string, basemapKey: string|null, bbox: number[]}} plan
+ * @param {{areaId: string, basemapKey: string|null, bbox: number[],
+ *   deps?: string[]}} plan
  * @returns {Promise<void>}
  */
 /**
@@ -1012,6 +1085,11 @@ async function _forgetBaseLayerRecord(basemapKey) {
  * hands back only the urls not already cached, so the common case — every
  * later switch back to a basemap — resolves an empty list and fetches
  * nothing.
+ *
+ * SNOW-929: what it fetches is the band AND the documents that draw it —
+ * see `resolveBaseLayerPlan`. That adds roughly 0.7–1.5 MB to a band of
+ * 2.7–12.6 MB, and it is the difference between holding a map and holding
+ * tiles nothing can read.
  *
  * @returns {Promise<void>} Always resolves.
  */
@@ -1062,7 +1140,17 @@ async function warmBaseLayerWideBand() {
       if (plan && plan.basemapKey) WARMED_WIDE_BANDS.add(plan.basemapKey);
       return;
     }
-    const warming = window.pwaWarmCache(plan.urls, { pinned: true, areaId: plan.areaId });
+    // SNOW-929: `glyphPrefix` as well, matching what an area download
+    // passes (`basemap_download_runner.js`). The plan enumerates the fixed
+    // `GLYPH_RANGES`, which is not every range a style's labels can reach;
+    // the prefix additionally lets the worker PROMOTE ranges already in
+    // the passive cache into this bucket (`sw.js`'s `_promoteGlyphs`), so
+    // a band gets both the ranges we can name and the ones browsing found.
+    const warming = window.pwaWarmCache(plan.urls, {
+      pinned: true,
+      areaId: plan.areaId,
+      glyphPrefix: activeBasemapGlyphPrefix(MAP),
+    });
     if (!warming) return;
     const result = await warming;
     await recordBaseLayer(result, plan);
@@ -1095,8 +1183,10 @@ async function recordBaseLayer(result, plan) {
       basemapKey: plan.basemapKey,
       // SNOW-868: the band this basemap actually asked for, not the
       // default one. Writing the constant here recorded z0-7 against a
-      // bucket holding z0-9, which is the read `_baseLayerBucketIsStale`
-      // deliberately does not trust — but a wrong number in a stored
+      // bucket holding z0-9, which is the read the re-banding check in
+      // `resolveBaseLayerPlan` deliberately does not trust (it goes to
+      // the bucket's own contents via `_baseLayerBucketURLs` instead) —
+      // but a wrong number in a stored
       // record is a trap for the next reader either way.
       //
       // `plan.bandKey`, NOT `plan.basemapKey`: the record has to state the
@@ -1106,6 +1196,17 @@ async function recordBaseLayer(result, plan) {
       // band there would write the number the run did not use.
       band: core.baseLayerBand(plan.bandKey),
       bbox: plan.bbox,
+      // SNOW-929: the documents this bucket needs to RENDER the band —
+      // recorded on the same terms as a region's or a custom area's, so
+      // the offline report and the downloaded-areas reader can verify a
+      // base layer by what it draws rather than asserting it draws with
+      // nothing (which is what both of them used to say).
+      //
+      // The WHOLE list, not the subset this top-up fetched: the question
+      // a reader asks later is "what does this bucket need?", and a
+      // top-up that found the style already cached would otherwise record
+      // a bucket that needs no style.
+      deps: Array.isArray(plan.deps) ? plan.deps : [],
       bytes: (Number(previous && previous.bytes) || 0) + (Number(result.bytes) || 0),
       savedAt: new Date().toISOString(),
     });

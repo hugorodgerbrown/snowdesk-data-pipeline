@@ -796,9 +796,19 @@ describe('which key picks the base layer band (SNOW-868)', () => {
   // buckets into one. Both halves are asserted in the same test on
   // purpose, so the two keys cannot be tidied into one without a red one.
 
-  /** The zoom range a plan's urls actually cover, read off the url paths. */
+  /**
+   * The zoom range a plan's TILE urls cover, read off the url paths.
+   *
+   * SNOW-929 put the documents that draw the band into the plan beside
+   * the band itself, so the tiles have to be selected out before a zoom
+   * can be read from a path — a style url's first path segment is not a
+   * number, and `Number()` of it made every band `[NaN, NaN]`. The
+   * selection goes through the same predicate the re-banding check uses,
+   * so this helper cannot disagree with production about what a tile is.
+   */
   function bandOf(urls) {
-    const zooms = urls.map((url) => Number(new URL(url).pathname.split('/')[1]));
+    const tiles = urls.filter((url) => self.pwaBasemapDownloadCore.isTileEntryURL(url));
+    const zooms = tiles.map((url) => Number(new URL(url).pathname.split('/')[1]));
     return [Math.min(...zooms), Math.max(...zooms)];
   }
 

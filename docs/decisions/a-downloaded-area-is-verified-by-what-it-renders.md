@@ -1,8 +1,8 @@
 ---
 name: a-downloaded-area-is-verified-by-what-it-renders
-description: missingRenderDependencies, the incomplete download state, repair — a pinned area needs its style, TileJSON and sprite too (SNOW-844)
+description: missingRenderDependencies, baseLayerStaleEntries, incomplete, repair — an area and the base layer need their style, TileJSON and sprite
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-09-12
 ---
 
 # A downloaded area is verified by what it renders, not by its tiles
@@ -107,6 +107,86 @@ Promotion survives as a second line, for ranges outside that set — see
 the live cached/uncached/partial state of a whole basemap, not one area's
 completeness — a different question with a different subject. Wiring this
 probe into it would make a dot answer about an area the menu never names.
+
+## The shared base layer is verified the same way (SNOW-929)
+
+**It is not an exception, and it used to be treated as one.** The wide band
+`warmBaseLayerWideBand` fetches the first time a basemap is shown pinned
+tiles and nothing else. Two surfaces —
+`basemap_downloaded_areas.js`'s base-layer row and `offline_audit.js`'s —
+hardcoded `deps: []` on it, each under a comment asserting that a base
+layer is tiles only because the area downloads sharing it carry the
+documents between them. That had the sharing backwards. A user who never
+downloads an area has no area download to carry anything: the style,
+TileJSON, sprite and glyph ranges lived only in the unpinned
+`snowdesk-basemap-v1` passive cache, which is FIFO-trimmed and evictable,
+and on a first visit the style and sprite were not cached at all, because
+MapLibre requests them before the service worker is in control. So the
+device held a band it could not render, and the report called it ready.
+
+`resolveBaseLayerPlan` now plans `activeBasemapRenderDependencyURLs(MAP)`
+alongside the band and records the list as `deps`, so `areaState` verifies
+a base layer on exactly the terms above. It costs 0.7–1.5 MB against bands
+of 2.7–12.6 MB, and it is the difference between holding a map and holding
+tiles nothing can read.
+
+**The band dedupes against every bucket; the documents dedupe against
+this one.** The asymmetry is deliberate and the review of #902 caught the
+first cut getting it wrong. A TILE is available offline whichever bucket
+holds it — `sw.js`'s `_searchPinnedBuckets` walks them all — so
+`resolveBaseLayerPlan` filters the band against `pinnedBasemapCacheURLs()`,
+the union, and spends nothing on a second copy of megabytes. A DOCUMENT is
+the *same URL* for every area sharing the basemap, so the same union check
+reads it as cached whenever any region download exists and copies nothing
+into the base layer's bucket. Removing that region then takes the base
+layer's only render dependencies with it — this decision's own defect,
+reached from the other side, and silent: the record declares the full
+list, so `areaState` reads `incomplete`, while a base row has no Repair
+control and is filtered out of the manage panel. So the documents are
+filtered against `_baseLayerBucketURLs(areaId)`, the bucket's own
+contents. Around 1 MB buys the promise that this bucket renders on its own
+and outlives any one area.
+
+That read also replaced the old `_baseLayerBucketIsStale` predicate, which
+opened and enumerated the same bucket to return a boolean. The plan needs
+the entries themselves — for the staleness verdict and for the missing
+documents — and two reads of one bucket is two chances for the answers to
+disagree.
+
+`areaState`'s `deps.length === 0 && area.kind !== 'base'` carve-out stays.
+Its reason has changed rather than gone: an empty list on a base layer is
+now a record written before SNOW-929, and that layer is re-warmed on the
+next switch to its basemap with no user action — unlike an area, which
+needs a repair. Reading it as `unverifiable` would put a warning on the
+report that clears itself, for a bucket nobody chose and nobody can
+repair.
+
+**The staleness check judges tile entries only.** SNOW-863 evicts a
+base-layer bucket whole when it holds an entry the current band does not
+ask for, because SNOW-856 shipped z0-9 against a default band of z0-7 and
+the old set is a superset — the missing-url plan finds nothing, so nothing
+else can free the bytes. Putting the documents in the same bucket ends the
+all-entries form of that check: every document is outside the tile set by
+construction, so it would evict the band on the very warm that fetched it.
+
+Folding the document list into the expected set is the other obvious
+answer and is worse. The expected documents are derived from the LIVE
+style, so they move whenever the provider moves them, while the tile set
+is a pure function of band, camera and style. A provider renaming a sprite
+path or adding a fontstack would then cost the user a 21 MB re-download.
+So the judgement is `pwaBasemapDownloadCore.baseLayerStaleEntries(entries,
+expectedTiles)` — the tile entries not in the band, `isTileEntryURL`
+deciding which entries are tiles from the URL path alone. A document the
+current plan happens not to name is left where it is: it is tens of
+kilobytes, and it may well be the thing making the band renderable.
+
+`isTileEntryURL` is pure, exported and truth-tabled
+(`tests/js/test_basemap_base_layer.js`) because both ways of being wrong
+are silent. Read a glyph range (`…/fonts/Noto%20Sans%20Bold/0-255.pbf` —
+one segment, not a numeric triple) as a tile and every warm evicts the
+band it just fetched; read a raster tile (OpenFreeMap's natural-earth
+source serves `.png`) as a document and SNOW-863's migration quietly stops
+firing.
 
 ## Consequences
 

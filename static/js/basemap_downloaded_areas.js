@@ -389,8 +389,19 @@
           savedAt: (record && record.savedAt) || '',
           basemapKey: basemapKey,
           bbox: record && record.bbox,
-          // Not a render dependency of anything — the tiles ARE the layer.
-          deps: [],
+          // SNOW-929: the documents this base layer needs to DRAW — the
+          // style, each source's TileJSON, the sprite pair and the glyph
+          // ranges, fetched into this very bucket beside the band. This
+          // used to read `deps: []` under a comment asserting "the tiles
+          // ARE the layer", which was the bug: the tiles are not the
+          // layer, they are unreadable without those four, and they sat
+          // in an evictable passive cache instead.
+          //
+          // An empty list here now means a record written BEFORE
+          // SNOW-929, not a layer that needs nothing. The next warm of
+          // this basemap writes one; `areaState` (offline_audit_core.js)
+          // is the reader that has to keep telling those two apart.
+          deps: Array.isArray(record && record.deps) ? record.deps : [],
         });
       }
     } catch (_e) {

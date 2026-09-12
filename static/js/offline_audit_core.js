@@ -848,10 +848,18 @@
    * is SNOW-843's whole bug class — a perfect tile set with no TileJSON
    * renders a blank map, and every surface called it "done".
    *
-   * A SHARED BASE LAYER is the exception: it is tiles and nothing else,
-   * because the area downloads that read it carry the style, TileJSON and
-   * sprite between them (SNOW-856). Its empty dependency list is not
-   * "nothing was recorded" but "there is nothing to record".
+   * A SHARED BASE LAYER is verified on exactly the same terms since
+   * SNOW-929, which pins its style, TileJSON, sprite pair and glyph
+   * ranges into its own bucket beside its band. Before that it held tiles
+   * alone, on the reasoning that the area downloads reading it carried
+   * the documents between them — which had the sharing backwards: a user
+   * who never downloaded an area had those documents only in the
+   * evictable passive cache, or (on a first visit) not at all, so the
+   * bucket was a band nothing could read and this function called it
+   * ready.
+   *
+   * What SNOW-929 does NOT change is the legacy branch below — see its
+   * own comment.
    *
    * @param {AreaReading} area
    * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable',
@@ -881,6 +889,16 @@
       // Downloaded before SNOW-844, so nothing on the record says what
       // that run fetched. The tiles are demonstrably there; whether the
       // style, TileJSON and sprite are cannot be answered from here.
+      //
+      // The `!== 'base'` carve-out STAYS after SNOW-929, and its reason
+      // has changed rather than gone. A base layer does declare
+      // dependencies now, so a current record takes the `missingDeps`
+      // branch above like any other area. An EMPTY one is a record
+      // written before SNOW-929, and the layer it describes is re-warmed
+      // on the very next switch to that basemap — unprompted, with no
+      // user action, which is not true of an area. Reading it as
+      // `unverifiable` would put a warning on the report that clears
+      // itself, for a bucket nobody chose and nobody can repair.
       status = 'unverifiable';
     }
     return {
