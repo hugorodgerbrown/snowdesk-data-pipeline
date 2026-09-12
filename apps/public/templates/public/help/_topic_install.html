@@ -44,15 +44,17 @@ docs/offline-first.md for why that exchange was made.
     </p>
     {# SNOW-748: offline mode. A paragraph in this topic rather than a topic #}
     {# of its own — it is the same subject as the paragraph just above. The  #}
-    {# split it describes is the aeroplane-mode one: the switch is in the    #}
-    {# account menu, and the header carries the symbol that reports it.      #}
+    {# split it describes is the aeroplane-mode one: the symbol reports the  #}
+    {# state, and SNOW-921 put the switch that sets it behind that same      #}
+    {# symbol, so this paragraph now describes one place rather than two —   #}
+    {# and drops the "if you are signed in", which is no longer true.        #}
     <p class="mb-3 last:mb-0" data-testid="help-install-network-toggle">
         {% blocktrans trimmed %}
-            You can also stop Snowdesk using the network yourself. If you are signed in, open the account menu and turn
+            You can also stop Snowdesk using the network yourself. Tap the signal symbol at the top of any page and turn
             on "Offline mode" &mdash; before you lose coverage, or to spare a metered or roaming connection &mdash; and
             the app runs from what it has already stored. It stays on until you turn it off again: Snowdesk will not
-            quietly reconnect. While it is on, the signal symbol at the top of every page is struck through, much like
-            aeroplane mode on a phone, and tapping it tells you how old the stored data is and offers the way back.
+            quietly reconnect. While it is on, that symbol is struck through, much like aeroplane mode on a phone, and
+            the same menu tells you how old the stored data is and offers the way back.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-install-downloads-pointer">

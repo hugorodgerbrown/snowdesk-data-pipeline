@@ -4,13 +4,14 @@ templates/includes/_network_mode_strings.html — copy for the Offline mode
 switch's lock-out warning (SNOW-922).
 
 ``static/js/pwa_offline.js`` puts this in a ``window.confirm`` before it
-lets the nav menu's "Offline mode" switch enter ``'offline-forced'`` on a
+lets the network menu's "Offline mode" switch enter ``'offline-forced'`` on a
 device whose app is not saved. ``makemessages`` scans templates and
 Python, never JavaScript, so written as a JS literal it would ship as
 English to every locale (docs/i18n.md).
 
 Included from ``public/base.html`` rather than beside the switch in
-``nav.html`` for the same reason the favourites-offline copy is: the
+``_connection_panel.html`` for the same reason the favourites-offline copy
+is: the
 warning has to already be on the page when it is needed, and the switch
 lives in the nav on every page. It is one hidden span.
 

@@ -221,7 +221,7 @@
     // SNOW-922: was `offline-mode`, labelled "Offline mode is on". It has
     // only ever answered from `serviceWorker.controlled` — "the offline
     // machinery is installed and running" — and that name collided head-on
-    // with the account menu's "Offline mode" switch, which is a different
+    // with the network menu's "Offline mode" switch, which is a different
     // thing entirely. A user stranded BY that switch read this row's green
     // Yes as confirmation of it and the report never corrected them, because
     // the mode had no row at all. It has one now, immediately below.

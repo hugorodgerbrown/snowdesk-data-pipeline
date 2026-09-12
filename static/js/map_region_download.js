@@ -1526,7 +1526,7 @@
           // may well have landed before the worker honoured the cancel, but
           // the region's tile set is incomplete by definition, and the
           // done-probe checks the whole of it. 'offline' is the resting
-          // state when the abort came from the account menu's "Offline
+          // state when the abort came from the network menu's "Offline
           // mode" row — which is the only way to reach this branch today;
           // `renderControl`'s own
           // connectivity listener already ran while this control was still

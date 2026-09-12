@@ -69,9 +69,11 @@ same-origin plain HTTP.
 
 ### 2. Going offline is done through the product
 
-The suite presses `#nav-offline-mode` — the switch in the account menu, the
-one a user presses — and waits for the header connectivity symbol, which
-`pwa_offline.js` repaints only after the worker acknowledges the mode.
+The suite presses `#nav-offline-mode` — the switch in the network menu the
+header's connectivity symbol opens, the one a user presses — and waits for
+that symbol, which `pwa_offline.js` repaints only after the worker
+acknowledges the mode. (It was in the account menu until SNOW-921, which is
+why `conftest.py`'s helper walks a different disclosure than it used to.)
 
 `test_offline_toggle_is_watertight.py` is the suite's foundation: with the
 network *fully available*, it switches Offline mode on and asserts the

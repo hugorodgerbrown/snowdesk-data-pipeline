@@ -434,7 +434,7 @@
    * SNOW-748: read through ``window.pwaConnectivity``, not from
    * ``navigator.onLine`` directly. The interface being up is only half the
    * question — under an offline mode (the worker's latch, or the one the user
-   * forced from the account menu's "Offline mode" row) no request leaves the
+   * forced from the network menu's "Offline mode" row) no request leaves the
    * app at all, and a
    * green dot beside an uncached layer would promise data that cannot arrive.
    * ``navigator.onLine`` stays the fallback for a page where

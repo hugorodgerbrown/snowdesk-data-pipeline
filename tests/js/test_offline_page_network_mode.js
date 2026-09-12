@@ -12,7 +12,8 @@
  * it survives the tab, the worker and the device restarting. A live signal
  * changed nothing, because it is the worker refusing, not the radio.
  *
- * The only control that ended the state lived in the account menu, inside
+ * The only control that ended the state lived in the app's own chrome,
+ * inside
  * the app that would not open. The exit was behind the door it locks. The
  * two ways out were a full local-data wipe — which also destroys every
  * downloaded region and saved place — and the browser's own site-data

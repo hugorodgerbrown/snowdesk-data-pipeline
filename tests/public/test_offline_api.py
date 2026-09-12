@@ -164,7 +164,7 @@ def test_offline_fallback_page_carries_the_offline_mode_switch() -> None:
     it is the worker refusing, not the radio.
 
     Before SNOW-922 the only control that ended that state was the switch
-    in the account menu, inside the app that would not open, leaving a
+    in the app's own chrome, inside the app that would not open, leaving a
     full local-data wipe (which also destroys every downloaded region) as
     the only escape. The switch is here now.
 

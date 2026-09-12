@@ -1,6 +1,6 @@
 ---
 name: the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on
-description: Offline mode switch on static/offline.html as well as nav — pwa_network_mode.js, canOpenOffline, network-use audit row, no self-heal
+description: Offline mode switch on static/offline.html too — pwa_network_mode.js, canOpenOffline, network-use audit row, why the worker never self-heals
 status: current
 last-reviewed: 2026-09-12
 ---
@@ -9,9 +9,10 @@ last-reviewed: 2026-09-12
 
 SNOW-922.
 
-**Decision.** The "Offline mode" switch appears in two places: the account
-menu (`includes/nav.html`, as before) and the offline fallback page
-(`static/offline.html`, new). Both work the same mechanism —
+**Decision.** The "Offline mode" switch appears in two places: the network
+menu (`includes/_connection_panel.html` — where SNOW-921 moved it from the
+account dropdown, landing alongside this ticket) and the offline fallback
+page (`static/offline.html`, new). Both work the same mechanism —
 `static/js/pwa_network_mode.js`, precached in `PRECACHE_URLS` — and both
 guard the ON direction by asking the service worker, over a
 `can-open-offline` message, whether the app would in fact open with no
@@ -47,8 +48,9 @@ to `offline.html` and stays there. Four ordinary ways to be in that state:
 A live signal made no difference, because it is the worker refusing and not
 the radio — so the page's own "Reconnect and try this page again" was advice
 for something that could not work. The only control that ended the state
-lived in the account menu, inside the app that would not open: **the exit was
-behind the door it locks.** What remained was "Reset local data", which also
+lived in the app's own chrome — the account dropdown then, the network menu
+now — inside the app that would not open: **the exit was behind the door it
+locks.** What remained was "Reset local data", which also
 destroys every downloaded region, saved place and queued mutation, or
 clearing site data in the browser's own settings. Reported from staging by
 someone holding a phone with a 200 MB Martigny-Verbier download on it and no
@@ -74,7 +76,7 @@ always can.
 ## Why a module rather than a second copy
 
 `pwa_offline.js` already knew how to change the mode, but the recovery page
-cannot use it: that module binds to nav markup this page does not have and
+cannot use it: that module binds to app chrome this page does not have and
 reads `window.pwaDb`, which it does not load. Restating the rule inline
 would be the wrong answer, because the rule is exactly the thing that must
 not drift:
@@ -140,9 +142,10 @@ would be advice for a state that may already be gone.
   failed entry fails `install`. It earns that on the same ground
   `pwa_reset.js` does, in its strongest form: the state it recovers from is
   one the worker itself creates.
-- The nav switch's ON direction is now asynchronous (it awaits the worker's
-  answer). OFF stays synchronous in both surfaces — that is the recovery
-  direction, and nothing belongs between a stranded user and the network.
+- The network menu switch's ON direction is now asynchronous (it awaits the
+  worker's answer). OFF stays synchronous in both surfaces — that is the
+  recovery direction, and nothing belongs between a stranded user and the
+  network.
 - `static/offline.html` restates the switch's geometry and the lock-out copy
   literally. It reaches no stylesheet and no message catalogue, as everything
   else on that page already does; the app-side copy is in

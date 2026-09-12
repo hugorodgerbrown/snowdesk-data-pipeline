@@ -891,7 +891,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Nav",
         description=(
             "Persistent top navigation bar — wordmark, optional back-chevron link, "
-            "optional season-trigger button, and a right-side auth/admin area. "
+            "optional season-trigger button, and a right-side auth/admin area "
+            "carrying the sync badge and the network menu (connectivity glyph, "
+            "SNOW-921 traffic arrows, offline-mode switch, debug-log entry). "
             "Variants cover the bare logo-only state, back link, season trigger, "
             "and an authenticated user."
         ),

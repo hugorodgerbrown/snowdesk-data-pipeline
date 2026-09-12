@@ -18,7 +18,9 @@
  * install, a sign-in as someone else, the window after a deploy before
  * ``activate`` has re-warmed the shell — every navigation falls through
  * ``_networkFirstFallback`` to ``offline.html``, and the only control
- * that clears the mode is the switch in ``includes/nav.html``, which is
+ * that clears the mode is the switch in the network menu
+ * (``includes/_connection_panel.html``, moved there from the account
+ * dropdown by SNOW-921), which is
  * inside the app that will not open. The exit was behind the door it
  * locks, and a live signal made no difference: the worker refuses the
  * network, not the radio.

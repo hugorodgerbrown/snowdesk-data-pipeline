@@ -736,9 +736,12 @@ online at least once so the timestamp is primed.
 | 2 | DevTools → Network → **Offline**, then trigger any request | The symbol switches to the struck-through mark; NO panel appears on its own. Press it: the panel reads "Offline — last synced <relative>" with the "lost contact" explanation |
 | 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The Subscribe button is disabled (grey / no-hover); the enclosing `<form>` carries `aria-disabled="true"` and `pointer-events: none`, so the email input is unreachable too. This is `data-network-required` in action |
 | 4 | Network → **No throttling** (back online), and trigger any request | The symbol returns to the plain arcs; an open panel repaints to the online copy live; subscribe form re-enables; no page reload needed |
-| 5 | Sign in, open the account menu and switch **Offline mode** on | The switch is the first row, above "Subscriptions"; the symbol goes struck-through while `navigator.onLine` is still true, and the panel now reads "Offline mode — last synced …" with "You asked the app to stay offline" and a **Use the network again** button |
-| 6 | Sign out and repeat step 5's state via the worker's own latch (three failed reads) | The switch is absent — it is signed-in only — but the panel still offers **Try reconnecting**, which is an anonymous reader's only way back |
-| 7 | With the panel open, press its "×" (top-right), then reopen it and press Escape | Each closes the panel and returns focus to the symbol; the "×" is a full 44×44 target, not a hairline glyph |
+| 5 | In the same menu, switch **Offline mode** on | The switch is the first control under the rule, below the explanations; the symbol goes struck-through while `navigator.onLine` is still true, and the menu now reads "Offline mode — last synced …" with "You asked the app to stay offline" and a **Use the network again** button |
+| 6 | Sign out entirely and repeat step 5 | The switch is still there (SNOW-921 — it is a device preference, not an account feature), and still works. This is the step that would have been impossible before: a signed-out reader could only escape a mode the worker chose for them, never choose one |
+| 7 | Sign out and reach step 5's state via the worker's own latch (three failed reads) | The menu offers **Try reconnecting** as well as the switch; both return to `auto` |
+| 8 | With the menu open, press its "×" (top-right), then reopen it and press Escape | Each closes the menu and returns focus to the symbol; the "×" is a full 44×44 target, not a hairline glyph |
+| 9 | Watch the two small arrows beside the wifi mark while the page loads and while panning the map | The up arrow lights as requests go out and the down arrow as responses land, each for about half a second; a burst holds them lit. Leave the tab idle for a minute: they stay dark — the telemetry flush is excluded on purpose |
+| 10 | As a GRP_DEBUG member, open the menu and press **Debug log** | The menu closes and the on-device trace panel opens bottom-left. Pressing it again with the trace already open leaves it open — the row opens, it does not toggle |
 
 ### Scenario P9: Offline navigation to a URL never visited
 
@@ -1035,7 +1038,7 @@ network; outside it, it does not — and neither state is a broken page.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | With D1 downloaded and the squares on, note a landmark just inside and one just outside the shaded edge | — |
-| 2 | DevTools → Network → **Offline** (or account menu → Offline mode) | The header network symbol switches to the struck-through glyph |
+| 2 | DevTools → Network → **Offline** (or the network menu → Offline mode) | The header network symbol switches to the struck-through glyph |
 | 3 | Hard-reload the map page | The map page loads from the shell cache; region overlays and the danger choropleth paint |
 | 4 | Pan to the landmark **inside** coverage | Basemap tiles draw, **with place labels** — glyphs are promoted into the pinned bucket at the end of a run |
 | 5 | Pan just past the shaded edge | The basemap keeps painting, but **coarsely** — stretched z9 tiles from the shared base layer (SNOW-856), not the detail you downloaded. The hatched overlay is what marks the real edge, and offline it is on by default (SNOW-857). Overlays keep painting either way. No error page, no spinner that never ends |
@@ -1116,7 +1119,7 @@ and nothing else.
 |------|--------|-----------------|
 | 1 | Sign out, then select a region and open the sheet | The region roundel and "Download a custom area" are still visible and tappable, and take you to sign-in |
 | 2 | While signed out, check what you already hold | The sheet still lists, sizes, renames and deletes; the squares still draw; an offline reload still shows the stored map |
-| 3 | Sign back in, then go offline (Network → Offline, or account menu → Offline mode) | The sheet's add-CTA is disabled and reads "Downloading needs a connection"; the region roundel is dimmed and non-actionable (`aria-disabled="true"`) — both explained, neither hidden |
+| 3 | Sign back in, then go offline (Network → Offline, or the network menu → Offline mode) | The sheet's add-CTA is disabled and reads "Downloading needs a connection"; the region roundel is dimmed and non-actionable (`aria-disabled="true"`) — both explained, neither hidden |
 | 4 | Return online | Both controls re-enable without a reload |
 
 ### Scenario D10: The full offline run, end to end
@@ -1137,7 +1140,7 @@ rather than repeated.
 > - **"Offline" is three different states**, and they exercise different
 >   code (see [`offline-map.md`](offline-map.md), "Network mode"):
 >   DevTools → Network → Offline is a **dead radio** (`fetch` rejects,
->   `navigator.onLine` false); the account menu's **Offline mode** switch
+>   `navigator.onLine` false); the network menu's **Offline mode** switch
 >   is a user instruction with the radio still **up** (`offline-forced`);
 >   a network that accepts and never answers makes `fetch` **hang**, which
 >   is the only state that exercises the read-path latch
@@ -1189,7 +1192,7 @@ rather than repeated.
 |------|--------|-----------------|
 | 1 | DevTools → Network → **Offline** | The header symbol goes struck-through, `data-network-state="offline"` |
 | 2 | Trigger any API-backed interaction (change the date, open a region) | Requests answer **504 with `X-SW-Cache: miss`** from the worker — not `net::ERR_INTERNET_DISCONNECTED`. A native browser failure here means `_mayPassThrough` has drifted back from `_shouldUseNetwork` (SNOW-862) |
-| 3 | Network → **No throttling**, then account menu → **Offline mode** on. Clear the Network panel and use the app: pan, zoom, change date, open a region | The symbol is struck-through while `navigator.onLine` is still true, and **nothing leaves the machine**. Expected exemptions, and only these: `/sw.js` (a worker cannot intercept its own script) and `/csp/report-uri/` (the browser's policy engine, specified to bypass workers). Anything else is a leak — this is the one step here that can find one |
+| 3 | Network → **No throttling**, then the network menu → **Offline mode** on. Clear the Network panel and use the app: pan, zoom, change date, open a region | The symbol is struck-through while `navigator.onLine` is still true, and **nothing leaves the machine**. Expected exemptions, and only these: `/sw.js` (a worker cannot intercept its own script) and `/csp/report-uri/` (the browser's policy engine, specified to bypass workers). Anything else is a leak — this is the one step here that can find one |
 | 4 | Watch for a `/livez` request | None. The probe belongs to the worker's own auto-latch; a mode the user asked for is never probed out from under them |
 | 5 | Panel copy: press the symbol | "Offline mode — last synced …", "You asked the app to stay offline", and a **Use the network again** button (P8) |
 
@@ -1277,7 +1280,7 @@ have left this script and joined D10.
 Genuinely no signal is the real test. If you cannot get to one, put the
 phone in **aeroplane mode**, which is the same thing from the app's point
 of view. Doing it from your desk with wifi on is a weaker test — for that
-one, use the **Offline mode** switch at the top of the account menu
+one, use the **Offline mode** switch in the network menu
 instead, which tells the app to behave as though the signal were gone.
 
 | Step | What you do | What you should see |

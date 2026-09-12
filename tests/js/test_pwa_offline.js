@@ -62,26 +62,52 @@ const TOGGLE_ROW_SELECTOR = '[data-network-toggle]';
 const CTA_SELECTOR = `#${PANEL_ID} [data-network-reconnect]`;
 
 /**
+ * The "Offline mode" row — the control half of the aeroplane-mode model.
+ *
+ * A real ``includes/_switch.html`` checkbox, not the role="menuitemcheckbox"
+ * button this row shipped as, so the state the module writes is ``checked``
+ * on an input rather than an attribute on a button.
+ *
+ * SNOW-921 moved it out of the subscriber menu and INTO the panel below, and
+ * with it went the signed-in-only rule: the mode is a ``meta:app`` row and a
+ * service-worker flag, so every viewer gets the row now. It stays its own
+ * constant because the module must still cope with its absence — see
+ * ``buildStaleShellFixture``.
+ */
+const SWITCH_ROW = `
+  <div data-network-toggle class="hidden items-center gap-3">
+    <label for="${SWITCH_ID}">Offline mode</label>
+    <label for="${SWITCH_ID}">
+      <input id="${SWITCH_ID}" type="checkbox" role="switch" class="peer sr-only">
+    </label>
+  </div>
+`;
+
+/**
  * The header disclosure from templates/includes/nav.html — the <details>, the
- * <summary> that is the connectivity symbol, and the connection-status panel
- * from templates/includes/_connection_panel.html inside it.
+ * <summary> that is the connectivity symbol and its SNOW-921 traffic arrows,
+ * and the network menu from templates/includes/_connection_panel.html inside
+ * it.
  *
  * Mirrored here rather than only in the templates because the module toggles
  * them by ``data-role``, so a fixture missing one would silently make those
  * assertions vacuous — the role helper skips a role it cannot find. The
  * <details> wrapper is mirrored for the same reason one layer up: the module
- * now reads open/closed from it, so a fixture that kept the old
+ * reads open/closed from it, so a fixture that kept the old
  * button-plus-hidden-div shape would test a surface that no longer exists.
- *
- * This is what an ANONYMOUS page renders: the symbol is shown to every viewer,
- * while the "Offline mode" switch below is signed-in only. Kept as its own
- * constant so ``buildAnonymousFixture`` can render exactly this and no row.
+ * The arrows are mirrored for a third version of it: ``pulseTraffic`` returns
+ * silently when it cannot find one, so a fixture without them would make
+ * every traffic assertion pass by describing nothing.
  *
  * No ``hidden`` class anywhere on the panel: visibility is the <details>'s
- * ``open`` property now, which is what stops this module and the template
+ * ``open`` property, which is what stops this module and the template
  * disagreeing about which of them closes the surface.
+ *
+ * @param {{withSwitch?: boolean}} [options]
+ * @returns {string}
  */
-const SYMBOL_AND_PANEL = `
+function symbolAndPanel({ withSwitch = true } = {}) {
+  return `
   <details class="relative" data-network-panel>
     <summary
       id="network-indicator-toggle"
@@ -92,8 +118,12 @@ const SYMBOL_AND_PANEL = `
     >
       <span data-role="network-online-icon"><svg></svg></span>
       <span data-role="network-offline-icon" class="hidden"><svg></svg></span>
-      <span data-role="network-name-online" class="sr-only">Connection status: using the network</span>
-      <span data-role="network-name-offline" class="sr-only hidden">Connection status: offline</span>
+      <span aria-hidden="true">
+        <span data-traffic-arrow="up"><svg></svg></span>
+        <span data-traffic-arrow="down"><svg></svg></span>
+      </span>
+      <span data-role="network-name-online" class="sr-only">Network menu: using the network</span>
+      <span data-role="network-name-offline" class="sr-only hidden">Network menu: offline</span>
     </summary>
     <div id="${PANEL_ID}">
       <div>
@@ -111,6 +141,7 @@ const SYMBOL_AND_PANEL = `
         <span data-role="latched-explainer" class="hidden">Stopped trying.</span>
         <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
+      ${withSwitch ? SWITCH_ROW : ''}
       <button type="button" data-network-reconnect>
         <span data-role="reconnect-label">Try reconnecting</span>
         <span data-role="resume-label" class="hidden">Use the network again</span>
@@ -119,43 +150,36 @@ const SYMBOL_AND_PANEL = `
   </details>
   <button type="button" data-network-required>Sync now</button>
 `;
-
-/**
- * The "Offline mode" row from the subscriber menu — the control half.
- *
- * Rendered only inside nav.html's ``{% if request.user.is_authenticated %}``
- * branch, hence its own constant: an anonymous page genuinely does not have
- * this element, and the module has to cope with that rather than skip the
- * symbol alongside it.
- *
- * A real ``includes/_switch.html`` checkbox, not the role="menuitemcheckbox"
- * button this row shipped as, so the state the module writes is ``checked``
- * on an input rather than an attribute on a button.
- */
-const MENU_SWITCH_ROW = `
-  <div role="none" data-network-toggle class="hidden items-center gap-3">
-    <label for="${SWITCH_ID}">Offline mode</label>
-    <label for="${SWITCH_ID}">
-      <input id="${SWITCH_ID}" type="checkbox" role="switch" class="peer sr-only">
-    </label>
-  </div>
-`;
-
-/**
- * A signed-in page: symbol, panel, and the menu switch that changes the mode.
- *
- * The ``data-network-required`` button inside ``SYMBOL_AND_PANEL`` is any
- * page's stand-in for a control that cannot work without the network — that
- * attribute is the generic mechanism the whole site gates on, and the last
- * block asserts a forced mode reaches it.
- */
-function buildFixture() {
-  document.body.innerHTML = SYMBOL_AND_PANEL + MENU_SWITCH_ROW;
 }
 
-/** An anonymous page: the symbol and panel, and no way to switch the mode. */
-function buildAnonymousFixture() {
-  document.body.innerHTML = SYMBOL_AND_PANEL;
+/**
+ * A page as SNOW-921 renders it, for any viewer: symbol, traffic arrows,
+ * menu, and the switch that changes the mode.
+ *
+ * The ``data-network-required`` button inside is any page's stand-in for a
+ * control that cannot work without the network — that attribute is the
+ * generic mechanism the whole site gates on, and the last block asserts a
+ * forced mode reaches it.
+ */
+function buildFixture() {
+  document.body.innerHTML = symbolAndPanel();
+}
+
+/**
+ * A page whose menu has no switch row.
+ *
+ * This used to be ``buildAnonymousFixture``, and it stood for the anonymous
+ * half of SNOW-748's split: the switch was in the account dropdown, so a
+ * signed-out reader genuinely had a symbol and no way to change the mode.
+ * SNOW-921 ended that — the row is in the menu every viewer gets — but the
+ * MODULE CONTRACT it pinned still has to hold, because a page served from a
+ * shell cached before that ticket renders exactly this shape. The two
+ * elements are looked up separately for that reason, and a shared early
+ * return on the missing row would leave such a page with no indication that
+ * the app had stopped using the network.
+ */
+function buildStaleShellFixture() {
+  document.body.innerHTML = symbolAndPanel({ withSwitch: false });
 }
 
 /**
@@ -467,12 +491,14 @@ describe('the header symbol tracks the connection', () => {
     expect(roleShown('network-name-online')).toBe(false);
   });
 
-  it('is painted on an anonymous page, which has no menu switch at all', async () => {
-    // The switch lives inside nav.html's authenticated branch; the symbol does
-    // not. The module looks each up separately for exactly this case — a
-    // shared early return on the missing row would leave an anonymous user
-    // with no indication that the app had stopped using the network.
-    buildAnonymousFixture();
+  it('is painted on a page whose menu has no switch row at all', async () => {
+    // The two elements are looked up separately, and this is the case that
+    // needs it. Until SNOW-921 it was the anonymous page — the switch was in
+    // the account dropdown. It is now a page served from a shell cached
+    // before that ticket, which is a state every deploy passes through. A
+    // shared early return on the missing row would leave such a page with no
+    // indication that the app had stopped using the network.
+    buildStaleShellFixture();
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
@@ -942,11 +968,12 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
   });
 
-  it('gives an anonymous reader the only exit they have', async () => {
-    // The menu switch is signed-in only, so for an anonymous user latched by
-    // the worker this button is the whole way back. It is the reason the
-    // banner's reconnect control had to survive the move into the panel.
-    buildAnonymousFixture();
+  it('is the whole way back on a page with no switch row', async () => {
+    // SNOW-748's reason for keeping the banner's reconnect control was the
+    // anonymous reader, who had no switch. SNOW-921 gave them one — but a
+    // page served from a shell cached before that ticket still has none, and
+    // for it this button is the only exit from a worker-latched mode.
+    buildStaleShellFixture();
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
@@ -1245,5 +1272,175 @@ describe('the lock-out guard on the switch’s ON direction (SNOW-922)', () => {
     } finally {
       restore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-921 — the traffic arrows
+// ---------------------------------------------------------------------------
+//
+// The header said whether the app COULD reach the server and when it last
+// DID, and nothing at all about whether anything was moving right now. A pan
+// over a downloaded region and a pan spending a roaming connection looked
+// identical from the top bar.
+//
+// Two arrows beside the glyph, one lit per edge. Deliberately approximate —
+// they answer "is anything moving", not "how much" — so nothing below counts
+// anything. What IS pinned is the part that would be wrong rather than
+// merely imprecise: which edges light which arrow, that a failure lights no
+// arrival, and what the pair stays dark for. That last one is the whole
+// difference between an activity lamp and a metronome: telemetry flushes its
+// buffer every 30 seconds forever, so a pair that pulsed for it would blink
+// at an idle tab until the battery ran out.
+
+/**
+ * One traffic arrow.
+ *
+ * @param {'up'|'down'} direction
+ * @returns {Element|null}
+ */
+function trafficArrow(direction) {
+  return document.querySelector(`[data-traffic-arrow="${direction}"]`);
+}
+
+/**
+ * Whether an arrow is currently lit.
+ *
+ * Read as the presence of ``data-active``, which is the module's entire
+ * output here: ``src/css/main.css`` owns the colour, the opacity and the
+ * transition, so there is no class to assert and no colour that could drift
+ * between the two files.
+ *
+ * @param {'up'|'down'} direction
+ * @returns {boolean}
+ */
+function arrowLit(direction) {
+  return trafficArrow(direction).hasAttribute('data-active');
+}
+
+describe('the traffic arrows (SNOW-921)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('starts dark, lights up on the way out and down on the way back', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(arrowLit('up')).toBe(false);
+    expect(arrowLit('down')).toBe(false);
+
+    await window.fetch('/api/ratings/');
+
+    expect(arrowLit('up')).toBe(true);
+    expect(arrowLit('down')).toBe(true);
+  });
+
+  it('goes out again after the pulse window', async () => {
+    vi.useFakeTimers();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    await window.fetch('/api/ratings/');
+
+    expect(arrowLit('up')).toBe(true);
+
+    // Just short of the window: still lit. A single round trip has to be
+    // legible, which is the reason the pulse outlives the request.
+    vi.advanceTimersByTime(400);
+    expect(arrowLit('up')).toBe(true);
+
+    vi.advanceTimersByTime(100);
+    expect(arrowLit('up')).toBe(false);
+    expect(arrowLit('down')).toBe(false);
+  });
+
+  it('lights nothing on the way back from a failed request', async () => {
+    // Nothing came back. An arrow that lit here would say the opposite of
+    // what the struck-through glyph is about to say, two pixels away.
+    window.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    await loadModule();
+
+    await expect(window.fetch('/api/ratings/')).rejects.toThrow();
+
+    expect(arrowLit('up')).toBe(true);
+    expect(arrowLit('down')).toBe(false);
+    expect(indicatorState()).toBe('offline');
+  });
+
+  it('stays dark for the telemetry flush', async () => {
+    // static/js/telemetry.js posts on a 30s cadence and on every lifecycle
+    // event. This is the exclusion that keeps the pair from blinking at the
+    // page talking to itself, forever, on a tab nobody is touching.
+    window.fetch = vi.fn().mockResolvedValue(okResponse('/api/telemetry'));
+    await loadModule();
+
+    await window.fetch('/api/telemetry');
+
+    expect(arrowLit('up')).toBe(false);
+    expect(arrowLit('down')).toBe(false);
+  });
+
+  it('stays dark for static assets', async () => {
+    // A cold boot pulls forty of them and says nothing a user wanted to know.
+    window.fetch = vi.fn().mockResolvedValue(okResponse('/static/js/map.js'));
+    await loadModule();
+
+    await window.fetch('/static/js/map.js');
+
+    expect(arrowLit('up')).toBe(false);
+  });
+
+  it('lights for a cross-origin tile, which is the interesting case', async () => {
+    // Basemap tiles are the bulkiest thing this app fetches, and a pan served
+    // entirely from a pinned bucket looks exactly like one spending a roaming
+    // connection. The arrows are the only surface that can tell those apart,
+    // so the same-origin exclusions above deliberately do not reach them.
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    await window.fetch('https://tiles.snowdesk-data.info/14/8522/5829.pbf');
+
+    expect(arrowLit('up')).toBe(true);
+  });
+
+  it('reads the URL off a Request object as well as a string', async () => {
+    // ``fetch`` takes a string, a URL or a Request, and the arrows are the
+    // only caller in this module that has to know which — everything else
+    // reads the response. Getting this wrong is silent: an unrecognised
+    // input falls through to "pulse anyway", so the telemetry exclusion
+    // above would quietly stop working for any caller using a Request.
+    window.fetch = vi.fn().mockResolvedValue(okResponse('/api/telemetry'));
+    await loadModule();
+
+    await window.fetch({ url: '/api/telemetry' });
+
+    expect(arrowLit('up')).toBe(false);
+  });
+
+  it('follows htmx traffic too, which never touches fetch', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    document.body.dispatchEvent(new CustomEvent('htmx:beforeRequest'));
+    expect(arrowLit('up')).toBe(true);
+    expect(arrowLit('down')).toBe(false);
+
+    document.body.dispatchEvent(new CustomEvent('htmx:afterOnLoad', { detail: {} }));
+    expect(arrowLit('down')).toBe(true);
+  });
+
+  it('is a no-op on a page that renders no arrows', async () => {
+    // A shell cached before this ticket. The pulse must not throw into the
+    // fetch wrapper it is called from — an activity lamp that can break a
+    // request is worse than no lamp.
+    buildStaleShellFixture();
+    trafficArrow('up')?.remove();
+    trafficArrow('down')?.remove();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    const response = await window.fetch('/api/ratings/');
+
+    expect(response.status).toBe(200);
   });
 });
