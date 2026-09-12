@@ -653,8 +653,33 @@ describe('base layer top-up', () => {
       expect(d.warmCache).toHaveBeenCalledWith(['/base/1', '/base/2'], {
         pinned: true,
         areaId: 'base-openfreemap_liberty',
+        // SNOW-929: and the glyph prefix. This fake bundle offers no
+        // `glyphPrefix` member — an older shell mid-rollout — so it
+        // resolves to '', which the worker reads as "promote nothing".
+        glyphPrefix: '',
       });
     });
+  });
+
+  it('promotes glyphs under the same prefix the area run used (SNOW-929)', async () => {
+    // Two paths warm a base-layer bucket: this one, on the tail of an area
+    // download, and `warmBaseLayerWideBand` when a basemap is first shown
+    // (asserted in tests/js/test_basemap_base_layer_plan.js). They must
+    // leave the same contents behind, and until SNOW-929 only the area
+    // run passed the prefix — so whether the bucket kept its labels
+    // depended on which path had filled it.
+    //
+    // Asserted against the AREA run's own option in the same test, not
+    // just against a literal: the requirement is that the two agree, and
+    // a third path added later has to satisfy the same shape.
+    const prefix = 'https://tiles.example.invalid/fonts/';
+    const d = withBaseLayer(['/base/1'], { glyphPrefix: vi.fn(() => prefix) });
+
+    await runAndSettle(d, options());
+
+    const byArea = new Map(d.warmCache.mock.calls.map(([, opts]) => [opts.areaId, opts]));
+    expect(byArea.get('region:ch-4115').glyphPrefix).toBe(prefix);
+    expect(byArea.get('base-openfreemap_liberty').glyphPrefix).toBe(prefix);
   });
 
   it('records what the top-up fetched', async () => {

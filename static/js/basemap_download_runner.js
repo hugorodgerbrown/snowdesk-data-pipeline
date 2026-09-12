@@ -421,7 +421,22 @@
       // No plan is a style whose bounds do not meet the map's own extent;
       // no urls is the common case — the base layer is already complete.
       if (!plan || !Array.isArray(plan.urls) || plan.urls.length === 0) return;
-      const warming = deps.warmCache(plan.urls, { pinned: true, areaId: plan.areaId });
+      // SNOW-929: `glyphPrefix`, resolved exactly as `run` resolves it
+      // above. There are TWO paths that warm a base-layer bucket — this
+      // one, after an area download, and `warmBaseLayerWideBand` when a
+      // basemap is first shown — and they must leave the same contents
+      // behind. Without this the bucket's glyphs depended on which path
+      // happened to fill it: the plan enumerates the fixed `GLYPH_RANGES`,
+      // and only the prefix lets the worker also PROMOTE the ranges
+      // ordinary browsing already cached (`sw.js`'s `_promoteGlyphs`).
+      // SNOW-929 is where the two paths were made to agree; a third one
+      // has to pass it too.
+      const glyphPrefix = typeof deps.glyphPrefix === 'function' ? deps.glyphPrefix() : '';
+      const warming = deps.warmCache(plan.urls, {
+        pinned: true,
+        areaId: plan.areaId,
+        glyphPrefix,
+      });
       if (!warming) return;
       const baseResult = await warming;
       if (typeof deps.finishBaseLayer === 'function') {

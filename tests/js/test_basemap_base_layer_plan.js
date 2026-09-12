@@ -358,6 +358,64 @@ describe('what the base-layer plan skips (SNOW-929)', () => {
   });
 });
 
+describe('the wide-band warm itself (SNOW-929)', () => {
+  /**
+   * Stub `window.pwaWarmCache` and trigger the warm the way a basemap
+   * switch does, returning the options it was called with.
+   *
+   * `warmBaseLayerWideBand` is bound to `snowdesk:basemap-changed`; the
+   * boot's own attempt has already returned by now, because it ran while
+   * `window.pwaWarmCache` was still absent — which is also why the stub
+   * cannot be installed in `beforeEach`.
+   */
+  async function warmAndCapture() {
+    const calls = [];
+    window.pwaWarmCache = vi.fn((urls, opts) => {
+      calls.push({ urls, opts });
+      return Promise.resolve({ ok: urls.length, failed: 0, bytes: 1024 });
+    });
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    // Two turns: the handler awaits the plan, which awaits the cache read.
+    for (let i = 0; i < 20; i += 1) {
+      if (calls.length) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    delete window.pwaWarmCache;
+    return calls.find((call) => call.opts.areaId === `base-openfreemap_liberty`);
+  }
+
+  it("warms the band and its documents into the base layer's own bucket", async () => {
+    const call = await warmAndCapture();
+
+    expect(call).toBeTruthy();
+    expect(call.opts.pinned).toBe(true);
+    expect(call.urls).toContain(STYLE_URL);
+    expect(call.urls.filter((url) => core.isTileEntryURL(url))).toHaveLength(56);
+  });
+
+  it('passes the glyph prefix, as the area download path does', async () => {
+    // The second of the two base-layer warm paths — the other is
+    // `topUpBaseLayer` (tests/js/test_basemap_download_runner.js). The
+    // plan enumerates the fixed `GLYPH_RANGES`, and only the prefix lets
+    // the worker also promote the ranges ordinary browsing cached; until
+    // SNOW-929 this path omitted it, so the bucket's labels depended on
+    // which path had filled it.
+    const call = await warmAndCapture();
+
+    expect(call.opts.glyphPrefix).toBe('https://tiles.example.invalid/fonts/');
+  });
+
+  it('records the document list against the basemap', async () => {
+    await warmAndCapture();
+
+    const record = (window.pwaDb.rows.get('basemap.baseLayers') || []).find(
+      (entry) => entry.basemapKey === 'openfreemap_liberty',
+    );
+    expect(record).toBeTruthy();
+    expect(record.deps).toEqual(expectedDeps());
+  });
+});
+
 describe('re-banding still fires, and only on tiles (SNOW-929)', () => {
   it("drops a bucket holding a previous band's tiles", async () => {
     // SNOW-863's migration, unchanged: SNOW-856 shipped z0-9 against a
