@@ -279,7 +279,12 @@ in addition to the shared map assets.
     {# SNOW-792: pure month-grid math for the map's date picker              #}
     {# (window.pwaCalendarCore), unit-tested in tests/js/test_calendar_core. #}
     {# Must load before map_calendar.js, which reads it at parse time and    #}
-    {# stays shut without it.                                                #}
+    {# stays shut without it — and, since SNOW-927, before map_scrubber.js,  #}
+    {# which reads MAX_FORWARD_DAYS at parse time to bound its boot ceiling. #}
+    {# The scrubber degrades quietly rather than breaking if reordered (it   #}
+    {# falls back to a today-only ceiling), so nothing would crash to tell   #}
+    {# you — and tests/public/test_map_script_order.py does not cover this   #}
+    {# pair, its regex matching only map*.js filenames.                      #}
     <script defer src="{% static 'js/calendar_core.js' %}"></script>
     {# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus). #}
     {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}

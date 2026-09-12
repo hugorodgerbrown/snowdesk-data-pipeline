@@ -47,6 +47,59 @@
   const seasonSpanMs = seasonEndMs - seasonStartMs;
   const todayMs = Date.parse(todayKey);
 
+  // SNOW-927: how far past today the ceiling below may ever reach — the
+  // bad-data cap ``pwaCalendarCore.latestKnownDate`` already applies, read
+  // from there rather than restated, because the boot path below has to
+  // assume the same number before that function has been called and the two
+  // drifting apart would put the picker and the scrubber back into
+  // disagreement about which days exist. Defaults to 0 if the core is
+  // somehow absent, which collapses the boot ceiling to today — the old
+  // behaviour, and the safe direction to fail in.
+  const MAX_FORWARD_MS =
+    (window.pwaCalendarCore ? window.pwaCalendarCore.MAX_FORWARD_DAYS : 0) * 86400000;
+
+  // SNOW-927: the latest day the visitor may select, which is the latest day
+  // the ratings payload covers rather than the clock. Seeded at today, so
+  // until the payload resolves this behaves exactly as it did before.
+  //
+  // NOT ``effectiveTodayKey`` below, which holds a very similar number and is
+  // the value SNOW-660 removed from the boot path for picking a day nobody
+  // asked for. Two names for two jobs: that one is a snap TARGET, this one is
+  // a RANGE BOUND, and this one must never become a fallback ``commitDate``
+  // reaches for.
+  let latestSelectableMs = todayMs;
+
+  // SNOW-927: a boot ``?d=`` that was in range but not yet in the DATA when
+  // the boot check ran, held so the country-merge handler can apply it once
+  // the day actually arrives.
+  //
+  // The race is structural, not a rare one. ``getSeasonRatings`` resolves
+  // with Switzerland alone, while ``map.js`` loads every other country the
+  // basemap covers separately and unawaited. So a link to a day that only
+  // France published resolves its boot check against a payload France is not
+  // in, refuses a perfectly good date, and — because that fallback is silent
+  // — leaves ``?d=<tomorrow>`` in the address bar over a map showing today.
+  // Nothing afterwards looked at the date again.
+  let pendingBootDate = null;
+
+  /**
+   * A ceiling date key as milliseconds, never earlier than today.
+   *
+   * ``latestKnownDate`` already guarantees both bounds — it returns the
+   * later of the cache and today, capped forward — so this is the second
+   * lock on a door that must not open rather than the first. A ceiling below
+   * today would make today itself unselectable and break the one rule
+   * SNOW-793 lays down, which is worth two locks.
+   *
+   * @param {string} dateKey
+   * @returns {number} UTC-midnight milliseconds.
+   */
+  const ceilingMsFrom = (dateKey) => {
+    const ms = Date.parse(dateKey);
+    if (!Number.isFinite(ms)) return todayMs;
+    return Math.max(ms, todayMs);
+  };
+
   // Convert between a thumb percentage (0..100 along the track) and an
   // ISO date string. Both use the season bounds parsed above and round
   // to the nearest day — the scrubber is intentionally single-day
@@ -146,6 +199,18 @@
     // nothing on screen named it. It is still what a release-without-a-drag
     // lands on (see `release` below), because that is a user action.
     effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
+
+    // SNOW-927: and the range ceiling, which is a different question with a
+    // different answer — the latest day the payload covers AT ALL, where the
+    // line above wants the latest day carrying a country the visitor has on.
+    // Shared with the calendar through ``pwaCalendarCore`` (page module →
+    // pure core, so neither core gains a dependency); ``latestKnownDate``
+    // returns today when the archive ends earlier, which off season it does.
+    latestSelectableMs = ceilingMsFrom(
+      window.pwaCalendarCore
+        ? window.pwaCalendarCore.latestKnownDate(data, todayKey)
+        : todayKey,
+    );
   }).catch(() => {
     scrubber.dataset.state = 'error';
     const loadingEl = scrubber.querySelector('.season-scrubber-loading');
@@ -169,6 +234,11 @@
   // the URL write — used by the popstate handler so re-applying a
   // browser-back-restored ``?d=`` doesn't re-write history.
   const commitDate = (dateKey, opts = {}) => {
+    // SNOW-927: a non-silent commit is the visitor choosing a day, which
+    // retires any boot ``?d=`` still waiting on a country's ratings (see
+    // ``pendingBootDate``). Without this, a merge landing a second after
+    // someone scrubbed would yank the map back to the URL's date.
+    if (!opts.silent) pendingBootDate = null;
     const pct = dateKeyToPct(dateKey);
     thumb.style.left = pct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(pct)));
@@ -282,7 +352,9 @@
   // it (which positions the thumb + queues the repaint once the ratings
   // cache resolves). Otherwise fall back to today (SNOW-793).
   //
-  // SNOW-794: the test is the CALENDAR's — parseable and not in the future.
+  // SNOW-794: the test is the CALENDAR's — parseable and inside the same
+  // range the grid offers (SNOW-927: that range's ceiling follows the data,
+  // so this reaches tomorrow when tomorrow has been published).
   // It was ``isInSeason``, which is narrower than what the picker offers:
   // the ratings payload is the whole archive, so the calendar pages back
   // years, and a day it offered — and committed — was then refused on
@@ -296,13 +368,28 @@
   // pointed somewhere false — which is also what became of the clamped
   // off-season thumb SNOW-793's own boot fallback describes below. The
   // clamp still happens; there is simply nothing on screen to see it.
-  const isSelectable = (dateKey) => {
-    if (window.pwaScrubberCore) return window.pwaScrubberCore.isSelectableDate(dateKey, todayMs);
+  // SNOW-927: the bound is a parameter rather than a closure read, because
+  // boot asks this question twice against two different ceilings — see
+  // below.
+  const isSelectable = (dateKey, maxMs) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.isSelectableDate(dateKey, maxMs);
     const ms = Date.parse(dateKey);
-    return Number.isFinite(ms) && ms <= todayMs;
+    return Number.isFinite(ms) && ms <= maxMs;
   };
   const bootDate = readUrlDateParam();
-  if (bootDate && isSelectable(bootDate)) {
+  // SNOW-927, phase one of two. The authoritative ceiling is
+  // ``latestSelectableMs``, and at this point in the file it is still just
+  // today: the ratings payload that moves it has not resolved, and this test
+  // runs synchronously so that the thumb below can. Testing against today
+  // here would therefore refuse every ``?d=<tomorrow>`` on a cold load —
+  // which is to say, all of them, since a cold load is the only kind a
+  // shared link gets.
+  //
+  // So accept optimistically as far as the ceiling could possibly move, and
+  // let the deferred block re-ask once it actually has. The bet is right in
+  // the ordinary case (a link sent at 5pm for tomorrow's tour) and visibly
+  // self-corrects in the rare one.
+  if (bootDate && isSelectable(bootDate, todayMs + MAX_FORWARD_MS)) {
     // Defer until both the map style and the ratings cache are ready —
     // commitDate calls repaintRegionsForDate which needs MAP and the
     // regions source up. The thumb position can be set immediately so
@@ -317,6 +404,20 @@
     thumb.style.left = bootPct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(bootPct)));
     Promise.all([MAP_READY_PROMISE, getSeasonRatings().catch(() => null)]).then(() => {
+      // SNOW-927, phase two. ``latestSelectableMs`` is now derived from the
+      // payload, so this is the real answer to the question phase one had to
+      // guess at. A day past it was never reachable — fall back to today, the
+      // same thing an unparseable ``?d=`` gets, and ``commitDate`` moves the
+      // thumb back with it.
+      if (!isSelectable(bootDate, latestSelectableMs)) {
+        // SNOW-927: "not yet", not "never". This payload is Switzerland's;
+        // the countries `map.js` is still loading may carry the day. Hold it
+        // for the merge handler and show today meanwhile, rather than
+        // discarding a link that is about to become valid.
+        pendingBootDate = bootDate;
+        if (todayKey) commitDate(todayKey, { silent: true });
+        return;
+      }
       commitDate(bootDate, { silent: true });
     });
   } else if (todayKey) {
@@ -369,7 +470,16 @@
   // history, and the bare URL it restores already means today.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
-    if (d && isSelectable(d)) {
+    // SNOW-927: a back step is the visitor navigating, and it re-reads the
+    // URL itself — so whatever boot was still holding is superseded.
+    pendingBootDate = null;
+    // SNOW-927: the authoritative ceiling, directly — no two-phase dance like
+    // boot's. Back-nav commits synchronously and deferring it behind the
+    // ratings promise would make the button feel slow and could race a second
+    // press. By the time anyone can press back the payload has resolved; in
+    // the sliver where it has not, the ceiling is today, which is what this
+    // handler did for its whole life anyway.
+    if (d && isSelectable(d, latestSelectableMs)) {
       commitDate(d, { silent: true });
       return;
     }
@@ -429,7 +539,59 @@
   // no day chosen it invented one outright.
   document.addEventListener('snowdesk:country-ratings-loaded', () => {
     if (!sortedDates || !ratingsCache) return;
+
+    // SNOW-927: rebuild the key list before re-deriving anything from it.
+    // ``sortedDates`` was ``Object.keys(...)`` taken once when the Swiss
+    // fetch resolved, and the merge adds whole new DATE KEYS to the same
+    // object — so it does not grow, and everything reading it is answering
+    // about Switzerland.
+    //
+    // That made this handler quietly not do its own job: its comment says it
+    // re-runs the effective-last computation for the newly-active country
+    // set, and it was re-running it over a list that could not contain that
+    // country's later days. It matters more now, because
+    // ``snapToNearestDataDay`` reads the same list on every drag — so a day
+    // the ceiling had just made reachable would snap back to the nearest
+    // SWISS day, and the picker would offer a date the scrubber physically
+    // could not land on.
+    sortedDates = Object.keys(ratingsCache).sort();
+
     effectiveTodayKey = deriveEffectiveTodayKey(sortedDates, ratingsCache);
+
+    // SNOW-927: and the ceiling, which without this would be derived from
+    // SWITZERLAND ALONE for the life of the page. ``getSeasonRatings``
+    // fetches ``?country=ch`` and nothing else (map_shared.js); every other
+    // country arrives here, and the merge in ``map.js`` adds whole new DATE
+    // KEYS to the same cache object, not just regions to existing ones. So
+    // for someone following only France the first ceiling is computed from a
+    // payload their country is not in, and the day this ticket exists to
+    // reach would never become reachable.
+    //
+    // Read from ``ratingsCache`` rather than ``sortedDates``: the latter is
+    // ``Object.keys(...)`` taken once when the fetch resolved and does not
+    // grow with the merge, so a new date is invisible to it. (That staleness
+    // predates this ticket and still affects ``effectiveTodayKey`` on the
+    // line above — untouched here rather than fixed in passing.)
+    latestSelectableMs = ceilingMsFrom(
+      window.pwaCalendarCore
+        ? window.pwaCalendarCore.latestKnownDate(ratingsCache, todayKey)
+        : todayKey,
+    );
+
+    // SNOW-927: and now the boot ``?d=`` that was held because this
+    // country's ratings had not arrived when it was checked. Silent, because
+    // the URL already says this — the visitor asked for it by opening the
+    // link, and re-writing it would be writing back what is already there.
+    //
+    // ``pendingBootDate`` is cleared by any non-silent commit and by
+    // popstate, so a drag or a calendar pick in the second before the merge
+    // wins and this does nothing. Cleared here too, so a later merge cannot
+    // apply it a second time over a day the visitor has since chosen.
+    if (pendingBootDate && isSelectable(pendingBootDate, latestSelectableMs)) {
+      const held = pendingBootDate;
+      pendingBootDate = null;
+      commitDate(held, { silent: true });
+    }
   });
 
 })();

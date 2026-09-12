@@ -222,8 +222,14 @@ describe('isSelectableDate', () => {
   // used to refuse any ?d= outside the season, which meant a day the
   // CALENDAR offered — it pages back over the whole archive — was committed
   // on the click and then refused on reload, leaving the map uncoloured
-  // while the URL and the grid both named it. The future is the only hard
-  // stop, which is the calendar's own rule.
+  // while the URL and the grid both named it. Both surfaces answer to one
+  // bound, which is the calendar's.
+  //
+  // SNOW-927 generalised what that bound IS. It was today, hardcoded at
+  // every call site; it is now whatever the caller derives from the ratings
+  // payload, which from about 16:00 is tomorrow. So these cases are about a
+  // CEILING, not about the clock — `MAX_MS` below happens to be today in
+  // most of them because that is still the common case.
   const TODAY_MS = Date.parse('2026-04-30T00:00:00Z');
 
   it('accepts today', () => {
@@ -241,8 +247,17 @@ describe('isSelectableDate', () => {
     expect(core.isSelectableDate('2024-07-01', TODAY_MS)).toBe(true);
   });
 
-  it('refuses the future', () => {
+  it('refuses a day past the ceiling', () => {
     expect(core.isSelectableDate('2026-05-01', TODAY_MS)).toBe(false);
+  });
+
+  it('accepts tomorrow once the ceiling has moved to it', () => {
+    // SNOW-927: same date as the case above, one day of published bulletin
+    // later. Nothing about the function changed — the caller stopped
+    // handing it the clock.
+    const TOMORROW_MS = Date.parse('2026-05-01T00:00:00Z');
+    expect(core.isSelectableDate('2026-05-01', TOMORROW_MS)).toBe(true);
+    expect(core.isSelectableDate('2026-05-02', TOMORROW_MS)).toBe(false);
   });
 
   it('refuses an unparseable date key', () => {
