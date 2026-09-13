@@ -1206,7 +1206,15 @@
 
     if (id === 'routes') {
       if (!r.dbAvailable) return { status: 'unknown' };
-      return overlayAnswer(overlayState(r, 'routes'), t, 'routes');
+      var routes = overlayState(r, 'routes');
+      if (routes.status === 'yes') return { status: 'yes' };
+      // SNOW-950: the routes panel is its own cached surface, and having
+      // read one is having something to read offline whatever the map
+      // overlay holds. The two must agree — this row answered from the
+      // overlay alone and said Yes while the panel beside it said "couldn't
+      // be loaded".
+      if ((r.panelKeys || []).indexOf('routes') >= 0) return { status: 'yes' };
+      return overlayAnswer(routes, t, 'routes');
     }
 
     if (id === 'reports') {

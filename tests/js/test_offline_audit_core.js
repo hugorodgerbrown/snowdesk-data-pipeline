@@ -909,6 +909,38 @@ describe('the rows that answer about what the user will see', () => {
     expect(row(report, 'routes').reason).toBe('principal');
   });
 
+  it('answers Yes for routes from the panel store alone (SNOW-950)', () => {
+    // The routes panel caches its own rows (static/js/routes_offline.js),
+    // so a device holding them has routes to read whatever the map overlay
+    // holds — the same reading the reports row takes from its own panel.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelKeys: ['routes'],
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('yes');
+  });
+
+  it('does not let another account’s overlay pass as a panel row', () => {
+    // The panel store is principal-partitioned too, so a device with
+    // neither a readable overlay nor a routes row still answers No — and
+    // for the reason that names the cause.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: { routes: { features: 4, principal: 'acct-2' } },
+        panelKeys: ['observations'],
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+    expect(row(report, 'routes').reason).toBe('principal');
+  });
+
   it('answers unknown for an overlay that is readable and empty', () => {
     // Nothing stored because there is nothing to store. Not Yes (nothing
     // will appear) and not No (nothing is broken).
