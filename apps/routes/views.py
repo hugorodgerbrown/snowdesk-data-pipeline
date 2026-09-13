@@ -452,10 +452,11 @@ def route_list(request: HttpRequest) -> HttpResponse:
     No freshness headers and no offline-cache sidecar, both of which
     ``favourite_list`` carries. A route has no safety-critical constituent
     to go stale (it is the user's own geometry, not a danger rating), and
-    caching routes for offline reads belongs to the map layer — SNOW-687's
-    ``routes_geojson`` below, write-through cached by
-    static/js/map_overlay_offline_cache.js. The panel itself still says so
-    via its own failed-load line.
+    no sidecar is needed because the panel's offline read (SNOW-950,
+    static/js/routes_offline.js) stores this response's rendered body
+    verbatim rather than a record per route. The map layer's own copy is
+    SNOW-687's ``routes_geojson`` below, write-through cached by
+    static/js/map_overlay_offline_cache.js.
 
     SNOW-764 WIDENED THE ANONYMOUS BRANCH. 403 is still the answer for a
     visitor with nothing pending, which is every visitor who has not

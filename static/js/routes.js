@@ -114,6 +114,15 @@
  * silently dropped. Rename and delete are online-only too, matching every
  * other panel's edits.
  *
+ * THE LIST DOES READ OFFLINE, as of SNOW-950. Every successful load's rows
+ * are persisted by static/js/routes_offline.js, and a failed load repaints
+ * them before this module falls back to its "couldn't be loaded" line —
+ * minus each row's "…" menu and each pending share's Save, because the
+ * actions behind them are the online-only ones described above. The map's
+ * routes layer has been readable offline since SNOW-687, and the panel
+ * naming those same routes was the surface that still went away with the
+ * signal.
+ *
  * EXCLUSIVITY. window.MapSheet.attach registers this sheet with
  * window.pwaMapOverlays (static/js/map_overlay_exclusivity.js) under its
  * own DOM id and calls opening() before revealing it, so the
@@ -150,6 +159,7 @@
     'signin-prompt': 'Sign in to save a route.',
     'signin-cta': 'Sign in',
     'list-failed': "Your routes couldn't be loaded — check your connection.",
+    'list-cached': 'Showing your saved routes — last updated %(time)s.',
     'rename-failed': "That name couldn't be saved. Try again.",
     'upload-offline': 'You need to be online to upload a route.',
     'upload-invalid':
@@ -160,6 +170,10 @@
     'share-copied': 'Link copied.',
     'share-failed': "That link couldn't be created. Try again.",
   });
+
+  // ``%(name)s`` substitution by name, the shape every translated string
+  // with a value in it uses (see static/js/i18n_strings.js).
+  const interpolate = self.pwaStrings.interpolate;
 
   const CREATE_URL = btn.dataset.routeCreateUrl;
   const LIST_URL = btn.dataset.routeListUrl;
@@ -770,26 +784,107 @@
     });
   }
 
-  // The list is fetched, and this panel opens offline while its list does
-  // not load offline. Say so, rather than leaving the loading line up
-  // forever — and never fall through to routes:list's own empty state,
-  // which would tell the user they have no routes when the request merely
-  // failed. Both htmx failure events are covered: responseError is a
-  // non-2xx reply, sendError is no reply at all (the offline case).
+  // The list is fetched, and this panel opens offline. Say so, rather than
+  // leaving the loading line up forever — and never fall through to
+  // routes:list's own empty state, which would tell the user they have no
+  // routes when the request merely failed. Both htmx failure events are
+  // covered: responseError is a non-2xx reply, sendError is no reply at all
+  // (the offline case).
   //
-  // Unlike the favourites equivalent this is the ONLY writer of that
-  // element: there is no routes_offline.js repainting cached rows over the
-  // line. SNOW-687 caches the map LAYER's geometry offline
-  // (map_overlay_offline_cache.js), not this list's rows.
+  // SNOW-950: ask the cache FIRST, and draw that failure line only on a
+  // miss. The routes were readable offline as lines on the map beside this
+  // panel the whole time (SNOW-687 caches the routes GeoJSON) — it was the
+  // user's own list, the one surface that names them, that went away with
+  // the signal.
+  //
+  // Nothing is drawn synchronously before the cache answers, so there is no
+  // failure line flashing up and being replaced a moment later.
   for (const name of ['htmx:responseError', 'htmx:sendError']) {
     document.addEventListener(name, function (event) {
       const rows = sheet.querySelector('[data-routes-rows]');
       if (!rows || !event.detail || event.detail.target !== rows) return;
-      const p = document.createElement('p');
-      p.className = 'text-sm text-text-2';
-      p.textContent = STRINGS['list-failed'];
-      rows.replaceChildren(p);
+      paintCachedRows(rows).then(function (painted) {
+        if (!painted) showListFailure(rows);
+      });
     });
+  }
+
+  /** Draw this panel's own failure line in place of the rows.
+   *
+   * @param {Element} rows The panel's rows container.
+   * @returns {void}
+   */
+  function showListFailure(rows) {
+    const p = document.createElement('p');
+    p.className = 'text-sm text-text-2';
+    p.textContent = STRINGS['list-failed'];
+    rows.replaceChildren(p);
+  }
+
+  /** Repaint the rows from the last list response this device stored.
+   *
+   * The cached value is the server's rendered markup, verbatim — see
+   * static/js/routes_offline.js for why it is the markup and not a record
+   * per route. Painting it keeps every translation and every measurement
+   * exactly as the server wrote them, and this module adds one line of its
+   * own saying where the rows came from.
+   *
+   * Three things have to happen around the paint:
+   *
+   *   - ``htmx.process``, because these rows arrive carrying their own
+   *     attributes and nothing else would bind them;
+   *   - every row's "…" menu comes OUT. Plan a trip, Share, Rename and
+   *     Delete are all online-only, and a control that silently does
+   *     nothing is worse than one that is not there;
+   *   - so does every pending share's Save (SNOW-764's claim is an
+   *     ``hx-post``), for the same reason.
+   *
+   * No ``pwaRelativeTime.refresh``, unlike report.js's equivalent: a route
+   * row carries no ``<time data-relative-time>`` to re-age. Row zoom needs
+   * nothing either — the click handler is delegated on the SHEET via
+   * ``closest()``, so cached rows are pressable without rebinding.
+   *
+   * @param {Element} rows The panel's rows container.
+   * @returns {Promise<boolean>} Whether anything was painted.
+   */
+  async function paintCachedRows(rows) {
+    const cache = window.pwaRoutesOffline;
+    if (!cache) return false;
+    const record = await cache.read();
+    if (!record) return false;
+    rows.innerHTML = record.body;
+    if (typeof htmx !== 'undefined') htmx.process(rows);
+    rows.querySelectorAll('[data-overflow-menu]').forEach(function (menu) {
+      menu.remove();
+    });
+    rows.querySelectorAll('[data-row-claimed]').forEach(function (form) {
+      form.remove();
+    });
+    const line = document.createElement('p');
+    line.className = 'mt-3 text-xs text-text-3 font-mono';
+    line.setAttribute('data-testid', 'route-list-cached');
+    line.textContent = interpolate(STRINGS['list-cached'], {
+      time: formatHHMM(record.cached_at),
+    });
+    rows.appendChild(line);
+    return true;
+  }
+
+  /** Format an ISO timestamp as "HH:MM" (24h, zero-padded).
+   *
+   * Mirrors report.js's and favourites_offline.js's own copies — the other
+   * surfaces that stamp a cached read — so all three say the age of a cache
+   * the same way. Returns '' on a parse failure.
+   *
+   * @param {?string} isoValue An ISO 8601 instant.
+   * @returns {string}
+   */
+  function formatHHMM(isoValue) {
+    if (!isoValue) return '';
+    const d = new Date(isoValue);
+    if (Number.isNaN(d.valueOf())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   // ---------------------------------------------------------------------------

@@ -257,7 +257,7 @@ each of them read Yes on a device that would have shown the user nothing
 | Danger ratings | any `/api/ratings/` entry | the feed for the day the cached page will open on |
 | Region outlines | any `/api/regions.geojson` entry | the country the cold open asks for |
 | Bulletins you have opened | any cached page that is not the map or an account page | a page whose path is a bulletin |
-| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something |
+| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something — or, for routes and reports, the panel's own cached rows |
 
 **The ratings row is the one that mattered most.** The map's cold open
 fetches `RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch'`, and
@@ -290,6 +290,35 @@ states are told apart — Yes, No (absent, or another account's, with the
 note saying which), and **unknown** for a row that is readable and empty,
 because "you have no routes" is neither a capability nor a fault and
 belongs on neither side of the tally.
+
+**Three of those rows have a second source**, because the overlay is not
+the only offline copy. The saved-places row also passes on a
+`data:favourites` row, and the reports (SNOW-661) and routes (SNOW-950)
+rows also pass on a `data:panel_rows` row for their panel: a device
+holding the panel's last list response has something to read there
+whatever the map overlay holds. Leaving the routes row on the overlay
+alone was what let the report say Yes while the panel beside it said
+"Your routes couldn't be loaded" — a row and a surface disagreeing about
+one thing on one device is the failure this panel cannot survive.
+
+That second source is **principal-checked like the overlays**, and for the
+same reason: every row in `data:panel_rows` is one user's own list, and
+each panel's own module refuses a row stamped for another account. The
+collector reads the stamp rather than the key alone (`readPanelRows`), and
+`panelRowState` compares it **untouched** — which is the one place this
+check is stricter than `overlayState`. A row carrying no stamp at all,
+written before SNOW-661 began stamping them, matches nobody including an
+anonymous reader, because that is what the panel does with it. Counting it
+would make the report and the panel disagree the other way round.
+
+It is also **content-checked like the overlays**. The idle warm stores a
+successful list response for a user with nothing to list, so such a user
+carries a panel row whose body is the empty clause and nothing else — the
+panel's `features: 0`. The collector parses the body and counts its
+`<li>` rows (every panel row is one, from `includes/_ugc_panel_row.html`),
+and a readable row holding none answers **unknown** with the same
+"you have not uploaded any routes yet" note an empty overlay gets, rather
+than Yes, and rather than the No an absent overlay alone would have given.
 
 ## Two halves, doing two jobs
 

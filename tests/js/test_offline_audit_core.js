@@ -105,7 +105,10 @@ function healthy(overrides) {
         weather: { features: 4 },
         routes: { features: 1, principal: null },
       },
-      panelKeys: ['observations'],
+      // SNOW-950: each panel's cached rows, stamped with the account they
+      // were cached for — this fixture's principal is null (anonymous), so
+      // the row reads back.
+      panelRows: { observations: { principal: null, rows: 2 } },
       mutations: { count: 0 },
       dbAvailable: true,
     },
@@ -907,6 +910,143 @@ describe('the rows that answer about what the user will see', () => {
 
     expect(row(report, 'routes').status).toBe('no');
     expect(row(report, 'routes').reason).toBe('principal');
+  });
+
+  it('answers Yes for routes from the panel store alone (SNOW-950)', () => {
+    // The routes panel caches its own rows (static/js/routes_offline.js),
+    // so a device holding them has routes to read whatever the map overlay
+    // holds — the same reading the reports row takes from its own panel.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { principal: null, rows: 1 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('yes');
+  });
+
+  it('does not let another account’s overlay pass as a panel row', () => {
+    // The panel store is principal-partitioned too, so a device with
+    // neither a readable overlay nor a routes row still answers No — and
+    // for the reason that names the cause.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: { routes: { features: 4, principal: 'acct-2' } },
+        panelRows: { observations: { principal: null, rows: 2 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+    expect(row(report, 'routes').reason).toBe('principal');
+  });
+
+  it('refuses a routes panel row cached under another account', () => {
+    // The panel store is partitioned exactly as the overlays are:
+    // routes_offline.js compares the stored principal untouched and hands
+    // this session nothing, so counting the row would put the report and
+    // the panel back in disagreement — the other way round from the fault
+    // SNOW-950 fixed.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { principal: 'acct-2', rows: 1 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+  });
+
+  it('refuses an observations panel row cached under another account', () => {
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: {},
+        panelRows: { observations: { principal: 'acct-2', rows: 1 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'reports').status).toBe('no');
+  });
+
+  it('refuses a panel row carrying no principal at all', () => {
+    // A row written before SNOW-661 stamped one belongs to nobody, and the
+    // panel's own read refuses it for the anonymous reader too.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { rows: 1 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+  });
+
+  it('answers unknown for a routes panel row that lists nothing', () => {
+    // The idle warm stores a successful list response for a user with no
+    // routes, and its body is the empty clause alone. That is the panel's
+    // ``features: 0``: readable, and not something to read — so unknown
+    // with the empty note, not Yes, and not the No an absent overlay
+    // alone would have given.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('unknown');
+    expect(row(report, 'routes').reason).toBe('empty');
+    expect(row(report, 'routes').note).toBe('note-empty-routes');
+  });
+
+  it('answers unknown for an observations panel row that lists nothing', () => {
+    const report = core.buildReport(
+      healthy({
+        overlays: {},
+        panelRows: { observations: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'reports').status).toBe('unknown');
+    expect(row(report, 'reports').reason).toBe('empty');
+  });
+
+  it('lets a readable overlay outrank an empty panel row', () => {
+    // The map overlay draws four routes; the panel's cached list happens
+    // to be older and empty. Something IS there to see offline.
+    const report = core.buildReport(
+      healthy({
+        overlays: { routes: { features: 4, principal: null } },
+        panelRows: { routes: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('yes');
+  });
+
+  it('reads a panel row with no row count as nothing to count on', () => {
+    // ``rows`` is null when the collector could not parse the body, and a
+    // body it could not parse is not one the panel can paint either.
+    const report = core.buildReport(
+      healthy({
+        overlays: {},
+        panelRows: { routes: { principal: null, rows: null } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
   });
 
   it('answers unknown for an overlay that is readable and empty', () => {

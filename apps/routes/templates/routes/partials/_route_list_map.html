@@ -18,10 +18,11 @@ rather than sitting in a bordered box of its own — rows are not cards, on
 any of the four panels.
 
 No offline-cache sidecar, unlike _favourite_list_map.html's
-``roster_payload``. Caching routes for offline reads arrives with the map
-layer in SNOW-687; until something draws a route there is nothing an
-offline reader could do with one, and the panel's own failed-load line
-(routes.js) covers the offline case honestly in the meantime.
+``roster_payload``, and none is needed: SNOW-950 stores THIS RESPONSE's
+markup verbatim (static/js/routes_offline.js) and routes.js repaints it
+when a later load fails, so every name and measurement the server wrote
+survives the trip without anything here being rebuilt in JavaScript. The
+map layer caches separately (SNOW-687), as geometry for the line.
 
 Context:
     routes         : list[Route] — the requesting user's own routes

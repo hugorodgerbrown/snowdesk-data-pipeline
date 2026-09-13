@@ -191,7 +191,12 @@
    *   principal it was stamped with. Presence alone is not an answer: a row
    *   stamped for another account is refused by the reader, and an empty
    *   FeatureCollection draws nothing.
-   * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
+   * @property {Record<string, {principal?: string|null, rows?: number|null}>} [panelRows]
+   *   SNOW-950: each ``data:panel_rows`` row — which panel it belongs to,
+   *   the principal it was stamped with, and how many rows its body holds.
+   *   Presence alone is not an answer here either: the panel refuses a row
+   *   from another session, and a warm for a user with nothing to list
+   *   stores a body holding only the empty clause.
    * @property {{count?: number|null}} [mutations]
    * @property {string|null} [networkMode] SNOW-922: the ``meta:app``
    *   ``network.mode`` row — ``'auto'``, ``'offline'`` (the worker's own
@@ -747,6 +752,42 @@
   }
 
   /**
+   * Whether one cached panel's rows will read back for THIS account
+   * (SNOW-950).
+   *
+   * The test ``overlayState`` applies to an account-scoped overlay, and
+   * for the same reason — every row in this store is one user's own list,
+   * so there is no public resource to exempt and the key alone would call
+   * another session's row a Yes.
+   *
+   * One difference from ``overlayState``, and it is the panels' rule
+   * rather than a choice made here: ``observations_offline.js`` and
+   * ``routes_offline.js`` compare the stored principal UNTOUCHED, so a row
+   * carrying no stamp at all — written before SNOW-661 — matches nobody,
+   * including an anonymous reader whose own principal is null. Normalising
+   * an absent stamp to null here would have this report promise rows the
+   * panel will refuse to paint.
+   *
+   * The answer has the overlay's three states, for the overlay's reason: a
+   * row this account can read may still hold nothing. The idle warm stores
+   * a successful list response for a user with no routes, and that body is
+   * the panel's empty clause — readable, and not something to read.
+   * Reporting it as Yes would count a device towards "available offline"
+   * for content it does not have.
+   *
+   * @param {AuditReadings} r
+   * @param {string} key The panel's key — 'observations' | 'routes'.
+   * @returns {{status: 'yes'|'empty'|'no'}}
+   */
+  function panelRowState(r, key) {
+    var row = (r.panelRows || {})[key];
+    if (!row) return { status: 'no' };
+    if (row.principal !== (r.currentPrincipal || null)) return { status: 'no' };
+    if (typeof row.rows !== 'number') return { status: 'no' };
+    return row.rows > 0 ? { status: 'yes' } : { status: 'empty' };
+  }
+
+  /**
    * One overlay row's answer, with the note that explains a No.
    *
    * @param {{status: string, reason?: string, principal?: string|null}} state
@@ -1206,7 +1247,21 @@
 
     if (id === 'routes') {
       if (!r.dbAvailable) return { status: 'unknown' };
-      return overlayAnswer(overlayState(r, 'routes'), t, 'routes');
+      var routes = overlayState(r, 'routes');
+      if (routes.status === 'yes') return { status: 'yes' };
+      // SNOW-950: the routes panel is its own cached surface, and having
+      // read one is having something to read offline whatever the map
+      // overlay holds. The two must agree — this row answered from the
+      // overlay alone and said Yes while the panel beside it said "couldn't
+      // be loaded". Readable by THIS account: a row cached under another
+      // one would make them disagree the other way.
+      var routesPanel = panelRowState(r, 'routes');
+      if (routesPanel.status === 'yes') return { status: 'yes' };
+      // A panel row this account can read that lists nothing is the
+      // user's own list saying it is empty — the overlay's ``features: 0``
+      // — and outranks an overlay that is merely absent.
+      if (routesPanel.status === 'empty') return overlayAnswer(routesPanel, t, 'routes');
+      return overlayAnswer(routes, t, 'routes');
     }
 
     if (id === 'reports') {
@@ -1215,8 +1270,11 @@
       if (reports.status === 'yes') return { status: 'yes' };
       // The observations panel is its own cached surface, and having read
       // one is having something to read offline whatever the map overlay
-      // holds.
-      if ((r.panelKeys || []).indexOf('observations') >= 0) return { status: 'yes' };
+      // holds — as long as this account is the one it was cached for
+      // (SNOW-950).
+      var reportsPanel = panelRowState(r, 'observations');
+      if (reportsPanel.status === 'yes') return { status: 'yes' };
+      if (reportsPanel.status === 'empty') return overlayAnswer(reportsPanel, t, 'reports');
       return overlayAnswer(reports, t, 'reports');
     }
 

@@ -286,8 +286,9 @@ describe('the offline fallback only claims favourites requests (SNOW-722)', () =
    * failed HTMX request on the page — and the suffix match is a bare
    * substring. ``/routes/partials/list/`` contains ``/partials/list/``, so
    * offline the routes panel was wiped and repainted with favourite cards
-   * under its own "TRACKS" heading. routes.js deliberately has no offline
-   * cache and renders its own "can't load offline" line instead.
+   * under its own "TRACKS" heading. routes.js paints that panel itself —
+   * from its own cache (routes_offline.js, SNOW-950) or its own failure
+   * line — and neither may be overwritten from here.
    */
 
   const ROUTES_PATH = '/routes/partials/list/';

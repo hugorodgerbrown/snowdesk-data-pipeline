@@ -64,6 +64,15 @@ exactly what a signed-out recipient has not got.
 * **Dead tokens are pruned on read.** `pending_shares()` drops any token
   whose share has expired or whose route was deleted, so a stale entry stops
   costing a query rather than sitting in the cookie until the session ends.
+* **A pending row reaches durable on-device storage.** SNOW-950 persists the
+  routes panel's rendered list body in IndexedDB (`data:panel_rows`,
+  `static/js/routes_offline.js`), and a pending share's row — its name and
+  meta line — is part of that body, stamped with a `null` principal for an
+  anonymous session. That widens nothing beyond the per-browser scope above:
+  the same browser already saw the row online, and the claim control is
+  stripped from a cached repaint. But it is the first place a pending share's
+  content outlives one page load, which matters on a shared device where an
+  anonymous reader is whoever holds the phone.
 * **`routes_eligible` no longer means "authenticated"** in
   `apps.public.views._routes_context`. It means "there is a routes list for
   this request"; `routes_upload_eligible` is the authentication question

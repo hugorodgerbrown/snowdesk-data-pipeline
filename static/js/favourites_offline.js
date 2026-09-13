@@ -352,9 +352,10 @@
    * The failure handlers below are bound to ``document.body``, so they are
    * offered every failed HTMX request on the page. Anything that is not a
    * favourites partial must be left to whoever owns it — the routes panel
-   * in particular renders its own "can't load offline" line (see
-   * ``static/js/routes.js``), and there is deliberately no offline cache
-   * behind it.
+   * in particular has an offline cache of its own since SNOW-950
+   * (``static/js/routes_offline.js``, painted by ``static/js/routes.js``),
+   * and a favourites handler repainting over it would be the SNOW-722
+   * fault again with cached rows instead of a failure line.
    *
    * Resolved through ``URL`` so a relative ``hx-get``, an absolute path and
    * a fully-qualified URL all reduce to a comparable pathname, and a query
