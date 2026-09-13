@@ -41,6 +41,8 @@ CHECK_ID_PREFIX = "core.site_base_url"
 SW_DEV_SHELL_BYPASS_CHECK_ID_PREFIX = "core.sw_dev_shell_bypass"
 
 # E001 — sw.js has no substitutable CACHE_VERSION assignment (SNOW-590).
+# E002 — sw.js could not be read at all.
+# E003 — sw.js has no substitutable BUILD_IDENTITY assignment (SNOW-933).
 SW_CACHE_VERSION_CHECK_ID_PREFIX = "core.sw_cache_version"
 
 # E001 — an environment-derived setting failed its spec validator.
@@ -147,7 +149,7 @@ def check_sw_dev_shell_bypass(app_configs: Any, **kwargs: Any) -> list[Error]:
 def check_sw_cache_version_substitutable(
     app_configs: Any, **kwargs: Any
 ) -> list[Error]:
-    """Verify ``sw.js`` still carries a substitutable ``CACHE_VERSION`` line (SNOW-590).
+    """Verify ``sw.js`` still carries both substitutable assignments (SNOW-590).
 
     Since SNOW-590 the shell cache name is derived from the shell content
     hash and injected into the response by ``serve_sw``; the value in the
@@ -162,8 +164,18 @@ def check_sw_cache_version_substitutable(
     earlier still: ``manage.py check`` runs in ``tox -e django-checks`` (a
     required CI job) and ``migrate`` runs it on every deploy, so a broken
     placeholder is caught before it can reach a browser.
+
+    SNOW-933 added ``serve_sw``'s second substitution, ``BUILD_IDENTITY``,
+    and it is probed here too — one check for "are serve_sw's rewrites
+    still applicable", rather than one per constant. Its failure is
+    cosmetic where the cache name's is structural, but it is a failure a
+    user reads: the banner would offer an update from "UNSUBST".
     """
-    from apps.core.sw_shell import SW_JS_PATH, inject_cache_version
+    from apps.core.sw_shell import (
+        SW_JS_PATH,
+        inject_build_identity,
+        inject_cache_version,
+    )
 
     try:
         source = SW_JS_PATH.read_text(encoding="utf-8")
@@ -194,6 +206,24 @@ def check_sw_cache_version_substitutable(
                     "picking up shell changes. See apps/core/sw_shell.py."
                 ),
                 id=f"{SW_CACHE_VERSION_CHECK_ID_PREFIX}.E001",
+            )
+        ]
+
+    try:
+        inject_build_identity(source, build="probe", release="probe")
+    except ValueError:
+        return [
+            Error(
+                "No substitutable BUILD_IDENTITY assignment in static/js/sw.js.",
+                hint=(
+                    "serve_sw rewrites the `const BUILD_IDENTITY = {...};` "
+                    "object at serve time with the git SHA and release label "
+                    "of the build being served (SNOW-933). Restore that exact "
+                    "form — without it the update banner names the "
+                    "placeholder instead of the build it is replacing. See "
+                    "apps/core/sw_shell.py."
+                ),
+                id=f"{SW_CACHE_VERSION_CHECK_ID_PREFIX}.E003",
             )
         ]
 

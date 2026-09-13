@@ -246,6 +246,22 @@ try {
 // looking like a legitimate cache name.
 const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';
 
+// SNOW-933: the build this worker was served from — the git SHA the server
+// was running (`settings.APP_VERSION`) and the release label a person reads
+// (`v34`, or '' on an unnumbered build). Substituted per-response by
+// apps.public.views.serve_sw, on the same required footing as CACHE_VERSION
+// above: a body that cannot be substituted raises rather than shipping the
+// placeholder, because the update banner puts this value on screen and
+// offering an update from "UNSUBST" is worse than the unnumbered copy it
+// replaced.
+//
+// It is a SECOND identity beside CACHE_VERSION, not a replacement for it.
+// CACHE_VERSION is derived from the shell content hash and names a cache;
+// this names a deploy, which is what the server's /api/version answer is
+// also expressed in, and the banner can only compare two strings of the
+// same kind. See docs/decisions/the-update-banner-names-the-worker-being-replaced.md.
+const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };
+
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
 // (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS
 // is on — the exact string 'const DEV_SHELL_BYPASS = false;' is replaced with
@@ -3901,6 +3917,24 @@ self.addEventListener('message', (event) => {
   // this is one page's question about its own next action, not worker state
   // anybody else needs. A caller that sent no port gets no reply and falls
   // back to its own budget, which answers false — the safe direction.
+  // SNOW-933: "which build are you?", asked by sw_register.js when it is
+  // about to label the update banner. The asker is the page, but the answer
+  // is about the worker CONTROLLING it, which is the build the update
+  // replaces — the page's own <meta> names whichever build served its HTML,
+  // and navigations are network-first, so after a deploy that meta is
+  // already the NEW build while this worker is still the old one.
+  //
+  // Replies down the transferred MessagePort (the SNOW-922 pattern above)
+  // rather than to every client: one page asked about its own banner. A
+  // caller that sent no port gets no reply and falls back to its meta.
+  if (event.data && event.data.type === 'build-identity') {
+    const port = event.ports && event.ports[0];
+    port?.postMessage({
+      type: 'build-identity',
+      build: BUILD_IDENTITY.build,
+      release: BUILD_IDENTITY.release,
+    });
+  }
   if (event.data && event.data.type === 'can-open-offline') {
     const port = event.ports && event.ports[0];
     const replied = _canOpenOffline()

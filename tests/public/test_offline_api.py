@@ -246,6 +246,61 @@ def test_sw_kill_file_exists_on_disk() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Build identity (SNOW-933)
+# ---------------------------------------------------------------------------
+
+
+@override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="34")
+def test_serve_sw_injects_the_build_identity() -> None:
+    """``/sw.js`` carries the build and release label of the serving deploy.
+
+    The worker hands these back when the page asks it ``build-identity``,
+    and the update banner names them — it is the only way the page can
+    learn which build the worker CONTROLLING it came from.
+    """
+    client = Client()
+    response = client.get("/sw.js")
+    body = response.content.decode("utf-8")
+    assert (
+        'const BUILD_IDENTITY = { build: "073ee8c68d7465e9", release: "v34" };' in body
+    )
+    assert "UNSUBSTITUTED" not in body
+
+
+@override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="")
+def test_serve_sw_injects_an_empty_label_for_an_unnumbered_build() -> None:
+    """An unnumbered build reports no label, so the banner falls to the SHAs."""
+    client = Client()
+    response = client.get("/sw.js")
+    body = response.content.decode("utf-8")
+    assert 'release: ""' in body
+
+
+def test_sw_js_on_disk_still_carries_the_build_identity_placeholder() -> None:
+    """The committed value is the inert placeholder, never a real-looking build.
+
+    A plausible literal in source would make a substitution failure
+    indistinguishable from correct operation in devtools.
+    """
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
+    content = path.read_text(encoding="utf-8")
+    assert "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };" in content
+
+
+def test_sw_js_answers_the_build_identity_message() -> None:
+    """The worker source still carries the ``build-identity`` handler.
+
+    ``sw_register.js`` waits 2s for this reply before falling back to the
+    page's meta, and the fallback is silent — so a handler deleted by a
+    refactor would show up only as the unnumbered banner coming back.
+    """
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
+    content = path.read_text(encoding="utf-8")
+    assert "event.data.type === 'build-identity'" in content
+    assert "BUILD_IDENTITY.build" in content
+
+
+# ---------------------------------------------------------------------------
 # Dev shell-cache bypass (SNOW-585)
 # ---------------------------------------------------------------------------
 
