@@ -1,6 +1,6 @@
 # Page audits
 
-Most recent audit: [2026-09-07](2026-09-07.html)
+Most recent audit: [2026-09-13](2026-09-13.html)
 
 ## Purpose
 
@@ -83,7 +83,8 @@ Sections in order, omitting any that would be empty:
 
 | Date | Baseline | Headline |
 |------|----------|----------|
-| [2026-09-07](2026-09-07.html) | `52c57eae` → `8dfafb96` | A single PR deleted five pages the map already covered and shipped a new Trips app whole — but the unsent-email claim survived into two more surfaces than it had last week |
+| [2026-09-13](2026-09-13.html) | `8dfafb96` → `49eec709` | The four-audit-running unsent-email lie is fixed on all 22 surfaces it turned out to occupy — but two other tracked findings (SNOW-674, SNOW-678) were silently cancelled with no comment while their pages are unchanged |
+| [2026-09-07](2026-09-07.html) | `52c57eae` → `8dfafb96` | A single PR deleted five pages the map already covered and shipped a new Trips app whole — but the unsent-email claim survived into two more surfaces than it had last week. Merged retroactively on 2026-09-14, a week late |
 | [2026-08-31](2026-08-31.html) | `4fdb414e` → `52c57eae` | Eight findings closed, including both top recommendations — but the Resend email claim survives a legal-pages rewrite built to fix lines around it |
 | [2026-08-24](2026-08-24.html) | `407e552` → `4fdb414` | Location-is-the-primitive shipped whole; two new account pages have no nav entry |
 | [2026-08-23](2026-08-23.html) | `e43b68e` → `407e552` | Legal and account-split shipped; the unsent email now has a competitor |
