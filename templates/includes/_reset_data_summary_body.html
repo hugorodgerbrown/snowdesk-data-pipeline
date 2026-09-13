@@ -1,9 +1,17 @@
 {% comment %}
-apps/accounts/templates/accounts/partials/_reset_data_summary_body.html —
-"Reset local data" breakdown panel body (SNOW-860).
+templates/includes/_reset_data_summary_body.html — "Reset local data"
+breakdown panel body (SNOW-860).
 
-Content partial for the settings page, included directly beneath the reset
-control it describes. It sat behind a collapsible titled "What this will
+Content partial included directly beneath the reset control it describes,
+on the public offline page at /offline/ (public/offline.html).
+
+SNOW-930 moved it here from apps/accounts/templates/accounts/partials/.
+It lived under the accounts app because account settings was its one
+caller, which is the same accident that ticket exists to correct: nothing
+in it touches an account — every figure is read from Cache Storage,
+IndexedDB and navigator.storage.estimate(), all facts about this browser.
+The bindings are by data-attribute and DOM id, so the move cost
+static/js/reset_data_summary.js nothing. It sat behind a collapsible titled "What this will
 delete" until SNOW-860 took the disclosure off: the rows are the whole
 point of the row, and putting them behind a click meant the warning was
 invisible by default. Rows are painted client-side by static/js/reset_data_summary.js,

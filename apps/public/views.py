@@ -1347,6 +1347,68 @@ def help_page(request: HttpRequest) -> HttpResponse:
     return render(request, "public/help.html", context)
 
 
+# ---------------------------------------------------------------------------
+# offline_page — what this device has saved (SNOW-930)
+# ---------------------------------------------------------------------------
+
+
+def offline_page(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /offline/ page: what Snowdesk has saved on this device.
+
+    Carries the offline-content audit, the reset-local-data control with
+    its size breakdown, and the sync log behind the flag it already had.
+    All three used to sit under the "This device" eyebrow on
+    ``/account/settings/``, which redirects an unauthenticated visitor to
+    sign-in — so the page you need when you have no signal was behind a
+    login. Every reading on it is computed client-side from Cache Storage,
+    IndexedDB and ``navigator.storage.estimate()``; there is no account in
+    any of it. The one server-side read is the waffle flag gating the sync
+    log, which is a flag lookup and nothing more.
+
+    Public deliberately, and not merely as a convenience: the page can be
+    warmed into the offline shell (``SHELL_PAGES``, ``static/js/sw.js``),
+    which a login-gated page can never usefully be — the warm would fetch
+    a redirect to sign-in.
+
+    Its cached copy is still principal-partitioned like any other page's.
+    ``base.html`` stamps every page with the reader's principal and
+    page-side code reads it, so a public page is not an identity-neutral
+    document; see
+    ``docs/decisions/what-this-device-holds-is-a-public-page.md``.
+
+    Context keys:
+        sync_log_visible — True when the ``sync_log`` waffle flag is active
+                            for this request (SNOW-482). ``flag_is_active``
+                            handles ``AnonymousUser`` without a branch, as
+                            ``help_page`` already relies on.
+        default_basemap_key — the deployed default basemap
+                            (``settings.BASEMAP``), the same value the map
+                            page renders as ``data-default-basemap-key``
+                            (SNOW-913). The report names the basemap the
+                            reader is actually looking at, and a visitor who
+                            has never opened the picker has written no
+                            ``localStorage`` preference — so the only way to
+                            know which style they will see is to be told the
+                            default that stands in for it.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered offline-content page.
+
+    """
+    return render(
+        request,
+        "public/offline.html",
+        {
+            "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+            "default_basemap_key": settings.BASEMAP,
+        },
+    )
+
+
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather

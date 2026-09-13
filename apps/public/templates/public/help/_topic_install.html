@@ -63,4 +63,15 @@ docs/offline-first.md for why that exchange was made.
             "Offline downloads" above.
         {% endblocktrans %}
     </p>
+    {# SNOW-930: where to check. The page is public now, so this pointer  #}
+    {# holds for a reader with no account — which was the whole reason    #}
+    {# for moving it off /account/settings/.                              #}
+    <p class="mb-3 last:mb-0" data-testid="help-install-offline-page-pointer">
+        {% url 'public:offline_page' as offline_page_url %}
+        {% blocktrans trimmed with url=offline_page_url %}
+            To see exactly what this device has saved &mdash; and to clear it if something is stuck &mdash; open
+            <a href="{{ url }}" class="underline">Offline content</a>. You do not need an account, and it is worth
+            checking before a trip rather than after.
+        {% endblocktrans %}
+    </p>
 </div>

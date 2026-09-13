@@ -652,7 +652,8 @@ Read these when working in the relevant area:
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
 | Why the Offline mode switch is on the offline page too (pwa_network_mode.js, canOpenOffline, the network-use audit row, why the worker never self-heals) | [`docs/decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md`](docs/decisions/the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on.md) |
 | Why the update banner names the controlling worker's build, not the page's (BUILD_IDENTITY, the `build-identity` message, controllerIdentity, inject_build_identity) | [`docs/decisions/the-update-banner-names-the-worker-being-replaced.md`](docs/decisions/the-update-banner-names-the-worker-being-replaced.md) |
-| Why `activate` re-warms the map page and its scripts (_rewarmShell, _shellSubresources, SHELL_PAGE; a deploy used to leave the app unopenable offline) | [`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](docs/decisions/the-shell-is-rewarmed-after-an-activation.md) |
+| Why `activate` re-warms the map page and its scripts (_rewarmShell, _shellSubresources, SHELL_PAGES; a deploy used to leave the app unopenable offline) | [`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](docs/decisions/the-shell-is-rewarmed-after-an-activation.md) |
+| Why the offline report, reset control and sync log are a public page (/offline/, offline_page, PUBLIC_PRINCIPAL_PATHS, SHELL_PAGES) | [`docs/decisions/what-this-device-holds-is-a-public-page.md`](docs/decisions/what-this-device-holds-is-a-public-page.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |

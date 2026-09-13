@@ -83,6 +83,8 @@ const SW_EXPORTS = [
   '_rewarmShell',
   'SHELL_PAGE',
   'SHELL_SUBRESOURCE_LIMIT',
+  // SNOW-930: the shell pages the activation walks.
+  'SHELL_PAGES',
   // SNOW-912: the feeds the warmed page's own boot will ask for. Warmed
   // with it, or the map opens grey.
   '_shellPageDay',
@@ -713,6 +715,74 @@ describe('_networkFirst principal partitioning (C1)', () => {
     const body = await offline.text();
     expect(body).not.toContain('a@example.com');
     expect(body).toContain("This page isn't available offline");
+  });
+});
+
+describe('/offline/ is public but still principal-partitioned (SNOW-930)', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('refuses a cached copy rendered for another account, like any page', async () => {
+    // The review of #909 rejected an exemption here. `base.html` renders
+    // `pwa-user-id` on every page, so the cached document carries the
+    // principal it was rendered for and page-side code reads it —
+    // `mutation_queue.js`'s `_reconcilePrincipal()` would clear the second
+    // reader's queued mutations and rewrite `mutations.principal` to the
+    // first. Being a public PAGE and being an identity-neutral DOCUMENT
+    // are different things, and only the first is true here.
+    const caches = makeCaches();
+    const request = navRequest('/offline/');
+    let online = basicResponse(pageHtml('acct-uuid-a', 'what this device holds'));
+    const sw = loadSw({
+      caches,
+      fetch: () => (online ? Promise.resolve(online) : Promise.reject(new TypeError('offline'))),
+    });
+    caches.seed(
+      'snowdesk-shell-UNSUBSTITUTED',
+      '/static/offline.html',
+      new Response("<h1>This page isn't available offline</h1>"),
+    );
+
+    await sw._networkFirst(request);
+    await flush();
+    await setStoredPrincipal(null);
+    online = null;
+
+    const body = await (await sw._networkFirst(request)).text();
+    expect(body).not.toContain('what this device holds');
+    // And the reader is not stranded: static/offline.html carries its own
+    // inlined audit and reset for exactly this case.
+    expect(body).toContain("This page isn't available offline");
+  });
+
+  it('serves it back to the reader it was cached for', async () => {
+    const caches = makeCaches();
+    const request = navRequest('/offline/');
+    let online = basicResponse(pageHtml('', 'what this device holds'));
+    const sw = loadSw({
+      caches,
+      fetch: () => (online ? Promise.resolve(online) : Promise.reject(new TypeError('offline'))),
+    });
+
+    await sw._networkFirst(request);
+    await flush();
+    online = null;
+
+    expect(await (await sw._networkFirst(request)).text()).toContain(
+      'what this device holds',
+    );
+  });
+
+  it('warms the page on activation, beside the map', async () => {
+    // The half of SNOW-930 that survives untouched: a page that cannot
+    // itself be opened offline is a poor place to explain why nothing else
+    // can, and a login-gated page could never have been warmed at all —
+    // the warm would fetch a redirect to sign-in.
+    const sw = loadSw({ caches: makeCaches(), fetch: () => Promise.reject(new Error()) });
+
+    expect(sw.SHELL_PAGES).toContain(sw.SHELL_PAGE);
+    expect(sw.SHELL_PAGES).toContain('/offline/');
   });
 });
 

@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-13
 ---
 
 # PWA shell
@@ -2104,10 +2104,11 @@ budget control itself.
 **One reader, two surfaces (SNOW-860).** `basemapDownloadedAreas()` moved
 out of `static/js/map_basemap_downloads.js` into the page-agnostic
 `static/js/basemap_downloaded_areas.js` (`window.pwaBasemapAreas`), which
-both the map page and `/account/settings/` load; the map module delegates
-to it, injecting `MAP_STRINGS` and its orphaned-bucket measurement. The
-settings page's "Reset local data" breakdown reads this same list, so the
-two surfaces cannot disagree about what is on the device — and the sheet
+both the map page and `/offline/` load (SNOW-930 moved that page off
+`/account/settings/`); the map module delegates to it, injecting
+`MAP_STRINGS` and its orphaned-bucket measurement. The "Reset local data"
+breakdown reads this same list, so the two surfaces cannot disagree about
+what is on the device — and the sheet
 now carries a line linking to it, because the shared overview maps, the
 cached pages, the unsent mutations and the preferences are none of them
 listed or budgeted here.
@@ -2604,7 +2605,9 @@ Cache Storage is per-browser, so a signed-in user with a phone and a
 laptop has two independent sets of downloads and two independent budgets.
 Putting that on `/account/settings/` would read as an account setting and
 imply the list follows the user between devices, which would simply be
-untrue. Every string in the sheet is written to say otherwise;
+untrue. SNOW-930 acted on the same reasoning from the other direction: the
+offline-content report and the reset control were on settings for no
+reason but availability, and they are at `/offline/` now. Every string in the sheet is written to say otherwise;
 `tests/js/test_map_downloads_manager.js` asserts the sheet's behaviour and
 `tests/public/test_map_page.py` asserts the row and strings templates as the
 server actually renders them.

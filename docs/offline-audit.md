@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline-content report — offline_audit.js, offline_audit_core.js, bounded storage reads, X-SW-Principal check, AUDIT_SCRIPTS precache
 status: current
-last-reviewed: 2026-09-12
+last-reviewed: 2026-09-13
 ---
 
 # The offline-content report (SNOW-907)
@@ -41,14 +41,25 @@ then falls through to `offline.html` without saying so anywhere.
 **Two hosts, one module.** `static/js/offline_audit.js` paints the same
 report into both:
 
-- **`/account/settings/` → This device → Offline content.** The
+- **`/offline/`** (`apps/public/templates/public/offline.html`). The
   proactive one: the surface to use *before* a journey. Sits above Reset
   local data on purpose — the two answer the same question, and until
   this existed, wiping every download was the only answer on the page.
+  SNOW-930 moved it here from `/account/settings/ → This device`, where
+  it had been gated behind a login for no reason but that settings was
+  the only page available to put it in: every reading on it is this
+  browser's own storage, and the page is most worth opening exactly when
+  the reader may have been signed out. Being public also made it
+  warmable — it is in `SHELL_PAGES` (`static/js/sw.js`), so the
+  activation re-warms it alongside the map page. Its cached copy is still
+  principal-partitioned like any other page's, and deliberately: see
+  [the decision record](decisions/what-this-device-holds-is-a-public-page.md)
+  for why a public page is not an identity-neutral document.
 - **`static/offline.html`.** The reactive one, and the reason the module
-  is precached at all: settings is a Django view, so it loads only if it
-  happens to be in the shell cache for this account. The page a stuck
-  user *can* open is the one that has to carry this.
+  is precached at all: `/offline/` is a Django view, so even warmed it
+  can be missing on a device whose worker has not activated since. The
+  page a stuck user *can always* open is the one that has to carry this.
+  It links to `/offline/` for a reader who does have a connection.
 
 The app-side markup and its `{% trans %}` strings are
 `templates/includes/_offline_audit_panel.html`; the offline page carries

@@ -950,6 +950,21 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // body declares (SNOW-624), which is what makes the entry servable at all.
 const SHELL_PAGE = '/';
 
+// SNOW-930: every page the activation re-warms, of which SHELL_PAGE is the
+// first and the one ``_canOpenOffline`` asks about. ``/offline/`` joins it
+// because it is the page a reader reaches for when the app is not
+// behaving, and a page that cannot itself be opened offline is a poor
+// place to explain why nothing else can. It was only ever gated behind an
+// account by accident (SNOW-930's own reason for existing), and a
+// login-gated page can never usefully be warmed at all — the warm would
+// fetch a redirect to sign-in.
+//
+// A list rather than a bespoke second path: the next page that needs this
+// should be an entry here, not a third mechanism. ``SHELL_PAGE`` stays a
+// single string because ``_canOpenOffline`` asks one question — "will the
+// app open" — and the app is the map.
+const SHELL_PAGES = [SHELL_PAGE, '/offline/'];
+
 // The subresources of a warmed page: same-origin scripts and stylesheets,
 // by attribute. A page whose HTML is saved and whose JavaScript is not
 // does not open — it paints a blank frame — so warming one without the
@@ -3171,6 +3186,36 @@ const PRINCIPAL_UNKNOWN = 'unknown';
 // silently turn every navigation into PRINCIPAL_UNKNOWN.
 const PWA_USER_ID_META = /<meta\s+name=["']pwa-user-id["']\s+content=["']([^"']*)["']/i;
 
+// SNOW-930: /offline/ is a PUBLIC page and is still principal-partitioned,
+// which is deliberate and was not the first answer.
+//
+// The first cut exempted its path from `_principalMatches`, so one cached
+// copy would serve every reader. That is wrong, and the review of #909
+// caught why: `base.html` renders `pwa-user-id` on every page, so the
+// cached document carries the principal it was rendered for, and page-side
+// code reads it. `mutation_queue.js` runs on every public page and
+// `_reconcilePrincipal()` trusts that meta — so serving account A's copy to
+// account B on a shared browser would clear B's queued mutations AND
+// rewrite `mutations.principal` to A, after which every mutation B made
+// was stamped A and discarded at the next drain. Silent data loss, offline,
+// on the one page a stuck reader is told to open.
+//
+// Removing the meta from that page does not fix it: an absent tag makes
+// `_currentPrincipal()` answer `null`, which is a real value meaning
+// ANONYMOUS, so the page would then clear a signed-in reader's queue
+// instead. Making the copy genuinely identity-neutral means giving the
+// page a way to say "do not reconcile against me" and teaching every
+// reader of `pwa-user-id` to honour it — a wider change than the property
+// it buys, and one that widens a surface built to protect queued writes.
+//
+// So the check is retained and the page is partitioned like any other. It
+// costs a SECOND reader of the same browser their cached copy, and they
+// fall through to `static/offline.html`, which carries its own inlined
+// audit and reset for exactly that case. Everything else SNOW-930 exists
+// for is unaffected: the page is public, it needs no login, and it is
+// warmed into the shell for whoever is signed in when the worker
+// activates.
+
 /**
  * True when ``response`` declares ``Cache-Control: no-store``. Uses the
  * same token-split/trim/includes match as ``shouldPersist``'s
@@ -3515,8 +3560,13 @@ async function _rewarmShell() {
       _debugLog('shell.rewarm', { result: 'skipped-offline' });
       return;
     }
+    // SNOW-930: every shell page, in one warm. `_warmCache` walks the list
+    // and pulls each page's own subresources in behind it, deduplicating
+    // against what it has already written — `/offline/` shares base.html
+    // with the map page, so most of the second page's list is already
+    // there by the time it is reached.
     const result = await Promise.race([
-      _warmCache([SHELL_PAGE]),
+      _warmCache(SHELL_PAGES),
       new Promise((resolve) => setTimeout(() => resolve(null), SHELL_REWARM_BUDGET_MS)),
     ]);
     if (!result) {

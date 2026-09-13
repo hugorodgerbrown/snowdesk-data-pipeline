@@ -31,9 +31,12 @@
   panel therefore self-guards on window.pwaOfflineAudit exactly as the
   reset panel guards on window.pwaResetLocalData.
 
-  The same panel is on /account/settings/, which is the surface to reach
-  for BEFORE a journey. This one exists because that page is a Django
-  view and a device with no connection cannot be relied on to have it.
+  The same panel is on /offline/, which is the surface to reach for
+  BEFORE a journey. This one exists because that page is a Django view
+  and a device with no connection cannot be relied on to have it — though
+  SNOW-930 made it public and put it in SHELL_PAGES, so a device that has
+  activated a worker since usually does. The link below sends a reader
+  who has a connection to the fuller page.
 
   SNOW-492: because this fallback only ever fires for a page with no
   cached copy at all (a previously-visited page's own cache still wins
@@ -215,9 +218,9 @@
                 max-width: 28rem;
                 margin-top: 2.5rem;
                 padding: 0.75rem 1rem;
+                gap: 1rem;
                 border: 1px solid currentColor;
                 border-radius: 0.75rem;
-                gap: 1rem;
                 text-align: left;
             }
             .network-mode[hidden] {
@@ -243,8 +246,8 @@
                focusable — Tab reaches it, Space toggles it, :checked
                drives the drawing. Same reasoning as the partial's. */
             .switch {
-                position: relative;
                 display: inline-flex;
+                position: relative;
                 flex-shrink: 0;
                 align-items: center;
                 width: 44px;
@@ -259,15 +262,15 @@
                 padding: 0;
                 overflow: hidden;
                 border: 0;
-                clip-path: inset(50%);
                 white-space: nowrap;
+                clip-path: inset(50%);
             }
             .switch-track {
                 position: absolute;
-                inset: 0;
                 width: 44px;
                 height: 26px;
                 margin: auto;
+                inset: 0;
                 border-radius: 9999px;
                 background: rgb(0 0 0 / 0.16);
                 pointer-events: none;
@@ -275,11 +278,11 @@
             }
             .switch-thumb {
                 position: absolute;
-                inset-block: 0;
                 left: 3px;
                 width: 20px;
                 height: 20px;
                 margin-block: auto;
+                inset-block: 0;
                 border-radius: 9999px;
                 background: #ffffff;
                 box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
@@ -382,6 +385,18 @@
                 font-size: 0.75rem;
                 text-align: center;
                 opacity: 0.7;
+            }
+            /* SNOW-930: the pointer to /offline/, under the report. Quieter
+               than the status line above it — it is a footnote to the
+               panel, not part of its answer. */
+            .audit-more {
+                margin: 0.75rem 0 0;
+                font-size: 0.75rem;
+                text-align: center;
+                opacity: 0.6;
+            }
+            .audit-more a {
+                color: inherit;
             }
             [data-offline-audit-output][hidden] {
                 display: none;
@@ -591,8 +606,7 @@
                 </p>
             </div>
             <label class="switch" for="offline-mode-switch">
-                <input type="checkbox" role="switch" id="offline-mode-switch"
-                       aria-describedby="network-mode-hint">
+                <input type="checkbox" role="switch" id="offline-mode-switch" aria-describedby="network-mode-hint">
                 <span class="switch-track" aria-hidden="true"></span>
                 <span class="switch-thumb" aria-hidden="true"></span>
             </label>
@@ -604,6 +618,18 @@
             </div>
             <p class="audit-status" data-offline-audit-status role="status" aria-live="polite"></p>
             <div data-offline-audit-output hidden></div>
+            <!--
+              SNOW-930: the same report, on a real page, for a reader who
+              does have a connection. Not hidden with the panel's own
+              scripts: this is a plain link and works whether or not
+              offline_audit.js reached the device. It goes nowhere useful
+              while offline, which is why it says so rather than being
+              presented as the first thing to try.
+            -->
+            <p class="audit-more">
+                With a connection, <a href="/offline/">the offline content page</a> shows the same report alongside the
+                reset control and its size breakdown.
+            </p>
         </div>
         <div class="recovery" id="pwa-reset-panel" hidden>
             <button type="button" data-pwa-reset-trigger>Reset local data on this device</button>
