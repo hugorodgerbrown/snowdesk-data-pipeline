@@ -439,6 +439,17 @@ describe('an area straddling a border takes both countries bulletins', () => {
     expect(asked.some((url) => url.includes('area-content'))).toBe(true);
   });
 
+  it('takes today alone where the page names no backwards reach', () => {
+    // The default half of SNOW-953's day window: this fixture's scrubber
+    // carries no `data-content-past-days`, which an older shell
+    // mid-rollout also does not. Today onwards is exactly what a download
+    // took before the setting existed, so the absence degrades to the old
+    // behaviour rather than to a guess.
+    const yesterday = '2026-01-05';
+
+    expect(posted.some((url) => url.includes('/' + yesterday + '/'))).toBe(false);
+  });
+
   it('reports the run complete, having actually been complete', async () => {
     // The stamp is what makes a gap invisible: weather comes from one
     // global feed that succeeds regardless, so a plan short of a whole
