@@ -1950,5 +1950,30 @@
 
   window.pwaRegionDownload = Object.freeze({
     start: startRegionDownload,
+
+    /**
+     * SNOW-932 review: re-probe the focused region and repaint its roundel.
+     *
+     * The Manage downloads sheet can refresh a REGION's content
+     * (`_handleContentRefreshClick`), and when that region is the one
+     * focused on the map the roundel is stale the moment the write lands:
+     * the record no longer says `contentIncomplete` and the control is
+     * still painted 'partial'. Nothing listened for it — the sheet's own
+     * re-render and the layers-menu refresh reach neither this control nor
+     * its probe — so the amber survived until an unrelated region, basemap
+     * or connectivity event happened by, and a tap meanwhile ran a second,
+     * redundant refresh of content that had just been fetched.
+     *
+     * A bridge rather than a synthetic `snowdesk:region-selected`: nothing
+     * has been selected, and dispatching a selection to force a repaint
+     * would be a lie every other listener also hears. It carries no
+     * answer — the control re-probes the record for itself — so the two
+     * surfaces cannot be made to disagree by calling it. Coalesced like
+     * every other trigger, so a call during a run is a no-op rather than
+     * a race.
+     *
+     * @returns {Promise<void>}
+     */
+    refreshState: () => renderControl(),
   });
 })();
