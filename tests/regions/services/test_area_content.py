@@ -191,14 +191,33 @@ def test_micro_region_index_skips_unmapped_unbounded_and_foreign_regions() -> No
 
 
 @pytest.mark.django_db
-def test_micro_region_index_skips_a_boundary_it_cannot_measure() -> None:
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        # An unsupported geometry type (ValueError out of bbox_from_boundary).
+        {"type": "GeometryCollection", "geometries": []},
+        # No type at all (KeyError).
+        {"coordinates": [[[7.0, 46.0], [7.1, 46.1], [7.0, 46.0]]]},
+        # A position too short to be one (IndexError) — the shape that used
+        # to 500 the whole endpoint rather than losing its own row, because
+        # the index is built lazily for every request.
+        {"type": "Polygon", "coordinates": [[[7.0, 46.0], [7.1], [7.0, 46.0]]]},
+        # A position that is not a sequence (TypeError).
+        {"type": "Polygon", "coordinates": [[[7.0, 46.0], None, [7.0, 46.0]]]},
+        # A ring with no positions in it (ValueError, out of min()).
+        {"type": "Polygon", "coordinates": [[]]},
+    ],
+)
+def test_micro_region_index_skips_a_boundary_it_cannot_measure(
+    boundary: dict[str, Any],
+) -> None:
     """One unusable geometry loses its own region, never the other 460."""
     major = MajorRegionFactory.create(prefix="CH-5", country="CH")
     sub = SubRegionFactory.create(prefix="CH-51", major=major)
     MicroRegionFactory.create(
         region_id="CH-5101",
         subregion=sub,
-        boundary={"type": "GeometryCollection", "geometries": []},
+        boundary=boundary,
     )
     MicroRegionFactory.create(
         region_id="CH-5102",

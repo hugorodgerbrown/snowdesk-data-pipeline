@@ -131,11 +131,19 @@ def micro_region_index() -> list[RegionBox]:
     for region_id, name, boundary in rows.iterator():
         try:
             bbox = bbox_from_boundary(cast("dict[str, Any]", boundary))
-        except KeyError, TypeError, ValueError:
+        except IndexError, KeyError, TypeError, ValueError:
             # A boundary this module cannot measure is one no rectangle
             # test can answer for. Skipping it keeps the endpoint serving
             # the other 460 regions rather than 500-ing the whole plan on
             # one malformed row; the log line is what an operator reads.
+            #
+            # IndexError is in that list for a position too short to be
+            # one — ``[]`` or ``[7.0]`` — which ``bbox_from_boundary``
+            # reaches through to ``pos[1]`` on. Every other malformation
+            # it can meet raises one of the three beside it: a geometry
+            # with no ``type`` (KeyError), a non-sequence position
+            # (TypeError), an unsupported type or a ring with no
+            # positions at all (ValueError).
             logger.warning(
                 "area_content: unusable boundary on micro-region %s", region_id
             )

@@ -28,6 +28,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from pytest_django import DjangoDbBlocker
 
+from apps.public import api
 from apps.regions.models import MicroRegion
 from tests.factories import (
     FavouriteFactory,
@@ -76,6 +77,26 @@ def _square(bbox: list[float]) -> dict[str, Any]:
             ]
         ],
     }
+
+
+def _seed_estate() -> None:
+    """Put one mapped region and one curated location on the map.
+
+    Enough for both indexes to come back non-empty, which is what the
+    response policy and the memo lifetime turn on.
+    """
+    sub = SubRegionFactory.create(
+        prefix="CH-91", major=MajorRegionFactory.create(prefix="CH-9", country="CH")
+    )
+    MicroRegionFactory.create(
+        region_id="CH-9101",
+        name="Seeded",
+        subregion=sub,
+        boundary=_square([7.0, 46.0, 8.0, 47.0]),
+    )
+    ResortLocationFactory.create(
+        location=LocationFactory.create(latitude=46.5, longitude=7.5)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -249,6 +270,8 @@ def test_a_degenerate_box_is_valid() -> None:
 @pytest.mark.django_db
 def test_the_response_carries_an_etag_and_a_revalidatable_policy() -> None:
     """Same policy as the geojson feeds: an ETag and a public max-age."""
+    _seed_estate()
+
     response = Client().get(_url("7.0,46.0,8.0,47.0"))
 
     assert response.status_code == 200
@@ -257,6 +280,51 @@ def test_the_response_carries_an_etag_and_a_revalidatable_policy() -> None:
     assert "public" in cache_control
     assert "max-age=300" in cache_control
     assert "stale-while-revalidate" in cache_control
+
+
+@pytest.mark.django_db
+def test_an_estate_with_no_geometry_gets_no_stale_window() -> None:
+    """A deployment missing its fixtures must not pin "nothing to download".
+
+    The distinction ``_geojson_response``'s ``empty`` branch draws, applied
+    to the INDEX rather than to the answer: a box over open water contains
+    nothing durably, but an estate with no regions at all contains nothing
+    only until someone loads the fixtures. Pinning the second for a day
+    would tell every client for a day that its area needs no bulletins —
+    and unlike a blank map, an empty plan looks complete.
+    """
+    response = Client().get(_url("7.0,46.0,8.0,47.0"))
+
+    assert response.status_code == 200
+    assert response.json() == {"regions": [], "weather": []}
+    assert "stale-while-revalidate" not in response["Cache-Control"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("seeded", "expected"),
+    [(True, 86400), (False, 300)],
+    ids=["a populated index is held for a day", "an empty one for minutes"],
+)
+def test_the_index_memo_is_short_only_when_it_came_back_empty(
+    monkeypatch: pytest.MonkeyPatch, seeded: bool, expected: int
+) -> None:
+    """The same exception ``_cached_region_payload`` makes, one layer in."""
+    if seeded:
+        _seed_estate()
+    timeouts: list[int | None] = []
+    original = api.cache.set
+
+    def _record(key: str, value: Any, timeout: int | None = None) -> None:
+        """Note the timeout the view chose, then store as usual."""
+        timeouts.append(timeout)
+        original(key, value, timeout=timeout)
+
+    monkeypatch.setattr(api.cache, "set", _record)
+
+    Client().get(_url("7.0,46.0,8.0,47.0"))
+
+    assert timeouts == [expected, expected]
 
 
 @pytest.mark.django_db

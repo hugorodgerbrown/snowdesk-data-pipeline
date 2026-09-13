@@ -1226,7 +1226,8 @@ def area_content(request: HttpRequest) -> HttpResponse:
     Both indexes are fixture-backed reference data (a region's boundary
     moves on a deploy; the location estate moves on an import), so each is
     memoised for ``_GEOJSON_CACHE_MAX_AGE`` and the request itself costs no
-    query in the common case. The response takes ``_geojson_response``'s
+    query in the common case — an EMPTY index for a much shorter one, see
+    ``_cached_area_content_index``. The response takes ``_geojson_response``'s
     ETag and revalidatable policy — it is not GeoJSON, but it is exactly
     the static-reference kind of answer that helper was written for — and
     the same ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment
@@ -1247,26 +1248,50 @@ def area_content(request: HttpRequest) -> HttpResponse:
 
     regions = cast(
         "list[RegionBox]",
-        cache.get_or_set(
-            f"{_AREA_CONTENT_INDEX_CACHE_PREFIX}:regions",
-            micro_region_index,
-            timeout=_GEOJSON_CACHE_MAX_AGE,
-        ),
+        _cached_area_content_index("regions", micro_region_index),
     )
     locations = cast(
         "list[WeatherPoint]",
-        cache.get_or_set(
-            f"{_AREA_CONTENT_INDEX_CACHE_PREFIX}:weather",
-            weather_location_index,
-            timeout=_GEOJSON_CACHE_MAX_AGE,
-        ),
+        _cached_area_content_index("weather", weather_location_index),
     )
     payload = build_area_content(bbox, regions=regions, locations=locations)
-    # Never the empty branch. An area over open water legitimately contains
-    # nothing, and that is a durable fact about the rectangle rather than a
-    # deployment missing its geometry — which is what that branch exists to
-    # avoid pinning.
-    return _geojson_response(request, payload)
+    # The empty branch turns on the INDEX, not on the answer. An area over
+    # open water legitimately contains nothing, and that is a durable fact
+    # about the rectangle; an estate with no regions in it at all is a fact
+    # about this deployment not having its geometry yet, and pinning that
+    # for a day is what the branch exists to avoid — here it would pin
+    # "your download needs no bulletins" over every rectangle on Earth.
+    return _geojson_response(request, payload, empty=not regions)
+
+
+def _cached_area_content_index(name: str, build: Callable[[], list[Any]]) -> list[Any]:
+    """
+    Memoise one reference index, briefly when it came back empty.
+
+    The same exception ``_cached_region_payload`` makes, for the same
+    reason and one layer further in. An empty index is not a durable fact
+    about the estate — it is a fixture not loaded, a migration not run, a
+    backfill still to come — and it is more dangerous here than it is
+    there: a blank map is visibly blank, while an empty plan looks like a
+    complete one, so a client would fetch nothing, land everything it
+    fetched, and stamp the area complete for the day the entry lived.
+
+    Args:
+        name: ``regions`` or ``weather`` — the index to memoise.
+        build: Builds the index on a miss.
+
+    Returns:
+        The index, from cache or freshly built.
+
+    """
+    key = f"{_AREA_CONTENT_INDEX_CACHE_PREFIX}:{name}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cast("list[Any]", cached)
+    index = build()
+    timeout = _DYNAMIC_CACHE_MAX_AGE if not index else _GEOJSON_CACHE_MAX_AGE
+    cache.set(key, index, timeout=timeout)
+    return index
 
 
 def _parse_bbox_param(raw: str) -> list[float] | None:
