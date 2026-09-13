@@ -114,6 +114,15 @@
  * silently dropped. Rename and delete are online-only too, matching every
  * other panel's edits.
  *
+ * THE LIST DOES READ OFFLINE, as of SNOW-950. Every successful load's rows
+ * are persisted by static/js/routes_offline.js, and a failed load repaints
+ * them before this module falls back to its "couldn't be loaded" line —
+ * minus each row's "…" menu and each pending share's Save, because the
+ * actions behind them are the online-only ones described above. The map's
+ * routes layer has been readable offline since SNOW-687, and the panel
+ * naming those same routes was the surface that still went away with the
+ * signal.
+ *
  * EXCLUSIVITY. window.MapSheet.attach registers this sheet with
  * window.pwaMapOverlays (static/js/map_overlay_exclusivity.js) under its
  * own DOM id and calls opening() before revealing it, so the
