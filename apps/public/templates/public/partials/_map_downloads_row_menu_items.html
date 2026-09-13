@@ -17,6 +17,19 @@ every panel. On this panel it means:
   a CUSTOM AREA or DROP ZONE   Rename and Remove → this menu.
   a row NOT on this device     Download alone → the bare download icon.
   a row that cannot render     Repair and Remove → this menu.
+  a row whose CONTENT is behind (SNOW-932)
+                               Refresh and Remove → this menu. A REGION
+    row reaches it too, which is the one shape change this ticket makes:
+    a region whose bulletins fell short gains a second action and so stops
+    being a bare trash. That is the rule above applying, not an exception
+    to it.
+
+ORDER: Repair → Refresh → Rename → Remove. The two restorative actions
+sit together at the top (Repair mends a map that will not DRAW; Refresh
+mends bulletins that are BEHIND — nearest-neighbour first), the rename
+follows, and the destructive item is last as it is on every list in the
+app. No row ever carries all four: Repair and Refresh answer different
+halves and Rename is custom-areas-only.
 
 The buttons are value-less here, exactly as the inline controls were: this
 partial is rendered ONCE inside the row `<template>`, and
@@ -39,6 +52,18 @@ wherever a user meets it.
     >
         {% include "includes/_icon_repair.html" only %}
         {% trans "Repair" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-refresh
+        aria-label="{% trans 'Refresh' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_refresh.html" only %}
+        {% trans "Refresh" %}
     </button>
 </li>
 <li role="none">

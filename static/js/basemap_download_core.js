@@ -2847,8 +2847,52 @@
     return !!(result && !result.cancelled && result.ok > 0 && result.failed === 0);
   }
 
+  /**
+   * SNOW-932: read a run's CONTENT tally into the two facts a caller acts on.
+   *
+   * The exact precedent is `downloadSucceeded` directly above: SNOW-649
+   * moved that predicate here because two controls each spelled out their
+   * own four-clause boolean and drifted (SNOW-607). This one had drifted
+   * further before it was written down — `content && content.total > 0 &&
+   * content.ok === content.total` was inlined in THREE controls
+   * (`map_region_download.js`, `map_custom_download.js`, `map_drop_zone.js`),
+   * and SNOW-932 needed all three to agree on a second, harder question:
+   * not "did it all land" but "did this run fall SHORT", which is not the
+   * negation of the first.
+   *
+   * It is not the negation because of the third state. A run with nothing
+   * to fetch — an area whose boundary contains no bulletins, or a shell
+   * whose deps bundle predates the content phase — is neither complete nor
+   * incomplete. It has nothing to say, and it must record NEITHER field:
+   * writing `contentIncomplete` for it would strand every such area amber
+   * with no shortfall behind it.
+   *
+   * `short` is SNOW-931's channel, opened by SNOW-932. A plan assembled
+   * while a country's regions could not be fetched is missing bulletins it
+   * should have listed, so its tally can read a clean `ok === total` over
+   * a list that was never whole. That is a shortfall the tally cannot see,
+   * which is why it travels beside it rather than inside it.
+   *
+   * @param {{ok?: number, total?: number, short?: boolean} | null |
+   *   undefined} content The run's content tally, from `finish`'s extras.
+   *   Absent for an older shell mid-rollout, which reads as "nothing to
+   *   say" — the pre-SNOW-924 behaviour.
+   * @returns {{complete: boolean, incomplete: boolean}} Both false for a
+   *   run with nothing to fetch and a whole plan. Never both true.
+   */
+  function contentOutcome(content) {
+    var total = (content && content.total) || 0;
+    var ok = (content && content.ok) || 0;
+    var short = !!(content && content.short);
+    return {
+      complete: !short && total > 0 && ok === total,
+      incomplete: short || (total > 0 && ok < total),
+    };
+  }
+
   self.pwaBasemapDownloadCore = Object.freeze({
     downloadSucceeded: downloadSucceeded,
+    contentOutcome: contentOutcome,
     zoomRows: zoomRows,
     tileSources: tileSources,
     tileSourceCount: tileSourceCount,

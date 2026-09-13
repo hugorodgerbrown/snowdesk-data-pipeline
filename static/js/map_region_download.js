@@ -300,6 +300,15 @@
    *   promoted and orphans them in the bucket permanently. `''` for a
    *   style with no `glyphs`, which reads as UNKNOWN, never as "no
    *   glyphs" — the same rule `deps` follows.
+   * @param {string | null} contentAt SNOW-924: an ISO stamp for a run that
+   *   fetched this area's content IN FULL, null otherwise. See the field's
+   *   own comment below for why it is separate from `savedAt`.
+   * @param {boolean} [contentIncomplete] SNOW-932: whether this run HAD
+   *   content to fetch and fell short of it. Written as `true` or not
+   *   written at all — never `false` — because absence is the only
+   *   representation of "nothing wrong", and that is what makes every
+   *   record predating this ticket keep reading `done` rather than going
+   *   amber on the deploy that introduces the field.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -312,6 +321,7 @@
     renderDeps,
     glyphPrefix,
     contentAt,
+    contentIncomplete,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -351,6 +361,18 @@
         // bulletins are new every day, so this is the stamp a refresh moves
         // and `savedAt` is not.
         ...(contentAt ? { contentAt: contentAt } : {}),
+        // SNOW-932: and the other half of the same fact — this run had
+        // content to fetch and did not get all of it. The `partial`
+        // roundel SNOW-924 introduced was painted and never stored, so the
+        // next `renderControl` (which fires on
+        // `snowdesk:connectivity-changed` — the very event a flapping
+        // signal produces) repainted `done` from a probe that had no way
+        // to know. This is what the probe reads back.
+        //
+        // Set or ABSENT, never `false`. Every reader treats absence as
+        // fine, which is the whole compatibility story: an area downloaded
+        // before this ticket carries neither field and still reads `done`.
+        ...(contentIncomplete ? { contentIncomplete: true } : {}),
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -778,9 +800,23 @@
    * dependencies of its own (the third row of `areaRenderDependencyURLs`'s
    * resolution rule — unknowable, so unaccused).
    *
+   * SNOW-932: `contentIncomplete` joins them, and it is the one field here
+   * that is READ rather than derived. Everything else this probe returns
+   * it works out from the cache; content completeness cannot be worked out
+   * from the cache at all — a bulletin absent because the area's boundary
+   * contains none is indistinguishable from one absent because the fetch
+   * fell over. So the run records the fact and the probe reports it, which
+   * is the same move `deps` made in SNOW-844 and for the same reason:
+   * verified by stored fact, not by probe alone.
+   *
    * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<{done: boolean, missingDeps: string[],
-   *   otherBasemapKey: string | null} | null>}
+   *   otherBasemapKey: string | null, contentIncomplete: boolean} | null>}
+   *   SNOW-932: `contentIncomplete` is false on every branch but the
+   *   area's-own-basemap one — the other-basemap branch and the no-record
+   *   fallback cannot know it, and neither paints a state that would use
+   *   it. False is "unaccused", exactly as `missingDeps: []` is on those
+   *   same two branches.
    */
   async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
@@ -863,6 +899,10 @@
           done: tilesCached && missingDeps.length === 0,
           missingDeps: missingDeps,
           otherBasemapKey: null,
+          // SNOW-932: read straight off the record — the ONE thing here
+          // the cache cannot answer. Coerced, because absence and `false`
+          // must be indistinguishable to every reader.
+          contentIncomplete: !!stored.contentIncomplete,
         };
       }
       // SNOW-645: a record for a DIFFERENT basemap. Verify its tiles are
@@ -875,7 +915,15 @@
         cached,
       );
       if (!otherStillCached) {
-        return { done: false, missingDeps: [], otherBasemapKey: null };
+        // SNOW-932: `contentIncomplete: false` here and below. A stale
+        // record reads exactly like "never downloaded", and nothing that
+        // was never downloaded can have fallen short of its content.
+        return {
+          done: false,
+          missingDeps: [],
+          otherBasemapKey: null,
+          contentIncomplete: false,
+        };
       }
       // A keyless record's basemap can still be named, from any other
       // record sharing its template — so the ring takes that basemap's
@@ -887,7 +935,16 @@
       // basemap is not the one loaded, so its sprite and TileJSON URLs are
       // only knowable if the record itself named them, and this state does
       // not paint them either way. The third row of the resolution rule.
-      return { done: false, missingDeps: [], otherBasemapKey: key || '' };
+      // SNOW-932: this record's `contentIncomplete` is deliberately NOT
+      // reported. It is a fact about a download held for ANOTHER basemap,
+      // and this branch paints an invitation to start a fresh one — the
+      // third row of the resolution rule, applied to the content half.
+      return {
+        done: false,
+        missingDeps: [],
+        otherBasemapKey: key || '',
+        contentIncomplete: false,
+      };
     }
 
     try {
@@ -909,6 +966,10 @@
         done: tilesCached && missingDeps.length === 0,
         missingDeps: missingDeps,
         otherBasemapKey: null,
+        // SNOW-932: no record, so nothing has ever said this area's
+        // content fell short — and nothing could. The fallback answers
+        // about TILES alone, which is all it has.
+        contentIncomplete: false,
       };
     } catch (_e) {
       return null;
@@ -922,7 +983,12 @@
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
    *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
-   *   'signin' | (SNOW-844) 'incomplete'.
+   *   'signin' | (SNOW-844) 'incomplete' | (SNOW-924) 'partial'.
+   *   SNOW-932 adds 'partial' to this list rather than the state itself:
+   *   it has been painted since SNOW-924 and went unlisted because it was
+   *   only ever transient — a paint the next render erased. It is now
+   *   derived by `_probeDone` from the record, like every other state
+   *   here, which is exactly what makes it worth naming.
    * @param {{mb: number, count: number}} [summary] The region's download
    *   summary, as the API computed it (`data.summary`) — omitted only by
    *   'no-region', which has no region to size. SNOW-843/SNOW-868: priced
@@ -1136,7 +1202,7 @@
       _retryWhenStyleSettles();
       return;
     }
-    const { done, missingDeps, otherBasemapKey } = probe;
+    const { done, missingDeps, otherBasemapKey, contentIncomplete } = probe;
     // Offline-integrity: a region already downloaded (done) still reads as
     // the green offline circle; one that isn't can't be fetched now, so it
     // shows the offline-disabled state instead of an actionable idle —
@@ -1152,6 +1218,23 @@
     // with the signal that makes it actionable.
     if (!networkInUse() && !done) {
       setState('offline', data.summary);
+      return;
+    }
+    // SNOW-932: the tiles and the render set are all here, and the run
+    // that fetched them did NOT get the content — a stored fact on the
+    // record, not a guess. Before the `done` branch, because it is the
+    // same area seen more precisely: `done` would be true and would paint
+    // over the shortfall, which is exactly the defect this ticket closes.
+    // SNOW-924 painted 'partial' and stored nothing, so the next render —
+    // and `renderControl` runs on `snowdesk:connectivity-changed`, the
+    // very event a flapping signal fires — repainted it green.
+    //
+    // Deliberately AFTER the offline guard above, which does not fire for
+    // a `done` area, so an amber area offline reads amber exactly as a
+    // green one reads green. `handleClick` already repaints 'offline' when
+    // a 'partial' tap has no network, so the tap is honest either way.
+    if (done && contentIncomplete) {
+      setState('partial', data.summary);
       return;
     }
     if (done) {
@@ -1285,11 +1368,26 @@
    * has none of those. It fetched bulletins; the tiles it did not touch
    * must keep the figures the run that fetched them wrote.
    *
+   * SNOW-932: the single writer for BOTH content outcomes on an existing
+   * record, rather than a stamp-on-success with the failure left in the
+   * DOM. One function because the two writes are exactly complementary and
+   * must not be able to disagree — a record carrying both a fresh
+   * `contentAt` and a live `contentIncomplete` would be saying two things
+   * at once, and the roundel reads the second.
+   *
    * @param {string} regionId
+   * @param {boolean} complete Whether the content half landed in full.
+   *   `true` sets `contentAt` and **deletes** `contentIncomplete` — deleted
+   *   rather than set to `false`, because absence is the one
+   *   representation of "nothing wrong" and a `false` here would make this
+   *   record disagree with every record written before the field existed.
+   *   `false` sets `contentIncomplete` and leaves `contentAt` ALONE: it
+   *   records the last time this area's content was fetched in full, and a
+   *   run that fell short did not change that.
    * @returns {Promise<void>} Best-effort, like every other write here: a
    *   failed stamp costs a stale timestamp, not a download.
    */
-  async function _stampRegionContent(regionId) {
+  async function _stampRegionContent(regionId, complete) {
     if (!window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -1298,7 +1396,15 @@
       const next = existing.map((entry) => {
         if (!entry || entry.region_id !== regionId) return entry;
         touched = true;
-        return { ...entry, contentAt: new Date().toISOString() };
+        if (!complete) return { ...entry, contentIncomplete: true };
+        // Destructured out rather than assigned `undefined`: this record
+        // is serialised into IndexedDB, and an explicit `undefined` would
+        // survive as a present key on some paths. The readers are spread
+        // across four modules and all of them ask `!!record.contentIncomplete`,
+        // so either would work today — the delete is what keeps the
+        // invariant true for the next reader, who may not.
+        const { contentIncomplete: _cleared, ...rest } = entry;
+        return { ...rest, contentAt: new Date().toISOString() };
       });
       if (!touched) return;
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
@@ -1334,8 +1440,25 @@
     // the content against. Settle on whatever the probe says instead of
     // dispatching a run with an empty list, which `repair` treats as a
     // failure and would paint 'error' over a working area.
-    const urls = record ? await assembleAreaContentURLs(record) : [];
+    // SNOW-932: the pair, not a bare list — `short` says the plan itself
+    // was assembled against an incomplete country set, so a refresh that
+    // fetches every url it was given still has not made this area whole.
+    const content = record
+      ? await assembleAreaContentURLs(record)
+      : { urls: [], short: false };
+    const urls = content.urls;
     if (urls.length === 0) {
+      // SNOW-932 review: a WHOLE plan that resolves to no urls is a
+      // complete answer about this boundary, not a failed refresh, so it
+      // clears a flag an earlier short plan set. Without this the roundel
+      // kept its 'partial' paint and the tap that is supposed to be its
+      // remedy did nothing at all — a dead control, which is worse than
+      // the stale amber it sits on.
+      //
+      // A SHORT plan is left alone: it was assembled against an incomplete
+      // country set and so cannot speak for the boundary either way.
+      // `renderControl` then repaints from the stored fact in both cases.
+      if (!content.short) await _stampRegionContent(data.regionId, true);
       await renderControl();
       return;
     }
@@ -1344,8 +1467,12 @@
       urls: urls,
       paint: (nextState, pct) => setState(nextState, data.summary, pct),
       finish: async (result, { core: runCore }) => {
-        if (runCore && runCore.downloadSucceeded(result)) {
-          await _stampRegionContent(data.regionId);
+        // SNOW-932: a short plan is a failed refresh even when every url
+        // in it landed. The tally cannot see it — `downloadSucceeded`
+        // asks about the list it was handed, and that list is the thing
+        // that was wrong.
+        if (runCore && runCore.downloadSucceeded(result) && !content.short) {
+          await _stampRegionContent(data.regionId, true);
           // Drop the busy latch before re-rendering, exactly as
           // `handleRepair` does and for the same reason — see its comment.
           setState(gateState('idle'), data.summary);
@@ -1354,6 +1481,13 @@
           // The tiles are untouched and the map still draws, so this is not
           // 'error': the area is downloaded, its content is behind. That is
           // what 'partial' says, and its remedy is this same tap.
+          //
+          // SNOW-932: and it is RECORDED before it is painted. Until this
+          // ticket the paint was the whole of it, so the next render — on
+          // a connectivity change, a region reselect, a style settle —
+          // read the probe, saw whole tiles, and painted 'done' over a
+          // shortfall that was still there.
+          await _stampRegionContent(data.regionId, false);
           setState('partial', data.summary);
           revealBasemapDownloadError(result ? result.reason : null);
         }
@@ -1604,8 +1738,12 @@
         // nothing, or a shell whose deps bundle predates the phase — which
         // is not a failure and not a completion either, so it records no
         // stamp rather than a false one.
-        const contentTotal = (content && content.total) || 0;
-        const contentComplete = contentTotal > 0 && content.ok === contentTotal;
+        // SNOW-932: read through the core's shared predicate rather than
+        // inlined here, for `downloadSucceeded`'s reason — three controls
+        // spelled out the same boolean and this ticket needed all three to
+        // start answering a second question (`incomplete`, which is not
+        // the negation of `complete`; see `contentOutcome`).
+        const outcome = runCore.contentOutcome(content);
         // SNOW-570: record what was downloaded before anything is painted.
         // SNOW-583: records the blob's own `z` (the clipped tile set the run
         // actually fetched) rather than a bbox — `_probeDone` reads this
@@ -1621,7 +1759,8 @@
             basemapKey,
             renderDeps,
             glyphPrefix,
-            contentComplete ? new Date().toISOString() : null,
+            outcome.complete ? new Date().toISOString() : null,
+            outcome.incomplete,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
@@ -1661,7 +1800,7 @@
           // 'busy' (and so early-returned), so the resting paint is this
           // callback's job.
           setState(networkInUse() ? 'idle' : 'offline', data.summary);
-        } else if (ok && contentTotal > 0 && !contentComplete) {
+        } else if (ok && outcome.incomplete) {
           // SNOW-924: the tiles landed and the content did not. Not 'done',
           // which would claim a completeness this area has not got, and not
           // 'error', which would raise a fault over a map that draws
@@ -1672,6 +1811,14 @@
           // whose boundary contains nothing, or a shell older than the
           // content phase, reports `total: 0` and settles on 'done' as it
           // always did.
+          //
+          // SNOW-932: `outcome.incomplete` also catches a run whose tally
+          // was clean over a list that was never whole — a country the
+          // client could not fetch, so its regions were never listed to be
+          // counted (see `assembleAreaContentURLs`). And the record now
+          // carries the fact, so this paint survives the next render
+          // instead of being repainted green by a probe that could not
+          // know.
           setState('partial', data.summary);
         } else if (ok) {
           setState('done', data.summary);

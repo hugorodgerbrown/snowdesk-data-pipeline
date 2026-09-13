@@ -277,7 +277,11 @@
    *   label: string, renameable: boolean, bytes: number, savedAt: string,
    *   size: string, basemapKey: string, onDevice: boolean,
    *   synced: boolean, redownloadable: boolean, bbox: number[]|null,
-   *   regionId: string}>} SNOW-749: ``onDevice`` and ``synced`` are the
+   *   regionId: string, contentIncomplete: boolean}>} SNOW-932:
+   *   ``contentIncomplete`` says the area's BULLETINS are behind, not that
+   *   its map is broken — the two are independent halves, and the sheet
+   *   must not dim a row for it (the area IS available offline). SNOW-749:
+   *   ``onDevice`` and ``synced`` are the
    *   two independent facts a row now carries, and the four combinations
    *   are all reachable — on both, on the device only (a download made
    *   before the account gate, or one whose sync has not drained yet),
@@ -402,6 +406,19 @@
         // carries `bbox` (above) plus the `band` fetched over it.
         z: area.z || null,
         band: Array.isArray(area.band) ? area.band : null,
+        // SNOW-932: whether this area's CONTENT half fell short — its
+        // bulletins and weather, not its tiles. Unlike `incomplete`
+        // (SNOW-844), which the sheet derives from Cache Storage, this is
+        // a STORED fact: no cache read can tell a bulletin absent because
+        // the boundary contains none from one absent because the fetch
+        // fell over, so the run records it and this carries it through.
+        //
+        // Suppressed for an ORPHAN and for an ACCOUNT-ONLY row. Neither
+        // has anything on this device that could be short — an orphan is a
+        // bucket with no record behind it to have been written, and an
+        // account-only row was never downloaded here at all — and both
+        // would otherwise be offered a Refresh with nothing to refresh.
+        contentIncomplete: !area.orphaned && onDevice && !!area.contentIncomplete,
       });
     }
 
@@ -580,6 +597,10 @@
         // Both are passed through unnormalised — see `manageRows`.
         z: area.z || null,
         band: Array.isArray(area.band) ? area.band : null,
+        // SNOW-932: the content half's shortfall, passed straight through
+        // from the record. This join rebuilds every entry field by field,
+        // so a field not named here is a field the sheet never sees.
+        contentIncomplete: !!area.contentIncomplete,
       });
     }
 

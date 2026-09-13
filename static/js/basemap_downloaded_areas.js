@@ -278,6 +278,14 @@
           // the roundel's own tile probe already reads as "no record".
           z: entry.z || null,
           band: Array.isArray(entry.band) ? entry.band : null,
+          // SNOW-932: whether the run that fetched this area fell short of
+          // its CONTENT — the bulletins and weather inside its boundary.
+          // Carried to the Manage downloads sheet, which is where a custom
+          // area's only remedy lives (it has no roundel of its own once
+          // the framing overlay closes). Coerced here, so absence — every
+          // record written before the field existed — reads as fine rather
+          // than as unknown.
+          contentIncomplete: !!entry.contentIncomplete,
         });
       }
     } catch (_e) {
@@ -330,6 +338,8 @@
           // the blob from the pair through `buildBlob`, the same
           // client-side twin that produced the tile set in the first place.
           band: Array.isArray(custom.band) ? custom.band : null,
+          // SNOW-932: see the region branch above.
+          contentIncomplete: !!custom.contentIncomplete,
         });
       }
     } catch (_e) {

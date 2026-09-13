@@ -866,7 +866,10 @@ describe('the content phase', () => {
     await runAndSettle(d, o);
 
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 1, total: 2 });
+    // SNOW-932: `short: false` rides along — a bare array from the
+    // resolver says nothing about the plan's own wholeness, so it
+    // normalises to "not short", which is the pre-ticket reading.
+    expect(extras.content).toEqual({ ok: 1, total: 2, short: false });
   });
 
   it('reports total 0 when the area contains nothing, not a failure', async () => {
@@ -876,7 +879,7 @@ describe('the content phase', () => {
     await runAndSettle(d, o);
 
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0 });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
   });
 
   it('never reaches the eviction machinery', async () => {
@@ -904,7 +907,7 @@ describe('the content phase', () => {
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
     expect(d.progressGrid.mock.calls[0][1]).toBe(1);
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0 });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
   });
 
   it('treats a content resolver that yields nothing usable as empty', async () => {
@@ -914,5 +917,33 @@ describe('the content phase', () => {
     await runAndSettle(d, options());
 
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
+  });
+
+  it('carries a short plan through from a resolver that answers with a pair', async () => {
+    // SNOW-932: the fact no tally can hold. Every url the resolver named
+    // lands, so `ok === total` — and the plan was still missing bulletins,
+    // because a country's regions never arrived to be named. The runner
+    // does not judge it; it carries it to `finish`, where
+    // `core.contentOutcome` weighs the two together.
+    const d = deps({
+      contentUrls: vi.fn(async () => ({ urls: ['/a/'], short: true })),
+      warmCache: vi.fn(async (urls, opts) => {
+        calls.push('warmCache');
+        opts.onProgress(urls.length, urls.length, [0, 1, 2, 3], 1024);
+        return { ok: urls.length, failed: 0, bytes: 1024 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/a/',
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+    ]);
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 1, total: 1, short: true });
   });
 });

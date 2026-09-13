@@ -664,6 +664,9 @@
       ) => {
         const cancelled = !!(result && result.cancelled);
         const ok = core.downloadSucceeded(result);
+        // SNOW-932: as map_custom_download.js — the shared predicate, so
+        // the three controls cannot drift on what a short content half is.
+        const outcome = core.contentOutcome(content);
         if (cancelled) {
           await progressFill.finish(false);
           paintRun(networkInUse() ? 'idle' : 'offline');
@@ -695,9 +698,11 @@
             // SNOW-924: as map_custom_download.js — a drop zone records
             // an ordinary custom area, so it carries the content stamp
             // on the same terms.
-            ...(content && content.total > 0 && content.ok === content.total
-              ? { contentAt: new Date().toISOString() }
-              : {}),
+            ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
+            // SNOW-932: and the shortfall, on the same terms — a drop zone
+            // records an ordinary custom area, so the Manage downloads
+            // sheet reads and remedies it exactly as it does one of those.
+            ...(outcome.incomplete ? { contentIncomplete: true } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);

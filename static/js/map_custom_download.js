@@ -1266,6 +1266,12 @@
         // a separate local because this control branches on it for its own
         // teardown — the core predicate already folds it in.
         const ok = core.downloadSucceeded(result);
+        // SNOW-932: the content half's two facts, read through the same
+        // shared predicate the region control uses — the inline
+        // `content && content.total > 0 && content.ok === content.total`
+        // this replaces was the third copy of one boolean, and it could
+        // not answer the question this ticket asks (see `contentOutcome`).
+        const outcome = core.contentOutcome(content);
         if (cancelled) {
           // Overlay teardown already ran synchronously when the user
           // dismissed (see the overlay:dismissed listener below) — this
@@ -1310,9 +1316,15 @@
             // framed before that ticket — which is not a fault: the tiles
             // decide whether a map draws and they are here. Separate from
             // `savedAt` because the two halves age differently.
-            ...(content && content.total > 0 && content.ok === content.total
-              ? { contentAt: new Date().toISOString() }
-              : {}),
+            ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
+            // SNOW-932: and the mirror — this run had content to fetch and
+            // fell short of it. Recorded here rather than painted, because
+            // a custom area has no roundel of its own once the overlay
+            // closes; the sheet is where the fact is read and where the
+            // remedy lives. Written or ABSENT, never `false`: absence is
+            // the only representation of "nothing wrong", which is what
+            // keeps every area framed before this ticket reading fine.
+            ...(outcome.incomplete ? { contentIncomplete: true } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);

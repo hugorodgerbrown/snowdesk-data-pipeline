@@ -16,6 +16,15 @@
  *     to every unit test — `run` and `repair` both end in a warm-cache
  *     call, and only the URL list tells them apart.
  *
+ * SNOW-932 adds the third, and it is the one this harness exists for more
+ * than either of those: that a content shortfall SURVIVES. `partial` was
+ * painted and never stored, so the next `renderControl()` repainted the
+ * area green from a probe with no way to know it had fallen short — and
+ * `renderControl()` runs on `snowdesk:connectivity-changed`, which is
+ * exactly what a flapping signal fires. Only a test that drives the real
+ * record, the real probe and the real listener can catch that; a unit test
+ * of any one of the three passes either way.
+ *
  * Harness follows tests/js/test_map_region_download_cancelled.js (see its
  * header, and test_map_download_bytes.js's, for the jsdom-boot rationale).
  *
@@ -444,5 +453,319 @@ describe('a downloaded area refreshes rather than re-downloads', () => {
     const urls = warmedUrls(0);
     expect(urls).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
     expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
+  });
+});
+
+describe('a content shortfall survives the next render (SNOW-932)', () => {
+  /**
+   * Tap the roundel, wait for the refresh it dispatches, and read where it
+   * settles.
+   *
+   * The wait is on the warm-cache CALL, not on the roundel leaving 'busy':
+   * the click handler is async, so the state is still whatever it was for
+   * the first few ticks after the tap and a bare "not busy" check passes
+   * before the run has begun.
+   */
+  async function tapAndSettle() {
+    const btn = document.getElementById('map-download-control');
+    window.pwaWarmCache.mockClear();
+    btn.click();
+    await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+    await waitFor(() => btn.dataset.downloadState !== 'busy');
+    return btn.dataset.downloadState;
+  }
+
+  /** Fire the event a flapping signal fires, and let the render settle. */
+  async function flapConnectivity() {
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    // `renderControl` is coalesced and probes Cache Storage, so the repaint
+    // is several ticks out. Long enough for the trailing pass to land.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+
+  it('stays partial across a connectivity change', async () => {
+    // THE test. A refresh that half-lands paints 'partial'; before this
+    // ticket nothing stored that, so the very next render read whole tiles
+    // off the probe and painted 'done' over a shortfall that was still
+    // there. Fails against the unmodified code.
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    window.pwaWarmCache.mockImplementationOnce(async () => ({
+      ok: 0,
+      failed: 4,
+      bytes: 0,
+      cancelled: false,
+    }));
+    expect(await tapAndSettle()).toBe('partial');
+
+    await flapConnectivity();
+
+    expect(btn.dataset.downloadState).toBe('partial');
+  });
+
+  it('records the shortfall on the area, not in the DOM', async () => {
+    // The same fact, read where it now lives. A roundel that is amber only
+    // for as long as nothing repaints it is not a state, it is a message.
+    const record = await recordedRegion();
+
+    expect(record.contentIncomplete).toBe(true);
+    // And `contentAt` is untouched: it records the last time this area's
+    // content was fetched IN FULL, which a run that fell short did not
+    // change.
+    expect(typeof record.contentAt).toBe('string');
+  });
+
+  it('clears the flag when a refresh lands, and goes back to done', async () => {
+    // Deleted, never set false — so a refreshed record is indistinguishable
+    // from one that never fell short, which is what keeps the
+    // absence-means-fine rule true for every reader.
+    const btn = document.getElementById('map-download-control');
+    expect(await tapAndSettle()).toBe('done');
+
+    const record = await recordedRegion();
+    expect('contentIncomplete' in record).toBe(false);
+
+    await flapConnectivity();
+    expect(btn.dataset.downloadState).toBe('done');
+  });
+
+  it('reads a record with neither field as done, not as amber', async () => {
+    // Backwards compatibility, and the reason the flag is absent rather
+    // than false. Every area downloaded before SNOW-924 carries neither
+    // `contentAt` nor `contentIncomplete`; if absence read as a shortfall,
+    // the deploy that introduced this field would turn every one of them
+    // amber overnight.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: row.value.map((entry) => {
+        if (!entry || entry.region_id !== REGION_ID) return entry;
+        const { contentAt: _a, contentIncomplete: _b, ...rest } = entry;
+        return rest;
+      }),
+    });
+
+    await flapConnectivity();
+
+    expect(document.getElementById('map-download-control').dataset.downloadState).toBe(
+      'done',
+    );
+  });
+
+  it('counts a short PLAN, even when every url in it lands', async () => {
+    // SNOW-931's hanging thread. A country the client could not fetch is
+    // never listed, so there is nothing in the tally to fail — the run
+    // reports `ok === total` over a list that was missing bulletins. Before
+    // this the shortfall reached the debug log and nothing else.
+    const countries = window.pwaMapCountries;
+    window.pwaMapCountries = {
+      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
+    };
+    try {
+      expect(await tapAndSettle()).toBe('partial');
+    } finally {
+      window.pwaMapCountries = countries;
+    }
+
+    const record = await recordedRegion();
+    expect(record.contentIncomplete).toBe(true);
+  });
+
+  /**
+   * Run `body` with this area's boundary resolving to NOTHING to fetch.
+   *
+   * Both halves have to go: `areaContentPlan` takes the region features and
+   * the weather features separately, and either one left populated still
+   * yields urls. The core is frozen, so the plan is emptied through its real
+   * inputs rather than by stubbing the resolver — which also keeps the test
+   * honest about what an empty plan actually is.
+   */
+  async function withEmptyPlan(body) {
+    // `featureByRegionId` is a getter on the state object, so the set it
+    // returns is emptied in place and refilled afterwards rather than
+    // swapped out.
+    const features = window.snowdeskMapState.featureByRegionId;
+    const saved = { ...features };
+    const realFetch = globalThis.fetch;
+    for (const key of Object.keys(features)) delete features[key];
+    globalThis.fetch = vi.fn((url) =>
+      String(url).includes('weather.geojson')
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ type: 'FeatureCollection', features: [] }),
+          })
+        : realFetch(url),
+    );
+    try {
+      const btn = document.getElementById('map-download-control');
+      btn.click();
+      // No warm-cache call to wait on — an empty plan never dispatches a
+      // run — so this settles on the repaint instead.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await body(btn);
+    } finally {
+      Object.assign(features, saved);
+      globalThis.fetch = realFetch;
+    }
+  }
+
+  it('clears a stale flag when a WHOLE plan resolves to nothing to fetch', async () => {
+    // Codex review on PR #908. An empty plan is not automatically a failed
+    // one: a boundary holding no bulletin region and no weather location
+    // resolves to zero urls, and that is a complete answer about this area.
+    // Both refresh paths used to return early WITHOUT stamping, so an area
+    // flagged by an earlier short plan could never be cleared — every tap
+    // re-resolved the same empty list and re-reported the same failure,
+    // leaving the roundel amber with a remedy that did nothing.
+    expect((await recordedRegion()).contentIncomplete).toBe(true);
+
+    await withEmptyPlan(async (btn) => {
+      expect(btn.dataset.downloadState).toBe('done');
+    });
+
+    expect('contentIncomplete' in (await recordedRegion())).toBe(false);
+  });
+
+  it('leaves the flag alone when an empty plan was itself SHORT', async () => {
+    // The other half of the same rule, and why `short` cannot be collapsed
+    // into "the list was empty". A plan assembled while a country was
+    // unreachable says nothing about what the boundary holds, so an empty
+    // one is not evidence of completeness and must not clear anything.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: row.value.map((entry) =>
+        entry && entry.region_id === REGION_ID
+          ? { ...entry, contentIncomplete: true }
+          : entry,
+      ),
+    });
+
+    const countries = window.pwaMapCountries;
+    window.pwaMapCountries = {
+      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
+    };
+    try {
+      await withEmptyPlan(async () => {
+        const record = await recordedRegion();
+        expect(record.contentIncomplete).toBe(true);
+      });
+    } finally {
+      window.pwaMapCountries = countries;
+    }
+  });
+});
+
+describe('a custom area catches up through the sheet (SNOW-932)', () => {
+  // The CUSTOM half of the same fact. A custom area has no roundel once
+  // its framing overlay closes, so `refreshAreaContent` — the bridge
+  // member the Manage downloads sheet's Refresh reaches — is the only way
+  // out of a shortfall it has. The sheet's own wiring is covered in
+  // tests/js/test_map_downloads_manager.js; what is asserted here is the
+  // thing only a real record and a real boundary can show.
+  const AREA_ID = 'custom-a1';
+
+  /** Seed one custom area over the fixture's ground, and read it back. */
+  async function seedCustomArea(extra) {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        Object.assign(
+          {
+            id: AREA_ID,
+            ordinal: 1,
+            bbox: [7.0, 46.0, 7.2, 46.2],
+            band: [10, 14],
+            template: TEMPLATE,
+            basemapKey: 'openfreemap_liberty',
+            bytes: 4096,
+            savedAt: '2026-01-05T10:00:00.000Z',
+            contentIncomplete: true,
+          },
+          extra || {},
+        ),
+      ],
+    });
+  }
+
+  /** The stored custom-area record, or undefined. */
+  async function storedCustomArea() {
+    const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
+    const list = Array.isArray(row && row.value) ? row.value : [];
+    return list.find((entry) => entry && entry.id === AREA_ID);
+  }
+
+  it('refetches the bulletins inside its box and not one tile', async () => {
+    // The user-visible promise, and the reason this goes through `repair`
+    // rather than `run`: kilobytes of HTML over the connection the download
+    // existed for, not megabytes of tiles — and no eviction confirm that
+    // could destroy another area for the sake of a day-old bulletin.
+    await seedCustomArea();
+    window.pwaWarmCache.mockClear();
+
+    const ok = await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(ok).toBe(true);
+    const urls = warmedUrls(0);
+    expect(urls).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
+    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/');
+    expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
+  });
+
+  it('deletes the flag on success rather than setting it false', async () => {
+    // The rule the whole ticket rests on. A `false` here would make this
+    // record disagree with every record written before the field existed,
+    // and the next reader to ask `'contentIncomplete' in record` would get
+    // a different answer for two areas in the same condition.
+    const record = await storedCustomArea();
+
+    expect('contentIncomplete' in record).toBe(false);
+    expect(typeof record.contentAt).toBe('string');
+  });
+
+  it('writes the flag back when the refetch falls over', async () => {
+    await seedCustomArea({ contentAt: '2026-01-05T10:00:00.000Z' });
+    window.pwaWarmCache.mockImplementationOnce(async () => ({
+      ok: 0,
+      failed: 6,
+      bytes: 0,
+      cancelled: false,
+    }));
+
+    const ok = await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(ok).toBe(false);
+    const record = await storedCustomArea();
+    expect(record.contentIncomplete).toBe(true);
+    // `contentAt` is left alone: it records the last time this area's
+    // content was fetched IN FULL, and this run did not change that.
+    expect(record.contentAt).toBe('2026-01-05T10:00:00.000Z');
+  });
+
+  it('declines an id nothing on this device carries', async () => {
+    // An orphaned bucket, or an area the account knows about and this
+    // device has never held. Nothing to refresh and nothing to write.
+    window.pwaWarmCache.mockClear();
+
+    const ok = await window.pwaBasemapDownloads.refreshAreaContent('custom-nope');
+
+    expect(ok).toBe(false);
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+
+  it('resolves a REGION id through the same one control', async () => {
+    // The sheet lists both kinds and offers one Refresh, so this member
+    // has to reach `basemap.regions` as readily as `basemap.customAreas`.
+    window.pwaWarmCache.mockClear();
+
+    const ok = await window.pwaBasemapDownloads.refreshAreaContent(
+      `region-${REGION_ID}`,
+    );
+
+    expect(ok).toBe(true);
+    expect(warmedUrls(0).some((url) => url.includes('tiles.example.invalid'))).toBe(
+      false,
+    );
   });
 });

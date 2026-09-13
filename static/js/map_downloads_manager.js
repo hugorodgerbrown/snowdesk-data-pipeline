@@ -318,6 +318,13 @@
     // a row cloned from a <template> has no name until buildRow fills it.
     'repair-row-label': 'Repair %(name)s',
     'repair-failed': "That download couldn't be repaired. Try again.",
+    // SNOW-932: the Refresh control's accessible name, its failure toast,
+    // and the subtitle for a row whose CONTENT half fell short. A separate
+    // word from 'kind-incomplete' on purpose — this row's map DRAWS and
+    // the area IS available offline; it is the bulletins that are behind.
+    'kind-content-incomplete': 'Bulletins not saved',
+    'refresh-row-label': 'Refresh %(name)s',
+    'refresh-failed': "Those bulletins couldn't be saved. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -1192,10 +1199,15 @@
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
    *   renameable?: boolean, size: string, basemapKey?: string,
-   *   incomplete?: boolean, missingDeps?: string[]}} row SNOW-844's two
+   *   incomplete?: boolean, missingDeps?: string[],
+   *   contentIncomplete?: boolean}} row SNOW-844's two
    *   fields are set by `markIncompleteRows`, never by the manage core —
    *   answering them needs Cache Storage, which that module deliberately
-   *   never touches.
+   *   never touches. SNOW-932's `contentIncomplete` comes the OTHER way,
+   *   from the manage core and ultimately from the area's own record: no
+   *   cache read can tell a bulletin absent because the boundary contains
+   *   none from one absent because the fetch fell over, so the run that
+   *   knew wrote it down.
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -1226,6 +1238,13 @@
       // same thing on this sheet — listed, but not usable offline here —
       // and this one is the newest member of that set: its tiles are real
       // and its map is blank.
+      //
+      // SNOW-932: `contentIncomplete` is deliberately NOT in this set. The
+      // dimming means "listed, but not available offline", and an area
+      // whose content fell short IS available offline — its tiles are
+      // whole, its map draws, and the bulletins it holds are simply older
+      // than today's. Dimming it would say the download failed, which is
+      // the opposite of what its Refresh control is there to offer.
       if (row.orphaned || row.onDevice === false || row.incomplete) {
         label.classList.remove('text-text-1');
         label.classList.add('text-text-2');
@@ -1301,6 +1320,21 @@
           basemap: basemapName(row.basemapKey),
           size: row.size,
         });
+        // SNOW-932: and a CLAUSE when this area's content half fell short
+        // — appended to the ordinary line rather than replacing it, which
+        // is the whole difference between this condition and the two
+        // above. "Incomplete" replaces the line because a row in that
+        // state has nothing useful to say about itself: it is not a usable
+        // download, so its kind and size are not the fact worth stating.
+        // This row IS a usable download — its tiles are whole, its map
+        // draws, it opens offline — and what is missing is what the map
+        // draws ON. So it keeps its kind, its basemap and its size and
+        // takes a caveat: "Custom area · OpenFreeMap · 12.0 MB ·
+        // Bulletins not saved". The same caveat-on-a-Yes shape the row is
+        // not dimmed for, and for the same reason.
+        if (row.contentIncomplete) {
+          subtitle.textContent += ' · ' + (STRINGS['kind-content-incomplete'] || '');
+        }
       }
       // No per-branch dimming here any more (SNOW-832). SNOW-645 dimmed
       // the SIZE COLUMN to `text-text-3` for an orphan, alongside the
@@ -1319,13 +1353,25 @@
     //   region here            Remove alone            → bare trash
     //   custom area / drop     Rename and Remove       → menu
     //   cannot render          Repair and Remove       → menu
+    //   content behind         Refresh and Remove      → menu (SNOW-932)
     //   not here               Download alone          → bare download
     //   base layer / orphan    see below
     const renameable = row.renameable && row.onDevice !== false;
     const repairable =
       row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length > 0;
+    // SNOW-932: a row whose CONTENT half fell short — its bulletins, not
+    // its tiles — can be refreshed. Independent of `repairable`: the two
+    // mend different halves, and an area can need one, the other, or
+    // both. The manage core already withheld the flag from an orphan and
+    // from an account-only row, neither of which has anything here to
+    // refresh.
+    const refreshable = !!row.contentIncomplete;
     const deletable = row.deletable !== false && row.onDevice !== false;
-    const useMenu = deletable && (renameable || repairable);
+    // A REGION row reaches the menu for the first time here: it was a bare
+    // trash because Remove was its only action, and a second action
+    // changes its shape. That is design-system rule 5 applying rather than
+    // an exception to it — see the row-menu partial's own comment.
+    const useMenu = deletable && (renameable || repairable || refreshable);
 
     // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
     // older cached shell whose row template predates it would otherwise
@@ -1369,7 +1415,12 @@
     // stamped with the area id AND a menu item without one.
     if (showMenu) {
       for (const inline of fragment.querySelectorAll(
-        '[data-downloads-delete], [data-downloads-repair], [data-row-rename]',
+        // SNOW-932: `[data-downloads-refresh]` joins the list. Missing
+        // from it, the inline copy survives the swap and the stamping
+        // below (which takes the FIRST match) fills that one while the
+        // menu item keeps the value-less attribute the template renders
+        // — leaving the row carrying the action twice, once dead.
+        '[data-downloads-delete], [data-downloads-repair], [data-downloads-refresh], [data-row-rename]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();
@@ -1463,6 +1514,28 @@
         );
       } else {
         repairBtn.remove();
+      }
+    }
+
+    // SNOW-932: "Refresh" — refetch the bulletins and weather inside this
+    // area's boundary, and not one tile. Carried by any row whose record
+    // says its content half fell short; every other row sheds it, so a row
+    // with nothing behind offers nothing to catch up.
+    //
+    // No url list travels on the element, unlike Repair's above. The
+    // boundary is what decides which bulletins these are, and only
+    // map_basemap_downloads.js can resolve it — so the id is the whole
+    // payload and `refreshAreaContent` does the resolving.
+    const refreshBtn = fragment.querySelector('[data-downloads-refresh]');
+    if (refreshBtn) {
+      if (row.contentIncomplete) {
+        refreshBtn.setAttribute('data-downloads-refresh', row.id);
+        refreshBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['refresh-row-label'], { name: row.label }),
+        );
+      } else {
+        refreshBtn.remove();
       }
     }
 
@@ -1648,6 +1721,7 @@
       return;
     }
     if (_handleRepairClick(event)) return;
+    if (_handleRefreshClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
@@ -1710,6 +1784,66 @@
       render();
       // The layers menu is a live cache-state dashboard, and this run wrote
       // into a pinned bucket.
+      window.pwaLayerSyncStatus?.refresh();
+    });
+    return true;
+  }
+
+  /**
+   * SNOW-932: "Refresh" — refetch the bulletins and weather inside this
+   * area's boundary, into the bucket its tiles already live in.
+   *
+   * The remedy for the `contentIncomplete` fact this ticket makes durable,
+   * and the only one a CUSTOM area has: a region has a roundel that
+   * refreshes on a tap, a custom area's framing overlay closes and never
+   * comes back. One control serves both kinds here rather than a second
+   * roundel being grown for custom areas, which was the scope decision on
+   * the ticket.
+   *
+   * NO TILES ARE RE-FETCHED — the same short path Repair above takes, for
+   * the same reasons plus one this control feels more sharply: a refresh
+   * is kilobytes of HTML, and the connection it is taken on is the reason
+   * the download existed. Sending it through the download path would cost
+   * megabytes and could raise an eviction confirm that destroys another
+   * area to make room for a day-old bulletin.
+   *
+   * Unlike Repair it carries no url list. Which bulletins an area contains
+   * is a question only its boundary answers, and only
+   * map_basemap_downloads.js can ask — so the id is the whole payload.
+   *
+   * Offline refuses, like every other control here that starts a fetch.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a Refresh.
+   */
+  function _handleRefreshClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-refresh]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-refresh');
+    if (!areaId) return true;
+
+    // SNOW-748: the mode, not the radio — a forced offline mode leaves
+    // `navigator.onLine` true, and a refresh is network use.
+    if (!networkInUse()) {
+      window.MapSheet?.toast(STRINGS['add-offline']);
+      return true;
+    }
+
+    // Disabled for the duration, as Repair is: the refetch is short, and a
+    // second tap would dispatch a second warm run for urls the first is
+    // already fetching.
+    button.setAttribute('disabled', '');
+    window.pwaBasemapDownloads?.refreshAreaContent(areaId).then(function (ok) {
+      if (!ok) window.MapSheet?.toast(STRINGS['refresh-failed']);
+      // Re-render either way, from the record as it stands now — a
+      // refresh that landed has cleared the flag this row was showing, and
+      // one that did not has just rewritten it.
+      render();
+      // The layers menu is a live cache-state dashboard, and this run
+      // wrote into a pinned bucket.
       window.pwaLayerSyncStatus?.refresh();
     });
     return true;

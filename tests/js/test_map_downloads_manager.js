@@ -147,6 +147,7 @@ function buildFixture() {
         <span>
           <button type="button" data-downloads-here aria-label="Download here">⤓</button>
           <button type="button" data-downloads-repair aria-label="Repair">↻</button>
+          <button type="button" data-downloads-refresh aria-label="Refresh">⟳</button>
           <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
           <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
           <!-- SNOW-XXX: the "…" shape, mirroring includes/_overflow_menu.html
@@ -159,6 +160,8 @@ function buildFixture() {
             <ul id="downloads-row-actions-menu" role="menu" hidden>
               <li role="none"><button type="button" role="menuitem" data-downloads-repair
                                       aria-label="Repair">Repair</button></li>
+              <li role="none"><button type="button" role="menuitem" data-downloads-refresh
+                                      aria-label="Refresh">Refresh</button></li>
               <li role="none"><button type="button" role="menuitem" data-row-rename
                                       data-downloads-rename aria-label="Rename">Rename</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-delete
@@ -180,6 +183,9 @@ function buildFixture() {
       <span data-string="kind-incomplete">Incomplete</span>
       <span data-string="repair-row-label">Repair %(name)s</span>
       <span data-string="repair-failed">That download couldn't be repaired. Try again.</span>
+      <span data-string="kind-content-incomplete">Bulletins not saved</span>
+      <span data-string="refresh-row-label">Refresh %(name)s</span>
+      <span data-string="refresh-failed">Those bulletins couldn't be saved. Try again.</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
@@ -274,6 +280,11 @@ function installDownloadsBridge(rows, cachesStub) {
         // Absent on a record written before that ticket, and normalised to
         // [] here exactly as map.js's own reader does.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-932: whether the run that fetched this area fell short of
+        // its CONTENT half. A stored fact, unlike SNOW-844's `deps` check
+        // above — no cache read can answer it — so the reader carries it
+        // through exactly as map.js's own does.
+        contentIncomplete: !!entry.contentIncomplete,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -298,6 +309,8 @@ function installDownloadsBridge(rows, cachesStub) {
         bbox: entry.bbox,
         // SNOW-844: see the region branch above.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-932: see the region branch above.
+        contentIncomplete: !!entry.contentIncomplete,
       });
     }
     return out;
@@ -390,6 +403,35 @@ function installDownloadsBridge(rows, cachesStub) {
       const set = new Set(cachesStub.urls || []);
       for (const url of urls) set.add(url);
       cachesStub.urls = [...set];
+      return true;
+    }),
+    // SNOW-932: the content refresh. Reimplemented against the seeded
+    // records rather than stubbed to a constant, for `areas()`'s reason:
+    // what the sheet promises is that a successful refresh CLEARS the flag
+    // the row was showing, and a stub that only resolved `true` would let
+    // a writer that never cleared it pass. Takes an id and no url list —
+    // only the area's own boundary says which bulletins it contains.
+    refreshAreaContent: vi.fn(async (areaId) => {
+      const core = getCore();
+      if (cachesStub.refreshFails) return false;
+      const key = core.isCustomAreaId(areaId) ? 'basemap.customAreas' : 'basemap.regions';
+      const existing = rows.get(key) || [];
+      const matches = (entry) =>
+        entry &&
+        (key === 'basemap.customAreas'
+          ? entry.id === areaId
+          : core.areaIdForRegion(entry.region_id) === areaId);
+      if (!existing.some(matches)) return false;
+      rows.set(
+        key,
+        existing.map((entry) => {
+          if (!matches(entry)) return entry;
+          // The write rule the real writer follows: DELETE on success,
+          // never set false — absence is the only "nothing wrong".
+          const { contentIncomplete: _cleared, ...rest } = entry;
+          return { ...rest, contentAt: '2026-09-13T00:00:00.000Z' };
+        }),
+      );
       return true;
     }),
   };
@@ -1346,6 +1388,167 @@ describe('an area that cannot render (SNOW-844)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
     expect(row.querySelector('[data-downloads-repair]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+});
+
+describe('an area whose bulletins are behind (SNOW-932)', () => {
+  /** A custom area on the active basemap whose content half fell short. */
+  function customAreaWithStaleContent(extra) {
+    return [
+      Object.assign(
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [7, 46, 7.2, 46.2],
+          band: [10, 14],
+          bytes: 12 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'openfreemap_liberty',
+          contentIncomplete: true,
+        },
+        extra || {},
+      ),
+    ];
+  }
+
+  it('adds its shortfall as a clause, keeping the kind, basemap and size', async () => {
+    // Two different conditions, and the sheet must not conflate them. An
+    // "Incomplete" row REPLACES its meta line because it has nothing
+    // useful to say about itself — it cannot be used offline at all. This
+    // one can: its tiles are whole and its map draws. So the ordinary
+    // line survives and the shortfall is appended to it, which is the
+    // same caveat-on-a-Yes shape as the row not being dimmed.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const meta = firstRowElement().querySelector('[data-row-meta]').textContent;
+    expect(meta).toContain('Custom area');
+    expect(meta).toContain('12.0 MB');
+    expect(meta.endsWith('· Bulletins not saved')).toBe(true);
+    expect(meta).not.toBe('Bulletins not saved');
+  });
+
+  it('does not dim the row, because the area IS available offline', async () => {
+    // The dimming on this sheet has one meaning — "listed, but not
+    // available offline" — and it would be the wrong thing to say here.
+    // Dimming this row would report a failed download over a working one.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const label = firstRowElement().querySelector('[data-row-label]');
+    expect(label.classList.contains('text-text-2')).toBe(false);
+    expect(label.classList.contains('text-text-1')).toBe(true);
+  });
+
+  it('offers Refresh, and refetches by area id rather than a url list', async () => {
+    // Which bulletins an area contains is a question only its boundary
+    // answers, and only the map bundle can ask — so unlike Repair, the id
+    // is the whole payload.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const refresh = firstRowElement().querySelector('[data-downloads-refresh]');
+    expect(refresh).not.toBeNull();
+    expect(refresh.getAttribute('aria-label')).toBe('Refresh Custom area 1');
+
+    refresh.click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.refreshAreaContent).toHaveBeenCalledWith('custom-a1');
+    // Never the download path: a refresh is kilobytes of HTML, and `run`'s
+    // eviction confirm can destroy another area to make room.
+    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
+  });
+
+  it('drops the row back to normal once the refresh lands', async () => {
+    // The flag is DELETED on success, never set false, so the re-render
+    // reads a record indistinguishable from one that never fell short.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-refresh]').click();
+    await settle();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe(
+      'Custom area · OpenFreeMap · 12.0 MB',
+    );
+    expect(row.querySelector('[data-downloads-refresh]')).toBeNull();
+  });
+
+  it('toasts when the refresh does not land', async () => {
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    window.caches.refreshFails = true;
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-refresh]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('refuses a refresh while offline', async () => {
+    // Listing and deleting what is stored needs no connection; this is not
+    // that. SNOW-748: the MODE, not `navigator.onLine`.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    firstRowElement().querySelector('[data-downloads-refresh]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.refreshAreaContent).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('leaves a row whose content is whole with no Refresh', async () => {
+    seed({ 'basemap.customAreas': customAreaWithStaleContent({ contentIncomplete: false }) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-downloads-refresh]')).toBeNull();
+  });
+
+  it('moves a REGION row from a bare trash to a menu', async () => {
+    // The one shape change this ticket makes. Remove was a region row's
+    // only action, so it was a bare trash; a second action is a "…", which
+    // is design-system rule 5 applying rather than an exception to it.
+    seed({
+      'basemap.regions': [
+        {
+          region_id: 'CH-2101',
+          name: 'Aletsch',
+          band: [10, 14],
+          bytes: 40 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'openfreemap_liberty',
+          contentIncomplete: true,
+        },
+      ],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-overflow-menu]')).not.toBeNull();
+    expect(row.querySelector('[data-downloads-refresh]')).not.toBeNull();
+    // And no Rename: a region's name is its real name.
+    expect(row.querySelector('[data-downloads-rename]')).toBeNull();
   });
 });
 
