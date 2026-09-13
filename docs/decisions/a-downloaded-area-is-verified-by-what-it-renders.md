@@ -1,8 +1,8 @@
 ---
 name: a-downloaded-area-is-verified-by-what-it-renders
-description: missingRenderDependencies, baseLayerStaleEntries, incomplete, repair — an area and the base layer need their style, TileJSON and sprite
+description: missingRenderDependencies, incomplete, repair, contentIncomplete, refreshAreaContent — an area needs its style, TileJSON, sprite, bulletins
 status: current
-last-reviewed: 2026-09-12
+last-reviewed: 2026-09-13
 ---
 
 # A downloaded area is verified by what it renders, not by its tiles
@@ -225,3 +225,80 @@ firing.
   both directions — skip never accuses and never falsely completes — but the
   two paths are not equally informative, and closing the gap means giving
   the sheet's repair a heal of its own.
+
+## Addendum (SNOW-932): the same rule for the CONTENT half
+
+SNOW-924 gave a download a second, independent half — the bulletins and
+weather inside its boundary. It is the perishable one: tiles are a fixed
+grid over fixed ground and never go stale, bulletins are new every day. It
+added a roundel state, **`partial`**, for "tiles landed, content did not".
+
+That state was *painted* and never *stored*. `_probeDone` returned eight
+states and `partial` was not among them, so the next `renderControl()`
+repainted `done` from the probe — and `renderControl()` fires on
+`snowdesk:connectivity-changed`, which is exactly what a flapping signal
+fires. The amber state was erased precisely when it had been earned.
+
+**The rule above is the fix, applied to the second half.** An area is
+verified by stored fact, not by probe alone — and content completeness is
+the strongest case for it, because unlike `deps` it cannot be probed *at
+all*. A bulletin absent from the bucket because the boundary contains none
+is indistinguishable from one absent because the fetch fell over. Only the
+run that assembled the plan knows, so the run writes it down:
+**`contentIncomplete: true`** on the area's record, read back by
+`_probeDone` and painted by `_renderControl` ahead of its `done` branch.
+
+### Absence means fine
+
+`contentIncomplete` is written `true` or **not written at all**. It is
+**deleted** on a successful refresh, never set to `false`.
+
+This is the whole backwards-compatibility story and it is worth stating
+plainly, because the obvious alternative quietly breaks the estate. Every
+record written before SNOW-924 carries neither `contentAt` nor
+`contentIncomplete`. If absence read as a shortfall, the deploy that
+introduced the field would turn every existing area amber overnight, each
+with no shortfall behind it. So absence is the *only* representation of
+"nothing wrong", and every reader — `_probeDone`, `manageRows`, `buildRow`,
+the downloaded-areas reader — coerces with `!!` rather than comparing
+against `false`. The delete-on-success path is the one to get exactly
+right: a stale `true` strands an area amber forever, with the control that
+would clear it reporting success each time.
+
+### Three states, not two
+
+`pwaBasemapDownloadCore.contentOutcome(content)` answers with a pair,
+`{complete, incomplete}`, and `incomplete` is **not** the negation of
+`complete`. The third state is a run with nothing to fetch — an area whose
+boundary contains no bulletins, or a shell whose deps bundle predates the
+content phase. It records neither field, because a stamp would claim a
+freshness it never had and a flag would strand it amber.
+
+`complete` also requires the PLAN to have been whole. SNOW-931 found that a
+country the client never loaded is never *listed*, so its bulletins are
+missing from a tally that reads `ok === total` over everything that was
+listed — a shortfall no count over that list can see. `assembleAreaContentURLs`
+returns `{urls, short}` for exactly this, and `short` makes a run incomplete
+whatever its tally says.
+
+### The remedy, and where it lives
+
+A region has a roundel that refreshes on a tap. A **custom area does not** —
+its framing overlay closes and never comes back — so the remedy for both
+lives on the Manage downloads sheet:
+`window.pwaBasemapDownloads.refreshAreaContent(areaId)`, which resolves the
+record for either kind and goes through **`repair`, never `run`**. No tiles
+are re-fetched. That is a user-visible promise rather than an
+implementation detail: a refresh costs kilobytes of HTML over the same thin
+connection the download existed for, where `run` would cost megabytes and
+could raise an eviction confirm that destroys another area to make room for
+a day-old bulletin.
+
+### What the sheet must NOT say
+
+A content-incomplete row is **not** dimmed, and does not reuse the
+"Incomplete" line. Dimming on that sheet means "listed, but not available
+offline", and this area *is* available offline — its tiles are whole and
+its map draws. What is behind is the news on it. The row says **"Bulletins
+out of date"** and carries a Refresh, which is a different condition from
+an orphan or a row that cannot render, and must keep reading as one.
