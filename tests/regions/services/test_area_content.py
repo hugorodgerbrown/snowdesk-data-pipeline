@@ -4,8 +4,8 @@ tests/regions/services/test_area_content.py — Tests for the area_content servi
 Covers:
   bboxes_overlap / point_in_bbox — the edge-inclusive rectangle rule
                       SNOW-953 moved out of ``basemap_download_core.js``,
-                      including the golden vector asserted identically in
-                      ``tests/js/test_basemap_download_core.js``.
+                      including the golden vector that pins the behaviour
+                      inherited from its retired JS twin.
   micro_region_index — the candidate set: every mapped micro-region with
                       a boundary, in ``region_id`` order, and nothing
                       whose parent is off the map or outside
@@ -38,11 +38,12 @@ from tests.factories import (
     SubRegionFactory,
 )
 
-# The golden vector: one box and the answers both implementations must
-# give for it. Asserted identically in ``tests/js/test_basemap_download_core.js``
-# (``describe('the rectangle rule (golden vector, SNOW-953)')``), which is
-# the only thing holding the Python rule and its retired JS twin's
-# behaviour together now that the code lives in one language.
+# The golden vector: one box, and the answer for every interesting
+# neighbour of it. These are the answers ``basemap_download_core.js``'s
+# ``bboxesOverlap`` and ``pointInBBox`` gave before SNOW-953 moved the rule
+# here, written down as values rather than left implicit in a port — so a
+# later edit that "tidies" an edge case has to change a number a reviewer
+# can see, rather than a comparison operator nobody notices.
 GOLDEN_BOX: list[float] = [7.0, 46.0, 8.0, 47.0]
 GOLDEN_OVERLAPS: list[tuple[list[float], bool]] = [
     ([8.0, 46.0, 9.0, 47.0], True),  # shares the eastern edge
@@ -295,8 +296,8 @@ def _mapped_regions() -> None:
     """Create three mapped micro-regions: inside, straddling, and far away.
 
     The same three shapes ``tests/js/test_basemap_download_core.js`` used
-    for ``areaContentPlan``, so the selection behaviour reads the same on
-    both sides of the move.
+    for ``areaContentPlan`` before SNOW-953, so the selection behaviour
+    reads the same on both sides of the move.
 
     """
     major = MajorRegionFactory.create(prefix="CH-9", country="CH")

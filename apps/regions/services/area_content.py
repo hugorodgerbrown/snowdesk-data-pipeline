@@ -34,7 +34,7 @@ The two predicates are the Python twins of
 ``pointInBBox``, which SNOW-953 removed from that file; their
 edge-inclusive rule and its rationale moved here with them, and
 ``tests/regions/services/test_area_content.py`` pins a golden vector
-shared with ``tests/js/test_basemap_download_core.js``.
+recording the answers that JS twin gave.
 
 Coordinate convention: **(lon, lat) order** throughout, matching GeoJSON
 positions and ``basemap_tiles.py`` next door — the same deliberate
@@ -184,7 +184,7 @@ def bboxes_overlap(a: BBox | None, b: BBox | None) -> bool:
     ``docs/decisions/inside-the-boundary-is-complete.md`` picks the page.
     The rule and this wording moved here from
     ``basemap_download_core.js``'s ``bboxesOverlap`` (SNOW-924, SNOW-953);
-    a golden vector pins the two implementations to the same answers.
+    a golden vector records the answers that implementation gave.
 
     Args:
         a: A box, or anything that is not one.
