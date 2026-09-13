@@ -1485,6 +1485,27 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     expect(row.querySelector('[data-downloads-refresh]')).toBeNull();
   });
 
+  it('repaints the region roundel, which reads the same record', async () => {
+    // SNOW-932 review: when the refreshed area is the region FOCUSED on the
+    // map, clearing the stored shortfall left the roundel painted 'partial'
+    // until an unrelated region, basemap or connectivity event happened by
+    // — and a tap meanwhile ran a second, redundant refresh. The sheet's
+    // own re-render and the layers-menu refresh reach neither that control
+    // nor its probe.
+    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
+    const refreshState = vi.fn();
+    window.pwaRegionDownload = { refreshState };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-refresh]').click();
+    await settle();
+
+    expect(refreshState).toHaveBeenCalled();
+    delete window.pwaRegionDownload;
+  });
+
   it('toasts when the refresh does not land', async () => {
     seed({ 'basemap.customAreas': customAreaWithStaleContent() });
     window.caches.refreshFails = true;
