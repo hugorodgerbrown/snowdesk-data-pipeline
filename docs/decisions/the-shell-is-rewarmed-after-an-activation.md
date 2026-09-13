@@ -1,15 +1,15 @@
 ---
 name: the-shell-is-rewarmed-after-an-activation
-description: sw.js activate re-warms the map page and its scripts/styles — _rewarmShell, _shellSubresources, SHELL_PAGE; a deploy broke offline open
+description: sw.js activate re-warms the map page and its scripts/styles — _rewarmShell, _shellSubresources, SHELL_PAGES; a deploy broke offline open
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-13
 ---
 
 # The shell is re-warmed after an activation
 
 **Decision** (SNOW-912). `activate` puts the map page back in the shell
 cache it has just emptied. `_rewarmShell()` runs after `clients.claim()`, inside the same
-`waitUntil`, and warms `SHELL_PAGE` (`/`) through `_warmCache` — which, for a
+`waitUntil`, and warms `SHELL_PAGES` through `_warmCache` — which, for a
 same-origin HTML response, now also fetches the page's own same-origin
 scripts and stylesheets (`_shellSubresources`, capped at
 `SHELL_SUBRESOURCE_LIMIT`, cache-checked before each fetch).
@@ -100,3 +100,17 @@ updated the app at home and opened it on a lift.
   this caller rather than on `_warmCache`'s fetches, which must stay
   unbounded for a several-thousand-tile basemap download; a radio that
   hangs rather than rejecting would otherwise hold the activation open.
+
+## SHELL_PAGE became SHELL_PAGES (SNOW-930)
+
+`/offline/` joined the map page in the warm. It is the page a reader
+reaches for when the app is not behaving, and a page that cannot itself
+be opened offline is a poor place to explain why nothing else can. It
+could not have joined before that ticket: it was part of
+`/account/settings/`, and a login-gated page cannot usefully be warmed —
+the warm would fetch a redirect to sign-in.
+
+A list rather than a bespoke second path, so the next page that needs
+this is an entry rather than a third mechanism. `SHELL_PAGE` itself stays
+a single string because `_canOpenOffline` asks one question — will the
+app open — and the app is the map.

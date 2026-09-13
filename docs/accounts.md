@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-13
 ---
 
 # Accounts
@@ -19,7 +19,7 @@ An account is an email address proven reachable — via a signed-token flow (no 
 | `/account/favourites/` | `favourites` | GET | Permanent 301 to `/?panel=favourites` (SNOW-803) |
 | `/account/observations/` | `observations` | GET | Permanent 301 to `/?panel=reports` (SNOW-803) |
 | `/account/routes/` | `routes` | GET | Permanent 301 to `/?panel=routes` (SNOW-803) |
-| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, sync log, reset local data, sign out, delete account (SNOW-667) — the one account page |
+| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, theme, sign out, delete account (SNOW-667) — the one account page. SNOW-930 took the offline-content report, the reset-local-data control and the sync log off it to the public `/offline/`: none of them touched the account, and gating them put the page you need with no signal behind a login |
 | `/account/register/` | `register` | GET + POST | Standalone registration (email required, name optional); sends a verification link |
 | `/account/verify/<token>/` | `verify` | GET + POST | GET shows a confirm button (no state change); POST marks the `Account` verified, logs in, redirects to setup |
 | `/account/setup/` | `setup` | GET | Post-verification credential-setup landing (extended by SNOW-431/434) |

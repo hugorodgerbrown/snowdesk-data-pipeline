@@ -61,7 +61,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-import waffle
 from django.conf import settings
 from django.contrib.auth import (
     authenticate,
@@ -1109,9 +1108,16 @@ def settings_view(request: HttpRequest) -> HttpResponse:
     Unauthenticated visitors are redirected to the sign-in page.
 
     Holds everything the user can change about the account itself: the
-    verified email address, passkeys, the telemetry opt-in, the sync-log
-    panel, the reset-local-data escape hatch, sign out, and the account
-    deletion control.
+    verified email address, passkeys, the telemetry opt-in, the theme
+    preference, sign out, and the account deletion control.
+
+    SNOW-930 took the offline-content audit, the reset-local-data control
+    and the sync-log panel off it. None of them touched the account —
+    every reading was computed client-side from this browser's storage —
+    and they were gated only because this page was the one page available
+    to put them in, which meant the page you need when you have no signal
+    was behind a login. They live at ``/offline/``
+    (``apps.public.views.offline_page``); this page keeps a link to it.
 
     Not ``@never_cache`` — see ``_ACCOUNT_PAGE_CACHE_NOTE``. This page does
     not itself feed the offline roster, but it renders inside the same shell
@@ -1120,19 +1126,6 @@ def settings_view(request: HttpRequest) -> HttpResponse:
 
     Context keys:
         account          — authenticated Account instance.
-        sync_log_visible — True when the ``sync_log`` waffle flag is active
-                            for this request (SNOW-482). Gates the sync-log
-                            panel, which reads ``window.pwaDb.getSyncLog()``
-                            client-side — nothing server-side to query here.
-        default_basemap_key — the deployed default basemap
-                            (``settings.BASEMAP``), the same value the map
-                            page renders as ``data-default-basemap-key``
-                            (SNOW-913). The offline-content report names the
-                            basemap the reader is actually looking at, and a
-                            visitor who has never opened the basemap picker
-                            has written no ``localStorage`` preference — so
-                            the only way to know which style they will see is
-                            to be told the default that stands in for it.
 
     Args:
         request: Incoming HTTP request.
@@ -1149,8 +1142,6 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         "accounts/settings.html",
         {
             "account": _get_account(request),
-            "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-            "default_basemap_key": settings.BASEMAP,
         },
     )
 

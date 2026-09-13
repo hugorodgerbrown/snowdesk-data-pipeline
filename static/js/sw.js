@@ -950,6 +950,21 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // body declares (SNOW-624), which is what makes the entry servable at all.
 const SHELL_PAGE = '/';
 
+// SNOW-930: every page the activation re-warms, of which SHELL_PAGE is the
+// first and the one ``_canOpenOffline`` asks about. ``/offline/`` joins it
+// because it is the page a reader reaches for when the app is not
+// behaving, and a page that cannot itself be opened offline is a poor
+// place to explain why nothing else can. It was only ever gated behind an
+// account by accident (SNOW-930's own reason for existing), and a
+// login-gated page can never usefully be warmed at all — the warm would
+// fetch a redirect to sign-in.
+//
+// A list rather than a bespoke second path: the next page that needs this
+// should be an entry here, not a third mechanism. ``SHELL_PAGE`` stays a
+// single string because ``_canOpenOffline`` asks one question — "will the
+// app open" — and the app is the map.
+const SHELL_PAGES = [SHELL_PAGE, '/offline/'];
+
 // The subresources of a warmed page: same-origin scripts and stylesheets,
 // by attribute. A page whose HTML is saved and whose JavaScript is not
 // does not open — it paints a blank frame — so warming one without the
@@ -3171,6 +3186,55 @@ const PRINCIPAL_UNKNOWN = 'unknown';
 // silently turn every navigation into PRINCIPAL_UNKNOWN.
 const PWA_USER_ID_META = /<meta\s+name=["']pwa-user-id["']\s+content=["']([^"']*)["']/i;
 
+// SNOW-930: paths whose cached navigation is servable to ANY principal.
+//
+// The principal rule exists because a page rendered for one account must
+// never be served to another, and it is the right default for every page
+// the app has. ``/offline/`` is the first one where it is actively wrong:
+// nothing on it comes from an account — the whole page is a reading of
+// this browser's Cache Storage, IndexedDB and storage estimate — and it
+// is precisely the page a reader needs when something has gone wrong,
+// which is exactly when they may have been signed out.
+//
+// Without this, a copy cached while signed in stops matching the moment
+// the reader signs out (``_currentPrincipal()`` answers
+// PRINCIPAL_ANONYMOUS, the stamp is a uuid) and they get
+// ``static/offline.html``'s fallback instead of the page — while offline,
+// which is the one moment the page exists for. ``base.html`` renders the
+// ``pwa-user-id`` meta tag on EVERY page, so this page is stamped like any
+// other and the exemption has to be explicit.
+//
+// A frozen, one-place list of paths that are public by construction,
+// mirroring ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``.
+// Preferred over the two alternatives: a response header the view sets
+// fails in the wrong direction, because a copy cached before that header
+// shipped is indistinguishable from an account page; and a sentinel
+// principal value would need every existing comparison rewritten. This
+// constant is versioned with the worker doing the matching, which is the
+// property that matters.
+//
+// Compared against the pathname alone, so a query string cannot smuggle a
+// non-public page past it, and matched exactly rather than by prefix.
+const PUBLIC_PRINCIPAL_PATHS = Object.freeze(['/offline/']);
+
+/**
+ * True when ``request`` names a path whose cached copy is public
+ * (SNOW-930) — see ``PUBLIC_PRINCIPAL_PATHS``.
+ *
+ * Never throws: a request whose URL will not parse is simply not public,
+ * which is the fail-closed direction the whole principal rule takes.
+ *
+ * @param {Request} request
+ * @returns {boolean}
+ */
+function _isPublicPrincipalPath(request) {
+  try {
+    return PUBLIC_PRINCIPAL_PATHS.includes(new URL(request.url).pathname);
+  } catch (_err) {
+    return false;
+  }
+}
+
 /**
  * True when ``response`` declares ``Cache-Control: no-store``. Uses the
  * same token-split/trim/includes match as ``shouldPersist``'s
@@ -3515,8 +3579,13 @@ async function _rewarmShell() {
       _debugLog('shell.rewarm', { result: 'skipped-offline' });
       return;
     }
+    // SNOW-930: every shell page, in one warm. `_warmCache` walks the list
+    // and pulls each page's own subresources in behind it, deduplicating
+    // against what it has already written — `/offline/` shares base.html
+    // with the map page, so most of the second page's list is already
+    // there by the time it is reached.
     const result = await Promise.race([
-      _warmCache([SHELL_PAGE]),
+      _warmCache(SHELL_PAGES),
       new Promise((resolve) => setTimeout(() => resolve(null), SHELL_REWARM_BUDGET_MS)),
     ]);
     if (!result) {
@@ -3607,6 +3676,11 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  */
 async function _networkFirstFallback(request, cache, startedAt) {
   const current = await _currentPrincipal();
+  // SNOW-930: a public path's cached copy matches whatever principal is
+  // current. Resolved once, here, so both match branches below read the
+  // same answer — see PUBLIC_PRINCIPAL_PATHS.
+  const isPublic = _isPublicPrincipalPath(request);
+  const matches = (entry) => isPublic || _principalMatches(entry, current);
   const cached = await cache.match(request);
   // SNOW-846: this function, not its caller, is where the shell page and
   // the offline fallback are told apart — "you got the page you asked for
@@ -3614,14 +3688,14 @@ async function _networkFirstFallback(request, cache, startedAt) {
   // to "where did this come from", and _networkFirst cannot see which
   // happened. It logs only the branches it owns; between them, exactly one
   // `serve` line is emitted per navigation.
-  if (cached && _principalMatches(cached, current)) {
+  if (cached && matches(cached)) {
     const hit = _stampCacheHit(cached);
     _debugServe(request, 'navigate', 'shell', hit, startedAt);
     return hit;
   }
   if (request.mode === 'navigate' || request.destination === 'document') {
     const searchless = await cache.match(request, { ignoreSearch: true });
-    if (searchless && _principalMatches(searchless, current)) {
+    if (searchless && matches(searchless)) {
       const hit = _stampCacheHit(searchless);
       _debugServe(request, 'navigate', 'shell', hit, startedAt);
       return hit;

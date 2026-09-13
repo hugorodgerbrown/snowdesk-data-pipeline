@@ -1,12 +1,17 @@
 """
-tests/accounts/test_settings_offline_audit.py — the offline-content audit
-panel on /account/settings/ and on the offline fallback page (SNOW-907).
+tests/public/test_offline_audit_panel.py — the offline-content audit panel
+on /offline/ and on the offline fallback page (SNOW-907, SNOW-930).
+
+SNOW-930 moved this module out of ``tests/accounts/``, where it was
+``test_settings_offline_audit.py``, along with the panel itself: the audit
+was on ``/account/settings/`` only because that page existed, and nothing
+in it has ever touched an account.
 
 What is worth pinning here is everything the panel's two halves rely on
 each other for, none of which any linter checks:
 
-  * The settings page renders the panel AND loads both scripts. The row
-    is markup with no behaviour of its own — forget a script tag and the
+  * ``/offline/`` renders the panel AND loads both scripts. The row is
+    markup with no behaviour of its own — forget a script tag and the
     button renders, binds to nothing, and reports nothing, silently.
   * The strings ``<template>`` id matches the one the module asks for.
     Whether the KEYS agree is tests/test_js_strings_are_translatable.py's
@@ -35,22 +40,10 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
-from apps.accounts.models import Account
-from tests.factories import AccountFactory
-
-_TOKEN_BACKEND = "django.contrib.auth.backends.ModelBackend"
-
 PARTIAL = "includes/_offline_audit_panel.html"
 MODULE = Path(settings.BASE_DIR) / "static" / "js" / "offline_audit.js"
 OFFLINE_PAGE = Path(settings.BASE_DIR) / "static" / "offline.html"
 SERVICE_WORKER = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
-
-
-def _client_for(account: Account) -> Client:
-    """Return a test client signed in as the account's User."""
-    client = Client()
-    client.force_login(account.user, backend=_TOKEN_BACKEND)
-    return client
 
 
 class TestPartial:
@@ -144,26 +137,20 @@ class TestStringsTemplate:
 
 
 @pytest.mark.django_db
-class TestSettingsPage:
+class TestOfflinePage:
     """The proactive entry point — the one to use before a journey."""
 
     def test_panel_renders_in_the_device_group(self) -> None:
         """The row sits in "This device", above the reset it precedes."""
-        html = (
-            _client_for(AccountFactory.create())
-            .get(reverse("accounts:settings"))
-            .content.decode()
-        )
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
         assert 'data-testid="offline-audit-panel"' in html
-        assert 'data-testid="settings-group-device"' in html
+        assert 'data-testid="offline-group-device"' in html
 
     def test_both_scripts_are_loaded(self) -> None:
         """The row is inert markup without them, and fails silently."""
-        html = (
-            _client_for(AccountFactory.create())
-            .get(reverse("accounts:settings"))
-            .content.decode()
-        )
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
         assert "offline_audit_core" in html
         assert "offline_audit." in html
 
@@ -173,20 +160,14 @@ class TestSettingsPage:
         ``settings.BASEMAP`` is, and the report needs it for a visitor who
         has never opened the basemap picker.
         """
-        html = (
-            _client_for(AccountFactory.create())
-            .get(reverse("accounts:settings"))
-            .content.decode()
-        )
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
         assert f'data-default-basemap-key="{settings.BASEMAP}"' in html
 
     def test_the_core_is_loaded_before_the_module(self) -> None:
         """``offline_audit.js`` calls into the core at bind time."""
-        html = (
-            _client_for(AccountFactory.create())
-            .get(reverse("accounts:settings"))
-            .content.decode()
-        )
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
         assert html.index("offline_audit_core") < html.index("js/offline_audit.")
 
 

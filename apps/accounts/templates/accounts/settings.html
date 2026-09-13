@@ -388,132 +388,48 @@ because the repository is the authority and the mock is a drawing:
                     </div>
 
                     {% comment %}
-                        SNOW-907: the offline-content audit.
+                        SNOW-930: the offline-content audit, the reset
+                        control with its size breakdown and the sync log
+                        were all here, and none of them belonged. Every
+                        reading in them is computed client-side from Cache
+                        Storage, IndexedDB and navigator.storage.estimate()
+                        — facts about this browser, with no account
+                        anywhere in them — and they were gated only because
+                        this page was the one page available to put them
+                        in. That is the accident SNOW-921 corrected for the
+                        "Offline mode" switch, which had become an account
+                        feature because the account dropdown was the only
+                        menu there was. The page you need when you have no
+                        signal cannot be behind a login.
 
-                        Above Reset rather than below it, and that is the
-                        whole point of where it sits: the two rows answer the
-                        same question — "the app is not behaving offline, what
-                        now?" — and until this one existed, Reset was the only
-                        answer on the page. Wiping every downloaded area is a
-                        poor first move when the actual fault is usually a
-                        single missing thing, and a user who has just been let
-                        down has no way to tell which. This row names the
-                        fault; the one below is what you reach for when it
-                        cannot be named.
+                        They live at /offline/ now (public/offline.html),
+                        which is public, warmable into the offline shell,
+                        and reachable from the network menu. This row is
+                        what is left: a pointer, in the place the block
+                        used to be, so a reader who knows where it was
+                        still finds it.
 
-                        The same panel is on static/offline.html, which is the
-                        copy that matters when the device is stuck: this page
-                        is a Django view, so it loads only if it happens to be
-                        in the shell cache for this account. Neither is a
-                        duplicate of the other — one module paints both, from
-                        the same markup contract.
+                        Theme stays. It is a display preference with no
+                        relationship to the network, and moving it would
+                        make the new page a second settings page rather
+                        than one answer to one question.
                     {% endcomment %}
-                    <div class="p-4" data-testid="offline-audit-panel">
-                        {% include "includes/_offline_audit_panel.html" %}
+                    <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <div class="min-w-0">
+                            <h3 class="text-sm font-semibold text-text-1">{% trans "Offline content" %}</h3>
+                            <p class="text-sm text-text-2">
+                                {% trans "Check what is saved on this device, and reset it if it is stuck." %}
+                            </p>
+                        </div>
+                        <a
+                            href="{% url 'public:offline_page' %}"
+                            data-testid="settings-offline-link"
+                            class="{% button_classes variant='ghost' size='compact' %} self-start shrink-0 whitespace-nowrap"
+                        >
+                            {% trans "Open" %}
+                        </a>
                     </div>
 
-                    {% comment %}
-                        SNOW-378: Reset local data escape hatch.
-                        Discoverable, not hidden. Wipes cached bulletins,
-                        the SW, cache storage, IndexedDB, and web storage;
-                        the server-side subscription is untouched. Copy
-                        lives here in the template so the visible label +
-                        helper line can be translated; the confirmation
-                        dialog message lives in pwa_reset.js.
-
-                        SNOW-746: the label moved off the button and onto the
-                        row's heading, so the button reads "Reset" — the row
-                        already says what is being reset, and repeating "local
-                        data on this device" inside the control made it the
-                        widest thing on the page.
-                        ``data-pwa-reset-trigger`` is pwa_reset.js's binding
-                        contract and moves with the button.
-
-                        SNOW-860: the helper line used to be the whole
-                        disclosure — "cached bulletins, offline data, and
-                        saved preferences" — for a wipe that takes every
-                        downloaded map, every unsent change and every cached
-                        page with it. The panel beneath now names all four,
-                        with a figure or an explicit reason it has none, and
-                        the same total pwa_reset.js quotes in its
-                        confirmation dialog. What survives here is the half
-                        the panel cannot say: what this does NOT touch.
-
-                        It supersedes SNOW-867's one-line
-                        ``[data-pwa-reset-size]`` paragraph, which disclosed
-                        the shared overview map alone. That map is now a row
-                        in the Downloaded maps category, named and sized
-                        beside every other thing on the device — strictly
-                        more than the line it replaces.
-
-                        The reset itself is unchanged: still all-or-nothing,
-                        still the same six steps. The panel discloses, it
-                        does not select — scoped deletion of one downloaded
-                        area already exists, in the map's Manage downloads
-                        sheet.
-                    {% endcomment %}
-                    <div class="p-4">
-                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                            <div class="min-w-0">
-                                <h3 class="text-sm font-semibold text-text-1">{% trans "Reset local data" %}</h3>
-                                <p class="text-sm text-text-2">
-                                    {% trans "Delete locally cached app data. Does not log you out." %}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                data-pwa-reset-trigger
-                                class="{% button_classes variant='ghost' size='compact' %} self-start shrink-0 whitespace-nowrap"
-                            >
-                                {% trans "Reset" %}
-                            </button>
-                        </div>
-                        {% comment %}
-                            The breakdown, painted by reset_data_summary.js
-                            from the same reader the map's Manage downloads
-                            sheet uses.
-
-                            SNOW-860: shown outright, not behind a
-                            disclosure. It was a _collapsible_panel titled
-                            "What this will delete", which put the one thing
-                            this row exists to say behind a click — and a
-                            disclosure the user has to open before the
-                            warning is visible is not a disclosure. Four
-                            short rows do not need hiding, and the reset is
-                            rare enough that the space costs nothing.
-                        {% endcomment %}
-                        <div class="mt-3" data-testid="reset-data-summary-panel">
-                            {% include "accounts/partials/_reset_data_summary_body.html" %}
-                        </div>
-                    </div>
-
-                    {% if sync_log_visible %}
-                        {% comment %}
-                            SNOW-482: Sync-log panel — read-out of the
-                            client-side log:sync IndexedDB store. Rows are
-                            painted by static/js/sync_log.js on load; the
-                            body_template shell only carries the <ul> it
-                            targets.
-
-                            SNOW-746: ``bare``, which is the parameter's
-                            documented purpose — "for a panel nested inside
-                            another card, where the full chrome would read as
-                            a card within a card". It costs the mock's
-                            sentence-case "Sync log" title, since the bare
-                            skin titles itself with an eyebrow; the partial's
-                            own convention wins over the drawing, because the
-                            alternative is a third collapsible implementation.
-
-                            ``bg-card-subtle`` is the mock's own choice for
-                            this row and the token's stated purpose ("card
-                            footer"): it is the one row here that opens rather
-                            than acts, and the recessed surface says so.
-                        {% endcomment %}
-                        <div class="bg-card-subtle p-4">
-                            {% translate "Sync log" as t_sync_log %}
-                            {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="sync-log-panel" body_template="accounts/partials/_sync_log_body.html" bare=True %}
-                        </div>
-                    {% endif %}
                     {% endcard %}
                 </section>
 
@@ -652,35 +568,10 @@ because the repository is the authority and the mock is a drawing:
             {# copy would run the IIFE twice and its                             #}
             {# Object.defineProperty(window, 'pwaResetLocalData', …) — declared  #}
             {# non-configurable — would throw on the second run.                 #}
-            {# SNOW-860: the "What this will delete" breakdown beside the       #}
-            {# reset control. Four files, in dependency order: the two pure     #}
-            {# cores, the shared reader the map page also loads (so this page   #}
-            {# and the Manage downloads sheet can never disagree about what is  #}
-            {# downloaded), then the DOM half that paints the panel and hands   #}
-            {# pwa_reset.js the total for its confirmation dialog.              #}
-            {#                                                                  #}
-            {# None of them reads another file at parse time, so this order is  #}
-            {# for the reader rather than for the browser — except that         #}
-            {# reset_data_summary.js renders on DOMContentLoaded, by which      #}
-            {# point base.html's db.js has run and window.pwaDb exists.         #}
-            <script src="{% static 'js/basemap_download_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            <script src="{% static 'js/basemap_manage_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            <script src="{% static 'js/basemap_downloaded_areas.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            <script src="{% static 'js/reset_data_summary_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            <script src="{% static 'js/reset_data_summary.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            {# SNOW-907: the offline-content audit. Deliberately shares none   #}
-            {# of the four files above — it re-reads Cache Storage and         #}
-            {# IndexedDB itself rather than asking their readers, because a    #}
-            {# report whose job is to catch storage and the app disagreeing    #}
-            {# must not take the app's word for what storage holds. It is also #}
-            {# the same pair of files the service worker precaches for         #}
-            {# static/offline.html, where none of the four exists.             #}
-            <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            {% if sync_log_visible %}
-                {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
-                <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
-            {% endif %}
+            {# SNOW-930: the eight scripts that painted the offline audit, the  #}
+            {# reset breakdown and the sync log went with those blocks, to      #}
+            {# public/offline.html. Nothing left on this page reads Cache       #}
+            {# Storage or IndexedDB.                                            #}
             {# Write side of the theme preference control above. Reads and #}
             {# writes the same localStorage key includes/theme_head.html    #}
             {# resolves in <head>; loaded here rather than in base.html      #}

@@ -17,15 +17,16 @@ sync-log panel this topic documents.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">
-        {% blocktrans trimmed %}
-            Your account page has a "Sync log" panel listing your device's most recent real syncs with the server
-            (cached, offline-served pages don't count). It keeps the newest 100 entries.
+        {% url 'public:offline_page' as offline_page_url %}
+        {% blocktrans trimmed with url=offline_page_url %}
+            The <a href="{{ url }}" class="underline">Offline content</a> page has a "Sync log" panel listing your
+            device's most recent real syncs with the server (cached, offline-served pages don't count). It keeps the
+            newest 100 entries.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            "Reset local data" on your settings page clears the sync log along with everything else cached on this
-            device.
+            "Reset local data" on the same page clears the sync log along with everything else cached on this device.
         {% endblocktrans %}
     </p>
 </div>

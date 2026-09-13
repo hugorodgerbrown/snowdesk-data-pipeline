@@ -460,15 +460,25 @@ class TestSignInPostTimingSideChannel:
 
 @pytest.mark.django_db
 class TestSettingsViewSyncLogSection:
-    """The flag-gated 'Sync log' panel next to the SNOW-378 reset control."""
+    """The flag-gated 'Sync log' panel is no longer on this page (SNOW-930).
+
+    It went to ``/offline/`` with the offline audit and the reset control,
+    because nothing in it is account-shaped — it reads
+    ``window.pwaDb.getSyncLog()`` on the client. The flag is unchanged; only
+    the page it gates is. Its presence there, with and without the flag, is
+    tests/public/test_offline_page.py.
+    """
 
     @override_flag("sync_log", active=True)
-    def test_panel_present_when_flag_active(self) -> None:
+    def test_panel_absent_even_when_the_flag_is_active(self) -> None:
+        """The strongest form of "it moved" — the flag cannot bring it back."""
         account = AccountFactory.create()
         client = _make_session_client(account)
+
         response = client.get(reverse("accounts:settings"))
+
         assert response.status_code == 200
-        assert b'data-testid="sync-log-panel"' in response.content
+        assert b'data-testid="sync-log-panel"' not in response.content
 
     @override_flag("sync_log", active=False)
     def test_panel_absent_when_flag_inactive(self) -> None:

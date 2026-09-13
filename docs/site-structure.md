@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-13
 ---
 
 # Snowdesk site structure
@@ -30,7 +30,9 @@ routes that used to render those things as pages are permanent redirects
 into the map (`?panel=favourites|routes|reports` opens a sheet,
 `?resort=<slug>` flies to a resort). `/resorts/<slug>/` survives as a
 search landing page that routes to the two documents, and
-`/account/settings/` because account mechanics are not map objects.
+`/account/settings/` because account mechanics are not map objects, and
+`/offline/` — public since SNOW-930 — because what this device has saved
+is not one either, and is most worth reading when signed out.
 Identifiers follow [`no-integer-pks-in-urls`](decisions/no-integer-pks-in-urls.md):
 no sequential primary key appears in a URL or a public feed.
 

@@ -1,0 +1,175 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/offline.html — the offline-content page
+(SNOW-930).
+
+One question, one page: **what is saved on this device, and how do I fix
+it.** The offline-content audit, the reset-local-data control with its
+size breakdown, and the sync log all sat under the "This device" eyebrow
+on /account/settings/, which redirects an unauthenticated visitor
+straight to sign-in. Every one of them is computed client-side from Cache
+Storage, IndexedDB and navigator.storage.estimate() — facts about this
+browser, with no account anywhere in them. They were gated for one
+reason: the settings page was the only page available to put them in.
+That is the same accident SNOW-921 corrected when it moved the "Offline
+mode" switch out of the account dropdown, where a device preference had
+quietly become an account feature because the dropdown was the only menu
+there was.
+
+Put sharply: the page you need when you have no signal was behind a
+login. A reader who never made an account, or whose session has expired,
+had no way to ask what this device is holding — and the report is most
+worth reading exactly when something has already gone wrong.
+
+Theme stays on settings. It is a display preference with no relationship
+to the network, and moving it would make this a second settings page
+rather than one answer to one question.
+
+Two things follow from the page being public, and both are the point
+rather than side effects:
+
+  It is warmed into the shell on activation, beside the map page — see
+  SHELL_PAGES in static/js/sw.js. A login-gated page can never usefully
+  be, and it matters more for this one than for any other in the product.
+
+  One cached copy serves every reader. That is NOT free: base.html
+  renders the pwa-user-id meta tag on every page, so the worker stamps
+  this one too and a copy cached while signed in stops matching after a
+  sign-out. PUBLIC_PRINCIPAL_PATHS in static/js/sw.js is the explicit
+  exemption that buys the intended behaviour.
+
+static/offline.html is the zero-server fallback the worker serves for a
+navigation to a page never visited. It keeps its own inlined copies of
+the audit and the reset for that case and nothing here changes it; what
+it gains is somewhere to send a reader who does have a connection.
+{% endcomment %}
+{% load i18n static components %}
+
+{% block page_meta %}
+    {% comment %}
+        sharing=False. A per-device diagnostic has nothing to unfurl: the
+        page's content is this browser's own storage, so a link card would
+        describe a reading the recipient's device does not have and cannot
+        be given. Not a privacy exemption — there is nothing secret here —
+        simply a page with no shareable subject.
+    {% endcomment %}
+    {% trans "Offline content" as page_name %}
+    {% trans "What Snowdesk has saved on this device, and how to fix it." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "Offline content" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="offline-page-heading" %}
+        <p class="mb-6 text-sm leading-prose text-text-2">
+            {% blocktrans trimmed %}
+                Everything below is about this browser on this device — nothing here is stored on your account or
+                shared with your other devices. Check it before a journey, and again if something is not behaving once
+                you have lost signal.
+            {% endblocktrans %}
+        </p>
+
+        <section aria-labelledby="offline-group-device">
+            {% trans "This device" as t_group_device %}
+            {% include "includes/_eyebrow.html" with text=t_group_device heading_id="offline-group-device" data_testid="offline-group-device" class_extra="mb-3" %}
+
+            {% card padding="p-0" extra="overflow-hidden divide-y divide-border" %}
+            {% comment %}
+                The audit, above Reset rather than below it — the placement
+                SNOW-907 argued for on settings and the reason it holds
+                here too. The two rows answer the same question ("the app
+                is not behaving offline, what now?") and until the audit
+                existed, Reset was the only answer. Wiping every downloaded
+                area is a poor first move when the fault is usually a
+                single missing thing, and a user who has just been let down
+                has no way to tell which. This row names the fault; the one
+                below is what you reach for when it cannot be named.
+            {% endcomment %}
+            <div class="p-4" data-testid="offline-audit-panel">
+                {% include "includes/_offline_audit_panel.html" %}
+            </div>
+
+            {% comment %}
+                Reset local data (SNOW-378), with SNOW-860's breakdown
+                beneath it. The helper line says what the reset does NOT
+                touch; the panel below names what it does, with a figure or
+                an explicit reason it has none.
+
+                ``button_classes`` rather than includes/_button.html because
+                the partial takes no data-attribute passthrough (SNOW-645
+                removed ``extra_attrs`` after semgrep flagged it as an
+                attribute-injection surface on a reusable component), and
+                ``data-pwa-reset-trigger`` is pwa_reset.js's binding
+                contract.
+            {% endcomment %}
+            <div class="p-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div class="min-w-0">
+                        <h3 class="text-sm font-semibold text-text-1">{% trans "Reset local data" %}</h3>
+                        <p class="text-sm text-text-2">
+                            {% trans "Delete locally cached app data. Does not log you out." %}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        data-pwa-reset-trigger
+                        class="{% button_classes variant='ghost' size='compact' %} self-start shrink-0 whitespace-nowrap"
+                    >
+                        {% trans "Reset" %}
+                    </button>
+                </div>
+                <div class="mt-3" data-testid="reset-data-summary-panel">
+                    {% include "includes/_reset_data_summary_body.html" %}
+                </div>
+            </div>
+
+            {% if sync_log_visible %}
+                {% comment %}
+                    SNOW-482: the sync log, behind the flag it has always
+                    had. ``bare`` because it is nested inside this card and
+                    the full chrome would read as a card within a card;
+                    ``bg-card-subtle`` because it is the one row here that
+                    opens rather than acts.
+                {% endcomment %}
+                <div class="bg-card-subtle p-4">
+                    {% translate "Sync log" as t_sync_log %}
+                    {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="sync-log-panel" body_template="includes/_sync_log_body.html" bare=True %}
+                </div>
+            {% endif %}
+            {% endcard %}
+        </section>
+    </main>
+{% endblock content %}
+
+{% block extra_js %}
+    {# SNOW-860: the "What this will delete" breakdown beside the reset      #}
+    {# control. Four files, in dependency order: the two pure cores, the     #}
+    {# shared reader the map page also loads (so this page and the Manage    #}
+    {# downloads sheet can never disagree about what is downloaded), then    #}
+    {# the DOM half that paints the panel and hands pwa_reset.js the total   #}
+    {# for its confirmation dialog.                                          #}
+    {#                                                                       #}
+    {# None of them reads another file at parse time, so this order is for   #}
+    {# the reader rather than for the browser — except that                  #}
+    {# reset_data_summary.js renders on DOMContentLoaded, by which point     #}
+    {# base.html's db.js has run and window.pwaDb exists.                    #}
+    <script src="{% static 'js/basemap_download_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/basemap_manage_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/basemap_downloaded_areas.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/reset_data_summary_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/reset_data_summary.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    {# SNOW-907: the offline-content audit. Deliberately shares none of the  #}
+    {# four files above — it re-reads Cache Storage and IndexedDB itself     #}
+    {# rather than asking their readers, because a report whose job is to    #}
+    {# catch storage and the app disagreeing must not take the app's word    #}
+    {# for what storage holds. It is also the same pair of files the service #}
+    {# worker precaches for static/offline.html, where none of the four      #}
+    {# exists.                                                               #}
+    <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    {% if sync_log_visible %}
+        {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
+        <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    {% endif %}
+{% endblock extra_js %}

@@ -83,6 +83,11 @@ const SW_EXPORTS = [
   '_rewarmShell',
   'SHELL_PAGE',
   'SHELL_SUBRESOURCE_LIMIT',
+  // SNOW-930: the shell pages the activation walks, and the paths whose
+  // cached navigation is servable to any principal.
+  'SHELL_PAGES',
+  'PUBLIC_PRINCIPAL_PATHS',
+  '_isPublicPrincipalPath',
   // SNOW-912: the feeds the warmed page's own boot will ask for. Warmed
   // with it, or the map opens grey.
   '_shellPageDay',
@@ -713,6 +718,86 @@ describe('_networkFirst principal partitioning (C1)', () => {
     const body = await offline.text();
     expect(body).not.toContain('a@example.com');
     expect(body).toContain("This page isn't available offline");
+  });
+});
+
+describe('the public-path principal exemption (SNOW-930)', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('serves /offline/ back after a sign-out, where an account page is refused', async () => {
+    // THE assertion. `base.html` stamps EVERY page with the reader's
+    // principal, `/offline/` included, so a copy cached while signed in
+    // would stop matching the moment they signed out — and they would get
+    // static/offline.html's fallback instead of the page, while offline,
+    // which is the one moment the page exists for. Nothing on the page
+    // comes from an account: it is a reading of this browser's storage.
+    const caches = makeCaches();
+    const request = navRequest('/offline/');
+    let online = basicResponse(pageHtml('acct-uuid-a', 'what this device holds'));
+    const sw = loadSw({
+      caches,
+      fetch: () => (online ? Promise.resolve(online) : Promise.reject(new TypeError('offline'))),
+    });
+    caches.seed(
+      'snowdesk-shell-UNSUBSTITUTED',
+      '/static/offline.html',
+      new Response("<h1>This page isn't available offline</h1>"),
+    );
+
+    await sw._networkFirst(request);
+    await flush();
+    await setStoredPrincipal(null);
+    online = null;
+
+    expect(await (await sw._networkFirst(request)).text()).toContain(
+      'what this device holds',
+    );
+  });
+
+  it('exempts the ignoreSearch match too', async () => {
+    // Both branches of `_networkFirstFallback` read one resolved answer,
+    // so a query string cannot be the way a public page becomes
+    // unreachable.
+    const caches = makeCaches();
+    let online = basicResponse(pageHtml('acct-uuid-a', 'what this device holds'));
+    const sw = loadSw({
+      caches,
+      fetch: () => (online ? Promise.resolve(online) : Promise.reject(new TypeError('offline'))),
+    });
+
+    await sw._networkFirst(navRequest('/offline/'));
+    await flush();
+    await setStoredPrincipal(null);
+    online = null;
+
+    const offline = await sw._networkFirst(navRequest('/offline/?dwf_sync_log=1'));
+    expect(await offline.text()).toContain('what this device holds');
+  });
+
+  it('exempts that path and no other', async () => {
+    // The list is what makes this safe: widen it by accident and a page
+    // rendered for one account is served to another.
+    const sw = loadSw({ caches: makeCaches(), fetch: () => Promise.reject(new Error()) });
+
+    expect(sw._isPublicPrincipalPath(navRequest('/offline/'))).toBe(true);
+    expect(sw._isPublicPrincipalPath(navRequest('/account/settings/'))).toBe(false);
+    expect(sw._isPublicPrincipalPath(navRequest('/'))).toBe(false);
+    // Matched on the pathname, exactly — a suffix must not smuggle a page
+    // past it, and a query string must not be needed to.
+    expect(sw._isPublicPrincipalPath(navRequest('/offline/secrets/'))).toBe(false);
+    expect(sw._isPublicPrincipalPath(navRequest('/offline/?x=1'))).toBe(true);
+  });
+
+  it('warms the page on activation, beside the map', async () => {
+    // A page that cannot itself be opened offline is a poor place to
+    // explain why nothing else can. It could not have been warmed while
+    // it lived behind a login — the warm would have fetched a redirect.
+    const sw = loadSw({ caches: makeCaches(), fetch: () => Promise.reject(new Error()) });
+
+    expect(sw.SHELL_PAGES).toContain(sw.SHELL_PAGE);
+    expect(sw.SHELL_PAGES).toContain('/offline/');
   });
 });
 

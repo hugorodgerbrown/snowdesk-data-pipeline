@@ -101,6 +101,12 @@ urlpatterns = [
     # the generic <region_id:region_id>/ patterns so "help" never resolves
     # as a region id.
     path("help/", views.help_page, name="help"),
+    # SNOW-930: what this device has saved offline. Registered here, ahead
+    # of the generic <region_id:region_id>/ patterns, for the same reason
+    # "help" is — so "offline" never resolves as a region id. Public: every
+    # reading on it is this browser's own storage, and the page is most
+    # worth opening when something has already gone wrong.
+    path("offline/", views.offline_page, name="offline_page"),
     # SNOW-804: the recent-observations stream (SNOW-476) was a filtered
     # view of map data — the map has the layer, the sheet and the submit
     # flow — so the page is gone and the URL 301s to the map with the

@@ -1,9 +1,11 @@
 {% comment %}
-apps/accounts/templates/accounts/partials/_sync_log_body.html — Sync-log panel body shell.
+templates/includes/_sync_log_body.html — Sync-log panel body shell.
 
-Content partial for the manage page (SNOW-482); included via the
-body_template parameter of includes/_collapsible_panel.html, wrapped by
-the caller in {% if sync_log_visible %}. Rows are painted client-side by
+Content partial (SNOW-482); included via the body_template parameter of
+includes/_collapsible_panel.html, wrapped by the caller in
+{% if sync_log_visible %}. SNOW-930 moved it here from the accounts app
+along with the reset summary and for the same reason — see that partial's
+header. Its caller is now the public offline page at /offline/. Rows are painted client-side by
 static/js/sync_log.js, which reads window.pwaDb.getSyncLog() on load —
 nothing server-side to query, so this shell only carries the loading /
 empty placeholder and the <ul> the JS targets.
