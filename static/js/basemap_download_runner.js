@@ -68,7 +68,8 @@
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
    *   slopeUrls?: function(Object): string[],
-   *   contentUrls?: function(Object): Promise<string[]>,
+   *   contentUrls?: function(Object): Promise<string[]|{urls: string[],
+   *     short?: boolean}>,
    *   renderDeps?: function(): string[],
    *   glyphPrefix?: function(): string,
    *   progressGrid: function(Object|null, number): Object,
@@ -322,8 +323,21 @@
     //
     // A deps bundle without the member (an older shell mid-rollout) yields
     // `[]` — the pre-ticket behaviour, tiles and nothing else.
-    const contentUrls =
+    //
+    // SNOW-932: `contentUrls` may answer with a bare array or with
+    // `{urls, short}` — the pair, which carries the one fact a tally over
+    // the list cannot hold: that the list itself was assembled short (see
+    // `assembleAreaContentURLs`). Both shapes are accepted rather than the
+    // new one alone, because this runner is loaded from the cached shell
+    // and a device mid-rollout can be pairing a NEW runner with an OLD
+    // deps bundle. An array normalises to `short: false`, which is exactly
+    // the pre-ticket behaviour.
+    const contentReply =
       typeof deps.contentUrls === 'function' ? (await deps.contentUrls(blob)) || [] : [];
+    const contentUrls = Array.isArray(contentReply)
+      ? contentReply
+      : contentReply.urls || [];
+    const contentShort = Array.isArray(contentReply) ? false : !!contentReply.short;
     const urls = [...contentUrls, ...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
@@ -399,7 +413,14 @@
         // means this run had no content to fetch — an older deps bundle, or
         // an area whose boundary contains nothing — which a caller must read
         // as "nothing to say" rather than as a failure to record.
-        content: { ok: contentOk, total: contentUrls.length },
+        //
+        // SNOW-932: plus `short`, which says the LIST was incomplete rather
+        // than that fetching it was. A run can post every url it was given
+        // and still have fallen short, because a country's regions never
+        // arrived to be listed; `ok === total` cannot see that, so it
+        // travels beside the tally. Every reader goes through
+        // `core.contentOutcome`, which weighs the two together.
+        content: { ok: contentOk, total: contentUrls.length, short: contentShort },
       });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a

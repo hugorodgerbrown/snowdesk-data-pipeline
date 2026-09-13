@@ -664,32 +664,46 @@ async function downloadContentDays() {
  * country. See `pwaMapCountries.ensureAllLoaded` for why the fix loads all
  * four rather than the ones a rectangle overlaps.
  *
+ * SNOW-932: the return is a PAIR now, not a bare list. An empty list and a
+ * list assembled while a country was unreachable are different facts, and
+ * only the second is a shortfall — see `short` below.
+ *
  * @param {Object} blob The run's download blob, for its tile ranges.
- * @returns {Promise<string[]>} Possibly empty, which every caller reads as
- *   "nothing to add" rather than as a failure.
+ * @returns {Promise<{urls: string[], short: boolean}>} `urls` is possibly
+ *   empty, which every caller reads as "nothing to add" rather than as a
+ *   failure. `short` is true when the plan was resolved against an
+ *   INCOMPLETE country set, so the list is missing bulletins it should
+ *   have named — a shortfall no tally over that list can detect, because
+ *   every url in it can land.
  */
 async function assembleAreaContentURLs(blob) {
   const core = self.pwaBasemapDownloadCore;
   const mapEl = document.getElementById('map');
-  if (!core || !core.areaContentPlan || !mapEl) return [];
+  if (!core || !core.areaContentPlan || !mapEl) return { urls: [], short: false };
 
   const weather = await cacheOverlayFeedsForDownload();
 
   const bbox = core.areaBBox(blob);
-  if (!bbox) return [];
+  if (!bbox) return { urls: [], short: false };
 
   // Before the lookup is read, not after: the whole point is that the set
   // it answers from is complete. Best-effort on the surface being absent,
   // as every other cross-module reach here is — an older shell mid-rollout
   // gets the pre-SNOW-931 answer rather than no download.
   const countries = await window.pwaMapCountries?.ensureAllLoaded();
-  if (countries && countries.failed.length > 0) {
+  const short = !!(countries && countries.failed.length > 0);
+  if (short) {
     // A country the client could not fetch leaves the plan short in exactly
-    // the way this ticket closed, so it is recorded rather than shrugged
-    // off. It is NOT yet reflected in the run's own completeness — that
-    // needs the durable-incompleteness plumbing SNOW-932 adds, since
-    // `contentAt` is write-only today and `partial` is lost on the next
-    // re-render.
+    // the way SNOW-931 closed, so it is recorded rather than shrugged off.
+    //
+    // SNOW-932: and it is reported now, not just logged. This comment used
+    // to end "it is NOT yet reflected in the run's own completeness — that
+    // needs the durable-incompleteness plumbing SNOW-932 adds"; that
+    // plumbing is here, so the flag rides out on the return value and the
+    // run records `contentIncomplete` against the area. The debug record
+    // stays: it names WHICH countries were missed, which the boolean
+    // cannot, and that is the line an operator reads when an area keeps
+    // going amber.
     window.pwaDebugLog?.record('net', 'download.countries.short', {
       loaded: countries.loaded,
       failed: countries.failed,
@@ -705,7 +719,7 @@ async function assembleAreaContentURLs(blob) {
     days: await downloadContentDays(),
     weatherDetailTemplate: mapEl.dataset.weatherDetailUrl || '',
   });
-  return [...plan.bulletinUrls, ...plan.weatherDetailUrls];
+  return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: short };
 }
 
 // SNOW-586: the Cache Storage name prefix every per-area pinned basemap
@@ -3018,6 +3032,10 @@ const PINNED_DOWNLOAD_DEPS = {
   // SNOW-924: the bulletins and weather inside the area's boundary, and
   // the four overlay feeds cached whole on the way past. Async, alone
   // among these — see `assembleAreaContentURLs`.
+  //
+  // SNOW-932: answers with `{urls, short}` rather than a bare list. The
+  // runner accepts either, so this is not a breaking change for a shell
+  // mid-rollout; what the pair buys is the shortfall the tally cannot see.
   contentUrls: (blob) => assembleAreaContentURLs(blob),
   // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
   // active style, captured at run start alongside `tileSources` so the
