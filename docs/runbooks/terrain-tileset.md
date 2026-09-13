@@ -281,8 +281,7 @@ Two ways to close it properly, neither yet done, both in `snowdesk-tiles`:
 
 Until one of them lands, the operational rule is: **re-read `grid.json` before
 sampling after any publish**, and treat the hour after a geometry change as a
-window in which sampled heights are not trustworthy. Raised by review on
-[#922](https://github.com/hugorodgerbrown/snowdesk-data-pipeline/pull/922).
+window in which sampled heights are not trustworthy. Tracked as SNOW-954.
 
 ## Coverage, and the accepted limitation
 
