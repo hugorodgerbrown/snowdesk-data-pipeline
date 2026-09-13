@@ -300,7 +300,10 @@ def sample_slope(
 
     Raises:
         ValueError: If ``window_m`` is not a positive whole multiple of the
-            grid's cell size.
+            grid's cell size. Not raised when the grid itself is
+            unreachable — the cell size is what the window is checked
+            against, so with no grid there is nothing to check it against
+            and the call returns ``UNAVAILABLE`` instead.
 
     """
     grid = load_grid()
