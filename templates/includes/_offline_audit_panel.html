@@ -63,6 +63,7 @@ of a settings page nobody came here to audit.
     data-offline-audit
     data-default-basemap-key="{{ default_basemap_key|default:'' }}"
     data-regions-url="{{ content_feeds.regions|default:'' }}"
+    data-area-content-url="{{ content_feeds.area_content|default:'' }}"
     data-weather-url="{{ content_feeds.weather|default:'' }}"
     data-weather-detail-url="{{ content_feeds.weather_detail|default:'' }}"
     data-favourites-url="{{ content_feeds.favourites|default:'' }}"
@@ -70,6 +71,7 @@ of a settings page nobody came here to audit.
     data-community-reports-url="{{ content_feeds.community_reports|default:'' }}"
     data-content-countries="{{ content_countries|default:'' }}"
     data-today="{{ today|default:'' }}"
+    data-content-past-days="{{ content_past_days|default:'0' }}"
 >
     {% comment %}
         The row, in the shape every other row in this card takes:

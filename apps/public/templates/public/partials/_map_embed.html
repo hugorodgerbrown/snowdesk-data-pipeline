@@ -69,6 +69,9 @@ Optional context:
 <div
     id="map"
     data-regions-url="{% url 'api:regions_geojson' %}"
+    {# SNOW-953: which regions and weather locations a download's boundary #}
+    {# contains, answered server-side. Read by map_basemap_downloads.js.   #}
+    data-area-content-url="{% url 'api:area_content' %}"
     data-major-regions-url="{% url 'api:major_regions_geojson' %}"
     data-sub-regions-url="{% url 'api:sub_regions_geojson' %}"
     data-ratings-url="{% url 'api:ratings' %}"
@@ -1528,6 +1531,10 @@ Optional context:
                 data-season-start="{{ season_start|date:'Y-m-d' }}"
                 data-season-end="{{ season_end|date:'Y-m-d' }}"
                 data-today="{{ today|date:'Y-m-d' }}"
+                {# SNOW-953: how many days BEHIND today an offline download #}
+                {# carries bulletins for. Forwards is data-driven off the   #}
+                {# last published day, so only the reach back is a setting. #}
+                data-content-past-days="{{ content_past_days }}"
                 data-today-pct="{{ today_pct }}"
                 {# CSS hides it when this is false. Server-rendered so first #}
                 {# paint is already right; static/js/map_scrubber_reveal.js  #}
