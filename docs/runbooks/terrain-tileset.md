@@ -88,9 +88,16 @@ Objects live under the **`terrain/` prefix** in the existing bucket:
 
 **The version segment is stripped by the Worker.** Objects are stored
 unversioned, so a rebuild replaces them in place and no client is left holding
-a URL that 404s. The segment exists to invalidate caches, not to address
-objects — which is why bumping it and rebuilding are two halves of one action
-(see below).
+a URL that 404s. The segment never reaches the bucket — it exists to vary the
+cache key, not to address objects — which is why bumping it and rebuilding are
+two halves of one action (see below).
+
+The segment is also **not validated**: the Worker's route matches any segment,
+so `/terrain/banana/3200/2000.s16` returns the same tile as `/terrain/v1/…`,
+and `/terrain/v99/grid.json` returns whatever definition is current. That is
+worth knowing before reading the version as an isolation guarantee, because it
+is a weaker one than it looks — see
+[below](#what-the-version-bump-does-not-buy).
 
 ### Outside coverage is 204, never 404 and never a height
 
@@ -242,6 +249,40 @@ Worker needs no deploy — it never reads the segment.
 Re-surveyed heights with the geometry unchanged need no bump in principle, but
 the year-long TTL means clients keep the old tiles until they fall out of
 cache. Bump it anyway if the correction matters.
+
+### What the version bump does not buy
+
+The bump gives the **new** geometry a clean URL space. It does **not** stop the
+**old** one from serving the new bytes, and that asymmetry is the part to hold
+on to.
+
+Because the segment is stripped, `/terrain/v1/{x}/{y}.s16` and
+`/terrain/v2/{x}/{y}.s16` are the same object. After a geometry-changing
+rebuild, a v1 request served from a warm edge or client cache returns the old
+bytes, and a v1 request that misses returns the **new** bytes — decoded by a
+consumer still holding the v1 numbers. Within one route calculation a consumer
+can get a mix of both, which is the silently-wrong-height failure this whole
+design is arranged to prevent.
+
+What bounds it is `grid.json`, not the version. It is unversioned too, so it
+always answers with the current definition — including the current `version`
+and `tile_url_template` — under a **one-hour TTL**. A consumer that re-reads it
+moves to the new URL space within the hour. So the exposure is: one hour from
+publish, for a consumer that reads tiles without re-reading `grid.json` first.
+
+Two ways to close it properly, neither yet done, both in `snowdesk-tiles`:
+
+1. **Key the objects by version** — store `terrain/{version}/{x}/{y}.s16` so an
+   old URL keeps resolving to the geometry it was cut for. Costs one extra copy
+   during the transition, about another five cents a month at the current size.
+2. **Gate the segment in the Worker** — serve only the current version and
+   answer anything older with an error rather than a height. Needs the Worker
+   to know the current version, so it becomes a deploy.
+
+Until one of them lands, the operational rule is: **re-read `grid.json` before
+sampling after any publish**, and treat the hour after a geometry change as a
+window in which sampled heights are not trustworthy. Raised by review on
+[#922](https://github.com/hugorodgerbrown/snowdesk-data-pipeline/pull/922).
 
 ## Coverage, and the accepted limitation
 
