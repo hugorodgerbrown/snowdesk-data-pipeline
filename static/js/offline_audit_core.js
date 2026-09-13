@@ -148,6 +148,12 @@
    *   bucket that WAS read and is not there — the difference between "this
    *   download is gone" and "we could not look", and the report may only
    *   say the first of those.
+   * @property {string|null} [contentAt] SNOW-926: when the bulletins and
+   *   weather inside this area's boundary were last fetched in full
+   *   (SNOW-924 records it). Absent means never — which is every area on
+   *   every device on the day that ticket shipped, and is a caveat rather
+   *   than a fault: the tiles are the half that decides whether a map
+   *   draws, and they are here.
    * @property {string[]} [entries]
    */
 
@@ -912,6 +918,47 @@
   }
 
   /**
+   * The state of one area's CONTENT — the perishable half (SNOW-926).
+   *
+   * The tiles are a fixed grid over fixed ground and never go stale. The
+   * bulletins, weather and ratings inside the same boundary are new every
+   * day, which introduces a state this panel has never had to express: an
+   * area can go from complete to incomplete overnight with **nothing
+   * deleted and nothing broken**. That must not read as a fault, and it is
+   * why this is a separate reading rather than a fifth ``areaState``
+   * status — a row whose answer flips at midnight over a download the user
+   * made once, and that still draws perfectly, is not a No.
+   *
+   * Calendar days, not elapsed hours, and in the reader's own zone. What
+   * the question actually asks is "does this device hold TODAY's
+   * bulletin", and a bulletin belongs to a date rather than to a
+   * twenty-four-hour window — content fetched at 23:00 last night is a day
+   * behind by 07:00, and content fetched at 06:00 this morning is not.
+   *
+   * ``'none'`` for anything with no content half to speak of: the shared
+   * base layer, which is the world's zoomed-out ground rather than a
+   * place, and any area whose tiles do not verify, which is already saying
+   * something stronger.
+   *
+   * @param {AreaReading} area
+   * @param {string} [now] The report's own clock, as an ISO string.
+   * @returns {'fresh'|'stale'|'never'|'none'}
+   */
+  function areaContentState(area, now) {
+    if (!area || area.kind === 'base') return 'none';
+    if (areaState(area).status !== 'ready') return 'none';
+    if (!area.contentAt) return 'never';
+    var fetched = new Date(area.contentAt);
+    var today = now ? new Date(now) : new Date();
+    if (Number.isNaN(fetched.getTime()) || Number.isNaN(today.getTime())) {
+      // An unparseable stamp is not evidence of anything. Reading it as
+      // stale would put a caveat on a row over a corrupt field.
+      return 'none';
+    }
+    return fetched.toDateString() === today.toDateString() ? 'fresh' : 'stale';
+  }
+
+  /**
    * The areas the user chose, excluding the shared base layer.
    *
    * The base layer is stored, takes space and is real, but it is not a
@@ -1167,14 +1214,35 @@
    * nothing, and every surface before this one called it downloaded
    * (SNOW-843).
    *
+   * SNOW-926: a ready area whose CONTENT is behind keeps its Yes and
+   * carries a caveat, following the shared base layer's treatment exactly
+   * (see ``answerBasemap``'s ``downloads-only`` branch). The row asks
+   * whether the map draws, and it does — what is behind is what the map
+   * draws ON. Grouped rather than noted, so any number of stale areas fold
+   * into one sentence with one shared remedy instead of filling the
+   * three-clause notes cap with the same fact restated.
+   *
    * @param {AreaReading} area
    * @param {Record<string, string>} t
-   * @returns {{status: AuditStatus, reason?: string, note?: string}}
+   * @param {string} [now] The report's own clock — see ``areaContentState``.
+   * @returns {{status: AuditStatus, reason?: string, note?: string,
+   *   group?: string, effect?: string}}
    */
-  function answerArea(area, t) {
+  function answerArea(area, t, now) {
     var state = areaState(area);
     var name = area.name || area.id;
-    if (state.status === 'ready') return { status: 'yes' };
+    if (state.status === 'ready') {
+      var content = areaContentState(area, now);
+      if (content === 'stale' || content === 'never') {
+        return {
+          status: 'yes',
+          reason: content === 'never' ? 'content-never' : 'content-stale',
+          group: 'content-' + (content === 'never' ? 'never' : 'stale'),
+          effect: name,
+        };
+      }
+      return { status: 'yes' };
+    }
     if (state.status === 'incomplete') {
       return {
         status: 'no',
@@ -1499,7 +1567,10 @@
               });
             }
             var resolved = row.area
-              ? answerArea(row.area, t)
+              // SNOW-926: the report's own clock, so the content-age
+              // reading and the `generatedAt` stamp agree — and so a test
+              // can pin a date rather than racing midnight.
+              ? answerArea(row.area, t, readings.now)
               : row.basemap
                 ? answerBasemap(row.basemap, readings, t)
                 : answer(row.id, readings, t);
@@ -1876,6 +1947,10 @@
     formatBytes: formatBytes,
     principalMatches: principalMatches,
     areaState: areaState,
+    // SNOW-926: the perishable half's own reading, exported beside the
+    // tile one because it answers a different question about the same
+    // area and because SNOW-928's staleness line asks it too.
+    areaContentState: areaContentState,
     joinList: joinList,
     quantify: quantify,
   });

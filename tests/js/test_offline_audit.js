@@ -347,6 +347,36 @@ describe('the area records', () => {
     ]);
   });
 
+  it('carries each area\'s content stamp, and never the base layer\'s', async () => {
+    // SNOW-926: `contentAt` is when the bulletins and weather inside the
+    // boundary were last fetched in full. Separate from `savedAt` because
+    // the two halves age differently — tiles never do, bulletins do
+    // daily — and absent on every record written before SNOW-924, which
+    // the report reads as a caveat rather than a fault.
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedMeta({
+      'basemap.regions': [
+        {
+          region_id: 'CH-4115',
+          name: 'Martigny',
+          deps: [],
+          contentAt: '2026-09-11T07:00:00.000Z',
+        },
+      ],
+      'basemap.customAreas': [{ id: 'custom-abc', name: 'Custom area', deps: [] }],
+      'basemap.baseLayers': [{ basemapKey: 'swisstopo_winter', name: 'Overview' }],
+    });
+
+    const readings = await audit.collect();
+    const byId = Object.fromEntries(readings.areas.map((area) => [area.id, area]));
+
+    expect(byId['region-CH-4115'].contentAt).toBe('2026-09-11T07:00:00.000Z');
+    // A record written before SNOW-924 carries none, normalised to null.
+    expect(byId['custom-abc'].contentAt).toBeNull();
+    // The shared overview has no boundary and so no content half at all.
+    expect(byId['base-swisstopo_winter'].contentAt).toBeUndefined();
+  });
+
   it('reads what each overlay holds, not just that a row exists', async () => {
     // SNOW-914: the key used to be the answer, and it is not one. A row
     // with an empty FeatureCollection draws nothing, and a row stamped for

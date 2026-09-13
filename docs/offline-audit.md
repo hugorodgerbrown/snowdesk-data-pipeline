@@ -77,7 +77,7 @@ stored, how many saved places there are is not a question anyone has.
 |---|---|
 | Getting in | Offline support is installed · The app may use the network · The app opens · The app looks right |
 | The map | Danger ratings · Region outlines · one row per basemap the device holds anything for |
-| Map downloads | one row per download, by name |
+| Map downloads | one row per download, by name — its answer is about the TILES, with the content age riding in the summary (SNOW-926) |
 | Your content | Bulletins you have opened · Your saved places · Your routes · Community reports · Weather |
 
 `ROWS` in `offline_audit_core.js` is a constant, declared before
@@ -342,6 +342,42 @@ the verdict to "The app will open, but not everything will be there" —
 "everything you need is on this device" printed over a table with six Nos
 in it is the exact species of reassurance this feature exists to stop
 being given.
+
+### And a Yes is sometimes a Yes with a caveat (SNOW-926)
+
+A download has two halves. The tiles are a fixed grid over fixed ground
+and never go stale; the bulletins, weather and ratings inside the same
+boundary are new every day. That second half introduces a state the panel
+had never had to express: **an area can go from complete to incomplete
+overnight with nothing deleted and nothing broken.**
+
+That must not read as a fault, so a downloaded area whose tiles verify
+**keeps its Yes** and the age of its content becomes a clause in the
+summary. The row asks whether the map draws, and it does — what is behind
+is what the map draws *on*. The precedent is the shared base layer's
+`downloads-only` reading, which is a caveat on a Yes for exactly the same
+reason.
+
+`areaContentState(area, now)` is the reading:
+
+| | |
+|---|---|
+| `fresh` | `contentAt` falls on the same calendar day as the report's clock |
+| `stale` | it falls on an earlier one |
+| `never` | there is no `contentAt` — every area on every device on the day SNOW-924 shipped, and a real caveat rather than a No: the map draws, with nothing on it |
+| `none` | the base layer (no boundary, so no content half) or an area whose tiles do not verify (already saying something stronger) |
+
+**Calendar days, not elapsed hours, and in the reader's own zone.** The
+question is "does this device hold *today's* bulletin", and a bulletin
+belongs to a date rather than to a twenty-four-hour window: content
+fetched at 23:00 last night is a day behind by 07:00, and content fetched
+at 06:00 this morning is not.
+
+The stale areas are **grouped**, not noted per row — one sentence naming
+them all with one shared remedy, rather than filling the summary's
+three-clause cap with the same fact restated over rows the table already
+lists. A row still never carries its own explanation. An unparseable
+stamp reads as `none`: a corrupt field is not evidence of anything.
 
 ## It always finishes
 

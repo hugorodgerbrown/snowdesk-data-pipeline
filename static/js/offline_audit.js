@@ -322,6 +322,17 @@
     'effect-shapes': 'will draw no region outlines',
     'group-open-map-lead': 'Without a signal the app %(effects)s.',
     'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
+    // SNOW-926: the perishable half. A caveat on a Yes, never a No — the
+    // map draws, and what is behind is what it draws on. Grouped so any
+    // number of areas fold into one sentence with one shared remedy.
+    'group-content-stale-lead':
+      'The bulletins and weather saved inside %(effects)s are from an earlier day.',
+    'group-content-stale-remedy':
+      'Tapping the download again while connected brings %(count)s up to date.',
+    'group-content-never-lead':
+      'No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it.',
+    'group-content-never-remedy':
+      'Tapping the download again while connected fills %(count)s in.',
 
     'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
@@ -1049,6 +1060,13 @@
           bytes: record.bytes,
           savedAt: record.savedAt,
           deps: Array.isArray(record.deps) ? record.deps : [],
+          // SNOW-926: when the bulletins and weather inside this area's
+          // boundary were last fetched in full (SNOW-924 records it).
+          // Separate from `savedAt` because the two halves age
+          // differently: the tiles are a fixed grid over fixed ground and
+          // never go stale, the bulletins are new every day. Absent means
+          // never, which is every area downloaded before that ticket.
+          contentAt: record.contentAt || null,
         });
       });
     }
@@ -1068,6 +1086,8 @@
           bytes: record.bytes,
           savedAt: record.savedAt,
           deps: Array.isArray(record.deps) ? record.deps : [],
+          // SNOW-926: see the region branch above.
+          contentAt: record.contentAt || null,
         });
       });
     }
