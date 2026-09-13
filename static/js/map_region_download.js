@@ -983,7 +983,12 @@
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
    *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
-   *   'signin' | (SNOW-844) 'incomplete'.
+   *   'signin' | (SNOW-844) 'incomplete' | (SNOW-924) 'partial'.
+   *   SNOW-932 adds 'partial' to this list rather than the state itself:
+   *   it has been painted since SNOW-924 and went unlisted because it was
+   *   only ever transient — a paint the next render erased. It is now
+   *   derived by `_probeDone` from the record, like every other state
+   *   here, which is exactly what makes it worth naming.
    * @param {{mb: number, count: number}} [summary] The region's download
    *   summary, as the API computed it (`data.summary`) — omitted only by
    *   'no-region', which has no region to size. SNOW-843/SNOW-868: priced
