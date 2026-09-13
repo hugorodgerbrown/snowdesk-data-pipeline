@@ -2188,6 +2188,20 @@ window.pwaBasemapDownloads = Object.freeze({
   refreshAreaContent: (areaId) => refreshAreaContent(areaId),
 
   /**
+   * SNOW-951: make one area wholly current — both halves, in one call.
+   *
+   * The member every "sync now" control reaches, and the reason the two
+   * above it stay: this composes them rather than replacing them, so the
+   * repair path and the content path have one implementation each however
+   * many surfaces offer them. See `syncArea` for the ordering, the
+   * unconditional content refetch, and what the two fields mean.
+   *
+   * @param {string} areaId
+   * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
+   */
+  syncArea: (areaId) => syncArea(areaId),
+
+  /**
    * SNOW-844: every URL held across every pinned bucket — see
    * `pinnedBasemapCacheURLs`. The sheet asks the same question the
    * roundels do ("is this area's whole render set on disk?"), and the
@@ -3267,6 +3281,119 @@ async function refreshAreaContent(areaId) {
       },
     });
   });
+}
+
+/**
+ * SNOW-951: which of one area's render dependencies are NOT on disk.
+ *
+ * The same question `map_downloads_manager.js`'s `markIncompleteRows` asks
+ * of every row, asked here of one RECORD. The sheet asks it to decide what
+ * a row says about itself; `syncArea` asks it to decide whether there is a
+ * tile half to mend at all, and it has to compute the list fresh rather
+ * than read the one the row was rendered with — a sheet left open while an
+ * eviction ran elsewhere carries an answer from before it.
+ *
+ * The rule itself is not restated: `areaRenderDependencyURLs` owns the
+ * three-row resolution (recorded list / live style / unknown), and an
+ * UNKNOWN answer resolves to `[]`, which `missingRenderDependencies` reads
+ * as "no claim" rather than as "complete". That is the honest outcome
+ * here too — an area on a basemap that is not loaded gets its content
+ * refetched and its tiles left alone, which is everything this page can
+ * truthfully do for it.
+ *
+ * The slope raster is appended unconditionally, unlike the sheet's own
+ * call, which excludes the shared base layer. No base layer can reach this
+ * function: `_areaRecordById` resolves only `basemap.regions` and
+ * `basemap.customAreas`, and a base layer lives in neither.
+ *
+ * @param {Object} record A `basemap.regions` or `basemap.customAreas` entry.
+ * @returns {Promise<string[]>} Empty when nothing is missing, when nothing
+ *   can be claimed, and when Cache Storage will not answer — a sync that
+ *   cannot read the disk declines the tile half rather than refetching a
+ *   list it has no evidence for.
+ */
+async function _missingAreaRenderDependencies(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.missingRenderDependencies !== 'function') return [];
+  let cached;
+  try {
+    cached = await pinnedBasemapCacheURLs();
+  } catch (_e) {
+    return [];
+  }
+  const activeKey = activeBasemapKey();
+  const isActive = !!activeKey && record.basemapKey === activeKey;
+  const depURLs = [
+    ...areaRenderDependencyURLs(record.deps, isActive),
+    ...areaSlopeTileUrls(record),
+  ];
+  return core.missingRenderDependencies(depURLs, cached);
+}
+
+/**
+ * SNOW-951: make ONE downloaded area wholly current, in a single press.
+ *
+ * Three controls could already mend a download and none of them made it
+ * whole: Repair (tiles, and only for an area the render check has already
+ * failed), Refresh (content, and only for an area whose last run recorded
+ * a shortfall) and `/offline/`'s Update (content, and only for an area
+ * that is not fresh). A user in a car park with a signal they are about to
+ * lose had no single action that ends with "this area now holds
+ * everything", which is the only question they are actually asking.
+ *
+ * So this composes the two halves that exist and adds no third fetch path.
+ * What it adds is the GUARANTEE, and the guarantee is why it is
+ * UNCONDITIONAL: the content half refetches whatever the record says about
+ * freshness. A saving measured in kilobytes of HTML is not worth the
+ * user's uncertainty about whether the press did anything — and every
+ * freshness reading on this device is an inference from a stamp, while the
+ * thing they are about to rely on is the data itself. The tile half is
+ * conditional, and differently so: tiles are megabytes, they never go
+ * stale (SNOW-923's permanent/perishable split), and an area holding all
+ * of them has nothing to fetch. An empty missing-list is the healthy case,
+ * not a skipped step.
+ *
+ * TILES FIRST, then content REGARDLESS of how the tiles went. A repair
+ * that fails is an area whose map will not draw; refusing to fetch its
+ * bulletins on that account would cost the user both halves for the sake
+ * of consistency in a report. They are independent remedies and they are
+ * reported independently.
+ *
+ * @param {string} areaId The pinned bucket id.
+ * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
+ *   `tiles` is `'none'` when there was nothing missing to fetch — the
+ *   healthy case — and also for an area whose dependency list is unknowable
+ *   (see `_missingAreaRenderDependencies`). `content` is
+ *   `refreshAreaContent`'s own answer, unchanged, including its
+ *   short-plan and empty-plan semantics. Both are `'none'`/`false` for an
+ *   id nothing on this device carries.
+ */
+async function syncArea(areaId) {
+  const found = await _areaRecordById(areaId);
+  if (!found) return { tiles: 'none', content: false };
+
+  let tiles = 'none';
+  const missing = await _missingAreaRenderDependencies(found.record);
+  if (missing.length > 0) {
+    const repaired = await new Promise((resolve) => {
+      repairPinnedDownload({
+        areaId: areaId,
+        urls: missing,
+        // Nothing to paint, as `refreshAreaContent` above: the caller
+        // re-renders on the result, and a repair is a handful of
+        // documents rather than a several-minute download.
+        paint: () => {},
+        finish: async (result, extras) => {
+          const runCore = extras && extras.core;
+          resolve(!!(runCore && runCore.downloadSucceeded(result)));
+        },
+      });
+    });
+    tiles = repaired ? 'ok' : 'failed';
+  }
+
+  const content = await refreshAreaContent(areaId);
+  return { tiles: tiles, content: content };
 }
 
 /**
