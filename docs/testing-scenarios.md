@@ -885,7 +885,7 @@ shell is cached), so there is state to clear.
 > [tests/js/test_map_multi_source_basemap.js](../tests/js/test_map_multi_source_basemap.js)
 > (the probe, the roundel's `incomplete` state and the repair loop),
 > [tests/js/test_map_downloads_manager.js](../tests/js/test_map_downloads_manager.js)
-> (the sheet's row and its Repair control) and
+> (the sheet's row and its Sync now control) and
 > [tests/js/test_basemap_download_runner.js](../tests/js/test_basemap_download_runner.js)
 > (the repair never reaches the eviction sequence). A browser test could
 > not run this journey anyway: a download's fetches are made by the
