@@ -1,0 +1,73 @@
+{
+  "grid": "snowdesk-terrain-5m-3035",
+  "crs": "EPSG:3035",
+  "cell_size_m": 5,
+  "tile_cells": 256,
+  "tile_size_m": 1280,
+  "skirt_cells": 1,
+  "stored_cells": 258,
+  "tile_bytes": 133128,
+  "dtype": "int16",
+  "byte_order": "little",
+  "height_scale_m": 0.25,
+  "height_offset_m": 0,
+  "nodata": -32768,
+  "row_order": "north-to-south",
+  "column_order": "west-to-east",
+  "cell_boundary_rule": "half-open [south, north) and [west, east): a coordinate on a cell or tile boundary belongs to the cell north and east of it",
+  "origin": {
+    "easting": 0,
+    "northing": 0
+  },
+  "default_analysis_window_m": 10,
+  "attribution": "\u00a9 swisstopo",
+  "absent_tile": "204 No Content means no source covers this tile. It is not an error and must never be read as level terrain.",
+  "version": "v1",
+  "tile_url_template": "https://tiles.snowdesk-data.info/terrain/v1/{x}/{y}.s16",
+  "sources": [
+    {
+      "id": "swissalti3d",
+      "name": "swissALTI3D",
+      "provider": "Federal Office of Topography swisstopo",
+      "native_resolution_m": 2.0,
+      "quality": "lidar",
+      "vertical_accuracy_m": {
+        "lidar": 0.5,
+        "stereo_above_2000m": 3.0
+      },
+      "surface": "terrain",
+      "attribution": "\u00a9 swisstopo",
+      "licence": "swisstopo free geodata (OGD)",
+      "licence_url": "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices",
+      "source_url": "https://www.swisstopo.admin.ch/en/height-model-swissalti3d",
+      "stac_collection": "ch.swisstopo.swissalti3d",
+      "coverage": {
+        "tile_count": 27331,
+        "tile_x": [
+          3131,
+          3405
+        ],
+        "tile_y": [
+          1963,
+          2144
+        ],
+        "bbox": [
+          4007680,
+          2512640,
+          4359680,
+          2745600
+        ]
+      },
+      "survey_years": [
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "source_tile_count": 43650
+    }
+  ]
+}

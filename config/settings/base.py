@@ -999,6 +999,27 @@ SLOPE_TILE_URL = config(
 )
 SLOPE_TILE_ORIGIN = basemap_origin(SLOPE_TILE_URL)
 
+# SNOW-917: the terrain HEIGHT tileset's origin — a 5 m Int16 grid over
+# Switzerland in EPSG:3035, published by SNOW-908 from the snowdesk-tiles
+# repo. It answers "how steep is the ground here", where SLOPE_TILE_URL
+# above only paints a picture of it.
+#
+# A BASE, NOT AN XYZ TEMPLATE, and the difference is deliberate.
+# ``SLOPE_TILE_URL`` is handed verbatim to MapLibre, which substitutes the
+# placeholders itself, so the template IS the setting. Django composes two
+# different paths under this one — ``grid.json`` for the geometry and
+# ``{x}/{y}.s16`` for a tile — so a template would have to be edited to
+# reach the definition that describes it.
+#
+# NO CSP ENTRY, and it must not go through ``basemap_origin`` or
+# ``csp_defaults``: nothing in a browser fetches this. Every request to it
+# is a server-side ``requests.get`` from
+# ``apps.locations.services.terrain``, which a page policy does not govern.
+TERRAIN_TILE_BASE_URL = config(
+    "TERRAIN_TILE_BASE_URL",
+    default="https://tiles.snowdesk-data.info/terrain/v1",
+)
+
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
 CSP_DEFAULTS = csp_defaults(OPENFREEMAP_ORIGIN, slope_origin=SLOPE_TILE_ORIGIN)
