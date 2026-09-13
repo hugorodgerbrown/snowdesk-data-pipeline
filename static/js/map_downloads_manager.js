@@ -1411,7 +1411,12 @@
     // stamped with the area id AND a menu item without one.
     if (showMenu) {
       for (const inline of fragment.querySelectorAll(
-        '[data-downloads-delete], [data-downloads-repair], [data-row-rename]',
+        // SNOW-932: `[data-downloads-refresh]` joins the list. Missing
+        // from it, the inline copy survives the swap and the stamping
+        // below (which takes the FIRST match) fills that one while the
+        // menu item keeps the value-less attribute the template renders
+        // — leaving the row carrying the action twice, once dead.
+        '[data-downloads-delete], [data-downloads-repair], [data-downloads-refresh], [data-row-rename]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();

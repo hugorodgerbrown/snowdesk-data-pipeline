@@ -16,6 +16,12 @@
  * false positive here is worse than a failed download, because the user
  * stops worrying about it.
  *
+ * SNOW-932 adds `contentOutcome`, the same kind of predicate for the other
+ * half of a download. The tile half decides whether the map DRAWS; the
+ * content half decides whether the bulletins on it are today's. It lives
+ * beside `downloadSucceeded` in the core for the reason that one does —
+ * three controls had inlined it — and it is tested beside it here.
+ *
  * `basemap_download_core.js` is a browser IIFE with no exports — importing
  * it for side effects publishes a frozen `self.pwaBasemapDownloadCore`.
  */
@@ -24,7 +30,7 @@ import { describe, expect, it } from 'vitest';
 
 import '../../static/js/basemap_download_core.js';
 
-const { downloadSucceeded } = self.pwaBasemapDownloadCore;
+const { downloadSucceeded, contentOutcome } = self.pwaBasemapDownloadCore;
 
 /**
  * Build a warm-cache worker reply.
@@ -133,6 +139,89 @@ describe('downloadSucceeded — hostile shapes degrade to false', () => {
   it('treats any truthy cancelled marker as cancelled', () => {
     for (const marker of [true, 1, 'yes', {}]) {
       expect(downloadSucceeded(result({ cancelled: marker }))).toBe(false);
+    }
+  });
+});
+
+describe('contentOutcome — the amber-roundel predicate (SNOW-932)', () => {
+  it('calls a fully-landed content half complete', () => {
+    expect(contentOutcome({ ok: 9, total: 9 })).toEqual({
+      complete: true,
+      incomplete: false,
+    });
+  });
+
+  it('calls a half-landed one incomplete', () => {
+    expect(contentOutcome({ ok: 4, total: 9 })).toEqual({
+      complete: false,
+      incomplete: true,
+    });
+  });
+
+  it('says NEITHER when there was nothing to fetch', () => {
+    // The third state, and the whole reason this returns a pair rather
+    // than one boolean: an area whose boundary contains no bulletins, or a
+    // shell whose deps bundle predates the content phase, has nothing to
+    // say. Recording `contentIncomplete` for it would strand it amber with
+    // no shortfall behind it, and recording `contentAt` would claim a
+    // freshness it never had.
+    expect(contentOutcome({ ok: 0, total: 0 })).toEqual({
+      complete: false,
+      incomplete: false,
+    });
+  });
+
+  it('calls a SHORT plan incomplete even on a clean tally', () => {
+    // SNOW-931's channel. Every url the plan named landed, and the plan was
+    // still missing a country's bulletins — which is a shortfall no tally
+    // over that list can ever see, because there was nothing in the list to
+    // fail. This is the clause that makes `incomplete` not the negation of
+    // `complete`.
+    expect(contentOutcome({ ok: 9, total: 9, short: true })).toEqual({
+      complete: false,
+      incomplete: true,
+    });
+  });
+
+  it('calls a short plan with nothing in it incomplete too', () => {
+    // The list is empty BECAUSE the countries never arrived. "Nothing to
+    // say" is the wrong reading here — there was plenty to say and none of
+    // it could be resolved.
+    expect(contentOutcome({ ok: 0, total: 0, short: true })).toEqual({
+      complete: false,
+      incomplete: true,
+    });
+  });
+
+  it('reads an absent tally as nothing to say, not as a failure', () => {
+    // An older shell mid-rollout whose runner reports no `content` extra.
+    // Both false is the pre-SNOW-924 behaviour: no stamp, no flag.
+    for (const input of [null, undefined, {}]) {
+      expect(contentOutcome(input)).toEqual({ complete: false, incomplete: false });
+    }
+  });
+
+  it('never returns a truthy non-boolean on either member', () => {
+    // Both feed a conditional record spread, where a truthy non-boolean
+    // would be written into IndexedDB as itself.
+    for (const input of [null, {}, { ok: 1, total: 1 }, { ok: 0, total: 3 }]) {
+      const outcome = contentOutcome(input);
+      expect(typeof outcome.complete).toBe('boolean');
+      expect(typeof outcome.incomplete).toBe('boolean');
+    }
+  });
+
+  it('is never both at once', () => {
+    const inputs = [
+      { ok: 0, total: 0 },
+      { ok: 3, total: 3 },
+      { ok: 1, total: 3 },
+      { ok: 3, total: 3, short: true },
+      { ok: 0, total: 0, short: true },
+    ];
+    for (const input of inputs) {
+      const outcome = contentOutcome(input);
+      expect(outcome.complete && outcome.incomplete).toBe(false);
     }
   });
 });
