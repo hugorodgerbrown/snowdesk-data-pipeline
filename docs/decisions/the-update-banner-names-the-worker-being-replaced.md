@@ -82,3 +82,13 @@ Reload to update to Y" without the sentence lying about one of them.
   an answer rather than a hang.
 * `describeUpdate()` is unchanged. It was always correct; it was being
   fed the wrong pair.
+* **Injecting the build made the worker's bytes change on every deploy**,
+  including one that touched only Python — the ETag is computed over the
+  final substituted body, so the browser installs a replacement worker
+  and the banner appeared for everyone, every time. SNOW-952 leaves the
+  injection in place (it is what makes the copy above readable) and gates
+  the reveal on the shell instead: see
+  [`the-update-banner-is-gated-on-the-shell-not-the-build.md`](the-update-banner-is-gated-on-the-shell-not-the-build.md).
+  The `build-identity` reply carries the worker's `CACHE_VERSION`
+  alongside its build for that comparison — one message, both values,
+  for the same reason the two build fields are taken whole.

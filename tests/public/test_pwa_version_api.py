@@ -13,8 +13,15 @@ the fail-open case for a client that sends no version — is the test of
 record for it, since the client now performs no version comparison at all.
 
 ``update_available`` (SNOW-869) is the second such decision, and its matrix
-sits beside the first. It is the soft banner's verdict: equality against
-``APP_VERSION``, failing CLOSED where ``update_required`` fails open.
+sits beside the first. It is equality against ``APP_VERSION``, failing
+CLOSED where ``update_required`` fails open.
+
+``shell`` (SNOW-952) is not a decision at all — it is the one identifier
+the client actually gates the banner on. It names the shell cache this
+build would serve, so it moves when a shell source moves rather than on
+every deploy, and the tests here pin it to the value ``serve_sw`` bakes
+into the worker: the whole mechanism is a comparison of those two strings,
+and it fails silently in both directions if they can ever disagree.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ import json
 import pytest
 from django.test import Client, override_settings
 
+from apps.core.sw_shell import cached_cache_version
 from config.settings.base import comma_separated_frozenset
 
 
@@ -36,10 +44,11 @@ from config.settings.base import comma_separated_frozenset
     SW_KILL=False,
 )
 def test_version_endpoint_returns_expected_shape() -> None:
-    """``/api/version`` returns the full six-field body.
+    """``/api/version`` returns the full seven-field body.
 
     ``release`` and ``update_available`` (SNOW-869) are what let the soft
-    banner name both builds; the other four are the original spec shape.
+    banner name both builds, ``shell`` (SNOW-952) is what decides whether
+    it appears; the other four are the original spec shape.
     """
     response = Client().get("/api/version")
     assert response.status_code == 200
@@ -47,11 +56,44 @@ def test_version_endpoint_returns_expected_shape() -> None:
     assert body == {
         "current": "2026.07.15.testabc",
         "release": "v30",
+        "shell": cached_cache_version(),
         "update_required": False,
         "update_available": False,
         "released_at": "2026-07-15T09:00:00+00:00",
         "kill": False,
     }
+
+
+@pytest.mark.django_db
+def test_version_endpoint_names_the_shell_the_worker_would_be_served() -> None:
+    """``shell`` is the same string ``serve_sw`` bakes into ``CACHE_VERSION``.
+
+    SNOW-952: the client compares this against the cache name the
+    controlling worker reports, so the two must be the same value read the
+    same way. If they could ever disagree the banner would either never
+    appear or never stop appearing, and both failures are silent.
+    """
+    body = json.loads(Client().get("/api/version").content)
+    worker = Client().get("/sw.js").content.decode("utf-8")
+
+    assert f"const CACHE_VERSION = '{body['shell']}';" in worker
+
+
+@pytest.mark.django_db
+@override_settings(APP_VERSION="a-different-build-entirely", APP_RELEASE="99")
+def test_version_endpoint_shell_does_not_move_with_the_build() -> None:
+    """A deploy that changes no shell source reports the same ``shell``.
+
+    This is the whole of SNOW-952. ``current`` changes on every deploy —
+    including one that touches only Python — and gating the update banner
+    on it interrupted every user after every deploy to offer a reload that
+    fetched nothing new. ``shell`` is derived from the shell content hash,
+    so it moves only when something a device holds has actually changed.
+    """
+    body = json.loads(Client().get("/api/version").content)
+
+    assert body["current"] == "a-different-build-entirely"
+    assert body["shell"] == cached_cache_version()
 
 
 @pytest.mark.django_db

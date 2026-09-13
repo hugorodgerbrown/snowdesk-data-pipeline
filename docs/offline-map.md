@@ -54,7 +54,18 @@ fixed bottom banner (`#sw-update-banner`, rendered by
 `templates/includes/_sw_update_banner.html` and included from `base.html`)
 whenever a freshly installed SW is waiting and the page is still controlled
 by the old one. `pwa_version_check.js` (SNOW-374) reveals the same banner
-on an `X-App-Version` drift.
+on an `X-App-Version` drift — the escape hatch for a worker so stuck that
+no replacement ever reaches `waiting`.
+
+Both paths are gated on one predicate (SNOW-952): the shell cache name the
+controlling worker reports (`cache` on its `build-identity` reply) against
+the one the server would serve (`shell` on `/api/version`). A deploy that
+changed no shell source shows no banner, however much the build SHA moved
+— see
+[`the-update-banner-is-gated-on-the-shell-not-the-build.md`](decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md).
+`window.pwaUpdateBanner.reveal()` is that gate; `revealNow` is the ungated
+primitive, and calling it from a reveal path puts the every-deploy
+interruption back.
 
 Whichever path revealed it, `labelBanner` then names both builds
 (SNOW-869). The build it calls the user's comes from the **controlling
