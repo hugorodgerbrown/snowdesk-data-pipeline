@@ -115,6 +115,10 @@ beforeEach(async () => {
   for (const key of ['favourites', 'community_reports', 'weather', 'routes']) {
     await db.delete('data:map_overlays', key);
   }
+  // SNOW-950: so are the panel rows.
+  for (const key of ['observations', 'routes']) {
+    await db.delete('data:panel_rows', key);
+  }
 });
 
 describe('the shell-cache reading', () => {
@@ -399,6 +403,31 @@ describe('the area records', () => {
     expect(readings.overlays.weather.features).toBe(2);
     expect(readings.overlays.routes.features).toBe(0);
     expect(readings.overlays.routes.principal).toBe('acct-1');
+  });
+
+  it('reads what each panel row holds, not just that a row exists (SNOW-950)', async () => {
+    // The idle warm stores a successful list response for a user with
+    // nothing to list, so the key alone is not an answer here either. Each
+    // panel row is a <li>; the empty clause is a <p> and counts nothing.
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await window.pwaDb.put('data:panel_rows', {
+      key: 'routes',
+      body: '<div><ul><li>Verbier skin track</li><li>Col des Mines</li></ul></div>',
+      principal: 'acct-1',
+      cached_at: '2026-09-13T08:00:00Z',
+    });
+    await window.pwaDb.put('data:panel_rows', {
+      key: 'observations',
+      body: '<div><ul></ul><p data-testid="observation-list-empty">None yet.</p></div>',
+      principal: 'acct-1',
+      cached_at: '2026-09-13T08:00:00Z',
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.panelRows.routes.rows).toBe(2);
+    expect(readings.panelRows.routes.principal).toBe('acct-1');
+    expect(readings.panelRows.observations.rows).toBe(0);
   });
 
   it('reads a payload with no feature array as unreadable, not as empty', async () => {

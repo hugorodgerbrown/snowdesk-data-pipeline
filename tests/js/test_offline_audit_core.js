@@ -108,7 +108,7 @@ function healthy(overrides) {
       // SNOW-950: each panel's cached rows, stamped with the account they
       // were cached for — this fixture's principal is null (anonymous), so
       // the row reads back.
-      panelRows: { observations: { principal: null } },
+      panelRows: { observations: { principal: null, rows: 2 } },
       mutations: { count: 0 },
       dbAvailable: true,
     },
@@ -919,7 +919,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         overlays: { community_reports: { features: 3 } },
-        panelRows: { routes: { principal: null } },
+        panelRows: { routes: { principal: null, rows: 1 } },
       }),
       {},
     );
@@ -935,7 +935,7 @@ describe('the rows that answer about what the user will see', () => {
       healthy({
         currentPrincipal: 'acct-1',
         overlays: { routes: { features: 4, principal: 'acct-2' } },
-        panelRows: { observations: { principal: null } },
+        panelRows: { observations: { principal: null, rows: 2 } },
       }),
       {},
     );
@@ -954,7 +954,7 @@ describe('the rows that answer about what the user will see', () => {
       healthy({
         currentPrincipal: 'acct-1',
         overlays: { community_reports: { features: 3 } },
-        panelRows: { routes: { principal: 'acct-2' } },
+        panelRows: { routes: { principal: 'acct-2', rows: 1 } },
       }),
       {},
     );
@@ -967,7 +967,7 @@ describe('the rows that answer about what the user will see', () => {
       healthy({
         currentPrincipal: 'acct-1',
         overlays: {},
-        panelRows: { observations: { principal: 'acct-2' } },
+        panelRows: { observations: { principal: 'acct-2', rows: 1 } },
       }),
       {},
     );
@@ -981,7 +981,67 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         overlays: { community_reports: { features: 3 } },
-        panelRows: { routes: {} },
+        panelRows: { routes: { rows: 1 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+  });
+
+  it('answers unknown for a routes panel row that lists nothing', () => {
+    // The idle warm stores a successful list response for a user with no
+    // routes, and its body is the empty clause alone. That is the panel's
+    // ``features: 0``: readable, and not something to read — so unknown
+    // with the empty note, not Yes, and not the No an absent overlay
+    // alone would have given.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('unknown');
+    expect(row(report, 'routes').reason).toBe('empty');
+    expect(row(report, 'routes').note).toBe('note-empty-routes');
+  });
+
+  it('answers unknown for an observations panel row that lists nothing', () => {
+    const report = core.buildReport(
+      healthy({
+        overlays: {},
+        panelRows: { observations: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'reports').status).toBe('unknown');
+    expect(row(report, 'reports').reason).toBe('empty');
+  });
+
+  it('lets a readable overlay outrank an empty panel row', () => {
+    // The map overlay draws four routes; the panel's cached list happens
+    // to be older and empty. Something IS there to see offline.
+    const report = core.buildReport(
+      healthy({
+        overlays: { routes: { features: 4, principal: null } },
+        panelRows: { routes: { principal: null, rows: 0 } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('yes');
+  });
+
+  it('reads a panel row with no row count as nothing to count on', () => {
+    // ``rows`` is null when the collector could not parse the body, and a
+    // body it could not parse is not one the panel can paint either.
+    const report = core.buildReport(
+      healthy({
+        overlays: {},
+        panelRows: { routes: { principal: null, rows: null } },
       }),
       {},
     );

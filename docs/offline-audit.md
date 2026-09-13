@@ -305,11 +305,20 @@ That second source is **principal-checked like the overlays**, and for the
 same reason: every row in `data:panel_rows` is one user's own list, and
 each panel's own module refuses a row stamped for another account. The
 collector reads the stamp rather than the key alone (`readPanelRows`), and
-`panelRowReadable` compares it **untouched** — which is the one place this
+`panelRowState` compares it **untouched** — which is the one place this
 check is stricter than `overlayState`. A row carrying no stamp at all,
 written before SNOW-661 began stamping them, matches nobody including an
 anonymous reader, because that is what the panel does with it. Counting it
 would make the report and the panel disagree the other way round.
+
+It is also **content-checked like the overlays**. The idle warm stores a
+successful list response for a user with nothing to list, so such a user
+carries a panel row whose body is the empty clause and nothing else — the
+panel's `features: 0`. The collector parses the body and counts its
+`<li>` rows (every panel row is one, from `includes/_ugc_panel_row.html`),
+and a readable row holding none answers **unknown** with the same
+"you have not uploaded any routes yet" note an empty overlay gets, rather
+than Yes, and rather than the No an absent overlay alone would have given.
 
 ## Two halves, doing two jobs
 

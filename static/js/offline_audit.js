@@ -962,22 +962,50 @@
    * What each ``data:panel_rows`` row holds, by panel (SNOW-950).
    *
    * The store holds one row per PANEL — 'observations', 'routes' — so the
-   * key is half the answer: a row count would say two and mean nothing.
-   * The other half is the principal, for the reason ``readOverlayRows``
-   * above reads one. Each panel's own module refuses a row stamped for
-   * another account (``observations_offline.js`` / ``routes_offline.js``
-   * compare the stored value untouched), so a row from another session is
-   * on the device and unreadable — and the key alone would have called it
-   * a Yes.
+   * key is a third of the answer: a row count would say two and mean
+   * nothing. The second third is the principal, for the reason
+   * ``readOverlayRows`` above reads one. Each panel's own module refuses a
+   * row stamped for another account (``observations_offline.js`` /
+   * ``routes_offline.js`` compare the stored value untouched), so a row
+   * from another session is on the device and unreadable — and the key
+   * alone would have called it a Yes.
+   *
+   * The last third is what the body HOLDS. The idle warm persists a
+   * successful list response whether or not the user has anything to
+   * list, so a user with no routes still carries a row — one whose body is
+   * the panel's empty clause and nothing else. That row is the
+   * ``features: 0`` of the overlays: readable, and not content. Every
+   * panel row is a ``<li>`` (includes/_ugc_panel_row.html, the one shape
+   * all four panels render), so the body is parsed and its ``<li>``
+   * elements counted; the empty clause is a ``<p>`` and counts nothing.
    *
    * @param {IDBDatabase} db
    * @param {string} name
-   * @returns {Promise<Record<string, {principal: string|null}>>} ``{}``
-   *   where the store does not exist or cannot be read. ``principal`` is
-   *   undefined on a row written before SNOW-661 stamped one — the same
-   *   convention ``readOverlayRows`` uses, and the core reads an absent
-   *   stamp the way the panels do.
+   * @returns {Promise<Record<string, {principal: string|null,
+   *   rows: number|null}>>} ``{}`` where the store does not exist or
+   *   cannot be read. ``principal`` is undefined on a row written before
+   *   SNOW-661 stamped one — the same convention ``readOverlayRows`` uses,
+   *   and the core reads an absent stamp the way the panels do. ``rows``
+   *   is null when the body is not a string, which the core reads as
+   *   unreadable rather than as empty.
    */
+  /**
+   * How many rows a panel's stored body renders.
+   *
+   * @param {unknown} body The row's ``body`` — the list response, verbatim.
+   * @returns {number|null} The count of ``<li>`` elements, or null when
+   *   the body is not a string or cannot be parsed.
+   */
+  function countPanelRows(body) {
+    if (typeof body !== 'string') return null;
+    try {
+      var parsed = new DOMParser().parseFromString(body, 'text/html');
+      return parsed.querySelectorAll('li').length;
+    } catch (_err) {
+      return null;
+    }
+  }
+
   function readPanelRows(db, name) {
     return new Promise(function (resolve) {
       try {
@@ -992,6 +1020,7 @@
             if (!row || !row.key) return;
             rows[String(row.key)] = {
               principal: row.principal === undefined ? undefined : row.principal,
+              rows: countPanelRows(row.body),
             };
           });
           resolve(rows);

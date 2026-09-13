@@ -191,10 +191,12 @@
    *   principal it was stamped with. Presence alone is not an answer: a row
    *   stamped for another account is refused by the reader, and an empty
    *   FeatureCollection draws nothing.
-   * @property {Record<string, {principal?: string|null}>} [panelRows]
+   * @property {Record<string, {principal?: string|null, rows?: number|null}>} [panelRows]
    *   SNOW-950: each ``data:panel_rows`` row — which panel it belongs to,
-   *   and the principal it was stamped with. Presence alone is not an
-   *   answer here either: the panel refuses a row from another session.
+   *   the principal it was stamped with, and how many rows its body holds.
+   *   Presence alone is not an answer here either: the panel refuses a row
+   *   from another session, and a warm for a user with nothing to list
+   *   stores a body holding only the empty clause.
    * @property {{count?: number|null}} [mutations]
    * @property {string|null} [networkMode] SNOW-922: the ``meta:app``
    *   ``network.mode`` row — ``'auto'``, ``'offline'`` (the worker's own
@@ -766,14 +768,23 @@
    * an absent stamp to null here would have this report promise rows the
    * panel will refuse to paint.
    *
+   * The answer has the overlay's three states, for the overlay's reason: a
+   * row this account can read may still hold nothing. The idle warm stores
+   * a successful list response for a user with no routes, and that body is
+   * the panel's empty clause — readable, and not something to read.
+   * Reporting it as Yes would count a device towards "available offline"
+   * for content it does not have.
+   *
    * @param {AuditReadings} r
    * @param {string} key The panel's key — 'observations' | 'routes'.
-   * @returns {boolean}
+   * @returns {{status: 'yes'|'empty'|'no'}}
    */
-  function panelRowReadable(r, key) {
+  function panelRowState(r, key) {
     var row = (r.panelRows || {})[key];
-    if (!row) return false;
-    return row.principal === (r.currentPrincipal || null);
+    if (!row) return { status: 'no' };
+    if (row.principal !== (r.currentPrincipal || null)) return { status: 'no' };
+    if (typeof row.rows !== 'number') return { status: 'no' };
+    return row.rows > 0 ? { status: 'yes' } : { status: 'empty' };
   }
 
   /**
@@ -1244,7 +1255,12 @@
       // overlay alone and said Yes while the panel beside it said "couldn't
       // be loaded". Readable by THIS account: a row cached under another
       // one would make them disagree the other way.
-      if (panelRowReadable(r, 'routes')) return { status: 'yes' };
+      var routesPanel = panelRowState(r, 'routes');
+      if (routesPanel.status === 'yes') return { status: 'yes' };
+      // A panel row this account can read that lists nothing is the
+      // user's own list saying it is empty — the overlay's ``features: 0``
+      // — and outranks an overlay that is merely absent.
+      if (routesPanel.status === 'empty') return overlayAnswer(routesPanel, t, 'routes');
       return overlayAnswer(routes, t, 'routes');
     }
 
@@ -1256,7 +1272,9 @@
       // one is having something to read offline whatever the map overlay
       // holds — as long as this account is the one it was cached for
       // (SNOW-950).
-      if (panelRowReadable(r, 'observations')) return { status: 'yes' };
+      var reportsPanel = panelRowState(r, 'observations');
+      if (reportsPanel.status === 'yes') return { status: 'yes' };
+      if (reportsPanel.status === 'empty') return overlayAnswer(reportsPanel, t, 'reports');
       return overlayAnswer(reports, t, 'reports');
     }
 
