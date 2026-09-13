@@ -322,6 +322,25 @@
     'effect-shapes': 'will draw no region outlines',
     'group-open-map-lead': 'Without a signal the app %(effects)s.',
     'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
+    // SNOW-926: the perishable half. A caveat on a Yes, never a No — the
+    // map draws, and what is behind is what it draws on. Grouped so any
+    // number of areas fold into one sentence with one shared remedy.
+    //
+    // The remedy names the SHEET rather than "tap the download again",
+    // which was true for a region roundel and for nothing else: a custom
+    // area or drop zone opens the downloads manager on a tap, and its
+    // Refresh (SNOW-932) is the one gesture every area kind actually has.
+    // Naming a gesture two of the three kinds do not have left those
+    // caveats with no way to clear them but deleting and recreating the
+    // area. Same surface `note-area-incomplete` already points at.
+    'group-content-stale-lead':
+      'The bulletins and weather saved inside %(effects)s are from an earlier day.',
+    'group-content-stale-remedy':
+      'Refreshing the download from the map’s Manage downloads sheet brings %(count)s up to date.',
+    'group-content-never-lead':
+      'No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it.',
+    'group-content-never-remedy':
+      'Refreshing the download from the map’s Manage downloads sheet fills %(count)s in.',
 
     'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
@@ -1049,6 +1068,13 @@
           bytes: record.bytes,
           savedAt: record.savedAt,
           deps: Array.isArray(record.deps) ? record.deps : [],
+          // SNOW-926: when the bulletins and weather inside this area's
+          // boundary were last fetched in full (SNOW-924 records it).
+          // Separate from `savedAt` because the two halves age
+          // differently: the tiles are a fixed grid over fixed ground and
+          // never go stale, the bulletins are new every day. Absent means
+          // never, which is every area downloaded before that ticket.
+          contentAt: record.contentAt || null,
         });
       });
     }
@@ -1068,6 +1094,8 @@
           bytes: record.bytes,
           savedAt: record.savedAt,
           deps: Array.isArray(record.deps) ? record.deps : [],
+          // SNOW-926: see the region branch above.
+          contentAt: record.contentAt || null,
         });
       });
     }

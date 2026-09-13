@@ -80,6 +80,12 @@ function healthy(overrides) {
           basemapKey: 'openfreemap',
           bytes: 12 * 1024 * 1024,
           deps: ['https://t/style.json', 'https://t/source.json'],
+          // SNOW-926: content fetched on the same calendar day as `now`,
+          // which is what makes this fixture healthy on the perishable
+          // half too. An area with no stamp is not broken — it is the
+          // pre-SNOW-924 state — but it does carry a caveat, and this
+          // fixture is the baseline every other test reads a delta from.
+          contentAt: '2026-09-11T07:00:00.000Z',
           bucketPresent: true,
           entries: [
             'https://t/style.json',
@@ -293,6 +299,174 @@ describe('the downloads', () => {
     // basemap's own row rather than as a download of its own.
     const report = core.buildReport(healthy(), {});
     expect(row(report, 'area:base-openfreemap')).toBeNull();
+  });
+});
+
+describe("an area's content age (SNOW-926)", () => {
+  /** `healthy()` with one region area, overridden. */
+  function withArea(overrides) {
+    return healthy({
+      areas: [
+        {
+          id: 'r1',
+          kind: 'region',
+          name: 'Martigny',
+          basemapKey: 'openfreemap',
+          deps: ['https://t/style.json'],
+          bucketPresent: true,
+          entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+          ...overrides,
+        },
+      ],
+    });
+  }
+
+  const STRINGS = {
+    'group-content-stale-lead': 'Stale inside %(effects)s.',
+    'group-content-stale-remedy': 'Refresh %(count)s.',
+    'group-content-never-lead': 'Nothing saved inside %(effects)s.',
+    'group-content-never-remedy': 'Download %(count)s.',
+  };
+
+  it('keeps the Yes for an area whose content is from today', () => {
+    const report = core.buildReport(
+      withArea({ contentAt: '2026-09-11T06:00:00.000Z' }),
+      STRINGS,
+    );
+
+    expect(row(report, 'area:r1').status).toBe('yes');
+    expect(row(report, 'area:r1').group).toBeUndefined();
+  });
+
+  it('keeps the Yes for an area whose content is three days old', () => {
+    // THE point of the reading. An area can go from complete to
+    // incomplete overnight with nothing deleted and nothing broken, and
+    // that must not read as a fault — the map draws, which is what the
+    // row asks. Same treatment as the shared base layer: a caveat on a
+    // Yes, not a No of its own.
+    const report = core.buildReport(
+      withArea({ contentAt: '2026-09-08T06:00:00.000Z' }),
+      STRINGS,
+    );
+
+    expect(row(report, 'area:r1').status).toBe('yes');
+    expect(row(report, 'area:r1').reason).toBe('content-stale');
+  });
+
+  it('treats an area with tiles and no content at all as a Yes with a caveat', () => {
+    // Every area on every device on the day SNOW-924 shipped. The map
+    // draws; there is nothing on it. That is a real caveat, and it is not
+    // a No.
+    const report = core.buildReport(withArea({}), STRINGS);
+
+    expect(row(report, 'area:r1').status).toBe('yes');
+    expect(row(report, 'area:r1').reason).toBe('content-never');
+  });
+
+  it('says nothing about content for an area whose tiles do not verify', () => {
+    // The row is already saying something stronger, and "and its
+    // bulletins are old" over an area that draws nothing is noise.
+    const report = core.buildReport(
+      withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null }),
+      STRINGS,
+    );
+
+    expect(row(report, 'area:r1').status).toBe('no');
+    expect(row(report, 'area:r1').reason).toBe('incomplete');
+  });
+
+  it('says nothing about content for the shared base layer', () => {
+    // It is the world's zoomed-out ground rather than a place, so it has
+    // no boundary and no content half. It is also not a row here at all.
+    const areas = healthy().areas;
+    const base = areas.filter((area) => area.kind === 'base')[0];
+
+    expect(core.areaContentState(base, '2026-09-11T08:00:00.000Z')).toBe('none');
+  });
+
+  it('measures calendar days in the reader\'s zone, not elapsed hours', () => {
+    // What the question asks is "does this device hold TODAY's bulletin".
+    // Content fetched at 23:00 last night is a day behind by 07:00, and
+    // content fetched at 06:00 this morning is not — an elapsed-hours
+    // window gets both of those wrong.
+    const yesterday = new Date('2026-09-11T08:00:00.000Z');
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(23, 0, 0, 0);
+    const thisMorning = new Date('2026-09-11T08:00:00.000Z');
+    thisMorning.setHours(6, 0, 0, 0);
+    const area = withArea({}).areas[0];
+
+    expect(
+      core.areaContentState(
+        { ...area, contentAt: yesterday.toISOString() },
+        thisMorning.toISOString(),
+      ),
+    ).toBe('stale');
+    expect(
+      core.areaContentState(
+        { ...area, contentAt: thisMorning.toISOString() },
+        new Date(thisMorning.getTime() + 60 * 60 * 1000).toISOString(),
+      ),
+    ).toBe('fresh');
+  });
+
+  it('reads an unparseable stamp as nothing to say, not as stale', () => {
+    // A corrupt field is not evidence of anything, and a caveat drawn
+    // from one is the false reading this panel cannot afford.
+    const area = withArea({ contentAt: 'not a date' }).areas[0];
+
+    expect(core.areaContentState(area, '2026-09-11T08:00:00.000Z')).toBe('none');
+  });
+
+  it('folds every stale area into ONE sentence with one remedy', () => {
+    // A note per row would fill the summary's three-clause cap with the
+    // same fact restated, over rows the table already lists. The rule
+    // that a row never carries its own explanation is unchanged.
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'r1',
+            kind: 'region',
+            name: 'Martigny',
+            basemapKey: 'openfreemap',
+            deps: ['https://t/style.json'],
+            bucketPresent: true,
+            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+            contentAt: '2026-09-08T06:00:00.000Z',
+          },
+          {
+            id: 'r2',
+            kind: 'region',
+            name: 'Zermatt',
+            basemapKey: 'openfreemap',
+            deps: ['https://t/style.json'],
+            bucketPresent: true,
+            entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+            contentAt: '2026-09-07T06:00:00.000Z',
+          },
+        ],
+      }),
+      { ...STRINGS, 'list-pair': '%(first)s and %(last)s', 'count-two': 'both' },
+    );
+
+    expect(report.summary).toContain('Stale inside Martigny and Zermatt.');
+    expect(report.summary).toContain('Refresh both.');
+    // One sentence pair, not two.
+    expect(report.summary.split('Stale inside').length).toBe(2);
+  });
+
+  it('adds no row of its own', () => {
+    const stale = core.buildReport(
+      withArea({ contentAt: '2026-09-08T06:00:00.000Z' }),
+      STRINGS,
+    );
+    const fresh = core.buildReport(
+      withArea({ contentAt: '2026-09-11T06:00:00.000Z' }),
+      STRINGS,
+    );
+
+    expect(ids(stale)).toEqual(ids(fresh));
   });
 });
 
