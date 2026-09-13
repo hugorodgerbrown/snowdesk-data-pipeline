@@ -273,14 +273,24 @@
    *   option any more (SNOW-635 review) — a custom area's label comes
    *   from ``area.name`` like every other row's does, so this module no
    *   longer needs a caller-supplied fallback string for it.
-   * @returns {Array<{id: string, kind: string, orphaned: boolean,
-   *   label: string, renameable: boolean, bytes: number, savedAt: string,
-   *   size: string, basemapKey: string, onDevice: boolean,
-   *   synced: boolean, redownloadable: boolean, bbox: number[]|null,
-   *   regionId: string, contentIncomplete: boolean}>} SNOW-932:
-   *   ``contentIncomplete`` says the area's BULLETINS are behind, not that
-   *   its map is broken — the two are independent halves, and the sheet
-   *   must not dim a row for it (the area IS available offline). SNOW-749:
+   * @returns {Array<{id: string, kind: string, deletable: boolean,
+   *   orphaned: boolean, label: string, renameable: boolean,
+   *   bytes: number, savedAt: string, size: string, basemapKey: string,
+   *   onDevice: boolean, synced: boolean, redownloadable: boolean,
+   *   bbox: number[]|null, regionId: string, deps: string[],
+   *   z: Object|null, band: number[]|null, contentIncomplete: boolean}>}
+   *   SNOW-936: ``deletable``, ``deps``, ``z`` and ``band`` were emitted
+   *   here for tickets' worth of releases without being named above. This
+   *   file is not ``@ts-check``'d, so this block is the ONLY contract a
+   *   caller has and nothing was checking it against the object literal a
+   *   screen below. The three data fields are not incidental —
+   *   ``deps`` (SNOW-844) and ``z``/``band`` (SNOW-692) are what the sheet
+   *   judges render-completeness and slope coverage from, so a caller
+   *   reading only this would not know they were available to read.
+   *   SNOW-932: ``contentIncomplete`` says the area's BULLETINS are
+   *   behind, not that its map is broken — the two are independent halves,
+   *   and the sheet must not dim a row for it (the area IS available
+   *   offline). SNOW-749:
    *   ``onDevice`` and ``synced`` are the
    *   two independent facts a row now carries, and the four combinations
    *   are all reachable — on both, on the device only (a download made
@@ -538,9 +548,36 @@
    * @returns {Array<{id: string, name?: string, bytes: number,
    *   savedAt?: string, orphaned: boolean, basemapKey: string|null,
    *   onDevice: boolean, synced: boolean, bbox: number[]|null,
-   *   regionId: string}>} The recorded areas in their original order, then
-   *   any orphans id-ascending, then any account-only areas id-ascending —
-   *   so the sheet's own sort has a stable input.
+   *   regionId: string, deps: string[], type?: string, z?: Object|null,
+   *   band?: number[]|null, contentIncomplete?: boolean}>} The recorded
+   *   areas in their original order, then any orphans id-ascending, then
+   *   any account-only areas id-ascending — so the sheet's own sort has a
+   *   stable input.
+   *
+   *   SNOW-936: ``deps``, ``type``, ``z`` and ``band`` were emitted here
+   *   without being named, and of the two typedefs this ticket corrects
+   *   it is the one that matters. This function REBUILDS every entry
+   *   field by field rather than spreading it, so a field it does not
+   *   name is a field that silently never reaches the sheet — which is
+   *   exactly how SNOW-932 lost one, having read this block and believed
+   *   it. A typedef that under-describes a rebuild is not a cosmetic
+   *   error; it is the documentation that hides the hop.
+   *
+   *   ``type``, ``z``, ``band`` and ``contentIncomplete`` are OPTIONAL and
+   *   the marker is load-bearing: only the recorded branch carries them.
+   *   An orphan has no record to read a band or a tile-row span off, and
+   *   an account-only row is not on this device for its content to be
+   *   behind. ``deps`` is on all three (``[]`` where there is nothing to
+   *   name), so it is not optional.
+   *
+   *   ``contentIncomplete`` proves the point rather than being an
+   *   afterthought: SNOW-932 added it to the object literal below and to
+   *   ``manageRows``' typedef, but not to this one. Rebasing this branch
+   *   onto that merge produced NO conflict here — the field arrived and
+   *   the contract describing it did not, silently, in the one function
+   *   whose field-by-field rebuild makes that expensive. Caught by
+   *   re-reading the literal after the rebase, which is the manual check
+   *   ``@ts-check`` would make unnecessary.
    */
   function reconcileAreas(recorded, storedAreaIds, bytesById, accountAreas) {
     var list = Array.isArray(recorded) ? recorded : [];
