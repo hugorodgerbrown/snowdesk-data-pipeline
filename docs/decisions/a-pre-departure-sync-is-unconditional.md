@@ -102,6 +102,8 @@ load is spent at the one moment the network is there by definition.
 - Both id forms are accepted by `/offline/` (a bucket id, or a bare region
   id), and resolving between them happens there, where `areaIdForRegion`
   is. No surface assembles the bucket-id format by hand.
-- SNOW-844's `repair` and SNOW-932's `refreshAreaContent` remain as bridge
-  members. `syncArea` composes them rather than replacing them, so each
-  fetch path still has exactly one implementation.
+- `syncArea` composes the two paths that already existed —
+  `repairPinnedDownload` and `refreshAreaContent` — rather than fetching
+  anything itself, so each half still has exactly one implementation. The
+  `repair` bridge member SNOW-844 added for the sheet's Repair control now
+  has no caller; it is left in place rather than removed in this ticket.
