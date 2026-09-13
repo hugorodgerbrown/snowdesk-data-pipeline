@@ -59,14 +59,16 @@ WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
   is deliberately online-only. Rename and delete are online-only too,
   matching every other panel's edits.
 
-  No offline cache sidecar for the PANEL. _favourite_list_map.html carries
-  ``roster_payload`` for favourites_offline.js, which repaints cached rows
-  over a failed list load; this panel still says "couldn't be loaded"
-  instead. The MAP LAYER does cache offline as of SNOW-687 —
-  routes:geojson is write-through cached by
-  static/js/map_overlay_offline_cache.js, principal-scoped so one account's
-  tracks can never read back into another's session — but that payload is
-  geometry for the line, not the rows this list renders.
+  No offline cache SIDECAR, but the panel does read offline. SNOW-950 gave
+  it static/js/routes_offline.js, which stores each list response's rendered
+  body verbatim in ``data:panel_rows`` and lets routes.js repaint it over a
+  failed load — the shape SNOW-661 built for the observations panel, and not
+  _favourite_list_map.html's ``roster_payload``, which hands
+  favourites_offline.js a record per row to rebuild. The MAP LAYER caches
+  separately, as it has since SNOW-687: routes:geojson is write-through
+  cached by static/js/map_overlay_offline_cache.js, principal-scoped so one
+  account's tracks can never read back into another's session — but that
+  payload is geometry for the line, not the rows this list renders.
 
 Context expected:
   route_create_url  — str: POST endpoint for routes:create.
@@ -190,6 +192,16 @@ Context expected:
 {# too, and SNOW-887 made it three panels. What was left behind here was   #}
 {# the old comment, mid-sentence, describing a script tag that is not on   #}
 {# this page — removed by SNOW-886.                                        #}
+{# SNOW-950: the panel's offline row store — written on every successful  #}
+{# list swap AND on routes.js's idle warm, read back when the request     #}
+{# fails. Sits between the two scripts it talks to, and both edges are    #}
+{# document order between deferred scripts: home.html's                   #}
+{# panel_rows_cache.js is above (this registers its onWarmed hook at      #}
+{# parse time), and routes.js is below (it reads                          #}
+{# window.pwaRoutesOffline). Map page only, like                          #}
+{# observations_offline.js and unlike favourites_offline.js, which        #}
+{# base.html loads site-wide.                                             #}
+<script defer src="{% static 'js/routes_offline.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -199,12 +211,23 @@ Context expected:
 <template id="routes-strings-template">
     <span data-string="signin-prompt">{% trans "Sign in to save a route." %}</span>
     <span data-string="signin-cta">{% trans "Sign in" %}</span>
-    {# The panel's own failure line. Distinct from routes:list's empty state #}
-    {# ("You have no saved routes yet.") on purpose: this panel opens        #}
-    {# offline, its list does not load offline, and telling a user they have #}
-    {# no routes when the request merely failed is a wrong statement about   #}
+    {# The panel's own failure line, for a failed request with nothing      #}
+    {# cached behind it. Distinct from routes:list's empty state ("You have #}
+    {# no saved routes yet.") on purpose — telling a user they have no      #}
+    {# routes when the request merely failed is a wrong statement about     #}
     {# their own data.                                                      #}
     <span data-string="list-failed">{% trans "Your routes couldn't be loaded — check your connection." %}</span>
+    {# SNOW-950: what the panel says instead when the request fails and this #}
+    {# device HAS the last response stored. A route is a file the user       #}
+    {# uploaded, not a forecast that expires, so the rows render as          #}
+    {# themselves and this line says where they came from.                   #}
+    {# ``%(time)s`` is substituted by name in JS (window.pwaStrings), the    #}
+    {# same shape includes/_favourites_offline_strings.html uses.            #}
+    <span data-string="list-cached">
+        {% blocktrans trimmed %}
+            Showing your saved routes — last updated %(time)s.
+        {% endblocktrans %}
+    </span>
     <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
     {# One line per outcome route_create distinguishes, because "it didn't   #}
     {# work" is not actionable and each of these has a different next step:  #}

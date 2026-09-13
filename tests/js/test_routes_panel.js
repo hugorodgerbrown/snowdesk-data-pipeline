@@ -188,6 +188,34 @@ function toastText() {
   return document.getElementById('map-sheet-toast').textContent;
 }
 
+/**
+ * Let a failed list load's cache read settle (SNOW-950).
+ *
+ * The failure handler asks static/js/routes_offline.js before it draws
+ * anything, so what the panel shows is one turn of the event loop behind
+ * the event that failed it.
+ *
+ * @returns {Promise<void>}
+ */
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Stand in for the offline row store, which is its own module and its own
+ * test file (test_routes_offline.js) — what is asserted here is what this
+ * panel does with the answer.
+ *
+ * @param {?object} record The cached row, or null for a cold device.
+ * @returns {void}
+ */
+function stubCache(record) {
+  window.pwaRoutesOffline = {
+    read: () => Promise.resolve(record),
+    write: () => Promise.resolve(),
+  };
+}
+
 beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
   globalThis.fetch = vi.fn(() =>
@@ -270,7 +298,7 @@ describe('loading the rows', () => {
     expect(url).toBe(LIST_URL);
   });
 
-  it('says so when the list does not load, rather than looking empty', () => {
+  it('says so when the list does not load, rather than looking empty', async () => {
     btn.click();
     const rows = sheet.querySelector('[data-routes-rows]');
 
@@ -278,10 +306,13 @@ describe('loading the rows', () => {
       new CustomEvent('htmx:sendError', { detail: { target: rows } }),
     );
 
+    // SNOW-950: the handler asks the offline row store first, so the line
+    // arrives a turn of the event loop later than it used to.
+    await settle();
     expect(rows.textContent).toContain("couldn't be loaded");
   });
 
-  it('ignores a failure aimed at somebody else’s target', () => {
+  it('ignores a failure aimed at somebody else’s target', async () => {
     // Every HTMX request on the map page runs through this document-level
     // listener — the other three panels share the page.
     btn.click();
@@ -293,7 +324,97 @@ describe('loading the rows', () => {
       }),
     );
 
+    await settle();
     expect(rows.textContent).not.toContain("couldn't be loaded");
+  });
+});
+
+describe('a failed list load with rows cached on the device (SNOW-950)', () => {
+  // static/js/routes_offline.js holds the last good response body; this
+  // module decides what to do with it. The panel used to say "check your
+  // connection" for routes the map was already drawing as lines beside it.
+
+  const CACHED_ROWS =
+    '<ul>' +
+    '<li id="route-1">' +
+    '<button data-row-label data-row-focus="6.1,45.9,6.3,46.1">Haute Route</button>' +
+    '<div data-overflow-menu><button type="button">…</button></div>' +
+    '</li>' +
+    '<li id="route-pending">' +
+    '<form data-row-claimed><button type="submit">Save</button></form>' +
+    '</li></ul>';
+
+  /**
+   * Fail the list request and settle the cache read behind it.
+   *
+   * @returns {Promise<Element>} The rows container, after the handler ran.
+   */
+  async function failListLoad() {
+    btn.click();
+    const container = sheet.querySelector('[data-routes-rows]');
+    document.dispatchEvent(
+      new CustomEvent('htmx:sendError', { detail: { target: container } }),
+    );
+    await settle();
+    return container;
+  }
+
+  beforeEach(() => {
+    stubCache({
+      body: CACHED_ROWS,
+      cached_at: '2026-09-13T09:00:00+00:00',
+    });
+  });
+
+  afterEach(() => {
+    delete window.pwaRoutesOffline;
+  });
+
+  it('repaints the rows instead of the failure line', async () => {
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain('Haute Route');
+    expect(container.textContent).not.toContain("couldn't be loaded");
+  });
+
+  it('says the rows came from the cache', async () => {
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain('Showing your saved routes');
+  });
+
+  it('carries no row menu, whose every item is online-only', async () => {
+    // Plan a trip, Share, Rename and Delete all need the network, and a
+    // control that silently does nothing is worse than one that is not
+    // there.
+    const container = await failListLoad();
+
+    expect(container.querySelector('[data-overflow-menu]')).toBeNull();
+    expect(container.textContent).toContain('Haute Route');
+  });
+
+  it("carries no pending share's Save, which is an hx-post", async () => {
+    const container = await failListLoad();
+
+    expect(container.querySelector('[data-row-claimed]')).toBeNull();
+  });
+
+  it('is still pressable, because the click handler is on the sheet', async () => {
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+    const container = await failListLoad();
+
+    container.querySelector('[data-row-focus]').click();
+
+    expect(window.pwaMapFocus.bounds).toHaveBeenCalled();
+    delete window.pwaMapFocus;
+  });
+
+  it('falls back to the failure line when the cache is empty', async () => {
+    stubCache(null);
+
+    const container = await failListLoad();
+
+    expect(container.textContent).toContain("couldn't be loaded");
   });
 });
 
