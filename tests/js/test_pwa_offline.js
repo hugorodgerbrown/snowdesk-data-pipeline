@@ -135,6 +135,10 @@ function symbolAndPanel({ withSwitch = true } = {}) {
         </span>
         <button type="button" data-disclosure-close aria-label="Dismiss">×</button>
       </div>
+      <span data-role="downloads-age" class="hidden">
+        <span data-role="downloads-updated">Downloads updated <span data-role="downloads-at">—</span></span>
+        <span data-role="downloads-empty" class="hidden">Your downloads have no bulletins saved yet.</span>
+      </span>
       <span>
         <span data-role="online-explainer">Using the network.</span>
         <span data-role="offline-explainer" class="hidden">Lost contact.</span>
@@ -142,6 +146,7 @@ function symbolAndPanel({ withSwitch = true } = {}) {
         <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
       ${withSwitch ? SWITCH_ROW : ''}
+      <a href="/offline/" data-network-downloads data-disclosure-close>Download for offline</a>
       <button type="button" data-network-reconnect>
         <span data-role="reconnect-label">Try reconnecting</span>
         <span data-role="resume-label" class="hidden">Use the network again</span>
@@ -1548,5 +1553,279 @@ describe('the traffic arrows (SNOW-921)', () => {
     const response = await window.fetch('/api/ratings/');
 
     expect(response.status).toBe(200);
+  });
+});
+
+// SNOW-928: the SECOND age. The summary line answers "is this app reaching
+// the server", which is about right now; SNOW-923's permanent/perishable
+// split poses the same question one time-scale out. A user who topped up on
+// Tuesday and reads a Friday page offline has a working app showing
+// Tuesday's danger ratings, and until this nothing anywhere said so.
+
+describe('the downloads-age line', () => {
+  /**
+   * Stub ``window.pwaDb`` over a fixed ``meta:app``.
+   *
+   * @param {Record<string, unknown>} rows
+   * @returns {void}
+   */
+  function stubDb(rows) {
+    window.pwaDb = {
+      get: async (_store, key) =>
+        Object.prototype.hasOwnProperty.call(rows, key)
+          ? { key, value: rows[key] }
+          : undefined,
+      put: async () => {},
+      appendSyncLog: async () => {},
+    };
+  }
+
+  /** The line, and which of its two sentences is showing. */
+  function line() {
+    const root = document.querySelector('[data-role="downloads-age"]');
+    return {
+      hidden: root.classList.contains('hidden'),
+      updated: !document
+        .querySelector('[data-role="downloads-updated"]')
+        .classList.contains('hidden'),
+      empty: !document
+        .querySelector('[data-role="downloads-empty"]')
+        .classList.contains('hidden'),
+      at: document.querySelector('[data-role="downloads-at"]').textContent,
+    };
+  }
+
+  /** Open the menu and let the toggle handler's async work settle. */
+  async function openMenu() {
+    disclosure().open = true;
+    await tick();
+    await tick();
+    await tick();
+  }
+
+  afterEach(() => {
+    delete window.pwaDb;
+  });
+
+  it('says nothing at all on a device with no downloads', async () => {
+    // The same posture the reconnect button takes for a state it does not
+    // apply to. A line reading "—" invites the reader to wonder what is
+    // missing.
+    buildFixture();
+    stubDb({});
+    await loadModule();
+
+    await openMenu();
+
+    expect(line().hidden).toBe(true);
+  });
+
+  it('names the OLDEST refresh across every area', async () => {
+    // The worst one is what decides whether the reader is holding current
+    // data. Naming the newest would be the reassurance this whole family
+    // of tickets exists to stop giving.
+    buildFixture();
+    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
+    stubDb({
+      'basemap.regions': [
+        { region_id: 'CH-1', contentAt: new Date().toISOString() },
+        { region_id: 'CH-2', contentAt: twoDaysAgo },
+      ],
+    });
+    await loadModule();
+
+    await openMenu();
+
+    const shown = line();
+    expect(shown.hidden).toBe(false);
+    expect(shown.updated).toBe(true);
+    expect(shown.at).toContain('2 days ago');
+  });
+
+  it('counts custom areas alongside regions', async () => {
+    buildFixture();
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+    stubDb({
+      'basemap.regions': [{ region_id: 'CH-1', contentAt: new Date().toISOString() }],
+      'basemap.customAreas': [{ id: 'custom-a1', contentAt: threeDaysAgo }],
+    });
+    await loadModule();
+
+    await openMenu();
+
+    expect(line().at).toContain('3 days ago');
+  });
+
+  it('says an area with no content at all is empty, not very old', async () => {
+    // An area holding tiles and no bulletins draws a map with nothing on
+    // it. That is a different sentence and a different urgency, not an
+    // arbitrarily distant date — and it is every area on every device on
+    // the day SNOW-924 shipped.
+    buildFixture();
+    stubDb({
+      'basemap.regions': [
+        { region_id: 'CH-1', contentAt: new Date().toISOString() },
+        { region_id: 'CH-2' },
+      ],
+    });
+    await loadModule();
+
+    await openMenu();
+
+    const shown = line();
+    expect(shown.hidden).toBe(false);
+    expect(shown.empty).toBe(true);
+    expect(shown.updated).toBe(false);
+  });
+
+  it('sees a download still stored under the pre-SNOW-635 legacy key', async () => {
+    // SNOW-928 review: a device that has not yet loaded a page which
+    // triggers `basemap_downloaded_areas.js`'s lazy migration holds its one
+    // custom download under `basemap.customArea`. A direct read of the new
+    // key called that device area-less and hid the line — on exactly the
+    // oldest installs, which are the ones most likely to be holding content
+    // from weeks ago. Such a record predates `contentAt`, so it takes the
+    // "no bulletins saved yet" sentence, which is true of it.
+    buildFixture();
+    stubDb({
+      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] },
+    });
+    await loadModule();
+
+    await openMenu();
+
+    const shown = line();
+    expect(shown.hidden).toBe(false);
+    expect(shown.empty).toBe(true);
+  });
+
+  it('prefers an empty new key over the legacy row, as the migration does', async () => {
+    // An empty array at the new key is "already migrated, nothing left" —
+    // the same precedence `readCustomAreas` applies, and reading the legacy
+    // row through it would resurrect an area the user deleted.
+    buildFixture();
+    stubDb({
+      'basemap.customAreas': [],
+      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2] },
+    });
+    await loadModule();
+
+    await openMenu();
+
+    expect(line().hidden).toBe(true);
+  });
+
+  it('does not migrate the legacy row — it only reads it', async () => {
+    // This module loads on every page in the site, the Django admin
+    // included. Routing the read through `pwaBasemapAreas.readCustomAreas()`
+    // would fire that function's migration WRITE from pages with nothing to
+    // do with downloads.
+    buildFixture();
+    const writes = [];
+    window.pwaDb = {
+      get: async (_store, key) =>
+        key === 'basemap.customArea'
+          ? { key, value: { bbox: [7.0, 46.0, 7.2, 46.2] } }
+          : undefined,
+      put: async (_store, row) => {
+        writes.push(row.key);
+      },
+      delete: async (_store, key) => {
+        writes.push('delete:' + key);
+      },
+      appendSyncLog: async () => {},
+    };
+    await loadModule();
+
+    await openMenu();
+
+    expect(writes).toEqual([]);
+  });
+
+  it('leaves the line alone when storage will not answer', async () => {
+    // A device whose IndexedDB is wedged keeps saying nothing rather than
+    // saying a wrong thing — the same rule the report holds itself to.
+    buildFixture();
+    window.pwaDb = {
+      get: async () => {
+        throw new Error('wedged');
+      },
+      put: async () => {},
+      appendSyncLog: async () => {},
+    };
+    await loadModule();
+
+    await openMenu();
+
+    expect(line().hidden).toBe(true);
+  });
+
+  it('re-reads on every open, because another tab may have downloaded', async () => {
+    buildFixture();
+    const rows = { 'basemap.regions': [] };
+    let reads = 0;
+    window.pwaDb = {
+      get: async (_store, key) => {
+        reads += 1;
+        return Object.prototype.hasOwnProperty.call(rows, key)
+          ? { key, value: rows[key] }
+          : undefined;
+      },
+      put: async () => {},
+      appendSyncLog: async () => {},
+    };
+    await loadModule();
+    await openMenu();
+    const afterFirst = reads;
+
+    disclosure().open = false;
+    await tick();
+    rows['basemap.regions'] = [
+      { region_id: 'CH-1', contentAt: new Date(Date.now() - 86400000).toISOString() },
+    ];
+    await openMenu();
+
+    expect(reads).toBeGreaterThan(afterFirst);
+    expect(line().hidden).toBe(false);
+  });
+});
+
+describe('the way to the offline-content page (SNOW-928)', () => {
+  it('is a link to /offline/ that closes the menu on the way', async () => {
+    // It STARTS NOTHING: a download is discrete per area (SNOW-925), so
+    // there is no single run for a menu row to kick off. And it shuts the
+    // menu rather than hanging over the page the user just asked to read —
+    // nav.html's shared mechanism, not a fourth dismissal of its own.
+    buildFixture();
+    await loadModule();
+
+    const row = document.querySelector('[data-network-downloads]');
+
+    expect(row.tagName).toBe('A');
+    expect(row.getAttribute('href')).toBe('/offline/');
+    expect(row.hasAttribute('data-disclosure-close')).toBe(true);
+  });
+
+  it('is there for a reader with nothing downloaded, and signed out', async () => {
+    // /offline/ is public (SNOW-930) and its "Save the map page" control
+    // warms the shell for anybody. A control that is present and honest
+    // about its limit beats one that vanishes, which reads as a bug.
+    buildFixture();
+    window.pwaDb = {
+      get: async () => undefined,
+      put: async () => {},
+      appendSyncLog: async () => {},
+    };
+    await loadModule();
+    disclosure().open = true;
+    await tick();
+    await tick();
+
+    expect(document.querySelector('[data-network-downloads]')).not.toBeNull();
+    // The staleness line above IS the half with nothing to say here.
+    expect(
+      document.querySelector('[data-role="downloads-age"]').classList.contains('hidden'),
+    ).toBe(true);
+    delete window.pwaDb;
   });
 });

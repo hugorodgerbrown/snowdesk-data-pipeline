@@ -2859,6 +2859,47 @@ transient, system-initiated, bottom-centred and status-coloured. It is now a
 third `<details>` in the header, built like the account and admin dropdowns
 beside it — see [`decisions/overlay-primitives.md`](decisions/overlay-primitives.md).
 
+### The second age, and the way to fix it (SNOW-928)
+
+The summary line answers *is this app reaching the server*, which is a
+question about right now. SNOW-923's permanent/perishable split poses the
+same question one time-scale out: the tiles are a fixed grid over fixed
+ground and never go stale, and the bulletins inside the same boundary are
+new every day. **A user who topped up on Tuesday and reads a Friday page
+offline has a working app showing Tuesday's danger ratings**, and until this
+nothing anywhere said so.
+
+So a second line sits beside the first, above the rule, reading the
+**oldest** content refresh across this device's areas — the worst one is
+what decides whether the reader is holding current data. Two sentences, one
+shown: an area that has never had content at all is not a very old one, it
+is a map with nothing on it, and it takes its own wording. A reader with no
+areas gets no line, the same posture the reconnect button already takes for
+a state it does not apply to.
+
+The records are re-read on every **open** rather than on the 30-second
+tick — they move only when a download runs, which can have happened in
+another tab — while the *phrase* re-renders on the tick, which is what makes
+it count up. An unreadable IndexedDB leaves the line saying nothing rather
+than a wrong thing.
+
+Below the rule, a **"Download for offline"** row opens `/offline/`
+(SNOW-930) and closes the menu on the way. It **starts nothing**: a download
+is discrete per area (SNOW-925), so there is no single run for a menu row to
+kick off, and the operation belongs where the report that verifies it is. A
+288px popover can hold neither. What the menu has that the panel does not is
+the *moment*: someone in a car park with a signal they are about to lose is
+thinking about the network, and the thing they press when they think about
+the network is the symbol in the header. Three navigations away is not where
+that thought lands. It is the pattern SNOW-921 set for the debug log — the
+surface that owns a panel owns every way into it.
+
+The row is unconditional, including for a signed-out reader. Map areas are
+account-bound (SNOW-749) so they see no download rows there, but `/offline/`
+is public and its "Save the map page" control warms the shell for anybody. A
+control that is present and honest about its limit beats one that vanishes,
+which reads as a bug.
+
 **Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
 — see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)
 — but not a forced mode: it refuses a new run and `_forceOffline()` cancels one
