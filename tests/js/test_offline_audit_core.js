@@ -105,7 +105,10 @@ function healthy(overrides) {
         weather: { features: 4 },
         routes: { features: 1, principal: null },
       },
-      panelKeys: ['observations'],
+      // SNOW-950: each panel's cached rows, stamped with the account they
+      // were cached for — this fixture's principal is null (anonymous), so
+      // the row reads back.
+      panelRows: { observations: { principal: null } },
       mutations: { count: 0 },
       dbAvailable: true,
     },
@@ -916,7 +919,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         overlays: { community_reports: { features: 3 } },
-        panelKeys: ['routes'],
+        panelRows: { routes: { principal: null } },
       }),
       {},
     );
@@ -932,13 +935,58 @@ describe('the rows that answer about what the user will see', () => {
       healthy({
         currentPrincipal: 'acct-1',
         overlays: { routes: { features: 4, principal: 'acct-2' } },
-        panelKeys: ['observations'],
+        panelRows: { observations: { principal: null } },
       }),
       {},
     );
 
     expect(row(report, 'routes').status).toBe('no');
     expect(row(report, 'routes').reason).toBe('principal');
+  });
+
+  it('refuses a routes panel row cached under another account', () => {
+    // The panel store is partitioned exactly as the overlays are:
+    // routes_offline.js compares the stored principal untouched and hands
+    // this session nothing, so counting the row would put the report and
+    // the panel back in disagreement — the other way round from the fault
+    // SNOW-950 fixed.
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: { principal: 'acct-2' } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
+  });
+
+  it('refuses an observations panel row cached under another account', () => {
+    const report = core.buildReport(
+      healthy({
+        currentPrincipal: 'acct-1',
+        overlays: {},
+        panelRows: { observations: { principal: 'acct-2' } },
+      }),
+      {},
+    );
+
+    expect(row(report, 'reports').status).toBe('no');
+  });
+
+  it('refuses a panel row carrying no principal at all', () => {
+    // A row written before SNOW-661 stamped one belongs to nobody, and the
+    // panel's own read refuses it for the anonymous reader too.
+    const report = core.buildReport(
+      healthy({
+        overlays: { community_reports: { features: 3 } },
+        panelRows: { routes: {} },
+      }),
+      {},
+    );
+
+    expect(row(report, 'routes').status).toBe('no');
   });
 
   it('answers unknown for an overlay that is readable and empty', () => {

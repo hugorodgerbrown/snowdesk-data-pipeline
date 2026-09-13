@@ -191,7 +191,10 @@
    *   principal it was stamped with. Presence alone is not an answer: a row
    *   stamped for another account is refused by the reader, and an empty
    *   FeatureCollection draws nothing.
-   * @property {string[]} [panelKeys] Which ``data:panel_rows`` rows exist.
+   * @property {Record<string, {principal?: string|null}>} [panelRows]
+   *   SNOW-950: each ``data:panel_rows`` row — which panel it belongs to,
+   *   and the principal it was stamped with. Presence alone is not an
+   *   answer here either: the panel refuses a row from another session.
    * @property {{count?: number|null}} [mutations]
    * @property {string|null} [networkMode] SNOW-922: the ``meta:app``
    *   ``network.mode`` row — ``'auto'``, ``'offline'`` (the worker's own
@@ -747,6 +750,33 @@
   }
 
   /**
+   * Whether one cached panel's rows will read back for THIS account
+   * (SNOW-950).
+   *
+   * The test ``overlayState`` applies to an account-scoped overlay, and
+   * for the same reason — every row in this store is one user's own list,
+   * so there is no public resource to exempt and the key alone would call
+   * another session's row a Yes.
+   *
+   * One difference from ``overlayState``, and it is the panels' rule
+   * rather than a choice made here: ``observations_offline.js`` and
+   * ``routes_offline.js`` compare the stored principal UNTOUCHED, so a row
+   * carrying no stamp at all — written before SNOW-661 — matches nobody,
+   * including an anonymous reader whose own principal is null. Normalising
+   * an absent stamp to null here would have this report promise rows the
+   * panel will refuse to paint.
+   *
+   * @param {AuditReadings} r
+   * @param {string} key The panel's key — 'observations' | 'routes'.
+   * @returns {boolean}
+   */
+  function panelRowReadable(r, key) {
+    var row = (r.panelRows || {})[key];
+    if (!row) return false;
+    return row.principal === (r.currentPrincipal || null);
+  }
+
+  /**
    * One overlay row's answer, with the note that explains a No.
    *
    * @param {{status: string, reason?: string, principal?: string|null}} state
@@ -1212,8 +1242,9 @@
       // read one is having something to read offline whatever the map
       // overlay holds. The two must agree — this row answered from the
       // overlay alone and said Yes while the panel beside it said "couldn't
-      // be loaded".
-      if ((r.panelKeys || []).indexOf('routes') >= 0) return { status: 'yes' };
+      // be loaded". Readable by THIS account: a row cached under another
+      // one would make them disagree the other way.
+      if (panelRowReadable(r, 'routes')) return { status: 'yes' };
       return overlayAnswer(routes, t, 'routes');
     }
 
@@ -1223,8 +1254,9 @@
       if (reports.status === 'yes') return { status: 'yes' };
       // The observations panel is its own cached surface, and having read
       // one is having something to read offline whatever the map overlay
-      // holds.
-      if ((r.panelKeys || []).indexOf('observations') >= 0) return { status: 'yes' };
+      // holds — as long as this account is the one it was cached for
+      // (SNOW-950).
+      if (panelRowReadable(r, 'observations')) return { status: 'yes' };
       return overlayAnswer(reports, t, 'reports');
     }
 

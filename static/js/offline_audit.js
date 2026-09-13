@@ -959,37 +959,48 @@
   }
 
   /**
-   * The keys a keyPath-addressed store holds.
+   * What each ``data:panel_rows`` row holds, by panel (SNOW-950).
    *
-   * ``data:panel_rows`` holds one row per RESOURCE, so the key is the
-   * answer: 'observations' being present is what makes the reports row
-   * reachable. A row count would say three and mean nothing.
+   * The store holds one row per PANEL — 'observations', 'routes' — so the
+   * key is half the answer: a row count would say two and mean nothing.
+   * The other half is the principal, for the reason ``readOverlayRows``
+   * above reads one. Each panel's own module refuses a row stamped for
+   * another account (``observations_offline.js`` / ``routes_offline.js``
+   * compare the stored value untouched), so a row from another session is
+   * on the device and unreadable — and the key alone would have called it
+   * a Yes.
    *
    * @param {IDBDatabase} db
    * @param {string} name
-   * @returns {Promise<string[]>} ``[]`` where the store does not exist or
-   *   cannot be read.
+   * @returns {Promise<Record<string, {principal: string|null}>>} ``{}``
+   *   where the store does not exist or cannot be read. ``principal`` is
+   *   undefined on a row written before SNOW-661 stamped one — the same
+   *   convention ``readOverlayRows`` uses, and the core reads an absent
+   *   stamp the way the panels do.
    */
-  function readKeys(db, name) {
+  function readPanelRows(db, name) {
     return new Promise(function (resolve) {
       try {
         if (!db.objectStoreNames.contains(name)) {
-          resolve([]);
+          resolve({});
           return;
         }
-        var request = db.transaction(name, 'readonly').objectStore(name).getAllKeys();
+        var request = db.transaction(name, 'readonly').objectStore(name).getAll();
         request.onsuccess = function () {
-          resolve(
-            (request.result || []).map(function (key) {
-              return String(key);
-            }),
-          );
+          var rows = {};
+          (request.result || []).forEach(function (row) {
+            if (!row || !row.key) return;
+            rows[String(row.key)] = {
+              principal: row.principal === undefined ? undefined : row.principal,
+            };
+          });
+          resolve(rows);
         };
         request.onerror = function () {
-          resolve([]);
+          resolve({});
         };
       } catch (_err) {
-        resolve([]);
+        resolve({});
       }
     });
   }
@@ -1576,16 +1587,16 @@
           {},
         )
       : {};
-    var panelKeys = db
+    var panelRows = db
       ? await bounded(
           budget,
           'store:data:panel_rows',
           function () {
-            return readKeys(db, 'data:panel_rows');
+            return readPanelRows(db, 'data:panel_rows');
           },
-          [],
+          {},
         )
-      : [];
+      : {};
     var mutations = db ? await boundedStore(budget, db, 'queue:mutations') : null;
     var currentPrincipal = db
       ? await bounded(
@@ -1678,7 +1689,7 @@
       // SNOW-914/915: the rows, not their keys — whether each overlay is
       // readable by this account and whether it has anything in it.
       overlays: overlays,
-      panelKeys: panelKeys,
+      panelRows: panelRows,
       mutations: { count: mutations },
       dbAvailable: !!db,
       // What could not be read, and whether the run gave up part way. The

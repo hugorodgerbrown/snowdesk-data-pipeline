@@ -301,6 +301,16 @@ alone was what let the report say Yes while the panel beside it said
 "Your routes couldn't be loaded" — a row and a surface disagreeing about
 one thing on one device is the failure this panel cannot survive.
 
+That second source is **principal-checked like the overlays**, and for the
+same reason: every row in `data:panel_rows` is one user's own list, and
+each panel's own module refuses a row stamped for another account. The
+collector reads the stamp rather than the key alone (`readPanelRows`), and
+`panelRowReadable` compares it **untouched** — which is the one place this
+check is stricter than `overlayState`. A row carrying no stamp at all,
+written before SNOW-661 began stamping them, matches nobody including an
+anonymous reader, because that is what the panel does with it. Counting it
+would make the report and the panel disagree the other way round.
+
 ## Two halves, doing two jobs
 
 **The log is evidence.** One line per capability, and strictly one: label
