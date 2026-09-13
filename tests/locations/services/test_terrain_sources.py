@@ -143,6 +143,21 @@ class TestSourceFromPayload:
         with pytest.raises(ValueError, match="four numbers"):
             source_from_payload(entry)
 
+    @pytest.mark.parametrize("axis", ["tile_x", "tile_y"])
+    def test_a_short_tile_range_raises_value_error_not_index_error(
+        self, axis: str
+    ) -> None:
+        """A one-element range must not escape as an IndexError.
+
+        ``load_grid`` catches ValueError and turns it into "no grid"; an
+        IndexError from indexing ``[1]`` on a one-element list would sail
+        past it and break the never-raises-for-data contract.
+        """
+        entry = _source_payload()
+        entry["coverage"][axis] = [3131]
+        with pytest.raises(ValueError, match="two numbers"):
+            source_from_payload(entry)
+
     def test_to_string_names_the_product_and_its_resolution(self) -> None:
         """The human description carries both halves of the provenance."""
         source = source_from_payload(_source_payload())

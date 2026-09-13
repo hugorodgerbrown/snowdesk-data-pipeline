@@ -514,6 +514,35 @@ class TestTileFetching:
 
         assert origin.requested == [FIXTURE_TILE]
 
+    def test_a_version_bump_does_not_reuse_the_cached_tile(self) -> None:
+        """The bumped URL is a different cache key, so the bytes are refetched.
+
+        This is what the version segment is for. ``tile_bytes`` is fixed by
+        the tile and skirt sizes, so a rebuild that changed the cell size or
+        the height scale leaves it identical — keying on the coordinates and
+        the length alone would hand year-old bytes to the new geometry and
+        report plausible, wrong heights.
+        """
+        grid = _grid()
+        bumped_payload: dict[str, Any] = json.loads(
+            (FIXTURES / "grid.json").read_text()
+        )
+        bumped_payload["version"] = "v2"
+        bumped_payload["tile_url_template"] = (
+            "https://tiles.snowdesk-data.info/terrain/v2/{x}/{y}.s16"
+        )
+        bumped = grid_from_payload(bumped_payload)
+        assert bumped.tile_bytes == grid.tile_bytes
+
+        tiles = {FIXTURE_TILE: _fixture_tile_bytes()}
+        origin = _Origin(tiles)
+        with _serving(grid, origin):
+            sample_height(*ZERMATT_VILLAGE)
+        with _serving(bumped, origin):
+            sample_height(*ZERMATT_VILLAGE)
+
+        assert origin.requested == [FIXTURE_TILE, FIXTURE_TILE]
+
 
 class TestUnknowns:
     """The ticket: an unknown is never mistakable for gentle ground."""

@@ -39,6 +39,7 @@ from apps.locations.services.terrain_grid import (
     project,
     stored_index,
     tile_of_cell,
+    tile_url,
 )
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "terrain"
@@ -210,6 +211,41 @@ class TestSkirt:
         assert stored_index(grid, 255, 255) == 256 * grid.stored_cells + 256
 
 
+class TestTileUrl:
+    """Where a tile is fetched from, and why it is not the setting."""
+
+    @override_settings(TERRAIN_TILE_BASE_URL="https://mirror.example/terrain/v1")
+    def test_comes_from_the_published_template_not_the_setting(self) -> None:
+        """The definition names its own tiles; the setting only finds it.
+
+        Pinning tile URLs to the setting would leave a bumped version
+        unable to move anyone off a year-long immutable cache entry.
+        """
+        grid = _grid()
+        assert grid.tile_url_template.startswith("https://tiles.snowdesk-data.info/")
+        assert (
+            tile_url(grid, 3239, 1990)
+            == "https://tiles.snowdesk-data.info/terrain/v1/3239/1990.s16"
+        )
+
+    def test_a_version_bump_moves_every_tile_url(self) -> None:
+        """That is the whole job of the version segment."""
+        payload = _grid_payload()
+        payload["version"] = "v2"
+        payload["tile_url_template"] = (
+            "https://tiles.snowdesk-data.info/terrain/v2/{x}/{y}.s16"
+        )
+        bumped = grid_from_payload(payload)
+
+        assert tile_url(_grid(), 3239, 1990) != tile_url(bumped, 3239, 1990)
+        assert tile_url(bumped, 3239, 1990).endswith("/terrain/v2/3239/1990.s16")
+
+    def test_substitutes_both_placeholders(self) -> None:
+        """x and y are distinct, and a negative index is still composed."""
+        assert tile_url(_grid(), 1, 2).endswith("/1/2.s16")
+        assert tile_url(_grid(), -1, 2000).endswith("/-1/2000.s16")
+
+
 class TestLoadGrid:
     """Fetching, parsing and caching the published definition."""
 
@@ -281,6 +317,20 @@ class TestLoadGrid:
     def test_a_body_that_is_not_json_returns_none(self) -> None:
         """A proxy's error page is not a grid."""
         mock_get = _mock_get(content=b"<html>who knows</html>")
+        with patch("apps.locations.services.terrain_grid.requests.get", mock_get):
+            assert load_grid() is None
+
+    @pytest.mark.parametrize("axis", ["tile_x", "tile_y"])
+    def test_a_structurally_short_coverage_range_returns_none(self, axis: str) -> None:
+        """A malformed range is "no grid", not a 500 out of a page render.
+
+        Indexing element 1 of a one-element list raises IndexError, which
+        is a different family from the KeyError/ValueError a missing or
+        unparseable field raises — and it has to be handled the same way.
+        """
+        payload = _grid_payload()
+        payload["sources"][0]["coverage"][axis] = [3131]
+        mock_get = _mock_get(content=json.dumps(payload).encode())
         with patch("apps.locations.services.terrain_grid.requests.get", mock_get):
             assert load_grid() is None
 

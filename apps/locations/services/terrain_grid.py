@@ -264,7 +264,10 @@ def load_grid() -> TerrainGrid | None:
     try:
         payload = json.loads(response.content)
         grid = grid_from_payload(payload)
-    except json.JSONDecodeError, KeyError, TypeError, ValueError:
+    # IndexError joins the list because a structurally short array — a
+    # coverage range published as ``[3131]`` — is a malformed definition
+    # like any other, and this function promises never to raise for one.
+    except json.JSONDecodeError, IndexError, KeyError, TypeError, ValueError:
         logger.exception("terrain: grid.json is not a usable definition (url=%s)", url)
         return None
 
@@ -447,3 +450,36 @@ def stored_index(grid: TerrainGrid, row: int, column: int) -> int:
 
     """
     return (row + grid.skirt_cells) * grid.stored_cells + (column + grid.skirt_cells)
+
+
+def tile_url(grid: TerrainGrid, tile_x: int, tile_y: int) -> str:
+    """Return the URL one tile is published at, per the loaded definition.
+
+    **From the definition's own template, not from
+    ``TERRAIN_TILE_BASE_URL``.** The template carries the version segment,
+    and that segment exists for exactly one reason: tiles are served
+    ``immutable, max-age=31536000``, so a rebuild that moves the geometry
+    bumps the version and moves every consumer to a URL no cache has an
+    answer for. Composing the URL from a pinned setting instead would
+    leave a process decoding year-old bytes with the new geometry — no
+    error, just wrong heights, which is the failure this module's whole
+    read-the-definition design exists to prevent.
+
+    A consequence worth knowing: a mirror pointed at by
+    ``TERRAIN_TILE_BASE_URL`` must publish its own ``grid.json`` naming its
+    own tiles. Serving somebody else's definition while hosting your own
+    tiles is already a lie about the geometry; this just makes it one about
+    the location too.
+
+    Args:
+        grid: The loaded grid definition.
+        tile_x: The tile's column.
+        tile_y: The tile's row.
+
+    Returns:
+        The absolute URL of that tile.
+
+    """
+    return grid.tile_url_template.replace("{x}", str(tile_x)).replace(
+        "{y}", str(tile_y)
+    )

@@ -186,7 +186,7 @@ def source_from_payload(entry: Mapping[str, Any]) -> TerrainSource:
     Raises:
         KeyError: If a required field is absent.
         ValueError: If the quality tier is unknown, or the coverage
-            rectangle is not four numbers.
+            rectangle or either tile range is the wrong length.
 
     """
     coverage = entry["coverage"]
@@ -194,8 +194,18 @@ def source_from_payload(entry: Mapping[str, Any]) -> TerrainSource:
     if len(bbox) != 4:
         raise ValueError(f"coverage bbox must carry four numbers, got {len(bbox)}")
 
+    # Length-checked for the same reason as the bbox, and separately from
+    # it: indexing [1] on a one-element range raises IndexError, which is
+    # NOT in the set load_grid catches, so it would escape the "never
+    # raises for a data problem" contract as a 500 rather than an
+    # UNAVAILABLE. A ValueError is the shape the caller already handles.
     tile_x = coverage["tile_x"]
     tile_y = coverage["tile_y"]
+    for axis, published in (("tile_x", tile_x), ("tile_y", tile_y)):
+        if len(published) != 2:
+            raise ValueError(
+                f"coverage {axis} must carry two numbers, got {len(published)}"
+            )
 
     return TerrainSource(
         id=str(entry["id"]),

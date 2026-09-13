@@ -51,7 +51,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 import requests
-from django.conf import settings
 
 from apps.locations.services.terrain_grid import (
     TerrainGrid,
@@ -61,6 +60,7 @@ from apps.locations.services.terrain_grid import (
     project,
     stored_index,
     tile_of_cell,
+    tile_url,
 )
 from apps.locations.services.terrain_sources import TerrainSource, select_source
 
@@ -576,7 +576,7 @@ def _load_tile(
     if key in tiles:
         return tiles[key]
 
-    raw = _fetch_tile(tile_x, tile_y, grid.tile_bytes)
+    raw = _fetch_tile(tile_url(grid, tile_x, tile_y), grid.tile_bytes)
     decoded = None if raw is None else _decode_tile(raw)
     tiles[key] = decoded
     return decoded
@@ -605,7 +605,7 @@ def _decode_tile(raw: bytes) -> array.array[int]:
 
 
 @functools.lru_cache(maxsize=TILE_CACHE_SIZE)
-def _fetch_tile(tile_x: int, tile_y: int, expected_bytes: int) -> bytes | None:
+def _fetch_tile(url: str, expected_bytes: int) -> bytes | None:
     """Fetch one terrain tile's bytes, or None when it is not published.
 
     Memoised for the life of the process, which the origin's ``immutable,
@@ -618,14 +618,23 @@ def _fetch_tile(tile_x: int, tile_y: int, expected_bytes: int) -> bytes | None:
     down must not read as permanently empty; ``OUTSIDE_COVERAGE`` and
     ``UNAVAILABLE`` mean different things to every caller.
 
+    **The URL is the cache key, and it is the whole key that matters.** It
+    comes from the definition's own template (``terrain_grid.tile_url``),
+    so it carries the version segment: when a rebuild bumps the version,
+    every key changes and no tile cut under the old geometry can be handed
+    back to be decoded under the new one. Keying on the coordinates alone
+    would survive a bump, and ``expected_bytes`` would not catch it —
+    ``tile_bytes`` is fixed by the tile and skirt sizes, so a changed cell
+    size or height scale leaves it identical.
+
     **Tests must call ``_fetch_tile.cache_clear()``**, since a warm entry
     outlives an ``override_settings`` of the base URL.
 
     Args:
-        tile_x: The tile's column.
-        tile_y: The tile's row.
-        expected_bytes: The exact length the grid says a tile is. Part of
-            the cache key so a rebuilt grid cannot serve a stale entry.
+        url: The tile's absolute URL, from ``terrain_grid.tile_url``.
+        expected_bytes: The exact length the grid says a tile is. Also part
+            of the key, as a second line against a rebuild that changed the
+            tile size without bumping the version.
 
     Returns:
         The tile's bytes, or None when the origin answers 204 or 404.
@@ -635,8 +644,6 @@ def _fetch_tile(tile_x: int, tile_y: int, expected_bytes: int) -> bytes | None:
             unexpected status or a tile of the wrong length.
 
     """
-    base = settings.TERRAIN_TILE_BASE_URL.rstrip("/")
-    url = f"{base}/{tile_x}/{tile_y}.s16"
     try:
         response = requests.get(url, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as error:
