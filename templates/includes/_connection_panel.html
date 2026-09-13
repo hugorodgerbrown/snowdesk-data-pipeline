@@ -193,6 +193,37 @@ stopped asking the server has to say so.
             {% endblocktrans %}
         </span>
     </span>
+    {% comment %}
+        SNOW-928: the second age, and the one that actually strands
+        someone.
+
+        The summary line above answers "is this app reaching the server",
+        which is a question about right now. SNOW-923's permanent/
+        perishable split poses the same question one time-scale out: the
+        CONTENT inside a downloaded area has an age too, and it is that age
+        — not the connection — that leaves a user reading Tuesday's danger
+        ratings on Friday. A working app showing stale bulletins says
+        nothing anywhere today.
+
+        Two variants, one shown. "Never" is not a longer version of
+        "stale": an area holding tiles and no bulletins at all draws a map
+        with nothing on it, which is a different sentence and a different
+        urgency. Both are rendered here and toggled, because
+        ``makemessages`` never scans ``static/js``.
+
+        HIDDEN with no downloads, and that is the same posture the
+        reconnect button below already takes for a state it does not apply
+        to: a reader with nothing downloaded has no content age, and a line
+        reading "—" invites them to wonder what is missing.
+    {% endcomment %}
+    <span data-role="downloads-age" class="mt-1 hidden text-xs text-text-2">
+        <span data-role="downloads-updated">
+            {% trans "Downloads updated" %} <span data-role="downloads-at">—</span>
+        </span>
+        <span data-role="downloads-empty" class="hidden">
+            {% trans "Your downloads have no bulletins saved yet." %}
+        </span>
+    </span>
     {# ── The rule between "what is true" and "what you can do" ── #}
     <div class="my-3 border-t border-border" aria-hidden="true"></div>
     {% comment %}
@@ -254,6 +285,55 @@ stopped asking the server has to say so.
         </label>
         {% include "includes/_switch.html" with id="nav-offline-mode" %}
     </div>
+    {% comment %}
+        SNOW-928: the way to the offline-content page.
+
+        The operation lives on that page (SNOW-925) and stays there — a
+        288px popover can hold neither a per-area report nor the
+        verification re-run that follows a download. But the panel has no
+        relationship to the MOMENT the control exists for. Someone in a car
+        park with a signal they are about to lose is thinking about the
+        network, and the thing they press when they think about the network
+        is the connectivity symbol in the header. Three navigations away is
+        not where that thought lands.
+
+        So the menu carries the entry point and the panel keeps the
+        operation — the pattern SNOW-921 already established for the debug
+        log below: the surface that owns a panel owns every way into it.
+        This row STARTS NOTHING. A download is discrete per area, so there
+        is no single run for a menu row to kick off; the user presses the
+        one they want when they get there. The page load it costs is spent
+        at the one moment the network is there by definition.
+
+        An <a>, not a <button>, because unlike the debug log this
+        destination has a URL. It carries ``data-disclosure-close`` so the
+        menu shuts on the way rather than hanging over the page the user
+        just asked to read.
+
+        UNCONDITIONAL, including for a signed-out reader. Map areas are
+        account-bound (SNOW-749) so they will see no download rows there,
+        but /offline/ is public (SNOW-930) and its "Save the map page"
+        control already warms the shell and the shared feeds for anybody. A
+        control that is present and honest about its limit beats one that
+        vanishes, which reads as a bug. The staleness line above is the
+        half that genuinely has nothing to say without areas, and it stays
+        hidden for them.
+
+        Between the switch and the debug log: the switch is the one row you
+        open this menu to OPERATE, this is the destination a reader
+        actually wants, and the debug log is behind a staff flag.
+        ``min-h-11`` matches that row's own tap target and vertical rhythm.
+    {% endcomment %}
+    <a
+        href="{% url 'public:offline_page' %}"
+        data-network-downloads
+        data-testid="network-downloads"
+        data-disclosure-close
+        class="flex min-h-11 w-full items-center justify-between gap-3 py-1 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        <span>{% trans "Download for offline" %}</span>
+        {% include "includes/_icon_chevron.html" with size=14 svg_class="-rotate-90" only %}
+    </a>
     {% if debug_log_visible %}
         {% comment %}
             SNOW-812/921: the way into the on-device debug trace.

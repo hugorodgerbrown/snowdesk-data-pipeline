@@ -387,6 +387,97 @@
   function renderFreshnessCells() {
     const syncedCell = document.querySelector('[data-role="synced-at"]');
     if (syncedCell) syncedCell.textContent = formatRelative(syncLastAt) || '—';
+    renderDownloadsAge();
+  }
+
+  /**
+   * SNOW-928: the OTHER age — how old the content inside this device's
+   * downloaded areas is.
+   *
+   * The summary line above answers "is this app reaching the server",
+   * which is about right now. SNOW-923's permanent/perishable split poses
+   * the same question one time-scale out: the tiles are a fixed grid over
+   * fixed ground and never go stale, and the bulletins inside the same
+   * boundary are new every day. A user who topped up on Tuesday and reads
+   * a Friday page offline has a working app showing Tuesday's danger
+   * ratings, and nothing anywhere told them so.
+   *
+   * The OLDEST refresh across every area, because the worst one is what
+   * decides whether the reader is holding current data. An area that has
+   * never had content at all is not a very old one — it is a map with
+   * nothing on it — so it takes its own sentence rather than an
+   * arbitrarily distant date.
+   *
+   * Reads ``downloadsOldestContentAt``, resolved once at boot and again
+   * whenever the panel opens, not on the 30s tick: the underlying records
+   * change only when a download runs, and re-opening IndexedDB twice a
+   * minute for a value that has not moved is waste on the device least
+   * able to afford it. The PHRASE is re-rendered on the tick, which is
+   * what makes it count up.
+   *
+   * @returns {void}
+   */
+  function renderDownloadsAge() {
+    const line = document.querySelector('[data-role="downloads-age"]');
+    if (!line) return;
+    // No areas at all: nothing to say, and a line reading "—" invites the
+    // reader to wonder what is missing. The same posture the reconnect
+    // button takes for a state it does not apply to.
+    if (downloadsAreaCount === 0) {
+      line.classList.add('hidden');
+      return;
+    }
+    line.classList.remove('hidden');
+    const never = downloadsOldestContentAt === null;
+    toggleRole('downloads-updated', !never);
+    toggleRole('downloads-empty', never);
+    if (never) return;
+    const cell = document.querySelector('[data-role="downloads-at"]');
+    if (cell) cell.textContent = formatRelative(downloadsOldestContentAt) || '—';
+  }
+
+  /**
+   * Re-read what this device's downloaded areas hold, and repaint the line.
+   *
+   * Never throws: a device whose IndexedDB will not answer keeps whatever
+   * the line last said, which is the pre-SNOW-928 behaviour of saying
+   * nothing rather than a wrong thing.
+   *
+   * @returns {Promise<void>}
+   */
+  async function refreshDownloadsAge() {
+    if (!window.pwaDb || typeof window.pwaDb.get !== 'function') return;
+    try {
+      const rows = await Promise.all([
+        window.pwaDb.get('meta:app', 'basemap.regions'),
+        window.pwaDb.get('meta:app', 'basemap.customAreas'),
+      ]);
+      let count = 0;
+      let oldest = null;
+      let anyMissing = false;
+      rows.forEach((row) => {
+        const list = (row && row.value) || [];
+        if (!Array.isArray(list)) return;
+        list.forEach((entry) => {
+          if (!entry) return;
+          count += 1;
+          const at = toDate(entry.contentAt);
+          // Absent means never fetched, which is every area downloaded
+          // before SNOW-924 and every one whose content phase fell short.
+          // It is not "very old"; it is a different sentence.
+          if (!at) {
+            anyMissing = true;
+            return;
+          }
+          if (oldest === null || at < oldest) oldest = at;
+        });
+      });
+      downloadsAreaCount = count;
+      downloadsOldestContentAt = anyMissing ? null : oldest;
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+    renderDownloadsAge();
   }
 
   // SNOW-482: re-render the "last synced" phrase on a timer while the panel
@@ -396,6 +487,14 @@
   // however the panel was closed — the symbol, the "×", Escape or a click
   // outside — and it also self-clears if it wakes to find the panel gone.
   let freshnessTicker = null;
+
+  // SNOW-928: how many areas this device holds, and the oldest content
+  // refresh among them — `null` when at least one holds no content at all,
+  // which is a different sentence rather than a very old date. Resolved
+  // from IndexedDB at boot and on every panel open; see
+  // `refreshDownloadsAge`.
+  let downloadsAreaCount = 0;
+  let downloadsOldestContentAt = null;
 
   /**
    * Start the freshness re-render timer, if not already running.
@@ -464,6 +563,13 @@
     if (indicator) indicator.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) {
       renderFreshnessCells();
+      // SNOW-928: re-read what the downloads hold, on every open rather
+      // than on the 30s tick. The records move only when a download runs —
+      // which can have happened in another tab since this page loaded —
+      // and re-opening IndexedDB twice a minute for a value that has not
+      // moved is waste on the device least able to afford it. The PHRASE
+      // still counts up on the tick.
+      refreshDownloadsAge();
       startFreshnessTicker();
     } else {
       stopFreshnessTicker();
@@ -1309,6 +1415,12 @@
     // latched with the panel still claiming it is merely struggling.
     bindNetworkModeControls();
     await hydratePersistedClocks();
+    // SNOW-928: and what this device's downloads hold, so the panel has
+    // the second age from the first press rather than from the second.
+    // Not awaited: the line is hidden until it resolves, and holding the
+    // mode re-assertion below behind an IndexedDB read would leave a
+    // latched worker in 'auto' for the length of it.
+    refreshDownloadsAge();
     // SNOW-742: re-assert the persisted mode to the worker. A worker
     // terminated while idle comes back in 'auto' having forgotten the latch;
     // this is what restores it, and it is why the worker never has to read
