@@ -475,13 +475,28 @@
    * the reveal it is labelling was itself caused by that round trip — and
    * otherwise issues one (sharing any fetch already in flight).
    *
+   * ``{refresh: true}`` skips the held body and goes to the network
+   * (SNOW-952). The held body is only as fresh as the event that fetched
+   * it, and one event does not refresh it: a header drift is verified
+   * once per distinct header value, so a tab that confirmed deploy B goes
+   * on returning B's body for every replay of B's header. A caller whose
+   * question was raised by something OTHER than that verification —
+   * ``showUpdateBanner``, woken by a worker from deploy C installing —
+   * would otherwise compare C's worker against B's shell, and where B was
+   * a build-only deploy the two match and the only notification of C is
+   * suppressed. The refresh shares any fetch already in flight, so a
+   * caller cannot make this cost a second round trip.
+   *
    * ``null`` means "cannot confirm", never "confirmed": the caller shows
    * the unnumbered copy rather than naming builds it could not check.
    *
+   * @param {{refresh?: boolean}} [options] ``refresh`` forces the network
+   *   read described above. Omitted, the held body wins.
    * @returns {Promise<{current: string, release: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    */
-  function verified() {
+  function verified(options) {
+    if (options && options.refresh === true) return fetchAuthoritativeVersion();
     if (lastVerdict) return Promise.resolve(lastVerdict);
     return fetchAuthoritativeVersion();
   }

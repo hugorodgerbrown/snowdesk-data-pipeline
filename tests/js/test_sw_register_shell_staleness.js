@@ -42,8 +42,21 @@ let workerReply = null;
 /** One entry per message the page posted to the controller. */
 const posted = [];
 
-/** The body `window.pwaVersionInfo.verified()` resolves with. */
+/** The body the SERVER would return right now — what a refresh reads. */
 let verdict = null;
+
+/**
+ * The body `pwa_version_check.js` is HOLDING, when it differs from the
+ * server's. `verified()` returns this unless the caller asks for a
+ * refresh, which is the real module's behaviour: it re-verifies once per
+ * distinct version header, so a tab that confirmed one deploy keeps
+ * handing that body back. Null means "holding nothing stale" and the
+ * stub answers with the live body either way.
+ */
+let heldVerdict = null;
+
+/** One entry per `verified()` call: the options it was given. */
+const verifiedCalls = [];
 
 const controller = {
   postMessage: (data, transfer) => {
@@ -97,7 +110,14 @@ beforeAll(async () => {
   window.pwaVersionInfo = {
     build: 'aaaaaaa1111',
     release: 'v29',
-    verified: () => Promise.resolve(verdict),
+    verified: (options) => {
+      verifiedCalls.push(options || {});
+      if (options && options.refresh === true) {
+        heldVerdict = verdict;
+        return Promise.resolve(verdict);
+      }
+      return Promise.resolve(heldVerdict === null ? verdict : heldVerdict);
+    },
   };
 
   await import('../../static/js/sw_register.js');
@@ -106,6 +126,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   posted.length = 0;
+  verifiedCalls.length = 0;
+  heldVerdict = null;
   banner().classList.add('hidden');
 });
 
@@ -156,6 +178,51 @@ describe('the staleness gate', () => {
     verdict = { current: 'ddd', release: 'v32', shell: 'shell-second' };
 
     expect(await window.pwaUpdateBanner.reveal()).toBe(true);
+  });
+});
+
+describe('how fresh the server half has to be', () => {
+  it('re-reads the verdict for a newly installed worker', async () => {
+    // The waiting-worker path is woken by a WORKER, not by the version
+    // check's own round trip, so it cannot accept whatever body that
+    // module happens to be holding.
+    verdict = { current: 'ccc', release: 'v31', shell: 'shell-refresh' };
+
+    await window.pwaUpdateBanner.reveal(true);
+
+    // [0] is the gate; labelBanner asks again, unrefreshed, to name builds.
+    expect(verifiedCalls[0]).toEqual({ refresh: true });
+  });
+
+  it('accepts the held body for the header-drift path', async () => {
+    // There, the body was fetched by the verification that raised the
+    // question moments earlier — going back to the network would be a
+    // second round trip for the same answer.
+    verdict = { current: 'ccc', release: 'v31', shell: 'shell-noreload' };
+
+    await window.pwaUpdateBanner.reveal();
+
+    expect(verifiedCalls[0]).toEqual({ refresh: false });
+  });
+
+  it('does not miss a second deploy behind a stale held verdict', async () => {
+    // The regression, in full. A tab verifies deploy B, which changed the
+    // build but no shell source — correctly silent. B's body is now held
+    // indefinitely: the version check re-verifies once per distinct
+    // header value, and every later replay of B's header reuses it.
+    verdict = { current: 'bbb', release: 'v30', shell: 'shell-B' };
+    heldVerdict = verdict;
+    workerReply = { type: 'build-identity', build: 'aaaaaaa1111', cache: 'shell-B' };
+    expect(await window.pwaUpdateBanner.reveal()).toBe(false);
+
+    // Deploy C changes a shell source. Its worker installs and parks, and
+    // that install is the only notice this tab gets. Judged against B's
+    // held body the shells match and the banner is swallowed — the tab
+    // then sits on a stale shell with nothing left to tell it.
+    verdict = { current: 'ccc', release: 'v31', shell: 'shell-C' };
+
+    expect(await window.pwaUpdateBanner.reveal(true)).toBe(true);
+    expect(isRevealed()).toBe(true);
   });
 });
 

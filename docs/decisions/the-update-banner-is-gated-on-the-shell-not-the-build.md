@@ -116,6 +116,18 @@ It self-corrects on the next deploy.
 * **`pwa.sw.update_available` moved behind the gate.** It counts what a
   user was offered; in front of the gate it would count deploys, and the
   dashboards would disagree with what anyone saw.
+* **The server half must be as fresh as the event that raised the
+  question.** `pwa_version_check.js` verifies a header drift once per
+  distinct header value and then holds that body, so a tab that confirmed
+  a build-only deploy B keeps handing B's body back for every replay of
+  B's header. The waiting-worker path is woken by something else entirely
+  — a worker from deploy C installing — and judging it against B's body
+  compares C's worker against B's shell; where B changed no shell source
+  the two match, and the only notification C would ever produce is
+  swallowed. So `showUpdateBanner` passes `refresh: true` and
+  `verified()` goes back to the network, sharing any fetch in flight. The
+  header-drift path passes nothing: its body was fetched by the
+  verification that raised its question moments earlier.
 * **The answer is memoised against the server shell it answered for**,
   not latched. `pwa_version_check.js` re-offers the banner for every
   response replaying a drifting version header, so an unmemoised gate

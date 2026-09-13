@@ -663,7 +663,15 @@
     // it would count deploys instead, which is the very conflation this
     // ticket is about, and the dashboards would disagree with what anyone
     // saw.
-    revealUpdateBannerIfStale().then((revealed) => {
+    // ``true``: re-read the server's shell rather than accepting the body
+    // pwa_version_check.js happens to be holding. That body is only as
+    // fresh as the header drift that fetched it, and this path is woken by
+    // a WORKER installing — a different event, from a later deploy. A tab
+    // that verified a build-only deploy B holds B's body indefinitely (it
+    // re-verifies only for a header value it has not seen), so judging
+    // deploy C's worker against it compares C against B's shell, finds
+    // them equal, and swallows the one notification C would ever get.
+    revealUpdateBannerIfStale(true).then((revealed) => {
       if (!revealed) return;
       // SNOW-384: emit once per distinct waiting worker, not once per call
       // site that happens to observe it (see announcedUpdateWorker above).
@@ -744,9 +752,13 @@
    *     the next.
    *   * **Both readable** → the comparison.
    *
+   * @param {boolean} [refreshVerdict] Re-read the server's half from the
+   *   network rather than accepting the body ``pwa_version_check.js`` is
+   *   holding. Required of any caller whose question was NOT raised by
+   *   that module's own verification — see ``showUpdateBanner``.
    * @returns {Promise<boolean>}
    */
-  function shellIsStale() {
+  function shellIsStale(refreshVerdict) {
     // Nothing cached, nothing stale. Checked first because it is the one
     // case that must NOT fail open, and it is free.
     if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
@@ -756,7 +768,7 @@
     // No version check on this page (the admin fallback banner, and any
     // page the module bailed on) — nothing to compare against.
     if (!info || typeof info.verified !== 'function') return Promise.resolve(true);
-    return Promise.resolve(info.verified())
+    return Promise.resolve(info.verified({ refresh: refreshVerdict === true }))
       .then((verdict) => {
         const server = verdict && verdict.shell ? verdict.shell : '';
         // Memo read BEFORE the worker is messaged, so a page re-offered
@@ -782,12 +794,15 @@
    * primitive underneath it, which only this function and the tests that
    * exercise the banner's COPY have any business calling.
    *
+   * @param {boolean} [refreshVerdict] Passed through to ``shellIsStale``.
+   *   ``pwa_version_check.js`` calls this with nothing, because the body
+   *   it is holding is the one its own verification just fetched.
    * @returns {Promise<boolean>} Whether the banner was revealed. Returned
    *   for the caller that emits telemetry on it, and for tests; nothing
    *   about the DOM depends on the caller awaiting it.
    */
-  function revealUpdateBannerIfStale() {
-    return shellIsStale().then((stale) => {
+  function revealUpdateBannerIfStale(refreshVerdict) {
+    return shellIsStale(refreshVerdict).then((stale) => {
       if (!stale) return false;
       revealUpdateBanner();
       return true;
