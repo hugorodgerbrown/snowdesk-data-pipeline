@@ -18,6 +18,7 @@ Django client.
 from __future__ import annotations
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 from waffle.testutils import override_flag
@@ -153,6 +154,55 @@ class TestResetRow:
         assert (
             "text-link" not in html.split("data-pwa-reset-trigger")[0].rsplit("<", 1)[1]
         )
+
+
+@pytest.mark.django_db
+class TestContentEndpoints:
+    """SNOW-925: what the per-row control needs from a page with no map."""
+
+    def test_the_page_renders_every_endpoint_the_plan_is_built_from(self) -> None:
+        """
+        The map reads the same endpoints off ``#map``'s own dataset; this
+        page has no ``#map``, and re-deriving them client-side would be a
+        second copy of routing only this view can answer for.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert f'data-regions-url="{reverse("api:regions_geojson")}"' in html
+        assert f'data-weather-url="{reverse("api:weather_geojson")}"' in html
+        assert 'data-weather-detail-url="/api/weather/__SHORTID__/detail/"' in html
+        assert (
+            f'data-community-reports-url="{reverse("api:community_reports_geojson")}"'
+            in html
+        )
+
+    def test_it_names_every_country_the_map_carries(self) -> None:
+        """
+        SNOW-931's lesson, applied where there is no ``pwaMapCountries`` to
+        ask: a border area resolved against only the countries some client
+        state happens to hold silently drops a country's bulletins.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        for code in settings.MAP_COUNTRY_CODES:
+            assert code in html.split('data-content-countries="')[1].split('"')[0]
+
+    def test_the_account_feeds_are_empty_for_a_signed_out_reader(self) -> None:
+        """
+        Favourites and routes need an account. An endpoint rendered for a
+        reader who cannot use it is a fetch that 302s to sign-in and
+        caches the redirect.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-favourites-url=""' in html
+        assert 'data-routes-url=""' in html
+
+    def test_they_are_filled_in_for_a_signed_in_reader(self) -> None:
+        html = _signed_in_client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-favourites-url=""' not in html
+        assert 'data-routes-url=""' not in html
 
 
 @pytest.mark.django_db

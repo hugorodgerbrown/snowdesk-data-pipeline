@@ -103,6 +103,16 @@
   // precise.
   var VERSION_PROBE_MS = 1500;
 
+  // SNOW-925 review: the bound on the two manifest fetches the per-row
+  // Update control derives its plan from. `pwaWarmCache` settles on the
+  // worker's own budget; these do not go through it, and without a bound
+  // a connection that stalls without rejecting leaves the operation
+  // pending — the button disabled, the status line mid-sentence, and the
+  // verification re-run never reached. Generous next to the read budgets
+  // below because this is a deliberate press over a real network rather
+  // than a storage probe, and it is a ceiling on a hang, not a target.
+  var MANIFEST_FETCH_BUDGET_MS = 15000;
+
   // How long between one row's answer and the next. Thirteen rows plus
   // however many downloads, at 70ms, is about a second — long enough to
   // read as deliberate, short enough that nobody waits for it. It is an
@@ -382,6 +392,16 @@
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
     'check-failed': 'The check could not run. Copy the report and send it in.',
+    // SNOW-925: the per-row control and its status line. "Update" rather
+    // than "Download": the tiles are already here and are not touched —
+    // what this fetches is the day's bulletins and weather inside the
+    // boundary, which is an update to a download that exists.
+    'row-complete': 'Update',
+    'row-complete-label': 'Update the bulletins and weather saved inside %(name)s',
+    completing: 'Saving this area’s bulletins and weather…',
+    completed: 'Saved. Re-checking…',
+    'complete-failed':
+      'Not everything could be saved. Re-checking what landed.',
   };
 
   /**
@@ -1143,6 +1163,324 @@
    * @returns {Promise<Object>} The readings object ``buildReport``
    *   documents.
    */
+  /**
+   * Fetch one area's shared feeds and boundary content into the cache
+   * (SNOW-925).
+   *
+   * The payload behind the per-row "Update" control. Everything goes
+   * through ``self.pwaWarmCache`` — the worker's own warm path — rather
+   * than a ``fetch`` from here, for the reason the Save control already
+   * documents: the worker stamps a same-origin HTML response with the
+   * principal its body declares (SNOW-624), and that stamp is the whole
+   * reason the entry will be servable offline. A ``cache.put`` from this
+   * page writes an entry the worker refuses for ever.
+   *
+   * The feed DOCUMENTS are fetched here as well as warmed, because the
+   * plan is derived from them: which regions a rectangle contains comes
+   * out of ``regions.geojson``, and which weather locations out of
+   * ``weather.geojson``. Those two reads are the reason this page needs
+   * the endpoints rendered onto the panel at all.
+   *
+   * Every country, not the ones some client state happens to hold. That
+   * is SNOW-931's lesson applied where there is no ``pwaMapCountries`` to
+   * ask: a border area whose plan is short of a country is exactly the
+   * under-fetch ``inside-the-boundary-is-complete.md`` promises not to
+   * produce. A country whose feed fails leaves the plan short, and the
+   * run reports failure rather than stamping a completion over it.
+   *
+   * @param {HTMLElement} root The panel, carrying the endpoints.
+   * @param {string} areaId
+   * @param {Object|null} report The report the press was made against —
+   *   its ``app-opens`` row is what decides whether the shell is warmed.
+   * @returns {Promise<boolean>} Whether everything asked for landed.
+   */
+  async function fetchAreaContent(root, areaId, report) {
+    var core = self.pwaBasemapDownloadCore;
+    var warm = self.pwaWarmCache;
+    var data = (root && root.dataset) || {};
+    if (!core || typeof core.areaContentPlan !== 'function') return false;
+    if (typeof warm !== 'function' || !data.regionsUrl) return false;
+
+    var record = await readAreaRecordById(areaId);
+    var bbox = record ? core.areaBBox(record) : null;
+    if (!bbox) return false;
+
+    // The bulletin day, from the CLIENT's own clock. The rendered
+    // `data-today` is the server's date at render time and is the
+    // fallback for a clock that will not answer; where the two agree —
+    // which is the ordinary case — nothing changes.
+    var day = localDay() || data.today || '';
+    if (!day) return false;
+
+    // Step 1: the map shell, when the report just said it is not saved.
+    // Not per-area and not this control's subject, but an area's content
+    // is no use inside an app that will not open, and the reader pressing
+    // this is asking for the area to work.
+    var shellOk = true;
+    if (!appOpens(report)) {
+      var shell = await warm(['/']);
+      shellOk = !!(shell && shell.ok > 0 && shell.failed === 0);
+    }
+
+    // Step 2: the four overlay feeds, whole and unfiltered — the boundary
+    // decides what must VERIFY present, not what gets stored, and each is
+    // one small request. A feed with no URL is one this reader is not
+    // eligible for (favourites and routes need an account), which is not
+    // a failure.
+    var feedUrls = [
+      data.weatherUrl,
+      data.favouritesUrl,
+      data.routesUrl,
+      data.communityReportsUrl,
+    ].filter(Boolean);
+
+    // Step 3: the plan, from the two feeds it is derived from.
+    var countries = String(data.contentCountries || '')
+      .split(/\s+/)
+      .filter(Boolean);
+    var regionUrls = countries.map(function (code) {
+      return data.regionsUrl + '?country=' + encodeURIComponent(code);
+    });
+    var fetched = await Promise.all(
+      regionUrls.concat([data.weatherUrl]).map(function (url) {
+        return url ? fetchJson(url) : null;
+      }),
+    );
+    var weatherFeed = fetched[fetched.length - 1];
+    var regionFeatures = [];
+    var short = false;
+    for (var i = 0; i < regionUrls.length; i += 1) {
+      var feed = fetched[i];
+      if (!feed || !Array.isArray(feed.features)) {
+        short = true;
+        continue;
+      }
+      regionFeatures = regionFeatures.concat(feed.features);
+    }
+    // The weather manifest is held to the same standard as each region
+    // feed, and the first cut did not: a request that failed or came back
+    // malformed left `weatherFeed` null, the plan named no weather sheets,
+    // and the warm of everything else still succeeded — so an area full of
+    // weather locations was stamped complete having saved none of them.
+    // The manifest is what the sheet urls are DERIVED from, so losing it
+    // is a short plan by exactly the same reasoning a lost country is.
+    if (!weatherFeed || !Array.isArray(weatherFeed.features)) short = true;
+
+    var plan = core.areaContentPlan({
+      bbox: bbox,
+      regionFeatures: regionFeatures,
+      weatherFeatures: (weatherFeed && weatherFeed.features) || [],
+      // Today alone. The map widens this to the last published day
+      // (SNOW-927) off the season payload the scrubber already holds;
+      // this page holds none, and fetching one to widen a bulletin set by
+      // a day would be a second copy of that rule for a marginal gain.
+      //
+      // Resolved at PRESS time, not read off the rendered attribute.
+      // `data-today` is the date the HTML was rendered on, and this page
+      // is warmed into the shell and reopened from cache — so on a tab
+      // left open across midnight, or a cached copy reconnecting the next
+      // morning, it names yesterday. The first cut warmed yesterday's
+      // bulletins and then stamped a completion with the current
+      // timestamp, after which the report called the area fresh and took
+      // the control away with today's bulletins never saved.
+      days: [day],
+      weatherDetailTemplate: data.weatherDetailUrl || '',
+    });
+
+    var urls = regionUrls
+      .concat(feedUrls)
+      .concat(plan.bulletinUrls)
+      .concat(plan.weatherDetailUrls);
+    if (urls.length === 0) return false;
+
+    var result = await warm(urls);
+    var landed = !!(result && result.ok > 0 && result.failed === 0);
+    var complete = shellOk && landed && !short;
+    await stampAreaContent(areaId, complete);
+    return complete;
+  }
+
+  /**
+   * Whether the report says the app opens without a signal.
+   *
+   * @param {Object|null} report
+   * @returns {boolean}
+   */
+  function appOpens(report) {
+    if (!report || !Array.isArray(report.sections)) return false;
+    var found = false;
+    report.sections.forEach(function (section) {
+      section.checks.forEach(function (check) {
+        if (check.id === 'app-opens' && check.status === 'yes') found = true;
+      });
+    });
+    return found;
+  }
+
+  /**
+   * Read one area's stored record by its bucket id.
+   *
+   * Through ``window.pwaDb``, NOT this module's own IndexedDB reader. That
+   * reader is deliberately bounded, read-only and independent — a report
+   * whose job is to catch storage and the app disagreeing must not take
+   * the app's word for what storage holds. This is not a report read: it
+   * is the operation behind a control, and an operation that writes back
+   * has to read and write through the same surface the rest of the app
+   * does or the two will drift.
+   *
+   * @param {string} areaId
+   * @returns {Promise<Object|null>}
+   */
+  async function readAreaRecordById(areaId) {
+    try {
+      var db = self.pwaDb;
+      if (!db) return null;
+      var customRow = await db.get('meta:app', 'basemap.customAreas');
+      var custom = (customRow && customRow.value) || [];
+      if (Array.isArray(custom)) {
+        for (var i = 0; i < custom.length; i += 1) {
+          if (custom[i] && custom[i].id === areaId) return custom[i];
+        }
+      }
+      var regionRow = await db.get('meta:app', 'basemap.regions');
+      var regions = (regionRow && regionRow.value) || [];
+      if (Array.isArray(regions)) {
+        for (var j = 0; j < regions.length; j += 1) {
+          var entry = regions[j];
+          if (entry && 'region-' + entry.region_id === areaId) return entry;
+        }
+      }
+      return null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
+   * Move one area's content stamp, in whichever store holds it.
+   *
+   * The same field SNOW-924 writes from the map and SNOW-926 reads back —
+   * one meaning, written by both entry points, so a refresh from here and
+   * a refresh from the map's roundel cannot leave the record saying
+   * different things. ``contentIncomplete`` is the durable half of that
+   * (SNOW-932), deleted on a completion rather than set false.
+   *
+   * @param {string} areaId
+   * @param {boolean} complete
+   * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
+   *   verdict on one row, never the fetch that just landed.
+   */
+  async function stampAreaContent(areaId, complete) {
+    var apply = function (entry) {
+      var next = Object.assign({}, entry);
+      delete next.contentIncomplete;
+      if (complete) next.contentAt = new Date().toISOString();
+      else next.contentIncomplete = true;
+      return next;
+    };
+    try {
+      var db = self.pwaDb;
+      if (!db) return;
+      var customRow = await db.get('meta:app', 'basemap.customAreas');
+      var custom = (customRow && customRow.value) || [];
+      if (
+        Array.isArray(custom) &&
+        custom.some(function (area) {
+          return area && area.id === areaId;
+        })
+      ) {
+        await db.put('meta:app', {
+          key: 'basemap.customAreas',
+          value: custom.map(function (area) {
+            return area && area.id === areaId ? apply(area) : area;
+          }),
+        });
+        return;
+      }
+      var regionRow = await db.get('meta:app', 'basemap.regions');
+      var regions = (regionRow && regionRow.value) || [];
+      if (!Array.isArray(regions)) return;
+      var touched = false;
+      var next = regions.map(function (entry) {
+        if (!entry || 'region-' + entry.region_id !== areaId) return entry;
+        touched = true;
+        return apply(entry);
+      });
+      if (!touched) return;
+      await db.put('meta:app', { key: 'basemap.regions', value: next });
+    } catch (_err) {
+      // Best-effort, per the docstring.
+    }
+  }
+
+  /**
+   * Today, as this device reckons it — ``YYYY-MM-DD`` in local time.
+   *
+   * SNOW-925 review: the bulletin day cannot be read off the rendered
+   * ``data-today``. That is the date the HTML was rendered on, and this
+   * page is warmed into the shell and reopened from cache — so on a tab
+   * left open across midnight, or a cached copy reconnecting the next
+   * morning, the attribute names yesterday. Warming yesterday's bulletins
+   * and stamping a completion for it is the false green the whole report
+   * exists to prevent, one layer down.
+   *
+   * Local rather than UTC, because a bulletin belongs to a calendar day in
+   * the reader's own zone — the same rule ``areaContentState`` applies
+   * when it decides whether that content is stale.
+   *
+   * @returns {string} ``''`` when the clock will not answer, which leaves
+   *   the caller falling back to the rendered date.
+   */
+  function localDay() {
+    try {
+      var now = new Date();
+      if (Number.isNaN(now.getTime())) return '';
+      var month = String(now.getMonth() + 1).padStart(2, '0');
+      var date = String(now.getDate()).padStart(2, '0');
+      return now.getFullYear() + '-' + month + '-' + date;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  /**
+   * Fetch and parse one JSON document, or null.
+   *
+   * BOUNDED, and that is not decoration. Unlike `pwaWarmCache` — which the
+   * worker settles on its own budget — these preliminary requests had no
+   * timeout at all, so on a connection that stalls without rejecting (a
+   * captive portal, a lift) any one of them could stay pending for the
+   * browser's full network timeout. `completeArea` holds `running` true
+   * and the button disabled for the whole of it, and never reaches its
+   * failure message or the verification re-run: the panel simply sits
+   * there. A bound that expires reads as a feed that did not answer, which
+   * makes the plan short and the run report failure — the honest outcome,
+   * and the one every other read on this page already degrades to
+   * (SNOW-918).
+   *
+   * @param {string} url
+   * @returns {Promise<Object|null>}
+   */
+  async function fetchJson(url) {
+    var controller =
+      typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
+    try {
+      if (controller) {
+        timer = setTimeout(function () {
+          controller.abort();
+        }, MANIFEST_FETCH_BUDGET_MS);
+      }
+      var response = await fetch(url, controller ? { signal: controller.signal } : {});
+      if (!response || !response.ok) return null;
+      return await response.json();
+    } catch (_err) {
+      return null;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+  }
+
   async function collect(root) {
     var budget = createBudget();
     var panel = root || document.querySelector(ROOT_SELECTOR);
@@ -1462,7 +1800,7 @@
    * @param {Document} doc
    * @returns {HTMLElement}
    */
-  function renderRow(check, doc) {
+  function renderRow(check, doc, t, canFetch) {
     var row = doc.createElement('li');
     row.setAttribute('data-audit-check', '');
     row.setAttribute('data-audit-row', check.id);
@@ -1482,7 +1820,64 @@
 
     row.appendChild(label);
     row.appendChild(value);
+    applyRowAction(row, check, t, canFetch);
     return row;
+  }
+
+  /**
+   * Put the "Update" control on a row that has something to fetch, or take
+   * it off one that no longer has (SNOW-925).
+   *
+   * A THIRD cell, and the two-cell rule above survives it. That rule is
+   * about per-row EXPLANATION — the prose that kept growing back and that
+   * the summary exists to hold once — and a control is not prose. The
+   * row's answer is unchanged and why the area is behind is still said
+   * once, in the summary.
+   *
+   * One action, so a bare control rather than a menu: the same threshold
+   * the Manage downloads sheet applies. The label comes from ``strings()``
+   * rather than a literal, because ``makemessages`` does not scan
+   * ``static/js``. No class strings: this module paints two hosts with
+   * different stylesheets, so ``src/css/main.css``'s ``[data-offline-audit]``
+   * block styles it by attribute.
+   *
+   * Applied here rather than only at first paint because a row is painted
+   * BLANK and answered afterwards (``revealRow``) — a control added only
+   * in ``renderRow`` would never appear on the animated path.
+   *
+   * @param {HTMLElement} row
+   * @param {Object} check
+   * @param {Record<string, string>} [t]
+   * @param {boolean} [canFetch] Whether this HOST can fetch at all — see
+   *   ``hostCanFetch``. Passed in rather than read off the row, because a
+   *   row is BUILT DETACHED and only appended afterwards: a ``closest``
+   *   from in here answered null on the reduced-motion path and the
+   *   control silently never appeared, which is the whole reason this is
+   *   a parameter.
+   * @returns {void}
+   */
+  function applyRowAction(row, check, t, canFetch) {
+    var strs = t || {};
+    var existing = row.querySelector('[data-audit-complete]');
+    var offerable = !!canFetch && !!check.completable && !!check.areaId;
+    if (!offerable) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    var doc = row.ownerDocument;
+    var action = doc.createElement('button');
+    action.type = 'button';
+    action.setAttribute('data-audit-complete', check.areaId);
+    action.textContent = strs['row-complete'] || FALLBACKS['row-complete'];
+    action.setAttribute(
+      'aria-label',
+      String(strs['row-complete-label'] || FALLBACKS['row-complete-label']).replace(
+        '%(name)s',
+        check.label,
+      ),
+    );
+    row.appendChild(action);
   }
 
   /**
@@ -1495,9 +1890,12 @@
    *
    * @param {HTMLElement} target
    * @param {Object} report
+   * @param {Record<string, string>} [t] SNOW-925: for the per-row control's
+   *   own label. Absent on the blank first paint, where no row has one.
    */
-  function renderLog(target, report) {
+  function renderLog(target, report, t) {
     var doc = target.ownerDocument;
+    var canFetch = hostCanFetch(target);
     target.textContent = '';
     var log = doc.createElement('div');
     log.setAttribute('data-audit-log', '');
@@ -1510,7 +1908,7 @@
       el.appendChild(heading);
       var list = doc.createElement('ol');
       section.checks.forEach(function (check) {
-        list.appendChild(renderRow(check, doc));
+        list.appendChild(renderRow(check, doc, t, canFetch));
       });
       el.appendChild(list);
       log.appendChild(el);
@@ -1523,13 +1921,34 @@
    *
    * @param {HTMLElement} target
    * @param {Object} check
+   * @param {Record<string, string>} [t] SNOW-925: for the control this row
+   *   may now have earned — the answer is what decides whether it has.
    */
-  function revealRow(target, check) {
+  function revealRow(target, check, t) {
     var row = target.querySelector('[data-audit-row="' + cssEscape(check.id) + '"]');
     if (!row) return;
     row.setAttribute('data-audit-status', check.status);
     var value = row.querySelector('[data-audit-value]');
     if (value) value.textContent = check.value;
+    applyRowAction(row, check, t, hostCanFetch(target));
+  }
+
+  /**
+   * Whether this panel's host can fetch anything at all (SNOW-925).
+   *
+   * The endpoints the per-row control needs are rendered onto the panel
+   * root by a Django view. ``static/offline.html`` has no server to render
+   * them — and no connection either, which is the whole reason that page
+   * exists — so a control there would offer a fetch that cannot arrive.
+   * One endpoint stands for all of them: they are written together or not
+   * at all.
+   *
+   * @param {HTMLElement} target The output element, which IS attached.
+   * @returns {boolean}
+   */
+  function hostCanFetch(target) {
+    var host = target && target.closest ? target.closest('[data-offline-audit]') : null;
+    return !!(host && host.dataset && host.dataset.regionsUrl);
   }
 
   /**
@@ -1600,7 +2019,7 @@
    * @param {Record<string, string>} t
    */
   function render(target, report, t) {
-    renderLog(target, report);
+    renderLog(target, report, t);
     if (!report.pending) renderSummary(target, report, t);
   }
 
@@ -1671,7 +2090,7 @@
       var checks = report.sections[i].checks;
       for (var j = 0; j < checks.length; j += 1) {
         await wait(ROW_INTERVAL_MS);
-        revealRow(target, checks[j]);
+        revealRow(target, checks[j], t);
       }
     }
     renderSummary(target, report, t);
@@ -1842,6 +2261,75 @@
           say(t['copy-failed'] || FALLBACKS['copy-failed']);
         }
       });
+    }
+
+    // SNOW-925: the per-row "Update" control. Delegated on the output
+    // element, because every row is repainted on each run and a listener
+    // bound to a button would go with the button it was bound to.
+    //
+    // One run at a time across the whole panel, sharing `running` with the
+    // report itself: the operation ENDS by re-running the report, so a
+    // second press part way through would race two collections onto one
+    // output element — the same reason `run` guards itself.
+    output.addEventListener('click', function (event) {
+      var target = /** @type {HTMLElement} */ (event.target);
+      if (!target || !target.closest) return;
+      var button = target.closest('[data-audit-complete]');
+      if (!button) return;
+      var areaId = button.getAttribute('data-audit-complete');
+      if (!areaId || running) return;
+      completeArea(areaId, button);
+    });
+
+    /**
+     * Fetch everything this page can fetch for one area, then re-check it.
+     *
+     * The order is cheapest first, and the last step is the point: the
+     * report re-runs and proves the result. Nothing else on the site
+     * claims a download succeeded without verifying it, and this is not
+     * going to be the first thing that does.
+     *
+     *   1. the map shell, if the report just said it is not saved — not
+     *      per-area, cheap, and an area's content is no use inside an app
+     *      that will not open;
+     *   2. the four overlay feeds, whole and unfiltered, which is how the
+     *      map draws favourites, routes, reports and weather offline;
+     *   3. the bulletins and weather sheets inside THIS area's boundary.
+     *
+     * What it deliberately does NOT do is fetch tiles. The tile half needs
+     * the loaded basemap style — its sources, its sprite, its TileJSON —
+     * and that exists only on the map. Re-deriving it here would be a
+     * second copy of the whole basemap pipeline on a page with no map,
+     * which is exactly the drift `basemap_downloaded_areas.js` was
+     * extracted to prevent. A row whose tiles do not verify is not
+     * offered this control at all (`completableArea`); it keeps the Repair
+     * remedy the report already names.
+     *
+     * @param {string} areaId
+     * @param {HTMLElement} button
+     * @returns {Promise<void>}
+     */
+    async function completeArea(areaId, button) {
+      if (running) return;
+      running = true;
+      button.disabled = true;
+      say(t.completing || FALLBACKS.completing);
+      var ok = false;
+      try {
+        ok = await fetchAreaContent(root, areaId, lastReport);
+      } catch (_err) {
+        ok = false;
+      }
+      say(
+        ok
+          ? t['completed'] || FALLBACKS['completed']
+          : t['complete-failed'] || FALLBACKS['complete-failed'],
+      );
+      running = false;
+      // Always, success or not: a run that half landed has still changed
+      // what is on disk, and the report must say what is true now rather
+      // than what it said before the press.
+      await run();
     }
 
     if (saveButton) {

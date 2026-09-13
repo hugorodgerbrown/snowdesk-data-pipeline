@@ -50,8 +50,15 @@ class TestPartial:
     """The panel's markup contract with ``offline_audit.js``."""
 
     def test_root_carries_the_binding_attribute(self) -> None:
-        """``data-offline-audit`` is what the module looks for."""
-        assert "data-offline-audit " in render_to_string(PARTIAL, {})
+        """``data-offline-audit`` is what the module looks for.
+
+        Matched on the bare attribute followed by whitespace of any kind:
+        SNOW-925 gave the root eight more attributes, so djangofmt put each
+        on its own line and a hard-coded trailing space stopped matching.
+        """
+        html = render_to_string(PARTIAL, {})
+
+        assert re.search(r"data-offline-audit\s", html)
 
     def test_root_carries_the_deployed_default_basemap(self) -> None:
         """
@@ -71,6 +78,45 @@ class TestPartial:
         instead of guessing at one.
         """
         assert 'data-default-basemap-key=""' in render_to_string(PARTIAL, {})
+
+    def test_root_carries_the_content_endpoints(self) -> None:
+        """
+        SNOW-925: the per-row "Update" control resolves an area's content
+        from a page with no map on it, so the endpoints the map reads off
+        ``#map`` are rendered here instead. Written together, so the
+        control's gate can read one of them and mean all of them.
+        """
+        html = render_to_string(
+            PARTIAL,
+            {
+                "content_feeds": {
+                    "regions": "/api/regions.geojson",
+                    "weather": "/api/weather.geojson",
+                    "weather_detail": "/api/weather/__SHORTID__/detail/",
+                    "favourites": "/api/favourites.geojson",
+                    "routes": "/api/routes.geojson",
+                    "community_reports": "/api/community-reports.geojson",
+                },
+                "content_countries": "ch fr at it",
+                "today": "2026-09-13",
+            },
+        )
+
+        assert 'data-regions-url="/api/regions.geojson"' in html
+        assert 'data-weather-detail-url="/api/weather/__SHORTID__/detail/"' in html
+        assert 'data-content-countries="ch fr at it"' in html
+        assert 'data-today="2026-09-13"' in html
+
+    def test_the_content_endpoints_are_empty_without_a_server(self) -> None:
+        """
+        ``static/offline.html`` has no server to render them, and no
+        connection either. Empty rather than omitted, so the control's gate
+        reads a falsy value and offers nothing rather than a fetch that
+        cannot arrive.
+        """
+        html = render_to_string(PARTIAL, {})
+
+        assert 'data-regions-url=""' in html
 
     def test_controls_carry_their_binding_attributes(self) -> None:
         """Run, Copy, Save and the status line are each found by attribute."""

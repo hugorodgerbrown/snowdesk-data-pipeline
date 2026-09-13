@@ -959,6 +959,28 @@
   }
 
   /**
+   * Whether one area has content this device could go and fetch (SNOW-925).
+   *
+   * The gate on the per-row control, and it is deliberately narrow. An
+   * area whose content is `fresh` has nothing to do — re-fetching it would
+   * spend a connection on documents already here, and "download everything
+   * for offline" must not mean "download it all again". An area whose
+   * TILES do not verify is excluded too, and that is the boundary of what
+   * this page can honestly offer: the tile half needs the loaded basemap
+   * style, which exists only on the map, so a row in that state keeps the
+   * Repair remedy the report already points it at (`note-area-incomplete`,
+   * the Manage downloads sheet).
+   *
+   * @param {AreaReading} area
+   * @param {string} [now]
+   * @returns {boolean}
+   */
+  function completableArea(area, now) {
+    var content = areaContentState(area, now);
+    return content === 'stale' || content === 'never';
+  }
+
+  /**
    * The areas the user chose, excluding the shared base layer.
    *
    * The base layer is stored, takes space and is real, but it is not a
@@ -1585,6 +1607,17 @@
                 label: row.label,
                 value: s(t, 'answer-' + (status === 'blocked' ? 'no' : status)),
                 status: status,
+                // SNOW-925: what a control on this row would act on, and
+                // whether there is anything for it to do. Carried BESIDE
+                // the readout rather than folded into `value`, so the
+                // row's answer is still the same three words it has always
+                // been and SNOW-926's "a row never carries its own
+                // explanation" still holds. Absent on every row that is
+                // not a download.
+                areaId: row.area ? row.area.id : undefined,
+                completable: row.area
+                  ? completableArea(row.area, readings.now)
+                  : undefined,
               })
             );
           }),
@@ -1951,6 +1984,8 @@
     // tile one because it answers a different question about the same
     // area and because SNOW-928's staleness line asks it too.
     areaContentState: areaContentState,
+    // SNOW-925: the gate on the per-row control.
+    completableArea: completableArea,
     joinList: joinList,
     quantify: quantify,
   });

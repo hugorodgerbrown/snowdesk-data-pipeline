@@ -1062,3 +1062,382 @@ describe('canOpenMap — the offline page’s one way forward', () => {
     }
   });
 });
+
+describe('the per-row "Update" control (SNOW-925)', () => {
+  const SHELL = 'snowdesk-shell-abc';
+  const REGION_ID = 'CH-4115';
+  const AREA_ID = 'region-' + REGION_ID;
+  // The date the fixture's HTML was rendered on, deliberately NOT today:
+  // the plan is built from the CLIENT's clock, and pinning that difference
+  // is what SNOW-925's review asked for.
+  const RENDERED_DAY = '2026-09-11';
+
+  /** Today as the client reckons it — what the plan must actually use. */
+  function clientDay() {
+    const now = new Date();
+    return (
+      now.getFullYear() +
+      '-' +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(now.getDate()).padStart(2, '0')
+    );
+  }
+
+  /** The panel, with the feed endpoints a server would have rendered. */
+  const PANEL = `
+    <div data-offline-audit
+         data-regions-url="/api/regions.geojson"
+         data-weather-url="/api/weather.geojson"
+         data-weather-detail-url="/api/weather/__SHORTID__/detail/"
+         data-favourites-url="/api/favourites.geojson"
+         data-routes-url="/api/routes.geojson"
+         data-community-reports-url="/api/community-reports.geojson"
+         data-content-countries="ch fr"
+         data-today="${RENDERED_DAY}">
+      <button data-offline-audit-run></button>
+      <div data-offline-audit-output hidden></div>
+      <button data-offline-audit-copy hidden></button>
+      <p data-offline-audit-status></p>
+    </div>
+  `;
+
+  /** One region whose polygon is the ground the area's tiles cover. */
+  const REGIONS_CH = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { id: REGION_ID, slug: 'martigny-verbier' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[7.0, 46.0], [7.2, 46.0], [7.2, 46.2], [7.0, 46.2], [7.0, 46.0]]],
+        },
+      },
+    ],
+  };
+  const WEATHER = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { short_id: 'INSIDEaaaaa' },
+        geometry: { type: 'Point', coordinates: [7.1, 46.1] },
+      },
+      {
+        type: 'Feature',
+        properties: { short_id: 'OUTSIDEbbbb' },
+        geometry: { type: 'Point', coordinates: [9.8, 46.8] },
+      },
+    ],
+  };
+
+  /** The stored region record — the golden vector's z14 row. */
+  function record(extra) {
+    return {
+      region_id: REGION_ID,
+      name: 'Martigny',
+      basemapKey: 'openfreemap_liberty',
+      band: [10, 14],
+      z: { 14: [8510, 8519, 5815, 5828] },
+      deps: ['https://t/style.json'],
+      savedAt: '2026-09-01T10:00:00.000Z',
+      ...(extra || {}),
+    };
+  }
+
+  let warmed;
+
+  beforeEach(async () => {
+    await import('../../static/js/basemap_download_core.js');
+    warmed = [];
+    window.pwaWarmCache = vi.fn(async (urls) => {
+      warmed.push(urls);
+      return { ok: urls.length, failed: 0, bytes: 1024 };
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        const href = String(url);
+        let body = { type: 'FeatureCollection', features: [] };
+        if (href.includes('regions.geojson') && href.includes('country=ch')) {
+          body = REGIONS_CH;
+        }
+        if (href.includes('weather.geojson')) body = WEATHER;
+        return { ok: true, json: async () => body };
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete window.pwaWarmCache;
+  });
+
+  /** Mount, run, and hand back the area row. */
+  async function runPanelWithArea(overrides) {
+    installCachesStub({
+      [SHELL]: [],
+      'snowdesk-basemap-pinned-region-CH-4115': [
+        { url: 'https://t/style.json' },
+        { url: 'https://t/14/8515/5822.pbf' },
+      ],
+    });
+    await seedMeta({ 'basemap.regions': [record(overrides)] });
+    document.body.innerHTML = PANEL;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(
+      () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
+      { timeout: 5000 },
+    );
+    return document.querySelector('[data-audit-row="area:' + AREA_ID + '"]');
+  }
+
+  it('offers the control on an area whose content is behind', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    const button = row.querySelector('[data-audit-complete]');
+    expect(button).not.toBeNull();
+    expect(button.getAttribute('data-audit-complete')).toBe(AREA_ID);
+  });
+
+  it('offers nothing on an area that is already complete', async () => {
+    // "Download everything for offline" must not mean "download it all
+    // again" — an area whose content landed today has nothing to fetch,
+    // and a control that spends a connection on documents already here is
+    // worse than no control.
+    const row = await runPanelWithArea({
+      contentAt: new Date().toISOString(),
+    });
+
+    expect(row.querySelector('[data-audit-complete]')).toBeNull();
+  });
+
+  it('leaves the row readout exactly as it was', async () => {
+    // The control is a third cell, not a third answer. The row still says
+    // Yes, and why the area is behind is still said once, in the summary.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    expect(row.getAttribute('data-audit-status')).toBe('yes');
+    expect(row.querySelectorAll('[data-audit-value]')).toHaveLength(1);
+  });
+
+  it('fetches the bulletins and weather inside the boundary, and no tile', async () => {
+    // THE payload. The tiles are already here, cost megabytes, and cannot
+    // have changed — re-fetching them over the connection this whole
+    // feature exists for is the waste SNOW-924's repair-not-run design
+    // removed.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
+    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/');
+    // Narrowed by the boundary: there are ~550 weather locations across
+    // the estate and this area contains one of them.
+    expect(urls).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
+    expect(urls.some((url) => url.includes('.pbf'))).toBe(false);
+  });
+
+  it('resolves the bulletin day at press time, not from the rendered page', async () => {
+    // SNOW-925 review: `data-today` is the date the HTML was rendered on,
+    // and this page is warmed into the shell and reopened from cache — so
+    // on a tab left open across midnight, or a cached copy reconnecting
+    // the next morning, it names yesterday. The first cut warmed
+    // yesterday's bulletins and then stamped a completion, after which the
+    // report called the area fresh and took the control away with today's
+    // bulletins never saved.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls.some((url) => url.includes('/' + RENDERED_DAY + '/'))).toBe(false);
+    expect(urls.some((url) => url.includes('/' + clientDay() + '/'))).toBe(true);
+  });
+
+  it('treats a missing weather manifest as a shortfall, not a completion', async () => {
+    // SNOW-925 review: the manifest is what the weather sheet urls are
+    // DERIVED from. A request that failed or came back malformed left the
+    // plan naming no sheets while the warm of everything else succeeded —
+    // so an area full of weather locations was stamped complete having
+    // saved none of them. Held to the same standard as each region feed.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('weather.geojson')) return { ok: false, json: async () => null };
+      if (href.includes('regions.geojson') && href.includes('country=ch')) {
+        return { ok: true, json: async () => REGIONS_CH };
+      }
+      return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
+    });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
+  it('bounds the manifest fetches, so a stalled connection cannot hang it', async () => {
+    // SNOW-925 review: unlike `pwaWarmCache` these preliminary requests
+    // went through no budget at all, so a connection that stalls without
+    // rejecting — a captive portal, a lift — could leave the operation
+    // pending for the browser's full network timeout, with `running` true,
+    // the button disabled, and neither the failure message nor the
+    // verification re-run ever reached.
+    //
+    // Asserted on the WIRING rather than by advancing a clock: the budget
+    // is a constant, and a timer test for it was flaky under the full
+    // suite. What matters is that every one of these fetches is abortable.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockClear();
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => window.fetch.mock.calls.length > 0, { timeout: 5000 });
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const manifests = window.fetch.mock.calls.filter((call) =>
+      /regions\.geojson|weather\.geojson/.test(String(call[0])),
+    );
+    expect(manifests.length).toBeGreaterThan(0);
+    for (const [url, init] of manifests) {
+      expect(init && init.signal, String(url)).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('takes the four overlay feeds along with it', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    for (const feed of [
+      '/api/weather.geojson',
+      '/api/favourites.geojson',
+      '/api/routes.geojson',
+      '/api/community-reports.geojson',
+    ]) {
+      expect(urls).toContain(feed);
+    }
+  });
+
+  it('resolves against every country, not the ones a client happens to hold', async () => {
+    // SNOW-931's lesson, applied where there is no `pwaMapCountries` to
+    // ask: a Swiss border area whose plan skips France is exactly the
+    // under-fetch `inside-the-boundary-is-complete.md` promises not to
+    // produce.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const asked = window.fetch.mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.includes('country=ch'))).toBe(true);
+    expect(asked.some((url) => url.includes('country=fr'))).toBe(true);
+  });
+
+  it('stamps the record and re-checks, so the report is the receipt', async () => {
+    // Nothing else on the site claims a download succeeded without
+    // verifying it, and this is not going to be the first thing that does.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentAt !== '2026-09-01T10:00:00.000Z';
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentIncomplete).toBeUndefined();
+    // And the row is Yes with no control, because the re-run found the
+    // content current.
+    await vi.waitUntil(
+      () =>
+        !document
+          .querySelector('[data-audit-row="area:' + AREA_ID + '"]')
+          .querySelector('[data-audit-complete]'),
+      { timeout: 5000 },
+    );
+  });
+
+  it('records the shortfall when the warm falls short', async () => {
+    // SNOW-932's durable flag, written from this entry point too — one
+    // meaning, two entry points, so a refresh from here and a refresh
+    // from the map's roundel cannot leave the record disagreeing.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.pwaWarmCache.mockImplementationOnce(async (urls) => {
+      warmed.push(urls);
+      return { ok: 1, failed: 2, bytes: 10 };
+    });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
+  it('appears on BOTH paint paths, animated and reduced-motion', async () => {
+    // The reduced-motion path nearly shipped without it. A row is BUILT
+    // DETACHED and appended afterwards, so the gate could not be a
+    // `closest` from inside the row — it answered null there, and the
+    // control silently never appeared for anyone with reduced motion on.
+    for (const reduced of [true, false]) {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: reduced }),
+      });
+
+      const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+      expect(row.querySelector('[data-audit-complete]'), String(reduced)).not.toBeNull();
+    }
+  });
+
+  it('is not offered on a host with no endpoints rendered', async () => {
+    // static/offline.html has no server to render them — and no
+    // connection either, which is the whole reason it exists. A control
+    // there would offer a fetch that cannot arrive.
+    installCachesStub({ [SHELL]: [] });
+    await seedMeta({
+      'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })],
+    });
+    document.body.innerHTML = `
+      <div data-offline-audit>
+        <button data-offline-audit-run></button>
+        <div data-offline-audit-output hidden></div>
+        <p data-offline-audit-status></p>
+      </div>
+    `;
+    audit.init();
+    document.querySelector('[data-offline-audit-run]').click();
+    await vi.waitUntil(
+      () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
+      { timeout: 5000 },
+    );
+
+    expect(document.querySelector('[data-audit-complete]')).toBeNull();
+  });
+});

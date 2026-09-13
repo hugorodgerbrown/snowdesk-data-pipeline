@@ -456,6 +456,58 @@ describe("an area's content age (SNOW-926)", () => {
     expect(report.summary.split('Stale inside').length).toBe(2);
   });
 
+  it('carries the area id and a has-something-to-fetch flag (SNOW-925)', () => {
+    // What a control needs in order to act, beside the readout rather
+    // than folded into it — the row's answer is still the same three
+    // words, and why the area is behind is still said once in the
+    // summary.
+    const stale = row(
+      core.buildReport(withArea({ contentAt: '2026-09-08T06:00:00.000Z' }), STRINGS),
+      'area:r1',
+    );
+
+    expect(stale.areaId).toBe('r1');
+    expect(stale.completable).toBe(true);
+    // Unchanged: the readout is the readout.
+    expect(stale.value).toBe(
+      row(
+        core.buildReport(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS),
+        'area:r1',
+      ).value,
+    );
+  });
+
+  it('offers nothing on an area that is already complete', () => {
+    const fresh = row(
+      core.buildReport(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS),
+      'area:r1',
+    );
+
+    expect(fresh.completable).toBe(false);
+  });
+
+  it('offers nothing on an area whose TILES do not verify', () => {
+    // The boundary of what a page with no map can honestly offer: the
+    // tile half needs the loaded basemap style. Such a row keeps the
+    // Repair remedy the report already points it at.
+    const broken = row(
+      core.buildReport(
+        withArea({ entries: ['https://t/12/1/1.pbf'], contentAt: null }),
+        STRINGS,
+      ),
+      'area:r1',
+    );
+
+    expect(broken.completable).toBe(false);
+  });
+
+  it('carries neither field on a row that is not a download', () => {
+    const check = row(core.buildReport(healthy(), {}), 'app-opens');
+
+    expect(check.areaId).toBeUndefined();
+    expect(check.completable).toBeUndefined();
+  });
+
   it('adds no row of its own', () => {
     const stale = core.buildReport(
       withArea({ contentAt: '2026-09-08T06:00:00.000Z' }),
