@@ -695,6 +695,7 @@ Read these when working in the relevant area:
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |
+| Terrain elevation tileset (swissALTI3D → 5 m EPSG:3035 Int16 grid; `/terrain/v1/{x}/{y}.s16`, grid.json, the 204 rule, TERRAIN_VERSION; built in the snowdesk-tiles repo) | [`docs/runbooks/terrain-tileset.md`](docs/runbooks/terrain-tileset.md) |
 | Worktree DB seeding, dev credentials, seed_test_data + seed_test_week (golden week) dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |
 | Claude Code hooks (SessionStart/SessionEnd/PreToolUse, setup-remote-env, init-worktree, mark-worktree-cleanable, claude-hook-deny-command) | [`docs/claude-code-hooks.md`](docs/claude-code-hooks.md) |
 | Domains requesting network-egress allowlisting for Claude Code on the web environments (accumulated from EGRESS_BLOCKED hits during routines) | [`docs/environment-network-allowlist.md`](docs/environment-network-allowlist.md) |
