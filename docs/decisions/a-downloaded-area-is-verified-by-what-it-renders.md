@@ -299,6 +299,20 @@ a day-old bulletin.
 A content-incomplete row is **not** dimmed, and does not reuse the
 "Incomplete" line. Dimming on that sheet means "listed, but not available
 offline", and this area *is* available offline — its tiles are whole and
-its map draws. What is behind is the news on it. The row says **"Bulletins
-out of date"** and carries a Refresh, which is a different condition from
-an orphan or a row that cannot render, and must keep reading as one.
+its map draws. What is behind is the news on it.
+
+Both halves of that follow from the same reading, and the second is the
+one easy to get wrong. "Incomplete" **replaces** the meta line because a
+row in that state has nothing useful to say about itself: it is not a
+usable download, so its kind and size are not the fact worth stating. A
+content shortfall is a **clause appended** to the ordinary line instead —
+`Custom area · OpenFreeMap · 12.0 MB · Bulletins not saved` — because the
+row keeps every one of those facts and adds a caveat to them. Taking the
+whole line would say the download failed just as surely as dimming it
+would, in the one place the reader looks to find out what this download
+is. A caveat on a Yes, not a No of its own.
+
+The words are chosen against the same test. Not "out of date": an area
+whose bulletins never arrived at all is not stale, it is short, and
+"Refresh" is offered for both. **"Bulletins not saved"** says the thing
+that is true of every row that carries it.

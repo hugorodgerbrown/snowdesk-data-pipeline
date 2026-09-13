@@ -183,9 +183,9 @@ function buildFixture() {
       <span data-string="kind-incomplete">Incomplete</span>
       <span data-string="repair-row-label">Repair %(name)s</span>
       <span data-string="repair-failed">That download couldn't be repaired. Try again.</span>
-      <span data-string="kind-content-stale">Bulletins out of date</span>
+      <span data-string="kind-content-incomplete">Bulletins not saved</span>
       <span data-string="refresh-row-label">Refresh %(name)s</span>
-      <span data-string="refresh-failed">Those bulletins couldn't be updated. Try again.</span>
+      <span data-string="refresh-failed">Those bulletins couldn't be saved. Try again.</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
@@ -1411,19 +1411,23 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     ];
   }
 
-  it('says its bulletins are out of date, not that it is incomplete', async () => {
+  it('adds its shortfall as a clause, keeping the kind, basemap and size', async () => {
     // Two different conditions, and the sheet must not conflate them. An
-    // "Incomplete" row cannot be used offline at all; this one can — its
-    // tiles are whole and its map draws. What is behind is the perishable
-    // half.
+    // "Incomplete" row REPLACES its meta line because it has nothing
+    // useful to say about itself — it cannot be used offline at all. This
+    // one can: its tiles are whole and its map draws. So the ordinary
+    // line survives and the shortfall is appended to it, which is the
+    // same caveat-on-a-Yes shape as the row not being dimmed.
     seed({ 'basemap.customAreas': customAreaWithStaleContent() });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
-      'Bulletins out of date',
-    );
+    const meta = firstRowElement().querySelector('[data-row-meta]').textContent;
+    expect(meta).toContain('Custom area');
+    expect(meta).toContain('12.0 MB');
+    expect(meta.endsWith('· Bulletins not saved')).toBe(true);
+    expect(meta).not.toBe('Bulletins not saved');
   });
 
   it('does not dim the row, because the area IS available offline', async () => {

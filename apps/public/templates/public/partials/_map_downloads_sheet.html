@@ -196,15 +196,18 @@ the row's own label, so home.html loads that module once for both.
     <span data-string="repair-row-label">{% blocktrans %}Repair %(name)s{% endblocktrans %}</span>
     <span data-string="repair-failed">{% trans "That download couldn't be repaired. Try again." %}</span>
     {# SNOW-932: the Refresh control's accessible name, its failure toast, #}
-    {# and the subtitle for a row whose CONTENT half fell short.          #}
-    {# "Bulletins out of date" rather than a second "Incomplete": this    #}
-    {# row is NOT in the same condition as an orphan or a row that cannot #}
-    {# render. Its map draws, and it is available offline — what is       #}
-    {# behind is the perishable half. Saying "Incomplete" would send the  #}
-    {# reader looking for a broken download that is not there.            #}
-    <span data-string="kind-content-stale">{% trans "Bulletins out of date" %}</span>
+    {# and the CLAUSE appended to the meta line of a row whose CONTENT     #}
+    {# half fell short. Its own words rather than a second "Incomplete",   #}
+    {# and a clause rather than a replacement, for one reason: this row is #}
+    {# NOT in the same condition as an orphan or a row that cannot render. #}
+    {# Its map draws and it is available offline — what did not arrive is  #}
+    {# what the map draws ON. So the row keeps its kind, basemap and size  #}
+    {# and takes a caveat. Saying "Incomplete", or taking the whole line   #}
+    {# the way that state does, would send the reader looking for a broken #}
+    {# download that is not there.                                         #}
+    <span data-string="kind-content-incomplete">{% trans "Bulletins not saved" %}</span>
     <span data-string="refresh-row-label">{% blocktrans %}Refresh %(name)s{% endblocktrans %}</span>
-    <span data-string="refresh-failed">{% trans "Those bulletins couldn't be updated. Try again." %}</span>
+    <span data-string="refresh-failed">{% trans "Those bulletins couldn't be saved. Try again." %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
     {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}

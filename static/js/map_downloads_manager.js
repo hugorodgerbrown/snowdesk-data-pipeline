@@ -322,9 +322,9 @@
     // and the subtitle for a row whose CONTENT half fell short. A separate
     // word from 'kind-incomplete' on purpose — this row's map DRAWS and
     // the area IS available offline; it is the bulletins that are behind.
-    'kind-content-stale': 'Bulletins out of date',
+    'kind-content-incomplete': 'Bulletins not saved',
     'refresh-row-label': 'Refresh %(name)s',
-    'refresh-failed': "Those bulletins couldn't be updated. Try again.",
+    'refresh-failed': "Those bulletins couldn't be saved. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -1303,17 +1303,6 @@
       // fetch.
       if (row.orphaned || row.incomplete) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
-      } else if (row.contentIncomplete) {
-        // SNOW-932: the perishable half is behind. Its own line rather
-        // than "Incomplete", because this row is in a different condition
-        // from the two above it: nothing about it is broken and it is
-        // available offline. What it has is old news, and the Refresh in
-        // its menu is one tap from fixing exactly that.
-        //
-        // It takes the whole line, as the two above do, for the same
-        // reason they do: the kind and the size are not the fact worth
-        // stating on a row that has something else to say.
-        subtitle.textContent = STRINGS['kind-content-stale'] || '';
       } else if (row.onDevice === false) {
         // SNOW-XXX: the kind alone. This row is under a heading that
         // already says these are not here, and it has no size (nothing of
@@ -1331,6 +1320,21 @@
           basemap: basemapName(row.basemapKey),
           size: row.size,
         });
+        // SNOW-932: and a CLAUSE when this area's content half fell short
+        // — appended to the ordinary line rather than replacing it, which
+        // is the whole difference between this condition and the two
+        // above. "Incomplete" replaces the line because a row in that
+        // state has nothing useful to say about itself: it is not a usable
+        // download, so its kind and size are not the fact worth stating.
+        // This row IS a usable download — its tiles are whole, its map
+        // draws, it opens offline — and what is missing is what the map
+        // draws ON. So it keeps its kind, its basemap and its size and
+        // takes a caveat: "Custom area · OpenFreeMap · 12.0 MB ·
+        // Bulletins not saved". The same caveat-on-a-Yes shape the row is
+        // not dimmed for, and for the same reason.
+        if (row.contentIncomplete) {
+          subtitle.textContent += ' · ' + (STRINGS['kind-content-incomplete'] || '');
+        }
       }
       // No per-branch dimming here any more (SNOW-832). SNOW-645 dimmed
       // the SIZE COLUMN to `text-text-3` for an orphan, alongside the
