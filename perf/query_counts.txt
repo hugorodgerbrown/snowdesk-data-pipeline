@@ -6,4 +6,5 @@ home 7
 api_ratings 1
 api_resorts_by_region 2
 api_regions_geojson 2
+api_area_content 2
 bulletin_historic 9

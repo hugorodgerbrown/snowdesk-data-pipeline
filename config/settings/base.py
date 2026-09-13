@@ -1350,6 +1350,18 @@ BASEMAP = config("BASEMAP", default="openfreemap_liberty")
 # renders a 200 empty state, so it cannot fail a download.
 OFFLINE_CONTENT_PAST_DAYS = config("OFFLINE_CONTENT_PAST_DAYS", default=3, cast=int)
 
+# A negative reach is not a smaller window, it is an inverted one: the day
+# loop would run from a start AFTER its end and yield nothing but the day on
+# screen, which reads as "downloads carry no bulletins" rather than as a
+# misconfigured number. Refused at startup, where the operator who typed it
+# is still watching, rather than absorbed by the client's own fallback.
+if OFFLINE_CONTENT_PAST_DAYS < 0:
+    raise ImproperlyConfigured(
+        f"OFFLINE_CONTENT_PAST_DAYS is {OFFLINE_CONTENT_PAST_DAYS}; it counts "
+        f"days BACKWARDS from today and cannot be negative. Use 0 for today "
+        f"onwards."
+    )
+
 # SNOW-791: which drawing of the weather icons to serve. Snowdesk draws its
 # own (bin/build-weather-icons) and that is the default; the other sets are
 # kept for comparison at /_icon-sets/. See apps/weather/icon_sets.py for the

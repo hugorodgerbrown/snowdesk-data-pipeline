@@ -77,6 +77,12 @@ def _build_monitored_urls() -> list[tuple[str, str]]:
         ("api_ratings", f"/api/ratings/?d={today}&country=ch"),
         ("api_resorts_by_region", "/api/resorts-by-region/"),
         ("api_regions_geojson", "/api/regions.geojson?country=ch"),
+        # SNOW-953: the download planner's endpoint. Measured because it is
+        # the one endpoint this project added that walks EVERY micro-region's
+        # boundary to answer — memoised for a day, so what this baseline
+        # pins is the cold-cache walk. A box over the Valais, which is
+        # covered by the committed fixture on both local and CI.
+        ("api_area_content", "/api/area-content/?bbox=7.0,46.0,7.2,46.2"),
         # SNOW-79: ``api_offline_manifest_map`` was retired with the rest of
         # the precache feature. The route 404s now and the 404 path runs ~4
         # middleware queries — tracking that against a "0 queries" target
