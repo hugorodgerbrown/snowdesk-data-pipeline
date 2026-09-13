@@ -243,8 +243,22 @@ describe('what the gate does when it cannot tell', () => {
     verdict = { current: 'bbbbbbb2222', release: 'v30', shell: 'shell-silent' };
     workerReply = null;
 
-    expect(await window.pwaUpdateBanner.reveal()).toBe(true);
-  }, 10000);
+    // Fake timers rather than two real seconds of `CONTROLLER_IDENTITY_
+    // TIMEOUT_MS`. The wait is the behaviour under test — the read is
+    // bounded, so a silent worker resolves instead of hanging — but
+    // spending it for real would be the slowest file in the suite for no
+    // extra assurance, and a loaded pool is what makes other files' fixed
+    // sleeps flake.
+    vi.useFakeTimers();
+    try {
+      const pending = window.pwaUpdateBanner.reveal();
+      await vi.advanceTimersByTimeAsync(2100);
+
+      expect(await pending).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('reveals when the server names no shell', async () => {
     // A server that predates the field, or one that could not be reached
