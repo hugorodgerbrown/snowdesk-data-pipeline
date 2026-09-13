@@ -410,7 +410,7 @@ stamp reads as `none`: a corrupt field is not evidence of anything.
 
 ### The remedy is on the row (SNOW-925)
 
-Every row whose tiles verify carries one control, **Update**, which
+Every row whose tiles verify carries one control, **Sync now**, which
 fetches that row's content and then **re-runs the report**. The panel
 already refuses to claim a green it has not verified, and the one place
 the report is allowed to say a fetch worked is after checking.

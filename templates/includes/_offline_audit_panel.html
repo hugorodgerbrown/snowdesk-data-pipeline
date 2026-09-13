@@ -48,7 +48,7 @@ of a settings page nobody came here to audit.
     guess.
 {% endcomment %}
 {% comment %}
-    SNOW-925: what the per-row "Update" control needs to resolve an area's
+    SNOW-925: what the per-row "Sync now" control needs to resolve an area's
     content from a page with no map on it. The map reads the same
     endpoints off `#map`'s own dataset; this page has no `#map`, and
     re-deriving them client-side would be a second copy of routing only
@@ -344,14 +344,17 @@ of a settings page nobody came here to audit.
             data-string="check-failed"
         >{% translate "The check could not run. Copy the report and send it in." %}</span>
 
-        {# SNOW-925: the per-row control. "Update" rather than "Download" —  #}
-        {# the tiles are already here and are not touched; what this fetches #}
-        {# is the day's bulletins and weather inside the boundary, which is  #}
-        {# an update to a download that exists.                              #}
-        <span data-string="row-complete">{% translate "Update" %}</span>
+        {# SNOW-925: the per-row control. Not "Download" — the tiles are     #}
+        {# already here and are not touched; what this fetches is the day's  #}
+        {# bulletins and weather inside the boundary.                        #}
+        {# SNOW-951: "Sync now", the same words the network menu and the     #}
+        {# map's Manage downloads sheet use for the same action. That menu   #}
+        {# NAVIGATES HERE off the map page and presses this very control, so #}
+        {# a second name for it would read as a second thing to do.          #}
+        <span data-string="row-complete">{% translate "Sync now" %}</span>
         <span
             data-string="row-complete-label"
-        >{% translate "Update the bulletins and weather saved inside %(name)s" %}</span>
+        >{% translate "Sync the bulletins and weather saved inside %(name)s" %}</span>
         <span data-string="completing">{% translate "Saving this area’s bulletins and weather…" %}</span>
         <span data-string="completed">{% translate "Saved. Re-checking…" %}</span>
         <span

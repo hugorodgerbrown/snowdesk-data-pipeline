@@ -104,7 +104,7 @@
   var VERSION_PROBE_MS = 1500;
 
   // SNOW-925 review: the bound on the two manifest fetches the per-row
-  // Update control derives its plan from. `pwaWarmCache` settles on the
+  // sync control derives its plan from. `pwaWarmCache` settles on the
   // worker's own budget; these do not go through it, and without a bound
   // a connection that stalls without rejecting leaves the operation
   // pending — the button disabled, the status line mid-sentence, and the
@@ -397,12 +397,20 @@
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
     'check-failed': 'The check could not run. Copy the report and send it in.',
-    // SNOW-925: the per-row control and its status line. "Update" rather
-    // than "Download": the tiles are already here and are not touched —
-    // what this fetches is the day's bulletins and weather inside the
-    // boundary, which is an update to a download that exists.
-    'row-complete': 'Update',
-    'row-complete-label': 'Update the bulletins and weather saved inside %(name)s',
+    // SNOW-925: the per-row control and its status line. Not "Download":
+    // the tiles are already here and are not touched — what this fetches
+    // is the day's bulletins and weather inside the boundary.
+    //
+    // SNOW-951: "Sync now" rather than "Update", because this is now the
+    // same action under two roofs. The network menu's per-area button
+    // says "Sync", runs `syncArea` on the map page and NAVIGATES HERE
+    // everywhere else, landing the user on this row — so a second name
+    // for it would read as a second thing to do. The key keeps its
+    // `row-complete` name: it is the completion the report is talking
+    // about, and renaming the key would churn every call site for no
+    // reader's benefit.
+    'row-complete': 'Sync now',
+    'row-complete-label': 'Sync the bulletins and weather saved inside %(name)s',
     completing: 'Saving this area’s bulletins and weather…',
     completed: 'Saved. Re-checking…',
     'complete-failed':
@@ -1212,7 +1220,7 @@
    * Fetch one area's shared feeds and boundary content into the cache
    * (SNOW-925).
    *
-   * The payload behind the per-row "Update" control. Everything goes
+   * The payload behind the per-row "Sync now" control. Everything goes
    * through ``self.pwaWarmCache`` — the worker's own warm path — rather
    * than a ``fetch`` from here, for the reason the Save control already
    * documents: the worker stamps a same-origin HTML response with the
@@ -1870,7 +1878,7 @@
   }
 
   /**
-   * Put the "Update" control on a row that has something to fetch, or take
+   * Put the "Sync now" control on a row that has something to fetch, or take
    * it off one that no longer has (SNOW-925).
    *
    * A THIRD cell, and the two-cell rule above survives it. That rule is
@@ -2352,7 +2360,7 @@
       });
     }
 
-    // SNOW-925: the per-row "Update" control. Delegated on the output
+    // SNOW-925: the per-row "Sync now" control. Delegated on the output
     // element, because every row is repainted on each run and a listener
     // bound to a button would go with the button it was bound to.
     //

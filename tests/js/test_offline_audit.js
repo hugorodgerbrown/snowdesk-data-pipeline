@@ -1092,7 +1092,7 @@ describe('canOpenMap — the offline page’s one way forward', () => {
   });
 });
 
-describe('the per-row "Update" control (SNOW-925)', () => {
+describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   const SHELL = 'snowdesk-shell-abc';
   const REGION_ID = 'CH-4115';
   const AREA_ID = 'region-' + REGION_ID;
