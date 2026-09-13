@@ -256,21 +256,22 @@
  *     The ground one tile covers, as ``[west, south, east, north]`` —
  *     the inverse of ``lonLatToTile``, and the only place the grid's
  *     squares get their geometry.
- *   featureBBox(feature) / bboxesOverlap(a, b) / pointInBBox(lon, lat, bbox)
- *     SNOW-924: the rectangle group behind "what is inside this area".
- *     ``featureBBox`` moved here from ``map.js`` (SNOW-811's copy, which
- *     is now a one-line adapter for MapLibre's nested pair). The two
- *     predicates are INCLUSIVE at the edges, unlike ``intersectBBox``
- *     above — see ``bboxesOverlap`` for why a shared edge counts.
+ *   featureBBox(feature)
+ *     SNOW-924: the lon/lat box a Feature covers, moved here from
+ *     ``map.js`` (SNOW-811's copy, which is now a one-line adapter for
+ *     MapLibre's nested pair). It kept company with two edge-inclusive
+ *     predicates until SNOW-953 moved the selection they served to the
+ *     server; their rule and its rationale now live in
+ *     ``apps/regions/services/area_content.py``.
  *   bboxFromZoomRanges(z) / areaBBox(area)
  *     SNOW-924: the ground an area covers, from its stored record alone.
  *     A custom area is its ``bbox``; a region area has only ``z`` since
  *     SNOW-583, so its rectangle is derived from the tile rows.
- *   areaContentPlan({bbox, regionFeatures, weatherFeatures, days,
- *   weatherDetailTemplate})
- *     SNOW-924: the bulletin pages and weather sheets inside an area —
- *     the two sets too large to fetch wholesale. Read its docstring for
- *     the contract that makes a rectangle the right test, and for why a
+ *   areaContentURLs({regions, weather, days, weatherDetailTemplate})
+ *     SNOW-953: the bulletin pages and weather sheets inside an area, as
+ *     urls, over the answer ``/api/area-content/`` gives. It composes
+ *     rather than selects — SNOW-924's rectangle test over every
+ *     country's outlines is gone from here. Read its docstring for why a
  *     weather sheet is one UNDATED url per location.
  *   cachedTilesFromURLs(spec, cachedURLs, zoom)
  *     The tiles a cache actually holds, read back out of its URLs — the
@@ -2273,43 +2274,6 @@
   }
 
   /**
-   * Whether two ``[west, south, east, north]`` boxes touch or overlap.
-   *
-   * INCLUSIVE at the edges, which is the one thing separating it from
-   * `intersectBBox` above — that one uses a strict `<` because it returns
-   * the overlapping REGION, and a zero-area overlap is not a region. Here
-   * the question is only "might this region have anything in the area",
-   * and a shared edge costs one HTML page to include and a missing
-   * bulletin to exclude. The contract picks the page.
-   *
-   * @param {number[]} a
-   * @param {number[]} b
-   * @returns {boolean} ``false`` when either is not a well-formed box —
-   *   an unanswerable question is not an overlap.
-   */
-  function bboxesOverlap(a, b) {
-    const ok = (box) => Array.isArray(box) && box.length === 4 && box.every(Number.isFinite);
-    if (!ok(a) || !ok(b)) return false;
-    return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
-  }
-
-  /**
-   * Whether a point sits in a ``[west, south, east, north]`` box.
-   *
-   * Inclusive at the edges, for the same reason as `bboxesOverlap`.
-   *
-   * @param {number} lon
-   * @param {number} lat
-   * @param {number[]} bbox
-   * @returns {boolean}
-   */
-  function pointInBBox(lon, lat, bbox) {
-    if (!Array.isArray(bbox) || bbox.length !== 4) return false;
-    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false;
-    return lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
-  }
-
-  /**
    * The ground a blob's tile ranges cover, as a lon/lat box.
    *
    * The way to a rectangle for a REGION area, which stores none: SNOW-583
@@ -2383,20 +2347,27 @@
   }
 
   /**
-   * What an area's boundary contains: bulletin pages and weather sheets.
+   * The urls for what an area's boundary contains, from the server's answer.
    *
-   * The two sets that cannot be fetched wholesale. There are 461
-   * micro-regions across the estate and ~550 public weather locations, so
-   * unlike the four overlay feeds — one small request each, taken whole
-   * and unfiltered — these have to be narrowed to the area. They are
-   * narrowed by rectangle, per the contract at the top of this group.
+   * SNOW-953 replaced `areaContentPlan`, which made the SELECTION here —
+   * walking `regions.geojson`'s features and testing each one's bounding
+   * box against the area's. Doing that meant loading every country's
+   * outlines first and awaiting them (SNOW-931), which is 764 KB over the
+   * wire to discover roughly 55 KB of pages, on the thin connection the
+   * whole feature exists to serve. `/api/area-content/` answers the same
+   * question from the boundaries it already holds, in one small request,
+   * and the failure mode SNOW-931 closed cannot recur — there is no
+   * "which countries are loaded" state left for the answer to depend on.
    *
-   * A bulletin URL is `/<region_id>/<slug>/<date>/`, built from the two
-   * properties `regions.geojson` carries for exactly this purpose. The id
-   * is LOWERCASED because `bulletin_detail` is wrapped in
-   * `@lowercase_region_id` and 301s a mixed-case one — a redirect the
-   * service worker would cache as the entry for a URL nothing ever
-   * requests again.
+   * What stays here is the url composition, which is a client concern:
+   * the day window comes from the page (the scrubber's `data-today`, its
+   * `data-content-past-days`, and the last published day), and the
+   * weather-sheet template comes from `#map`'s dataset.
+   *
+   * A bulletin URL is `/<region_id>/<slug>/<date>/`. The id is LOWERCASED
+   * because `bulletin_detail` is wrapped in `@lowercase_region_id` and
+   * 301s a mixed-case one — a redirect the service worker would cache as
+   * the entry for a URL nothing ever requests again.
    *
    * A weather sheet is ONE undated URL per location, not one per day, and
    * that is a correctness point rather than a saving: `?date=` selects
@@ -2408,38 +2379,30 @@
    * for this day" pages out of every seven.
    *
    * @param {Object} options
-   * @param {number[]} options.bbox The area's rectangle.
-   * @param {Array<Object>} [options.regionFeatures] `regions.geojson`
-   *   features. Absent or empty yields no bulletins — "cannot say", which
-   *   the caller reports rather than treating as "none inside".
-   * @param {Array<Object>} [options.weatherFeatures] `weather.geojson`
-   *   point features.
+   * @param {Array<{id?: string, slug?: string}>} [options.regions] The
+   *   endpoint's `regions` list. Absent or empty yields no bulletins.
+   * @param {Array<{short_id?: string}>} [options.weather] The endpoint's
+   *   `weather` list.
    * @param {string[]} [options.days] Date keys to take a bulletin for,
-   *   supplied by the caller from the same forward bound the scrubber and
-   *   calendar use (SNOW-927), never from a clock in here.
+   *   supplied by the caller from the window the scrubber and calendar
+   *   answer to (SNOW-927/SNOW-953), never from a clock in here.
    * @param {string} [options.weatherDetailTemplate] A URL carrying
    *   ``__SHORTID__``, as `#map`'s `data-weather-detail-url` does.
-   * @returns {{regionIds: string[], bulletinUrls: string[],
-   *   weatherDetailUrls: string[]}} Each list deduplicated and stable in
-   *   input order, so a run's URL list is reproducible.
+   * @returns {{bulletinUrls: string[], weatherDetailUrls: string[]}} Each
+   *   list deduplicated and stable in the server's order, so a run's URL
+   *   list is reproducible.
    */
-  function areaContentPlan(options) {
+  function areaContentURLs(options) {
     const opts = options || {};
-    const bbox = opts.bbox;
-    const out = { regionIds: [], bulletinUrls: [], weatherDetailUrls: [] };
-    if (!Array.isArray(bbox) || bbox.length !== 4) return out;
+    const out = { bulletinUrls: [], weatherDetailUrls: [] };
 
     const days = Array.isArray(opts.days) ? opts.days.filter(Boolean) : [];
     const seenRegion = new Set();
-    for (const feature of opts.regionFeatures || []) {
-      const properties = (feature && feature.properties) || {};
-      const regionId = properties.id || properties.regionID;
-      if (!regionId || seenRegion.has(regionId)) continue;
-      if (!bboxesOverlap(bbox, featureBBox(feature))) continue;
+    for (const region of opts.regions || []) {
+      const regionId = region && region.id;
+      const slug = region && region.slug;
+      if (!regionId || !slug || seenRegion.has(regionId)) continue;
       seenRegion.add(regionId);
-      out.regionIds.push(regionId);
-      const slug = properties.slug;
-      if (!slug) continue;
       for (const day of days) {
         out.bulletinUrls.push('/' + String(regionId).toLowerCase() + '/' + slug + '/' + day + '/');
       }
@@ -2448,11 +2411,9 @@
     const template = opts.weatherDetailTemplate;
     if (template) {
       const seenLocation = new Set();
-      for (const feature of opts.weatherFeatures || []) {
-        const shortId = feature && feature.properties && feature.properties.short_id;
-        const position = feature && feature.geometry && feature.geometry.coordinates;
-        if (!shortId || seenLocation.has(shortId) || !Array.isArray(position)) continue;
-        if (!pointInBBox(position[0], position[1], bbox)) continue;
+      for (const point of opts.weather || []) {
+        const shortId = point && point.short_id;
+        if (!shortId || seenLocation.has(shortId)) continue;
         seenLocation.add(shortId);
         out.weatherDetailUrls.push(template.replace('__SHORTID__', shortId));
       }
@@ -2915,11 +2876,9 @@
     bboxPolygon: bboxPolygon,
     tileBounds: tileBounds,
     featureBBox: featureBBox,
-    bboxesOverlap: bboxesOverlap,
-    pointInBBox: pointInBBox,
     bboxFromZoomRanges: bboxFromZoomRanges,
     areaBBox: areaBBox,
-    areaContentPlan: areaContentPlan,
+    areaContentURLs: areaContentURLs,
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,

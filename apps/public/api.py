@@ -15,6 +15,10 @@ Swiss region choropleth and back the per-region tooltip:
   docstring for the exact shape.
 * ``/api/major-regions.geojson``           — FeatureCollection of L1 region polygons.
 * ``/api/sub-regions.geojson``             — FeatureCollection of L2 region polygons.
+* ``/api/area-content/``                   — SNOW-953: the micro-regions and
+  public weather locations inside one ``?bbox=w,s,e,n`` rectangle. What an
+  offline download's boundary contains, answered where the boundaries are
+  rather than from four countries of region outlines on the client.
 * ``/api/region-basemap-tiles/``           — SNOW-521: the full precomputed
   basemap_download blob (incl. ``z`` tile ranges) for one MicroRegion,
   ``?id=<region_id>``. Fetched on demand when the user clicks the
@@ -73,6 +77,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 import secrets
 import uuid
@@ -123,6 +128,13 @@ from apps.regions.models import (
     MicroRegion,
     Resort,
     SubRegion,
+)
+from apps.regions.services.area_content import (
+    RegionBox,
+    WeatherPoint,
+    area_content as build_area_content,
+    micro_region_index,
+    weather_location_index,
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.weather.models import Weather
@@ -1171,6 +1183,151 @@ def region_basemap_tiles(request: HttpRequest) -> HttpResponse:
         raise Http404(f"No computed basemap_download for region {region_id!r}")
 
     return _geojson_response(request, region.basemap_download)
+
+
+# Cache key segment for the two reference indexes behind ``/api/area-content/``.
+# ``v1`` so a change to either index's SHAPE (a field added to a row, an
+# ordering rule) cannot be answered from an entry built by the previous
+# deploy, following ``weather_geojson``'s ``v2`` precedent.
+_AREA_CONTENT_INDEX_CACHE_PREFIX = "area-content-index:v1"
+
+
+@vary_on_headers("Accept-Encoding")
+@require_GET
+def area_content(request: HttpRequest) -> HttpResponse:
+    """
+    Return the micro-regions and weather locations inside one rectangle.
+
+    SNOW-953. What a downloaded area's boundary contains, so a client
+    planning an offline download does not have to work it out from every
+    country's region outlines — 764 KB over the wire to discover roughly
+    55 KB of pages, on the thin connection the feature exists to serve.
+
+    ``?bbox=west,south,east,north`` in degrees, and nothing else. Date-free
+    on purpose: the client already holds its own day window (today, the
+    days behind it per ``OFFLINE_CONTENT_PAST_DAYS``, and the last
+    published day ahead) and composes the bulletin URLs itself, so this
+    answer is the same for every caller and every day — which is what
+    makes it cacheable.
+
+    Response shape::
+
+        {"regions": [{"id": "CH-4115", "slug": "brunig-lungern"}, ...],
+         "weather": [{"short_id": "Ab3dE_fGh1J"}, ...]}
+
+    The selection rule is unchanged by the move and is the one
+    ``docs/decisions/inside-the-boundary-is-complete.md`` states: an
+    edge-inclusive rectangle over each region's bounding box, never real
+    geometry, deliberately over-inclusive. What the move removes is the
+    failure mode SNOW-931 closed — the candidate set being whatever
+    countries the client happened to have loaded — which stops being
+    possible here, because the candidate set is the whole mapped estate on
+    every request.
+
+    Both indexes are fixture-backed reference data (a region's boundary
+    moves on a deploy; the location estate moves on an import), so each is
+    memoised for ``_GEOJSON_CACHE_MAX_AGE`` and the request itself costs no
+    query in the common case — an EMPTY index for a much shorter one, see
+    ``_cached_area_content_index``. The response takes ``_geojson_response``'s
+    ETag and revalidatable policy — it is not GeoJSON, but it is exactly
+    the static-reference kind of answer that helper was written for — and
+    the same ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment
+    the geojson endpoints get, or ``Vary: Cookie`` defeats the caching.
+    See ``regions_geojson`` for the full rationale.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, or 400 for a bbox that is
+        missing, non-numeric, the wrong length, out of range or inverted.
+
+    """
+    bbox = _parse_bbox_param(request.GET.get("bbox", ""))
+    if bbox is None:
+        return JsonResponse({"error": "invalid_bbox"}, status=400)
+
+    regions = cast(
+        "list[RegionBox]",
+        _cached_area_content_index("regions", micro_region_index),
+    )
+    locations = cast(
+        "list[WeatherPoint]",
+        _cached_area_content_index("weather", weather_location_index),
+    )
+    payload = build_area_content(bbox, regions=regions, locations=locations)
+    # The empty branch turns on the INDEX, not on the answer. An area over
+    # open water legitimately contains nothing, and that is a durable fact
+    # about the rectangle; an estate with no regions in it at all is a fact
+    # about this deployment not having its geometry yet, and pinning that
+    # for a day is what the branch exists to avoid — here it would pin
+    # "your download needs no bulletins" over every rectangle on Earth.
+    return _geojson_response(request, payload, empty=not regions)
+
+
+def _cached_area_content_index(name: str, build: Callable[[], list[Any]]) -> list[Any]:
+    """
+    Memoise one reference index, briefly when it came back empty.
+
+    The same exception ``_cached_region_payload`` makes, for the same
+    reason and one layer further in. An empty index is not a durable fact
+    about the estate — it is a fixture not loaded, a migration not run, a
+    backfill still to come — and it is more dangerous here than it is
+    there: a blank map is visibly blank, while an empty plan looks like a
+    complete one, so a client would fetch nothing, land everything it
+    fetched, and stamp the area complete for the day the entry lived.
+
+    Args:
+        name: ``regions`` or ``weather`` — the index to memoise.
+        build: Builds the index on a miss.
+
+    Returns:
+        The index, from cache or freshly built.
+
+    """
+    key = f"{_AREA_CONTENT_INDEX_CACHE_PREFIX}:{name}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cast("list[Any]", cached)
+    index = build()
+    timeout = _DYNAMIC_CACHE_MAX_AGE if not index else _GEOJSON_CACHE_MAX_AGE
+    cache.set(key, index, timeout=timeout)
+    return index
+
+
+def _parse_bbox_param(raw: str) -> list[float] | None:
+    """
+    Parse and validate a ``west,south,east,north`` query parameter.
+
+    Rejects an inverted box (``west > east`` or ``south > north``) rather
+    than normalising it: the two rectangles a client could have meant are
+    different sets of bulletins, and quietly picking one would plan a
+    download nobody asked for.
+
+    Args:
+        raw: The raw ``?bbox=`` value, possibly empty.
+
+    Returns:
+        ``[west, south, east, north]``, or ``None`` when the value is
+        missing, non-numeric, not four parts, out of range or inverted.
+
+    """
+    parts = [part.strip() for part in raw.split(",")] if raw else []
+    if len(parts) != 4:
+        return None
+    try:
+        west, south, east, north = (float(part) for part in parts)
+    except ValueError:
+        return None
+    if not all(math.isfinite(value) for value in (west, south, east, north)):
+        return None
+    if not (-180.0 <= west <= 180.0 and -180.0 <= east <= 180.0):
+        return None
+    if not (-90.0 <= south <= 90.0 and -90.0 <= north <= 90.0):
+        return None
+    if west > east or south > north:
+        return None
+    return [west, south, east, north]
 
 
 @vary_on_headers("Accept-Encoding")

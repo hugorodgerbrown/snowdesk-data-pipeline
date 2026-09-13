@@ -411,6 +411,13 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Danger choropleth's opening opacity step",
     ),
     SettingSpec("WEATHER_ICON_SET", note="Which weather icon set to serve"),
+    # SNOW-953: cast=int in base.py, so a non-numeric value raises there
+    # and there is no shape left for a validator here to check. Zero is a
+    # legitimate value (today onwards), which is why there is no minimum.
+    SettingSpec(
+        "OFFLINE_CONTENT_PAST_DAYS",
+        note="Past days of bulletins an offline download carries",
+    ),
     # --- Host allowlists (lists built by decouple's Csv cast) -------------
     SettingSpec("ALLOWED_HOSTS", note="Django host allowlist"),
     SettingSpec("CSRF_TRUSTED_ORIGINS", note="CSRF trusted origins"),

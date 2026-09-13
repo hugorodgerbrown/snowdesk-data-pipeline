@@ -99,6 +99,20 @@ const WEATHER_GEOJSON = {
   ],
 };
 
+/**
+ * The server's answer for this area's rectangle (SNOW-953).
+ *
+ * The selection is the endpoint's now, so the fixture states its RESULT
+ * rather than the geometry it was made from: the region the boundary
+ * covers, and the one weather location inside it. `OUTSIDEbbbb` (Davos,
+ * in the weather feed above) is absent for the same reason the server
+ * would leave it out — it is not in the box.
+ */
+const AREA_CONTENT = {
+  regions: [{ id: REGION_ID, slug: REGION_SLUG }],
+  weather: [{ short_id: 'INSIDEaaaaa' }],
+};
+
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
@@ -254,6 +268,7 @@ function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
+         data-area-content-url="/api/area-content/"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
          data-weather-url="/api/weather.geojson"
@@ -267,6 +282,7 @@ function buildFixture() {
          data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <div id="season-scrubber" data-today="${TODAY}" data-today-pct="50"
+         data-content-past-days="1"
          data-season-start="2025-11-01" data-season-end="2026-05-31" data-state="ready">
       <div class="season-scrubber-track"><div class="season-scrubber-thumb"></div></div>
       <div class="season-scrubber-loading"></div>
@@ -316,6 +332,15 @@ function warmedUrls(callIndex) {
 let mapStub;
 let overlayStore;
 
+/**
+ * What `/api/area-content/` answers on the next call.
+ *
+ * A function rather than a constant so a test can make the endpoint fail
+ * or come back empty — the two states that used to be reached by emptying
+ * the client's own feature set, which no longer decides anything.
+ */
+let areaContentAnswer = () => AREA_CONTENT;
+
 /** Select the region and click the control, settling out of 'busy'. */
 async function clickControl() {
   const btn = document.getElementById('map-download-control');
@@ -347,6 +372,16 @@ beforeAll(async () => {
       const href = String(url);
       let body = {};
       if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
+      if (href.includes('area-content')) {
+        const answer = areaContentAnswer();
+        // A null answer stands for an endpoint that could not be read —
+        // the state that makes a plan SHORT rather than empty.
+        return Promise.resolve(
+          answer
+            ? { ok: true, json: () => Promise.resolve(answer) }
+            : { ok: false, json: () => Promise.resolve({}) },
+        );
+      }
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
       if (href.includes('weather.geojson')) body = WEATHER_GEOJSON;
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
@@ -399,10 +434,25 @@ describe('a download takes the content inside its boundary', () => {
     expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
   });
 
+  it('reaches BACK the number of days the deployment asks for (SNOW-953)', () => {
+    // `data-content-past-days="1"` in the fixture. Forward-only meant a
+    // user carried today and tomorrow but not yesterday — and yesterday's
+    // bulletin is what says what the snowpack has just been through.
+    expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-05/`);
+  });
+
+  it('does not reach further back than that', () => {
+    // The window is a setting, not an appetite: every extra day is a page
+    // per region over the connection this feature exists for.
+    expect(posted).not.toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-04/`);
+  });
+
   it('posts the weather sheet for a location inside, and not one outside', () => {
     // The whole feed is cached either way — it is one small request. What
     // the boundary narrows is the per-location sheets, of which there are
-    // ~550 across the estate.
+    // ~550 across the estate. Since SNOW-953 the narrowing is the
+    // server's, so what this asserts is that the client asks for exactly
+    // what it was told and invents nothing from the feed it also holds.
     expect(posted).toContain('/api/weather/INSIDEaaaaa/detail/');
     expect(posted).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
   });
@@ -554,18 +604,24 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
   });
 
   it('counts a short PLAN, even when every url in it lands', async () => {
-    // SNOW-931's hanging thread. A country the client could not fetch is
-    // never listed, so there is nothing in the tally to fail — the run
-    // reports `ok === total` over a list that was missing bulletins. Before
-    // this the shortfall reached the debug log and nothing else.
-    const countries = window.pwaMapCountries;
-    window.pwaMapCountries = {
-      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
-    };
+    // SNOW-931's hanging thread, in SNOW-953's shape: the plan can no
+    // longer be short of a COUNTRY, but it can still be short of
+    // everything, when the endpoint that answers for it cannot be read.
+    // Nothing in the tally fails either way — the run reports
+    // `ok === total` over a list that was missing bulletins — so the
+    // shortfall has to ride out on its own flag.
+    const btn = document.getElementById('map-download-control');
+    areaContentAnswer = () => null;
     try {
-      expect(await tapAndSettle()).toBe('partial');
+      btn.click();
+      // No warm-cache call to wait on: a plan the endpoint could not
+      // answer for is EMPTY as well as short, so nothing is dispatched.
+      // That is exactly why the flag has to be written here rather than
+      // by the run's `finish` — see `refreshAreaContent`.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(btn.dataset.downloadState).toBe('partial');
     } finally {
-      window.pwaMapCountries = countries;
+      areaContentAnswer = () => AREA_CONTENT;
     }
 
     const record = await recordedRegion();
@@ -575,28 +631,13 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
   /**
    * Run `body` with this area's boundary resolving to NOTHING to fetch.
    *
-   * Both halves have to go: `areaContentPlan` takes the region features and
-   * the weather features separately, and either one left populated still
-   * yields urls. The core is frozen, so the plan is emptied through its real
-   * inputs rather than by stubbing the resolver — which also keeps the test
-   * honest about what an empty plan actually is.
+   * SNOW-953: an empty plan is an empty ANSWER now — both lists, because
+   * either one left populated still yields urls. It used to be produced by
+   * emptying the client's own `featureByRegionId` and its weather feed,
+   * which no longer decide anything.
    */
   async function withEmptyPlan(body) {
-    // `featureByRegionId` is a getter on the state object, so the set it
-    // returns is emptied in place and refilled afterwards rather than
-    // swapped out.
-    const features = window.snowdeskMapState.featureByRegionId;
-    const saved = { ...features };
-    const realFetch = globalThis.fetch;
-    for (const key of Object.keys(features)) delete features[key];
-    globalThis.fetch = vi.fn((url) =>
-      String(url).includes('weather.geojson')
-        ? Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ type: 'FeatureCollection', features: [] }),
-          })
-        : realFetch(url),
-    );
+    areaContentAnswer = () => ({ regions: [], weather: [] });
     try {
       const btn = document.getElementById('map-download-control');
       btn.click();
@@ -605,8 +646,7 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
       await body(btn);
     } finally {
-      Object.assign(features, saved);
-      globalThis.fetch = realFetch;
+      areaContentAnswer = () => AREA_CONTENT;
     }
   }
 
@@ -629,9 +669,9 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
 
   it('leaves the flag alone when an empty plan was itself SHORT', async () => {
     // The other half of the same rule, and why `short` cannot be collapsed
-    // into "the list was empty". A plan assembled while a country was
-    // unreachable says nothing about what the boundary holds, so an empty
-    // one is not evidence of completeness and must not clear anything.
+    // into "the list was empty". A plan whose endpoint never answered says
+    // nothing about what the boundary holds, so an empty one is not
+    // evidence of completeness and must not clear anything.
     const row = await window.pwaDb.get('meta:app', 'basemap.regions');
     await window.pwaDb.put('meta:app', {
       key: 'basemap.regions',
@@ -642,17 +682,15 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
       ),
     });
 
-    const countries = window.pwaMapCountries;
-    window.pwaMapCountries = {
-      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
-    };
+    areaContentAnswer = () => null;
     try {
-      await withEmptyPlan(async () => {
-        const record = await recordedRegion();
-        expect(record.contentIncomplete).toBe(true);
-      });
+      const btn = document.getElementById('map-download-control');
+      btn.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const record = await recordedRegion();
+      expect(record.contentIncomplete).toBe(true);
     } finally {
-      window.pwaMapCountries = countries;
+      areaContentAnswer = () => AREA_CONTENT;
     }
   });
 });

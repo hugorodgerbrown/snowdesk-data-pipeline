@@ -1791,12 +1791,18 @@ control (below) rather than staying inert.
 
 It resolves after `loadBlob`, because the area's own ground is what it
 resolves against, and it is the one **async** member of the deps bundle:
-its first act is to cache the four overlay feeds, and the weather sheets it
-returns are derived from the weather feed it has just fetched. Which
-bulletins and which locations is
-`basemap_download_core.js`'s `areaContentPlan`, selecting by rectangle —
+its first act is to cache the four overlay feeds, and its second is to ask
+`/api/area-content/?bbox=…` which regions and which weather locations the
+area's rectangle contains (SNOW-953 — the selection used to be made here,
+against every country's outlines loaded first).
+`basemap_download_core.js`'s `areaContentURLs` composes the urls from that
+answer and the run's day window. The selection is still by rectangle —
 read [`decisions/inside-the-boundary-is-complete.md`](decisions/inside-the-boundary-is-complete.md)
 before making that test more precise, because the crudeness is the design.
+
+An endpoint that does not answer makes the plan **short**: the urls it did
+name still land, so no tally can see the gap, and both refresh paths record
+`contentIncomplete` on the area rather than stamping a completion over it.
 
 **Content goes FIRST, and the progress grid's offset absorbs it.**
 `progressGrid` is handed the index at which tile urls start, so anything
