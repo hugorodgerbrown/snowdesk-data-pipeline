@@ -349,6 +349,52 @@ describe('which build the banner calls yours', () => {
   });
 });
 
+describe('the identity message port', () => {
+  it('is closed on every settlement path', async () => {
+    // Assigning onmessage starts the port, and a reveal is not a one-off:
+    // pwa_version_check.js re-reveals the banner for every response
+    // carrying a confirmed drift. An unclosed port per response
+    // accumulates for as long as the page stays on the outdated build.
+    const closed = [];
+    const RealChannel = globalThis.MessageChannel;
+    class RecordingChannel extends RealChannel {
+      constructor() {
+        super();
+        const close = this.port1.close.bind(this.port1);
+        this.port1.close = () => {
+          closed.push(true);
+          close();
+        };
+      }
+    }
+    vi.stubGlobal('MessageChannel', RecordingChannel);
+
+    resetCopy();
+    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v34' });
+    stubVersionInfo('v34', 'bbbbbbb2222', {
+      current: 'bbbbbbb2222',
+      release: 'v34',
+      update_available: true,
+    });
+
+    window.pwaUpdateBanner.reveal();
+    await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
+    expect(closed).toHaveLength(1);
+
+    // And on the path where the worker never answers at all.
+    resetCopy();
+    stubController(null);
+    vi.useFakeTimers();
+    window.pwaUpdateBanner.reveal();
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(closed).toHaveLength(2));
+
+    vi.stubGlobal('MessageChannel', RealChannel);
+    clearController();
+  });
+});
+
 describe('pressing Reload', () => {
   it('acknowledges the click before the update starts', async () => {
     cta().click();

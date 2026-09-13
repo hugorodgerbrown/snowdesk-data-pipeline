@@ -759,31 +759,53 @@
         resolve(null);
         return;
       }
+      /** @type {MessageChannel} */
+      let channel;
+      try {
+        channel = new MessageChannel();
+      } catch (_err) {
+        resolve(null);
+        return;
+      }
       let settled = false;
-      /** @param {{build: string, release: string} | null} value */
+      /**
+       * Resolve once, and close the port however we got here.
+       *
+       * Assigning ``onmessage`` starts the port, and a reveal is not a
+       * one-off: ``pwa_version_check.js`` re-reveals the banner for every
+       * response carrying a confirmed drift, so a page left open on an
+       * outdated build would otherwise accumulate a live port per
+       * response until navigation. ``canOpenOffline`` in
+       * pwa_network_mode.js closes its port the same way.
+       *
+       * @param {{build: string, release: string} | null} value
+       */
       const settle = (value) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
+        try {
+          channel.port1.close();
+        } catch (_err) {
+          // Non-fatal.
+        }
         resolve(value);
       };
       const timer = setTimeout(() => settle(null), CONTROLLER_IDENTITY_TIMEOUT_MS);
+      channel.port1.onmessage = (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'build-identity') {
+          settle(null);
+          return;
+        }
+        settle({
+          build: String(data.build || '').trim(),
+          release: String(data.release || '').trim(),
+        });
+      };
       try {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = (event) => {
-          clearTimeout(timer);
-          const data = event.data;
-          if (!data || data.type !== 'build-identity') {
-            settle(null);
-            return;
-          }
-          settle({
-            build: String(data.build || '').trim(),
-            release: String(data.release || '').trim(),
-          });
-        };
         controller.postMessage({ type: 'build-identity' }, [channel.port2]);
       } catch (_err) {
-        clearTimeout(timer);
         settle(null);
       }
     });
