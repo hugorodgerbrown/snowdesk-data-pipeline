@@ -391,6 +391,49 @@
   }
 
   /**
+   * The stored custom areas, legacy row included (SNOW-928 review).
+   *
+   * A device that still holds its one custom download under the
+   * pre-SNOW-635 ``basemap.customArea`` key, and has not yet loaded a page
+   * that triggers the lazy migration, has a real download that a direct
+   * read of ``basemap.customAreas`` cannot see — so the line hid itself on
+   * exactly the oldest installs, which are the ones most likely to be
+   * holding content from weeks ago. Such a record predates ``contentAt``
+   * entirely, so it takes the "no bulletins saved yet" sentence, which is
+   * true of it.
+   *
+   * READ-ONLY, and deliberately not a call to
+   * ``pwaBasemapAreas.readCustomAreas()``. That function MIGRATES as a
+   * side effect of reading, and this module loads on every page in the
+   * site — including the Django admin — so routing this read through it
+   * would fire the migration from pages that have nothing to do with
+   * downloads. It is also not loaded outside the map and ``/offline/``, so
+   * it cannot be relied on here at all. The precedence rule is mirrored
+   * rather than shared: an ARRAY at the new key wins even when empty
+   * ("already migrated, nothing left"), and only an absent or
+   * non-array value falls through to the legacy row. The migration
+   * itself still happens where it belongs, on the next map or
+   * ``/offline/`` load.
+   *
+   * @returns {Promise<{value: Array<Object>}>} Shaped like a ``meta:app``
+   *   row so the caller can treat both reads alike.
+   */
+  async function readCustomAreaRecords() {
+    try {
+      const row = await window.pwaDb.get('meta:app', 'basemap.customAreas');
+      if (Array.isArray(row && row.value)) return { value: row.value };
+      const legacyRow = await window.pwaDb.get('meta:app', 'basemap.customArea');
+      const legacy = legacyRow && legacyRow.value;
+      if (!legacy || !Array.isArray(legacy.bbox)) return { value: [] };
+      return { value: [legacy] };
+    } catch (_err) {
+      // Best-effort, like every other read here — the caller keeps
+      // whatever the line last said.
+      return { value: [] };
+    }
+  }
+
+  /**
    * SNOW-928: the OTHER age — how old the content inside this device's
    * downloaded areas is.
    *
@@ -450,7 +493,7 @@
     try {
       const rows = await Promise.all([
         window.pwaDb.get('meta:app', 'basemap.regions'),
-        window.pwaDb.get('meta:app', 'basemap.customAreas'),
+        readCustomAreaRecords(),
       ]);
       let count = 0;
       let oldest = null;

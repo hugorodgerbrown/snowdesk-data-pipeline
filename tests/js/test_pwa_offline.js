@@ -1678,6 +1678,70 @@ describe('the downloads-age line', () => {
     expect(shown.updated).toBe(false);
   });
 
+  it('sees a download still stored under the pre-SNOW-635 legacy key', async () => {
+    // SNOW-928 review: a device that has not yet loaded a page which
+    // triggers `basemap_downloaded_areas.js`'s lazy migration holds its one
+    // custom download under `basemap.customArea`. A direct read of the new
+    // key called that device area-less and hid the line — on exactly the
+    // oldest installs, which are the ones most likely to be holding content
+    // from weeks ago. Such a record predates `contentAt`, so it takes the
+    // "no bulletins saved yet" sentence, which is true of it.
+    buildFixture();
+    stubDb({
+      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] },
+    });
+    await loadModule();
+
+    await openMenu();
+
+    const shown = line();
+    expect(shown.hidden).toBe(false);
+    expect(shown.empty).toBe(true);
+  });
+
+  it('prefers an empty new key over the legacy row, as the migration does', async () => {
+    // An empty array at the new key is "already migrated, nothing left" —
+    // the same precedence `readCustomAreas` applies, and reading the legacy
+    // row through it would resurrect an area the user deleted.
+    buildFixture();
+    stubDb({
+      'basemap.customAreas': [],
+      'basemap.customArea': { bbox: [7.0, 46.0, 7.2, 46.2] },
+    });
+    await loadModule();
+
+    await openMenu();
+
+    expect(line().hidden).toBe(true);
+  });
+
+  it('does not migrate the legacy row — it only reads it', async () => {
+    // This module loads on every page in the site, the Django admin
+    // included. Routing the read through `pwaBasemapAreas.readCustomAreas()`
+    // would fire that function's migration WRITE from pages with nothing to
+    // do with downloads.
+    buildFixture();
+    const writes = [];
+    window.pwaDb = {
+      get: async (_store, key) =>
+        key === 'basemap.customArea'
+          ? { key, value: { bbox: [7.0, 46.0, 7.2, 46.2] } }
+          : undefined,
+      put: async (_store, row) => {
+        writes.push(row.key);
+      },
+      delete: async (_store, key) => {
+        writes.push('delete:' + key);
+      },
+      appendSyncLog: async () => {},
+    };
+    await loadModule();
+
+    await openMenu();
+
+    expect(writes).toEqual([]);
+  });
+
   it('leaves the line alone when storage will not answer', async () => {
     // A device whose IndexedDB is wedged keeps saying nothing rather than
     // saying a wrong thing — the same rule the report holds itself to.
