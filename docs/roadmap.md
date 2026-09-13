@@ -82,7 +82,23 @@ plumbing. Phase B adds a capability the codebase does not have.
 Tracked under [SNOW-937](https://linear.app/hugorodgerbrown/issue/SNOW-937/alerting-tell-people-when-the-bulletin-for-a-place-they-follow-changes).
 The alert is about a *place*: the audience is `Favourite.objects.region_pins()`.
 
-**Shape.** One notification per meaningful change, carrying what moved:
+**Two subscription modes, and both are real products.** A reader chooses
+between them on `/account/settings/`:
+
+- **New bulletin** — one notification a day, when the bulletin for the coming
+  period is published. Fires on the first issue that establishes a target day,
+  so it is once a day however many issues that day carries.
+- **Only changes** — fires when the authoritative bulletin differs from the one
+  last sent, and stays silent when a republished bulletin says the same thing.
+
+Simulated over CH-4115's season: **new bulletin 189 sends (0.95/day), changes
+only 148 (0.74/day)** — 22% apart, not the order of magnitude assumed when this
+was first written. The volume argument for making changes-only the default does
+not survive that margin, so the default is *new bulletin*: it lands between
+15:00 and 16:00 UTC on 177 of 189 days, which makes it a predictable early-
+evening "tomorrow's bulletin is out" rather than an unpredictable interruption.
+
+**Shape.** Each notification carries the day, and what moved if anything did:
 
 ```
 Bulletin update for CH-4115, 12 Nov
@@ -92,9 +108,16 @@ Risk increased — Moderate → Considerable · 20 cm new snow forecast
 Bulletin update for CH-4115, 12 Nov
 Wind slab now north through east above 2400 · Considerable, unchanged
 ```
+```
+Bulletin update for CH-4115, 12 Nov
+Considerable, all day · persistent weak layers above 2400
+```
 
-The second of those is the common case, not the exception — it describes 107
-days of the season against the first one's 26.
+The second is the common case, not the exception — it describes 107 days of the
+season against the first one's 26. The third is a *restatement*: a new-bulletin
+send on a day where nothing moved, which is 55 days of the season. It states the
+day rather than announcing an absence, and must never read "no change" — the
+reason it fired is that a fresh bulletin exists.
 
 **It fires on change, not on a clock.** The original sketch here was a daily
 cron at a fixed local hour; the data killed it. A single daily send misses the
@@ -113,9 +136,16 @@ special case.
 | A4 | [SNOW-942](https://linear.app/hugorodgerbrown/issue/SNOW-942) — `send_bulletin_alerts`, dispatch on change | M | Ready for dev |
 | A5 | [SNOW-943](https://linear.app/hugorodgerbrown/issue/SNOW-943) — flip the `/compare/` alerts row | XS | Ready for dev |
 | A6 | [SNOW-944](https://linear.app/hugorodgerbrown/issue/SNOW-944) — weather in the payload | S | Ready for dev |
+| A7 | [SNOW-949](https://linear.app/hugorodgerbrown/issue/SNOW-949) — season replay harness | M | Ready for dev |
 
-A4 is blocked by A1–A3 and blocks A5. A6 is additive and the first thing to cut
-if November gets close.
+A4 is blocked by A1–A3 **and by A7**, and blocks A5. A6 is additive and the
+first thing to cut if November gets close.
+
+**A7 is the validation route, and it is available now.** It replays a committed
+season through A1 and A3 and renders every notification a subscriber would have
+received, as a staff-only schedule and as a command. Nothing about this feature
+— its volume, its cadence, or its copy over a long run — needs to wait for live
+data to be seen.
 
 **Two decisions the data made, recorded so they are not relitigated:**
 
@@ -124,18 +154,22 @@ if November gets close.
   version bumped on rebuild rather than a revision counter, and `bands` is
   ALBINA-only and `None` for every SLF row. Problems live in
   `Bulletin.render_model["traits"][*]["problems"]`.
-- *A2 defaults to "only when something changes".* The argument for a daily
-  heartbeat was that people forget a channel that goes quiet. The longest
-  silence a change-driven feed would have produced all season is four days,
-  which does not reach that — and Web Push permission, once revoked, cannot be
-  asked for again.
+- *A2 offers two modes and defaults to "new bulletin".* An earlier draft made
+  changes-only the default on the grounds that it protects the Web Push
+  permission by being much quieter. Simulating both modes over the season put
+  them 22% apart — one send every five days — so that argument is withdrawn.
+  Permission is still one-way with no re-prompt, which is why the choice must
+  exist before the first send rather than be retrofitted.
 
 ### Phase A risks
 
-- **No live data until November.** Build against the golden week
-  (`apps/bulletins/services/golden_week.py`, `seed_test_week`) and the
-  committed season archive; the first real run is a `--commit`-less dry run in
-  production.
+- **~~No live data until November.~~** Withdrawn — this was false. The
+  committed archives under `apps/bulletins/local_mirrors/` hold complete
+  seasons for all three providers (`slf_archive.ndjson` alone is 2,216
+  bulletins). What does not exist until November is *incoming* data on a live
+  schedule; historical data to build and judge against exists today, which is
+  what A7 is for. Real bulletin transitions come from archive slices; the
+  golden week stays useful where a test needs seeded database rows.
 - **Fan-out.** One task per (subscription × pin) per send. `db_worker` on
   production is one dyno; staging has none and runs `ImmediateBackend`, so a
   staging test sends inline and will not surface a queue problem.
