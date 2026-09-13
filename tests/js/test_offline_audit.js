@@ -1231,16 +1231,18 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     expect(button.getAttribute('data-audit-complete')).toBe(AREA_ID);
   });
 
-  it('offers nothing on an area that is already complete', async () => {
-    // "Download everything for offline" must not mean "download it all
-    // again" — an area whose content landed today has nothing to fetch,
-    // and a control that spends a connection on documents already here is
-    // worse than no control.
+  it('offers it on an area that is already fresh too (SNOW-951)', async () => {
+    // SNOW-925 withheld it here, on the reasoning that "download
+    // everything for offline" must not mean "download it all again".
+    // SNOW-951 reversed that: the control is now also what a per-area
+    // "sync now" lands on, and to someone about to lose signal "fresh" is
+    // an inference from a stamp while the thing they are going to rely on
+    // is the data.
     const row = await runPanelWithArea({
       contentAt: new Date().toISOString(),
     });
 
-    expect(row.querySelector('[data-audit-complete]')).toBeNull();
+    expect(row.querySelector('[data-audit-complete]')).not.toBeNull();
   });
 
   it('leaves the row readout exactly as it was', async () => {
@@ -1394,13 +1396,14 @@ describe('the per-row "Update" control (SNOW-925)', () => {
 
     const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
     expect(stored.value[0].contentIncomplete).toBeUndefined();
-    // And the row is Yes with no control, because the re-run found the
-    // content current.
+    // And the row is Yes. SNOW-951: it keeps its control, because the
+    // control is no longer a claim that something is missing — it is the
+    // way to ask for this area again, whatever the report just found.
     await vi.waitUntil(
       () =>
-        !document
-          .querySelector('[data-audit-row="area:' + AREA_ID + '"]')
-          .querySelector('[data-audit-complete]'),
+        document.querySelector('[data-audit-row="area:' + AREA_ID + '"]')?.getAttribute(
+          'data-audit-status',
+        ) === 'yes',
       { timeout: 5000 },
     );
   });
@@ -1468,5 +1471,117 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     );
 
     expect(document.querySelector('[data-audit-complete]')).toBeNull();
+  });
+
+  describe('?sync= — the handover from the network menu (SNOW-951)', () => {
+    /**
+     * Mount the panel at `/offline/?sync=<requested>` and let it run
+     * itself.
+     *
+     * No press on "Run the check" here, unlike `runPanelWithArea` above:
+     * what is under test is precisely that arriving with the parameter
+     * takes the report and then acts on it, with the user having pressed
+     * nothing on this page.
+     */
+    async function arriveWithSync(requested, overrides) {
+      installCachesStub({
+        [SHELL]: [],
+        'snowdesk-basemap-pinned-region-CH-4115': [
+          { url: 'https://t/style.json' },
+          { url: 'https://t/14/8515/5822.pbf' },
+        ],
+      });
+      await seedMeta({ 'basemap.regions': [record(overrides)] });
+      window.history.replaceState(null, '', '/offline/?sync=' + requested);
+      document.body.innerHTML = PANEL;
+      audit.init();
+    }
+
+    afterEach(() => {
+      window.history.replaceState(null, '', '/');
+    });
+
+    it('updates the area a bucket id names', async () => {
+      await arriveWithSync(AREA_ID, { contentAt: '2026-09-01T10:00:00.000Z' });
+
+      await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+      expect(warmed.flat()).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
+    });
+
+    it('updates the area a bare REGION id names', async () => {
+      // The menu reads its rows out of two IndexedDB stores, where a
+      // region carries `region_id` and a custom area carries the bucket
+      // id itself. Resolving between the two forms belongs here, where
+      // `areaIdForRegion` is — that format is deliberately never
+      // assembled by hand.
+      await arriveWithSync(REGION_ID, { contentAt: '2026-09-01T10:00:00.000Z' });
+
+      await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+      expect(warmed.flat()).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
+    });
+
+    it('runs for an area the report calls fresh', async () => {
+      // The reason `completableArea` dropped its freshness exclusion: a
+      // press that silently does nothing is exactly the outcome someone
+      // about to lose signal took the action to rule out.
+      await arriveWithSync(AREA_ID, { contentAt: new Date().toISOString() });
+
+      await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+      expect(warmed.flat()).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
+    });
+
+    it('still renders the report for an area it cannot update', async () => {
+      // An area whose TILES do not verify is offered no control — this
+      // page has no loaded basemap style and cannot mend them — so
+      // nothing runs. The report is the honest answer, and it names the
+      // remedy.
+      installCachesStub({
+        [SHELL]: [],
+        'snowdesk-basemap-pinned-region-CH-4115': [{ url: 'https://t/14/8515/5822.pbf' }],
+      });
+      await seedMeta({
+        'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })],
+      });
+      window.history.replaceState(null, '', '/offline/?sync=' + AREA_ID);
+      document.body.innerHTML = PANEL;
+      audit.init();
+
+      await vi.waitUntil(
+        () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
+        { timeout: 5000 },
+      );
+
+      expect(document.querySelector('[data-audit-complete]')).toBeNull();
+      expect(warmed).toHaveLength(0);
+    });
+
+    it('takes the parameter out of the address bar', async () => {
+      // So a reload does not re-run a fetch the user asked for once — and
+      // so a second bound host on the same page finds nothing to take.
+      await arriveWithSync(AREA_ID, { contentAt: '2026-09-01T10:00:00.000Z' });
+
+      await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+      expect(window.location.search).toBe('');
+      expect(window.location.pathname).toBe('/offline/');
+    });
+
+    it('does nothing at all without the parameter', async () => {
+      installCachesStub({ [SHELL]: [] });
+      await seedMeta({
+        'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })],
+      });
+      document.body.innerHTML = PANEL;
+      audit.init();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // The report is taken when the user asks for it, and nothing else
+      // on this page runs on load.
+      expect(document.querySelector('[data-audit-summary]')).toBeNull();
+      expect(warmed).toHaveLength(0);
+    });
   });
 });

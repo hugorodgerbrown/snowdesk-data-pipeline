@@ -1000,25 +1000,37 @@
   }
 
   /**
-   * Whether one area has content this device could go and fetch (SNOW-925).
+   * Whether one area has content this device could go and fetch
+   * (SNOW-925; widened by SNOW-951).
    *
-   * The gate on the per-row control, and it is deliberately narrow. An
-   * area whose content is `fresh` has nothing to do — re-fetching it would
-   * spend a connection on documents already here, and "download everything
-   * for offline" must not mean "download it all again". An area whose
-   * TILES do not verify is excluded too, and that is the boundary of what
-   * this page can honestly offer: the tile half needs the loaded basemap
-   * style, which exists only on the map, so a row in that state keeps the
-   * Repair remedy the report already points it at (`note-area-incomplete`,
-   * the Manage downloads sheet).
+   * SNOW-925 excluded a `fresh` area, arguing that re-fetching content
+   * already here spends a connection on nothing and that "download
+   * everything for offline" must not mean "download it all again".
+   * SNOW-951 REVERSES that, and the reason is who is asking. The
+   * exclusion was written for a report — a passive reading of what this
+   * device holds, where offering an action with nothing to do is noise.
+   * The control is now also reached by a user who has explicitly pressed
+   * "sync now" for this area before losing signal, and to them "fresh"
+   * is an inference from a stamp while the thing they are about to rely
+   * on is the data. A press that silently does nothing because the app
+   * believes it already has today's bulletins is exactly the failure
+   * they took the action to rule out. See
+   * docs/decisions/a-pre-departure-sync-is-unconditional.md.
+   *
+   * The TILES exclusion stays, and it is the boundary of what this page
+   * can honestly offer: the tile half needs the loaded basemap style,
+   * which exists only on the map, so a row in that state keeps the remedy
+   * the report already points it at (`note-area-incomplete`, the Manage
+   * downloads sheet's Sync now).
    *
    * @param {AreaReading} area
    * @param {string} [now]
-   * @returns {boolean}
+   * @returns {boolean} True for every area whose tiles verify — `'none'`
+   *   is the only excluded state, and it covers both the shared base
+   *   layer (not a place, so no content) and an area that does not draw.
    */
   function completableArea(area, now) {
-    var content = areaContentState(area, now);
-    return content === 'stale' || content === 'never';
+    return areaContentState(area, now) !== 'none';
   }
 
   /**

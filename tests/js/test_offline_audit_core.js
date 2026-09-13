@@ -480,13 +480,19 @@ describe("an area's content age (SNOW-926)", () => {
     );
   });
 
-  it('offers nothing on an area that is already complete', () => {
+  it('offers the control on an area that is already fresh (SNOW-951)', () => {
+    // SNOW-925 withheld it, reasoning that re-fetching content already
+    // here spends a connection on nothing. That held for a passive
+    // report; it does not for a user who has explicitly asked for this
+    // area before losing signal, to whom "fresh" is an inference from a
+    // stamp and a press that silently does nothing is the failure they
+    // took the action to rule out.
     const fresh = row(
       core.buildReport(withArea({ contentAt: '2026-09-11T06:00:00.000Z' }), STRINGS),
       'area:r1',
     );
 
-    expect(fresh.completable).toBe(false);
+    expect(fresh.completable).toBe(true);
   });
 
   it('offers nothing on an area whose TILES do not verify', () => {
