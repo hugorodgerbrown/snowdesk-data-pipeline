@@ -31,10 +31,17 @@
  * SNOW-844 adds a row state the sheet did not have: an area that is on
  * this device, holds every tile, and still cannot render, because the
  * style/sprite/TileJSON documents are not in its bucket. Its fixture is
- * the bridge stub's four new members — the pinned-cache URL union, the
- * active basemap key, the three-row resolution rule (reimplemented
- * verbatim rather than stubbed away, for the same reason ``areas()`` is)
- * and the repair itself.
+ * the bridge stub's members — the pinned-cache URL union, the active
+ * basemap key and the three-row resolution rule (reimplemented verbatim
+ * rather than stubbed away, for the same reason ``areas()`` is).
+ *
+ * SNOW-951 folds the two controls that mended those states — Repair
+ * (tiles) and Refresh (content) — into ONE unconditional "Sync now" on
+ * every row this device holds, so the bridge stub carries `syncArea` in
+ * place of `repair`/`refreshAreaContent`. It is reimplemented over the
+ * seeded records for the same reason they were: what the sheet promises
+ * is that a sync leaves the row saying something different, which a stub
+ * resolving a constant could not show.
  *
  * ``caches`` does not exist in jsdom, so a minimal stub stands in. It is
  * the surface this module actually uses (``delete``), and asserting on it
@@ -146,8 +153,6 @@ function buildFixture() {
         </span>
         <span>
           <button type="button" data-downloads-here aria-label="Download here">⤓</button>
-          <button type="button" data-downloads-repair aria-label="Repair">↻</button>
-          <button type="button" data-downloads-refresh aria-label="Refresh">⟳</button>
           <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
           <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
           <!-- SNOW-XXX: the "…" shape, mirroring includes/_overflow_menu.html
@@ -158,10 +163,8 @@ function buildFixture() {
                     aria-expanded="false" aria-controls="downloads-row-actions-menu"
                     aria-label="More actions">…</button>
             <ul id="downloads-row-actions-menu" role="menu" hidden>
-              <li role="none"><button type="button" role="menuitem" data-downloads-repair
-                                      aria-label="Repair">Repair</button></li>
-              <li role="none"><button type="button" role="menuitem" data-downloads-refresh
-                                      aria-label="Refresh">Refresh</button></li>
+              <li role="none"><button type="button" role="menuitem" data-downloads-sync
+                                      aria-label="Sync now">Sync now</button></li>
               <li role="none"><button type="button" role="menuitem" data-row-rename
                                       data-downloads-rename aria-label="Rename">Rename</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-delete
@@ -181,11 +184,9 @@ function buildFixture() {
     </ul>
     <template id="map-downloads-strings-template">
       <span data-string="kind-incomplete">Incomplete</span>
-      <span data-string="repair-row-label">Repair %(name)s</span>
-      <span data-string="repair-failed">That download couldn't be repaired. Try again.</span>
+      <span data-string="sync-row-label">Sync %(name)s now</span>
+      <span data-string="sync-failed">That area couldn't be brought up to date. Try again.</span>
       <span data-string="kind-content-incomplete">Bulletins not saved</span>
-      <span data-string="refresh-row-label">Refresh %(name)s</span>
-      <span data-string="refresh-failed">Those bulletins couldn't be saved. Try again.</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
@@ -315,6 +316,54 @@ function installDownloadsBridge(rows, cachesStub) {
     }
     return out;
   };
+  // map_basemap_downloads.js's own three-row resolution rule, verbatim —
+  // reimplemented here rather than stubbed away for the same reason
+  // `areas()` above is: the sheet depends on the rule and does not own it,
+  // and a stub that answered differently would test nothing. SNOW-951
+  // reads it from two places (the exported member and `syncArea`), which
+  // is why it is a function rather than an inline arrow.
+  const renderDependencyUrls = (recordedDeps, basemapIsActive) => {
+    if (Array.isArray(recordedDeps) && recordedDeps.length > 0) return recordedDeps;
+    if (basemapIsActive) return cachesStub.liveDeps || [];
+    return [];
+  };
+  /** The seeded record one area id names, whichever store it lives in. */
+  const areaRecord = (areaId) => {
+    const core = getCore();
+    if (core.isCustomAreaId(areaId)) {
+      return (rows.get('basemap.customAreas') || []).find(
+        (entry) => entry && entry.id === areaId,
+      );
+    }
+    return (rows.get('basemap.regions') || []).find(
+      (entry) => entry && core.areaIdForRegion(entry.region_id) === areaId,
+    );
+  };
+  // SNOW-932's content refetch, which SNOW-951 folded into `syncArea` as
+  // its second half. The write rule is the real writer's: DELETE the flag
+  // on success, never set it false, because absence is the only
+  // representation of "nothing wrong".
+  const refreshContent = async (areaId) => {
+    const core = getCore();
+    if (cachesStub.refreshFails) return false;
+    const key = core.isCustomAreaId(areaId) ? 'basemap.customAreas' : 'basemap.regions';
+    const existing = rows.get(key) || [];
+    const matches = (entry) =>
+      entry &&
+      (key === 'basemap.customAreas'
+        ? entry.id === areaId
+        : core.areaIdForRegion(entry.region_id) === areaId);
+    if (!existing.some(matches)) return false;
+    rows.set(
+      key,
+      existing.map((entry) => {
+        if (!matches(entry)) return entry;
+        const { contentIncomplete: _cleared, ...rest } = entry;
+        return { ...rest, contentAt: '2026-09-13T00:00:00.000Z' };
+      }),
+    );
+    return true;
+  };
   window.pwaBasemapDownloads = {
     areas: vi.fn(areas),
     evict: vi.fn(async (ids) => {
@@ -394,45 +443,40 @@ function installDownloadsBridge(rows, cachesStub) {
     // reimplemented here rather than stubbed away for the same reason
     // `areas()` above is: the sheet depends on the rule and does not own
     // it, and a stub that answered differently would test nothing.
-    areaRenderDependencyUrls: vi.fn((recordedDeps, basemapIsActive) => {
-      if (Array.isArray(recordedDeps) && recordedDeps.length > 0) return recordedDeps;
-      if (basemapIsActive) return cachesStub.liveDeps || [];
-      return [];
-    }),
-    repair: vi.fn(async (areaId, urls) => {
-      const set = new Set(cachesStub.urls || []);
-      for (const url of urls) set.add(url);
-      cachesStub.urls = [...set];
-      return true;
-    }),
-    // SNOW-932: the content refresh. Reimplemented against the seeded
-    // records rather than stubbed to a constant, for `areas()`'s reason:
-    // what the sheet promises is that a successful refresh CLEARS the flag
-    // the row was showing, and a stub that only resolved `true` would let
-    // a writer that never cleared it pass. Takes an id and no url list —
-    // only the area's own boundary says which bulletins it contains.
-    refreshAreaContent: vi.fn(async (areaId) => {
+    areaRenderDependencyUrls: vi.fn(renderDependencyUrls),
+    // SNOW-951: the one control the sheet offers on every row it holds,
+    // replacing SNOW-844's `repair` and SNOW-932's `refreshAreaContent`.
+    // Reimplemented over the seeded records rather than stubbed to a
+    // constant, for `areas()`'s reason: what the sheet promises is that a
+    // sync leaves the row saying something DIFFERENT — the missing
+    // dependency is on disk, the content shortfall is cleared — and a stub
+    // that only resolved a shape would let a writer that did neither pass.
+    //
+    // The two halves fail independently, through `cachesStub.repairFails`
+    // and `cachesStub.refreshFails`, because the real one runs the content
+    // half whatever became of the tiles.
+    syncArea: vi.fn(async (areaId) => {
       const core = getCore();
-      if (cachesStub.refreshFails) return false;
-      const key = core.isCustomAreaId(areaId) ? 'basemap.customAreas' : 'basemap.regions';
-      const existing = rows.get(key) || [];
-      const matches = (entry) =>
-        entry &&
-        (key === 'basemap.customAreas'
-          ? entry.id === areaId
-          : core.areaIdForRegion(entry.region_id) === areaId);
-      if (!existing.some(matches)) return false;
-      rows.set(
-        key,
-        existing.map((entry) => {
-          if (!matches(entry)) return entry;
-          // The write rule the real writer follows: DELETE on success,
-          // never set false — absence is the only "nothing wrong".
-          const { contentIncomplete: _cleared, ...rest } = entry;
-          return { ...rest, contentAt: '2026-09-13T00:00:00.000Z' };
-        }),
+      const record = areaRecord(areaId);
+      if (!record) return { tiles: 'none', content: false };
+      const activeKey = window.pwaBasemapDownloads.activeBasemapKey();
+      const isActive = !!activeKey && record.basemapKey === activeKey;
+      const missing = core.missingRenderDependencies(
+        renderDependencyUrls(record.deps, isActive),
+        new Set(cachesStub.urls || []),
       );
-      return true;
+      let tiles = 'none';
+      if (missing.length > 0) {
+        if (cachesStub.repairFails) {
+          tiles = 'failed';
+        } else {
+          const set = new Set(cachesStub.urls || []);
+          for (const url of missing) set.add(url);
+          cachesStub.urls = [...set];
+          tiles = 'ok';
+        }
+      }
+      return { tiles, content: await refreshContent(areaId) };
     }),
   };
 }
@@ -840,16 +884,18 @@ describe('one action is an icon, more than one is a menu (SNOW-XXX)', () => {
     );
   }
 
-  it('gives a region the bare trash and no menu', async () => {
+  it('gives a region the menu, since Sync now joined Remove on it', async () => {
     // A region cannot be renamed — its name is its real name — so Remove
-    // is the whole of what it offers.
+    // was the whole of what it offered and it was a bare trash. SNOW-951
+    // put "Sync now" on every row this device holds, and two actions are a
+    // "…". The rule applying, not an exception to it.
     seed({ 'basemap.regions': REGIONS });
     await loadModule();
     openSheet();
     await settle();
 
     const row = firstRowElement();
-    expect(row.querySelector('[data-overflow-menu]')).toBeNull();
+    expect(row.querySelector('[data-overflow-menu]')).not.toBeNull();
     expect(row.querySelector('[data-downloads-delete]').getAttribute('data-downloads-delete')).toBe(
       'region-CH-2101',
     );
@@ -1247,7 +1293,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     ];
   }
 
-  it('says "Incomplete" and offers Repair when a dependency is not on disk', async () => {
+  it('says "Incomplete" when a dependency is not on disk', async () => {
     // The tiles are pinned and the TileJSON is not, which is the exact
     // shape of an area downloaded before SNOW-843: MapLibre cannot learn a
     // single tile URL from it, so the map comes up blank over a full
@@ -1260,9 +1306,6 @@ describe('an area that cannot render (SNOW-844)', () => {
 
     const row = firstRowElement();
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
-    const repair = row.querySelector('[data-downloads-repair]');
-    expect(repair).not.toBeNull();
-    expect(repair.getAttribute('aria-label')).toBe('Repair Aletsch');
   });
 
   it('leaves a complete area alone', async () => {
@@ -1274,27 +1317,25 @@ describe('an area that cannot render (SNOW-844)', () => {
 
     const row = firstRowElement();
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · OpenFreeMap · 40.0 MB');
-    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
   });
 
-  it('repairs only what is missing, and never re-downloads the area', async () => {
-    // The whole design of the repair path: it warms a handful of documents
-    // into the area's own bucket. It must not touch the download path,
-    // whose eviction confirm could destroy another area to make room for a
-    // sprite.
+  it('mends it from the same one control every other row carries', async () => {
+    // SNOW-951: Repair is gone as a separate item. The row that cannot
+    // render is not offered a different control from a healthy one — it is
+    // offered the same "Sync now", which finds the missing dependency for
+    // itself and fetches only that. The download path is still never
+    // touched: its eviction confirm could destroy another area to make
+    // room for a sprite.
     window.caches.urls = [STYLE_URL, SPRITE_URL];
     seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
     await loadModule();
     openSheet();
     await settle();
 
-    firstRowElement().querySelector('[data-downloads-repair]').click();
+    firstRowElement().querySelector('[data-downloads-sync]').click();
     await settle();
 
-    expect(window.pwaBasemapDownloads.repair).toHaveBeenCalledWith(
-      'region-CH-2101',
-      [TILEJSON_URL],
-    );
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('region-CH-2101');
     expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
     // And the sheet re-reads real cache state rather than assuming: the
     // row is a normal download again.
@@ -1302,21 +1343,6 @@ describe('an area that cannot render (SNOW-844)', () => {
     expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
       'Region · OpenFreeMap · 40.0 MB',
     );
-  });
-
-  it('refuses a repair while offline', async () => {
-    window.caches.urls = [STYLE_URL, SPRITE_URL];
-    seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
-    await loadModule();
-    openSheet();
-    await settle();
-    setOnline(false);
-
-    firstRowElement().querySelector('[data-downloads-repair]').click();
-    await settle();
-
-    expect(window.pwaBasemapDownloads.repair).not.toHaveBeenCalled();
-    expect(window.MapSheet.toast).toHaveBeenCalled();
   });
 
   it('never accuses a legacy record on a basemap that is not loaded', async () => {
@@ -1344,7 +1370,6 @@ describe('an area that cannot render (SNOW-844)', () => {
 
     const row = firstRowElement();
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · Swisstopo (CH) · 40.0 MB');
-    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
   });
 
   it('checks a legacy record against the live style when its basemap IS loaded', async () => {
@@ -1372,8 +1397,9 @@ describe('an area that cannot render (SNOW-844)', () => {
   });
 
   it('leaves an orphan remove-only', async () => {
-    // SNOW-612's reasoning is untouched: an orphan has no record naming
-    // what to fetch, so there is nothing a repair could ask for.
+    // SNOW-612's reasoning is untouched, and SNOW-951 inherits it: an
+    // orphan has no record, so there is neither a dependency list to check
+    // its tiles against nor a boundary to resolve its content from.
     window.caches.urls = [];
     window.caches.liveDeps = [STYLE_URL];
     seed({});
@@ -1386,7 +1412,7 @@ describe('an area that cannot render (SNOW-844)', () => {
 
     const row = firstRowElement();
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
-    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
+    expect(row.querySelector('[data-downloads-sync]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
   });
 });
@@ -1444,29 +1470,7 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     expect(label.classList.contains('text-text-1')).toBe(true);
   });
 
-  it('offers Refresh, and refetches by area id rather than a url list', async () => {
-    // Which bulletins an area contains is a question only its boundary
-    // answers, and only the map bundle can ask — so unlike Repair, the id
-    // is the whole payload.
-    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    const refresh = firstRowElement().querySelector('[data-downloads-refresh]');
-    expect(refresh).not.toBeNull();
-    expect(refresh.getAttribute('aria-label')).toBe('Refresh Custom area 1');
-
-    refresh.click();
-    await settle();
-
-    expect(window.pwaBasemapDownloads.refreshAreaContent).toHaveBeenCalledWith('custom-a1');
-    // Never the download path: a refresh is kilobytes of HTML, and `run`'s
-    // eviction confirm can destroy another area to make room.
-    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
-  });
-
-  it('drops the row back to normal once the refresh lands', async () => {
+  it('drops the row back to normal once a sync lands', async () => {
     // The flag is DELETED on success, never set false, so the re-render
     // reads a record indistinguishable from one that never fell short.
     seed({ 'basemap.customAreas': customAreaWithStaleContent() });
@@ -1474,7 +1478,7 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     openSheet();
     await settle();
 
-    firstRowElement().querySelector('[data-downloads-refresh]').click();
+    firstRowElement().querySelector('[data-downloads-sync]').click();
     await settle();
     await settle();
 
@@ -1482,94 +1486,243 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe(
       'Custom area · OpenFreeMap · 12.0 MB',
     );
-    expect(row.querySelector('[data-downloads-refresh]')).toBeNull();
   });
+});
 
-  it('repaints the region roundel, which reads the same record', async () => {
-    // SNOW-932 review: when the refreshed area is the region FOCUSED on the
-    // map, clearing the stored shortfall left the roundel painted 'partial'
-    // until an unrelated region, basemap or connectivity event happened by
-    // — and a tap meanwhile ran a second, redundant refresh. The sheet's
-    // own re-render and the layers-menu refresh reach neither that control
-    // nor its probe.
-    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
-    const refreshState = vi.fn();
-    window.pwaRegionDownload = { refreshState };
-    await loadModule();
-    openSheet();
-    await settle();
-
-    firstRowElement().querySelector('[data-downloads-refresh]').click();
-    await settle();
-
-    expect(refreshState).toHaveBeenCalled();
-    delete window.pwaRegionDownload;
-  });
-
-  it('toasts when the refresh does not land', async () => {
-    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
-    window.caches.refreshFails = true;
-    await loadModule();
-    openSheet();
-    await settle();
-
-    firstRowElement().querySelector('[data-downloads-refresh]').click();
-    await settle();
-
-    expect(window.MapSheet.toast).toHaveBeenCalled();
-  });
-
-  it('refuses a refresh while offline', async () => {
-    // Listing and deleting what is stored needs no connection; this is not
-    // that. SNOW-748: the MODE, not `navigator.onLine`.
-    seed({ 'basemap.customAreas': customAreaWithStaleContent() });
-    await loadModule();
-    openSheet();
-    await settle();
-    setOnline(false);
-
-    firstRowElement().querySelector('[data-downloads-refresh]').click();
-    await settle();
-
-    expect(window.pwaBasemapDownloads.refreshAreaContent).not.toHaveBeenCalled();
-    expect(window.MapSheet.toast).toHaveBeenCalled();
-  });
-
-  it('leaves a row whose content is whole with no Refresh', async () => {
-    seed({ 'basemap.customAreas': customAreaWithStaleContent({ contentIncomplete: false }) });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    expect(firstRowElement().querySelector('[data-downloads-refresh]')).toBeNull();
-  });
-
-  it('moves a REGION row from a bare trash to a menu', async () => {
-    // The one shape change this ticket makes. Remove was a region row's
-    // only action, so it was a bare trash; a second action is a "…", which
-    // is design-system rule 5 applying rather than an exception to it.
-    seed({
-      'basemap.regions': [
+describe('"Sync now" (SNOW-951)', () => {
+  /** A custom area on the active basemap, whole and current. */
+  function healthyCustomArea(extra) {
+    return [
+      Object.assign(
         {
-          region_id: 'CH-2101',
-          name: 'Aletsch',
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [7, 46, 7.2, 46.2],
           band: [10, 14],
-          bytes: 40 * MB,
+          bytes: 12 * MB,
           savedAt: '2026-08-01T10:00:00.000Z',
           basemapKey: 'openfreemap_liberty',
-          contentIncomplete: true,
         },
-      ],
-    });
+        extra || {},
+      ),
+    ];
+  }
+
+  /** A region record on the active basemap, whole and current. */
+  function healthyRegion() {
+    return [
+      {
+        region_id: 'CH-2101',
+        name: 'Aletsch',
+        band: [10, 14],
+        bytes: 40 * MB,
+        savedAt: '2026-08-01T10:00:00.000Z',
+        basemapKey: 'openfreemap_liberty',
+      },
+    ];
+  }
+
+  it('is on a row with nothing wrong with it', async () => {
+    // The whole point of the ticket. SNOW-844's Repair and SNOW-932's
+    // Refresh were both remedies, so neither was on the row at the moment
+    // a user wants one — before they leave the signal, when nothing is
+    // wrong yet and everything is about to be needed.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const sync = firstRowElement().querySelector('[data-downloads-sync]');
+    expect(sync).not.toBeNull();
+    expect(sync.getAttribute('aria-label')).toBe('Sync Custom area 1 now');
+  });
+
+  it('makes a REGION row a menu, because two actions are a "…"', async () => {
+    // Remove was a region row's only action, so it was a bare trash. A
+    // second action changes its shape: design-system rule 5 applying
+    // rather than an exception to it.
+    seed({ 'basemap.regions': healthyRegion() });
     await loadModule();
     openSheet();
     await settle();
 
     const row = firstRowElement();
     expect(row.querySelector('[data-overflow-menu]')).not.toBeNull();
-    expect(row.querySelector('[data-downloads-refresh]')).not.toBeNull();
+    expect(row.querySelector('[data-downloads-sync]')).not.toBeNull();
     // And no Rename: a region's name is its real name.
     expect(row.querySelector('[data-downloads-rename]')).toBeNull();
+  });
+
+  it('orders the menu Sync → Rename → Remove', async () => {
+    // Design-system rule 4: the restorative action leads, the rename
+    // follows, and the destructive item is last wherever a user meets it.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    // The visible words, not the accessible names — buildRow interpolates
+    // the row's own name into every one of those, and what this asserts is
+    // the reading ORDER a user meets.
+    const items = Array.from(
+      firstRowElement().querySelectorAll('[role="menu"] [role="menuitem"]'),
+    ).map((el) => el.textContent.trim());
+
+    expect(items).toEqual(['Sync now', 'Rename', 'Remove']);
+  });
+
+  it('syncs by area id, and starts no download', async () => {
+    // Both halves resolve from the area's own record when the press lands,
+    // so the id is the whole payload — nothing is stamped onto the element
+    // that a later eviction could make wrong. And never the download path:
+    // its eviction confirm can destroy another area to make room.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('custom-a1');
+    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
+  });
+
+  it('refuses while offline', async () => {
+    // Listing and deleting what is stored needs no connection; this is not
+    // that. SNOW-748: the MODE, not `navigator.onLine`.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.syncArea).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('toasts when the content half falls short', async () => {
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    window.caches.refreshFails = true;
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('toasts when the tile half falls short', async () => {
+    // Either half missing means the area is not current, which is the only
+    // thing the user asked for — so one message serves both.
+    window.caches.urls = ['https://tiles.example.invalid/liberty.json'];
+    window.caches.repairFails = true;
+    seed({
+      'basemap.customAreas': healthyCustomArea({
+        deps: [
+          'https://tiles.example.invalid/liberty.json',
+          'https://tiles.example.invalid/base/tiles.json',
+        ],
+      }),
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('says nothing when both halves land', async () => {
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+
+  it('repaints the map views of the cache it just wrote into', async () => {
+    // The layers menu is a live cache-state dashboard, and the region
+    // roundel behind this sheet reads the same record — SNOW-932 review's
+    // finding, which a sync inherits because it writes both halves.
+    const refreshState = vi.fn();
+    window.pwaRegionDownload = { refreshState };
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.pwaLayerSyncStatus.refresh).toHaveBeenCalled();
+    expect(refreshState).toHaveBeenCalled();
+    delete window.pwaRegionDownload;
+  });
+
+  it('keeps the control disabled across the re-render a sync triggers', async () => {
+    // The sheet re-clones every row on each render, so a run still going
+    // when one lands used to come back with a live control — and a second
+    // press would dispatch a second fetch of the documents the first is
+    // still pulling. The in-flight set is module state for exactly that.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    let release;
+    window.pwaBasemapDownloads.syncArea.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = () => resolve({ tiles: 'none', content: true });
+      }),
+    );
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+    // A render from somewhere else entirely — a connectivity flip, another
+    // area finishing — while the run is still going.
+    window.pwaDownloadsManager.refresh();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-downloads-sync]').disabled).toBe(true);
+
+    release();
+    await settle();
+    await settle();
+    expect(firstRowElement().querySelector('[data-downloads-sync]').disabled).toBe(false);
+  });
+
+  it('is not offered to a row this device does not hold', async () => {
+    // An account-only row (SNOW-749) holds nothing here to bring up to
+    // date; its one action is "Download here".
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      {
+        id: 'region-CH-2101',
+        name: 'Aletsch',
+        bytes: 0,
+        onDevice: false,
+        synced: true,
+        regionId: 'CH-2101',
+      },
+    ]);
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-downloads-sync]')).toBeNull();
+    expect(row.querySelector('[data-downloads-here]')).not.toBeNull();
   });
 });
 

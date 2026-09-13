@@ -313,18 +313,20 @@
     // inside `row-meta` rather than being concatenated here, matching how
     // every server-rendered meta line on the other panels is written
     // (favourites' "{{ region }} · saved {{ when }}").
-    // SNOW-844: the Repair control's accessible name, and the toast when
-    // the refetch does not land. Same pattern as every other row action —
-    // a row cloned from a <template> has no name until buildRow fills it.
-    'repair-row-label': 'Repair %(name)s',
-    'repair-failed': "That download couldn't be repaired. Try again.",
-    // SNOW-932: the Refresh control's accessible name, its failure toast,
-    // and the subtitle for a row whose CONTENT half fell short. A separate
-    // word from 'kind-incomplete' on purpose — this row's map DRAWS and
-    // the area IS available offline; it is the bulletins that are behind.
+    // SNOW-951: the Sync now control's accessible name, and the toast for
+    // a run where either half fell short. One pair in place of the two
+    // (Repair's and Refresh's) this ticket removed — the control is one
+    // control now, and a user who cannot tell the halves apart cannot act
+    // on being told which of them missed. Same pattern as every other row
+    // action: a row cloned from a <template> has no name until buildRow
+    // fills it.
+    'sync-row-label': 'Sync %(name)s now',
+    'sync-failed': "That area couldn't be brought up to date. Try again.",
+    // SNOW-932: the subtitle clause for a row whose CONTENT half fell
+    // short. A separate word from 'kind-incomplete' on purpose — this
+    // row's map DRAWS and the area IS available offline; it is the
+    // bulletins that are behind.
     'kind-content-incomplete': 'Bulletins not saved',
-    'refresh-row-label': 'Refresh %(name)s',
-    'refresh-failed': "Those bulletins couldn't be saved. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -404,6 +406,23 @@
   });
 
   var interpolate = self.pwaStrings.interpolate;
+
+  // SNOW-951: which areas have a "Sync now" still running, by area id.
+  //
+  // Module state rather than a flag on the button, because the button does
+  // not survive: a sync ends by calling `render()`, which re-clones every
+  // row from the <template>, and a sync started from one render is
+  // frequently still going when another (a connectivity flip, a rename, a
+  // second area's run finishing) repaints the sheet underneath it. The
+  // control would come back live, and a second press would dispatch a
+  // second warm run for the documents the first is already fetching.
+  // `buildRow` re-applies the disabled attribute from this set on every
+  // render, and `_handleSyncClick` refuses a press it already holds.
+  //
+  // Per AREA, not one global flag: two areas may legitimately be syncing
+  // at once — they are separate buckets and separate fetches — and one
+  // running run must not disable every other row's control.
+  var syncing = new Set();
 
   // SNOW-749: the sign-in gate's configuration, read off the roundel that
   // opens this sheet (#map-custom-download-control — see its own template
@@ -513,7 +532,13 @@
       const missing = core.missingRenderDependencies(depURLs, cached);
       if (missing.length === 0) continue;
       row.incomplete = true;
-      row.missingDeps = missing;
+      // SNOW-951: the missing LIST is no longer carried onto the row. It
+      // existed to be stamped onto the Repair control as JSON, and Sync
+      // now — the one control that replaced it — resolves its own list
+      // inside `syncArea` at the moment it runs. That list is the fresher
+      // of the two: a sheet left open while an eviction ran elsewhere
+      // renders an answer from before it. What survives here is the FACT,
+      // which is what the row's own status line says.
     }
   }
 
@@ -1199,10 +1224,10 @@
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
    *   renameable?: boolean, size: string, basemapKey?: string,
-   *   incomplete?: boolean, missingDeps?: string[],
-   *   contentIncomplete?: boolean}} row SNOW-844's two
-   *   fields are set by `markIncompleteRows`, never by the manage core —
-   *   answering them needs Cache Storage, which that module deliberately
+   *   incomplete?: boolean,
+   *   contentIncomplete?: boolean}} row SNOW-844's `incomplete`
+   *   is set by `markIncompleteRows`, never by the manage core —
+   *   answering it needs Cache Storage, which that module deliberately
    *   never touches. SNOW-932's `contentIncomplete` comes the OTHER way,
    *   from the manage core and ultimately from the area's own record: no
    *   cache read can tell a bulletin absent because the boundary contains
@@ -1350,28 +1375,33 @@
     // row) for every panel on 2026-09-07 — see
     // includes/_map_downloads_row_actions.html.
     //
-    //   region here            Remove alone            → bare trash
-    //   custom area / drop     Rename and Remove       → menu
-    //   cannot render          Repair and Remove       → menu
-    //   content behind         Refresh and Remove      → menu (SNOW-932)
+    //   region here            Sync now and Remove     → menu (SNOW-951)
+    //   custom area / drop     Sync, Rename and Remove → menu
     //   not here               Download alone          → bare download
     //   base layer / orphan    see below
     const renameable = row.renameable && row.onDevice !== false;
-    const repairable =
-      row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length > 0;
-    // SNOW-932: a row whose CONTENT half fell short — its bulletins, not
-    // its tiles — can be refreshed. Independent of `repairable`: the two
-    // mend different halves, and an area can need one, the other, or
-    // both. The manage core already withheld the flag from an orphan and
-    // from an account-only row, neither of which has anything here to
-    // refresh.
-    const refreshable = !!row.contentIncomplete;
+    // SNOW-951: one UNCONDITIONAL action replaces SNOW-844's Repair and
+    // SNOW-932's Refresh, both of which were gated on a fault having
+    // already happened (`incomplete` / `contentIncomplete`). Neither was
+    // on the row at the moment a user actually wants it — the one before
+    // they leave the signal, when nothing is wrong yet and everything is
+    // about to be needed — so every row that this device holds now offers
+    // it, and `syncArea` decides which halves have anything to do.
+    //
+    // An ORPHAN is excluded, keeping SNOW-612's remove-only treatment: it
+    // has no record, so there is no boundary to resolve content against
+    // and no dependency list to check tiles against. An ACCOUNT-ONLY row
+    // holds nothing here to bring up to date; its one action is "Download
+    // here". A BASE LAYER is not an area at all — it is the shared z0-9
+    // world ground every download reads, and it has no boundary and so no
+    // content half (`_areaRecordById` finds no record for one).
+    const syncable = row.onDevice !== false && !row.orphaned && row.kind !== 'base';
     const deletable = row.deletable !== false && row.onDevice !== false;
-    // A REGION row reaches the menu for the first time here: it was a bare
-    // trash because Remove was its only action, and a second action
-    // changes its shape. That is design-system rule 5 applying rather than
-    // an exception to it — see the row-menu partial's own comment.
-    const useMenu = deletable && (renameable || repairable || refreshable);
+    // A REGION row on this device is now ALWAYS a menu: Sync now and
+    // Remove are two actions, and design-system rule 5 collapses two into
+    // a "…". That is the rule applying rather than an exception to it —
+    // see the row-menu partial's own comment.
+    const useMenu = deletable && (renameable || syncable);
 
     // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
     // older cached shell whose row template predates it would otherwise
@@ -1415,12 +1445,13 @@
     // stamped with the area id AND a menu item without one.
     if (showMenu) {
       for (const inline of fragment.querySelectorAll(
-        // SNOW-932: `[data-downloads-refresh]` joins the list. Missing
-        // from it, the inline copy survives the swap and the stamping
-        // below (which takes the FIRST match) fills that one while the
-        // menu item keeps the value-less attribute the template renders
-        // — leaving the row carrying the action twice, once dead.
-        '[data-downloads-delete], [data-downloads-repair], [data-downloads-refresh], [data-row-rename]',
+        // SNOW-951: `[data-downloads-sync]` is in the list in place of the
+        // two it replaced. An action missing from it keeps its inline copy
+        // through the swap, and the stamping below (which takes the FIRST
+        // match) then fills that one while the menu item keeps the
+        // value-less attribute the template renders — leaving the row
+        // carrying the action twice, once dead.
+        '[data-downloads-delete], [data-downloads-sync], [data-row-rename]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();
@@ -1496,46 +1527,32 @@
       }
     }
 
-    // SNOW-844: "Repair" — refetch just the documents this area is missing.
-    // Only a row the render-dependency check actually failed carries it;
-    // every other row sheds it, including an ORPHAN, which keeps SNOW-612's
-    // remove-only treatment because it has no record naming what to fetch.
-    // The missing URLs travel as JSON on the element, like the "Download
-    // here" bbox above and for the same reason: the handler is delegated on
-    // the sheet and the row is a clone, so a closure would not survive.
-    const repairBtn = fragment.querySelector('[data-downloads-repair]');
-    if (repairBtn) {
-      if (row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length) {
-        repairBtn.setAttribute('data-downloads-repair', row.id);
-        repairBtn.setAttribute('data-downloads-repair-urls', JSON.stringify(row.missingDeps));
-        repairBtn.setAttribute(
-          'aria-label',
-          interpolate(STRINGS['repair-row-label'], { name: row.label }),
-        );
-      } else {
-        repairBtn.remove();
-      }
-    }
-
-    // SNOW-932: "Refresh" — refetch the bulletins and weather inside this
-    // area's boundary, and not one tile. Carried by any row whose record
-    // says its content half fell short; every other row sheds it, so a row
-    // with nothing behind offers nothing to catch up.
+    // SNOW-951: "Sync now" — mend this area's tiles if any are missing,
+    // then refetch the bulletins and weather inside its boundary whatever
+    // the record claims about their age. Carried by every row this device
+    // holds, which is the whole change: the two controls it replaces were
+    // remedies, offered only once something had already gone wrong.
     //
-    // No url list travels on the element, unlike Repair's above. The
-    // boundary is what decides which bulletins these are, and only
-    // map_basemap_downloads.js can resolve it — so the id is the whole
-    // payload and `refreshAreaContent` does the resolving.
-    const refreshBtn = fragment.querySelector('[data-downloads-refresh]');
-    if (refreshBtn) {
-      if (row.contentIncomplete) {
-        refreshBtn.setAttribute('data-downloads-refresh', row.id);
-        refreshBtn.setAttribute(
+    // No url list travels on the element, unlike the Repair it replaces.
+    // Both halves are resolved from the area's own record at the moment
+    // the press lands — which is fresher than anything this render could
+    // stamp on — so the id is the whole payload.
+    const syncBtn = fragment.querySelector('[data-downloads-sync]');
+    if (syncBtn) {
+      if (syncable) {
+        syncBtn.setAttribute('data-downloads-sync', row.id);
+        syncBtn.setAttribute(
           'aria-label',
-          interpolate(STRINGS['refresh-row-label'], { name: row.label }),
+          interpolate(STRINGS['sync-row-label'], { name: row.label }),
         );
+        // The sheet re-clones every row on each render, and a sync that is
+        // still running would come back with a live control — so a second
+        // press could dispatch a second run for the documents the first is
+        // already fetching. The in-flight set is module state precisely
+        // because the DOM it was disabled on no longer exists.
+        if (syncing.has(row.id)) syncBtn.setAttribute('disabled', '');
       } else {
-        refreshBtn.remove();
+        syncBtn.remove();
       }
     }
 
@@ -1720,136 +1737,88 @@
     ) {
       return;
     }
-    if (_handleRepairClick(event)) return;
-    if (_handleRefreshClick(event)) return;
+    if (_handleSyncClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
   });
 
   /**
-   * SNOW-844: "Repair" — refetch the render dependencies this area is
-   * missing, into the bucket its tiles already live in.
+   * SNOW-951: "Sync now" — make one area wholly current, both halves, in
+   * one press.
    *
-   * Deliberately NOT `window.pwaRegionDownload.start` or a re-framed
-   * custom-area run, which is what "Download here" above hands off to.
-   * Those start a whole download: hundreds of tiles, a quota pre-flight, a
-   * budget plan and an eviction confirm that can destroy another area.
-   * This is four small documents the record already names, so it goes
-   * through the short path — see `basemap_download_runner.js`'s `repair`.
+   * Replaces SNOW-844's Repair and SNOW-932's Refresh, which mended one
+   * half each and were each offered only to a row already in a fault
+   * state. What the user wants before they lose signal is not a remedy but
+   * a guarantee, so this runs on every row this device holds and
+   * `syncArea` decides which halves have anything to do — see its
+   * docstring in map_basemap_downloads.js for the ordering and for why the
+   * content refetch is unconditional.
+   *
+   * NO WHOLE DOWNLOAD IS STARTED, which is the promise both replaced
+   * controls made and this one inherits: `syncArea` goes through
+   * `repair`, never `run`, so no tile the device already holds is fetched
+   * again and no eviction confirm can destroy another area to make room.
+   * A repair of what is genuinely missing is a handful of documents; the
+   * content half is kilobytes of HTML over the very connection the
+   * download existed for.
+   *
+   * It carries no url list. Both halves resolve from the area's own record
+   * when the press lands, which is fresher than anything the render that
+   * drew this button could have stamped on it.
    *
    * Offline refuses, like every other control on this sheet that starts a
    * fetch: listing and deleting what is stored needs no connection, and
    * this is not that.
    *
    * @param {MouseEvent} event
-   * @returns {boolean} Whether this click was a Repair.
+   * @returns {boolean} Whether this click was a Sync.
    */
-  function _handleRepairClick(event) {
+  function _handleSyncClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return false;
-    const button = target.closest('[data-downloads-repair]');
+    const button = target.closest('[data-downloads-sync]');
     if (!button) return false;
 
-    const areaId = button.getAttribute('data-downloads-repair');
+    const areaId = button.getAttribute('data-downloads-sync');
     if (!areaId) return true;
 
     // SNOW-748: the mode, not the radio — a forced offline mode leaves
-    // `navigator.onLine` true, and a repair is network use.
+    // `navigator.onLine` true, and a sync is network use.
     if (!networkInUse()) {
       window.MapSheet?.toast(STRINGS['add-offline']);
       return true;
     }
 
-    let urls = [];
-    try {
-      urls = JSON.parse(button.getAttribute('data-downloads-repair-urls') || '[]');
-    } catch (_err) {
-      urls = [];
-    }
-    if (!Array.isArray(urls) || urls.length === 0) {
-      window.MapSheet?.toast(STRINGS['repair-failed']);
-      return true;
-    }
-
-    // Disabled for the duration rather than left live: the repair is short,
-    // and a second tap would dispatch a second warm run for URLs the first
-    // one is already fetching.
+    // Already running for this area: a second press would dispatch a
+    // second warm run for documents the first is still fetching. Tracked
+    // by AREA rather than by element, because the render below re-clones
+    // the row and the element this one disabled is gone by then.
+    if (syncing.has(areaId)) return true;
+    syncing.add(areaId);
     button.setAttribute('disabled', '');
-    window.pwaBasemapDownloads?.repair(areaId, urls).then(function (ok) {
-      if (!ok) window.MapSheet?.toast(STRINGS['repair-failed']);
-      // Re-render either way, from real cache state — a partial repair has
-      // still changed what is on disk, and the row must say what is true
-      // now rather than what it said before the tap.
+
+    window.pwaBasemapDownloads?.syncArea(areaId).then(function (result) {
+      syncing.delete(areaId);
+      // One toast, for either half falling short. The user asked for the
+      // area to be current and it is not; which of the two halves missed
+      // is a distinction they can act on nowhere — the remedy is the same
+      // press again, on a better connection.
+      const ok = !!result && result.tiles !== 'failed' && result.content;
+      if (!ok) window.MapSheet?.toast(STRINGS['sync-failed']);
+      // Re-render either way, from real cache state and the record as it
+      // stands now — a run that half landed has still changed what is on
+      // disk, and the row must say what is true now rather than what it
+      // said before the press.
       render();
-      // The layers menu is a live cache-state dashboard, and this run wrote
-      // into a pinned bucket.
-      window.pwaLayerSyncStatus?.refresh();
-    });
-    return true;
-  }
-
-  /**
-   * SNOW-932: "Refresh" — refetch the bulletins and weather inside this
-   * area's boundary, into the bucket its tiles already live in.
-   *
-   * The remedy for the `contentIncomplete` fact this ticket makes durable,
-   * and the only one a CUSTOM area has: a region has a roundel that
-   * refreshes on a tap, a custom area's framing overlay closes and never
-   * comes back. One control serves both kinds here rather than a second
-   * roundel being grown for custom areas, which was the scope decision on
-   * the ticket.
-   *
-   * NO TILES ARE RE-FETCHED — the same short path Repair above takes, for
-   * the same reasons plus one this control feels more sharply: a refresh
-   * is kilobytes of HTML, and the connection it is taken on is the reason
-   * the download existed. Sending it through the download path would cost
-   * megabytes and could raise an eviction confirm that destroys another
-   * area to make room for a day-old bulletin.
-   *
-   * Unlike Repair it carries no url list. Which bulletins an area contains
-   * is a question only its boundary answers, and only
-   * map_basemap_downloads.js can ask — so the id is the whole payload.
-   *
-   * Offline refuses, like every other control here that starts a fetch.
-   *
-   * @param {MouseEvent} event
-   * @returns {boolean} Whether this click was a Refresh.
-   */
-  function _handleRefreshClick(event) {
-    const target = /** @type {HTMLElement} */ (event.target);
-    if (!target || !target.closest) return false;
-    const button = target.closest('[data-downloads-refresh]');
-    if (!button) return false;
-
-    const areaId = button.getAttribute('data-downloads-refresh');
-    if (!areaId) return true;
-
-    // SNOW-748: the mode, not the radio — a forced offline mode leaves
-    // `navigator.onLine` true, and a refresh is network use.
-    if (!networkInUse()) {
-      window.MapSheet?.toast(STRINGS['add-offline']);
-      return true;
-    }
-
-    // Disabled for the duration, as Repair is: the refetch is short, and a
-    // second tap would dispatch a second warm run for urls the first is
-    // already fetching.
-    button.setAttribute('disabled', '');
-    window.pwaBasemapDownloads?.refreshAreaContent(areaId).then(function (ok) {
-      if (!ok) window.MapSheet?.toast(STRINGS['refresh-failed']);
-      // Re-render either way, from the record as it stands now — a
-      // refresh that landed has cleared the flag this row was showing, and
-      // one that did not has just rewritten it.
-      render();
-      // The layers menu is a live cache-state dashboard, and this run
-      // wrote into a pinned bucket.
+      // The layers menu is a live cache-state dashboard, and both halves
+      // write into a pinned bucket.
       window.pwaLayerSyncStatus?.refresh();
       // SNOW-932 review: and the region roundel behind this sheet, which
-      // reads the same record. Without it a refresh of the FOCUSED region
+      // reads the same record. Without it a sync of the FOCUSED region
       // cleared the stored shortfall and left the roundel painted
       // 'partial' until an unrelated region, basemap or connectivity event
-      // happened by — and a tap meanwhile ran a second, redundant refresh.
+      // happened by — and a tap meanwhile ran a second, redundant fetch.
       // The control re-probes rather than being told an answer, so this
       // cannot make the two disagree.
       window.pwaRegionDownload?.refreshState();
