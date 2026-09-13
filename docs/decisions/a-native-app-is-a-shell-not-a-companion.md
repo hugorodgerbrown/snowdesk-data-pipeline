@@ -25,8 +25,9 @@ Three rules, in the order they have to be answered:
   it." Settle that before any of the rest; it is a product decision, not an
   engineering one.
 - **Background location is the only capability that justifies going native.**
-  Notifications are not a second reason, and a native app built for them
-  alone would deliver nothing the site does not already do.
+  Notifications are not a second reason. They are not finished either — Web
+  Push is a staff-only spike — but what remains is product work that a native
+  transport would not remove.
 - **If it is built, it is a shell around the existing PWA** — one icon, the
   web app running inside it, a native location plugin bridging into the
   JavaScript that already exists. **A second app alongside the PWA is ruled
@@ -49,14 +50,24 @@ MapLibre `GeolocateControl` with `trackUserLocation: false` and calls
 `getCurrentPosition` for a single fix. The app has no continuous tracking of
 any kind, so this is a new capability rather than a better version of one.
 
-**Because notifications already ship.** `PushSubscription`
-([`apps/accounts/models.py:435`](../../apps/accounts/models.py)),
-`push_service.py`, `push_config.py` and the `mint_vapid_keypair` command are
-a working Web Push estate ([`push-notifications.md`](../push-notifications.md)),
-and iOS has supported Web Push for home-screen PWAs since 16.4. Native would
-add a direct APNs token, notification actions, and time-sensitive or critical
-alerts. Those are refinements of a solved problem, and none of them is worth
-an App Store presence on its own.
+**Because the notification work that remains is ours, not the platform's.**
+Web Push is wired and delivering end-to-end, but it is a **staff-only spike
+rather than a shipped feature**: every endpoint in
+[`apps/accounts/push_views.py`](../../apps/accounts/push_views.py) sits behind
+`@staff_member_required`, the only surface is `/_push-demo/`, and the
+subscriber-facing CTA, fan-out and ingestion trigger are open under SNOW-226
+([`push-notifications.md`](../push-notifications.md)). So notifications are
+emphatically not done — but nothing blocking them is missing from the web
+platform, which carries Web Push for home-screen PWAs on iOS 16.4+ and
+Declarative Web Push on Safari 18.4+.
+
+SNOW-226 is the same body of work whichever transport delivers the message:
+who gets notified, for what change, how often, and the surface that lets them
+opt in. **Going native would not remove a line of it** — it would add a second
+delivery path beside a proven one. Native would buy a direct APNs token,
+notification actions, and time-sensitive or critical alerts: refinements to
+the transport layer, which is the layer that already works, and none of them
+worth an App Store presence on its own.
 
 **Because a companion app cannot hand the track over.** Two apps on one phone
 share no storage on iOS. A separate recorder's only route back to the map is
