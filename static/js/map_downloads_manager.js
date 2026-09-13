@@ -318,6 +318,14 @@
     // a row cloned from a <template> has no name until buildRow fills it.
     'repair-row-label': 'Repair %(name)s',
     'repair-failed': "That download couldn't be repaired. Try again.",
+    // SNOW-932: the CONTENT half. Deliberately worded away from Repair's
+    // "couldn't be repaired": this download is not broken, the map draws
+    // and always did — what is behind is the bulletins and weather inside
+    // it, which are new every day and which a run over a bad connection
+    // can miss without failing.
+    'content-incomplete': 'Bulletins not saved',
+    'content-refresh-row-label': "Refresh %(name)s's content",
+    'content-refresh-failed': "That area's bulletins couldn't be saved. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -1301,6 +1309,15 @@
           basemap: basemapName(row.basemapKey),
           size: row.size,
         });
+        // SNOW-932: and a clause when the run that fetched this area's
+        // tiles fell short on its CONTENT. A clause on the ordinary line
+        // rather than a replacement for it, because — unlike `incomplete`
+        // above — the download IS usable: the map draws, and what is
+        // missing is what the map draws on. The row keeps its kind, its
+        // basemap and its size, and the menu carries the remedy.
+        if (row.contentIncomplete && !row.orphaned) {
+          subtitle.textContent += ' · ' + (STRINGS['content-incomplete'] || '');
+        }
       }
       // No per-branch dimming here any more (SNOW-832). SNOW-645 dimmed
       // the SIZE COLUMN to `text-text-3` for an orphan, alongside the
@@ -1324,8 +1341,14 @@
     const renameable = row.renameable && row.onDevice !== false;
     const repairable =
       row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length > 0;
+    // SNOW-932: the CONTENT half fell short on the run that fetched this
+    // area. Offered only for a row this device actually holds and whose
+    // record is intact — an orphan names no boundary to resolve content
+    // against, and an account-only row holds nothing here to top up.
+    const contentRefreshable =
+      !!row.contentIncomplete && !row.orphaned && row.onDevice !== false;
     const deletable = row.deletable !== false && row.onDevice !== false;
-    const useMenu = deletable && (renameable || repairable);
+    const useMenu = deletable && (renameable || repairable || contentRefreshable);
 
     // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
     // older cached shell whose row template predates it would otherwise
@@ -1369,7 +1392,8 @@
     // stamped with the area id AND a menu item without one.
     if (showMenu) {
       for (const inline of fragment.querySelectorAll(
-        '[data-downloads-delete], [data-downloads-repair], [data-row-rename]',
+        '[data-downloads-delete], [data-downloads-repair], [data-row-rename],' +
+          ' [data-downloads-content-refresh]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();
@@ -1463,6 +1487,29 @@
         );
       } else {
         repairBtn.remove();
+      }
+    }
+
+    // SNOW-932: "Refresh content" — re-fetch the bulletins and weather
+    // inside this area's boundary, and not one tile. Only a row whose own
+    // record says a run fell short carries it; every other row sheds it,
+    // including an orphan (no record, so no boundary to resolve against)
+    // and an account-only row (nothing here to top up).
+    //
+    // No URL list on the element, unlike Repair above: content is resolved
+    // against the CURRENT day and the current region set, so a list stamped
+    // when the sheet rendered would be stale by the time it was pressed.
+    // The handler asks for it at press time instead.
+    const contentBtn = fragment.querySelector('[data-downloads-content-refresh]');
+    if (contentBtn) {
+      if (contentRefreshable) {
+        contentBtn.setAttribute('data-downloads-content-refresh', row.id);
+        contentBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['content-refresh-row-label'], { name: row.label }),
+        );
+      } else {
+        contentBtn.remove();
       }
     }
 
@@ -1648,6 +1695,7 @@
       return;
     }
     if (_handleRepairClick(event)) return;
+    if (_handleContentRefreshClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
@@ -1710,6 +1758,54 @@
       render();
       // The layers menu is a live cache-state dashboard, and this run wrote
       // into a pinned bucket.
+      window.pwaLayerSyncStatus?.refresh();
+    });
+    return true;
+  }
+
+  /**
+   * SNOW-932: "Refresh content" — re-fetch the bulletins and weather inside
+   * one area's boundary, and not one tile.
+   *
+   * The remedy a custom area or drop zone did not have. SNOW-924 gave the
+   * region roundel a content refresh on a tap; the other two kinds recorded
+   * a content stamp and offered nothing, so the only way to re-fetch a few
+   * kilobytes of bulletins was to delete the area and re-spend megabytes of
+   * tiles. This is the same operation, reached by area id, through the
+   * shared `pwaBasemapDownloads.refreshContent` — one function, so a region
+   * refreshed from the roundel and a drop zone refreshed from here cannot
+   * drift into two different payloads.
+   *
+   * Offline refuses, like every other control on this sheet that fetches.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a content refresh.
+   */
+  function _handleContentRefreshClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-content-refresh]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-content-refresh');
+    if (!areaId) return true;
+
+    // SNOW-748: the mode, not the radio — a forced offline mode leaves
+    // `navigator.onLine` true, and this is network use.
+    if (!networkInUse()) {
+      window.MapSheet?.toast(STRINGS['add-offline']);
+      return true;
+    }
+
+    // Disabled for the duration, as Repair is and for the same reason: a
+    // second tap would dispatch a second warm run for the same URLs.
+    button.setAttribute('disabled', '');
+    window.pwaBasemapDownloads?.refreshContent(areaId).then(function (ok) {
+      if (!ok) window.MapSheet?.toast(STRINGS['content-refresh-failed']);
+      // Re-render either way, from the record as it stands now — a refresh
+      // that half landed has still changed what is on disk, and the row
+      // must say what is true rather than what it said before the tap.
+      render();
       window.pwaLayerSyncStatus?.refresh();
     });
     return true;

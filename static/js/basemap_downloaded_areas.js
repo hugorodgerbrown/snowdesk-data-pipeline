@@ -278,6 +278,12 @@
           // the roundel's own tile probe already reads as "no record".
           z: entry.z || null,
           band: Array.isArray(entry.band) ? entry.band : null,
+          // SNOW-932: a run that landed this area's tiles and fell short on
+          // its content. Absent on every record written before SNOW-924 and
+          // normalised to `false` here — the sheet must never read silence
+          // as a fault, which is what would light every pre-existing area
+          // amber on deploy.
+          contentIncomplete: !!entry.contentIncomplete,
         });
       }
     } catch (_e) {
@@ -330,6 +336,8 @@
           // the blob from the pair through `buildBlob`, the same
           // client-side twin that produced the tile set in the first place.
           band: Array.isArray(custom.band) ? custom.band : null,
+          // SNOW-932: see the region branch above.
+          contentIncomplete: !!custom.contentIncomplete,
         });
       }
     } catch (_e) {

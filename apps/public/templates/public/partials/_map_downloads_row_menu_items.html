@@ -17,6 +17,19 @@ every panel. On this panel it means:
   a CUSTOM AREA or DROP ZONE   Rename and Remove → this menu.
   a row NOT on this device     Download alone → the bare download icon.
   a row that cannot render     Repair and Remove → this menu.
+  a row whose CONTENT is short Refresh content and Remove → this menu.
+
+SNOW-932 added the last of those. It is a different fault from Repair and
+it is deliberately its own item: Repair fetches the documents the map needs
+to DRAW, and this fetches the bulletins and weather inside the boundary,
+which is what the map draws them ON. A custom area or drop zone had neither
+signal nor remedy for the second before that ticket — the only way to
+re-fetch a few kilobytes of bulletins was to delete the area and re-spend
+megabytes of tiles.
+
+Order follows the design-system consistency rule: the constructive items
+first in the order the routes and favourites rows established, destructive
+last.
 
 The buttons are value-less here, exactly as the inline controls were: this
 partial is rendered ONCE inside the row `<template>`, and
@@ -39,6 +52,18 @@ wherever a user meets it.
     >
         {% include "includes/_icon_repair.html" only %}
         {% trans "Repair" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-content-refresh
+        aria-label="{% trans 'Refresh content' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_refresh.html" only %}
+        {% trans "Refresh content" %}
     </button>
 </li>
 <li role="none">

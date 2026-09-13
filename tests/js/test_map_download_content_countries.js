@@ -421,3 +421,50 @@ describe('an area straddling a border takes both countries bulletins', () => {
     expect(typeof record.contentAt).toBe('string');
   });
 });
+
+describe('a country that would not load leaves the run short (SNOW-932)', () => {
+  /** The stored `basemap.regions` entry for the Swiss region. */
+  async function record() {
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const list = Array.isArray(row && row.value) ? row.value : [];
+    return list.find((entry) => entry && entry.region_id === CH_REGION_ID);
+  }
+
+  it('records the shortfall rather than only logging it', async () => {
+    // SNOW-931 closed the plan and left this thread hanging: a country
+    // whose geometry feed fails writes `download.countries.short` to the
+    // debug log and the run proceeds with a plan it KNOWS is short. Every
+    // posted url then lands, `ok === total`, and the area goes green over
+    // missing bulletins — which is the same false green SNOW-931 removed,
+    // reached by the other road.
+    //
+    // Driven through `refreshContent`, the public seam SNOW-932 added, so
+    // this exercises the real resolver rather than a reimplementation.
+    const before = await record();
+    expect(before).toBeTruthy();
+
+    const countries = window.pwaMapCountries;
+    window.pwaMapCountries = {
+      ensureAllLoaded: async () => ({ loaded: ['ch'], failed: ['fr'] }),
+    };
+    try {
+      const complete = await window.pwaBasemapDownloads.refreshContent(
+        self.pwaBasemapDownloadCore.areaIdForRegion(CH_REGION_ID),
+      );
+
+      expect(complete).toBe(false);
+      expect((await record()).contentIncomplete).toBe(true);
+    } finally {
+      window.pwaMapCountries = countries;
+    }
+  });
+
+  it('clears it again once every country loads', async () => {
+    const complete = await window.pwaBasemapDownloads.refreshContent(
+      self.pwaBasemapDownloadCore.areaIdForRegion(CH_REGION_ID),
+    );
+
+    expect(complete).toBe(true);
+    expect((await record()).contentIncomplete).toBeUndefined();
+  });
+});

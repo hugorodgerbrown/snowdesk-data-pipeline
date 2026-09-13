@@ -322,8 +322,16 @@
     //
     // A deps bundle without the member (an older shell mid-rollout) yields
     // `[]` — the pre-ticket behaviour, tiles and nothing else.
-    const contentUrls =
+    //
+    // SNOW-932: the member now answers `{urls, short}` — a plan can be
+    // short of what the boundary implies without being empty, when a
+    // country's geometry feed never loaded and its regions therefore
+    // produced no bulletins. A bare array is still accepted, because an
+    // older cached bundle returns one and a run must not break on it.
+    const contentPlan =
       typeof deps.contentUrls === 'function' ? (await deps.contentUrls(blob)) || [] : [];
+    const contentUrls = Array.isArray(contentPlan) ? contentPlan : contentPlan.urls || [];
+    const contentShort = !Array.isArray(contentPlan) && !!contentPlan.short;
     const urls = [...contentUrls, ...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
@@ -399,7 +407,12 @@
         // means this run had no content to fetch — an older deps bundle, or
         // an area whose boundary contains nothing — which a caller must read
         // as "nothing to say" rather than as a failure to record.
-        content: { ok: contentOk, total: contentUrls.length },
+        //
+        // SNOW-932: plus `short`, which is the other way this half can fall
+        // down — every URL in the list landed, but the list itself was
+        // never the whole of what the boundary implies. A caller reading
+        // `ok === total` alone would call that a completion.
+        content: { ok: contentOk, total: contentUrls.length, short: contentShort },
       });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a

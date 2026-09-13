@@ -394,6 +394,18 @@
         // check itself is not here — it needs Cache Storage, which this
         // module deliberately never touches.
         deps: Array.isArray(area.deps) ? area.deps : [],
+        // SNOW-932: a run that fetched this area's tiles and fell short on
+        // its CONTENT — the bulletins and weather inside its boundary.
+        // Stored on the record by the run that discovered it, so the row
+        // can offer a refresh rather than the shortfall being invisible
+        // until the user opens the area offline and finds no bulletin.
+        //
+        // Distinct from `incomplete`, which the sheet derives from Cache
+        // Storage and which means the map cannot DRAW. This one means the
+        // map draws with nothing on it. Never inferred from a missing
+        // `contentAt`: absence there is "downloaded before SNOW-924",
+        // which is every pre-existing area on every device.
+        contentIncomplete: !!area.contentIncomplete,
         // SNOW-692: the ground the area covers, carried for the same
         // reason and checked by the same surface — but DERIVED rather than
         // recorded, because a region's ~273 slope tiles would be 27.4 KB
@@ -580,6 +592,10 @@
         // Both are passed through unnormalised — see `manageRows`.
         z: area.z || null,
         band: Array.isArray(area.band) ? area.band : null,
+        // SNOW-932: the run's own verdict on its CONTENT half, recorded
+        // rather than probed — the tiles being on disk says nothing about
+        // whether the bulletins inside the boundary ever arrived.
+        contentIncomplete: !!area.contentIncomplete,
       });
     }
 

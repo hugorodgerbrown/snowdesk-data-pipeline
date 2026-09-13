@@ -195,6 +195,15 @@ the row's own label, so home.html loads that module once for both.
     {# whole.                                                              #}
     <span data-string="repair-row-label">{% blocktrans %}Repair %(name)s{% endblocktrans %}</span>
     <span data-string="repair-failed">{% trans "That download couldn't be repaired. Try again." %}</span>
+    {# SNOW-932: the CONTENT half, and it is a different reading from      #}
+    {# "Incomplete" above rather than a synonym for it. That one means the #}
+    {# map cannot draw; this one means the map draws with nothing on it —  #}
+    {# the tiles are whole and the bulletins inside the boundary are not.  #}
+    {# So it is a clause appended to the row's ordinary meta line, not a   #}
+    {# replacement for it, and the row keeps its kind, basemap and size.   #}
+    <span data-string="content-incomplete">{% trans "Bulletins not saved" %}</span>
+    <span data-string="content-refresh-row-label">{% blocktrans %}Refresh %(name)s's content{% endblocktrans %}</span>
+    <span data-string="content-refresh-failed">{% trans "That area's bulletins couldn't be saved. Try again." %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
     {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}

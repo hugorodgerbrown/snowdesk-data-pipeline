@@ -1310,9 +1310,15 @@
             // framed before that ticket — which is not a fault: the tiles
             // decide whether a map draws and they are here. Separate from
             // `savedAt` because the two halves age differently.
-            ...(content && content.total > 0 && content.ok === content.total
-              ? { contentAt: new Date().toISOString() }
-              : {}),
+            //
+            // SNOW-932: the predicate is shared now, and it also records
+            // the SHORTFALL. This control's own copy could see a failed
+            // fetch but not a plan that never named a country's bulletins,
+            // and it had nowhere to put either — a content failure on a
+            // custom area was invisible and, short of deleting the area and
+            // re-spending its tiles, unrecoverable. `contentIncomplete` is
+            // what the Manage downloads sheet's refresh acts on.
+            ...areaContentFields(content),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);

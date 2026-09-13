@@ -866,7 +866,7 @@ describe('the content phase', () => {
     await runAndSettle(d, o);
 
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 1, total: 2 });
+    expect(extras.content).toEqual({ ok: 1, total: 2, short: false });
   });
 
   it('reports total 0 when the area contains nothing, not a failure', async () => {
@@ -876,7 +876,7 @@ describe('the content phase', () => {
     await runAndSettle(d, o);
 
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0 });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
   });
 
   it('never reaches the eviction machinery', async () => {
@@ -904,7 +904,52 @@ describe('the content phase', () => {
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
     expect(d.progressGrid.mock.calls[0][1]).toBe(1);
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0 });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
+  });
+
+  it('carries a SHORT plan through to the tally, though every url landed', async () => {
+    // SNOW-932: the second way the content half falls down. A country whose
+    // geometry feed never loaded contributes no bulletin urls at all, so
+    // every url in the list can land while the list was never the whole of
+    // what the boundary implies. `ok === total` alone reads that as a
+    // completion, which is the false green this ticket removes.
+    const d = withContent([], {
+      contentUrls: vi.fn(async () => {
+        calls.push('contentUrls');
+        return { urls: ['/a/'], short: true };
+      }),
+      warmCache: vi.fn(async (urls, opts) => {
+        calls.push('warmCache');
+        opts.onProgress(urls.length, urls.length, [0, 1, 2, 3], 900);
+        return { ok: urls.length, failed: 0, bytes: 900 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 1, total: 1, short: true });
+  });
+
+  it('accepts a bare array from an older cached bundle', async () => {
+    // SNOW-932 widened the member's return to `{urls, short}`. A shell
+    // mid-rollout still answers with a list, and a run must not break on
+    // it — it simply reports no shortfall, which is what it could say
+    // before the field existed.
+    const d = withContent(['/a/'], {
+      warmCache: vi.fn(async (urls, opts) => {
+        calls.push('warmCache');
+        opts.onProgress(urls.length, urls.length, [0, 1, 2, 3], 900);
+        return { ok: urls.length, failed: 0, bytes: 900 };
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content).toEqual({ ok: 1, total: 1, short: false });
   });
 
   it('treats a content resolver that yields nothing usable as empty', async () => {

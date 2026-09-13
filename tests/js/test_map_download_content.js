@@ -446,3 +446,52 @@ describe('a downloaded area refreshes rather than re-downloads', () => {
     expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
   });
 });
+
+describe('a content shortfall survives the next re-render (SNOW-932)', () => {
+  const btn = () => document.getElementById('map-download-control');
+
+  /** Fail the next warm-cache run outright, as a dropped signal does. */
+  function failNextWarm() {
+    window.pwaWarmCache.mockImplementationOnce(async () => ({
+      ok: 0,
+      failed: 1,
+      bytes: 0,
+      cancelled: false,
+    }));
+  }
+
+  it('stays partial across a connectivity flip, where it used to go green', async () => {
+    // THE discriminating test. SNOW-924 painted 'partial' at the two run
+    // outcomes and nothing re-derived it, so the next `renderControl()`
+    // repainted the area green from the probe — and the event most likely
+    // to trigger one is `snowdesk:connectivity-changed`, which fires in
+    // exactly the flapping-signal conditions that caused the shortfall.
+    await waitFor(() => btn().dataset.downloadState === 'done');
+    failNextWarm();
+
+    btn().click();
+    await waitFor(() => btn().dataset.downloadState === 'partial');
+
+    const record = await recordedRegion();
+    expect(record.contentIncomplete).toBe(true);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    // Long enough for the coalesced render and its async probe to settle.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(btn().dataset.downloadState).toBe('partial');
+  });
+
+  it('clears once a refresh actually completes', async () => {
+    // The flag is set by the run that discovers the shortfall and cleared
+    // by the run that fixes it — never inferred from anything else.
+    await waitFor(() => btn().dataset.downloadState === 'partial');
+
+    btn().click();
+    await waitFor(() => btn().dataset.downloadState === 'done');
+
+    const record = await recordedRegion();
+    expect(record.contentIncomplete).toBeUndefined();
+    expect(typeof record.contentAt).toBe('string');
+  });
+});

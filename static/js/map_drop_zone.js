@@ -694,10 +694,9 @@
             bytes: Number(result.bytes) || 0,
             // SNOW-924: as map_custom_download.js — a drop zone records
             // an ordinary custom area, so it carries the content stamp
-            // on the same terms.
-            ...(content && content.total > 0 && content.ok === content.total
-              ? { contentAt: new Date().toISOString() }
-              : {}),
+            // on the same terms. SNOW-932: and the same durable shortfall,
+            // through the same shared predicate.
+            ...areaContentFields(content),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);

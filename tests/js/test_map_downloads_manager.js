@@ -159,6 +159,9 @@ function buildFixture() {
             <ul id="downloads-row-actions-menu" role="menu" hidden>
               <li role="none"><button type="button" role="menuitem" data-downloads-repair
                                       aria-label="Repair">Repair</button></li>
+              <li role="none"><button type="button" role="menuitem"
+                                      data-downloads-content-refresh
+                                      aria-label="Refresh content">Refresh content</button></li>
               <li role="none"><button type="button" role="menuitem" data-row-rename
                                       data-downloads-rename aria-label="Rename">Rename</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-delete
@@ -180,6 +183,9 @@ function buildFixture() {
       <span data-string="kind-incomplete">Incomplete</span>
       <span data-string="repair-row-label">Repair %(name)s</span>
       <span data-string="repair-failed">That download couldn't be repaired. Try again.</span>
+      <span data-string="content-incomplete">Bulletins not saved</span>
+      <span data-string="content-refresh-row-label">Refresh %(name)s's content</span>
+      <span data-string="content-refresh-failed">That area's bulletins couldn't be saved. Try again.</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
@@ -274,6 +280,9 @@ function installDownloadsBridge(rows, cachesStub) {
         // Absent on a record written before that ticket, and normalised to
         // [] here exactly as map.js's own reader does.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-932: the run's own verdict on its CONTENT half, likewise
+        // normalised here — absence must read as "nothing to report".
+        contentIncomplete: !!entry.contentIncomplete,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -298,6 +307,8 @@ function installDownloadsBridge(rows, cachesStub) {
         bbox: entry.bbox,
         // SNOW-844: see the region branch above.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-932: see the region branch above.
+        contentIncomplete: !!entry.contentIncomplete,
       });
     }
     return out;
@@ -392,6 +403,11 @@ function installDownloadsBridge(rows, cachesStub) {
       cachesStub.urls = [...set];
       return true;
     }),
+    // SNOW-932: the content half's own remedy, reached by area id. The real
+    // one resolves the boundary, warms the bulletins and stamps the record;
+    // the sheet only needs to know whether it landed, so the stub answers
+    // whatever `cachesStub.contentRefreshOk` says.
+    refreshContent: vi.fn(async (_areaId) => cachesStub.contentRefreshOk !== false),
   };
 }
 
@@ -1346,6 +1362,100 @@ describe('an area that cannot render (SNOW-844)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
     expect(row.querySelector('[data-downloads-repair]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+});
+
+describe('an area whose CONTENT fell short (SNOW-932)', () => {
+  const STYLE_URL = 'https://tiles.example.invalid/liberty.json';
+
+  /** A custom area whose run landed its tiles and missed its bulletins. */
+  function shortCustomArea(extra) {
+    return [
+      Object.assign(
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          bytes: 20 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'openfreemap_liberty',
+          deps: [STYLE_URL],
+          contentIncomplete: true,
+        },
+        extra || {},
+      ),
+    ];
+  }
+
+  it('says so on the row and offers a refresh, where it said nothing at all', async () => {
+    // The custom-area half of this ticket. SNOW-924 recorded a content
+    // stamp here and gave the row no state and no remedy, so a shortfall
+    // was invisible AND unrecoverable — the only way to re-fetch a few
+    // kilobytes of bulletins was to delete the area and re-spend its tiles.
+    window.caches.urls = [STYLE_URL];
+    seed({ 'basemap.customAreas': shortCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    // A CLAUSE on the ordinary line, not a replacement for it: the map
+    // draws, unlike the `incomplete` case, so the row keeps its kind, its
+    // basemap and its size.
+    expect(row.querySelector('[data-row-meta]').textContent).toBe(
+      'Custom area · OpenFreeMap · 20.0 MB · Bulletins not saved',
+    );
+    const refresh = row.querySelector('[data-downloads-content-refresh]');
+    expect(refresh).not.toBeNull();
+    expect(refresh.getAttribute('aria-label')).toBe("Refresh Custom area 1's content");
+  });
+
+  it('leaves an area with no recorded shortfall alone', async () => {
+    // Absence is "downloaded before SNOW-924", which is every pre-existing
+    // area on every device — it must never read as a fault.
+    window.caches.urls = [STYLE_URL];
+    seed({ 'basemap.customAreas': shortCustomArea({ contentIncomplete: false }) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe(
+      'Custom area · OpenFreeMap · 20.0 MB',
+    );
+    expect(row.querySelector('[data-downloads-content-refresh]')).toBeNull();
+  });
+
+  it('refreshes the content by area id, and never the tiles', async () => {
+    window.caches.urls = [STYLE_URL];
+    seed({ 'basemap.customAreas': shortCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-content-refresh]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.refreshContent).toHaveBeenCalledWith('custom-a1');
+    // Not the download path, whose eviction confirm could destroy another
+    // area to make room for a handful of HTML pages.
+    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
+  });
+
+  it('refuses while offline', async () => {
+    window.caches.urls = [STYLE_URL];
+    seed({ 'basemap.customAreas': shortCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    firstRowElement().querySelector('[data-downloads-content-refresh]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.refreshContent).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalled();
   });
 });
 

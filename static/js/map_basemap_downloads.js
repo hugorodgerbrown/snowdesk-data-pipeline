@@ -664,32 +664,40 @@ async function downloadContentDays() {
  * country. See `pwaMapCountries.ensureAllLoaded` for why the fix loads all
  * four rather than the ones a rectangle overlaps.
  *
+ * SNOW-932: the return is `{urls, short}` rather than a bare list, because
+ * a plan can be SHORT of what the boundary implies without being empty —
+ * a country whose geometry feed failed to load yields no bulletins for its
+ * regions while every other country's still resolve. `short` is that fact,
+ * carried out to the run's own completeness tally so the shortfall becomes
+ * a stored `contentIncomplete` rather than only a line in the debug log.
+ *
  * @param {Object} blob The run's download blob, for its tile ranges.
- * @returns {Promise<string[]>} Possibly empty, which every caller reads as
- *   "nothing to add" rather than as a failure.
+ * @returns {Promise<{urls: string[], short: boolean}>} An empty `urls` is
+ *   read by every caller as "nothing to add" rather than as a failure;
+ *   `short` is what says the plan could not be completed.
  */
 async function assembleAreaContentURLs(blob) {
   const core = self.pwaBasemapDownloadCore;
   const mapEl = document.getElementById('map');
-  if (!core || !core.areaContentPlan || !mapEl) return [];
+  if (!core || !core.areaContentPlan || !mapEl) return { urls: [], short: false };
 
   const weather = await cacheOverlayFeedsForDownload();
 
   const bbox = core.areaBBox(blob);
-  if (!bbox) return [];
+  if (!bbox) return { urls: [], short: false };
 
   // Before the lookup is read, not after: the whole point is that the set
   // it answers from is complete. Best-effort on the surface being absent,
   // as every other cross-module reach here is — an older shell mid-rollout
   // gets the pre-SNOW-931 answer rather than no download.
   const countries = await window.pwaMapCountries?.ensureAllLoaded();
-  if (countries && countries.failed.length > 0) {
+  const short = !!(countries && countries.failed.length > 0);
+  if (short) {
     // A country the client could not fetch leaves the plan short in exactly
-    // the way this ticket closed, so it is recorded rather than shrugged
-    // off. It is NOT yet reflected in the run's own completeness — that
-    // needs the durable-incompleteness plumbing SNOW-932 adds, since
-    // `contentAt` is write-only today and `partial` is lost on the next
-    // re-render.
+    // the way SNOW-931 closed. SNOW-932 carries it out through the return
+    // value as well as recording it here, so the run stamps
+    // `contentIncomplete` rather than a `contentAt` over a plan it knows
+    // was missing a country.
     window.pwaDebugLog?.record('net', 'download.countries.short', {
       loaded: countries.loaded,
       failed: countries.failed,
@@ -705,7 +713,182 @@ async function assembleAreaContentURLs(blob) {
     days: await downloadContentDays(),
     weatherDetailTemplate: mapEl.dataset.weatherDetailUrl || '',
   });
-  return [...plan.bulletinUrls, ...plan.weatherDetailUrls];
+  return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: short };
+}
+
+/**
+ * What a run's content half actually did (SNOW-932).
+ *
+ * Three outcomes, and the middle one is the reason this is a function
+ * rather than a boolean at each call site — the region roundel, the custom
+ * area and the drop zone all had to agree on it, and two of them had a
+ * copy of the predicate that could not see `short` at all.
+ *
+ *   not attempted  `total === 0` and the plan was not short. An area whose
+ *     boundary contains nothing, or a shell older than the content phase.
+ *     Records NOTHING: absence of `contentAt` already means "never", and
+ *     writing an incompleteness here would light an amber roundel across
+ *     every pre-SNOW-924 area on deploy.
+ *   complete       every posted content URL landed AND the plan named
+ *     everything the boundary implies.
+ *   short          anything else — a URL that failed, or a country whose
+ *     geometry never loaded so its bulletins were never in the list.
+ *
+ * @param {{ok?: number, total?: number, short?: boolean}|null|undefined} content
+ *   The runner's own content tally, from `finish`'s extras.
+ * @returns {{attempted: boolean, complete: boolean}}
+ */
+function areaContentOutcome(content) {
+  const total = (content && content.total) || 0;
+  const short = !!(content && content.short);
+  return {
+    attempted: total > 0 || short,
+    complete: total > 0 && content.ok === total && !short,
+  };
+}
+
+/**
+ * The content fields a finished run writes onto its area record (SNOW-932).
+ *
+ * Spread into the record rather than assigned, so the "not attempted" case
+ * writes neither field and a pre-existing record keeps whatever it had.
+ * `contentIncomplete` is deliberately the DURABLE half of `partial`: the
+ * roundel state used to live only in the DOM, so the next re-render — most
+ * likely `snowdesk:connectivity-changed`, the very event that fires in the
+ * flapping-signal conditions that caused the shortfall — repainted the area
+ * green.
+ *
+ * @param {{ok?: number, total?: number, short?: boolean}|null|undefined} content
+ * @returns {{contentAt?: string, contentIncomplete?: boolean}}
+ */
+function areaContentFields(content) {
+  const outcome = areaContentOutcome(content);
+  if (outcome.complete) return { contentAt: new Date().toISOString() };
+  if (outcome.attempted) return { contentIncomplete: true };
+  return {};
+}
+
+/**
+ * The stored record behind one area id, whichever store it lives in
+ * (SNOW-932).
+ *
+ * Region records live in `basemap.regions` keyed by `region_id`, custom
+ * areas and drop zones in `basemap.customAreas` keyed by `id`. A caller
+ * holding an area id — which is what every surface outside the two
+ * download controls holds — should not have to know which.
+ *
+ * @param {string} areaId
+ * @returns {Promise<Object|null>} The record, or null when nothing on this
+ *   device claims that id.
+ */
+async function areaRecordById(areaId) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId) return null;
+  try {
+    if (core.isCustomAreaId(areaId)) {
+      const areas = await _readCustomAreas();
+      return areas.find((area) => area && area.id === areaId) || null;
+    }
+    const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+    const existing = Array.isArray(row && row.value) ? row.value : [];
+    return (
+      existing.find(
+        (entry) => entry && core.areaIdForRegion(entry.region_id) === areaId,
+      ) || null
+    );
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Write one area's content fields back onto its record (SNOW-932).
+ *
+ * A read-modify-write on whichever store holds it, touching nothing else.
+ * `contentIncomplete` is DELETED on a completion rather than set false —
+ * absence is what every reader already treats as "nothing to report".
+ *
+ * @param {string} areaId
+ * @param {boolean} complete Whether the content half landed in full.
+ * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
+ *   verdict on one row, never a download.
+ */
+async function stampAreaContent(areaId, complete) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId || !window.pwaDb) return;
+  const apply = (entry) => {
+    const { contentIncomplete: _dropped, ...rest } = entry;
+    if (complete) return { ...rest, contentAt: new Date().toISOString() };
+    return { ...rest, contentIncomplete: true };
+  };
+  try {
+    if (core.isCustomAreaId(areaId)) {
+      const areas = await _readCustomAreas();
+      if (!areas.some((area) => area && area.id === areaId)) return;
+      await _writeCustomAreas(
+        areas.map((area) => (area && area.id === areaId ? apply(area) : area)),
+      );
+      return;
+    }
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const existing = Array.isArray(row && row.value) ? row.value : [];
+    let touched = false;
+    const next = existing.map((entry) => {
+      if (!entry || core.areaIdForRegion(entry.region_id) !== areaId) return entry;
+      touched = true;
+      return apply(entry);
+    });
+    if (!touched) return;
+    await window.pwaDb.put('meta:app', { key: 'basemap.regions', value: next });
+  } catch (_e) {
+    // Best-effort, as every write in this file is.
+  }
+}
+
+/**
+ * Re-fetch one area's CONTENT — the perishable half — by area id
+ * (SNOW-932).
+ *
+ * The kind-agnostic counterpart of `map_region_download.js`'s
+ * `handleRefresh`, and the reason it exists is that a custom area or a
+ * drop zone had no remedy at all: a content shortfall there was invisible,
+ * and re-fetching a few kilobytes of bulletins meant deleting the area and
+ * re-spending megabytes of tiles. That is precisely the waste SNOW-924's
+ * `repair()`-not-`run()` design removed for regions.
+ *
+ * Goes through `repairPinnedDownload` for that same reason: `run`'s
+ * pre-flight guards a several-hundred-tile download and can ask the user
+ * to evict another area, which is absurd for a handful of HTML pages.
+ *
+ * @param {string} areaId
+ * @returns {Promise<boolean>} Whether the content is now complete. A short
+ *   PLAN counts as a failure even when every posted URL landed — the list
+ *   was never the whole of what the boundary implies.
+ */
+async function refreshAreaContent(areaId) {
+  const record = await areaRecordById(areaId);
+  if (!record) return false;
+  const plan = await assembleAreaContentURLs(record);
+  if (plan.urls.length === 0) {
+    // Nothing resolvable. A short plan is still a discovered shortfall and
+    // belongs on the record; an empty-but-whole plan says nothing.
+    if (plan.short) await stampAreaContent(areaId, false);
+    return !plan.short;
+  }
+  const landed = await new Promise((resolve) => {
+    repairPinnedDownload({
+      areaId: areaId,
+      urls: plan.urls,
+      paint: () => {},
+      finish: async (result, extras) => {
+        const runCore = extras && extras.core;
+        resolve(!!(runCore && runCore.downloadSucceeded(result)));
+      },
+    });
+  });
+  const complete = landed && !plan.short;
+  await stampAreaContent(areaId, complete);
+  return complete;
 }
 
 // SNOW-586: the Cache Storage name prefix every per-area pinned basemap
@@ -2155,6 +2338,20 @@ window.pwaBasemapDownloads = Object.freeze({
         },
       });
     }),
+
+  /**
+   * SNOW-932: re-fetch one area's CONTENT — the bulletins and weather
+   * inside its boundary — by area id, whatever kind of area it is. The
+   * Manage downloads sheet's "Refresh content" control, and the remedy a
+   * custom area or drop zone had no way to offer before.
+   *
+   * See `refreshAreaContent`. Stamps the record itself, so the caller only
+   * has to re-render.
+   *
+   * @param {string} areaId
+   * @returns {Promise<boolean>} Whether the content is now complete.
+   */
+  refreshContent: (areaId) => refreshAreaContent(areaId),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see

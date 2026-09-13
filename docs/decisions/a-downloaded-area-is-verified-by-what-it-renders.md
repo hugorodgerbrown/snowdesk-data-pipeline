@@ -1,8 +1,8 @@
 ---
 name: a-downloaded-area-is-verified-by-what-it-renders
-description: missingRenderDependencies, baseLayerStaleEntries, incomplete, repair — an area and the base layer need their style, TileJSON and sprite
+description: missingRenderDependencies, incomplete, repair, contentIncomplete, refreshContent, partial — an area needs its style, TileJSON and sprite
 status: current
-last-reviewed: 2026-09-12
+last-reviewed: 2026-09-13
 ---
 
 # A downloaded area is verified by what it renders, not by its tiles
@@ -225,3 +225,49 @@ firing.
   both directions — skip never accuses and never falsely completes — but the
   two paths are not equally informative, and closing the gap means giving
   the sheet's repair a heal of its own.
+
+## The content half is verified the same way — by stored fact (SNOW-932)
+
+SNOW-924 gave a download a second half: the bulletins and weather inside
+its boundary. It gave that half a roundel state too, `partial`, and painted
+it at the two run outcomes that can produce it. Nothing re-derived it.
+`_probeDone` answers `idle` / `busy` / `done` / `incomplete` /
+`other-basemap` / `error` / `offline` / `signin` and never `partial`, so the
+next `renderControl()` repainted the area green — and the event most likely
+to fire one is `snowdesk:connectivity-changed`, which happens in exactly the
+flapping-signal conditions that caused the shortfall. The amber was most
+likely to be erased precisely when it had been earned.
+
+So the content half follows the same rule this document sets for the render
+half, one layer down: **a verdict is derived from a stored fact, never held
+in the DOM.** The fact is `contentIncomplete` on the area record, written by
+the run that discovers the shortfall (`areaContentFields`, shared by the
+region roundel, the custom area and the drop zone) and cleared only by a
+refresh that completes. `_probeDone` returns it and `_renderControl` paints
+from it.
+
+Three things about it are deliberate:
+
+- **It is not derived from a missing `contentAt`.** SNOW-924 rejected that
+  and was right to: absence means "downloaded before this shipped", which is
+  every pre-existing area on every device, and inferring from it would light
+  amber across the estate on deploy. Absence stays silence.
+- **A short PLAN counts, not only a failed fetch.** A country whose geometry
+  feed never loaded contributes no bulletin URLs at all, so every posted URL
+  can land while the list was never the whole of what the boundary implies.
+  `assembleAreaContentURLs` returns `{urls, short}` and the runner carries
+  `short` into `content`, which is what closes the thread SNOW-931 left
+  hanging — that case used to reach the debug log and nothing else.
+- **The remedy is not region-only.** A custom area or drop zone recorded a
+  content stamp and offered no state and no repair, so a shortfall there was
+  invisible and, short of deleting the area and re-spending megabytes of
+  tiles, unrecoverable — precisely the waste SNOW-924's `repair()`-not-`run()`
+  design removed for regions. `pwaBasemapDownloads.refreshContent(areaId)` is
+  the kind-agnostic operation, and the Manage downloads sheet's "Refresh
+  content" item is its entry point for the two kinds with no roundel.
+
+The two states stay distinct on every surface. `incomplete` means the map
+cannot draw, so the row is dimmed and its meta line is replaced. A content
+shortfall means the map draws with nothing on it, so the row keeps its kind,
+basemap and size and takes a clause — the same "caveat on a Yes, not a No of
+its own" treatment the shared base layer already gets.
