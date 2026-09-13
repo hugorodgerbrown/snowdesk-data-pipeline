@@ -379,6 +379,54 @@ three-clause cap with the same fact restated over rows the table already
 lists. A row still never carries its own explanation. An unparseable
 stamp reads as `none`: a corrupt field is not evidence of anything.
 
+### The remedy is on the row (SNOW-925)
+
+A row the reading calls `stale` or `never` gains one control, **Update**,
+which fetches what that row is short of and then **re-runs the report**.
+The panel already refuses to claim a green it has not verified, and the
+one place the report is allowed to say a fetch worked is after checking.
+`completableArea` is the gate: an area whose content is `fresh` has
+nothing to do, and re-fetching it would spend a connection on documents
+already here.
+
+A third cell, and the two-cell rule survives it: that rule is about per-row
+*explanation* — the prose that kept growing back — and a control is not
+prose. One action, so a bare control rather than a "…", the same threshold
+the Manage downloads sheet applies.
+
+**What it fetches, cheapest first:** the map shell if the report just said
+it is not saved; the four overlay feeds, whole and unfiltered; then the
+bulletins and weather sheets inside this area's boundary. Everything goes
+through `self.pwaWarmCache` — the worker's own warm path — because the
+worker stamps a same-origin HTML response with the principal its body
+declares, and a `cache.put` from the page writes an entry the worker
+refuses for ever.
+
+**What it deliberately does not fetch is tiles**, and that is the boundary
+of what this page can honestly offer. The tile half needs the loaded
+basemap style — its sources, its sprite, its TileJSON — and that exists
+only on the map. Re-deriving it here would be a second copy of the whole
+basemap pipeline on a page with no map, which is exactly the drift
+`basemap_downloaded_areas.js` was extracted to prevent. A row whose tiles
+do not verify is not offered the control at all; it keeps the Repair
+remedy `note-area-incomplete` already names, on the Manage downloads
+sheet.
+
+The endpoints the plan is built from — `regions.geojson` per country,
+`weather.geojson`, the weather-detail template, the four feeds and
+today's date — are rendered onto the panel root by
+`apps.public.views.offline_page`. The map reads the same endpoints off
+`#map`'s own dataset; this page has no `#map`, and re-deriving them
+client-side would be a second copy of routing only the server can answer
+for. `static/offline.html` has none of them, which is also the right
+answer there: the control is gated on their presence, and a page reached
+with no connection cannot fetch anything anyway.
+
+Every country is asked, not the ones some client state happens to hold —
+SNOW-931's lesson, applied where there is no `pwaMapCountries` to ask. A
+country whose feed fails leaves the plan short, and the run records
+`contentIncomplete` (SNOW-932) rather than stamping a completion over it.
+
 ## It always finishes
 
 The report shipped able to hang. Every reading was an unbounded `await`

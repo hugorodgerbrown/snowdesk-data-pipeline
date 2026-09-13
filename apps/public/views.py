@@ -1405,6 +1405,34 @@ def offline_page(request: HttpRequest) -> HttpResponse:
         {
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
             "default_basemap_key": settings.BASEMAP,
+            # SNOW-925: what the per-row "Update" control needs in order to
+            # resolve an area's content from a page with no map on it. The
+            # map reads the same endpoints off `#map`'s own dataset; this
+            # page has no `#map`, and re-deriving them client-side would be
+            # a second copy of the routing that only this view can answer
+            # for. `today` is the bulletin day the content is taken for,
+            # matching the map's `data-today`.
+            "content_feeds": {
+                "regions": reverse("api:regions_geojson"),
+                "weather": reverse("api:weather_geojson"),
+                "weather_detail": reverse(
+                    "api:weather_detail", kwargs={"short_id": "__SHORTID__"}
+                ),
+                "favourites": reverse("favourites:geojson")
+                if request.user.is_authenticated
+                else "",
+                "routes": reverse("routes:geojson")
+                if request.user.is_authenticated
+                else "",
+                "community_reports": reverse("api:community_reports_geojson"),
+            },
+            # The countries whose region geometry a boundary may overlap.
+            # SNOW-931's lesson, applied where there is no
+            # `pwaMapCountries` to ask: resolve against EVERY country, not
+            # the ones some client-side state happens to hold, or a border
+            # area silently drops a country's bulletins.
+            "content_countries": " ".join(settings.MAP_COUNTRY_CODES),
+            "today": timezone.localdate().isoformat(),
         },
     )
 

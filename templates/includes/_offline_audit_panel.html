@@ -47,7 +47,30 @@ of a settings page nobody came here to audit.
     current basemap at all when there is none — an omission rather than a
     guess.
 {% endcomment %}
-<div data-offline-audit data-default-basemap-key="{{ default_basemap_key|default:'' }}">
+{% comment %}
+    SNOW-925: what the per-row "Update" control needs to resolve an area's
+    content from a page with no map on it. The map reads the same
+    endpoints off `#map`'s own dataset; this page has no `#map`, and
+    re-deriving them client-side would be a second copy of routing only
+    the server can answer for.
+
+    All absent on static/offline.html, which has no server to ask — and
+    the control is gated on them, which is the right answer there anyway:
+    that page is the one you reach with no connection, and nothing it
+    could offer to fetch would arrive.
+{% endcomment %}
+<div
+    data-offline-audit
+    data-default-basemap-key="{{ default_basemap_key|default:'' }}"
+    data-regions-url="{{ content_feeds.regions|default:'' }}"
+    data-weather-url="{{ content_feeds.weather|default:'' }}"
+    data-weather-detail-url="{{ content_feeds.weather_detail|default:'' }}"
+    data-favourites-url="{{ content_feeds.favourites|default:'' }}"
+    data-routes-url="{{ content_feeds.routes|default:'' }}"
+    data-community-reports-url="{{ content_feeds.community_reports|default:'' }}"
+    data-content-countries="{{ content_countries|default:'' }}"
+    data-today="{{ today|default:'' }}"
+>
     {% comment %}
         The row, in the shape every other row in this card takes:
         heading and description left, one control on the trailing edge,
@@ -317,5 +340,19 @@ of a settings page nobody came here to audit.
         <span
             data-string="check-failed"
         >{% translate "The check could not run. Copy the report and send it in." %}</span>
+
+        {# SNOW-925: the per-row control. "Update" rather than "Download" —  #}
+        {# the tiles are already here and are not touched; what this fetches #}
+        {# is the day's bulletins and weather inside the boundary, which is  #}
+        {# an update to a download that exists.                              #}
+        <span data-string="row-complete">{% translate "Update" %}</span>
+        <span
+            data-string="row-complete-label"
+        >{% translate "Update the bulletins and weather saved inside %(name)s" %}</span>
+        <span data-string="completing">{% translate "Saving this area’s bulletins and weather…" %}</span>
+        <span data-string="completed">{% translate "Saved. Re-checking…" %}</span>
+        <span
+            data-string="complete-failed"
+        >{% translate "Not everything could be saved. Re-checking what landed." %}</span>
     </template>
 </div>
