@@ -24,6 +24,14 @@
  * builds — and its tests run FIRST in this file for the same
  * single-import reason: `showBannerBusy` latches, and once the Reload
  * test has fired the labelling is deliberately inert.
+ *
+ * SNOW-952 made `window.pwaUpdateBanner.reveal()` the GATED entry point —
+ * it reveals only when this device's shell is stale — so this file calls
+ * `revealNow`, the ungated primitive beneath it. That is the right call
+ * here and not a shortcut: these tests are about what the banner SAYS,
+ * and routing them through the gate would make every copy assertion also
+ * depend on a stubbed controller answering a message. The gate itself is
+ * tested in test_sw_register_shell_staleness.js.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -208,7 +216,7 @@ describe('the revealed banner', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
     expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
@@ -221,7 +229,7 @@ describe('the revealed banner', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
     expect(bodyText()).toContain('You are on aaaaaaa.');
@@ -231,7 +239,7 @@ describe('the revealed banner', () => {
     resetCopy();
     stubVersionInfo('v29', 'aaaaaaa1111', null);
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -249,7 +257,7 @@ describe('the revealed banner', () => {
       update_available: false,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -261,7 +269,7 @@ describe('the revealed banner', () => {
     delete window.pwaVersionInfo;
 
     // Admin pages, and any page the version check did not load on.
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await Promise.resolve();
 
     expect(titleText()).toBe('Update available');
@@ -284,7 +292,7 @@ describe('which build the banner calls yours', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
     expect(bodyText()).toBe('You are on aaaaaaa. Reload to update to bbbbbbb.');
@@ -303,7 +311,7 @@ describe('which build the banner calls yours', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (v34)'));
     expect(bodyText()).toBe('You are on v33. Reload to update to v34.');
@@ -319,7 +327,7 @@ describe('which build the banner calls yours', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
     expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
@@ -339,7 +347,7 @@ describe('which build the banner calls yours', () => {
     });
     vi.useFakeTimers();
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await vi.advanceTimersByTimeAsync(2000);
     vi.useRealTimers();
 
@@ -377,7 +385,7 @@ describe('the identity message port', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
     expect(closed).toHaveLength(1);
 
@@ -385,7 +393,7 @@ describe('the identity message port', () => {
     resetCopy();
     stubController(null);
     vi.useFakeTimers();
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await vi.advanceTimersByTimeAsync(2000);
     vi.useRealTimers();
     await vi.waitFor(() => expect(closed).toHaveLength(2));
@@ -436,7 +444,7 @@ describe('once the update is applying', () => {
       update_available: true,
     });
 
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     await Promise.resolve();
     await Promise.resolve();
 

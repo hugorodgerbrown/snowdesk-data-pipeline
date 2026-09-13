@@ -45,7 +45,23 @@
  * A second reveal path lives in ``pwa_version_check.js`` (SNOW-374):
  * when the server's ``X-App-Version`` header drifts from the shell's
  * ``<meta name="pwa-app-version">`` we surface the same banner even if
- * ``sw.js`` itself didn't change. Both paths land in the same DOM node.
+ * ``sw.js`` itself didn't change. That path is the escape hatch for a
+ * worker that is STUCK — ``install`` is atomic, so one bad precache entry
+ * rejects it and no worker ever reaches "waiting", leaving the path above
+ * silent for as long as the fault lasts. Both paths land in the same DOM
+ * node.
+ *
+ * Both are gated on one predicate (SNOW-952): is the shell THIS DEVICE
+ * holds out of date? See ``shellIsStale``. Neither "a new worker
+ * installed" nor "the server has redeployed" answers that question —
+ * ``serve_sw`` bakes the deploy's SHA into the worker, so its bytes
+ * change on every deploy, and ``update_available`` is a comparison of two
+ * server builds. Ungated, the banner interrupted every user after every
+ * deploy to offer a reload that, when no shell source had changed, swapped
+ * one worker for another that behaved identically. The contract this file
+ * opens with — *no message means you are already current* — only holds
+ * with the gate, and its inverse only means anything if the message is
+ * rare enough to be read rather than dismissed.
  *
  * Whichever path revealed it, the banner then NAMES the two builds
  * (SNOW-869): ``labelBanner`` reads one verified ``/api/version`` body
@@ -166,6 +182,17 @@
   // ensures the telemetry event fires once per distinct waiting worker
   // rather than once per entry point that happens to observe it.
   let announcedUpdateWorker = null;
+  // SNOW-952: the staleness gate's answer, remembered against the server
+  // shell it was an answer TO. The question is asked again for every
+  // response replaying a stale version header — ``pwa_version_check.js``
+  // re-offers the banner on each of them — and messaging the worker every
+  // time would be waste. Keyed rather than latched because a second deploy
+  // in one session names a different shell and must get its own answer;
+  // for a GIVEN shell the answer cannot change, since the controlling
+  // worker cannot be replaced without a ``controllerchange``, and this
+  // file reloads the page on one.
+  /** @type {{shell: string, stale: boolean} | null} */
+  let shellAnswer = null;
 
   // SNOW-492: slot for the in-flight "Cache this area" call, if any. Only
   // one warm-cache run can be in flight at a time — map.js click-guards its
@@ -626,18 +653,28 @@
     // SNOW-585: suppress both the DOM reveal and the pwa.sw.update_available
     // emit below — see DEV_SHELL_BYPASS_ACTIVE's comment above.
     if (DEV_SHELL_BYPASS_ACTIVE) return;
+    // Latched unconditionally, ahead of the gate: this is state, not UI.
+    // ``handleReloadClick`` re-resolves the live waiting worker anyway, so
+    // the cost of holding a reference to one whose banner never showed is
+    // nil, and skipping it would make the latch depend on an async answer.
     if (worker) waitingWorker = worker;
-    // SNOW-384: emit once per distinct waiting worker, not once per call
-    // site that happens to observe it (see announcedUpdateWorker above).
-    if (worker && worker !== announcedUpdateWorker) {
+    // SNOW-952: the telemetry moved behind the gate. ``update_available``
+    // counts what a user was OFFERED — with the emit in front of the gate
+    // it would count deploys instead, which is the very conflation this
+    // ticket is about, and the dashboards would disagree with what anyone
+    // saw.
+    revealUpdateBannerIfStale().then((revealed) => {
+      if (!revealed) return;
+      // SNOW-384: emit once per distinct waiting worker, not once per call
+      // site that happens to observe it (see announcedUpdateWorker above).
+      if (!worker || worker === announcedUpdateWorker) return;
       announcedUpdateWorker = worker;
       try {
         window.pwaTelemetry?.emit('pwa.sw.update_available', {});
       } catch (_err) {
         // Ignore — telemetry must never break the update banner.
       }
-    }
-    revealUpdateBanner();
+    });
   }
 
   function hideUpdateBanner() {
@@ -667,6 +704,94 @@
       banner.classList.remove('hidden');
     }
     labelBanner();
+  }
+
+  /**
+   * Is this device holding an out-of-date offline shell? (SNOW-952)
+   *
+   * The predicate the update banner is gated on, and the reason the
+   * banner had become an interruption rather than a signal. Both reveal
+   * paths used to key off the server's build: the SW path because
+   * ``serve_sw`` bakes ``APP_VERSION`` into the worker (so its bytes, and
+   * therefore its identity to the browser, change on every deploy), and
+   * the header path because ``update_available`` is literally
+   * ``client_version !== APP_VERSION``. Neither says anything about this
+   * device. An online client does not need the banner to become current
+   * at all — navigations are network-first and static assets are hashed,
+   * so a reload picks up whatever changed on its own. What an update
+   * actually replaces is the shell this device can open without a
+   * network, and the only value that tracks it is ``CACHE_VERSION``,
+   * derived from the shell content hash (``apps/core/sw_shell.py``).
+   *
+   * So: the server names the shell it would serve today (``shell`` on
+   * ``/api/version``), the controlling worker names the one it holds, and
+   * a difference between them is the whole question. A deploy that
+   * changed no shell source produces no banner.
+   *
+   * Three answers rather than two, and the failure directions are
+   * deliberate and opposite:
+   *
+   *   * **No controller** → ``false``. Nothing is cached, so nothing can
+   *     be stale, and the page in front of the user came off the network.
+   *   * **A controller that cannot be read** — no ``shell`` from the
+   *     server, no reply from the worker, or a worker predating SNOW-952
+   *     that replies without a cache name → ``true``. This is the
+   *     opposite of ``labelBanner``'s fallback, and on purpose: an
+   *     unanswering worker is itself a symptom of the state the banner
+   *     exists to escape, and revealing is what happens today. Like every
+   *     change to the worker's message contract, the first deploy
+   *     carrying this shows the banner to everyone and self-corrects on
+   *     the next.
+   *   * **Both readable** → the comparison.
+   *
+   * @returns {Promise<boolean>}
+   */
+  function shellIsStale() {
+    // Nothing cached, nothing stale. Checked first because it is the one
+    // case that must NOT fail open, and it is free.
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+      return Promise.resolve(false);
+    }
+    const info = window.pwaVersionInfo;
+    // No version check on this page (the admin fallback banner, and any
+    // page the module bailed on) — nothing to compare against.
+    if (!info || typeof info.verified !== 'function') return Promise.resolve(true);
+    return Promise.resolve(info.verified())
+      .then((verdict) => {
+        const server = verdict && verdict.shell ? verdict.shell : '';
+        // Memo read BEFORE the worker is messaged, so a page re-offered
+        // the banner for every replayed response pays one round trip in
+        // total rather than one apiece.
+        if (shellAnswer && shellAnswer.shell === server) return shellAnswer.stale;
+        return controllerIdentity().then((controller) => {
+          const held = controller && controller.cache ? controller.cache : '';
+          const stale = !server || !held || server !== held;
+          shellAnswer = { shell: server, stale: stale };
+          return stale;
+        });
+      })
+      .catch(() => true);
+  }
+
+  /**
+   * Reveal the banner if — and only if — this device's shell is stale.
+   *
+   * The one entry point both reveal paths go through (SNOW-952), so the
+   * predicate lives in one place rather than in each caller. Published as
+   * ``window.pwaUpdateBanner.reveal``; ``revealNow`` is the ungated DOM
+   * primitive underneath it, which only this function and the tests that
+   * exercise the banner's COPY have any business calling.
+   *
+   * @returns {Promise<boolean>} Whether the banner was revealed. Returned
+   *   for the caller that emits telemetry on it, and for tests; nothing
+   *   about the DOM depends on the caller awaiting it.
+   */
+  function revealUpdateBannerIfStale() {
+    return shellIsStale().then((stale) => {
+      if (!stale) return false;
+      revealUpdateBanner();
+      return true;
+    });
   }
 
   /**
@@ -744,13 +869,21 @@
    * exactly the state in which the banner has something to offer and
    * nothing to say about it.
    *
+   * SNOW-952: the answer also carries the worker's own ``CACHE_VERSION``,
+   * which is what ``shellIsStale`` compares against the server's to decide
+   * whether the banner appears at all. Same message, same round trip: the
+   * gate and the label want the same worker's answer, and asking twice
+   * would be two chances to get two different ones.
+   *
    * Not memoised: a reveal labels the banner once, and a cached ``null``
    * from a moment when nothing was controlling the page yet would outlive
-   * the condition that produced it.
+   * the condition that produced it. ``shellIsStale`` keeps its own memo of
+   * the ANSWER it derived, which is the repeated question.
    *
-   * @returns {Promise<{build: string, release: string} | null>} ``null``
-   *   when there is no controller, no ``MessageChannel``, or no reply
-   *   inside the budget — all of which mean "ask the page instead".
+   * @returns {Promise<{build: string, release: string, cache: string} |
+   *   null>} ``null`` when there is no controller, no ``MessageChannel``,
+   *   or no reply inside the budget — all of which mean "ask the page
+   *   instead". ``cache`` is ``''`` from a worker that predates SNOW-952.
    */
   function controllerIdentity() {
     return new Promise((resolve) => {
@@ -778,7 +911,7 @@
        * response until navigation. ``canOpenOffline`` in
        * pwa_network_mode.js closes its port the same way.
        *
-       * @param {{build: string, release: string} | null} value
+       * @param {{build: string, release: string, cache: string} | null} value
        */
       const settle = (value) => {
         if (settled) return;
@@ -801,6 +934,7 @@
         settle({
           build: String(data.build || '').trim(),
           release: String(data.release || '').trim(),
+          cache: String(data.cache || '').trim(),
         });
       };
       try {
@@ -890,8 +1024,16 @@
   // waiting worker and emits `pwa.sw.update_available`, neither of which
   // the version-check path has or wants: there is no waiting worker when
   // the drift is a server header rather than a new SW script.
+  //
+  // SNOW-952: `reveal` is now the GATED entry point — it reveals only if
+  // this device's shell is stale — and it keeps the name deliberately, so
+  // the obvious thing to reach for is the safe one. `revealNow` is the
+  // ungated DOM primitive; it exists because the tests that exercise the
+  // banner's copy are not about the gate, and calling it from a reveal
+  // path would put the interruption straight back.
   window.pwaUpdateBanner = Object.freeze({
-    reveal: revealUpdateBanner,
+    reveal: revealUpdateBannerIfStale,
+    revealNow: revealUpdateBanner,
     hide: hideUpdateBanner,
     // SNOW-869: the copy rule, exported so it can be tested as the pure
     // function it is rather than through a DOM and a stubbed fetch.

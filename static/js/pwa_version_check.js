@@ -19,8 +19,10 @@
  *      blocking modal opens and stays open; nothing is wiped and nothing
  *      reloads until the user clicks "Reload now". No dismiss control.
  *
- *   2. body ``update_available: true`` → reveal the existing soft
- *      ``#sw-update-banner``. This is the same visible affordance as the
+ *   2. body ``update_available: true`` → OFFER the existing soft
+ *      ``#sw-update-banner`` to ``sw_register.js``, which reveals it only
+ *      when this device's shell is actually stale (SNOW-952 — see
+ *      ``showSoftBanner``). This is the same visible affordance as the
  *      SW-update flow. Since SNOW-869 that is the server's boolean rather
  *      than a client-side comparison of ``current`` against the shell's
  *      build: the server holds both strings anyway (the request carried
@@ -194,6 +196,15 @@
    * remembers. The dev-bypass suppression is checked there too, so the
    * banner cannot be revealed by either path under the bypass.
    *
+   * SNOW-952: the delegation is now also a GATE. A server-build drift says
+   * the server has redeployed; it does not say this device has anything to
+   * pick up, and for most of them it does not — HTML is network-first and
+   * static assets are hashed, so an online client is already current. What
+   * an update replaces is the offline shell, and only ``sw_register.js``
+   * can ask the controlling worker which shell it holds. So this hands the
+   * offer over and lets that comparison decide, rather than revealing on
+   * the strength of the header alone.
+   *
    * SNOW-609: nothing else stays here. This function used to also stamp
    * ``localStorage['pwa.update.first_shown_at']``, the clock behind the
    * 24h escalation to the blocking modal. That escalation is gone — it
@@ -273,7 +284,7 @@
    * resolved body is held in ``lastVerdict`` for the labelling read that
    * follows a reveal.
    *
-   * @returns {Promise<{current: string, release: string,
+   * @returns {Promise<{current: string, release: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    *   The trimmed identifiers and both server verdicts, or ``null`` when
    *   the endpoint is unreachable / non-2xx — "cannot confirm" must never
@@ -292,6 +303,12 @@
           // SNOW-869: the release label the server is serving ("v30"), or
           // "" on an unnumbered build.
           release: String(json.release || '').trim(),
+          // SNOW-952: the shell cache name this build would serve. Carried
+          // through untouched for ``sw_register.js``'s staleness gate,
+          // which compares it against the controlling worker's own. Empty
+          // from a server that predates the field, which the gate reads as
+          // "cannot confirm" and therefore reveals — see ``shellIsStale``.
+          shell: String(json.shell || '').trim(),
           // Strict ``=== true`` on both verdicts: a server that predates
           // the field omits it entirely, and an absent verdict must read
           // as "not blocked" / "nothing to pick up" rather than as
@@ -461,7 +478,7 @@
    * ``null`` means "cannot confirm", never "confirmed": the caller shows
    * the unnumbered copy rather than naming builds it could not check.
    *
-   * @returns {Promise<{current: string, release: string,
+   * @returns {Promise<{current: string, release: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    */
   function verified() {

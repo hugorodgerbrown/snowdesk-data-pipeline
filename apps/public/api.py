@@ -113,6 +113,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
+from apps.core.sw_shell import cache_version, cached_cache_version
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
@@ -3463,13 +3464,35 @@ def version(request: HttpRequest) -> JsonResponse:
       so the banner and the footer cannot disagree.
     * ``update_available`` — true when the request carried an
       ``X-Client-Version`` AND that value differs from ``APP_VERSION``.
-      This is the whole soft-banner verdict, and it is *equality*, never
-      ordering, for the same reason ``update_required`` is membership: a
-      git SHA has no order (see
+      It is *equality*, never ordering, for the same reason
+      ``update_required`` is membership: a git SHA has no order (see
       ``docs/decisions/blocked-builds-not-a-version-floor.md``). It fails
       CLOSED on an unidentified client — no header means false — which is
       the mirror of ``update_required``'s fail-open: a client whose build
       we cannot read is never *told* it has an update we cannot confirm.
+
+      SNOW-952: this is no longer the whole soft-banner verdict. It says
+      the server has redeployed since this page was served, which is a
+      statement about the SERVER; whether the *device* has anything to
+      pick up is a statement about its shell, answered by ``shell``
+      below. The client now needs both, and this one is the cheap
+      pre-filter that decides whether to ask the second question at all.
+
+    ``shell`` (SNOW-952) is the third identifier, and the one the update
+    banner is actually gated on: the shell cache name this build would
+    serve, derived from the shell content hash
+    (``apps.core.sw_shell.cached_cache_version``). The controlling service
+    worker reports its own ``CACHE_VERSION`` to the page, and the two
+    differ exactly when the device is holding a stale offline shell.
+
+    The distinction is the whole of SNOW-952. ``APP_VERSION`` changes on
+    every deploy, including one that touches only Python, so gating the
+    banner on it interrupted every user after every deploy to offer them
+    a reload whose entire effect was to swap one worker for another that
+    behaved identically — which is how an escape hatch for a stuck worker
+    becomes a thing people learn to dismiss. ``shell`` changes only when
+    a shell source does. See
+    ``docs/decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md``.
 
     Both new fields are functions of ``X-Client-Version``, which is already
     in ``Vary`` below, so the 60-second edge cache is unaffected.
@@ -3517,6 +3540,12 @@ def version(request: HttpRequest) -> JsonResponse:
         {
             "current": settings.APP_VERSION,
             "release": release_label(),
+            # SNOW-952: the shell the banner is gated on. Recomputed under
+            # DEBUG and cached per process otherwise, mirroring ``serve_sw``
+            # exactly — this value is compared against the one that view
+            # baked into the worker, so the two must be read the same way
+            # or local development shows a permanent phantom update.
+            "shell": cache_version() if settings.DEBUG else cached_cache_version(),
             "update_required": update_required,
             "update_available": update_available,
             "released_at": settings.APP_RELEASED_AT,

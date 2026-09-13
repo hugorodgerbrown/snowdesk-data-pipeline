@@ -500,6 +500,7 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
     versionBody = {
       current: NEWER_BUILD,
       release: 'v30',
+      shell: 'snowdesk-shell-bbbbbbbbbbbb',
       update_required: false,
       update_available: true,
     };
@@ -509,9 +510,23 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
     expect(verdict).toEqual({
       current: NEWER_BUILD,
       release: 'v30',
+      // SNOW-952: carried through for `sw_register.js`'s staleness gate,
+      // which is what actually decides whether the banner appears.
+      shell: 'snowdesk-shell-bbbbbbbbbbbb',
       update_required: false,
       update_available: true,
     });
+  });
+
+  it('reports an empty shell from a server that predates the field', async () => {
+    // Deploy ordering: the page can be newer than the server answering it
+    // (a CDN entry, a rolling deploy). The gate reads "" as "cannot
+    // confirm" and reveals, which is the pre-SNOW-952 behaviour.
+    versionBody = { current: NEWER_BUILD, release: 'v30', update_available: true };
+
+    const verdict = await window.pwaVersionInfo.verified();
+
+    expect(verdict.shell).toBe('');
   });
 
   it('reuses the round trip the drift verification already made', async () => {

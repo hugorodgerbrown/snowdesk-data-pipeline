@@ -34,6 +34,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | Server-decided forced-update verdict              | SNOW-369 / SNOW-609 | `apps.public.api.version` returns `update_required` from `settings.APP_BLOCKED_VERSIONS` × the request's `X-Client-Version`. **Supersedes the `X-App-Min-Version` response header**, which SNOW-609 removed — see [`decisions/blocked-builds-not-a-version-floor.md`](decisions/blocked-builds-not-a-version-floor.md) |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `apps.public.api.version_view` at `/api/version/`                                                      |
 | 12.2 | Server-decided soft-update verdict + release labels | SNOW-869 | `apps.public.api.version` also returns `update_available` (`X-Client-Version` != `APP_VERSION`, failing **closed** on an unidentified client) and `release` (`apps.public.release.release_label`). The banner names both builds from that one body; the shell's own label rides in `<meta name="pwa-app-release">` |
+| 12.2 | Update banner gated on the device's shell, not the build | SNOW-952 | `apps.public.api.version` also returns `shell` (`apps.core.sw_shell.cached_cache_version`), and the worker reports its own `CACHE_VERSION` in the `build-identity` reply. `shellIsStale()` in `static/js/sw_register.js` compares them, behind `window.pwaUpdateBanner.reveal()`, so a deploy that changed no shell source raises no banner — see [`decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md`](decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md) |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
 | 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
@@ -83,9 +84,13 @@ from the response **body**:
   shell caches (`window.pwaClearShellCachesAndReload`, `sw_register.js`)
   and reloads. Pinned basemaps, IndexedDB and web storage are untouched
   — a code update does not destroy user data.
-- body `update_available: true` → reveal the soft `#sw-update-banner`.
-  This is the server's boolean, not a client comparison of `current`
-  against the shell's build (SNOW-869): the request carried
+- body `update_available: true` → **offer** the soft `#sw-update-banner`,
+  which `sw_register.js` reveals only if this device's shell is stale
+  (SNOW-952 — the body's `shell` against the controlling worker's own
+  `CACHE_VERSION`; a server-build drift says the server redeployed, not
+  that this device has anything to pick up).
+  The verdict itself is the server's boolean, not a client comparison of
+  `current` against the shell's build (SNOW-869): the request carried
   `X-Client-Version`, so the server holds both strings anyway, and
   one authority answering both verdicts keeps them from disagreeing.
   The same body carries `release`, which — with the shell's own
