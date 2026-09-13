@@ -571,6 +571,90 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     const record = await recordedRegion();
     expect(record.contentIncomplete).toBe(true);
   });
+
+  /**
+   * Run `body` with this area's boundary resolving to NOTHING to fetch.
+   *
+   * Both halves have to go: `areaContentPlan` takes the region features and
+   * the weather features separately, and either one left populated still
+   * yields urls. The core is frozen, so the plan is emptied through its real
+   * inputs rather than by stubbing the resolver — which also keeps the test
+   * honest about what an empty plan actually is.
+   */
+  async function withEmptyPlan(body) {
+    // `featureByRegionId` is a getter on the state object, so the set it
+    // returns is emptied in place and refilled afterwards rather than
+    // swapped out.
+    const features = window.snowdeskMapState.featureByRegionId;
+    const saved = { ...features };
+    const realFetch = globalThis.fetch;
+    for (const key of Object.keys(features)) delete features[key];
+    globalThis.fetch = vi.fn((url) =>
+      String(url).includes('weather.geojson')
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ type: 'FeatureCollection', features: [] }),
+          })
+        : realFetch(url),
+    );
+    try {
+      const btn = document.getElementById('map-download-control');
+      btn.click();
+      // No warm-cache call to wait on — an empty plan never dispatches a
+      // run — so this settles on the repaint instead.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await body(btn);
+    } finally {
+      Object.assign(features, saved);
+      globalThis.fetch = realFetch;
+    }
+  }
+
+  it('clears a stale flag when a WHOLE plan resolves to nothing to fetch', async () => {
+    // Codex review on PR #908. An empty plan is not automatically a failed
+    // one: a boundary holding no bulletin region and no weather location
+    // resolves to zero urls, and that is a complete answer about this area.
+    // Both refresh paths used to return early WITHOUT stamping, so an area
+    // flagged by an earlier short plan could never be cleared — every tap
+    // re-resolved the same empty list and re-reported the same failure,
+    // leaving the roundel amber with a remedy that did nothing.
+    expect((await recordedRegion()).contentIncomplete).toBe(true);
+
+    await withEmptyPlan(async (btn) => {
+      expect(btn.dataset.downloadState).toBe('done');
+    });
+
+    expect('contentIncomplete' in (await recordedRegion())).toBe(false);
+  });
+
+  it('leaves the flag alone when an empty plan was itself SHORT', async () => {
+    // The other half of the same rule, and why `short` cannot be collapsed
+    // into "the list was empty". A plan assembled while a country was
+    // unreachable says nothing about what the boundary holds, so an empty
+    // one is not evidence of completeness and must not clear anything.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: row.value.map((entry) =>
+        entry && entry.region_id === REGION_ID
+          ? { ...entry, contentIncomplete: true }
+          : entry,
+      ),
+    });
+
+    const countries = window.pwaMapCountries;
+    window.pwaMapCountries = {
+      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
+    };
+    try {
+      await withEmptyPlan(async () => {
+        const record = await recordedRegion();
+        expect(record.contentIncomplete).toBe(true);
+      });
+    } finally {
+      window.pwaMapCountries = countries;
+    }
+  });
 });
 
 describe('a custom area catches up through the sheet (SNOW-932)', () => {

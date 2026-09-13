@@ -3218,9 +3218,11 @@ async function _stampAreaContent(areaId, regionId, complete) {
  * @returns {Promise<boolean>} Whether the content half landed in full —
  *   `repair`'s own contract, which the sheet reads to decide between a
  *   silent re-render and a toast. False for an area with no record, and
- *   for one whose boundary resolved to nothing to fetch: neither refreshed
+ *   for one whose plan was SHORT with nothing to fetch: neither refreshed
  *   anything, and claiming otherwise would leave the row amber with a
- *   control that reports success.
+ *   control that reports success. True for a whole plan that resolves to
+ *   no urls at all — see the empty-plan branch below for why that is a
+ *   completion rather than a failure.
  */
 async function refreshAreaContent(areaId) {
   const found = await _areaRecordById(areaId);
@@ -3231,7 +3233,23 @@ async function refreshAreaContent(areaId) {
   // reported success on one would clear the very flag it was called to
   // clear. See `assembleAreaContentURLs`.
   const content = await assembleAreaContentURLs(found.record);
-  if (content.urls.length === 0) return false;
+  if (content.urls.length === 0) {
+    // SNOW-932 review: an empty plan is not automatically a failed one. A
+    // plan assembled against the WHOLE country set that resolves to no
+    // urls is a complete answer — the boundary contains no bulletin region
+    // and no weather location — so an area flagged by an earlier SHORT
+    // plan must be cleared by it. Returning false without stamping left
+    // `contentIncomplete` set with no way to remove it: every subsequent
+    // Refresh re-resolved the same empty list and re-reported the same
+    // failure, so the row stayed amber permanently.
+    //
+    // `short` is what separates the two. A plan assembled while a country
+    // was unreachable says nothing about what the boundary holds, so it
+    // stays flagged and still reports failure.
+    if (content.short) return false;
+    await _stampAreaContent(areaId, found.regionId, true);
+    return true;
+  }
 
   return new Promise((resolve) => {
     repairPinnedDownload({

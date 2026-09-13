@@ -1448,6 +1448,17 @@
       : { urls: [], short: false };
     const urls = content.urls;
     if (urls.length === 0) {
+      // SNOW-932 review: a WHOLE plan that resolves to no urls is a
+      // complete answer about this boundary, not a failed refresh, so it
+      // clears a flag an earlier short plan set. Without this the roundel
+      // kept its 'partial' paint and the tap that is supposed to be its
+      // remedy did nothing at all — a dead control, which is worse than
+      // the stale amber it sits on.
+      //
+      // A SHORT plan is left alone: it was assembled against an incomplete
+      // country set and so cannot speak for the boundary either way.
+      // `renderControl` then repaints from the stored fact in both cases.
+      if (!content.short) await _stampRegionContent(data.regionId, true);
       await renderControl();
       return;
     }
