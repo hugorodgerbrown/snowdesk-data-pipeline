@@ -32,11 +32,17 @@ rather than side effects:
   SHELL_PAGES in static/js/sw.js. A login-gated page can never usefully
   be, and it matters more for this one than for any other in the product.
 
-  One cached copy serves every reader. That is NOT free: base.html
-  renders the pwa-user-id meta tag on every page, so the worker stamps
-  this one too and a copy cached while signed in stops matching after a
-  sign-out. PUBLIC_PRINCIPAL_PATHS in static/js/sw.js is the explicit
-  exemption that buys the intended behaviour.
+  Its cached copy is still PRINCIPAL-PARTITIONED, like every other
+  page's, and that is deliberate rather than an oversight. An exemption
+  was tried and rejected: base.html renders the pwa-user-id meta tag on
+  every page, so the cached document carries the principal it was
+  rendered for and page-side code reads it — mutation_queue.js's
+  _reconcilePrincipal() would clear a second reader's queued mutations
+  and rewrite mutations.principal to the first. A public PAGE is not an
+  identity-neutral DOCUMENT. The cost is that a second reader of the same
+  browser falls through to static/offline.html, which carries its own
+  inlined audit and reset for exactly that case. See
+  docs/decisions/what-this-device-holds-is-a-public-page.md.
 
 static/offline.html is the zero-server fallback the worker serves for a
 navigation to a page never visited. It keeps its own inlined copies of

@@ -1366,12 +1366,16 @@ def offline_page(request: HttpRequest) -> HttpResponse:
     any of it. The one server-side read is the waffle flag gating the sync
     log, which is a flag lookup and nothing more.
 
-    Public deliberately, and not merely as a convenience. The page can be
+    Public deliberately, and not merely as a convenience: the page can be
     warmed into the offline shell (``SHELL_PAGES``, ``static/js/sw.js``),
-    which a login-gated page can never usefully be, and one cached copy
-    serves every reader — see ``PUBLIC_PRINCIPAL_PATHS`` for the exemption
-    that makes the second part true, since ``base.html`` stamps every page
-    with the reader's principal.
+    which a login-gated page can never usefully be — the warm would fetch
+    a redirect to sign-in.
+
+    Its cached copy is still principal-partitioned like any other page's.
+    ``base.html`` stamps every page with the reader's principal and
+    page-side code reads it, so a public page is not an identity-neutral
+    document; see
+    ``docs/decisions/what-this-device-holds-is-a-public-page.md``.
 
     Context keys:
         sync_log_visible — True when the ``sync_log`` waffle flag is active

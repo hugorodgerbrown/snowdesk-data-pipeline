@@ -3186,54 +3186,35 @@ const PRINCIPAL_UNKNOWN = 'unknown';
 // silently turn every navigation into PRINCIPAL_UNKNOWN.
 const PWA_USER_ID_META = /<meta\s+name=["']pwa-user-id["']\s+content=["']([^"']*)["']/i;
 
-// SNOW-930: paths whose cached navigation is servable to ANY principal.
+// SNOW-930: /offline/ is a PUBLIC page and is still principal-partitioned,
+// which is deliberate and was not the first answer.
 //
-// The principal rule exists because a page rendered for one account must
-// never be served to another, and it is the right default for every page
-// the app has. ``/offline/`` is the first one where it is actively wrong:
-// nothing on it comes from an account — the whole page is a reading of
-// this browser's Cache Storage, IndexedDB and storage estimate — and it
-// is precisely the page a reader needs when something has gone wrong,
-// which is exactly when they may have been signed out.
+// The first cut exempted its path from `_principalMatches`, so one cached
+// copy would serve every reader. That is wrong, and the review of #909
+// caught why: `base.html` renders `pwa-user-id` on every page, so the
+// cached document carries the principal it was rendered for, and page-side
+// code reads it. `mutation_queue.js` runs on every public page and
+// `_reconcilePrincipal()` trusts that meta — so serving account A's copy to
+// account B on a shared browser would clear B's queued mutations AND
+// rewrite `mutations.principal` to A, after which every mutation B made
+// was stamped A and discarded at the next drain. Silent data loss, offline,
+// on the one page a stuck reader is told to open.
 //
-// Without this, a copy cached while signed in stops matching the moment
-// the reader signs out (``_currentPrincipal()`` answers
-// PRINCIPAL_ANONYMOUS, the stamp is a uuid) and they get
-// ``static/offline.html``'s fallback instead of the page — while offline,
-// which is the one moment the page exists for. ``base.html`` renders the
-// ``pwa-user-id`` meta tag on EVERY page, so this page is stamped like any
-// other and the exemption has to be explicit.
+// Removing the meta from that page does not fix it: an absent tag makes
+// `_currentPrincipal()` answer `null`, which is a real value meaning
+// ANONYMOUS, so the page would then clear a signed-in reader's queue
+// instead. Making the copy genuinely identity-neutral means giving the
+// page a way to say "do not reconcile against me" and teaching every
+// reader of `pwa-user-id` to honour it — a wider change than the property
+// it buys, and one that widens a surface built to protect queued writes.
 //
-// A frozen, one-place list of paths that are public by construction,
-// mirroring ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``.
-// Preferred over the two alternatives: a response header the view sets
-// fails in the wrong direction, because a copy cached before that header
-// shipped is indistinguishable from an account page; and a sentinel
-// principal value would need every existing comparison rewritten. This
-// constant is versioned with the worker doing the matching, which is the
-// property that matters.
-//
-// Compared against the pathname alone, so a query string cannot smuggle a
-// non-public page past it, and matched exactly rather than by prefix.
-const PUBLIC_PRINCIPAL_PATHS = Object.freeze(['/offline/']);
-
-/**
- * True when ``request`` names a path whose cached copy is public
- * (SNOW-930) — see ``PUBLIC_PRINCIPAL_PATHS``.
- *
- * Never throws: a request whose URL will not parse is simply not public,
- * which is the fail-closed direction the whole principal rule takes.
- *
- * @param {Request} request
- * @returns {boolean}
- */
-function _isPublicPrincipalPath(request) {
-  try {
-    return PUBLIC_PRINCIPAL_PATHS.includes(new URL(request.url).pathname);
-  } catch (_err) {
-    return false;
-  }
-}
+// So the check is retained and the page is partitioned like any other. It
+// costs a SECOND reader of the same browser their cached copy, and they
+// fall through to `static/offline.html`, which carries its own inlined
+// audit and reset for exactly that case. Everything else SNOW-930 exists
+// for is unaffected: the page is public, it needs no login, and it is
+// warmed into the shell for whoever is signed in when the worker
+// activates.
 
 /**
  * True when ``response`` declares ``Cache-Control: no-store``. Uses the
@@ -3676,11 +3657,6 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  */
 async function _networkFirstFallback(request, cache, startedAt) {
   const current = await _currentPrincipal();
-  // SNOW-930: a public path's cached copy matches whatever principal is
-  // current. Resolved once, here, so both match branches below read the
-  // same answer — see PUBLIC_PRINCIPAL_PATHS.
-  const isPublic = _isPublicPrincipalPath(request);
-  const matches = (entry) => isPublic || _principalMatches(entry, current);
   const cached = await cache.match(request);
   // SNOW-846: this function, not its caller, is where the shell page and
   // the offline fallback are told apart — "you got the page you asked for
@@ -3688,14 +3664,14 @@ async function _networkFirstFallback(request, cache, startedAt) {
   // to "where did this come from", and _networkFirst cannot see which
   // happened. It logs only the branches it owns; between them, exactly one
   // `serve` line is emitted per navigation.
-  if (cached && matches(cached)) {
+  if (cached && _principalMatches(cached, current)) {
     const hit = _stampCacheHit(cached);
     _debugServe(request, 'navigate', 'shell', hit, startedAt);
     return hit;
   }
   if (request.mode === 'navigate' || request.destination === 'document') {
     const searchless = await cache.match(request, { ignoreSearch: true });
-    if (searchless && matches(searchless)) {
+    if (searchless && _principalMatches(searchless, current)) {
       const hit = _stampCacheHit(searchless);
       _debugServe(request, 'navigate', 'shell', hit, startedAt);
       return hit;

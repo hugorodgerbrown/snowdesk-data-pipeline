@@ -10,8 +10,8 @@ its flag, and settings no longer renders a second copy of any of them.
 The panel's own markup contract with ``offline_audit.js`` is
 tests/public/test_offline_audit_panel.py, which moved out of
 ``tests/accounts/`` with the panel. The report's arithmetic is
-tests/js/test_offline_audit_core.js, and the service worker's public-path
-exemption is tests/js/test_sw.js — none of those needs a browser or a
+tests/js/test_offline_audit_core.js, and the service worker's warming and
+principal partitioning are tests/js/test_sw.js — none of those needs a browser or a
 Django client.
 """
 

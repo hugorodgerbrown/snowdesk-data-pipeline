@@ -51,10 +51,10 @@ report into both:
   browser's own storage, and the page is most worth opening exactly when
   the reader may have been signed out. Being public also made it
   warmable — it is in `SHELL_PAGES` (`static/js/sw.js`), so the
-  activation re-warms it alongside the map page — and servable from one
-  cached copy to any reader, which took an explicit
-  `PUBLIC_PRINCIPAL_PATHS` exemption, because `base.html` stamps every
-  page with the reader's principal.
+  activation re-warms it alongside the map page. Its cached copy is still
+  principal-partitioned like any other page's, and deliberately: see
+  [the decision record](decisions/what-this-device-holds-is-a-public-page.md)
+  for why a public page is not an identity-neutral document.
 - **`static/offline.html`.** The reactive one, and the reason the module
   is precached at all: `/offline/` is a Django view, so even warmed it
   can be missing on a device whose worker has not activated since. The

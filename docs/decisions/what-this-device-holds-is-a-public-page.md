@@ -1,6 +1,6 @@
 ---
 name: what-this-device-holds-is-a-public-page
-description: /offline/, offline_page, PUBLIC_PRINCIPAL_PATHS, SHELL_PAGES — the offline report, reset control and sync log are public, not settings
+description: /offline/, offline_page, SHELL_PAGES, pwa-user-id — the offline report, reset control and sync log are public, not settings
 status: current
 last-reviewed: 2026-09-13
 ---
@@ -42,32 +42,36 @@ page. A login-gated page could never have been: the warm would have
 fetched a redirect to sign-in. A page that cannot itself open offline is a
 poor place to explain why nothing else can.
 
-**One cached copy serves every reader — but not for free.** `base.html`
-renders `<meta name="pwa-user-id">` on *every* page, so the worker stamps
-this one with the reader's principal like any other. A copy cached while
-signed in stops matching after a sign-out (`_currentPrincipal()` answers
-`PRINCIPAL_ANONYMOUS`, the stamp is a uuid), and `_networkFirstFallback`
-would serve `static/offline.html`'s fallback instead of the page — while
-offline, which is the one moment the page exists for.
+**One cached copy does NOT serve every reader, and that was the first
+answer.** The first cut exempted `/offline/` from the principal check so a
+single cached copy would serve anybody. The review of #909 rejected it, and
+the reasoning is worth keeping because the mistake is an easy one to make
+again: **being a public page and being an identity-neutral document are
+different things.**
 
-The exemption is explicit: **`PUBLIC_PRINCIPAL_PATHS`**, a frozen list of
-paths whose cached navigation matches any current principal, checked in
-`_networkFirstFallback` beside `_principalMatches`. It mirrors
-`_POSTHOG_EXEMPT_PATHS` in `config/settings/base.py` — a small, readable,
-one-place list of paths that are public by construction. Matched on the
-pathname exactly, so a query string cannot smuggle a non-public page past
-it.
+`base.html` renders `<meta name="pwa-user-id">` on *every* page, so the
+cached document carries the principal it was rendered for, and page-side
+code reads it. `mutation_queue.js` runs on every public page and
+`_reconcilePrincipal()` trusts that meta. Serving account A's copy to
+account B on a shared browser would have cleared B's queued mutations
+*and* rewritten `mutations.principal` to A — after which every mutation B
+made was stamped A and discarded at the next drain. Silent data loss,
+offline, on the one page a stuck reader is told to open.
 
-Two alternatives were considered and are worse:
+Removing the meta from the page does not fix it. An absent tag makes
+`_currentPrincipal()` answer `null`, which is a real value meaning
+**anonymous** — so the page would then clear a *signed-in* reader's queue
+instead. Making the copy genuinely identity-neutral means giving a page a
+way to say "do not reconcile against me" and teaching every reader of
+`pwa-user-id` to honour it: a wider change than the property it buys, and
+one that widens a surface built to protect queued writes.
 
-- **A response header the view sets.** Fails in the wrong direction: a
-  copy cached before that header shipped is indistinguishable from an
-  account page, so every existing entry would stay refused.
-- **A sentinel principal value.** Would need every existing comparison
-  rewritten, for one page.
-
-The constant is versioned with the worker doing the matching, which is the
-property that matters.
+So the page is partitioned like any other. The cost is that a *second*
+reader of the same browser does not get the cached copy and falls through
+to `static/offline.html`, which carries its own inlined audit and reset for
+exactly that case. Everything else this decision is for is untouched: the
+page is public, it needs no login, and it is warmed into the shell for
+whoever is signed in when the worker activates.
 
 ## What did not change
 
