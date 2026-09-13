@@ -54,6 +54,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// SNOW-951: the sync rows read their two strings back out of
+// ``includes/_network_mode_strings.html`` through this reader, exactly as
+// every other JS-painted surface does.
+import '../../static/js/i18n_strings.js';
+
 const PANEL_ID = 'pwa-connection-panel';
 const SWITCH_ID = 'nav-offline-mode';
 const INDICATOR_SELECTOR = '[data-network-indicator]';
@@ -80,6 +85,35 @@ const SWITCH_ROW = `
     <label for="${SWITCH_ID}">
       <input id="${SWITCH_ID}" type="checkbox" role="switch" class="peer sr-only">
     </label>
+  </div>
+`;
+
+/**
+ * SNOW-951: the per-area sync block, mirroring
+ * ``includes/_connection_panel.html``.
+ *
+ * The row is a <template> in the real markup and it is one here too, which
+ * is the whole point of the shape: every user-facing word and every class
+ * string stays server-side, and the module clones rather than writes. A
+ * fixture that built the rows itself would test a surface that does not
+ * exist and would let a module that wrote its own English pass.
+ */
+const SYNC_BLOCK = `
+  <div data-network-sync class="hidden">
+    <p>Heading out? Make sure you sync all of your data before you lose signal.</p>
+    <p data-network-sync-offline class="hidden">Syncing needs a connection.</p>
+    <ul data-network-sync-list></ul>
+    <template data-network-sync-row>
+      <li>
+        <span data-sync-label></span>
+        <button type="button" data-network-sync-area>
+          <span data-sync-state="idle">Sync</span>
+          <span data-sync-state="running" class="hidden">Syncing…</span>
+          <span data-sync-state="done" class="hidden">Synced</span>
+          <span data-sync-state="failed" class="hidden">Try again</span>
+        </button>
+      </li>
+    </template>
   </div>
 `;
 
@@ -146,6 +180,7 @@ function symbolAndPanel({ withSwitch = true } = {}) {
         <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
       ${withSwitch ? SWITCH_ROW : ''}
+      ${SYNC_BLOCK}
       <a href="/offline/" data-network-downloads data-disclosure-close>Download for offline</a>
       <button type="button" data-network-reconnect>
         <span data-role="reconnect-label">Try reconnecting</span>
@@ -1790,12 +1825,265 @@ describe('the downloads-age line', () => {
   });
 });
 
+describe('the per-area sync rows (SNOW-951)', () => {
+  /**
+   * Stub ``window.pwaDb`` over a fixed ``meta:app`` — as the
+   * downloads-age suite above does, and for the same read.
+   *
+   * @param {Record<string, unknown>} rows
+   */
+  function stubDb(rows) {
+    window.pwaDb = {
+      get: async (_store, key) =>
+        Object.prototype.hasOwnProperty.call(rows, key)
+          ? { key, value: rows[key] }
+          : undefined,
+      put: async () => {},
+      appendSyncLog: async () => {},
+    };
+  }
+
+  /** Open the menu and let the toggle handler's async work settle. */
+  async function openMenu() {
+    disclosure().open = true;
+    await tick();
+    await tick();
+    await tick();
+  }
+
+  /** Every rendered row's label and the state its button is showing. */
+  function rows() {
+    return Array.from(document.querySelectorAll('[data-network-sync-area]')).map(
+      (button) => ({
+        id: button.getAttribute('data-network-sync-area'),
+        label: button.closest('li').querySelector('[data-sync-label]').textContent,
+        disabled: button.disabled,
+        state: Array.from(button.querySelectorAll('[data-sync-state]'))
+          .filter((span) => !span.classList.contains('hidden'))
+          .map((span) => span.getAttribute('data-sync-state'))[0],
+      }),
+    );
+  }
+
+  /** Whether the block is on screen at all. */
+  function blockHidden() {
+    return document.querySelector('[data-network-sync]').classList.contains('hidden');
+  }
+
+  afterEach(() => {
+    delete window.pwaDb;
+    delete window.pwaBasemapDownloads;
+  });
+
+  it('says nothing at all on a device with no downloads', async () => {
+    // The same posture the staleness line takes: a reader with nothing
+    // downloaded has nothing to sync, and a heading over an empty list
+    // reads as a fault rather than as an answer.
+    buildFixture();
+    stubDb({});
+    await loadModule();
+
+    await openMenu();
+
+    expect(blockHidden()).toBe(true);
+  });
+
+  it('lists an area from each store, named as that store names it', async () => {
+    // A region carries a stored name and its region id; an unrenamed
+    // custom area carries neither, and its numbered default is built at
+    // read time so it stays translatable rather than freezing in whatever
+    // language was active at download time.
+    buildFixture();
+    stubDb({
+      'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny — Verbier' }],
+      'basemap.customAreas': [{ id: 'custom-a1', ordinal: 1, bbox: [7, 46, 7.2, 46.2] }],
+    });
+    await loadModule();
+
+    await openMenu();
+
+    expect(blockHidden()).toBe(false);
+    expect(rows().map((row) => row.label)).toEqual(['Martigny — Verbier', 'Custom area 1']);
+    expect(rows().map((row) => row.id)).toEqual(['CH-4115', 'custom-a1']);
+  });
+
+  it('falls back to the region id for an area with no stored name', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115' }] });
+    await loadModule();
+
+    await openMenu();
+
+    expect(rows()[0].label).toBe('CH-4115');
+  });
+
+  it('runs in place on a page that can sync, and keeps the menu open', async () => {
+    // The map page. The result is the answer to the question the press
+    // asked, so the surface that asked it has to still be there.
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    let settle;
+    const syncArea = vi.fn(
+      () => new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    window.pwaBasemapDownloads = { syncArea };
+    await loadModule();
+    await openMenu();
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+
+    expect(syncArea).toHaveBeenCalledWith('CH-4115');
+    expect(rows()[0].state).toBe('running');
+    expect(rows()[0].disabled).toBe(true);
+
+    settle({ tiles: 'none', content: true });
+    await tick();
+    await tick();
+
+    expect(rows()[0].state).toBe('done');
+    expect(panelShown()).toBe(true);
+  });
+
+  it('hands syncArea the BUCKET id, through the module that owns that format', async () => {
+    // The row carries what the record stores — a region's `region_id` —
+    // and `syncArea` takes a pinned bucket id. Turning one into the other
+    // is `areaIdForRegion`'s, never a template literal here: this module
+    // does not know the format and must not learn it.
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    const syncArea = vi.fn(async () => ({ tiles: 'none', content: true }));
+    window.pwaBasemapDownloads = { syncArea };
+    await loadModule();
+    // The real core, as the map page loads it — not a stub, or this would
+    // assert a format this file made up.
+    await import('../../static/js/basemap_download_core.js');
+    await openMenu();
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+
+    expect(syncArea).toHaveBeenCalledWith('region-CH-4115');
+    delete self.pwaBasemapDownloadCore;
+  });
+
+  it('reports a run where either half fell short', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    window.pwaBasemapDownloads = {
+      syncArea: vi.fn(async () => ({ tiles: 'failed', content: true })),
+    };
+    await loadModule();
+    await openMenu();
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+    await tick();
+
+    expect(rows()[0].state).toBe('failed');
+  });
+
+  it('navigates to /offline/ with the area named on a page that cannot', async () => {
+    // Off the map there is no `syncArea` — `basemap_download_core.js` is
+    // 140KB of map-and-/offline/-only code — so the press hands the area
+    // to the page that can run it, through the href the panel already
+    // carries rather than a path written twice.
+    buildFixture();
+    stubDb({ 'basemap.customAreas': [{ id: 'custom-a1', name: 'Verbier bowl' }] });
+    await loadModule();
+    await openMenu();
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: 'https://snowdesk.test/ch-4115/', assign },
+    });
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+
+    expect(assign).toHaveBeenCalledWith('/offline/?sync=custom-a1');
+  });
+
+  it('refuses while the app is not using the network', async () => {
+    // SNOW-748: the MODE, not the radio — `navigator.onLine` is TRUE
+    // throughout this test, which is the state the whole offline-mode
+    // family exists for. A disabled control and a sentence, rather than a
+    // row that vanishes: the reader still wants to know the area is here.
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    const syncArea = vi.fn();
+    window.pwaBasemapDownloads = { syncArea };
+    const sw = stubServiceWorker();
+    await loadModule();
+    await openMenu();
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    await tick();
+
+    expect(window.navigator.onLine).toBe(true);
+    expect(rows()[0].disabled).toBe(true);
+    expect(
+      document.querySelector('[data-network-sync-offline]').classList.contains('hidden'),
+    ).toBe(false);
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+
+    expect(syncArea).not.toHaveBeenCalled();
+  });
+
+  it('offers the controls again once the network comes back', async () => {
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    window.pwaBasemapDownloads = { syncArea: vi.fn(async () => ({ tiles: 'none', content: true })) };
+    const sw = stubServiceWorker();
+    await loadModule();
+    await openMenu();
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    await tick();
+    expect(rows()[0].disabled).toBe(true);
+
+    sw.emit({ type: 'network-mode', mode: 'auto' });
+    await tick();
+
+    expect(rows()[0].disabled).toBe(false);
+    expect(
+      document.querySelector('[data-network-sync-offline]').classList.contains('hidden'),
+    ).toBe(true);
+  });
+
+  it('remembers what a press learned across a close and re-open', async () => {
+    // The rows are rebuilt from the <template> on every open, so a run
+    // still going — or one that finished this session — has to survive
+    // the rebuild, or the menu offers an idle button for a run in flight.
+    buildFixture();
+    stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+    window.pwaBasemapDownloads = {
+      syncArea: vi.fn(async () => ({ tiles: 'none', content: true })),
+    };
+    await loadModule();
+    await openMenu();
+
+    document.querySelector('[data-network-sync-area]').click();
+    await tick();
+    await tick();
+    disclosure().open = false;
+    await tick();
+    await openMenu();
+
+    expect(rows()[0].state).toBe('done');
+  });
+});
+
 describe('the way to the offline-content page (SNOW-928)', () => {
   it('is a link to /offline/ that closes the menu on the way', async () => {
-    // It STARTS NOTHING: a download is discrete per area (SNOW-925), so
-    // there is no single run for a menu row to kick off. And it shuts the
-    // menu rather than hanging over the page the user just asked to read —
-    // nav.html's shared mechanism, not a fourth dismissal of its own.
+    // SNOW-951 overturned the "it starts nothing" half of SNOW-928's
+    // reasoning — the sync rows above start something, per area — but not
+    // this: the row is still the way to the full report, and it still
+    // shuts the menu rather than hanging over the page the user just
+    // asked to read. nav.html's shared mechanism, not a fourth dismissal
+    // of its own.
     buildFixture();
     await loadModule();
 
