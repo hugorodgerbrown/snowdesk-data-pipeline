@@ -103,6 +103,16 @@
   // precise.
   var VERSION_PROBE_MS = 1500;
 
+  // SNOW-925 review: the bound on the two manifest fetches the per-row
+  // Update control derives its plan from. `pwaWarmCache` settles on the
+  // worker's own budget; these do not go through it, and without a bound
+  // a connection that stalls without rejecting leaves the operation
+  // pending — the button disabled, the status line mid-sentence, and the
+  // verification re-run never reached. Generous next to the read budgets
+  // below because this is a deliberate press over a real network rather
+  // than a storage probe, and it is a ceiling on a hang, not a target.
+  var MANIFEST_FETCH_BUDGET_MS = 15000;
+
   // How long between one row's answer and the next. Thirteen rows plus
   // however many downloads, at 70ms, is about a second — long enough to
   // read as deliberate, short enough that nobody waits for it. It is an
@@ -1195,6 +1205,13 @@
     var bbox = record ? core.areaBBox(record) : null;
     if (!bbox) return false;
 
+    // The bulletin day, from the CLIENT's own clock. The rendered
+    // `data-today` is the server's date at render time and is the
+    // fallback for a clock that will not answer; where the two agree —
+    // which is the ordinary case — nothing changes.
+    var day = localDay() || data.today || '';
+    if (!day) return false;
+
     // Step 1: the map shell, when the report just said it is not saved.
     // Not per-area and not this control's subject, but an area's content
     // is no use inside an app that will not open, and the reader pressing
@@ -1240,6 +1257,14 @@
       }
       regionFeatures = regionFeatures.concat(feed.features);
     }
+    // The weather manifest is held to the same standard as each region
+    // feed, and the first cut did not: a request that failed or came back
+    // malformed left `weatherFeed` null, the plan named no weather sheets,
+    // and the warm of everything else still succeeded — so an area full of
+    // weather locations was stamped complete having saved none of them.
+    // The manifest is what the sheet urls are DERIVED from, so losing it
+    // is a short plan by exactly the same reasoning a lost country is.
+    if (!weatherFeed || !Array.isArray(weatherFeed.features)) short = true;
 
     var plan = core.areaContentPlan({
       bbox: bbox,
@@ -1249,7 +1274,16 @@
       // (SNOW-927) off the season payload the scrubber already holds;
       // this page holds none, and fetching one to widen a bulletin set by
       // a day would be a second copy of that rule for a marginal gain.
-      days: data.today ? [data.today] : [],
+      //
+      // Resolved at PRESS time, not read off the rendered attribute.
+      // `data-today` is the date the HTML was rendered on, and this page
+      // is warmed into the shell and reopened from cache — so on a tab
+      // left open across midnight, or a cached copy reconnecting the next
+      // morning, it names yesterday. The first cut warmed yesterday's
+      // bulletins and then stamped a completion with the current
+      // timestamp, after which the report called the area fresh and took
+      // the control away with today's bulletins never saved.
+      days: [day],
       weatherDetailTemplate: data.weatherDetailUrl || '',
     });
 
@@ -1380,18 +1414,70 @@
   }
 
   /**
+   * Today, as this device reckons it — ``YYYY-MM-DD`` in local time.
+   *
+   * SNOW-925 review: the bulletin day cannot be read off the rendered
+   * ``data-today``. That is the date the HTML was rendered on, and this
+   * page is warmed into the shell and reopened from cache — so on a tab
+   * left open across midnight, or a cached copy reconnecting the next
+   * morning, the attribute names yesterday. Warming yesterday's bulletins
+   * and stamping a completion for it is the false green the whole report
+   * exists to prevent, one layer down.
+   *
+   * Local rather than UTC, because a bulletin belongs to a calendar day in
+   * the reader's own zone — the same rule ``areaContentState`` applies
+   * when it decides whether that content is stale.
+   *
+   * @returns {string} ``''`` when the clock will not answer, which leaves
+   *   the caller falling back to the rendered date.
+   */
+  function localDay() {
+    try {
+      var now = new Date();
+      if (Number.isNaN(now.getTime())) return '';
+      var month = String(now.getMonth() + 1).padStart(2, '0');
+      var date = String(now.getDate()).padStart(2, '0');
+      return now.getFullYear() + '-' + month + '-' + date;
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  /**
    * Fetch and parse one JSON document, or null.
+   *
+   * BOUNDED, and that is not decoration. Unlike `pwaWarmCache` — which the
+   * worker settles on its own budget — these preliminary requests had no
+   * timeout at all, so on a connection that stalls without rejecting (a
+   * captive portal, a lift) any one of them could stay pending for the
+   * browser's full network timeout. `completeArea` holds `running` true
+   * and the button disabled for the whole of it, and never reaches its
+   * failure message or the verification re-run: the panel simply sits
+   * there. A bound that expires reads as a feed that did not answer, which
+   * makes the plan short and the run report failure — the honest outcome,
+   * and the one every other read on this page already degrades to
+   * (SNOW-918).
    *
    * @param {string} url
    * @returns {Promise<Object|null>}
    */
   async function fetchJson(url) {
+    var controller =
+      typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
     try {
-      var response = await fetch(url);
+      if (controller) {
+        timer = setTimeout(function () {
+          controller.abort();
+        }, MANIFEST_FETCH_BUDGET_MS);
+      }
+      var response = await fetch(url, controller ? { signal: controller.signal } : {});
       if (!response || !response.ok) return null;
       return await response.json();
     } catch (_err) {
       return null;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
     }
   }
 

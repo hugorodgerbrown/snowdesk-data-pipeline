@@ -427,6 +427,31 @@ SNOW-931's lesson, applied where there is no `pwaMapCountries` to ask. A
 country whose feed fails leaves the plan short, and the run records
 `contentIncomplete` (SNOW-932) rather than stamping a completion over it.
 
+Three properties the run holds itself to, each of which the review of
+SNOW-925 found missing from the first cut:
+
+- **The bulletin day is resolved at press time**, from the client's own
+  clock. The rendered `data-today` is the date the HTML was rendered on,
+  and this page is warmed into the shell and reopened from cache — so on a
+  tab left open across midnight, or a cached copy reconnecting the next
+  morning, it names yesterday. Warming yesterday's bulletins and then
+  stamping a completion is the false green the report exists to prevent,
+  one layer down. The rendered date remains the fallback for a clock that
+  will not answer.
+- **A missing weather manifest is a shortfall, not a completion.** The
+  manifest is what the weather-sheet URLs are *derived* from, so a request
+  that fails or comes back malformed leaves the plan naming no sheets while
+  the warm of everything else succeeds. It is held to the same standard as
+  each region feed.
+- **The manifest fetches are bounded.** `pwaWarmCache` settles on the
+  worker's own budget; these do not go through it, and without a bound a
+  connection that stalls without rejecting leaves the operation pending for
+  the browser's full network timeout — the button disabled, the status line
+  mid-sentence, and the verification re-run never reached. Same rule as
+  every other read on this page (SNOW-918): a bound that expires reads as a
+  feed that did not answer, which makes the plan short and the run report
+  failure.
+
 ## It always finishes
 
 The report shipped able to hang. Every reading was an unbounded `await`

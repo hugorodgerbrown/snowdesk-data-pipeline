@@ -1067,7 +1067,22 @@ describe('the per-row "Update" control (SNOW-925)', () => {
   const SHELL = 'snowdesk-shell-abc';
   const REGION_ID = 'CH-4115';
   const AREA_ID = 'region-' + REGION_ID;
-  const TODAY = '2026-09-11';
+  // The date the fixture's HTML was rendered on, deliberately NOT today:
+  // the plan is built from the CLIENT's clock, and pinning that difference
+  // is what SNOW-925's review asked for.
+  const RENDERED_DAY = '2026-09-11';
+
+  /** Today as the client reckons it — what the plan must actually use. */
+  function clientDay() {
+    const now = new Date();
+    return (
+      now.getFullYear() +
+      '-' +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(now.getDate()).padStart(2, '0')
+    );
+  }
 
   /** The panel, with the feed endpoints a server would have rendered. */
   const PANEL = `
@@ -1079,7 +1094,7 @@ describe('the per-row "Update" control (SNOW-925)', () => {
          data-routes-url="/api/routes.geojson"
          data-community-reports-url="/api/community-reports.geojson"
          data-content-countries="ch fr"
-         data-today="${TODAY}">
+         data-today="${RENDERED_DAY}">
       <button data-offline-audit-run></button>
       <div data-offline-audit-output hidden></div>
       <button data-offline-audit-copy hidden></button>
@@ -1219,12 +1234,86 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
-    expect(urls).toContain('/ch-4115/martigny-verbier/' + TODAY + '/');
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
     expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/');
     // Narrowed by the boundary: there are ~550 weather locations across
     // the estate and this area contains one of them.
     expect(urls).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
     expect(urls.some((url) => url.includes('.pbf'))).toBe(false);
+  });
+
+  it('resolves the bulletin day at press time, not from the rendered page', async () => {
+    // SNOW-925 review: `data-today` is the date the HTML was rendered on,
+    // and this page is warmed into the shell and reopened from cache — so
+    // on a tab left open across midnight, or a cached copy reconnecting
+    // the next morning, it names yesterday. The first cut warmed
+    // yesterday's bulletins and then stamped a completion, after which the
+    // report called the area fresh and took the control away with today's
+    // bulletins never saved.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls.some((url) => url.includes('/' + RENDERED_DAY + '/'))).toBe(false);
+    expect(urls.some((url) => url.includes('/' + clientDay() + '/'))).toBe(true);
+  });
+
+  it('treats a missing weather manifest as a shortfall, not a completion', async () => {
+    // SNOW-925 review: the manifest is what the weather sheet urls are
+    // DERIVED from. A request that failed or came back malformed left the
+    // plan naming no sheets while the warm of everything else succeeded —
+    // so an area full of weather locations was stamped complete having
+    // saved none of them. Held to the same standard as each region feed.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('weather.geojson')) return { ok: false, json: async () => null };
+      if (href.includes('regions.geojson') && href.includes('country=ch')) {
+        return { ok: true, json: async () => REGIONS_CH };
+      }
+      return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
+    });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
+  it('bounds the manifest fetches, so a stalled connection cannot hang it', async () => {
+    // SNOW-925 review: unlike `pwaWarmCache` these preliminary requests
+    // went through no budget at all, so a connection that stalls without
+    // rejecting — a captive portal, a lift — could leave the operation
+    // pending for the browser's full network timeout, with `running` true,
+    // the button disabled, and neither the failure message nor the
+    // verification re-run ever reached.
+    //
+    // Asserted on the WIRING rather than by advancing a clock: the budget
+    // is a constant, and a timer test for it was flaky under the full
+    // suite. What matters is that every one of these fetches is abortable.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockClear();
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => window.fetch.mock.calls.length > 0, { timeout: 5000 });
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const manifests = window.fetch.mock.calls.filter((call) =>
+      /regions\.geojson|weather\.geojson/.test(String(call[0])),
+    );
+    expect(manifests.length).toBeGreaterThan(0);
+    for (const [url, init] of manifests) {
+      expect(init && init.signal, String(url)).toBeInstanceOf(AbortSignal);
+    }
   });
 
   it('takes the four overlay feeds along with it', async () => {
