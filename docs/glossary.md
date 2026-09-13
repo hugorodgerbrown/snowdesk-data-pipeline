@@ -128,6 +128,7 @@ Which coordinate on which model is exact, approximate or derived:
 |------|---------|------|
 | Slope angle overlay | The map's steepness raster (SNOW-691) — swisstopo's `ch.swisstopo.hangneigung-ueber_30`, banded to the SLF classification (30–35 / 35–40 / 40–45 / 45–50 / >50°). Under 30° is unshaded | `static/js/slope_overlay_core.js`; `installSlopeLayer` in `static/js/map.js`; `SLOPE_TILE_URL` in `config/settings/base.py` |
 | Coverage rectangle | The slope raster's declared extent, `5.140242, 45.398181` → `11.47757, 48.230651`. Used as the source's `bounds` and to disable the layers-menu row outside it, because unshaded ground *outside* it means "not surveyed" rather than "under 30°" | `COVERAGE_BOUNDS` / `coversPoint` in `static/js/slope_overlay_core.js` |
+| Terrain elevation tileset | Our own Int16 height grid, read server-side to answer "what is the height here, and therefore the slope angle" — the question the slope overlay cannot answer because nothing can read a value back out of a painted raster. swissALTI3D resampled to 5 m in EPSG:3035, 256-cell tiles with a 1-cell skirt, `height_m / 0.25` as little-endian Int16. Switzerland only; outside coverage answers **204, never a height** (SNOW-908) | Built in [snowdesk-tiles](https://github.com/hugorodgerbrown/snowdesk-tiles) (`scripts/terrain_grid.py`), served at `tiles.snowdesk-data.info/terrain/v1/`; sampled by SNOW-917, not yet started; [terrain-tileset.md](runbooks/terrain-tileset.md) |
 
 ## Accounts and tracking
 
