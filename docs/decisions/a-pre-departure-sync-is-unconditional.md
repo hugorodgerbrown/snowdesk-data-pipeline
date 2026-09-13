@@ -104,6 +104,8 @@ load is spent at the one moment the network is there by definition.
   is. No surface assembles the bucket-id format by hand.
 - `syncArea` composes the two paths that already existed —
   `repairPinnedDownload` and `refreshAreaContent` — rather than fetching
-  anything itself, so each half still has exactly one implementation. The
-  `repair` bridge member SNOW-844 added for the sheet's Repair control now
-  has no caller; it is left in place rather than removed in this ticket.
+  anything itself, so each half still has exactly one implementation.
+  SNOW-844's `repair` member on `window.pwaBasemapDownloads` and
+  `includes/_icon_repair.html` existed for the sheet's Repair control
+  alone and went with it; the private `repairPinnedDownload` is untouched
+  and is still the tile path.

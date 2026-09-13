@@ -2142,45 +2142,23 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   areaSlopeTileUrls: (record) => areaSlopeTileUrls(record),
 
-  /**
-   * SNOW-844: refetch `urls` into `areaId`'s pinned bucket — the Manage
-   * downloads sheet's Repair control. See `basemap_download_runner.js`'s
-   * `repair` for why this is NOT the download path (no eviction, no budget
-   * plan): a repair is a handful of documents, and running it through the
-   * eviction confirm could destroy another area to make room for a sprite.
-   *
-   * The sheet paints nothing while it runs — it re-renders on the result,
-   * and a repair is four small documents rather than a several-minute
-   * download — so the runner's `paint` is a no-op here.
-   *
-   * @param {string} areaId
-   * @param {string[]} urls The MISSING documents only.
-   * @returns {Promise<boolean>} Whether every one of them landed.
-   */
-  repair: (areaId, urls) =>
-    new Promise((resolve) => {
-      repairPinnedDownload({
-        areaId: areaId,
-        urls: urls,
-        paint: () => {},
-        finish: async (result, extras) => {
-          const runCore = extras && extras.core;
-          resolve(!!(runCore && runCore.downloadSucceeded(result)));
-        },
-      });
-    }),
+  // SNOW-844's `repair(areaId, urls)` stood here until SNOW-951. It was
+  // the Manage downloads sheet's Repair control and nothing else, and
+  // that control is gone — one "Sync now" replaced it, and `syncArea`
+  // reaches the same short path through `repairPinnedDownload` directly,
+  // with a url list it resolves itself. The private function stays; only
+  // the public member, and a docstring describing a control that no
+  // longer exists, went with the caller.
 
   /**
-   * SNOW-932: refetch one area's CONTENT — the Manage downloads sheet's
-   * Refresh control. See `refreshAreaContent` for the whole of it.
+   * SNOW-932: refetch one area's CONTENT — the bulletins and weather
+   * inside its boundary. See `refreshAreaContent` for the whole of it.
    *
-   * Beside `repair` above because it is the same kind of thing: a short,
-   * targeted refetch into a bucket that already exists, with no tiles and
-   * none of the download path's machinery. The difference is which half it
-   * mends — `repair` fixes a map that will not DRAW, this one fixes
-   * bulletins that are BEHIND — and unlike `repair` it takes no url list,
-   * because the area's own boundary is what says which bulletins those
-   * are and only this module can ask.
+   * A short, targeted refetch into a bucket that already exists, with no
+   * tiles and none of the download path's machinery. It takes no url
+   * list, unlike the tile half beside it in `syncArea`: the area's own
+   * boundary is what says which bulletins those are, and only this module
+   * can ask.
    *
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the content half landed in full.
