@@ -237,6 +237,10 @@ of a settings page nobody came here to audit.
         >{% translate "Opening the map once while connected fixes %(count)s." %}</span>
 
         {# SNOW-926: the perishable half of a download. A caveat on a Yes,   #}
+        {# and the remedy names the SHEET rather than "tap the download        #}
+        {# again" — that was true for a region roundel and for nothing else,   #}
+        {# and the sheet's Refresh (SNOW-932) is the one gesture every area    #}
+        {# kind has. Same surface note-area-incomplete already points at.      #}
         {# never a No — an area whose tiles verify still draws, and what is  #}
         {# behind is what it draws ON. Grouped rather than noted per row, so #}
         {# any number of stale areas fold into one sentence with one shared  #}
@@ -247,13 +251,13 @@ of a settings page nobody came here to audit.
         >{% translate "The bulletins and weather saved inside %(effects)s are from an earlier day." %}</span>
         <span
             data-string="group-content-stale-remedy"
-        >{% translate "Tapping the download again while connected brings %(count)s up to date." %}</span>
+        >{% translate "Refreshing the download from the map’s Manage downloads sheet brings %(count)s up to date." %}</span>
         <span
             data-string="group-content-never-lead"
         >{% translate "No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it." %}</span>
         <span
             data-string="group-content-never-remedy"
-        >{% translate "Tapping the download again while connected fills %(count)s in." %}</span>
+        >{% translate "Refreshing the download from the map’s Manage downloads sheet fills %(count)s in." %}</span>
 
         <span data-string="principal-anonymous">{% translate "a signed-out visitor" %}</span>
         <span data-string="principal-account">{% translate "account %(id)s…" %}</span>

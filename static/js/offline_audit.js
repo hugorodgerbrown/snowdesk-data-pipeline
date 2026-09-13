@@ -325,14 +325,22 @@
     // SNOW-926: the perishable half. A caveat on a Yes, never a No — the
     // map draws, and what is behind is what it draws on. Grouped so any
     // number of areas fold into one sentence with one shared remedy.
+    //
+    // The remedy names the SHEET rather than "tap the download again",
+    // which was true for a region roundel and for nothing else: a custom
+    // area or drop zone opens the downloads manager on a tap, and its
+    // Refresh (SNOW-932) is the one gesture every area kind actually has.
+    // Naming a gesture two of the three kinds do not have left those
+    // caveats with no way to clear them but deleting and recreating the
+    // area. Same surface `note-area-incomplete` already points at.
     'group-content-stale-lead':
       'The bulletins and weather saved inside %(effects)s are from an earlier day.',
     'group-content-stale-remedy':
-      'Tapping the download again while connected brings %(count)s up to date.',
+      'Refreshing the download from the map’s Manage downloads sheet brings %(count)s up to date.',
     'group-content-never-lead':
       'No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it.',
     'group-content-never-remedy':
-      'Tapping the download again while connected fills %(count)s in.',
+      'Refreshing the download from the map’s Manage downloads sheet fills %(count)s in.',
 
     'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
