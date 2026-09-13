@@ -1455,10 +1455,17 @@
       // remedy did nothing at all — a dead control, which is worse than
       // the stale amber it sits on.
       //
-      // A SHORT plan is left alone: it was assembled against an incomplete
-      // country set and so cannot speak for the boundary either way.
-      // `renderControl` then repaints from the stored fact in both cases.
-      if (!content.short) await _stampRegionContent(data.regionId, true);
+      // A SHORT plan cannot speak for the boundary either way, so it
+      // clears nothing — and SNOW-953 makes it RECORD the shortfall here
+      // rather than merely decline to clear one. A short plan used to
+      // still name the countries that did load, so it went down the
+      // repair path below and was stamped there; with the whole selection
+      // behind one endpoint (`/api/area-content/`), an endpoint that
+      // cannot be read yields an EMPTY plan, which lands here. Leaving
+      // the record alone would let the `renderControl` below read whole
+      // tiles off the probe and paint 'done' over a shortfall that is
+      // still there — the exact repaint SNOW-932 closed.
+      await _stampRegionContent(data.regionId, !content.short);
       await renderControl();
       return;
     }

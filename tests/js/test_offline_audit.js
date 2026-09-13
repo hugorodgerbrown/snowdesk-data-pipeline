@@ -1096,10 +1096,13 @@ describe('the per-row "Update" control (SNOW-925)', () => {
   const SHELL = 'snowdesk-shell-abc';
   const REGION_ID = 'CH-4115';
   const AREA_ID = 'region-' + REGION_ID;
-  // The date the fixture's HTML was rendered on, deliberately NOT today:
-  // the plan is built from the CLIENT's clock, and pinning that difference
-  // is what SNOW-925's review asked for.
-  const RENDERED_DAY = '2026-09-11';
+  // The date the fixture's HTML was rendered on, deliberately NOT today
+  // and deliberately far from it: the plan is built from the CLIENT's
+  // clock, and pinning that difference is what SNOW-925's review asked
+  // for. A month back rather than a fixed date, so that SNOW-953's
+  // backwards reach can never grow far enough to include it by accident
+  // and turn this assertion into a calendar coincidence.
+  const RENDERED_DAY = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
   /** Today as the client reckons it — what the plan must actually use. */
   function clientDay() {
@@ -1122,7 +1125,9 @@ describe('the per-row "Update" control (SNOW-925)', () => {
          data-favourites-url="/api/favourites.geojson"
          data-routes-url="/api/routes.geojson"
          data-community-reports-url="/api/community-reports.geojson"
+         data-area-content-url="/api/area-content/"
          data-content-countries="ch fr"
+         data-content-past-days="2"
          data-today="${RENDERED_DAY}">
       <button data-offline-audit-run></button>
       <div data-offline-audit-output hidden></div>
@@ -1130,6 +1135,19 @@ describe('the per-row "Update" control (SNOW-925)', () => {
       <p data-offline-audit-status></p>
     </div>
   `;
+
+  /**
+   * What `/api/area-content/` answers for this area (SNOW-953).
+   *
+   * The selection is the server's now, so the fixture states its result:
+   * the region the boundary covers and the one weather location inside
+   * it. `OUTSIDEbbbb` — in the weather feed below, and 300 km away — is
+   * absent for the same reason the server would leave it out.
+   */
+  const AREA_CONTENT = {
+    regions: [{ id: REGION_ID, slug: 'martigny-verbier' }],
+    weather: [{ short_id: 'INSIDEaaaaa' }],
+  };
 
   /** One region whose polygon is the ground the area's tiles cover. */
   const REGIONS_CH = {
@@ -1189,6 +1207,7 @@ describe('the per-row "Update" control (SNOW-925)', () => {
       vi.fn(async (url) => {
         const href = String(url);
         let body = { type: 'FeatureCollection', features: [] };
+        if (href.includes('area-content')) body = AREA_CONTENT;
         if (href.includes('regions.geojson') && href.includes('country=ch')) {
           body = REGIONS_CH;
         }
@@ -1289,19 +1308,18 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     expect(urls.some((url) => url.includes('/' + clientDay() + '/'))).toBe(true);
   });
 
-  it('treats a missing weather manifest as a shortfall, not a completion', async () => {
-    // SNOW-925 review: the manifest is what the weather sheet urls are
-    // DERIVED from. A request that failed or came back malformed left the
-    // plan naming no sheets while the warm of everything else succeeded —
-    // so an area full of weather locations was stamped complete having
-    // saved none of them. Held to the same standard as each region feed.
+  it('treats an unanswered area-content request as a shortfall', async () => {
+    // SNOW-953: the plan is one request now, so a plan that could not be
+    // made is EVERY bulletin and every sheet missing — and the warm of the
+    // feeds around it still succeeds, so nothing in the tally says so. A
+    // stamped completion here would take the control away from an area
+    // holding none of its documents. The same standard SNOW-925 held the
+    // weather manifest to, applied to the one read that replaced it.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
     window.fetch.mockImplementation(async (url) => {
       const href = String(url);
-      if (href.includes('weather.geojson')) return { ok: false, json: async () => null };
-      if (href.includes('regions.geojson') && href.includes('country=ch')) {
-        return { ok: true, json: async () => REGIONS_CH };
-      }
+      if (href.includes('area-content')) return { ok: false, json: async () => null };
+      if (href.includes('weather.geojson')) return { ok: true, json: async () => WEATHER };
       return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
     });
 
@@ -1337,7 +1355,7 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const manifests = window.fetch.mock.calls.filter((call) =>
-      /regions\.geojson|weather\.geojson/.test(String(call[0])),
+      /area-content/.test(String(call[0])),
     );
     expect(manifests.length).toBeGreaterThan(0);
     for (const [url, init] of manifests) {
@@ -1362,19 +1380,42 @@ describe('the per-row "Update" control (SNOW-925)', () => {
     }
   });
 
-  it('resolves against every country, not the ones a client happens to hold', async () => {
-    // SNOW-931's lesson, applied where there is no `pwaMapCountries` to
-    // ask: a Swiss border area whose plan skips France is exactly the
-    // under-fetch `inside-the-boundary-is-complete.md` promises not to
-    // produce.
+  it('still warms every country outline, without planning from any of them', async () => {
+    // Two facts that used to be one. The map needs all four countries'
+    // outlines offline, so they are still fetched and warmed — but the
+    // PLAN comes from `/api/area-content/`, which selects over every
+    // boundary the server holds. Before SNOW-953 a country feed that
+    // failed left the plan silently short of that country's bulletins
+    // (SNOW-931); now a feed that fails to warm is counted by `warm`'s own
+    // tally and nothing else depends on it.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
     row.querySelector('[data-audit-complete]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
+    const urls = warmed.flat();
+    expect(urls).toContain('/api/regions.geojson?country=ch');
+    expect(urls).toContain('/api/regions.geojson?country=fr');
     const asked = window.fetch.mock.calls.map((call) => String(call[0]));
-    expect(asked.some((url) => url.includes('country=ch'))).toBe(true);
-    expect(asked.some((url) => url.includes('country=fr'))).toBe(true);
+    expect(asked.some((url) => url.includes('area-content'))).toBe(true);
+    expect(asked.some((url) => url.includes('country=fr'))).toBe(false);
+  });
+
+  it('reaches back the days the page was told to (SNOW-953)', async () => {
+    // `data-content-past-days="2"` in the fixture. Yesterday's bulletin is
+    // what says what the snowpack has just been through, and a
+    // forward-only window never carried it.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    const day = (back) =>
+      new Date(Date.parse(clientDay()) - back * 86400000).toISOString().slice(0, 10);
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + day(1) + '/');
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + day(2) + '/');
+    expect(urls).not.toContain('/ch-4115/martigny-verbier/' + day(3) + '/');
   });
 
   it('stamps the record and re-checks, so the report is the receipt', async () => {
