@@ -257,7 +257,7 @@ each of them read Yes on a device that would have shown the user nothing
 | Danger ratings | any `/api/ratings/` entry | the feed for the day the cached page will open on |
 | Region outlines | any `/api/regions.geojson` entry | the country the cold open asks for |
 | Bulletins you have opened | any cached page that is not the map or an account page | a page whose path is a bulletin |
-| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something |
+| Your saved places / routes / reports / weather | the overlay row existing | a row this account can read, holding something — or, for routes and reports, the panel's own cached rows |
 
 **The ratings row is the one that mattered most.** The map's cold open
 fetches `RATINGS_URL + '?d=' + readDisplayDate() + '&country=ch'`, and
@@ -290,6 +290,16 @@ states are told apart — Yes, No (absent, or another account's, with the
 note saying which), and **unknown** for a row that is readable and empty,
 because "you have no routes" is neither a capability nor a fault and
 belongs on neither side of the tally.
+
+**Three of those rows have a second source**, because the overlay is not
+the only offline copy. The saved-places row also passes on a
+`data:favourites` row, and the reports (SNOW-661) and routes (SNOW-950)
+rows also pass on a `data:panel_rows` row for their panel: a device
+holding the panel's last list response has something to read there
+whatever the map overlay holds. Leaving the routes row on the overlay
+alone was what let the report say Yes while the panel beside it said
+"Your routes couldn't be loaded" — a row and a surface disagreeing about
+one thing on one device is the failure this panel cannot survive.
 
 ## Two halves, doing two jobs
 

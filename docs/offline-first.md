@@ -182,8 +182,9 @@ that went away with the signal.
   listener. Without it the rows would be stored only for a user who had
   opened the panel while online, which is not the user this relaxation is
   for — someone who loads the map with signal and opens the panel without
-  it. The hook is per key and only `observations` registers one, so a warm
-  of the favourites or routes panel still persists nothing.
+  it. The hook is per key: `observations` and `routes` register one
+  (SNOW-950), and the favourites panel persists nothing through it — it has
+  its own `data:favourites` store.
 - What is stored is the **rendered response body**, not a record per
   observation — the row's meta line is server-translated and carries a
   region name, a `<time datetime>` element and a what3words line, so
@@ -205,6 +206,32 @@ that went away with the signal.
 
 A report filed offline and still sitting in `queue:mutations` is
 deliberately out of this scope — it is not yet a report the server has.
+
+### And for the user's own saved routes (SNOW-950)
+
+The map's routes panel had the same asymmetry, for the same reason: the
+map draws the user's routes offline (SNOW-687 caches the routes GeoJSON in
+`data:map_overlays`) while the panel listing those same routes said "Your
+routes couldn't be loaded". The offline content report's "Your routes" row
+answered from the overlay alone, so the two surfaces contradicted each
+other on one device at one moment.
+
+`static/js/routes_offline.js` is the module above applied to that panel —
+same store, its own key (`routes`), same principal partitioning, same two
+ways in (a swap of `[data-routes-rows]`, and `routes.js`'s idle warm
+through `onWarmed`), and the same rendered body rather than a record per
+route. `routes.js` repaints it on a failed load and appends "Showing your
+saved routes — last updated HH:MM"; `offline_audit_core.js`'s routes row
+now reads the panel store too, so the report and the panel agree.
+
+Two differences from the observations panel, both consequences of what a
+route row contains:
+
+- Each repainted row loses its **"…" menu** (`[data-overflow-menu]`) and a
+  pending share loses its **Save** (`[data-row-claimed]`). Plan a trip,
+  Share, Rename, Delete and the claim are all online-only.
+- **No relative-time refresh**: a route row carries no
+  `<time datetime>` to re-age.
 
 ## Idempotency (SNOW-371)
 

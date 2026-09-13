@@ -42,7 +42,7 @@ never removed.
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
-| `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
+| `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`, and `'routes'` since SNOW-950), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) and `static/js/routes_offline.js` (`window.pwaRoutesOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
 | `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
 
 Alongside `basemap.origins` and `sw.devShellCache`, `meta:app` also
@@ -72,28 +72,36 @@ of its own.
 }
 ```
 
-### `data:panel_rows` row shape (SNOW-661)
+### `data:panel_rows` row shape (SNOW-661, SNOW-950)
 
 ```js
 {
-  key,        // 'observations' — the PANEL, not the thing it lists
+  key,        // 'observations' | 'routes' — the PANEL, not the things it
+              // lists
   body,       // the list endpoint's last successful response, verbatim:
               // the server's rendered rows, translations and all
-  cached_at,  // ISO 8601 timestamp — what report.js stamps its "last
-              // updated HH:MM" line with
+  cached_at,  // ISO 8601 timestamp — what report.js and routes.js stamp
+              // their "last updated HH:MM" line with
   principal,  // the signed-in account (SNOW-493's partitioning), or null
               // for an anonymous session. A row whose principal does not
               // match the current one reads back as null
 }
 ```
 
-The markup rather than a record per observation: the row's meta line is
-server-translated and carries a region name, a `<time datetime>` element
-and a what3words line, so rebuilding it client-side would mean assembling
-a translated, markup-bearing sentence in JavaScript — the string class
-`i18n-lint` exists to catch. See the module header for the whole
+The markup rather than a record per observation or per route: the row's
+meta line is server-translated — a region name, a `<time datetime>`
+element and a what3words line on an observation, a distance and ascent
+line on a route — so rebuilding it client-side would mean assembling a
+translated, markup-bearing sentence in JavaScript, the string class
+`i18n-lint` exists to catch. See either module header for the whole
 argument, and [`offline-first.md`](offline-first.md) §12.6 for the
 relaxation it sits under.
+
+The two panels each own their key and write only for their own
+container: `observations_offline.js` matches `[data-report-rows]` and
+`routes_offline.js` matches `[data-routes-rows]`, which is what stops one
+panel caching another's list (SNOW-722). The favourites panel keeps no
+row here — it has its own `data:favourites` store.
 
 ### `meta:app` row shape — `basemap.customAreas` (SNOW-522, SNOW-586, SNOW-635)
 
