@@ -1671,6 +1671,34 @@ describe('"Sync now" (SNOW-951)', () => {
     delete window.pwaRegionDownload;
   });
 
+  it('leaves the row pressable when the sync THROWS', async () => {
+    // The failure mode the in-flight Set introduced. `syncArea` reaches
+    // Cache Storage, IndexedDB, the country loader and several fetches,
+    // any of which can reject rather than resolve false — and an entry
+    // never deleted from `syncing` leaves `buildRow` re-applying
+    // `disabled` on every render for the rest of the page's life. Before
+    // this ticket the disabled state was per element, and the next render
+    // healed it; the Set must not be a worse bargain than that.
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    await loadModule();
+    openSheet();
+    await settle();
+    window.pwaBasemapDownloads.syncArea.mockRejectedValueOnce(new Error('storage gone'));
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+    const sync = firstRowElement().querySelector('[data-downloads-sync]');
+    expect(sync.disabled).toBe(false);
+    // And pressing it again really does start another run, rather than
+    // being refused by a Set that still holds the area.
+    sync.click();
+    await settle();
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the control disabled across the re-render a sync triggers', async () => {
     // The sheet re-clones every row on each render, so a run still going
     // when one lands used to come back with a live control — and a second

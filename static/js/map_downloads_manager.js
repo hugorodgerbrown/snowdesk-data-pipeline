@@ -1798,7 +1798,26 @@
     syncing.add(areaId);
     button.setAttribute('disabled', '');
 
-    window.pwaBasemapDownloads?.syncArea(areaId).then(function (result) {
+    /**
+     * Settle the press: forget the run, say so if it fell short, and
+     * repaint every surface it could have changed.
+     *
+     * Shared by the fulfilled and the REJECTED path, and the sharing is
+     * the point. `syncArea` reaches Cache Storage, IndexedDB,
+     * `window.pwaMapCountries` and several feed fetches, any of which can
+     * throw rather than resolve false — and before SNOW-951 a thrown
+     * error cost only the one disabled element, which the next `render()`
+     * replaced. Now that `buildRow` re-applies `disabled` from `syncing`
+     * on every render, an entry never deleted leaves that row's control
+     * dead until a full page reload. The area is in the same condition
+     * either way: not current, and worth pressing again.
+     *
+     * @param {{tiles: string, content: boolean}|null|undefined} result
+     *   Absent for a rejection, and for a page whose download bridge has
+     *   not loaded — both are "nothing landed".
+     * @returns {void}
+     */
+    const settleSync = (result) => {
       syncing.delete(areaId);
       // One toast, for either half falling short. The user asked for the
       // area to be current and it is not; which of the two halves missed
@@ -1822,7 +1841,16 @@
       // The control re-probes rather than being told an answer, so this
       // cannot make the two disagree.
       window.pwaRegionDownload?.refreshState();
-    });
+    };
+
+    // `Promise.resolve` around the call, not a bare `.then`: an older
+    // cached shell can carry a bridge with no `syncArea` at all, and
+    // `?.syncArea(areaId)` yields `undefined` there — on which `.then`
+    // throws synchronously, out of a click handler, leaving the row in
+    // `syncing` for the life of the page.
+    Promise.resolve(window.pwaBasemapDownloads?.syncArea(areaId))
+      .then(settleSync)
+      .catch(() => settleSync(null));
     return true;
   }
 
