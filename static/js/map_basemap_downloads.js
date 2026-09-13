@@ -2171,6 +2171,23 @@ window.pwaBasemapDownloads = Object.freeze({
     }),
 
   /**
+   * SNOW-932: refetch one area's CONTENT — the Manage downloads sheet's
+   * Refresh control. See `refreshAreaContent` for the whole of it.
+   *
+   * Beside `repair` above because it is the same kind of thing: a short,
+   * targeted refetch into a bucket that already exists, with no tiles and
+   * none of the download path's machinery. The difference is which half it
+   * mends — `repair` fixes a map that will not DRAW, this one fixes
+   * bulletins that are BEHIND — and unlike `repair` it takes no url list,
+   * because the area's own boundary is what says which bulletins those
+   * are and only this module can ask.
+   *
+   * @param {string} areaId
+   * @returns {Promise<boolean>} Whether the content half landed in full.
+   */
+  refreshAreaContent: (areaId) => refreshAreaContent(areaId),
+
+  /**
    * SNOW-844: every URL held across every pinned bucket — see
    * `pinnedBasemapCacheURLs`. The sheet asks the same question the
    * roundels do ("is this area's whole render set on disk?"), and the
@@ -3085,6 +3102,153 @@ async function runPinnedDownload(options) {
     return;
   }
   return runner.run(PINNED_DOWNLOAD_DEPS, options);
+}
+
+/**
+ * SNOW-932: the record one area id names, whichever half it lives in.
+ *
+ * Region records and custom-area records are two arrays under two keys,
+ * joined only by the bucket id both mint. `refreshAreaContent` is the
+ * first thing that has to reach either from an id alone — every other
+ * writer already knows which kind it is holding — so the resolution is
+ * one function rather than a branch inside it.
+ *
+ * @param {string} areaId The pinned bucket id.
+ * @returns {Promise<{record: Object, regionId: string} | null>} `regionId`
+ *   is `''` for a custom area, which is how the caller knows which array
+ *   to write the outcome back to without re-deriving the kind. Null when
+ *   nothing on this device carries that id — an orphaned bucket, or a row
+ *   the account knows about and this device has never held.
+ */
+async function _areaRecordById(areaId) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId) return null;
+  try {
+    if (core.isCustomAreaId(areaId)) {
+      const areas = await _readCustomAreas();
+      const record = areas.find((entry) => entry && entry.id === areaId);
+      return record ? { record: record, regionId: '' } : null;
+    }
+    const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+    const regions = Array.isArray(row && row.value) ? row.value : [];
+    const record = regions.find(
+      (entry) => entry && core.areaIdForRegion(entry.region_id) === areaId,
+    );
+    return record ? { record: record, regionId: record.region_id } : null;
+  } catch (_e) {
+    // Best-effort, like every other read of these two keys here — a
+    // refresh that cannot find its record declines rather than throwing.
+    return null;
+  }
+}
+
+/**
+ * SNOW-932: write one area's content outcome back onto its record.
+ *
+ * The custom-area twin of `map_region_download.js`'s `_stampRegionContent`,
+ * widened to serve BOTH halves — this module is the only one that reaches
+ * both arrays, and the Manage downloads sheet's Refresh acts on either
+ * kind of row from one control.
+ *
+ * The write rule is the ticket's whole compatibility story and is stated
+ * once here for both: success SETS `contentAt` and DELETES
+ * `contentIncomplete`; failure sets `contentIncomplete` and leaves
+ * `contentAt` alone, because it still records the last time this area's
+ * content was fetched in full and a run that fell short did not change
+ * that. `contentIncomplete` is never written `false` — absence is the only
+ * representation of "nothing wrong", which is what lets every record
+ * written before this ticket keep reading as fine.
+ *
+ * @param {string} areaId
+ * @param {string} regionId `''` for a custom area — see `_areaRecordById`.
+ * @param {boolean} complete Whether the content half landed in full.
+ * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
+ *   reading on the sheet, not a download.
+ */
+async function _stampAreaContent(areaId, regionId, complete) {
+  const stamp = (entry) => {
+    if (!complete) return { ...entry, contentIncomplete: true };
+    const { contentIncomplete: _cleared, ...rest } = entry;
+    return { ...rest, contentAt: new Date().toISOString() };
+  };
+  try {
+    if (!regionId) {
+      const existing = await _readCustomAreas();
+      if (!existing.some((entry) => entry && entry.id === areaId)) return;
+      await _writeCustomAreas(
+        existing.map((entry) => (entry && entry.id === areaId ? stamp(entry) : entry)),
+      );
+      return;
+    }
+    const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
+    const existing = Array.isArray(row && row.value) ? row.value : [];
+    if (!existing.some((entry) => entry && entry.region_id === regionId)) return;
+    await window.pwaDb?.put('meta:app', {
+      key: 'basemap.regions',
+      value: existing.map((entry) =>
+        entry && entry.region_id === regionId ? stamp(entry) : entry,
+      ),
+    });
+  } catch (_e) {
+    // Best-effort — see the docstring.
+  }
+}
+
+/**
+ * SNOW-932: refetch one area's CONTENT — the bulletins and weather inside
+ * its boundary — and record what came of it.
+ *
+ * The Manage downloads sheet's Refresh control, and the remedy for the
+ * `contentIncomplete` fact the same ticket makes durable. A region has a
+ * roundel of its own that already does this (`map_region_download.js`'s
+ * `handleRefresh`); a CUSTOM area has nothing — its framing overlay closes
+ * and never comes back — so until this existed a custom area whose
+ * bulletins fell short had no way out at all. The sheet serves both kinds
+ * from one control rather than growing a second roundel, which was the
+ * scope decision on the ticket.
+ *
+ * Goes through `repairPinnedDownload`, never `runPinnedDownload`, and that
+ * is the user-visible promise rather than an implementation detail: NO
+ * TILES ARE RE-FETCHED. A refresh costs kilobytes of HTML over the same
+ * thin connection this whole feature exists for, where a re-download would
+ * cost megabytes — and `run`'s eviction confirm can destroy ANOTHER area
+ * to make room, which is an absurd price for a day-old bulletin.
+ *
+ * @param {string} areaId The pinned bucket id, from the sheet's row.
+ * @returns {Promise<boolean>} Whether the content half landed in full —
+ *   `repair`'s own contract, which the sheet reads to decide between a
+ *   silent re-render and a toast. False for an area with no record, and
+ *   for one whose boundary resolved to nothing to fetch: neither refreshed
+ *   anything, and claiming otherwise would leave the row amber with a
+ *   control that reports success.
+ */
+async function refreshAreaContent(areaId) {
+  const found = await _areaRecordById(areaId);
+  if (!found) return false;
+
+  // The pair, not a bare list: a plan assembled while a country was
+  // unreachable is short however many of its urls land, and a refresh that
+  // reported success on one would clear the very flag it was called to
+  // clear. See `assembleAreaContentURLs`.
+  const content = await assembleAreaContentURLs(found.record);
+  if (content.urls.length === 0) return false;
+
+  return new Promise((resolve) => {
+    repairPinnedDownload({
+      areaId: areaId,
+      urls: content.urls,
+      // Nothing to paint: the sheet re-renders on the result, and this is
+      // a handful of documents rather than a several-minute download —
+      // the same reasoning the `repair` bridge member above gives.
+      paint: () => {},
+      finish: async (result, extras) => {
+        const runCore = extras && extras.core;
+        const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
+        await _stampAreaContent(areaId, found.regionId, ok);
+        resolve(ok);
+      },
+    });
+  });
 }
 
 /**
