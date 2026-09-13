@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-09-13
 ---
 
 # Environment network allow-list
@@ -113,6 +113,32 @@ denial — this doc can't tell which. Leaving the row above in place rather
 than deleting it: if a future pass finds it blocked again, that confirms
 intermittency; if it stays reachable, it's safe to move to "Actioned" at
 that point.
+
+## Requested — 2026-09-13 (competitor-scan routine)
+
+Reconfirmed blocks and two clearances from the
+[2026-09-13 competitor scan](competitors.md).
+
+| Domain | Why it matters |
+|---|---|
+| `peakvisor.com` | PeakVisor — blocked again this pass (2nd of 2 scan passes so far) |
+| `skida.app` / `www.skida.app` | Skida (Alpine Adventures) — blocked on all 3 scan passes to date; this pass's block was the deciding factor in promoting the profile on search-corroboration alone rather than waiting for primary verification |
+| `www.slf.ch` | Still blocked. Note the exact host: the bare `whiterisk.ch` domain (see clearance below) is a *different* host and is no longer blocked, so this is not a duplicate of the `slf.ch` row in the 2026-08-30 table above |
+
+**Clearances this pass** — for the record, not action items. `get.whympr.com`
+and `snowsafe.at` were both reachable by direct `WebFetch` for the first
+time, each returning real page content (not a placeholder), so both moved
+from search-corroborated to partially primary-verified in
+[`competitors.md`](competitors.md). `whiterisk.ch` (bare domain, not
+`www.slf.ch`) also stopped returning `EGRESS_BLOCKED`, but the page is a
+client-rendered SPA shell with no content in the fetched HTML, so this is a
+policy clearance without a verification win — worth re-fetching once the
+route's client-side render is reachable some other way (e.g. a rendered
+snapshot), rather than assuming the plain fetch will ever return useful
+content. As with `avalancheclarity.com`'s 2026-09-06 clearance, nothing in
+this session changed the egress policy, so either a human updated the
+allowlist between passes or the blocks were intermittent — this doc still
+can't tell which.
 
 ## How to add these
 
