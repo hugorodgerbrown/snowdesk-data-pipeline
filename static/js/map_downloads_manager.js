@@ -1845,6 +1845,14 @@
       // The layers menu is a live cache-state dashboard, and this run
       // wrote into a pinned bucket.
       window.pwaLayerSyncStatus?.refresh();
+      // SNOW-932 review: and the region roundel behind this sheet, which
+      // reads the same record. Without it a refresh of the FOCUSED region
+      // cleared the stored shortfall and left the roundel painted
+      // 'partial' until an unrelated region, basemap or connectivity event
+      // happened by — and a tap meanwhile ran a second, redundant refresh.
+      // The control re-probes rather than being told an answer, so this
+      // cannot make the two disagree.
+      window.pwaRegionDownload?.refreshState();
     });
     return true;
   }
