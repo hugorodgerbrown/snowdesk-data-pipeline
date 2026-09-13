@@ -655,6 +655,7 @@ Read these when working in the relevant area:
 | Why `activate` re-warms the map page and its scripts (_rewarmShell, _shellSubresources, SHELL_PAGES; a deploy used to leave the app unopenable offline) | [`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](docs/decisions/the-shell-is-rewarmed-after-an-activation.md) |
 | Why the offline report, reset control and sync log are a public page (/offline/, offline_page, PUBLIC_PRINCIPAL_PATHS, SHELL_PAGES) | [`docs/decisions/what-this-device-holds-is-a-public-page.md`](docs/decisions/what-this-device-holds-is-a-public-page.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
+| Why a native build would be a shell around the PWA and never a companion app (DRAFT — background location is the only justification; WKAppBoundDomains risk to the offline estate) | [`docs/decisions/a-native-app-is-a-shell-not-a-companion.md`](docs/decisions/a-native-app-is-a-shell-not-a-companion.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
