@@ -451,3 +451,166 @@ describe('cruxCount', () => {
     expect(core.cruxCount(null)).toBe(0);
   });
 });
+
+describe('the passage flag on a segment', () => {
+  it('marks exactly the indices the server named', () => {
+    const feature = sampled([12, 52, 51, 12]);
+    feature.properties.slope.passages = [{ from: 1, to: 2, m: 50, fall_line: 'descending' }];
+
+    const features = core.segmentFeatures(feature);
+
+    expect(features.map((f) => f.properties.passage)).toEqual([
+      undefined, true, true, undefined,
+    ]);
+  });
+
+  it('is never false, only present or absent', () => {
+    // The `_mark_cruxes` rule, and the reason the layer filter can be a
+    // plain `['==', ['get', 'passage'], true]`: a `false` would still be
+    // a value the next reader has to remember to test for.
+    const feature = sampled([12, 52]);
+    feature.properties.slope.passages = [{ from: 1, to: 1, m: 25 }];
+
+    const features = core.segmentFeatures(feature);
+
+    expect(features[0].properties).not.toHaveProperty('passage');
+  });
+
+  it('never lands on an unknown segment', () => {
+    // Belt and braces over a server that never names one: unsurveyed
+    // ground is not ground we may mark, and a feature carrying both
+    // `unknown` and `passage` would be painted by two layers at once.
+    const feature = sampled([null, 52]);
+    feature.properties.slope.passages = [{ from: 0, to: 1, m: 50 }];
+
+    const features = core.segmentFeatures(feature);
+
+    expect(features[0].properties.unknown).toBe(true);
+    expect(features[0].properties).not.toHaveProperty('passage');
+    expect(features[1].properties.passage).toBe(true);
+  });
+
+  it('is absent from every segment of a route with no passages', () => {
+    const feature = sampled([12, 41]);
+    feature.properties.slope.passages = [];
+
+    for (const f of core.segmentFeatures(feature)) {
+      expect(f.properties).not.toHaveProperty('passage');
+    }
+  });
+
+  it('does not throw on a malformed passage list', () => {
+    // The record arrives from a feature property and is checked rather
+    // than trusted: a route that fails to draw is worse than one drawn
+    // without its marks.
+    const feature = sampled([12, 52]);
+    feature.properties.slope.passages = [
+      null, {}, { from: 'x', to: 1 }, { from: 1 }, { from: 1, to: 0 }, 7,
+    ];
+
+    const features = core.segmentFeatures(feature);
+
+    expect(features).toHaveLength(2);
+    for (const f of features) expect(f.properties).not.toHaveProperty('passage');
+  });
+
+  it('ignores a passages value that is not a list at all', () => {
+    const feature = sampled([12, 52]);
+    feature.properties.slope.passages = 'two';
+
+    expect(core.segmentFeatures(feature)).toHaveLength(2);
+  });
+});
+
+describe('passageLines', () => {
+  /** Build a route feature carrying the given passages. */
+  function withPassages(passages) {
+    const feature = sampled([12, 52]);
+    feature.properties.slope.passages = passages;
+    return feature;
+  }
+
+  it('says nothing at all when there are none', () => {
+    // The cruxCount rule. "0 no-fall passages" claims the algorithm
+    // looked and found none, which is the reading the help topic exists
+    // to prevent.
+    expect(core.passageLines(withPassages([]))).toEqual([]);
+    expect(core.passageLines(sampled([12]))).toEqual([]);
+    expect(core.passageLines(null)).toEqual([]);
+  });
+
+  it('uses the singular key for one', () => {
+    const lines = core.passageLines(withPassages([{ from: 1, to: 1, m: 25 }]));
+
+    expect(lines[0].key).toBe('route-terrain-passage-one');
+    expect(lines[0].params.count).toBe('1');
+  });
+
+  it('uses the plural key and counts them', () => {
+    const lines = core.passageLines(withPassages([
+      { from: 0, to: 0, m: 25 }, { from: 1, to: 1, m: 25 },
+    ]));
+
+    expect(lines[0].key).toBe('route-terrain-passages');
+    expect(lines[0].params.count).toBe('2');
+  });
+
+  it('names each distinct direction once, in a fixed order', () => {
+    // One descriptor per DIRECTION, not per passage: a long tour would
+    // otherwise repeat the same three words down the popup. Fixed order,
+    // so the line does not reshuffle between two taps on one route.
+    const lines = core.passageLines(withPassages([
+      { from: 0, to: 0, m: 25, fall_line: 'crossing' },
+      { from: 1, to: 1, m: 25, fall_line: 'descending' },
+      { from: 2, to: 2, m: 25, fall_line: 'crossing' },
+    ]));
+
+    expect(lines.map((l) => l.key)).toEqual([
+      'route-terrain-passages',
+      'route-terrain-passage-descending',
+      'route-terrain-passage-crossing',
+    ]);
+  });
+
+  it('carries the count alone for a passage nothing could classify', () => {
+    // `fall_line` is absent, never null, on a passage whose ground faces
+    // nowhere — and the passage still counts, because steep ground is
+    // what earns the mark.
+    const lines = core.passageLines(withPassages([{ from: 1, to: 1, m: 25 }]));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].key).toBe('route-terrain-passage-one');
+  });
+
+  it('returns descriptors and never text', () => {
+    // Nothing here may ship an English literal to a translated page —
+    // the rule `tox -e i18n-lint` enforces.
+    const lines = core.passageLines(withPassages([
+      { from: 1, to: 1, m: 25, fall_line: 'climbing' },
+    ]));
+
+    for (const line of lines) {
+      expect(typeof line.key).toBe('string');
+      expect(line.key.startsWith('route-terrain-passage')).toBe(true);
+      expect(line).not.toHaveProperty('text');
+    }
+  });
+});
+
+describe('PASSAGE_CORE_COLOUR', () => {
+  it('is off the steepness scale entirely', () => {
+    // The core is a GAP in the line, not a seventh class of ground, so
+    // it must not be any band's colour.
+    expect(core.CLASSES.map((c) => c.hex)).not.toContain(core.PASSAGE_CORE_COLOUR);
+  });
+
+  it('is not the crux ring halo, which it co-occurs with', () => {
+    // Any segment over 50° has already fired is_crux at 35°, so nearly
+    // every passage carries a ring as well.
+    expect(core.PASSAGE_CORE_COLOUR).not.toBe('#ffffff');
+  });
+
+  it('names the token it mirrors', () => {
+    expect(core.PASSAGE_CORE_TOKEN).toBe('--color-passage-core');
+  });
+});
