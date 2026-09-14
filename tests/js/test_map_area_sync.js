@@ -416,6 +416,31 @@ beforeEach(async () => {
   holdDependencies(DEPS);
 });
 
+describe('TEMPORARY DIAGNOSTIC', () => {
+  it('reports what the content plan is built from', async () => {
+    const core = self.pwaBasemapDownloadCore;
+    const mapEl = document.getElementById('map');
+    const record = await storedArea();
+    const countries = await window.pwaMapCountries?.ensureAllLoaded();
+    const byRegion = window.snowdeskMapState?.featureByRegionId || {};
+    console.log(
+      'DIAG',
+      JSON.stringify({
+        hasCore: !!core,
+        hasMapEl: !!mapEl,
+        hasAreaContentPlan: typeof core?.areaContentPlan,
+        bbox: core?.areaBBox ? core.areaBBox(record) : 'no-fn',
+        regionKeys: Object.keys(byRegion),
+        countries,
+        today: document.getElementById('season-scrubber')?.dataset.today,
+        weatherDetailUrl: mapEl?.dataset.weatherDetailUrl,
+        overlayStored: [...(window.pwaMapOverlayCache?.stored?.keys() || [])],
+      }),
+    );
+    expect(true).toBe(true);
+  });
+});
+
 describe('the tile half', () => {
   it('fetches nothing when every dependency is already on disk', async () => {
     // The healthy case, and it is the common one: tiles are permanent, so
