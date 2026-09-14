@@ -4617,6 +4617,13 @@
     // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
+    // SNOW-910: a write may be waiting on this overlay. Its payload is
+    // NOT the answer — this load may have started before the write, or
+    // been served from the offline cache — so hand the question to
+    // `confirmRouteWrite`, which issues a read of its own. Inert unless a
+    // write is actually outstanding.
+    if (key === 'routes') confirmRouteWrite();
+
   };
 
   // SNOW-235 / SNOW-493 P1: public entry point. Short-circuits if the tier
@@ -5554,17 +5561,25 @@
    * showing what it showed a moment ago — stale, but not wrong about
    * anything it claims to know.
    *
+   * **Resolves to whether a payload was actually applied** (SNOW-910).
+   * It swallows its own failures — a refetch that cannot land leaves the
+   * map showing what it showed a moment ago — so "the promise settled" is
+   * NOT the same as "the server answered", and a caller that needs the
+   * difference has to be told. `confirmRouteWrite` is that caller: it
+   * clears an unconfirmed write only on a true here, and a false is what
+   * keeps the signal up for a later retry.
+   *
    * @param {string} key - ``'routes'`` or ``'community_reports'``.
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} True when fresh data was applied.
    */
   const refreshPanelOverlay = (key) => {
-    if (!overlayLoaded[key]) return Promise.resolve();
+    if (!overlayLoaded[key]) return Promise.resolve(false);
     const url = key === 'routes' ? ROUTES_URL : COMMUNITY_REPORTS_URL;
-    if (!url) return Promise.resolve();
+    if (!url) return Promise.resolve(false);
     return fetch(url)
       .then(r => r.json())
       .then((data) => {
-        if (!data) return;
+        if (!data) return false;
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
@@ -5588,8 +5603,9 @@
           communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
           map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
         }
+        return true;
       })
-      .catch(() => {});
+      .catch(() => false);
   };
 
   // SNOW-910: how long after an upload or a claim the map re-reads the
@@ -5607,6 +5623,74 @@
   // for a track of a few hundred samples, not a measurement.
   const SLOPE_REFETCH_DELAY_MS = 20000;
   let slopeRefetchTimer = null;
+
+  // How many writes have put a route on the server this session, and how
+  // many of those a returned network read has covered. A write is
+  // UNCONFIRMED while the first number leads the second.
+  //
+  // A COUNTER, not a boolean, and that is the whole point. The rule is
+  // that a write is confirmed only by a network read ISSUED AFTER IT, and
+  // a boolean cannot express "after": two writes can be in flight at once,
+  // and the earlier one's read — which was issued before the later write
+  // and cannot possibly see it — would clear a shared flag on success and
+  // strand the later write with no retry. Five bugs on this mechanism all
+  // reduce to consuming a signal against something that could not answer
+  // for it; a read is now credited with exactly the writes that existed
+  // when it went out, and with none that followed.
+  let routeWriteSeq = 0;
+  let routeConfirmedSeq = 0;
+
+  /**
+   * Whether some write is still waiting to be seen by a network read.
+   *
+   * @returns {boolean} True while a write is unconfirmed.
+   */
+  const routeWritePending = () => routeWriteSeq > routeConfirmedSeq;
+
+  /**
+   * Credit a returned read with every write made before it was issued.
+   *
+   * @param {number} seq `routeWriteSeq` as it stood when the read went out.
+   * @param {boolean} applied Whether the read actually applied a payload.
+   *   `refreshPanelOverlay` swallows its own failures, so a settled promise
+   *   is NOT a served request and only this says which it was.
+   * @returns {void}
+   */
+  const creditRouteRead = (seq, applied) => {
+    if (!applied) return;
+    if (seq > routeConfirmedSeq) routeConfirmedSeq = seq;
+    scheduleSlopeRefetch();
+  };
+
+  /**
+   * Ask the server about an unconfirmed write, and judge that answer.
+   *
+   * The only path that advances `routeConfirmedSeq` other than a write's
+   * own refresh. Callers never decide whether their payload is good
+   * enough — `_loadOverlay`'s can predate the write or come from the
+   * offline cache — they hand the question here.
+   *
+   * @returns {void}
+   */
+  const confirmRouteWrite = () => {
+    if (!routeWritePending() || !overlayLoaded.routes) return;
+    const seq = routeWriteSeq;
+    refreshPanelOverlay('routes')
+      .then((applied) => creditRouteRead(seq, applied))
+      // Offline, or the origin refused. Nothing is credited, so the
+      // reconnect below — or the next write, or the next overlay load —
+      // asks again. Nothing is drawn wrongly meanwhile; the route is
+      // simply not there yet.
+      .catch(() => {});
+  };
+
+  // The retry that makes an uncredited write worth tracking. An enable
+  // served from the offline cache installs a payload written before the
+  // write, so the route can be missing from the map entirely — and
+  // nothing refreshes an already-loaded overlay, so without this it
+  // stayed missing until a page reload. Inert unless a write is actually
+  // outstanding, which is the common case by far.
+  window.addEventListener('online', confirmRouteWrite);
 
   /**
    * Re-read the routes feed ONCE, later, for a route sampled after upload.
@@ -5630,6 +5714,10 @@
    */
   const scheduleSlopeRefetch = () => {
     if (slopeRefetchTimer) return;
+    // Judged on the payload alone, and on the CURRENT one: each caller
+    // reaches here from its own settled refresh, so the cache it reads is
+    // the answer to its own fetch. No shared signal is consulted or
+    // cleared, which is what makes two overlapping writes independent.
     const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
     const anyUnsampled = features.some(
       (f) => f && f.properties && !f.properties.pending && !f.properties.slope,
@@ -5745,7 +5833,22 @@
     const detail = (event && event.detail) || {};
     const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
-    if (mayGainSlope) refreshed.then(scheduleSlopeRefetch);
+    if (mayGainSlope) {
+      routeWriteSeq += 1;
+      // Captured now, so this read is credited with THIS write and never
+      // with one that follows it.
+      const seq = routeWriteSeq;
+      // When the overlay is loaded, the refresh above was issued after
+      // this write and so can answer for it; reuse it rather than firing
+      // a second. When it is not, that call did nothing, and the write
+      // waits for `_loadOverlay` — which hands the question to
+      // `confirmRouteWrite` rather than judging its own payload.
+      if (overlayLoaded.routes) {
+        refreshed
+          .then((applied) => creditRouteRead(seq, applied))
+          .catch(() => {});
+      }
+    }
   });
   document.addEventListener('snowdesk:reports-changed', () => {
     refreshPanelOverlay('community_reports');
