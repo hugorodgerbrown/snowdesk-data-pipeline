@@ -3345,24 +3345,29 @@ async function _missingAreaRenderDependencies(record) {
  * remedy for that record is a re-download, which the sheet already
  * offers.
  *
- * `pinnedBucketAreaIds` answers `[]` both for a device holding nothing
- * and for one whose Cache Storage would not answer, and that conflation
- * is harmless here: every half of a sync WRITES to Cache Storage, so a
- * device that cannot be read cannot be synced either, and refusing is the
- * same outcome reached without spending the connection to find out.
+ * It reads Cache Storage HERE rather than delegating to
+ * `window.pwaBasemapAreas.pinnedBucketAreaIds`, which answers the same
+ * question from another module with its own availability guard. This walk
+ * is the one `pinnedBasemapCacheURLs` above already makes, on the prefix
+ * constant this module already holds, so the bucket check and the
+ * dependency check two lines later read the same Cache Storage through
+ * the same gate and cannot disagree about whether it answered.
+ *
+ * Refuses only on EVIDENCE. Cache Storage that is absent or will not
+ * enumerate answers `true`, leaving the sync to proceed exactly as it did
+ * before this check existed: the fault being guarded against is a record
+ * whose bucket is demonstrably gone, and inferring it from a read that
+ * failed would strand a working area on a transient error.
  *
  * @param {string} areaId The pinned bucket id.
- * @returns {Promise<boolean>} `true` when there is no reader on the page
- *   to ask — an older cached shell without
- *   `static/js/basemap_downloaded_areas.js` falls through to the sync it
- *   was asked for rather than being refused on no evidence.
+ * @returns {Promise<boolean>}
  */
 async function _areaBucketOnDevice(areaId) {
-  const areas = window.pwaBasemapAreas;
-  if (!areas || typeof areas.pinnedBucketAreaIds !== 'function') return true;
+  if (!('caches' in window)) return true;
   try {
-    const ids = await areas.pinnedBucketAreaIds();
-    return Array.isArray(ids) && ids.includes(areaId);
+    const names = await caches.keys();
+    if (!Array.isArray(names)) return true;
+    return names.includes(BASEMAP_PINNED_CACHE_PREFIX + areaId);
   } catch (_e) {
     return true;
   }

@@ -308,6 +308,26 @@ async function seedArea(extra) {
   });
 }
 
+/**
+ * Poll `predicate` until it holds or the budget runs out.
+ *
+ * Mirrors `tests/js/test_map_download_content.js`'s helper of the same
+ * name — this suite follows that file's harness, and this is the part of
+ * it that was missed.
+ *
+ * @param {() => boolean} predicate
+ * @param {number} [timeoutMs]
+ * @returns {Promise<boolean>}
+ */
+async function waitFor(predicate, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return predicate();
+}
+
 /** Put `urls` in the area's own pinned bucket, and nothing else. */
 function holdDependencies(urls) {
   cachesStub.buckets.clear();
@@ -371,6 +391,14 @@ beforeAll(async () => {
   await import('../../static/js/calendar_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
+  // The load handler starts the country load and does not await it, so the
+  // regions this area's boundary contains arrive on a floating promise.
+  // Every content assertion below depends on them: an empty
+  // `featureByRegionId` yields an empty content plan, which warms nothing
+  // and stamps nothing — so without this the whole suite is a race the
+  // machine wins on a fast box and loses on a two-core runner, which is
+  // exactly how it went red on CI while passing locally.
+  await waitFor(() => !!window.snowdeskMapState?.featureByRegionId?.[REGION_ID]);
 });
 
 afterAll(() => {
