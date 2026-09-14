@@ -13,23 +13,29 @@ other way (a visible trash on every row, one tap not two) and SNOW-830
 narrowed it for the routes row alone; Hugo reversed it on 2026-09-07 for
 every panel. On this panel it means:
 
-  a REGION on this device      Remove alone → the bare trash stays.
-  a CUSTOM AREA or DROP ZONE   Rename and Remove → this menu.
+  a REGION on this device      Sync now and Remove → this menu.
+  a CUSTOM AREA or DROP ZONE   Sync now, Rename and Remove → this menu.
   a row NOT on this device     Download alone → the bare download icon.
-  a row that cannot render     Repair and Remove → this menu.
-  a row whose CONTENT is behind (SNOW-932)
-                               Refresh and Remove → this menu. A REGION
-    row reaches it too, which is the one shape change this ticket makes:
-    a region whose bulletins fell short gains a second action and so stops
-    being a bare trash. That is the rule above applying, not an exception
-    to it.
+  an ORPHAN                    Remove alone → the bare trash.
 
-ORDER: Repair → Refresh → Rename → Remove. The two restorative actions
-sit together at the top (Repair mends a map that will not DRAW; Refresh
-mends bulletins that are BEHIND — nearest-neighbour first), the rename
-follows, and the destructive item is last as it is on every list in the
-app. No row ever carries all four: Repair and Refresh answer different
-halves and Rename is custom-areas-only.
+SNOW-951 replaced the two CONDITIONAL items this menu used to carry —
+Repair (offered only to a row the render check had already failed) and
+Refresh (offered only to a row whose last run recorded a content
+shortfall) — with ONE UNCONDITIONAL item offered to every row that is
+downloaded here. Both old items were remedies for a fault, so neither was
+on the row at the moment a user actually wants them: the one before
+leaving the car park, when nothing is wrong yet and everything is about
+to be needed. "Sync now" runs both halves in that order (see
+map_basemap_downloads.js's `syncArea`), so the row offers one thing that
+always works rather than two that usually are not there.
+
+The consequence is that a REGION row on this device is always a menu now
+— Sync now and Remove are two actions, and design-system rule 5 collapses
+two into a "…". That is the rule applying rather than an exception to it.
+
+ORDER: Sync now → Rename → Remove. The restorative action leads, the
+rename follows, and the destructive item is last as it is on every list
+in the app.
 
 The buttons are value-less here, exactly as the inline controls were: this
 partial is rendered ONCE inside the row `<template>`, and
@@ -42,28 +48,20 @@ rename click without knowing which panel it is on) and
 Remove last, as everywhere else: the destructive item is in the same place
 wherever a user meets it.
 {% endcomment %}
+{# The cycle glyph rather than the spanner: this is "bring it up to date", #}
+{# which is what it does on every row — the repair half only runs on the   #}
+{# rows that need one, and a spanner on a healthy area would promise a     #}
+{# fault to fix.                                                          #}
 <li role="none">
     <button
         type="button"
         role="menuitem"
-        data-downloads-repair
-        aria-label="{% trans 'Repair' %}"
-        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
-    >
-        {% include "includes/_icon_repair.html" only %}
-        {% trans "Repair" %}
-    </button>
-</li>
-<li role="none">
-    <button
-        type="button"
-        role="menuitem"
-        data-downloads-refresh
-        aria-label="{% trans 'Refresh' %}"
+        data-downloads-sync
+        aria-label="{% trans 'Sync now' %}"
         class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
     >
         {% include "includes/_icon_refresh.html" only %}
-        {% trans "Refresh" %}
+        {% trans "Sync now" %}
     </button>
 </li>
 <li role="none">

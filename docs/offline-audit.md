@@ -410,13 +410,27 @@ stamp reads as `none`: a corrupt field is not evidence of anything.
 
 ### The remedy is on the row (SNOW-925)
 
-A row the reading calls `stale` or `never` gains one control, **Update**,
-which fetches what that row is short of and then **re-runs the report**.
-The panel already refuses to claim a green it has not verified, and the
-one place the report is allowed to say a fetch worked is after checking.
-`completableArea` is the gate: an area whose content is `fresh` has
-nothing to do, and re-fetching it would spend a connection on documents
-already here.
+Every row whose tiles verify carries one control, **Sync now**, which
+fetches that row's content and then **re-runs the report**. The panel
+already refuses to claim a green it has not verified, and the one place
+the report is allowed to say a fetch worked is after checking.
+
+SNOW-925 offered it only to a row reading `stale` or `never`, on the
+ground that a `fresh` area has nothing to do. SNOW-951 widened
+`completableArea` to every area whose tiles verify, and the reason is who
+is asking: the control is now also what the network menu's per-area "sync
+now" lands on, and to a user about to lose signal `fresh` is an inference
+from a stamp while the thing they are going to rely on is the data. See
+[a-pre-departure-sync-is-unconditional.md](decisions/a-pre-departure-sync-is-unconditional.md).
+
+**`?sync=<area id>` runs it on arrival** (SNOW-951). The page takes its
+report first — if the area cannot be updated, no control is painted for
+it and the report names the remedy instead, which is the honest answer —
+then finds that area's control and presses it. Either id form resolves:
+the bucket id as minted, or a bare region id through
+`pwaBasemapDownloadCore.areaIdForRegion`. The parameter is removed with
+`history.replaceState`, so a reload does not re-run a fetch that was
+asked for once.
 
 A third cell, and the two-cell rule survives it: that rule is about per-row
 *explanation* — the prose that kept growing back — and a control is not
@@ -437,9 +451,10 @@ basemap style — its sources, its sprite, its TileJSON — and that exists
 only on the map. Re-deriving it here would be a second copy of the whole
 basemap pipeline on a page with no map, which is exactly the drift
 `basemap_downloaded_areas.js` was extracted to prevent. A row whose tiles
-do not verify is not offered the control at all; it keeps the Repair
-remedy `note-area-incomplete` already names, on the Manage downloads
-sheet.
+do not verify is not offered the control at all; it keeps the remedy
+`note-area-incomplete` already names, on the Manage downloads sheet —
+"Sync now" since SNOW-951 folded that sheet's Repair and Refresh into one
+item.
 
 The endpoints the plan is built from — `regions.geojson` per country,
 `weather.geojson`, the weather-detail template, the four feeds and

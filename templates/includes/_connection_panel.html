@@ -286,6 +286,81 @@ stopped asking the server has to say so.
         {% include "includes/_switch.html" with id="nav-offline-mode" %}
     </div>
     {% comment %}
+        SNOW-951: the pre-departure sync, one row per downloaded area.
+
+        This is the moment the whole download feature exists for: a signal
+        about to be lost, and a person who wants to know that what they
+        are carrying is current. Until this ticket nothing anywhere
+        answered that in one press — Repair mended tiles for an area
+        already broken, Refresh mended content for an area already short,
+        and /offline/'s Update skipped anything it judged fresh. Three
+        remedies, no guarantee.
+
+        PER AREA, with no "sync all". A download is discrete: two areas
+        are two boundaries, two sets of bulletins and two runs, and one
+        button standing for an unbounded amount of fetching over a
+        connection about to disappear tells the user nothing about what
+        they will have when it stops. They press the ones they are going
+        to be standing in.
+
+        The press does one of two things, and which one depends on what
+        the page can do rather than on what it is:
+
+          * ``window.pwaBasemapDownloads.syncArea`` present (the map page)
+            — run here, and report inside the row. The menu deliberately
+            does NOT close: the result is the answer to the question the
+            press asked.
+          * otherwise — navigate to the ``/offline/`` link below with
+            ``?sync=<area id>`` appended, and let that page run it and
+            prove it in its report. ``basemap_download_core.js`` is 140KB
+            of map-and-that-page-only code and there is no lazy-script
+            precedent in the tree, so the alternative was a third copy of
+            the content-fetch and its stamp rule. The href is read off
+            that link rather than written here twice.
+
+        A <button> rather than an <a> for exactly that reason: on the map
+        page it is not a navigation at all.
+
+        HIDDEN with no downloads, like the staleness line above and for
+        the same reason — a reader with nothing downloaded has nothing to
+        sync, and a heading over an empty list reads as a fault.
+
+        The row is a <template> the script clones rather than markup the
+        script writes. Every user-facing word and every class string stays
+        server-side, which is what ``bin/i18n-lint`` and ``bin/ds-lint``
+        require of a surface painted from JavaScript, and the four button
+        states are rendered here and toggled — the same treatment the
+        panel's own four connection states get above.
+    {% endcomment %}
+    <div data-network-sync data-testid="network-sync" class="hidden">
+        <p class="mt-1 text-xs text-text-2">
+            {% blocktrans %}
+                Heading out? Make sure you sync all of your data before you lose signal.
+            {% endblocktrans %}
+        </p>
+        {# The refusal, in its own words rather than the toast phrasing used #}
+        {# elsewhere: it sits on controls nobody has pressed yet.            #}
+        <p data-network-sync-offline class="mt-1 hidden text-xs text-text-3">
+            {% trans "Syncing needs a connection." %}
+        </p>
+        <ul data-network-sync-list class="mt-1"></ul>
+        <template data-network-sync-row>
+            <li class="flex min-h-11 items-center justify-between gap-3 py-1">
+                <span data-sync-label class="min-w-0 truncate text-sm text-text-2"></span>
+                <button
+                    type="button"
+                    data-network-sync-area
+                    class="{% button_classes variant='secondary' size='compact' %} shrink-0"
+                >
+                    <span data-sync-state="idle">{% trans "Sync" %}</span>
+                    <span data-sync-state="running" class="hidden">{% trans "Syncing…" %}</span>
+                    <span data-sync-state="done" class="hidden">{% trans "Synced" %}</span>
+                    <span data-sync-state="failed" class="hidden">{% trans "Try again" %}</span>
+                </button>
+            </li>
+        </template>
+    </div>
+    {% comment %}
         SNOW-928: the way to the offline-content page.
 
         The operation lives on that page (SNOW-925) and stays there — a
@@ -300,15 +375,25 @@ stopped asking the server has to say so.
         So the menu carries the entry point and the panel keeps the
         operation — the pattern SNOW-921 already established for the debug
         log below: the surface that owns a panel owns every way into it.
-        This row STARTS NOTHING. A download is discrete per area, so there
-        is no single run for a menu row to kick off; the user presses the
-        one they want when they get there. The page load it costs is spent
-        at the one moment the network is there by definition.
+
+        SNOW-951 OVERTURNS the "this row starts nothing" reasoning that
+        stood here. It argued that a download is discrete per area, so
+        there is no single run for a menu row to kick off, and that the
+        user should press the one they want once they arrive. The premise
+        was right and the conclusion was wrong: discreteness is a reason
+        for a row PER AREA, which is what the block above now renders, not
+        a reason for the menu to start nothing at all. A page load between
+        the thought and the action is a page load spent on the connection
+        that is about to go. This row survives as what it always was
+        underneath — the way to the full report — and the sync it used to
+        defer now happens here, or on that page with the area already
+        named.
 
         An <a>, not a <button>, because unlike the debug log this
-        destination has a URL. It carries ``data-disclosure-close`` so the
-        menu shuts on the way rather than hanging over the page the user
-        just asked to read.
+        destination has a URL — and the block above reads that URL off
+        this element rather than hard-coding the path a second time. It
+        carries ``data-disclosure-close`` so the menu shuts on the way
+        rather than hanging over the page the user just asked to read.
 
         UNCONDITIONAL, including for a signed-out reader. Map areas are
         account-bound (SNOW-749) so they will see no download rows there,
@@ -319,10 +404,11 @@ stopped asking the server has to say so.
         half that genuinely has nothing to say without areas, and it stays
         hidden for them.
 
-        Between the switch and the debug log: the switch is the one row you
-        open this menu to OPERATE, this is the destination a reader
-        actually wants, and the debug log is behind a staff flag.
-        ``min-h-11`` matches that row's own tap target and vertical rhythm.
+        Below the switch and the sync rows, above the debug log: the
+        switch and the sync rows are what you open this menu to OPERATE,
+        this is the destination a reader actually wants, and the debug log
+        is behind a staff flag. ``min-h-11`` matches those rows' own tap
+        target and vertical rhythm.
     {% endcomment %}
     <a
         href="{% url 'public:offline_page' %}"

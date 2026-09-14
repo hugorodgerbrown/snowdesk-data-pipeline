@@ -1,7 +1,8 @@
 {% load i18n %}
 {% comment %}
 templates/includes/_network_mode_strings.html — copy for the Offline mode
-switch's lock-out warning (SNOW-922).
+switch's lock-out warning (SNOW-922) and for the network menu's per-area
+sync rows (SNOW-951).
 
 ``static/js/pwa_offline.js`` puts this in a ``window.confirm`` before it
 lets the network menu's "Offline mode" switch enter ``'offline-forced'`` on a
@@ -32,4 +33,16 @@ as every other string on it is. Keep the two wordings in step by hand.
             opening at all until you switch it off again.{% endblocktrans %}
     </span>
     <span data-string="lockout-confirm">{% trans "Switch it on anyway?" %}</span>
+    {# SNOW-951: an area's own name is stored, and an unrenamed custom     #}
+    {# area has none — its display name is built from the ordinal at read  #}
+    {# time and never persisted, so it stays translatable rather than      #}
+    {# freezing in whatever language was active at download time. Same     #}
+    {# msgid as map.js's own default (_map_embed.html), because it is the  #}
+    {# same name for the same thing; a reader must not meet an area called #}
+    {# one thing on the map and another in this menu.                      #}
+    <span data-string="area-default-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    {# The row's accessible name. "Sync" alone names nothing with a list   #}
+    {# of areas on screen — the same reason every row control on the       #}
+    {# downloads sheet interpolates the row's own name.                    #}
+    <span data-string="sync-area-label">{% blocktrans %}Sync %(name)s now{% endblocktrans %}</span>
 </template>

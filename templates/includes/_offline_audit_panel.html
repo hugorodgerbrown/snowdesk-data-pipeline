@@ -48,7 +48,7 @@ of a settings page nobody came here to audit.
     guess.
 {% endcomment %}
 {% comment %}
-    SNOW-925: what the per-row "Update" control needs to resolve an area's
+    SNOW-925: what the per-row "Sync now" control needs to resolve an area's
     content from a page with no map on it. The map reads the same
     endpoints off `#map`'s own dataset; this page has no `#map`, and
     re-deriving them client-side would be a second copy of routing only
@@ -219,7 +219,7 @@ of a settings page nobody came here to audit.
         >{% translate "outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space" %}</span>
         <span
             data-string="note-area-incomplete"
-        >{% translate "%(name)s will not draw until you repair it from the map’s Manage downloads sheet" %}</span>
+        >{% translate "%(name)s will not draw until you sync it from the map’s Manage downloads sheet" %}</span>
         <span
             data-string="note-area-missing"
         >{% translate "%(name)s is recorded as downloaded but nothing is stored, so download it again" %}</span>
@@ -264,8 +264,11 @@ of a settings page nobody came here to audit.
         {# SNOW-926: the perishable half of a download. A caveat on a Yes,   #}
         {# and the remedy names the SHEET rather than "tap the download        #}
         {# again" — that was true for a region roundel and for nothing else,   #}
-        {# and the sheet's Refresh (SNOW-932) is the one gesture every area    #}
-        {# kind has. Same surface note-area-incomplete already points at.      #}
+        {# and the sheet's own control is the one gesture every area kind      #}
+        {# has. Same surface note-area-incomplete already points at.           #}
+        {# SNOW-951: that control is "Sync now" — one item in place of the     #}
+        {# sheet's former Repair and Refresh — so the verb here follows it     #}
+        {# rather than sending a reader after a control that is gone.          #}
         {# never a No — an area whose tiles verify still draws, and what is  #}
         {# behind is what it draws ON. Grouped rather than noted per row, so #}
         {# any number of stale areas fold into one sentence with one shared  #}
@@ -276,13 +279,13 @@ of a settings page nobody came here to audit.
         >{% translate "The bulletins and weather saved inside %(effects)s are from an earlier day." %}</span>
         <span
             data-string="group-content-stale-remedy"
-        >{% translate "Refreshing the download from the map’s Manage downloads sheet brings %(count)s up to date." %}</span>
+        >{% translate "Syncing the download from the map’s Manage downloads sheet brings %(count)s up to date." %}</span>
         <span
             data-string="group-content-never-lead"
         >{% translate "No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it." %}</span>
         <span
             data-string="group-content-never-remedy"
-        >{% translate "Refreshing the download from the map’s Manage downloads sheet fills %(count)s in." %}</span>
+        >{% translate "Syncing the download from the map’s Manage downloads sheet fills %(count)s in." %}</span>
 
         <span data-string="principal-anonymous">{% translate "a signed-out visitor" %}</span>
         <span data-string="principal-account">{% translate "account %(id)s…" %}</span>
@@ -343,14 +346,17 @@ of a settings page nobody came here to audit.
             data-string="check-failed"
         >{% translate "The check could not run. Copy the report and send it in." %}</span>
 
-        {# SNOW-925: the per-row control. "Update" rather than "Download" —  #}
-        {# the tiles are already here and are not touched; what this fetches #}
-        {# is the day's bulletins and weather inside the boundary, which is  #}
-        {# an update to a download that exists.                              #}
-        <span data-string="row-complete">{% translate "Update" %}</span>
+        {# SNOW-925: the per-row control. Not "Download" — the tiles are     #}
+        {# already here and are not touched; what this fetches is the day's  #}
+        {# bulletins and weather inside the boundary.                        #}
+        {# SNOW-951: "Sync now", the same words the network menu and the     #}
+        {# map's Manage downloads sheet use for the same action. That menu   #}
+        {# NAVIGATES HERE off the map page and presses this very control, so #}
+        {# a second name for it would read as a second thing to do.          #}
+        <span data-string="row-complete">{% translate "Sync now" %}</span>
         <span
             data-string="row-complete-label"
-        >{% translate "Update the bulletins and weather saved inside %(name)s" %}</span>
+        >{% translate "Sync the bulletins and weather saved inside %(name)s" %}</span>
         <span data-string="completing">{% translate "Saving this area’s bulletins and weather…" %}</span>
         <span data-string="completed">{% translate "Saved. Re-checking…" %}</span>
         <span

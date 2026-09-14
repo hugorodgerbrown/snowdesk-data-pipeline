@@ -104,7 +104,7 @@
   var VERSION_PROBE_MS = 1500;
 
   // SNOW-925 review: the bound on the two manifest fetches the per-row
-  // Update control derives its plan from. `pwaWarmCache` settles on the
+  // sync control derives its plan from. `pwaWarmCache` settles on the
   // worker's own budget; these do not go through it, and without a bound
   // a connection that stalls without rejecting leaves the operation
   // pending — the button disabled, the status line mid-sentence, and the
@@ -308,7 +308,7 @@
     'note-basemap-downloads-only':
       'outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space',
     'note-area-incomplete':
-      '%(name)s will not draw until you repair it from the map’s Manage downloads sheet',
+      '%(name)s will not draw until you sync it from the map’s Manage downloads sheet',
     'note-area-missing':
       '%(name)s is recorded as downloaded but nothing is stored, so download it again',
     'note-area-unverifiable':
@@ -338,19 +338,24 @@
     //
     // The remedy names the SHEET rather than "tap the download again",
     // which was true for a region roundel and for nothing else: a custom
-    // area or drop zone opens the downloads manager on a tap, and its
-    // Refresh (SNOW-932) is the one gesture every area kind actually has.
+    // area or drop zone opens the downloads manager on a tap, and the
+    // sheet's control is the one gesture every area kind actually has.
     // Naming a gesture two of the three kinds do not have left those
     // caveats with no way to clear them but deleting and recreating the
     // area. Same surface `note-area-incomplete` already points at.
+    //
+    // SNOW-951: the verb follows the control. That sheet offered Repair
+    // and Refresh; it offers one "Sync now" that does both, so a remedy
+    // naming either of the old two would send the reader looking for a
+    // control that is not there.
     'group-content-stale-lead':
       'The bulletins and weather saved inside %(effects)s are from an earlier day.',
     'group-content-stale-remedy':
-      'Refreshing the download from the map’s Manage downloads sheet brings %(count)s up to date.',
+      'Syncing the download from the map’s Manage downloads sheet brings %(count)s up to date.',
     'group-content-never-lead':
       'No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it.',
     'group-content-never-remedy':
-      'Refreshing the download from the map’s Manage downloads sheet fills %(count)s in.',
+      'Syncing the download from the map’s Manage downloads sheet fills %(count)s in.',
 
     'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
@@ -392,12 +397,20 @@
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
     'check-failed': 'The check could not run. Copy the report and send it in.',
-    // SNOW-925: the per-row control and its status line. "Update" rather
-    // than "Download": the tiles are already here and are not touched —
-    // what this fetches is the day's bulletins and weather inside the
-    // boundary, which is an update to a download that exists.
-    'row-complete': 'Update',
-    'row-complete-label': 'Update the bulletins and weather saved inside %(name)s',
+    // SNOW-925: the per-row control and its status line. Not "Download":
+    // the tiles are already here and are not touched — what this fetches
+    // is the day's bulletins and weather inside the boundary.
+    //
+    // SNOW-951: "Sync now" rather than "Update", because this is now the
+    // same action under two roofs. The network menu's per-area button
+    // says "Sync", runs `syncArea` on the map page and NAVIGATES HERE
+    // everywhere else, landing the user on this row — so a second name
+    // for it would read as a second thing to do. The key keeps its
+    // `row-complete` name: it is the completion the report is talking
+    // about, and renaming the key would churn every call site for no
+    // reader's benefit.
+    'row-complete': 'Sync now',
+    'row-complete-label': 'Sync the bulletins and weather saved inside %(name)s',
     completing: 'Saving this area’s bulletins and weather…',
     completed: 'Saved. Re-checking…',
     'complete-failed':
@@ -1207,7 +1220,7 @@
    * Fetch one area's shared feeds and boundary content into the cache
    * (SNOW-925).
    *
-   * The payload behind the per-row "Update" control. Everything goes
+   * The payload behind the per-row "Sync now" control. Everything goes
    * through ``self.pwaWarmCache`` — the worker's own warm path — rather
    * than a ``fetch`` from here, for the reason the Save control already
    * documents: the worker stamps a same-origin HTML response with the
@@ -1925,7 +1938,7 @@
   }
 
   /**
-   * Put the "Update" control on a row that has something to fetch, or take
+   * Put the "Sync now" control on a row that has something to fetch, or take
    * it off one that no longer has (SNOW-925).
    *
    * A THIRD cell, and the two-cell rule above survives it. That rule is
@@ -2197,6 +2210,50 @@
   }
 
   /**
+   * SNOW-951: the area the URL asks this page to bring up to date, taken
+   * once and removed from the address bar in the same breath.
+   *
+   * The network menu's per-area "sync now" button runs in place on the map
+   * page, where `pwaBasemapDownloads.syncArea` exists, and NAVIGATES here
+   * everywhere else — `basemap_download_core.js` is 140KB of map-and-this-
+   * page-only code, there is no lazy-script precedent in the tree, and the
+   * two content-fetch implementations genuinely differ (day range, which
+   * feeds), so a third copy of the stamp rule is exactly what this avoids.
+   * The param is the whole handover.
+   *
+   * The removal is `replaceState` rather than a flag, which buys two
+   * things from one call: a reload does not re-run a fetch the user asked
+   * for once, and a second bound host on the same page finds nothing left
+   * to take.
+   *
+   * @returns {string} The requested id, or `''`. Either an area id as
+   *   minted (`region-CH-4115`, `custom-a1`) or a bare region id — see
+   *   `syncRequestedArea` for why both are accepted and why resolving
+   *   between them happens here rather than in the menu.
+   */
+  function takeRequestedSyncArea() {
+    var search = self.location ? self.location.search : '';
+    if (!search) return '';
+    var requested = '';
+    try {
+      requested = new URLSearchParams(search).get('sync') || '';
+    } catch (_err) {
+      // A URL this runtime will not parse is not an instruction.
+      return '';
+    }
+    if (!requested) return '';
+    try {
+      var url = new URL(self.location.href);
+      url.searchParams.delete('sync');
+      self.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch (_err) {
+      // Best-effort: a browser that refuses the rewrite costs a repeated
+      // fetch on reload, which is wasteful rather than wrong.
+    }
+    return requested;
+  }
+
+  /**
    * Bind one host's markup.
    *
    * Every control is optional. The offline page carries no Save button
@@ -2363,7 +2420,7 @@
       });
     }
 
-    // SNOW-925: the per-row "Update" control. Delegated on the output
+    // SNOW-925: the per-row "Sync now" control. Delegated on the output
     // element, because every row is repainted on each run and a listener
     // bound to a button would go with the button it was bound to.
     //
@@ -2432,6 +2489,50 @@
       await run();
     }
 
+    /**
+     * SNOW-951: run the report, then update the area the URL named.
+     *
+     * The report FIRST, and not merely because the control is painted by
+     * it. The report is what the page answers with either way: if the area
+     * can be updated this proves the result afterwards (the last step of
+     * `completeArea` is another run), and if it cannot — its tiles do not
+     * verify, so no control is painted for it — the reader gets the
+     * finding and the named remedy instead of a press that silently did
+     * nothing. Nothing is said about the request itself; the report is the
+     * honest answer to it in both cases.
+     *
+     * Both id forms resolve HERE rather than in the menu that sent them:
+     * this module already reaches `pwaBasemapDownloadCore` (it is what
+     * `fetchAreaContent` plans against), and `areaIdForRegion` owns the
+     * bucket-id format, which is deliberately never assembled by hand. The
+     * menu reads its rows straight out of two IndexedDB stores where a
+     * region carries `region_id` and a custom area carries `id`, so the
+     * ambiguity starts there and is settled here.
+     *
+     * The button is matched by walking the painted controls rather than
+     * by interpolating the id into a selector — the value is a URL
+     * parameter, and it is never trusted with a selector grammar.
+     *
+     * @param {string} requested The `?sync=` value.
+     * @returns {Promise<void>}
+     */
+    async function syncRequestedArea(requested) {
+      await run();
+      var core = self.pwaBasemapDownloadCore;
+      var candidates = [requested];
+      if (core && typeof core.areaIdForRegion === 'function') {
+        candidates.push(core.areaIdForRegion(requested));
+      }
+      var match = null;
+      var controls = output.querySelectorAll('[data-audit-complete]');
+      for (var i = 0; i < controls.length && !match; i += 1) {
+        var areaId = controls[i].getAttribute('data-audit-complete');
+        if (areaId && candidates.indexOf(areaId) !== -1) match = controls[i];
+      }
+      if (!match) return;
+      await completeArea(match.getAttribute('data-audit-complete'), match);
+    }
+
     if (saveButton) {
       saveButton.addEventListener('click', async function () {
         say(t.saving || FALLBACKS.saving);
@@ -2459,6 +2560,12 @@
         }
       });
     }
+
+    // SNOW-951: the handover from the network menu's per-area button on a
+    // page that is not the map. Last in `bind`, because it runs the report
+    // and everything above it has to be listening by then.
+    var requestedSync = takeRequestedSyncArea();
+    if (requestedSync) syncRequestedArea(requestedSync);
   }
 
   /**

@@ -13,8 +13,13 @@ lives in docs/design-system.md's interaction principles — go there for the
 statement and the reasoning; what follows is only how this row applies it.
 
 So this row renders both shapes and buildRow keeps whichever the row has
-earned — the bare trash for a region, the bare download for an
-account-only row, the menu for anything with two things to offer.
+earned — the bare download for an account-only row, the bare trash for an
+orphan, the menu for anything with two things to offer.
+
+SNOW-951 moved a REGION on this device from the first list to the last.
+"Sync now" is offered to every row this device holds, so a region carries
+it alongside Remove and two actions are a "…". The bare trash survives
+only for an orphan, whose one action Remove still is.
 
 The items themselves are in public/partials/_map_downloads_row_menu_items.html.
 
@@ -53,8 +58,8 @@ so for a row that is on both. The automatic budget eviction
 {# The constructive action, first. Removed by buildRow for every row that #}
 {# is already on this device — there is nothing to fetch.                 #}
 {# ONE action → a bare icon. These two are the rows that have exactly     #}
-{# one: an account-only row can only be downloaded, and a region on this  #}
-{# device can only be removed.                                            #}
+{# one: an account-only row can only be downloaded, and an orphan can     #}
+{# only be removed.                                                       #}
 <button
     type="button"
     data-downloads-here
@@ -71,8 +76,8 @@ so for a row that is on both. The automatic budget eviction
 >
     {% include "includes/_icon_trash.html" only %}
 </button>
-{# MORE THAN ONE → the "…". A custom area or a drop zone can be renamed   #}
-{# and removed; a row that cannot render can be repaired and removed.     #}
+{# MORE THAN ONE → the "…". A region on this device can be synced and     #}
+{# removed; a custom area or a drop zone can also be renamed.             #}
 {# buildRow keeps either this trigger or the bare trash above, never      #}
 {# both, and rewrites the two ids per clone (the partial's own header     #}
 {# requires that of any caller that clones it).                           #}
