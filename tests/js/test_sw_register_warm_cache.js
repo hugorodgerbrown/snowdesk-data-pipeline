@@ -33,6 +33,42 @@ function makeWorker() {
   return { postMessage: (msg) => posted.push(msg) };
 }
 
+/**
+ * Let every pending microtask run.
+ *
+ * `warmCache` awaits the queue (SNOW-951 review) and then `_activeWorker`
+ * before it posts, so the number of hops between the call and the message
+ * is an implementation detail no test should be counting. Drain instead.
+ *
+ * @returns {Promise<void>}
+ */
+async function flush() {
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+}
+
+/**
+ * Answer the worker's side of a run so it settles.
+ *
+ * Every test that starts a run must end it. Runs are SERIALISED now, so a
+ * leaked one is not merely an untidy slot — it holds the queue, and every
+ * later call in the file waits behind it for a 30-second silence timeout
+ * that fake timers in a later test will never advance.
+ *
+ * @param {string} requestId
+ * @param {Object} [extra]
+ * @returns {void}
+ */
+function settle(requestId, extra) {
+  swStub.dispatchEvent(
+    new MessageEvent('message', {
+      data: Object.assign(
+        { type: 'warm-cache-done', ok: 0, failed: 0, reason: null, bytes: 0, requestId },
+        extra || {},
+      ),
+    }),
+  );
+}
+
 beforeAll(async () => {
   swStub = new EventTarget();
   swStub.controller = null;
@@ -81,15 +117,66 @@ describe('pwaWarmCacheCancel() with no run ever started (SNOW-632)', () => {
 describe('warmCache() with a controller present', () => {
   it('posts the warm-cache message to the active worker', async () => {
     swStub.controller = makeWorker();
-    window.pwaWarmCache(['/a.mvt', '/b.mvt'], { pinned: true, areaId: 'region-CH-4115' });
-    // Let the awaited _activeWorker() microtask settle.
-    await Promise.resolve();
-    await Promise.resolve();
+    const promise = window.pwaWarmCache(['/a.mvt', '/b.mvt'], {
+      pinned: true,
+      areaId: 'region-CH-4115',
+    });
+    await flush();
     expect(posted).toHaveLength(1);
     expect(posted[0].type).toBe('warm-cache');
     expect(posted[0].urls).toEqual(['/a.mvt', '/b.mvt']);
     expect(posted[0].pinned).toBe(true);
     expect(posted[0].areaId).toBe('region-CH-4115');
+
+    settle(posted[0].requestId);
+    await promise;
+  });
+});
+
+describe('two warmCache() calls at once (SNOW-951 review)', () => {
+  it('runs the second only once the first has settled', async () => {
+    swStub.controller = makeWorker();
+    const first = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'region-CH-4115' });
+    const second = window.pwaWarmCache(['/b.mvt'], { pinned: true, areaId: 'custom-a1' });
+    await flush();
+
+    // The bug: both dispatched, the second overwrote the slot's
+    // requestId, and the worker's reply to the first no longer matched
+    // anything — so the first caller sat out its whole silence timeout
+    // and reported a failure while its documents were landing on disk.
+    expect(posted).toHaveLength(1);
+    expect(posted[0].areaId).toBe('region-CH-4115');
+
+    settle(posted[0].requestId, { ok: 1 });
+    const firstResult = await first;
+    // The first gets the worker's ACTUAL answer, not a timeout.
+    expect(firstResult.ok).toBe(1);
+    expect(firstResult.reason).toBeNull();
+
+    await flush();
+    expect(posted).toHaveLength(2);
+    expect(posted[1].areaId).toBe('custom-a1');
+    expect(posted[1].requestId).not.toBe(posted[0].requestId);
+
+    settle(posted[1].requestId, { ok: 1 });
+    expect((await second).ok).toBe(1);
+  });
+
+  it('does not let one caller wedge the queue for every later one', async () => {
+    swStub.controller = makeWorker();
+    // A rejection cannot come out of `_warmCacheRun`, but the chain must
+    // survive one anyway: a wedged queue is every download on the device
+    // silently doing nothing until a reload.
+    const first = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
+    await flush();
+    settle(posted[0].requestId);
+    await first;
+
+    const second = window.pwaWarmCache(['/b.mvt'], { pinned: true, areaId: 'y' });
+    await flush();
+    expect(posted).toHaveLength(2);
+    settle(posted[1].requestId);
+    await second;
   });
 });
 
@@ -120,19 +207,24 @@ describe('warmCache() on an uncontrolled page', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(posted).toHaveLength(1);
     expect(posted[0].type).toBe('warm-cache');
-    // The run is now in flight and waits on the worker's reply, so the
-    // promise stays pending — the point is that it dispatched at all.
-    expect(promise).toBeInstanceOf(Promise);
+
+    // Settled rather than left pending: a run in flight now holds the
+    // QUEUE, not just the slot, so leaking one strands every later test.
+    settle(posted[0].requestId);
+    expect(await promise).not.toBeNull();
   });
 
   it('does not wait when a controller is already there', async () => {
     vi.useFakeTimers();
     swStub.controller = makeWorker();
-    window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
+    const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
     // No timer advance at all — a present controller must not be delayed
     // behind the uncontrolled-page wait.
     await vi.advanceTimersByTimeAsync(0);
     expect(posted).toHaveLength(1);
+
+    settle(posted[0].requestId);
+    await promise;
   });
 });
 
@@ -140,8 +232,7 @@ describe('pwaWarmCacheCancel() with a run in flight (SNOW-632)', () => {
   it('posts a warm-cache-cancel message carrying the live requestId', async () => {
     swStub.controller = makeWorker();
     const promise = window.pwaWarmCache(['/a.mvt', '/b.mvt'], { pinned: true, areaId: 'x' });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     expect(posted).toHaveLength(1);
     const { requestId } = posted[0];
 
@@ -163,8 +254,7 @@ describe('pwaWarmCacheCancel() with a run in flight (SNOW-632)', () => {
   it('settles the warmCache() promise with cancelled: true on a cancelled done-reply', async () => {
     swStub.controller = makeWorker();
     const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x' });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     const { requestId } = posted[0];
 
     swStub.dispatchEvent(
@@ -191,8 +281,7 @@ describe('pwaWarmCacheCancel() with a run in flight (SNOW-632)', () => {
     swStub.controller = makeWorker();
     const onProgress = vi.fn();
     const promise = window.pwaWarmCache(['/a.mvt'], { pinned: true, areaId: 'x', onProgress });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     const { requestId } = posted[0];
 
     swStub.dispatchEvent(

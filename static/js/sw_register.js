@@ -168,8 +168,8 @@
   let announcedUpdateWorker = null;
 
   // SNOW-492: slot for the in-flight "Cache this area" call, if any. Only
-  // one warm-cache run can be in flight at a time — map.js click-guards its
-  // button while busy — so a single slot is enough.
+  // one warm-cache run can be in flight at a time — see ``_warmCacheChain``
+  // below, which is what now makes that true — so a single slot is enough.
   //
   // SNOW-493 finding 9: the slot now carries a ``requestId`` alongside the
   // ``resolve`` function. Without it, a worker reply that arrives AFTER
@@ -179,6 +179,32 @@
   // Correlating on ``requestId`` (minted per call, echoed back by the
   // worker) means a reply only ever resolves the call it actually answers.
   let _warmCacheSlot = null;
+
+  // SNOW-951 review: the queue that keeps the single slot above honest.
+  //
+  // "Only one run at a time" was a claim about the CALLERS, and it held
+  // only while one click-guarded button was the sole entry point. It is
+  // not true any more: a per-area "Sync now" runs two warm calls of its
+  // own (tiles, then content), several areas can be pressed before the
+  // first settles, and the offline report warms the shell on its own
+  // schedule. A second call landing mid-run overwrote ``requestId``, so
+  // the worker's reply to the FIRST no longer matched the slot, and that
+  // caller sat out the full silence timeout before resolving
+  // ``'timeout'`` — a sync reported as failed while its documents were
+  // landing on disk.
+  //
+  // Serialised rather than multi-slotted, because the constraint is not
+  // only the slot: ``sw.js``'s ``_warmCache`` is itself one run with one
+  // progress stream, and overlapping runs would interleave their
+  // ``settled`` batches. Queueing costs a caller the wait for whatever is
+  // ahead of it, which is the truthful price — the work was never going
+  // to happen in parallel.
+  //
+  // The chain only ever holds a SETTLED-or-pending promise that cannot
+  // reject: ``_warmCacheRun`` resolves on every path (including its own
+  // timeout), and the ``catch`` below is belt and braces so one throw can
+  // never wedge every later call.
+  let _warmCacheChain = Promise.resolve();
 
   /**
    * Mint a request id for a ``warmCache()`` call. ``crypto.randomUUID`` is
@@ -440,6 +466,13 @@
    * ``cancelled`` before treating a short ``ok`` count as evidence of
    * trouble.
    *
+   * SNOW-951 review: calls QUEUE. The worker runs one warm at a time and
+   * this module tracks it in one slot, so a second caller waits for the
+   * first to settle rather than overwriting it — see ``_warmCacheChain``.
+   * Nothing about a single call's own result changes; what changes is that
+   * a caller who arrives during another's run gets its own answer instead
+   * of that run's silence timeout.
+   *
    * @param {string[]} urls
    * @param {{pinned?: boolean, areaId?: string, onProgress?: (done: number,
    *   total: number, settled?: number[], bytes?: number) => void}} [opts]
@@ -447,6 +480,30 @@
    *   bytes: number, cancelled: boolean} | null>}
    */
   async function warmCache(urls, opts) {
+    const mine = _warmCacheChain.then(() => _warmCacheRun(urls, opts));
+    _warmCacheChain = mine.then(
+      () => undefined,
+      () => undefined,
+    );
+    return mine;
+  }
+
+  /**
+   * One warm-cache run, dispatched with the slot to itself.
+   *
+   * Split out of ``warmCache`` by the SNOW-951 review so the queueing
+   * above wraps the WHOLE of a run — the controller wait included, since
+   * a call that takes the slot before waiting for a controller would hold
+   * it while doing nothing.
+   *
+   * @param {string[]} urls
+   * @param {{pinned?: boolean, areaId?: string, glyphPrefix?: string,
+   *   onProgress?: (done: number, total: number, settled?: number[],
+   *   bytes?: number) => void}} [opts]
+   * @returns {Promise<{ok: number, failed: number, reason: string|null,
+   *   bytes: number, cancelled: boolean} | null>}
+   */
+  async function _warmCacheRun(urls, opts) {
     const active = await _activeWorker();
     // SNOW-605: no controller after the wait — the page is uncontrolled and
     // will stay that way until it reloads. Report it as its own reason so
