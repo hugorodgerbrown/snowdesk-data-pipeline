@@ -356,8 +356,13 @@ FEATURES: tuple[Feature, ...] = (
             skitourenguru=Cell(Support.YES, _("The whole product")),
             whympr=_NO,
             opensnow=_NO,
-            # apps/routes/ holds geometry only; no bulletin coupling.
-            snowdesk=_NO,
+            # SNOW-839. YES rather than PARTIAL, and the wording is the
+            # claim: what a trip page states is where the line ENTERS the
+            # ground each problem names, not a rating of the day. Every
+            # other YES in this row is a score or a flag; ours is
+            # deliberately neither, which is why the cell says what it
+            # does rather than borrowing their word for it.
+            snowdesk=Cell(Support.YES, _("Where your line meets each problem")),
         ),
     ),
     Feature(

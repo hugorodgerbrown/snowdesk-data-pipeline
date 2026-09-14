@@ -212,16 +212,25 @@ class TestSnowdeskEntryMatchesTheCode:
         assert "national topographic basemaps" in page
 
     def test_states_the_gaps_that_are_still_real(self, page: str) -> None:
-        """Alerting, station data and per-tour scoring are genuinely absent.
+        """Alerting and station data are genuinely absent; scoring is refused.
 
-        Each was re-verified when the page was written: the push endpoints
-        in ``apps/accounts/push_views.py`` are all staff-only, ``apps/weather/``
-        is Open-Meteo forecast only, and ``apps/routes/`` holds geometry with
-        no bulletin coupling.
+        Alerting and weather stations were re-verified when the page was
+        written — the push endpoints in ``apps/accounts/push_views.py``
+        are all staff-only and ``apps/weather/`` is Open-Meteo forecast
+        only.
+
+        **Per-tour scoring is a different kind of entry and the wording
+        has to keep it that way.** SNOW-839 joined a route to the
+        bulletin, so the capability exists; what does not exist, and will
+        not, is a RATING. The page must go on naming scoring as something
+        Snowdesk does not do while no longer implying it cannot — which
+        is why the assertion below is on the refusal rather than on the
+        two words it used to match.
         """
         assert "alerting, which it does not do at all" in page
         assert "no live station network" in page
-        assert "per-tour risk scoring" in page
+        assert "deliberately does not do" in page
+        assert "stops short of rating the day" in page
 
     def test_describes_weather_as_forecasts_not_observations(self, page: str) -> None:
         """The distinction is the whole of the claim.
@@ -296,11 +305,19 @@ class TestFeatureMatrix:
 
         ours = [feature.cells["snowdesk"].support for feature in FEATURES]
         assert Support.NO in ours, "our column claims everything"
-        # And specifically the three verified against the code when the
-        # page was written: alerts, station data, per-tour scoring.
+        # Alerts and station data were verified against the code when the
+        # page was written and are still absent.
+        #
+        # ``tour_score`` LEFT this list in SNOW-839, which is the one
+        # cell in our column to have moved. It is a YES whose wording is
+        # the whole claim — "where your line meets each problem" — and
+        # the cell's own text is asserted below rather than its support
+        # level alone, so a later edit cannot quietly turn it into the
+        # rating every other YES in that row means.
         by_key = {feature.key: feature.cells["snowdesk"] for feature in FEATURES}
-        for key in ("alerts", "stations", "tour_score"):
+        for key in ("alerts", "stations"):
             assert by_key[key].support is Support.NO, f"{key} is not a gap any more"
+        assert "meets each problem" in str(by_key["tour_score"].note)
 
     def test_no_competitor_column_is_all_unknown(self) -> None:
         """A column of nothing but dots is a product we should not have listed."""

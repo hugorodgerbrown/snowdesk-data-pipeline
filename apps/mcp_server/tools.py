@@ -70,10 +70,10 @@ from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.schema import AvalancheProblem
+from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
 from apps.public.api import COUNTRY_NAMES
-from apps.public.views import _select_bulletin_for_date
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 
@@ -271,7 +271,7 @@ def get_current_conditions(
         raise ToolError(f"Unknown region_id: {region_id!r}.")
 
     target_date = date or today or timezone.localdate()
-    bulletin = _select_bulletin_for_date(region, target_date)
+    bulletin = select_bulletin_for_date(region, target_date)
     if bulletin is None:
         return {
             "region_id": region.region_id,
@@ -367,7 +367,7 @@ def get_avalanche_problems(
         raise ToolError(f"Unknown region_id: {region_id!r}.")
 
     target_date = date or today or timezone.localdate()
-    bulletin = _select_bulletin_for_date(region, target_date)
+    bulletin = select_bulletin_for_date(region, target_date)
     if bulletin is None:
         return {
             "region_id": region.region_id,
@@ -724,7 +724,7 @@ def get_bulletin_metadata(
         raise ToolError(f"Unknown region_id: {region_id!r}.")
 
     target_date = date or today or timezone.localdate()
-    bulletin = _select_bulletin_for_date(region, target_date)
+    bulletin = select_bulletin_for_date(region, target_date)
     if bulletin is None:
         return {
             "region_id": region.region_id,
@@ -954,7 +954,7 @@ def get_bulletin_raw(
         raise ToolError(f"Unknown region_id: {region_id!r}.")
 
     target_date = date or today or timezone.localdate()
-    bulletin = _select_bulletin_for_date(region, target_date)
+    bulletin = select_bulletin_for_date(region, target_date)
     if bulletin is None:
         return {
             "region_id": region.region_id,

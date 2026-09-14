@@ -17,7 +17,7 @@ GeoJSON coordinate convention: [longitude, latitude] pairs.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from apps.regions.models import MicroRegion
@@ -206,4 +206,163 @@ def region_for_point(lat: float, lon: float) -> "MicroRegion | None":
         if point_in_polygon(lon, lat, region.boundary):
             return region
 
+    return None
+
+
+def regions_for_points(
+    points: list[tuple[float, float]],
+) -> list["MicroRegion | None"]:
+    """Return the MicroRegion containing each of many points.
+
+    The batch form of ``region_for_point``, added for SNOW-839, which asks
+    the question once per segment of a track — several hundred times for
+    one tour. Calling the single-point version in a loop would re-run its
+    **whole-table query** each time; this runs it once and then answers
+    from memory.
+
+    **THE LAST ANSWER IS TRIED FIRST**, which is what makes the walk
+    cheap. Consecutive samples along a track are 25 m apart, so they are
+    almost always in the region the one before was in — a hit there costs
+    a single point-in-polygon test, and only a genuine crossing pays for
+    the sorted scan. A track that stayed in one region used to cost N
+    queries and N sorted scans; it now costs one query and N cheap tests.
+
+    Args:
+        points: ``(latitude, longitude)`` pairs, in any order, though a
+            track's own order is what makes the cache above pay.
+
+    Returns:
+        One entry per point, in the same order: the containing
+        MicroRegion, or None where the point is outside every known
+        region. **None is an answer about our coverage, not about the
+        ground** — a caller must not read it as "no bulletin applies".
+
+    """
+    from apps.regions.models import MicroRegion  # noqa: PLC0415
+
+    if not points:
+        return []
+
+    candidates = list(
+        MicroRegion.objects.exclude(boundary__isnull=True).select_related(
+            "centroid_location"
+        )
+    )
+
+    # EVERY REGION'S BOUNDING BOX, COMPUTED ONCE. Without this a sample
+    # that matches nothing — a track outside the covered countries, or
+    # every point after one leaves them — runs a sorted scan and a full
+    # ray-cast against all 461 boundaries and their ~67,000 vertices. At
+    # one sample per 25 m that is around 180,000 polygon tests for a
+    # 10 km route, on a page render. A box test is four comparisons and
+    # rejects almost every region before the ray-cast is reached.
+    boxed = [(region, _bounding_box(region.boundary)) for region in candidates]
+
+    found: list[MicroRegion | None] = []
+    previous: MicroRegion | None = None
+    for latitude, longitude in points:
+        if previous is not None and point_in_polygon(
+            longitude, latitude, previous.boundary
+        ):
+            found.append(previous)
+            continue
+        match = _first_containing(boxed, latitude, longitude)
+        found.append(match)
+        if match is not None:
+            previous = match
+    return found
+
+
+def _bounding_box(
+    boundary: dict[str, Any] | None,
+) -> tuple[float, float, float, float] | None:
+    """Return ``(min_lon, min_lat, max_lon, max_lat)`` for a boundary.
+
+    Walks every ring of a Polygon or MultiPolygon, which is the shape
+    ``point_in_polygon`` itself accepts. Computed once per batch and
+    reused for every sample — a box is what makes the scan below cheap,
+    and recomputing it per point would put the cost straight back.
+
+    Args:
+        boundary: The stored GeoJSON geometry, or None.
+
+    Returns:
+        The box, or None for a geometry with no coordinates to bound —
+        which is tested the slow way rather than skipped, since a box we
+        could not compute is not evidence about where the point is.
+
+    """
+    if not boundary:
+        return None
+    coordinates = boundary.get("coordinates") or []
+    longitudes: list[float] = []
+    latitudes: list[float] = []
+
+    def _walk(node: Any) -> None:
+        """Collect every coordinate pair, whatever the nesting depth."""
+        if (
+            isinstance(node, list)
+            and len(node) >= 2
+            and all(isinstance(value, int | float) for value in node[:2])
+        ):
+            longitudes.append(float(node[0]))
+            latitudes.append(float(node[1]))
+            return
+        if isinstance(node, list):
+            for child in node:
+                _walk(child)
+
+    _walk(coordinates)
+    if not longitudes:
+        return None
+    return (min(longitudes), min(latitudes), max(longitudes), max(latitudes))
+
+
+def _first_containing(
+    boxed: list[tuple["MicroRegion", tuple[float, float, float, float] | None]],
+    latitude: float,
+    longitude: float,
+) -> "MicroRegion | None":
+    """Return the first region whose boundary contains a point.
+
+    **THE BOX IS TESTED FIRST AND IT IS THE WHOLE OPTIMISATION.** A point
+    outside a region's bounding box cannot be inside its boundary, and
+    four comparisons rule out almost every region for the price of one
+    ray-cast against one of them. A region whose box could not be
+    computed is tested the slow way rather than skipped: an unknown box
+    is not evidence about where the point is.
+
+    Args:
+        boxed: Regions with a boundary, each with its bounding box.
+        latitude: Latitude of the point.
+        longitude: Longitude of the point.
+
+    Returns:
+        The containing region, or None.
+
+    """
+    inside_a_box = [
+        (region, box)
+        for region, box in boxed
+        if box is None
+        or (box[0] <= longitude <= box[2] and box[1] <= latitude <= box[3])
+    ]
+    if not inside_a_box:
+        return None
+
+    def _sq_distance(
+        entry: tuple["MicroRegion", tuple[float, float, float, float] | None],
+    ) -> float:
+        """Return the squared distance from the region centre to the point."""
+        centre = entry[0].centre_point()
+        if centre is None:
+            return float("inf")
+        centre_lat, centre_lon = centre
+        dlon = centre_lon - longitude
+        dlat = centre_lat - latitude
+        return dlon * dlon + dlat * dlat
+
+    for region, _box in sorted(inside_a_box, key=_sq_distance):
+        if point_in_polygon(longitude, latitude, region.boundary):
+            return region
     return None

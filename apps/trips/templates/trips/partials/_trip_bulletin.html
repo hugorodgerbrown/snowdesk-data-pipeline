@@ -1,0 +1,109 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_bulletin.html — where this day's line meets this day's
+bulletin (SNOW-839).
+
+The one thing on a trip page that changes twice a day. Everything else is
+the snapshot the organiser shared; this is read fresh on every view and
+stored nowhere, because a cached intersection would be held offline by the
+service worker under a date it no longer belongs to.
+
+WHAT THIS IS NOT. It is not a score, not a verdict and not a
+recommendation, and the copy is written so it cannot be read as one. A
+number would suppress everything it did not weigh, invisibly — and
+``docs/decisions/location-first-information-model.md`` already draws that
+line: highlight, never suppress, which is "the line between helping
+someone read a bulletin and deciding for them, and it is what our
+liability disclaimer rests on". So every row states a fact about the
+TRACK ("1.4 km of your line, on N and NE, between 2200 and 2800 m") and
+names the problem the forecaster put there. The deciding is the reader's,
+with the bulletin this panel links them to.
+
+ONE BLOCK PER REGION, longest stretch first. A track over a ridge is in
+two micro-regions, and on a border it is two PROVIDERS with two readings
+of the same day — so the panel shows both rather than picking one, and
+names each. A region with no bulletin for the day is still listed: a
+reader whose route leaves the forecast needs to know it did.
+
+Context:
+    trip             : Trip — for its date, which is the day asked about.
+    bulletin_readings: list[dict] — one entry per region, each carrying
+                       ``region``, ``bulletin``, ``overlaps`` (already
+                       display-shaped) and ``length_km``, the region total.
+{% endcomment %}
+{% if bulletin_readings %}
+    {% card %}
+    <h2 class="text-summary font-semibold text-text-1">{% trans "This day's bulletin, along your line" %}</h2>
+    {# The caveat sits ABOVE the rows, not under them. A reader who scans #}
+    {# the figures and stops has still read the sentence that says what   #}
+    {# they are.                                                          #}
+    <p class="mt-1 text-meta text-text-3">
+        {% blocktrans trimmed %}
+            Where your route crosses the ground each problem names. It is not a rating of your day — read the bulletin
+            itself, and decide as you always would.
+        {% endblocktrans %}
+    </p>
+
+    {% for reading in bulletin_readings %}
+        <div class="mt-4 border-t border-border pt-3 first:mt-3" data-testid="trip-bulletin-region">
+            <div class="flex items-baseline justify-between gap-2">
+                <span class="text-body font-medium text-text-1">{{ reading.region.name }}</span>
+                {% if reading.bulletin_url %}
+                    <a
+                        class="text-meta text-accent underline underline-offset-2"
+                        href="{{ reading.bulletin_url }}"
+                    >{% trans "Read the bulletin" %}</a>
+                {% endif %}
+            </div>
+
+            {% if not reading.bulletin %}
+                {# Not an error and not silence: a route can leave the      #}
+                {# forecast, and a reader who is shown nothing here would   #}
+                {# assume the region was clear rather than unforecast.      #}
+                <p class="mt-1 text-meta text-text-3">
+                    {% blocktrans trimmed %}
+                        No bulletin was published for this region on this day.
+                    {% endblocktrans %}
+                </p>
+            {% elif not reading.overlaps %}
+                <p class="mt-1 text-meta text-text-3">
+                    {% blocktrans trimmed %}
+                        Your line does not enter the ground any of this bulletin's problems name. That is not the same
+                        as safe — read the bulletin.
+                    {% endblocktrans %}
+                </p>
+            {% else %}
+                <ul class="mt-1 space-y-1">
+                    {% for overlap in reading.overlaps %}
+                        <li class="text-meta text-text-2" data-testid="trip-bulletin-overlap">
+                            {% if overlap.lowest_m and overlap.lowest_m == overlap.highest_m and not overlap.elevation_undecided %}
+                                {# One height, not a range. "Between 2500 #}
+                                {# and 2500 m" is what a range template   #}
+                                {# says about a stretch that sits at one  #}
+                                {# height, and it reads as a bug.         #}
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects metres=overlap.lowest_m problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }}, at {{ metres }} m — {{ problem }}
+                                {% endblocktrans %}
+                            {% elif overlap.lowest_m and not overlap.elevation_undecided %}
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects low=overlap.lowest_m high=overlap.highest_m problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }}, between {{ low }} and {{ high }} m
+                                    —
+                                    {{ problem }}
+                                {% endblocktrans %}
+                            {% else %}
+                                {# No usable height: either the GPX carried #}
+                                {# no elevation or the problem's band is    #}
+                                {# pinned to the treeline, which we hold no #}
+                                {# model of. The aspect half still stands.  #}
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }} — {{ problem }}
+                                {% endblocktrans %}
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </div>
+    {% endfor %}
+    {% endcard %}
+{% endif %}

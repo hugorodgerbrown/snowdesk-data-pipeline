@@ -148,6 +148,13 @@ Routes and Offline downloads came to have neither.
         {# after a triple slash. Gated on the same waffle flag as the        #}
         {# address itself, so a reader is never told about a form of words   #}
         {# their own trips do not carry.                                     #}
+        {# SNOW-839. Beside the trip's own topics, because the panel it   #}
+        {# documents is on the trip page — and its limits are the reason   #}
+        {# that panel is allowed to exist, so they need somewhere longer   #}
+        {# than a card to live.                                            #}
+        {% translate "The bulletin along your line" as t_trip_bulletin %}
+        {% include "includes/_collapsible_panel.html" with title=t_trip_bulletin data_testid="help-topic-trip-bulletin" body_template="public/help/_topic_trip_bulletin.html" %}
+
         {% if what3words_visible %}
             {% translate "The meeting point" as t_what3words %}
             {% include "includes/_collapsible_panel.html" with title=t_what3words data_testid="help-topic-what3words" body_template="public/help/_topic_what3words.html" %}

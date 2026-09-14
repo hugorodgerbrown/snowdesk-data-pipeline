@@ -116,6 +116,7 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.bulletins.services.coverage import covered_region_ids
+from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.core.sw_shell import cache_version, cached_cache_version
@@ -147,7 +148,6 @@ from .decorators import lowercase_region_id
 from .release import release_label
 from .views import (
     _resolve_region_for_bulletin,
-    _select_bulletin_for_date,
 )
 
 # ISO 3166-1 alpha-2 → English country name mapping. Used by the region
@@ -3584,7 +3584,7 @@ def share_create(request: HttpRequest) -> JsonResponse:
     except Http404:
         return JsonResponse({"error": "region_not_found"}, status=404)
 
-    bulletin = _select_bulletin_for_date(region, target_date)  # type: ignore[arg-type]
+    bulletin = select_bulletin_for_date(region, target_date)  # type: ignore[arg-type]
     if bulletin is None:
         return JsonResponse({"error": "bulletin_not_found"}, status=404)
 

@@ -23,12 +23,12 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.public.views import (
     _get_nav_dates,
     _has_later_bulletin,
     _issues_for_date,
     _resolve_selected_issue,
-    _select_bulletin_for_date,
     _select_default_issue,
 )
 from apps.regions.models import MicroRegion
@@ -113,7 +113,7 @@ class TestSelectBulletinForDate:
         am = _make_am_bulletin(region, day)
 
         with _freeze("2026-03-20T12:00:00+00:00"):
-            result = _select_bulletin_for_date(region, day)
+            result = select_bulletin_for_date(region, day)
 
         assert result is not None
         assert result.pk == am.pk
@@ -124,7 +124,7 @@ class TestSelectBulletinForDate:
         pm = _make_pm_bulletin(region, date(2026, 3, 14))  # PM covers 3/15
 
         with _freeze("2026-03-20T12:00:00+00:00"):
-            result = _select_bulletin_for_date(region, day)
+            result = select_bulletin_for_date(region, day)
 
         assert result is not None
         assert result.pk == pm.pk
@@ -136,7 +136,7 @@ class TestSelectBulletinForDate:
         am = _make_am_bulletin(region, day)  # AM: 06:00 - 15:00
 
         with _freeze("2026-03-15T10:00:00+00:00"):
-            result = _select_bulletin_for_date(region, day)
+            result = select_bulletin_for_date(region, day)
 
         assert result is not None
         assert result.pk == am.pk
@@ -148,7 +148,7 @@ class TestSelectBulletinForDate:
         _make_am_bulletin(region, day)  # starts at 06:00
 
         with _freeze("2026-03-15T04:00:00+00:00"):
-            result = _select_bulletin_for_date(region, day)
+            result = select_bulletin_for_date(region, day)
 
         assert result is not None
         assert result.pk == pm.pk
@@ -156,7 +156,7 @@ class TestSelectBulletinForDate:
     def test_no_bulletins_returns_none(self, region: MicroRegion) -> None:
         """When no bulletins exist for a date, None is returned."""
         with _freeze("2026-03-20T12:00:00+00:00"):
-            result = _select_bulletin_for_date(region, date(2026, 3, 15))
+            result = select_bulletin_for_date(region, date(2026, 3, 15))
 
         assert result is None
 
@@ -674,7 +674,7 @@ class TestDefaultIssueSelection:
         _make_pm_bulletin(region, date(2026, 3, 15))  # irrelevant (after 10:00)
 
         with _freeze("2026-03-20T12:00:00+00:00"):
-            result = _select_bulletin_for_date(region, date(2026, 3, 15))
+            result = select_bulletin_for_date(region, date(2026, 3, 15))
 
         assert result is not None and result.pk == am.pk
 
@@ -686,7 +686,7 @@ class TestDefaultIssueSelection:
         # No AM today.
 
         with _freeze("2026-03-20T12:00:00+00:00"):
-            result = _select_bulletin_for_date(region, date(2026, 3, 15))
+            result = select_bulletin_for_date(region, date(2026, 3, 15))
 
         assert result is not None and result.pk == prev_evening.pk
 
@@ -697,7 +697,7 @@ class TestDefaultIssueSelection:
 
         # 18:00 is inside the same-day evening window and outside AM's.
         with _freeze("2026-03-15T18:00:00+00:00"):
-            result = _select_bulletin_for_date(region, date(2026, 3, 15))
+            result = select_bulletin_for_date(region, date(2026, 3, 15))
 
         assert result is not None and result.pk == same_evening.pk
 
