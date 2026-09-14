@@ -151,10 +151,15 @@ class Command(BaseCommand):
             verbosity=verbosity,
             describe=lambda row: f"{row.pk} {row.uuid}",
         ):
-            if limit and processed >= limit:
-                break
             self._backfill_one(route, counts, commit=commit)
             processed += 1
+            # Checked AFTER the work, not before it. ``iterate_rows`` prints
+            # its countdown line as it yields, so breaking on the way in
+            # would count a row down and then discard it — ``--limit 20``
+            # reading as 21 rows processed. Breaking here also skips the
+            # trailing ``--delay``, which nothing is waiting for.
+            if limit and processed >= limit:
+                break
             if commit and delay:
                 time.sleep(delay)
 
