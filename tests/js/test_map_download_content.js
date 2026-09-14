@@ -232,6 +232,19 @@ function installDbStub() {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // SNOW-959: the stub's stand-in for db.js's one-transaction
+    // read-modify-write. The serialisation that helper exists for is
+    // IndexedDB's, and a Map cannot show it — so this reproduces only the
+    // CONTRACT its callers depend on: the mutator is handed the current
+    // row, and an `undefined` return writes nothing. The serialisation
+    // itself is proved against fake-indexeddb in tests/js/test_db.js.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),
@@ -830,6 +843,69 @@ describe('a custom area catches up through the sheet (SNOW-932)', () => {
     expect(warmedUrls(0).some((url) => url.includes('tiles.example.invalid'))).toBe(
       false,
     );
+  });
+});
+
+describe('both stampers write through one transaction (SNOW-959)', () => {
+  // The rows these two write are whole ARRAYS rewritten to change one
+  // entry, and since SNOW-950/953 three functions across two
+  // simultaneously-open pages write them. A `get` and a later `put` loses
+  // whichever change lands first, so the pair has to ride one IndexedDB
+  // transaction — see `readModifyWrite` in static/js/db.js.
+  //
+  // What is asserted here is the ROUTING, because that is what can
+  // regress: someone reaching for the familiar `get`/`put` pair in a
+  // later ticket. That the helper actually serialises is proved against
+  // fake-indexeddb in tests/js/test_db.js, with the lost update
+  // reproduced — a stub over a Map could not show it.
+
+  /** Every key `put` was called with since the last clear. */
+  function putKeys() {
+    return window.pwaDb.put.mock.calls.map((call) => call[1] && call[1].key);
+  }
+
+  /** Every key `readModifyWrite` was called with since the last clear. */
+  function rmwKeys() {
+    return window.pwaDb.readModifyWrite.mock.calls.map((call) => call[1]);
+  }
+
+  it('the region roundel stamps through readModifyWrite, not put', async () => {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: [{ region_id: REGION_ID, bytes: 4096, savedAt: '2026-01-05T10:00:00.000Z' }],
+    });
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+
+    expect(rmwKeys()).toContain('basemap.regions');
+    expect(putKeys()).not.toContain('basemap.regions');
+  });
+
+  it('the custom-area sheet stamps through readModifyWrite, not put', async () => {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        {
+          id: 'custom-rmw',
+          ordinal: 1,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          template: TEMPLATE,
+          basemapKey: 'openfreemap_liberty',
+          bytes: 4096,
+          savedAt: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await window.pwaBasemapDownloads.refreshAreaContent('custom-rmw');
+
+    expect(rmwKeys()).toContain('basemap.customAreas');
+    expect(putKeys()).not.toContain('basemap.customAreas');
   });
 });
 

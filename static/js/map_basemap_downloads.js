@@ -3242,22 +3242,46 @@ async function _stampAreaContent(areaId, regionId, complete) {
     return { ...rest, contentAt: new Date().toISOString() };
   };
   try {
+    if (!window.pwaDb) return;
+    // SNOW-959: one transaction per stamp, not a `get` and a later `put`.
+    // Both of these rows are whole ARRAYS rewritten to change one entry,
+    // and three functions across two simultaneously-open pages write them
+    // — so the gap between a read and its write was a lost update. See
+    // `readModifyWrite`'s docstring for the mechanism, and note the
+    // constraint it imposes: `stamp` must stay synchronous.
     if (!regionId) {
-      const existing = await _readCustomAreas();
-      if (!existing.some((entry) => entry && entry.id === areaId)) return;
-      await _writeCustomAreas(
-        existing.map((entry) => (entry && entry.id === areaId ? stamp(entry) : entry)),
-      );
+      const key = window.pwaBasemapAreas.CUSTOM_AREAS_KEY;
+      // One read before the transaction, and its RESULT is deliberately
+      // thrown away. `_readCustomAreas` owns the lazy migration off the
+      // legacy single-row `basemap.customArea` key, and that migration
+      // cannot happen inside the transaction below — it writes one key and
+      // deletes another. Calling it here keeps a pre-SNOW-635 device's
+      // stamp working exactly as it did; the authoritative read is still
+      // the one inside the transaction, so this adds no gap to close.
+      await _readCustomAreas();
+      await window.pwaDb.readModifyWrite('meta:app', key, (row) => {
+        const existing = Array.isArray(row && row.value) ? row.value : [];
+        if (!existing.some((entry) => entry && entry.id === areaId)) return undefined;
+        return {
+          key,
+          value: existing.map((entry) =>
+            entry && entry.id === areaId ? stamp(entry) : entry,
+          ),
+        };
+      });
       return;
     }
-    const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
-    const existing = Array.isArray(row && row.value) ? row.value : [];
-    if (!existing.some((entry) => entry && entry.region_id === regionId)) return;
-    await window.pwaDb?.put('meta:app', {
-      key: 'basemap.regions',
-      value: existing.map((entry) =>
-        entry && entry.region_id === regionId ? stamp(entry) : entry,
-      ),
+    await window.pwaDb.readModifyWrite('meta:app', 'basemap.regions', (row) => {
+      const existing = Array.isArray(row && row.value) ? row.value : [];
+      if (!existing.some((entry) => entry && entry.region_id === regionId)) {
+        return undefined;
+      }
+      return {
+        key: 'basemap.regions',
+        value: existing.map((entry) =>
+          entry && entry.region_id === regionId ? stamp(entry) : entry,
+        ),
+      };
     });
   } catch (_e) {
     // Best-effort — see the docstring.

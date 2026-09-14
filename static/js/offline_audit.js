@@ -1462,33 +1462,52 @@
     try {
       var db = self.pwaDb;
       if (!db) return;
-      var customRow = await db.get('meta:app', 'basemap.customAreas');
-      var custom = (customRow && customRow.value) || [];
-      if (
-        Array.isArray(custom) &&
-        custom.some(function (area) {
-          return area && area.id === areaId;
-        })
-      ) {
-        await db.put('meta:app', {
+      // SNOW-959: read and write on ONE transaction each. This page became
+      // the SECOND writer of these two rows in SNOW-950/953 — the map page
+      // was the first — and `/offline/` and the map are both SHELL_PAGES,
+      // so a user can hold them open in separate tabs. Each row is a whole
+      // ARRAY rewritten to change one entry, so a `get` followed later by a
+      // `put` meant the tab that wrote second silently discarded the
+      // other's stamp. IndexedDB serialises overlapping `readwrite`
+      // transactions across every connection, tabs included, so doing both
+      // halves on one transaction is the whole fix. `readModifyWrite`'s
+      // docstring has the mechanism; its one constraint is that `apply`
+      // and the mutators below stay synchronous.
+      //
+      // `undefined` from a mutator commits nothing, which is what each of
+      // the old early returns did.
+      var wroteCustom = false;
+      await db.readModifyWrite('meta:app', 'basemap.customAreas', function (row) {
+        var custom = (row && row.value) || [];
+        if (!Array.isArray(custom)) return undefined;
+        if (
+          !custom.some(function (area) {
+            return area && area.id === areaId;
+          })
+        ) {
+          return undefined;
+        }
+        wroteCustom = true;
+        return {
           key: 'basemap.customAreas',
           value: custom.map(function (area) {
             return area && area.id === areaId ? apply(area) : area;
           }),
-        });
-        return;
-      }
-      var regionRow = await db.get('meta:app', 'basemap.regions');
-      var regions = (regionRow && regionRow.value) || [];
-      if (!Array.isArray(regions)) return;
-      var touched = false;
-      var next = regions.map(function (entry) {
-        if (!entry || 'region-' + entry.region_id !== areaId) return entry;
-        touched = true;
-        return apply(entry);
+        };
       });
-      if (!touched) return;
-      await db.put('meta:app', { key: 'basemap.regions', value: next });
+      if (wroteCustom) return;
+      await db.readModifyWrite('meta:app', 'basemap.regions', function (row) {
+        var regions = (row && row.value) || [];
+        if (!Array.isArray(regions)) return undefined;
+        var touched = false;
+        var next = regions.map(function (entry) {
+          if (!entry || 'region-' + entry.region_id !== areaId) return entry;
+          touched = true;
+          return apply(entry);
+        });
+        if (!touched) return undefined;
+        return { key: 'basemap.regions', value: next };
+      });
     } catch (_err) {
       // Best-effort, per the docstring.
     }
