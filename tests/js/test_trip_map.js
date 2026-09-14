@@ -353,6 +353,48 @@ describe('routeSlopeSourceData', () => {
   });
 });
 
+describe('the no-fall passages on a trip (SNOW-964)', () => {
+  /** A sampled payload whose record names the given passages. */
+  function withPassages(angles, passages) {
+    const p = sampled(angles);
+    p.route.properties.slope.passages = passages;
+    return p;
+  }
+
+  it('carries the mark through to the segments the page draws', () => {
+    // The trip page is what the GROUP sees — the people who did not plan
+    // the route — so the same track must mark the same passages on both
+    // surfaces. Nothing in trip_map.js reads the record for this: the
+    // flag arrives through `segmentFeatures`.
+    const data = core.routeSlopeSourceData(
+      withPassages([12, 52, 51, 12], [{ from: 1, to: 2, m: 50, fall_line: 'climbing' }]),
+    );
+
+    expect(data.features.map((f) => f.properties.passage))
+      .toEqual([undefined, true, true, undefined]);
+  });
+
+  it('marks nothing on a trip whose record names no passages', () => {
+    const data = core.routeSlopeSourceData(withPassages([12, 34], []));
+
+    for (const feature of data.features) {
+      expect(feature.properties).not.toHaveProperty('passage');
+    }
+  });
+
+  it('marks nothing on a snapshot taken before passages existed', () => {
+    // A trip is a verbatim copy of the record as it stood, and an older
+    // one simply has no `passages` key — which must draw the track
+    // unmarked rather than throw and take the whole map with it.
+    const data = core.routeSlopeSourceData(sampled([12, 52]));
+
+    expect(data.features).toHaveLength(2);
+    for (const feature of data.features) {
+      expect(feature.properties).not.toHaveProperty('passage');
+    }
+  });
+});
+
 describe('isSlopeColoured', () => {
   it('is true when the record produces segments to paint', () => {
     expect(core.isSlopeColoured(sampled([12, 34]))).toBe(true);
