@@ -68,8 +68,9 @@ describe('a claim made while the overlay is still loading', () => {
     harness.payload = ROUTES_UNSAMPLED;
     announce({ claimed: true });
 
-    // The load settles on its pre-write payload, and a second request goes
-    // out — the first one that can see the write.
+    // The load settles on its pre-write payload, which is never judged; a
+    // confirming request goes out instead — the first that can see the
+    // write.
     await vi.advanceTimersByTimeAsync(60);
     await loading;
     await vi.advanceTimersByTimeAsync(1);

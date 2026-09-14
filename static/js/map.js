@@ -4617,15 +4617,12 @@
     // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
-    // SNOW-910: a claim or an upload may have happened while this overlay
-    // was off, in which case the write found no cache to read and left the
-    // signal standing. There is a payload now, so ask the question it
-    // could not. Inert otherwise — the flag is false unless such a write
-    // happened, and this is the only reader that can clear it.
-    if (key === 'routes' && routeSamplingPending) {
-      routeSamplingPending = false;
-      scheduleSlopeRefetch();
-    }
+    // SNOW-910: a write may be waiting on this overlay. Its payload is
+    // NOT the answer — this load may have started before the write, or
+    // been served from the offline cache — so hand the question to
+    // `confirmRouteWrite`, which issues a read of its own. Inert unless a
+    // write is actually outstanding.
+    if (key === 'routes') confirmRouteWrite();
 
   };
 
@@ -5564,17 +5561,25 @@
    * showing what it showed a moment ago — stale, but not wrong about
    * anything it claims to know.
    *
+   * **Resolves to whether a payload was actually applied** (SNOW-910).
+   * It swallows its own failures — a refetch that cannot land leaves the
+   * map showing what it showed a moment ago — so "the promise settled" is
+   * NOT the same as "the server answered", and a caller that needs the
+   * difference has to be told. `confirmRouteWrite` is that caller: it
+   * clears an unconfirmed write only on a true here, and a false is what
+   * keeps the signal up for a later retry.
+   *
    * @param {string} key - ``'routes'`` or ``'community_reports'``.
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} True when fresh data was applied.
    */
   const refreshPanelOverlay = (key) => {
-    if (!overlayLoaded[key]) return Promise.resolve();
+    if (!overlayLoaded[key]) return Promise.resolve(false);
     const url = key === 'routes' ? ROUTES_URL : COMMUNITY_REPORTS_URL;
-    if (!url) return Promise.resolve();
+    if (!url) return Promise.resolve(false);
     return fetch(url)
       .then(r => r.json())
       .then((data) => {
-        if (!data) return;
+        if (!data) return false;
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
@@ -5598,8 +5603,9 @@
           communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
           map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
         }
+        return true;
       })
-      .catch(() => {});
+      .catch(() => false);
   };
 
   // SNOW-910: how long after an upload or a claim the map re-reads the
@@ -5618,26 +5624,58 @@
   const SLOPE_REFETCH_DELAY_MS = 20000;
   let slopeRefetchTimer = null;
 
-  // Whether a write happened while the routes overlay had never been
-  // LOADED, and so still owes the map a look at the feed.
+  // Whether a write is UNCONFIRMED: a claim or an upload has put a route
+  // on the server and no network read issued since has been seen.
   //
-  // `refreshPanelOverlay` is a no-op until an overlay has loaded, so a
-  // claim or an upload made with the routes switch OFF leaves
-  // `routesGeojsonCache` untouched: there is no payload to find unsampled
-  // and the write's own call has nothing to arm off. Enabling the overlay
-  // afterwards drew the null-slope route and scheduled nothing either,
-  // leaving it flat for the rest of the session — the state a page reload
-  // was needed to escape, which is what this timer exists to avoid.
+  // ONE RULE, because four bugs came from not having it: the signal is
+  // cleared only by a successful network read that WE issued AFTER the
+  // write. Every earlier version consumed it against whatever payload
+  // happened to be at hand, and a payload can fail to answer for a write
+  // in at least four ways — it can belong to a different write's refresh,
+  // it can be an overlay load that started before the write, it can be
+  // the offline cache, or it can be a fetch that never arrived. Judging
+  // any of them leaves the new route flat, or absent, until a reload.
   //
-  // **SET ONLY ON THE UNLOADED PATH.** When the overlay IS loaded the
-  // write's own refresh carries its own payload through its own `.then`,
-  // and reads it with no shared state in between. That separation is what
-  // keeps two overlapping writes from stealing each other's signal: a
-  // claim that inherited a record and an upload that did not can be in
-  // flight together, and a single shared flag let whichever response
-  // landed first consume it for both — leaving the second route flat.
-  // There is no flag on that path to consume.
+  // `refreshPanelOverlay('routes')` is that read. It issues a fresh GET
+  // and rejects rather than resolving when the network fails, so "it
+  // resolved" is exactly the confirmation wanted, and a failure retains
+  // the signal for the next write or overlay load to retry.
   let routeSamplingPending = false;
+
+  /**
+   * Confirm an unconfirmed write with a network read, and judge THAT.
+   *
+   * The only place `routeSamplingPending` is cleared. Callers do not
+   * decide whether their own payload is good enough — they hand the
+   * question here, and this asks the server.
+   *
+   * @returns {void}
+   */
+  const confirmRouteWrite = () => {
+    if (!routeSamplingPending || !overlayLoaded.routes) return;
+    refreshPanelOverlay('routes')
+      .then((applied) => {
+        // A FALSE here is a refetch that did not land — offline, or a
+        // refused origin. It says nothing about the write, so the signal
+        // stays up for the reconnect below to retry.
+        if (!applied) return;
+        routeSamplingPending = false;
+        scheduleSlopeRefetch();
+      })
+      // Offline, or the origin refused. The signal stays up, so the
+      // reconnect below — or the next write, or the next overlay load —
+      // asks again. Nothing is drawn wrongly in the meantime; the route
+      // is simply not there yet.
+      .catch(() => {});
+  };
+
+  // The retry that makes retaining the signal worth anything. An enable
+  // served from the offline cache installs a payload written before the
+  // write, so the route can be missing from the map entirely — and
+  // nothing refreshes an already-loaded overlay, so without this it
+  // stayed missing until a page reload. Inert unless a write is actually
+  // outstanding, which is the common case by far.
+  window.addEventListener('online', confirmRouteWrite);
 
   /**
    * Re-read the routes feed ONCE, later, for a route sampled after upload.
@@ -5781,36 +5819,20 @@
     const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
     if (mayGainSlope) {
-      // THREE situations, and the middle one is the trap.
-      //
-      // Loaded: the refresh above really fetched, and it was issued after
-      // this write, so its payload is the answer to it.
-      //
-      // LOADING: a GET is already in flight that may have been issued
-      // BEFORE this write — a boot restore of the routes overlay is the
-      // ordinary way in — so its payload cannot speak for the write, and
-      // the route may not even be in it. `refreshPanelOverlay` above
-      // no-opped because `overlayLoaded` is still false, so wait for that
-      // load to finish and then fetch again, which is the first request
-      // that can see the write.
-      //
-      // Neither: nothing has been fetched and nothing will be until the
-      // user enables the overlay, so leave the signal for `_loadOverlay`.
+      routeSamplingPending = true;
+      // When the overlay is loaded, the refresh above IS a post-write
+      // network read, so reuse it rather than issuing a second. When it
+      // is not, that call did nothing and the signal waits for
+      // `_loadOverlay` — which hands it straight back to
+      // `confirmRouteWrite` rather than judging its own payload.
       if (overlayLoaded.routes) {
-        refreshed.then(scheduleSlopeRefetch);
-      } else if (overlayLoading.routes) {
-        overlayLoading.routes.then(() => {
-          // The load can fail or bail (ineligible, offline with nothing
-          // cached), which leaves the overlay unloaded. Fall back to the
-          // third case rather than judging a payload that never arrived.
-          if (!overlayLoaded.routes) {
-            routeSamplingPending = true;
-            return undefined;
-          }
-          return refreshPanelOverlay('routes').then(scheduleSlopeRefetch);
-        });
-      } else {
-        routeSamplingPending = true;
+        refreshed
+          .then((applied) => {
+            if (!applied) return;
+            routeSamplingPending = false;
+            scheduleSlopeRefetch();
+          })
+          .catch(() => {});
       }
     }
   });

@@ -191,12 +191,18 @@ export const harness = {
   payload: ROUTES_UNSAMPLED,
   /** Per-request response delays in ms, consumed in call order. */
   delays: [],
+  /** When true, every routes.geojson request REJECTS, as offline does. */
+  offline: false,
+  /** What the offline overlay cache hands back when a fetch rejects. */
+  cached: null,
 };
 
 /** Restore the defaults every test starts from. */
 export function resetHarnessState() {
   harness.payload = ROUTES_UNSAMPLED;
   harness.delays = [];
+  harness.offline = false;
+  harness.cached = null;
 }
 
 /** How many times the routes feed has been asked for. */
@@ -224,6 +230,13 @@ export async function boot(options) {
   localStorage.clear();
   stubCanvas2D();
   buildFixture();
+  // The offline overlay cache map.js falls back to when a fetch rejects.
+  // Without it a failed load installs nothing and never marks itself
+  // loaded, which is a DIFFERENT path from the cache-served one.
+  window.pwaMapOverlayCache = {
+    putOverlay: async () => {},
+    getOverlay: async () => harness.cached,
+  };
   Object.defineProperty(window, 'caches', {
     value: { keys: async () => [], open: async () => ({ keys: async () => [] }) },
     configurable: true,
@@ -232,7 +245,12 @@ export async function boot(options) {
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
-      const body = String(url).includes('routes.geojson') ? harness.payload : EMPTY_FC;
+      const isRoutes = String(url).includes('routes.geojson');
+      // A rejected fetch, which is what map.js sees offline — and the
+      // difference that matters here, because `refreshPanelOverlay` has no
+      // catch of its own, so a rejection must not be mistaken for a read.
+      if (isRoutes && harness.offline) return Promise.reject(new Error('offline'));
+      const body = isRoutes ? harness.payload : EMPTY_FC;
       const delay = harness.delays.shift() || 0;
       return Promise.resolve({
         ok: true,
@@ -260,6 +278,7 @@ export async function boot(options) {
 /** Undo everything `boot` installed. */
 export function teardown() {
   vi.unstubAllGlobals();
+  delete window.pwaMapOverlayCache;
   localStorage.clear();
   delete globalThis.maplibregl;
 }

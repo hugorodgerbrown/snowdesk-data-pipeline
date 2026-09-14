@@ -69,18 +69,21 @@ describe('a claim made while the routes overlay is off', () => {
     await vi.advanceTimersByTimeAsync(120000);
     expect(routesFetchCount()).toBe(0);
 
-    // The user turns routes on. That fetch is the overlay's own load.
+    // The user turns routes on. TWO requests follow: the overlay's own
+    // load, and the confirming read the outstanding write asks for. The
+    // load's payload is deliberately not judged — it can be the offline
+    // cache, or a fetch that started before the write.
     await window.pwaRoutesOverlay.show();
     await vi.advanceTimersByTimeAsync(1);
-    expect(routesFetchCount()).toBe(1);
-
-    // And the signal the write left standing is answered now there is a
-    // payload to judge: the route is drawn flat, so ask again.
-    await vi.advanceTimersByTimeAsync(20000);
     expect(routesFetchCount()).toBe(2);
+
+    // That confirming payload carries the unsampled route, so the delayed
+    // re-read is armed off it.
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(routesFetchCount()).toBe(3);
 
     // One shot, here as everywhere.
     await vi.advanceTimersByTimeAsync(120000);
-    expect(routesFetchCount()).toBe(2);
+    expect(routesFetchCount()).toBe(3);
   });
 });
