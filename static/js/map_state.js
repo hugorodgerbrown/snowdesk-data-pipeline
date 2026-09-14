@@ -500,6 +500,20 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // to /help/#help-topic-slope, which is where the caveats are.
   'route-terrain-crux-one': '1 key passage',
   'route-terrain-cruxes': '%(count)s key passages',
+  // SNOW-964: the no-fall passages — where the TRACK is on ground over
+  // 50°, which is a different claim from the ring above and has to read
+  // as one. The ring says the terrain AROUND you can release; this says
+  // you are ON it. The two co-occur on nearly every passage, since
+  // anything over 50° was already flagged a crux at 35°.
+  //
+  // The direction is a word, never a number: the fall line is measured
+  // from one 25 m chord of a recorded track, which supports "this
+  // descends the slope" and not "at 14° off the fall line".
+  'route-terrain-passage-one': '1 no-fall passage',
+  'route-terrain-passages': '%(count)s no-fall passages',
+  'route-terrain-passage-descending': 'down the fall line',
+  'route-terrain-passage-climbing': 'up the fall line',
+  'route-terrain-passage-crossing': 'across the fall line',
   // The same last-resort label routes/partials/_route.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle

@@ -8163,9 +8163,24 @@
       // looked and found nothing, which is exactly the reading
       // /help/#help-topic-slope exists to prevent: the markers are not
       // exhaustive, and a route with none is not a safe route.
-      const cruxes = slopeCore?.cruxCount
-        ? slopeCore.cruxCount({ properties: { slope: readFeatureJson(props.slope) } })
-        : 0;
+      // Parsed ONCE and shared with the passage lines below: the slope
+      // record is the largest property on the feature, and it arrives as
+      // a JSON string that both readers would otherwise parse
+      // separately.
+      const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
+      // SNOW-964: the no-fall passages, pushed BEFORE the crux count so
+      // the line reads in the order the eye takes the map in — the
+      // colour under the track, then the split across it, then the ring
+      // around it.
+      //
+      // The two marks land on nearly the same ground (anything over 50°
+      // was already flagged a crux at 35°), so the words have to keep
+      // them apart: the ring says the terrain around you can release,
+      // the split says you are on it.
+      if (slopeCore?.passageLines) {
+        terrainLines.push(...slopeCore.passageLines(slopeFeature));
+      }
+      const cruxes = slopeCore?.cruxCount ? slopeCore.cruxCount(slopeFeature) : 0;
       if (cruxes > 0) {
         terrainLines.push({
           key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',

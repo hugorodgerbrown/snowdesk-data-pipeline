@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 from django.conf import settings
@@ -1714,6 +1715,60 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     )[0]
     assert 'data-string="focus-row-label"' in strings
     assert "Zoom to" in strings
+
+
+# SNOW-964: the five strings the no-fall passage line is built from —
+# the two count forms and one word per direction.
+_PASSAGE_STRING_KEYS = (
+    "route-terrain-passage-one",
+    "route-terrain-passages",
+    "route-terrain-passage-descending",
+    "route-terrain-passage-climbing",
+    "route-terrain-passage-crossing",
+)
+
+_MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
+
+
+@pytest.mark.django_db
+def test_the_no_fall_passage_strings_are_rendered_and_mirrored() -> None:
+    """The passage line's words exist in BOTH hand-maintained places.
+
+    ``makemessages`` never scans JavaScript, so every user-facing string
+    in ``static/js`` is rendered here and read back through
+    ``window.pwaStrings`` (``tox -e i18n-lint``). The fallbacks in
+    ``MAP_STRINGS`` are the second copy, and NOTHING enforces that the
+    two agree — a key that lands in one but not the other ships an
+    English literal to a translated page and nothing fails. This
+    assertion is the only guard there is.
+    """
+    content = Client().get(reverse("public:home")).content.decode()
+    template = content.split('id="map-strings-template"', 1)[1]
+    strings = template.split("</template>", 1)[0]
+    fallbacks = _MAP_STATE_JS.read_text(encoding="utf-8")
+
+    for key in _PASSAGE_STRING_KEYS:
+        assert f'data-string="{key}"' in strings, key
+        assert f"'{key}':" in fallbacks, key
+
+
+@pytest.mark.django_db
+def test_the_passage_wording_separates_the_split_from_the_ring() -> None:
+    """The two marks co-occur, so the copy has to say different things.
+
+    Any segment over 50 degrees was already flagged a crux at 35, so
+    nearly every passage carries a ring as well. The ring's words say the
+    terrain AROUND you can release; the passage's say you are ON it.
+    """
+    content = Client().get(reverse("public:home")).content.decode()
+    template = content.split('id="map-strings-template"', 1)[1]
+    strings = template.split("</template>", 1)[0]
+
+    assert "no-fall passage" in strings
+    assert "key passage" in strings
+    assert "down the fall line" in strings
+    assert "up the fall line" in strings
+    assert "across the fall line" in strings
 
 
 @pytest.mark.django_db

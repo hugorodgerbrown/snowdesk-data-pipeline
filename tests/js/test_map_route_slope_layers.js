@@ -539,6 +539,20 @@ describe('tapping a coloured route', () => {
     expect(queried).not.toContain('routes-passage-core');
   });
 
+  it('names the no-fall passage and what the track does with it', () => {
+    // SNOW-964. The count and the direction ride on the terrain line
+    // with the steepness figures, not on a line of their own — and the
+    // direction is a WORD, because the fall line is measured from one
+    // 25 m chord of a recorded track.
+    popupNodes.length = 0;
+    tapSlopeSegment('routes-slope-line');
+
+    const text = popupNodes.at(-1).textContent;
+
+    expect(text).toContain('1 no-fall passage');
+    expect(text).toContain('down the fall line');
+  });
+
   it('colours the profile of the route it opens', () => {
     popupNodes.length = 0;
     tapSlopeSegment('routes-slope-line');
