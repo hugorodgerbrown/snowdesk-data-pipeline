@@ -247,12 +247,37 @@
   const UNSURVEYED_FLOOR_M = 1;
 
   /**
+   * The server's terrain summary for one route.
+   *
+   * Every field is optional because this arrives from a feature property
+   * and is checked rather than trusted — `apps/routes/services/
+   * slope_summary.py` omits `steepest_deg` entirely for a walk that
+   * surveyed nothing, which is the distinction the whole module turns on.
+   *
+   * @typedef {object} TerrainSummary
+   * @property {number} [sampled_m] The walk's own length, in metres.
+   * @property {number} [surveyed_m] Of it, the part with an answer.
+   * @property {number} [steep_m] Of that, the part at or above the
+   *   threshold.
+   * @property {number} [steepest_deg] The steepest sampled angle.
+   * @property {Object<string, number>} [bands] Metres per slope class.
+   */
+
+  /**
+   * One rendered line, as the string key and the params it interpolates.
+   *
+   * @typedef {object} TerrainLine
+   * @property {string} key The `data-string` key in the surface partial.
+   * @property {{km?: string, m?: string, deg?: string}} params Its values.
+   */
+
+  /**
    * One length, as the string key and params that render it.
    *
    * @param {number} metres The length.
    * @param {string} kmKey The string key for a kilometre rendering.
    * @param {string} mKey The string key for a metre rendering.
-   * @returns {{key: string, params: object}} The descriptor.
+   * @returns {TerrainLine} The descriptor.
    */
   function lengthLine(metres, kmKey, mKey) {
     if (metres < KILOMETRE_M) {
@@ -275,11 +300,12 @@
    * gentle on the strength of never having looked at it. It says only
    * that it is unsurveyed, which is the one thing known about it.
    *
-   * @param {?object} terrain The feature's `terrain` property — the
-   *   server's summary (`apps/routes/services/slope_summary.py`), already
-   *   parsed. Null/absent for a route that has never been sampled, which
-   *   produces no lines at all rather than an unsurveyed claim.
-   * @returns {Array<{key: string, params: object}>} The lines, in order.
+   * @param {?TerrainSummary} terrain The feature's `terrain` property —
+   *   the server's summary (`apps/routes/services/slope_summary.py`),
+   *   already parsed. Null/absent for a route that has never been
+   *   sampled, which produces no lines at all rather than an unsurveyed
+   *   claim.
+   * @returns {Array<TerrainLine>} The lines, in order.
    */
   function summaryLines(terrain) {
     if (!terrain || typeof terrain !== 'object') return [];
