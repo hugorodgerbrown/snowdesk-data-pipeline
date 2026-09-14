@@ -44,11 +44,23 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     Args:
         samples: The row's ``slope_samples``, or None if never sampled.
 
+    ``cruxes`` (SNOW-911) travel as the COORDINATES ALONE. The angle that
+    flagged one stays server-side: a marker says "look here", and a number
+    beside it would invite the reader to compare two rings and treat the
+    larger as the more dangerous — a severity claim a max-in-an-arc does
+    not support. The key is absent rather than empty for a record written
+    before cruxes existed, so "nothing was flagged" and "nothing looked"
+    stay apart on the client exactly as they do one level up.
+
+    Args:
+        samples: The row's ``slope_samples``, or None if never sampled.
+
     Returns:
-        ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, or
-        None when there is nothing to draw — never sampled, or a record
-        whose halves do not pair up (N + 1 coordinates to N angles), which
-        would draw segments against the wrong ground.
+        ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
+        ``cruxes`` where the record has them. None when there is nothing
+        to draw — never sampled, or a record whose halves do not pair up
+        (N + 1 coordinates to N angles), which would draw segments
+        against the wrong ground.
 
     """
     if not samples:
@@ -64,7 +76,9 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
         )
         return None
 
+    cruxes = samples.get("cruxes")
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
+        **({"cruxes": cruxes} if isinstance(cruxes, list) else {}),
     }

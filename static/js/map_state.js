@@ -215,9 +215,12 @@ const OVERLAY_LAYERS = Object.freeze({
   // line: they are the same overlay, so the switch has to reach them, but
   // the roundel ring is still painted from the flat line's colour because
   // a sampled route has no single colour to take one from.
+  // SNOW-911's 'routes-cruxes' joins on the same terms again: the rings
+  // belong to the routes a user switched on, and a switch that left them
+  // painted over an empty map would be markers pointing at nothing.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
-    'routes-slope-line', 'routes-slope-unknown',
+    'routes-slope-line', 'routes-slope-unknown', 'routes-cruxes',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.
@@ -482,6 +485,16 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'route-terrain-unsurveyed-km': '%(km)skm not surveyed',
   'route-terrain-unsurveyed-m': '%(m)sm not surveyed',
   'route-terrain-unsurveyed-all': 'Terrain not surveyed',
+  // SNOW-911: how many passages on this route have terrain around them
+  // capable of releasing. Two forms rather than one pluralised string,
+  // because a locale's plural rules are not English's and a "%(count)s
+  // key passage(s)" would be a bracket in the product.
+  //
+  // "Key passage" and not "crux": the domain word is right in a guidebook
+  // and opaque on a map popup, and the marker's job is to send a reader
+  // to /help/#help-topic-slope, which is where the caveats are.
+  'route-terrain-crux-one': '1 key passage',
+  'route-terrain-cruxes': '%(count)s key passages',
   // The same last-resort label routes/partials/_route.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle

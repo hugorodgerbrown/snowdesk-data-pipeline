@@ -1643,6 +1643,17 @@
    src/css/main.css for why a line needs both. */
 .map-legend-swatch--slope-gentle { background: var(--color-slope-gentle); }
 
+/* SNOW-911: the crux marker, drawn as the ring it is rather than as a
+   filled block. Hollow is the whole shape — on the map the middle is left
+   empty so the segment colour the reader is being sent to look at is not
+   hidden by the thing pointing at it, and a solid swatch here would
+   describe a different marker. */
+.map-legend-swatch--crux {
+    background: transparent;
+    border: 2px solid var(--color-crux-ring);
+    border-radius: 9999px;
+}
+
 /* Drawn as a dash rather than a solid block, because on the map the dash
    is half the signal: a reader who cannot separate this grey from the
    over-50° one still reads the broken line as "not surveyed". A gradient

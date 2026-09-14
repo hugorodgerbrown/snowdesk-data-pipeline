@@ -108,3 +108,49 @@ def haversine_m(
     return EARTH_RADIUS_M * _central_angle(
         latitude_1, longitude_1, latitude_2, longitude_2
     )
+
+
+def destination(
+    latitude: float, longitude: float, bearing_deg: float, distance_m: float
+) -> tuple[float, float]:
+    """Return the point ``distance_m`` away on ``bearing_deg``.
+
+    The inverse of ``haversine_m``, on the same sphere and with the same
+    accuracy note: every caller works at the scale of a hillside, where a
+    spherical earth is far below the precision of the answer being asked
+    for. Added for SNOW-911, which probes the ground a short way uphill of
+    a track and needs the coordinate of "80 m that way".
+
+    Bearings are compass bearings — 0 is north, 90 is east — because that
+    is what an ASPECT is (``apps/locations/services/terrain.py``), and the
+    one caller derives its direction from one.
+
+    Args:
+        latitude: Latitude of the origin, in degrees.
+        longitude: Longitude of the origin, in degrees.
+        bearing_deg: Compass bearing to travel on, in degrees.
+        distance_m: How far to travel, in metres.
+
+    Returns:
+        The destination as ``(latitude, longitude)`` in degrees, longitude
+        normalised to [-180, 180].
+
+    """
+    angular = distance_m / EARTH_RADIUS_M
+    lat_1 = math.radians(latitude)
+    lon_1 = math.radians(longitude)
+    bearing = math.radians(bearing_deg)
+
+    sin_lat_2 = math.sin(lat_1) * math.cos(angular) + math.cos(lat_1) * math.sin(
+        angular
+    ) * math.cos(bearing)
+    lat_2 = math.asin(max(-1.0, min(1.0, sin_lat_2)))
+    lon_2 = lon_1 + math.atan2(
+        math.sin(bearing) * math.sin(angular) * math.cos(lat_1),
+        math.cos(angular) - math.sin(lat_1) * sin_lat_2,
+    )
+    # Normalised rather than left to wrap: a probe a few metres east of the
+    # antimeridian is not a case this project has, but a longitude of 181
+    # would be silently rejected by the grid projection rather than
+    # answering for the ground it means.
+    return math.degrees(lat_2), (math.degrees(lon_2) + 540) % 360 - 180

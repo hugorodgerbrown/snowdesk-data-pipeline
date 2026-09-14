@@ -52,6 +52,8 @@
  *   classify(angle)        — a bucket index, or null for an unknown
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
+ *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
+ *   cruxCount(f)           — how many one route carries
  *   summaryLines(terrain)  — the same record in words (SNOW-961)
  */
 
@@ -345,6 +347,63 @@
     return lines;
   }
 
+  /**
+   * Every route's crux markers, as one Point FeatureCollection.
+   *
+   * SNOW-911. The server groups a run of flagged segments into ONE
+   * coordinate (`apps/routes/services/cruxes.py`), so this only unpacks
+   * what it was given — a client that re-grouped would be a second
+   * opinion about how many passages a track has.
+   *
+   * A PENDING ROUTE PRODUCES NOTHING, the same rule `segmentFeatures`
+   * follows and for the same reason: a followed share's one line says
+   * "this one is not yours yet", and hanging markers off it would spend
+   * that line on a second message. It also keeps a non-owner's feature
+   * from carrying anything but its token.
+   *
+   * Always a valid collection, even when nothing is marked — `setData`
+   * throws on a null.
+   *
+   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} The markers.
+   */
+  function cruxCollection(geojson) {
+    const features = (geojson && geojson.features) || [];
+    const markers = [];
+    for (let i = 0; i < features.length; i += 1) {
+      const properties = (features[i] && features[i].properties) || {};
+      if (properties.pending) continue;
+      const cruxes = (properties.slope && properties.slope.cruxes) || [];
+      if (!Array.isArray(cruxes)) continue;
+      for (let j = 0; j < cruxes.length; j += 1) {
+        const point = cruxes[j];
+        if (!Array.isArray(point) || point.length < 2) continue;
+        markers.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [point[0], point[1]] },
+          properties: properties.uuid ? { uuid: properties.uuid } : {},
+        });
+      }
+    }
+    return { type: 'FeatureCollection', features: markers };
+  }
+
+  /**
+   * How many cruxes one route feature carries.
+   *
+   * @param {?{properties?: object}} feature One route Feature.
+   * @returns {number} The count, 0 when the route has none and 0 when it
+   *   has never been sampled — the popup tells those apart by whether it
+   *   has a `terrain` summary at all, not by this number.
+   */
+  function cruxCount(feature) {
+    const properties = /** @type {{slope?: {cruxes?: Array<*>}}} */ (
+      (feature && feature.properties) || {}
+    );
+    const cruxes = properties.slope && properties.slope.cruxes;
+    return Array.isArray(cruxes) ? cruxes.length : 0;
+  }
+
   self.pwaRouteSlopeCore = Object.freeze({
     CLASSES: CLASSES,
     UNKNOWN_COLOUR: UNKNOWN_COLOUR,
@@ -353,6 +412,8 @@
     classify: classify,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
+    cruxCollection: cruxCollection,
+    cruxCount: cruxCount,
     summaryLines: summaryLines,
   });
 })();

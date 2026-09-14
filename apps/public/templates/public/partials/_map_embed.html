@@ -1338,6 +1338,21 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Under 30°" %}
                 </div>
+                {# SNOW-911: the crux ring. Inside the route-steepness key   #}
+                {# rather than a section of its own — it is the same         #}
+                {# reading of the same terrain, marked rather than shaded,   #}
+                {# and a second heading would suggest a second source.       #}
+                {#                                                           #}
+                {# The wording carries the caveat the marker cannot: NOT     #}
+                {# EXHAUSTIVE. A reader who takes an unmarked route for a    #}
+                {# safe one has been misled by this key, which is why the    #}
+                {# heading above links to /help/#help-topic-slope.           #}
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--crux"
+                        aria-hidden="true"
+                    ></span>{% trans "Key passage — not a full list" %}
+                </div>
                 <div class="map-legend-row">
                     <span
                         class="map-legend-swatch map-legend-swatch--slope-unknown"
@@ -2467,6 +2482,17 @@ Optional context:
     <span data-string="route-terrain-unsurveyed-km">{% blocktrans %}%(km)skm not surveyed{% endblocktrans %}</span>
     <span data-string="route-terrain-unsurveyed-m">{% blocktrans %}%(m)sm not surveyed{% endblocktrans %}</span>
     <span data-string="route-terrain-unsurveyed-all">{% trans "Terrain not surveyed" %}</span>
+    {# SNOW-911: how many passages on this route have terrain around them  #}
+    {# capable of releasing a slab. Two forms and not one pluralised       #}
+    {# string, because a locale's plural rules are not English's and       #}
+    {# "%(count)s key passage(s)" would put a bracket in the product.      #}
+    {#                                                                      #}
+    {# OMITTED AT ZERO by map.js, not rendered as "0": the markers are not  #}
+    {# exhaustive, so "none found" must never read as "none there". That is #}
+    {# what /help/#help-topic-slope says at length and what the legend row  #}
+    {# below links to.                                                      #}
+    <span data-string="route-terrain-crux-one">{% trans "1 key passage" %}</span>
+    <span data-string="route-terrain-cruxes">{% blocktrans %}%(count)s key passages{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-764: the shared-route popup — the Save control's label and its   #}
     {# three outcomes. There is deliberately no "Shared with you" qualifier  #}

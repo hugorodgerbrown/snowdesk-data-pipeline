@@ -1,8 +1,11 @@
 """backfill_trip_slope_samples — give existing trips the ground they cross.
 
-One-shot backfill for SNOW-962. Every ``Trip`` created before that ticket
-has a null ``slope_samples``, which means NEVER SAMPLED and draws the trip
-page's line and height profile flat. Nothing else would ever fill them in:
+Backfill for SNOW-962, and for every later ticket that adds a key to the
+record — SNOW-911's ``cruxes`` is the first.
+
+Every ``Trip`` created before SNOW-962 has a null ``slope_samples``, which
+means NEVER SAMPLED and draws the trip page's line and height profile
+flat. Nothing else would ever fill them in:
 ``enqueue_trip_slope_sampling`` runs at creation only, and rendering an old
 trip schedules nothing. Without this command the whole existing estate
 stays permanently uncoloured, which is how the gap was found — by review
@@ -26,10 +29,15 @@ another's, which is the failure this whole feature exists to prevent.
 migrations, and the fallback path makes outbound requests besides.
 Migration ``0003`` adds the column and nothing else.
 
-**Null is the candidate, and stays honest.** A trip that comes back with
-nothing learnable is left null rather than written as a record of
-nothing, so a later run picks it up again. Idempotent: a sampled row is
-not a candidate.
+**Two kinds of candidate.** A null is a trip nothing has sampled. A
+record with no ``cruxes`` key is one written before SNOW-911, which draws
+its colours but none of its markers — and nothing else would ever add
+them. A record carrying the key is current even when the list inside is
+empty, because that is "nothing was flagged", which is an answer.
+
+**Null stays honest.** A trip that comes back with nothing learnable is
+left null rather than written as a record of nothing, so a later run
+picks it up again. Idempotent: a current row is not a candidate.
 
 Usage:
     # Preview — reports how many trips would be filled, and by which
@@ -51,6 +59,7 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
 from apps.routes.services.slope_segments import build_slope_samples
@@ -133,9 +142,14 @@ class Command(BaseCommand):
         # Streamed, not materialised: Trip is a growable user table.
         # ``select_related`` because the copy path reads the source route
         # for all but a handful of rows.
-        candidates = Trip.objects.filter(slope_samples__isnull=True).select_related(
-            "route"
-        )
+        # Two kinds of candidate, as the routes command has: a null is a
+        # trip nothing has sampled, and a record with no ``cruxes`` key is
+        # one written before SNOW-911, which draws its colours but none of
+        # its markers. A record carrying the key is current even when the
+        # list inside is empty — that is "nothing was flagged".
+        candidates = Trip.objects.filter(
+            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="cruxes")
+        ).select_related("route")
         total = candidates.count()
 
         flag_label = "" if commit else " [READ-ONLY]"
@@ -201,6 +215,12 @@ class Command(BaseCommand):
         if route is None or route.slope_samples is None:
             return None
         if route.points != trip.points:
+            return None
+        # A record the route itself has not brought up to date is not
+        # worth inheriting: the trip would still be missing the key this
+        # command selects on, so it would be re-copied on every run and
+        # never converge. Walking answers it once.
+        if "cruxes" not in route.slope_samples:
             return None
         record: dict[str, Any] = route.slope_samples
         return record
