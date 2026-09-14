@@ -4617,6 +4617,13 @@
     // Apply country filters to the freshly-added layers so they
     // respect whichever countries are currently enabled.
     applyCountryFilters();
+    // SNOW-910: a claim or an upload may have happened while this overlay
+    // was off, in which case the write's own call found no cache to read
+    // and left the signal standing. There is a payload now, so ask again.
+    // Inert in every other case — the flag is false unless such a write
+    // happened and has not yet been answered.
+    if (key === 'routes') scheduleSlopeRefetch();
+
   };
 
   // SNOW-235 / SNOW-493 P1: public entry point. Short-circuits if the tier
@@ -5608,6 +5615,24 @@
   const SLOPE_REFETCH_DELAY_MS = 20000;
   let slopeRefetchTimer = null;
 
+  // Whether a write this session put a route on the server that may still
+  // be waiting for its record.
+  //
+  // Separate from the payload because the two can be known at different
+  // times. `refreshPanelOverlay` is a no-op while the routes overlay has
+  // never been loaded, so a claim or an upload made with the overlay
+  // switched OFF leaves `routesGeojsonCache` untouched and there is
+  // nothing yet to find unsampled. Enabling the overlay afterwards drew
+  // the null-slope route and scheduled nothing, leaving it flat for the
+  // rest of the session — the state a page reload was needed to escape,
+  // which is the whole thing this timer exists to avoid.
+  //
+  // So the SIGNAL is remembered here and the PAYLOAD is consulted
+  // whenever one is available: at the write when the overlay is already
+  // on, and at the end of `_loadOverlay('routes')` when it is not. One
+  // shot either way — whichever arrives first consumes the flag.
+  let routeSamplingPending = false;
+
   /**
    * Re-read the routes feed ONCE, later, for a route sampled after upload.
    *
@@ -5629,11 +5654,21 @@
    * @returns {void}
    */
   const scheduleSlopeRefetch = () => {
-    if (slopeRefetchTimer) return;
+    if (!routeSamplingPending || slopeRefetchTimer) return;
+    // The overlay has never been loaded, so there is no payload to judge
+    // and nothing drawn to repaint. KEEP the flag rather than consuming
+    // it: `_loadOverlay('routes')` calls this again once there is a cache,
+    // which is what carries the signal across an overlay enable.
+    if (!overlayLoaded.routes) return;
     const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
     const anyUnsampled = features.some(
       (f) => f && f.properties && !f.properties.pending && !f.properties.slope,
     );
+    // Consumed on every path that got far enough to read a payload,
+    // including the one that finds nothing to wait for: the write's route
+    // came back already sampled, which is what every environment running
+    // the sampler inline sees.
+    routeSamplingPending = false;
     if (!anyUnsampled) return;
     slopeRefetchTimer = setTimeout(() => {
       slopeRefetchTimer = null;
@@ -5745,7 +5780,10 @@
     const detail = (event && event.detail) || {};
     const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
-    if (mayGainSlope) refreshed.then(scheduleSlopeRefetch);
+    if (mayGainSlope) {
+      routeSamplingPending = true;
+      refreshed.then(scheduleSlopeRefetch);
+    }
   });
   document.addEventListener('snowdesk:reports-changed', () => {
     refreshPanelOverlay('community_reports');
