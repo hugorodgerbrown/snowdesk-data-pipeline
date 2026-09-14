@@ -211,12 +211,17 @@ beforeAll(async () => {
   });
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(
-        String(url).includes('routes.geojson') ? routesPayload : EMPTY_FC,
-      ),
-    })),
+    vi.fn((url) => {
+      // Captured HERE, when the request is made, not when `json()` is
+      // awaited. A response body is decided by the server when it serves
+      // the request, and two requests issued either side of a write must
+      // be able to answer differently — which is the whole condition the
+      // overlapping-writes test needs. Reading `routesPayload` lazily in
+      // `json()` gave every in-flight fetch the LATEST value, so that test
+      // passed against the bug it was written to catch.
+      const body = String(url).includes('routes.geojson') ? routesPayload : EMPTY_FC;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+    }),
   );
 
   mapStub = stubMapLibre();

@@ -203,6 +203,9 @@ function announce(detail) {
   );
 }
 
+/** Per-request response delays, in ms, consumed in call order. */
+let routesDelays = [];
+
 let mapStub;
 
 beforeAll(async () => {
@@ -216,12 +219,28 @@ beforeAll(async () => {
   });
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(
-        String(url).includes('routes.geojson') ? routesPayload : EMPTY_FC,
-      ),
-    })),
+    vi.fn((url) => {
+      // Captured HERE, when the request is made, not when `json()` is
+      // awaited. A response body is decided by the server when it serves
+      // the request, and two requests issued either side of a write must
+      // be able to answer differently — which is the whole condition the
+      // overlapping-writes test needs. Reading `routesPayload` lazily in
+      // `json()` gave every in-flight fetch the LATEST value, so that test
+      // passed against the bug it was written to catch.
+      const body = String(url).includes('routes.geojson') ? routesPayload : EMPTY_FC;
+      // Per-request DELAY, so a test can decide which of two in-flight
+      // refreshes lands first. Without it both settle in the same
+      // microtask flush and interleave, which is not what two real HTTP
+      // round trips do — and an overlapping-writes test run that way
+      // cannot tell a correct implementation from a racy one.
+      const delay = routesDelays.shift() || 0;
+      return Promise.resolve({
+        ok: true,
+        json: () => (delay
+          ? new Promise((resolve) => setTimeout(() => resolve(body), delay))
+          : Promise.resolve(body)),
+      });
+    }),
   );
 
   mapStub = stubMapLibre();
@@ -245,6 +264,7 @@ afterAll(() => {
 
 beforeEach(() => {
   routesPayload = ROUTES_UNSAMPLED;
+  routesDelays = [];
   // Fake timers are armed AFTER the boot above, which schedules work of
   // its own that has nothing to do with this suite.
   vi.useFakeTimers();
@@ -341,6 +361,40 @@ describe('a claim that beat the sharer\'s sampling task (SNOW-910)', () => {
 
     await vi.advanceTimersByTimeAsync(120000);
     expect(routesFetchCount()).toBe(1);
+  });
+});
+
+describe('two writes whose refreshes overlap', () => {
+  it('does not let the first response answer for the second', async () => {
+    // A claim that inherited the sharer's record and an upload that has
+    // not been sampled can be in flight together. The claim's payload
+    // carries nothing unsampled; the upload's does. While the two shared
+    // one pending flag, whichever response landed first consumed it for
+    // both, and the upload stayed flat until a reload.
+    // The claim's refresh lands FIRST and finds nothing to wait for; the
+    // upload's lands later carrying the unsampled route. That order is the
+    // whole point — it is the one in which a shared flag is consumed by
+    // the wrong response.
+    routesDelays = [10, 50];
+
+    routesPayload = ROUTES_SAMPLED;
+    announce({ claimed: true });
+
+    routesPayload = ROUTES_UNSAMPLED;
+    announce({ uploaded: true });
+
+    await vi.advanceTimersByTimeAsync(20);
+    expect(routesFetchCount()).toBe(2);
+
+    // The upload's response arrives now, and it is the one that must arm.
+    await vi.advanceTimersByTimeAsync(40);
+    expect(routesFetchCount()).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(routesFetchCount()).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(routesFetchCount()).toBe(3);
   });
 });
 
