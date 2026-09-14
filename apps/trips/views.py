@@ -93,6 +93,7 @@ from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
+from apps.routes.services.route_bulletin import display_overlaps, readings_for_track
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
@@ -244,6 +245,42 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
         },
         "bounds": trip.bounds,
     }
+
+
+def _bulletin_readings(trip: Trip) -> list[dict[str, Any]]:
+    """Return what each region's bulletin says about this trip's line.
+
+    Template-shaped rather than raw: the partial should not be reaching
+    into a dataclass for a URL, and the bulletin link has to be built
+    where ``get_absolute_url`` is in scope.
+
+    Args:
+        trip: The trip, for its geometry, its terrain record and its DATE
+            — a trip is planned for a day, which is what makes it the
+            surface this belongs on. A route would have to assume today.
+
+    Returns:
+        One entry per region the line crosses, longest stretch first, or
+        an empty list when the trip has never been sampled — in which
+        case the panel does not render at all rather than claiming the
+        line meets nothing.
+
+    """
+    readings = readings_for_track(trip.points, trip.slope_samples, trip.date)
+    return [
+        {
+            "region": reading.region,
+            "bulletin": reading.bulletin,
+            "bulletin_url": (
+                reading.region.get_absolute_url(trip.date)
+                if reading.bulletin is not None
+                else None
+            ),
+            "overlaps": display_overlaps(reading.problem_overlaps),
+            "length_km": round(reading.length_m / 1000, 1),
+        }
+        for reading in readings
+    ]
 
 
 def _basemap_context() -> dict[str, Any]:
@@ -566,6 +603,11 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
+        # SNOW-839: where this day's line meets this day's bulletin.
+        # DERIVED ON EVERY VIEW and stored nowhere — the one thing on this
+        # page that is not the organiser's snapshot, and the one that
+        # changes twice a day.
+        "bulletin_readings": _bulletin_readings(trip),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
         # scoped per ORIGIN, so a trip page reads

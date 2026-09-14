@@ -296,3 +296,78 @@ def _height_lookup(
         return best[2]
 
     return _height
+
+
+@dataclass(frozen=True)
+class OverlapDisplay:
+    """One problem overlap, ready for a template.
+
+    The numbers are formatted here rather than in the template because
+    the rounding is part of the claim: a stretch reported to the metre
+    would suggest the join knows where a problem's edge is, and it knows
+    only which 25 m segments fell inside the aspects and heights the
+    forecaster stated.
+    """
+
+    problem_label: str
+    aspects: str
+    length_km: float
+    lowest_m: int | None
+    highest_m: int | None
+    elevation_undecided: bool
+
+
+def display_overlaps(overlaps_: list[ProblemOverlap]) -> list[OverlapDisplay]:
+    """Return overlaps in the order and shape a template renders.
+
+    **LONGEST FIRST.** A reader scanning one line of a panel should meet
+    the problem their day spends most of its length inside; ordering by
+    danger rating instead would put a 40 m brush with a high-rated
+    problem above 3 km inside a moderate one, which is not what the
+    length figure is for.
+
+    Args:
+        overlaps_: The overlaps for one region, as the join returned them.
+
+    Returns:
+        One entry per overlap, longest stretch first.
+
+    """
+    from apps.bulletins.schema import AvalancheProblemType  # noqa: PLC0415
+
+    labels = dict(AvalancheProblemType.choices)
+    ordered = sorted(overlaps_, key=lambda o: o.length_m, reverse=True)
+    return [
+        OverlapDisplay(
+            # The enum's own label where the type is one we know, and the
+            # raw value where a provider sends something new — which is
+            # visible rather than swallowed, so a reader can report it.
+            problem_label=str(labels.get(overlap.problem_type, overlap.problem_type)),
+            aspects=_aspect_phrase(overlap.aspects),
+            length_km=round(overlap.length_m / 1000, 1),
+            lowest_m=None if overlap.lowest_m is None else round(overlap.lowest_m),
+            highest_m=None if overlap.highest_m is None else round(overlap.highest_m),
+            elevation_undecided=overlap.elevation_undecided,
+        )
+        for overlap in ordered
+    ]
+
+
+def _aspect_phrase(aspects: set[str]) -> str:
+    """Return the crossed aspects in compass order.
+
+    Compass order, not alphabetical: "N, NE, E" is how a bulletin reads
+    and how the reader will check it against the page they open next.
+    Alphabetical would give "E, N, NE", which is the same set and a
+    different sentence.
+
+    Args:
+        aspects: The octants the route crossed inside this problem.
+
+    Returns:
+        A comma-separated phrase, empty when there are none.
+
+    """
+    from apps.routes.services.bulletin_join import OCTANTS  # noqa: PLC0415
+
+    return ", ".join(octant for octant in OCTANTS if octant in aspects)

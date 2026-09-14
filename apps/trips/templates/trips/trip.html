@@ -72,6 +72,10 @@ its own metadata.
 
             {% include "trips/partials/_trip_basemaps.html" %}
             {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
+            {# SNOW-839: under the map, because it is about the line the   #}
+            {# map just drew — and after it, because the drawing is what   #}
+            {# the reader orients on before reading a word about it.       #}
+            {% include "trips/partials/_trip_bulletin.html" with trip=trip bulletin_readings=bulletin_readings %}
 
             {# SNOW-848: the saved state, and the way out of it. NOT rendered   #}
             {# for the organiser: their trip is on their agenda by authorship,  #}

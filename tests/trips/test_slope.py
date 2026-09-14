@@ -283,3 +283,95 @@ class TestTripMapPayload:
 
         assert "slope" not in properties
         assert "terrain" not in properties
+
+
+@pytest.mark.django_db
+class TestTripBulletinPanel:
+    """What the trip page says about this day's bulletin (SNOW-839)."""
+
+    def _sampled_trip(self, aspect_deg: float | None = 0.0) -> Any:
+        """Return a trip on forecast ground, sampled at one aspect."""
+        import datetime
+
+        from apps.regions.models import MicroRegion
+        from tests.factories import BulletinFactory, MicroRegionFactory
+
+        region = MicroRegionFactory.create(
+            region_id="CH-B01",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.0, 46.0], [7.1, 46.0], [7.1, 46.1], [7.0, 46.1], [7.0, 46.0]]
+                ],
+            },
+        )
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2026, 3, 1, 6, tzinfo=datetime.UTC),
+            valid_to=datetime.datetime(2026, 3, 1, 23, tzinfo=datetime.UTC),
+            render_model_version=1,
+            render_model={
+                "version": 1,
+                "traits": [
+                    {
+                        "problems": [
+                            {
+                                "problem_type": "persistent_weak_layers",
+                                "danger_rating_value": "considerable",
+                                "aspects": ["N"],
+                                "elevation": None,
+                            }
+                        ]
+                    }
+                ],
+            },
+        )
+        bulletin.regions.add(region)
+        assert MicroRegion.objects.filter(pk=region.pk).exists()
+
+        coordinates = [(7.02, 46.02), (7.03, 46.03)]
+        return TripFactory.create(
+            date=datetime.date(2026, 3, 1),
+            points=[[lon, lat, 2500.0] for lon, lat in coordinates],
+            point_count=2,
+            slope_samples={
+                "window_m": 10.0,
+                "stride_m": 25.0,
+                "grid": "g",
+                "points": [[lon, lat] for lon, lat in coordinates],
+                "segments": [{"angle_deg": 34.0, "aspect_deg": aspect_deg}]
+                if aspect_deg is not None
+                else [{"unknown": "outside_coverage"}],
+                "cruxes": [],
+            },
+        )
+
+    def test_the_panel_names_the_problem_the_line_enters(self) -> None:
+        from apps.trips.views import _bulletin_readings
+
+        readings = _bulletin_readings(self._sampled_trip())
+
+        assert len(readings) == 1
+        assert readings[0]["overlaps"][0].problem_label == "Persistent weak layers"
+        assert readings[0]["overlaps"][0].aspects == "N"
+        assert readings[0]["bulletin_url"]
+
+    def test_a_line_outside_every_problem_reports_no_overlaps(self) -> None:
+        """And the panel says so rather than staying silent — a reader
+        shown nothing assumes the day was clear.
+        """
+        from apps.trips.views import _bulletin_readings
+
+        # South-facing, against a problem listed for N alone.
+        readings = _bulletin_readings(self._sampled_trip(aspect_deg=180.0))
+
+        assert len(readings) == 1
+        assert readings[0]["overlaps"] == []
+        assert readings[0]["bulletin"] is not None
+
+    def test_an_unsampled_trip_renders_no_panel(self) -> None:
+        """No aspect, no join — and no claim that the line meets nothing."""
+        from apps.trips.views import _bulletin_readings
+
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
+
+        assert _bulletin_readings(trip) == []
