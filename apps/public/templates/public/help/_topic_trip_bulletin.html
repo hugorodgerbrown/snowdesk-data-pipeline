@@ -1,0 +1,47 @@
+{% comment %}
+apps/public/templates/public/help/_topic_trip_bulletin.html — the trip
+page's "This day's bulletin, along your line" panel (SNOW-839).
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html.
+
+This is where the panel's LIMITS live, and they are the reason it is
+allowed to exist. The panel itself carries one sentence of caveat, which
+is as much as a card can hold without burying the figures it is
+explaining; everything a reader needs in order to judge how far to trust
+it is here, in the place the rest of the caveats already are.
+{% endcomment %}
+{% load i18n %}
+<p class="mb-3 last:mb-0" data-testid="help-trip-bulletin-what">
+    {% blocktrans trimmed %}
+        A trip page shows where your line crosses the ground each of that day's avalanche problems describes. The
+        bulletin states, for every problem, which aspects and which heights it applies to; your route has been sampled
+        for the direction the ground faces along it, and it carries its own heights from the file you uploaded. Put the
+        two together and you get a sentence like &ldquo;1.4&nbsp;km on N and NE, between 2200 and 2800&nbsp;m &mdash;
+        persistent weak layers&rdquo;.
+    {% endblocktrans %}
+</p>
+<p class="mb-3 last:mb-0" data-testid="help-trip-bulletin-not-a-score">
+    {% blocktrans trimmed %}
+        <strong>It is not a score, and there will not be one.</strong> A single number would have to weigh the things it
+        could measure against the things it could not, and hide which was which &mdash; and the parts it left out would
+        be invisible to you. What you get instead is the overlap itself, so you can see what was matched and go and read
+        the bulletin that said it.
+    {% endblocktrans %}
+</p>
+<p class="mb-3 last:mb-0" data-testid="help-trip-bulletin-limits">
+    {% blocktrans trimmed %}
+        Three limits are worth knowing. A regional bulletin describes a whole area and can be a danger level out on any
+        single slope, which is why nothing here tells you a slope is fine. Where a problem is pinned to the treeline
+        rather than to a height in metres, the overlap is matched on aspect alone &mdash; there is no treeline in our
+        data. And a route that has not been surveyed for terrain shows no panel at all, which means nothing was
+        compared, not that nothing was found.
+    {% endblocktrans %}
+</p>
+<p class="mb-3 last:mb-0" data-testid="help-trip-bulletin-regions">
+    {% blocktrans trimmed %}
+        A route that crosses two regions is listed under both, longest stretch first. On a national border those can be
+        two different forecasting services reading the same day differently; both are shown, and neither is treated as
+        the answer.
+    {% endblocktrans %}
+</p>
