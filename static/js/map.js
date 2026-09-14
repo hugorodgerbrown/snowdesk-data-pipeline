@@ -5781,12 +5781,37 @@
     const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
     if (mayGainSlope) {
-      // Two different situations, and only one of them has a payload.
-      // Loaded: the refresh above is really fetching, so read its answer.
-      // Not loaded: it resolved immediately having done nothing, so there
-      // is nothing to read and the signal waits for the overlay instead.
-      if (overlayLoaded.routes) refreshed.then(scheduleSlopeRefetch);
-      else routeSamplingPending = true;
+      // THREE situations, and the middle one is the trap.
+      //
+      // Loaded: the refresh above really fetched, and it was issued after
+      // this write, so its payload is the answer to it.
+      //
+      // LOADING: a GET is already in flight that may have been issued
+      // BEFORE this write — a boot restore of the routes overlay is the
+      // ordinary way in — so its payload cannot speak for the write, and
+      // the route may not even be in it. `refreshPanelOverlay` above
+      // no-opped because `overlayLoaded` is still false, so wait for that
+      // load to finish and then fetch again, which is the first request
+      // that can see the write.
+      //
+      // Neither: nothing has been fetched and nothing will be until the
+      // user enables the overlay, so leave the signal for `_loadOverlay`.
+      if (overlayLoaded.routes) {
+        refreshed.then(scheduleSlopeRefetch);
+      } else if (overlayLoading.routes) {
+        overlayLoading.routes.then(() => {
+          // The load can fail or bail (ineligible, offline with nothing
+          // cached), which leaves the overlay unloaded. Fall back to the
+          // third case rather than judging a payload that never arrived.
+          if (!overlayLoaded.routes) {
+            routeSamplingPending = true;
+            return undefined;
+          }
+          return refreshPanelOverlay('routes').then(scheduleSlopeRefetch);
+        });
+      } else {
+        routeSamplingPending = true;
+      }
     }
   });
   document.addEventListener('snowdesk:reports-changed', () => {
