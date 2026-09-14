@@ -54,6 +54,7 @@ from django.utils import timezone
 
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.routes import _assert_under_cap, _locked_cap_recheck
+from apps.routes.services.slope_segments import enqueue_route_slope_sampling
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -174,6 +175,19 @@ _COPIED_FIELDS = (
     "finished_at",
     "point_count",
     "bounds",
+    # SNOW-910. Carried rather than re-sampled: the copy has the same
+    # geometry, so the terrain under it is the same terrain, and asking
+    # the tile origin again would spend a request per tile to learn what
+    # the sharer's row already says. A copy that started null would also
+    # read as "never sampled" on the claimer's map while the identical
+    # line on the sharer's map was fully coloured.
+    #
+    # WHEN THE SOURCE HAS ONE. A claim can beat the sharer's own sampling
+    # task — the link works the moment it is minted, and in production the
+    # task is queued rather than run — so the value inherited may be null.
+    # ``claim_route_share`` samples the copy itself in that case; see the
+    # enqueue at the end of it.
+    "slope_samples",
 )
 
 
@@ -234,6 +248,10 @@ def claim_route_share(user: "User", token: str) -> Route:
     Both are ``routes.py``'s, so a claim and an upload compete for the same
     cap under the same lock rather than each holding their own idea of it.
 
+    Terrain sampling is enqueued for the copy ONLY when the source had
+    none to give (SNOW-910) — a claim can arrive before the sharer's own
+    sampling task has run, and nothing else would ever sample the copy.
+
     Args:
         user: The authenticated user claiming the copy.
         token: The share token, from the URL.
@@ -292,6 +310,23 @@ def claim_route_share(user: "User", token: str) -> Route:
             last_claimed_at=claimed_at,
             updated_at=claimed_at,
         )
+
+    # SNOW-910: the copy inherits the source's slope record, and inherits
+    # NOTHING when the source has not been sampled yet. Nothing else would
+    # ever sample the copy — the sharer's own task carries the SOURCE's pk
+    # — so without this a claim that beat that task left a route uncoloured
+    # for good, beside an identical line on the sharer's map that was
+    # coloured. The one-shot historical backfill does not save it either:
+    # that runs once, and this race is available for as long as the feature
+    # is.
+    #
+    # AFTER the atomic block, never inside it, and for the reason
+    # ``create_route`` states: under ImmediateBackend — dev, test AND
+    # staging — ``.enqueue()`` runs the sampler inline, and a tile-origin
+    # walk inside the transaction would hold the cap's row lock for the
+    # length of it.
+    if route.slope_samples is None:
+        enqueue_route_slope_sampling(route)
 
     logger.info(
         "Route share claimed: user=%s token=%s source=%s copy=%s",

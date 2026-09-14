@@ -1282,6 +1282,134 @@ class TestRoutesGeojsonShape:
         assert properties["ascent_m"] == 0.0
 
 
+def _slope_record(*segments: dict[str, object]) -> dict[str, object]:
+    """Build a stored slope record bounding ``segments`` (SNOW-910).
+
+    The N + 1 boundary coordinates are generated to match, since the
+    pairing is the invariant ``_compact_slope`` checks and a test that
+    hand-wrote both would eventually get it wrong for the wrong reason.
+
+    Args:
+        segments: The per-segment records, in order.
+
+    Returns:
+        A record of the shape ``build_slope_samples`` returns.
+
+    """
+    return {
+        "window_m": 10.0,
+        "stride_m": 25.0,
+        "grid": "snowdesk-terrain-5m-3035",
+        "points": [[7.4 + index / 1000, 46.1] for index in range(len(segments) + 1)],
+        "segments": list(segments),
+    }
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonSlope:
+    """The compact slope property (SNOW-910).
+
+    Three states, and the payload has to keep them apart: never sampled,
+    sampled with an answer, and sampled without one.
+    """
+
+    def test_a_never_sampled_route_carries_no_slope_key_at_all(
+        self, client: Client
+    ) -> None:
+        """Absent, not null — the map filters on the key's presence."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "slope" not in properties
+
+    def test_a_sampled_route_carries_points_and_angles(self, client: Client) -> None:
+        """N + 1 coordinates and N angles, the segments' geometry and colour."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 34.2, "aspect_deg": 105.3},
+                {"angle_deg": 41.0, "aspect_deg": 110.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["angles"] == [34.2, 41.0]
+        assert len(slope["points"]) == 3
+
+    def test_an_unknown_segment_travels_as_a_null_angle(self, client: Client) -> None:
+        """Sampled with no answer — distinguishable from a missing key."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 34.2, "aspect_deg": 105.3},
+                {"unknown": "outside_coverage"},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["angles"] == [34.2, None]
+
+    def test_a_fully_unknown_route_still_carries_a_slope_key(
+        self, client: Client
+    ) -> None:
+        """Every segment unknown is a SAMPLED route, and must not read as unsampled."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"unknown": "outside_coverage"},
+                {"unknown": "no_data"},
+            ),
+        )
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["slope"]["angles"] == [None, None]
+
+    def test_the_aspect_and_the_unknown_reason_stay_on_the_server(
+        self, client: Client
+    ) -> None:
+        """Neither is drawn, and a 600-segment route would carry both."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 34.2, "aspect_deg": 105.3},
+                {"unknown": "outside_coverage"},
+            ),
+        )
+
+        body = client.get(GEOJSON_URL).content.decode()
+
+        assert "aspect_deg" not in body
+        assert "outside_coverage" not in body
+
+    def test_a_record_whose_halves_do_not_pair_up_is_dropped(
+        self, client: Client
+    ) -> None:
+        """Segments against the wrong ground is worse than no colouring at all."""
+        user = UserFactory.create()
+        client.force_login(user)
+        malformed = _slope_record({"angle_deg": 34.2, "aspect_deg": 105.3})
+        malformed["points"] = [[7.4, 46.1]]
+        RouteFactory.create(user=user, slope_samples=malformed)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "slope" not in properties
+
+
 @pytest.mark.django_db
 class TestRoutesGeojsonScoping:
     """Owner scoping — the layer draws the requesting user's routes alone."""

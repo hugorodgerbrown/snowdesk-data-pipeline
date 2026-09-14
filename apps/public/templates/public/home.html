@@ -358,6 +358,17 @@ in addition to the shared map assets.
     {# parse time — so like the other call-site cores it sits here and not   #}
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+    {# SNOW-910: the slope-coloured route line's pure half                   #}
+    {# (window.pwaRouteSlopeCore) — which of six buckets an angle falls in,  #}
+    {# and the two-point LineStrings a route's slope record draws as. The    #}
+    {# band boundaries are the assertion worth having: an inclusive/         #}
+    {# exclusive slip puts every boundary sample one band GENTLER than the   #}
+    {# ground is, which nothing on screen would reveal                       #}
+    {# (tests/js/test_route_slope_core.js). Read by map.js from              #}
+    {# installRoutesLayer and refreshPanelOverlay, never at parse time, so   #}
+    {# like the other call-site cores it sits here and not inside the map    #}
+    {# bundle's contiguous run.                                              #}
+    <script defer src="{% static 'js/route_slope_core.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
     {# geometry is fetched from, and what the address bar should say once   #}

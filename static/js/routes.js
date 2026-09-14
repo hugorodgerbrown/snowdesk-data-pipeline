@@ -370,10 +370,21 @@
    * module goes through here rather than dispatching by hand, so the two
    * halves of the response can never drift apart.
    *
+   * SNOW-910: an UPLOAD says so, because it is the one write that lands a
+   * route the server has not finished describing. In production terrain
+   * sampling is a queued task, so the record the map reads a moment later
+   * carries no `slope` and the line is drawn flat; map.js re-reads the
+   * feed once, later, on this detail alone. A rename, a delete and a claim
+   * raise the same event with nothing attached.
+   *
+   * @param {{uploaded?: boolean}} [detail] What changed, when the map
+   *   needs to know more than "something did".
    * @returns {void}
    */
-  function announceRoutesChanged() {
-    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+  function announceRoutesChanged(detail) {
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:routes-changed', { detail: detail || null }),
+    );
   }
 
   // The panel LISTENS to that signal as well as raising it, because it is
@@ -747,7 +758,9 @@
         // BEFORE the reveal, not after: the reveal may switch the layer on
         // for somebody who had it off, and the layer wants the new route in
         // its source by the time it draws.
-        announceRoutesChanged();
+        //
+        // Flagged as an upload (SNOW-910) — see announceRoutesChanged.
+        announceRoutesChanged({ uploaded: true });
 
         // SNOW-886: switch the routes layer on if the user has it off, then
         // fit the camera to the track. Same two steps, same order, as

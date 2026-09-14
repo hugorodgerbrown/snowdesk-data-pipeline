@@ -9,6 +9,10 @@ The uploaded bytes reach ``create_route``, are handed to ``parse_gpx``, and
 go out of scope. Nothing is written to disk at any point — see
 ``docs/decisions/gpx-uploads-are-parsed-not-stored.md``.
 
+Terrain sampling (SNOW-910) is enqueued here rather than done here, and
+the LINE IT SITS ON MATTERS: after the transaction, never inside it. See
+``apps.routes.services.slope_segments.enqueue_route_slope_sampling``.
+
 The cap itself is two functions — ``_assert_under_cap`` and
 ``_locked_cap_recheck`` — rather than the pair of inline blocks
 ``create_route`` carried until SNOW-764. There is now a SECOND way a Route
@@ -32,6 +36,7 @@ from django.db import transaction
 
 from apps.routes.models import Route
 from apps.routes.services.gpx import parse_gpx
+from apps.routes.services.slope_segments import enqueue_route_slope_sampling
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -111,6 +116,12 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     exceeded under a race. This mirrors ``create_favourite`` (SNOW-465); see
     the comment at the re-check for the full rationale.
 
+    Terrain sampling is enqueued once the transaction has committed, so
+    the returned route's ``slope_samples`` may still be null when the
+    caller reads it — under the DatabaseBackend it certainly is. Callers
+    must treat that as "not yet", which is the same null the field's
+    help_text describes.
+
     Args:
         user: The authenticated user uploading the route.
         raw: The raw bytes of the uploaded ``.gpx`` file.
@@ -157,6 +168,20 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
         parsed.source_point_count,
         parsed.track_count,
     )
+
+    # SNOW-910: terrain sampling, AFTER the transaction has committed and
+    # deliberately not inside it. Under the ImmediateBackend — dev, test
+    # AND staging — ``.enqueue()`` runs the worker inline, so enqueuing a
+    # line earlier would make one tile-origin round trip per terrain tile
+    # the track crosses while still holding the ``select_for_update`` lock
+    # on the user row. Every backend looks identical on a green test run;
+    # only production would pay for it.
+    #
+    # The upload's own response does not wait for it either way, which is
+    # the other half of the decision: a route is drawn flat until the
+    # sampling lands, and a first paint is worth more than a coloured one
+    # twenty seconds later.
+    enqueue_route_slope_sampling(route)
     return route
 
 

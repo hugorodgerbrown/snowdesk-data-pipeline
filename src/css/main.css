@@ -395,6 +395,31 @@
   --color-slope-45: #c889bb;   /* 45–50° */
   --color-slope-50: #4b4b4b;   /* >50°   */
 
+  /* —— two more, for the slope-coloured route LINE (SNOW-910) ——
+     The five above are the raster's and are a published
+     standard. These two are ours, and exist because a
+     LINE has to carry two states a raster does not:
+
+     --color-slope-gentle: under 30°. The raster paints
+       nothing there, which on a raster reads as "the
+       ground beneath shows through". A line that painted
+       nothing would instead read as a BREAK in the track,
+       so the gentle band needs a colour. Cool and calm,
+       and well outside the yellow → red → purple → black
+       progression above, so it cannot be misread as a
+       step on that scale.
+
+     --color-slope-unknown: sampled, no answer — ground the
+       survey does not cover. NOT a shade of gentle, and
+       deliberately not on the scale at all: "we do not
+       know" must never be readable as "not steep". The
+       line is also DASHED, which carries the same meaning
+       for a reader who cannot separate this grey from the
+       over-50° one.
+     ————————————————————————————————————————— */
+  --color-slope-gentle: #38bdf8;   /* <30°              */
+  --color-slope-unknown: #94a3b8;  /* sampled, no answer */
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;

@@ -308,6 +308,15 @@ describe('the pending route layer', () => {
     // The bug this guards: an OWNED feature omits `pending` entirely, so
     // ['==', ['get','pending'], false] matches nothing and every owned
     // route disappears. The owned filter has to be a NOT-equal test.
+    //
+    // SNOW-910 wraps the owned side in an `all` with a second clause —
+    // sampled routes leave this layer for the slope ones — but ONLY when
+    // `route_slope_core.js` has loaded, since with no core there is
+    // nothing else to draw them. This suite boots without it, so the bare
+    // owned test is the whole filter here. The wrapped form is
+    // tests/js/test_map_route_slope_layers.js's subject and the
+    // conditionality is tests/js/test_map_route_slope_core_missing.js's;
+    // what is asserted here is still only the pending half.
     expect(addedLayers['routes-line'].filter).toEqual([
       '!=', ['get', 'pending'], true,
     ]);

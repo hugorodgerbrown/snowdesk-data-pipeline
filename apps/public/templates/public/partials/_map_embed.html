@@ -1257,6 +1257,100 @@ Optional context:
                     </div>
                 </section>
             {% endif %}
+            {% comment %}
+                SNOW-910: what a saved route's own colours mean. Hidden
+                until BOTH the routes overlay is drawn and at least one
+                route on it has been sampled — map.js syncs it off the
+                same `snowdesk:overlay-visibility-changed` announcement the
+                switches raise. Most readers have no routes at all, and a
+                six-swatch key explaining a line they have never uploaded
+                is clutter on every visit.
+
+                NOT gated on `slope_layer_eligible` beside the raster key
+                above: these colours come from our own terrain sampling,
+                not from the swisstopo raster, and a route is coloured
+                whether or not that layer is configured. The five steep
+                bands ARE that raster's palette, deliberately, so a route
+                crossing shaded ground is the colour of the shading.
+
+                The two the raster has no counterpart for are the two
+                worth reading carefully, which is why they are last and
+                spelled out rather than left to the scale:
+
+                  Under 30° — the raster paints nothing there. A line that
+                    painted nothing would read as a break in the track.
+
+                  Not surveyed — sampled, no answer. Dashed AND off the
+                    scale entirely, because "we do not know" must never be
+                    readable as "not steep". This is the same coverage the
+                    slope-angle raster has (Switzerland and its immediate
+                    surrounds), so a route in the Dolomites is dashed for
+                    its whole length.
+            {% endcomment %}
+            <section
+                id="map-route-slope-section"
+                class="map-legend-section"
+                data-testid="map-legend-route-slope"
+                hidden
+            >
+                {# The heading is the way to the caveats, as the raster    #}
+                {# key's is: the 10 m grid, where the coverage stops, and  #}
+                {# that none of it is a verdict run to several paragraphs. #}
+                <div class="map-legend-title">
+                    <a
+                        class="map-legend-attribution-link"
+                        href="{% url 'public:help' %}#help-topic-slope"
+                    >{% trans "Route steepness" %}</a>
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-30"
+                        aria-hidden="true"
+                    ></span>{% trans "30–35°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-35"
+                        aria-hidden="true"
+                    ></span>{% trans "35–40°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-40"
+                        aria-hidden="true"
+                    ></span>{% trans "40–45°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-45"
+                        aria-hidden="true"
+                    ></span>{% trans "45–50°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-50"
+                        aria-hidden="true"
+                    ></span>{% trans "Over 50°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-gentle"
+                        aria-hidden="true"
+                    ></span>{% trans "Under 30°" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--slope-unknown"
+                        aria-hidden="true"
+                    ></span>{% trans "Not surveyed" %}
+                </div>
+                <p class="map-legend-attribution">
+                    {% blocktrans trimmed %}
+                        The colour is the steepness of the ground the track crosses, not of the track itself. Dashed
+                        means the terrain data does not cover that stretch — never that it is gentle.
+                    {% endblocktrans %}
+                </p>
+            </section>
             {# SNOW-640: the whole section is hidden by map.js when the      #}
             {# active style yields no attribution at all, rather than        #}
             {# painting a heading with nothing under it. A style that omits  #}

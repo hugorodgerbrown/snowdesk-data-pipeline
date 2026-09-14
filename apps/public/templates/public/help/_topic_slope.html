@@ -29,6 +29,15 @@ half that fits.
             particular aspect and elevation.
         {% endblocktrans %}
     </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-route-colouring">
+        {% blocktrans trimmed %}
+            A saved route is coloured by the same bands, so a track crossing shaded ground is the colour of the shading
+            under it. That colour is the steepness of the GROUND, never of the track: a skin track zigzagging up a steep
+            face climbs gently along its own length, and colouring it by its own gradient would make a serious slope
+            look easy. Where a stretch is drawn as a grey dashed line, the terrain data does not cover it &mdash; that
+            is the same coverage limit described below, and it never means the ground is gentle.
+        {% endblocktrans %}
+    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
         {% blocktrans trimmed %}
