@@ -5592,6 +5592,59 @@
       .catch(() => {});
   };
 
+  // SNOW-910: how long after an UPLOAD the map re-reads the routes feed to
+  // pick the colouring up.
+  //
+  // In production the sampler is a queued task, so ``create_route`` returns
+  // while ``slope_samples`` is still null: the refresh the upload triggers
+  // reads an uncoloured record and draws the flat line, and the worker's
+  // later save reaches no client. Without this, the route a user has just
+  // uploaded stays uncoloured until a full page reload — on the one path
+  // every new user takes first, which is where the feature would look
+  // broken.
+  //
+  // Twenty seconds is a judgement about a queued task on a shared worker
+  // for a track of a few hundred samples, not a measurement.
+  const SLOPE_REFETCH_DELAY_MS = 20000;
+  let slopeRefetchTimer = null;
+
+  /**
+   * Re-read the routes feed ONCE, later, for a route sampled after upload.
+   *
+   * One shot, never a poll: a worker that is merely busy must not become a
+   * stream of requests, and the next page load reads the record anyway. A
+   * second call while one is pending is ignored for the same reason.
+   *
+   * Scoped to an upload by its caller, and that matters as much as the
+   * delay — a legacy route the backfill never reached is unsampled on
+   * every load, and scheduling off that would cost a pointless refetch on
+   * every visit for the rest of its life.
+   *
+   * Under ``ImmediateBackend`` — dev, test AND staging — the sample is
+   * already stored by the time the upload's response returns, so the
+   * payload read here carries its `slope`, nothing is scheduled, and this
+   * whole path is inert. Harmless: it costs one array scan.
+   *
+   * @returns {void}
+   */
+  const scheduleSlopeRefetch = () => {
+    if (slopeRefetchTimer) return;
+    const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
+    const anyUnsampled = features.some(
+      (f) => f && f.properties && !f.properties.pending && !f.properties.slope,
+    );
+    if (!anyUnsampled) return;
+    slopeRefetchTimer = setTimeout(() => {
+      slopeRefetchTimer = null;
+      // Twenty seconds is long enough for the overlay to have been torn
+      // down or the style replaced underneath it. Both read the same way
+      // from here — there is no source left to write to — and the next
+      // enable fetches this URL itself.
+      if (!overlayLoaded.routes || !map.getSource('route-slopes')) return;
+      refreshPanelOverlay('routes');
+    }, SLOPE_REFETCH_DELAY_MS);
+  };
+
   // SNOW-752: these two bound inside ``map.on('load')`` for their whole life,
   // which is a bind point that does not always come — ``load`` waits on the
   // first complete render, so a basemap style that fails to load (offline
@@ -5675,8 +5728,13 @@
   // Bound at IIFE level rather than inside ``map.on('load')`` — a style that
   // never loads must not cost the map its ability to notice a write, and
   // every identifier these two touch is declared above.
-  document.addEventListener('snowdesk:routes-changed', () => {
-    refreshPanelOverlay('routes');
+  document.addEventListener('snowdesk:routes-changed', (event) => {
+    // SNOW-910: only an UPLOAD arms the one-shot re-read — the announcement
+    // is also raised by a rename, a delete and a claim, none of which puts
+    // a route on the server that is about to gain a slope record.
+    const uploaded = !!(event && event.detail && event.detail.uploaded);
+    const refreshed = refreshPanelOverlay('routes');
+    if (uploaded) refreshed.then(scheduleSlopeRefetch);
   });
   document.addEventListener('snowdesk:reports-changed', () => {
     refreshPanelOverlay('community_reports');
