@@ -494,8 +494,16 @@
    *
    * Subtracted from `queryRenderedFeatures()` so what remains is the
    * basemap's own drawing — see `basemapDrewNothing` below.
+   *
+   * EVERY SOURCE THIS MODULE INSTALLS HAS TO BE LISTED. `drewNothing`
+   * answers false the moment it sees a source that is not here, so an
+   * omission does not degrade the check — it disables it, and silently:
+   * the blank-basemap notice and its switch-to-the-standard-map escape
+   * hatch would simply stop appearing, on exactly the trips that have the
+   * omitted source. `trip-route-slopes` (SNOW-962) is installed only for
+   * a SAMPLED trip, which is the subset that would have lost the notice.
    */
-  var OUR_SOURCE_IDS = ['trip-route', 'trip-meeting'];
+  var OUR_SOURCE_IDS = ['trip-route', 'trip-route-slopes', 'trip-meeting'];
 
   /**
    * Read the {key: url} basemap catalogue the page emitted.
