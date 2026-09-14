@@ -45,6 +45,19 @@ const TILEJSON_URL = 'https://tiles.example.invalid/base/tiles.json';
 const SPRITE_URL = 'https://tiles.example.invalid/sprites/liberty.json';
 const DEPS = [STYLE_URL, TILEJSON_URL, SPRITE_URL];
 
+/**
+ * What `/api/area-content/` answers for the seeded area.
+ *
+ * SNOW-953 moved the SELECTION of what a boundary contains to the server,
+ * so this — not the client's own region features — is what decides the
+ * content plan. A function so a test can make the endpoint fail, which is
+ * the one state that separates an empty plan from a short one.
+ */
+let areaContentAnswer = () => ({
+  regions: [{ id: REGION_ID, slug: REGION_SLUG }],
+  weather: [],
+});
+
 /** One region, whose polygon is the ground the seeded area covers. */
 const REGIONS_GEOJSON = {
   type: 'FeatureCollection',
@@ -200,6 +213,20 @@ function installDbStub() {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // SNOW-959: the content stamp rides ONE IndexedDB transaction rather
+    // than a `get` and a later `put` — three functions across two
+    // simultaneously-open pages rewrite these whole-array rows, and the
+    // gap between the pair was a lost update. Stubbed to the CONTRACT its
+    // callers depend on: the mutator is handed the current row, and an
+    // `undefined` return writes nothing. That it actually serialises is
+    // proved against fake-indexeddb in tests/js/test_db.js.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),
@@ -235,6 +262,7 @@ function installOverlayCacheStub() {
 function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
+         data-area-content-url="/api/area-content/"
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
@@ -367,6 +395,11 @@ beforeAll(async () => {
       const href = String(url);
       let body = {};
       if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
+      if (href.includes('area-content')) {
+        const answer = areaContentAnswer();
+        if (!answer) return Promise.resolve({ ok: false, json: () => Promise.resolve({}) });
+        body = answer;
+      }
       if (href.includes('weather.geojson')) body = WEATHER_GEOJSON;
       if (href.includes('favourites.geojson')) body = EMPTY_GEOJSON;
       if (href.includes('routes.geojson')) body = EMPTY_GEOJSON;
@@ -414,31 +447,6 @@ beforeEach(async () => {
   window.pwaWarmCache.mockClear();
   await seedArea();
   holdDependencies(DEPS);
-});
-
-describe('TEMPORARY DIAGNOSTIC', () => {
-  it('reports what the content plan is built from', async () => {
-    const core = self.pwaBasemapDownloadCore;
-    const mapEl = document.getElementById('map');
-    const record = await storedArea();
-    const countries = await window.pwaMapCountries?.ensureAllLoaded();
-    const byRegion = window.snowdeskMapState?.featureByRegionId || {};
-    console.log(
-      'DIAG',
-      JSON.stringify({
-        hasCore: !!core,
-        hasMapEl: !!mapEl,
-        hasAreaContentPlan: typeof core?.areaContentPlan,
-        bbox: core?.areaBBox ? core.areaBBox(record) : 'no-fn',
-        regionKeys: Object.keys(byRegion),
-        countries,
-        today: document.getElementById('season-scrubber')?.dataset.today,
-        weatherDetailUrl: mapEl?.dataset.weatherDetailUrl,
-        overlayStored: [...(window.pwaMapOverlayCache?.stored?.keys() || [])],
-      }),
-    );
-    expect(true).toBe(true);
-  });
 });
 
 describe('the tile half', () => {
