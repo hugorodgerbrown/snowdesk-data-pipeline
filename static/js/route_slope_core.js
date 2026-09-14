@@ -144,7 +144,8 @@
    * module comment's three states. So does a record whose halves do not
    * pair up, which would otherwise draw segments against the wrong ground.
    *
-   * @param {?object} feature One route feature from the routes payload.
+   * @param {?{properties?: any}} feature One route feature from the routes
+   *   payload, as served by `routes:geojson`.
    * @returns {Array<object>} Its segment features, possibly empty.
    */
   function segmentFeatures(feature) {
@@ -186,7 +187,7 @@
    * when nothing in the payload has been sampled — an empty one paints
    * nothing, where a null would make `setData` throw.
    *
-   * @param {?object} geojson The routes FeatureCollection.
+   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} The segments.
    */
   function segmentCollection(geojson) {
