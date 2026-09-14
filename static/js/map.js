@@ -5592,8 +5592,8 @@
       .catch(() => {});
   };
 
-  // SNOW-910: how long after an UPLOAD the map re-reads the routes feed to
-  // pick the colouring up.
+  // SNOW-910: how long after an upload or a claim the map re-reads the
+  // routes feed to pick the colouring up.
   //
   // In production the sampler is a queued task, so ``create_route`` returns
   // while ``slope_samples`` is still null: the refresh the upload triggers
@@ -5615,10 +5615,11 @@
    * stream of requests, and the next page load reads the record anyway. A
    * second call while one is pending is ignored for the same reason.
    *
-   * Scoped to an upload by its caller, and that matters as much as the
-   * delay — a legacy route the backfill never reached is unsampled on
-   * every load, and scheduling off that would cost a pointless refetch on
-   * every visit for the rest of its life.
+   * Scoped by its caller to the writes that put a route on the server —
+   * an upload or a claim — and that matters as much as the delay: a
+   * legacy route the backfill never reached is unsampled on every load,
+   * and scheduling off that alone would cost a pointless refetch on every
+   * visit for the rest of its life.
    *
    * Under ``ImmediateBackend`` — dev, test AND staging — the sample is
    * already stored by the time the upload's response returns, so the
@@ -5729,12 +5730,22 @@
   // never loads must not cost the map its ability to notice a write, and
   // every identifier these two touch is declared above.
   document.addEventListener('snowdesk:routes-changed', (event) => {
-    // SNOW-910: only an UPLOAD arms the one-shot re-read — the announcement
-    // is also raised by a rename, a delete and a claim, none of which puts
-    // a route on the server that is about to gain a slope record.
-    const uploaded = !!(event && event.detail && event.detail.uploaded);
+    // SNOW-910: the one-shot re-read is armed by the two writes
+    // that PUT A ROUTE ON THE SERVER — an upload and a claim — and by
+    // neither of the two that do not. A rename and a delete raise the same
+    // announcement and can never produce a route about to gain a record,
+    // so arming off them would cost a pointless refetch.
+    //
+    // The claim was excluded until SNOW-910, on the reasoning that it
+    // copies the sharer's record and so arrives already coloured. It does
+    // — EXCEPT when it beats the sharer's own sampling task, which the
+    // link makes possible from the moment it is minted: the copy then
+    // inherits null and ``claim_route_share`` samples it, exactly as an
+    // upload is sampled. Same race, same cure.
+    const detail = (event && event.detail) || {};
+    const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
-    if (uploaded) refreshed.then(scheduleSlopeRefetch);
+    if (mayGainSlope) refreshed.then(scheduleSlopeRefetch);
   });
   document.addEventListener('snowdesk:reports-changed', () => {
     refreshPanelOverlay('community_reports');
@@ -7706,7 +7717,15 @@
           .claim(ROUTE_CLAIM_URL_TEMPLATE.replace('__TOKEN__', token), routeCsrfToken())
           .then(function () {
             window.pwaTelemetry?.emit('map.route.claimed', {});
-            document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+            // `claimed` for the same reason routes.js's panel claim sets
+            // it (SNOW-910): this copy may have beaten the sharer's
+            // sampling task, in which case the server has just enqueued
+            // sampling for it and the one-shot re-read is what paints it.
+            document.dispatchEvent(
+              new CustomEvent('snowdesk:routes-changed', {
+                detail: { claimed: true },
+              }),
+            );
             closeDetailPopup();
           })
           .catch(function (resp) {

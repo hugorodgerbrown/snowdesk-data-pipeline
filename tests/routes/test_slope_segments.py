@@ -15,7 +15,10 @@ Covers ``apps.routes.services.slope_segments``:
   - ``_worker_sample_route_slopes``: the write, the one-column save, and a
     route deleted between the enqueue and the run being an expected race;
   - ``create_route``: the enqueue happens exactly once, and OUTSIDE the
-    transaction.
+    transaction;
+  - ``save_trip_route``: the same two placement rules, plus the end-to-end
+    path — a route saved off a trip ends up with a record of its own,
+    because a trip's snapshot deliberately carries none to inherit.
 
 ``sample_slope`` is patched here rather than the transport: this module's
 job is the walk and the record, and ``tests/locations/services/test_terrain.py``
@@ -50,7 +53,7 @@ from apps.routes.services.slope_segments import (
     stride_coordinates,
     stride_distances,
 )
-from tests.factories import RouteFactory, UserFactory
+from tests.factories import RouteFactory, TripFactory, UserFactory
 
 _GRID_FIXTURE = (
     Path(__file__).parent.parent / "locations" / "fixtures" / "terrain" / "grid.json"
@@ -708,3 +711,155 @@ class TestClaimedCopiesCarryTheSamples:
         copy = claim_route_share(claimer, share.token)
 
         assert copy.slope_samples == record
+
+
+@pytest.mark.django_db
+class TestTripSavedRoutesAreSampled:
+    """A trip-saved route is RE-SAMPLED, which is the opposite of a claim.
+
+    ``claim_route_share`` has the source's record one field access away and
+    copies it. ``save_trip_route`` has no route to read — a trip's geometry
+    is a snapshot and ``Trip.route`` is provenance only — so the copy is
+    written null and sampled (SNOW-910). Without the enqueue a trip-saved
+    route drew flat for good while the identical line was coloured
+    everywhere else.
+    """
+
+    def test_it_enqueues_exactly_once(self) -> None:
+        """One save, one sampling run, against the COPY's row."""
+        from apps.trips.services.routes import save_trip_route
+
+        trip = TripFactory.create(points=MERIDIAN_TRACK, point_count=2)
+        viewer = UserFactory.create()
+
+        with patch(
+            "apps.trips.services.routes.enqueue_route_slope_sampling"
+        ) as enqueue:
+            route = save_trip_route(viewer, trip)
+
+        enqueue.assert_called_once_with(route)
+
+    def test_it_enqueues_outside_the_transaction(self) -> None:
+        """The same placement ``create_route`` is held to, same probe.
+
+        ``write_route_copy`` opens a nested ``atomic()`` that takes
+        ``select_for_update`` on the user row for the cap re-check. Under
+        ``ImmediateBackend`` — dev, test AND staging — an enqueue inside it
+        would hold that lock through a walk of the tile origin, and every
+        backend would still look green.
+        """
+        from apps.trips.services.routes import save_trip_route
+
+        trip = TripFactory.create(points=MERIDIAN_TRACK, point_count=2)
+        viewer = UserFactory.create()
+        depths: list[int] = []
+
+        def _record(route: Route) -> None:
+            """Record how deep the transaction stack is at the enqueue."""
+            depths.append(len(connection.savepoint_ids))
+
+        with patch(
+            "apps.trips.services.routes.enqueue_route_slope_sampling",
+            side_effect=_record,
+        ):
+            save_trip_route(viewer, trip)
+
+        assert depths == [0]
+
+    def test_the_saved_route_ends_up_with_a_record(self) -> None:
+        """End to end, through the real enqueue and the real worker.
+
+        The enqueue is deliberately NOT patched here: under the test
+        backend it runs the worker inline, so this asserts the whole path
+        a trip-saved route now takes rather than the call at the top of it.
+        """
+        from apps.trips.services.routes import save_trip_route
+
+        trip = TripFactory.create(points=MERIDIAN_TRACK, point_count=2)
+        viewer = UserFactory.create()
+        grid = _grid()
+
+        with (
+            patch("apps.routes.services.slope_segments.load_grid", return_value=grid),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(34.25),
+            ),
+        ):
+            route = save_trip_route(viewer, trip)
+
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert route.slope_samples["grid"] == grid.grid
+        assert route.slope_samples["stride_m"] == SAMPLE_STRIDE_M
+        assert (
+            len(route.slope_samples["points"])
+            == len(route.slope_samples["segments"]) + 1
+        )
+        assert all(
+            segment["angle_deg"] == 34.2 for segment in route.slope_samples["segments"]
+        )
+
+    def test_a_sampled_source_route_hands_nothing_over(self) -> None:
+        """The snapshot carries no slope record, on purpose.
+
+        The organiser's own route may be fully sampled and it makes no
+        difference: ``_snapshot_fields`` has no ``slope_samples`` to copy
+        because ``Trip`` has no such column, and the copy is answered by a
+        fresh walk rather than by an inherited one. See
+        ``docs/decisions/a-trip-is-one-object-with-a-roster.md`` on what
+        the snapshot is for.
+        """
+        from apps.trips.services.routes import save_trip_route
+
+        record: dict[str, Any] = {
+            "window_m": 10.0,
+            "stride_m": SAMPLE_STRIDE_M,
+            "grid": "snowdesk-terrain-5m-3035",
+            "points": [[7.0, 46.0], [7.0, 46.01]],
+            "segments": [{"angle_deg": 51.0, "aspect_deg": 180.0}],
+        }
+        organiser = UserFactory.create()
+        source = RouteFactory.create(
+            user=organiser, points=MERIDIAN_TRACK, slope_samples=record
+        )
+        trip = TripFactory.create(
+            created_by=organiser,
+            route=source,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+        )
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(34.25),
+            ),
+        ):
+            route = save_trip_route(UserFactory.create(), trip)
+
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        # 51.0 is the organiser's record. Inheriting it would have been the
+        # other design; this angle is the one the fresh walk answered.
+        assert route.slope_samples["segments"][0]["angle_deg"] == 34.2
+
+    def test_an_unreachable_origin_leaves_the_copy_unsampled(self) -> None:
+        """Null is "never sampled", and a failed walk must leave it true.
+
+        The route is still saved — a dead tile origin is no reason to
+        refuse somebody their own copy of a track — and the backfill
+        command's candidate set selects on exactly this null.
+        """
+        from apps.trips.services.routes import save_trip_route
+
+        trip = TripFactory.create(points=MERIDIAN_TRACK, point_count=2)
+
+        with patch("apps.routes.services.slope_segments.load_grid", return_value=None):
+            route = save_trip_route(UserFactory.create(), trip)
+
+        route.refresh_from_db()
+        assert route.slope_samples is None
