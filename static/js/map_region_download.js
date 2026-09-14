@@ -1390,24 +1390,33 @@
   async function _stampRegionContent(regionId, complete) {
     if (!window.pwaDb) return;
     try {
-      const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
-      const existing = Array.isArray(row && row.value) ? row.value : [];
-      let touched = false;
-      const next = existing.map((entry) => {
-        if (!entry || entry.region_id !== regionId) return entry;
-        touched = true;
-        if (!complete) return { ...entry, contentIncomplete: true };
-        // Destructured out rather than assigned `undefined`: this record
-        // is serialised into IndexedDB, and an explicit `undefined` would
-        // survive as a present key on some paths. The readers are spread
-        // across four modules and all of them ask `!!record.contentIncomplete`,
-        // so either would work today — the delete is what keeps the
-        // invariant true for the next reader, who may not.
-        const { contentIncomplete: _cleared, ...rest } = entry;
-        return { ...rest, contentAt: new Date().toISOString() };
+      // SNOW-959: read and write on ONE transaction. This row is a whole
+      // ARRAY rewritten to change one entry, and it now has three writers
+      // across two pages a user can have open at once — so a `get` then a
+      // `put` loses whichever change lands first. See `readModifyWrite`'s
+      // docstring; its `mutate` must stay synchronous, which is why the
+      // clock below is read inside it rather than awaited anywhere.
+      await window.pwaDb.readModifyWrite('meta:app', DOWNLOADED_REGIONS_KEY, (row) => {
+        const existing = Array.isArray(row && row.value) ? row.value : [];
+        let touched = false;
+        const next = existing.map((entry) => {
+          if (!entry || entry.region_id !== regionId) return entry;
+          touched = true;
+          if (!complete) return { ...entry, contentIncomplete: true };
+          // Destructured out rather than assigned `undefined`: this record
+          // is serialised into IndexedDB, and an explicit `undefined` would
+          // survive as a present key on some paths. The readers are spread
+          // across four modules and all of them ask `!!record.contentIncomplete`,
+          // so either would work today — the delete is what keeps the
+          // invariant true for the next reader, who may not.
+          const { contentIncomplete: _cleared, ...rest } = entry;
+          return { ...rest, contentAt: new Date().toISOString() };
+        });
+        // `undefined` commits nothing, which is what the old early return
+        // did — and now does it without having opened a write at all.
+        if (!touched) return undefined;
+        return { key: DOWNLOADED_REGIONS_KEY, value: next };
       });
-      if (!touched) return;
-      await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
     } catch (_e) {
       // See `_recordRegionDownload` — IndexedDB writes here never surface.
     }
