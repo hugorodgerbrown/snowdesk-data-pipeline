@@ -271,41 +271,23 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Page audit · week of 31 August – 13 September · 13 September 2026</p>
+    <p class="eyebrow">Page audit · week of 7–13 September · 13 September 2026</p>
     <h1>The lie finally died — and something else quietly stopped being tracked</h1>
     <p class="standfirst">
-      164 commits, 944 files, thirteen days — by far the largest window this series has reviewed,
-      because the previous week's audit (7 September) was drafted, never merged, and its ground
-      is folded into this one. In that span: the four-audit-running "Snowdesk sends bulletin
-      alerts" claim was found on <strong>22</strong> surfaces by an exhaustive grep sweep, corrected
-      on all of them, and locked behind a permanent regression test. The whole site's information
-      architecture was rewritten around two documents and a map. A new app, Trips, shipped whole.
-      And two of this series' oldest tracked findings — the orphaned examples pages and the missing
-      regions index — had their tickets silently cancelled, with no comment, while the pages
-      themselves are exactly as unreachable as they were three audits ago.
+      93 commits, 552 files since last week's audit (7 September) — itself drafted on time but not
+      merged until a day after this one, retroactively, once its author noticed. This run reads it
+      as the real predecessor it always should have been and reports only what changed since: the
+      four-audit-running "Snowdesk sends bulletin alerts" claim was found on <strong>22</strong>
+      surfaces by an exhaustive grep sweep, corrected on all of them, and locked behind a permanent
+      regression test. Two of this series' oldest tracked findings — the orphaned examples pages and
+      the missing regions index — had their tickets silently cancelled, with no comment, while the
+      pages themselves are exactly as unreachable as they were last week.
     </p>
     <div class="masthead-meta">
-      <p class="eyebrow">Baseline <span class="mono">52c57eae</span> → now <span class="mono">49eec709</span></p>
-      <p class="eyebrow">164 commits · 944 files</p>
+      <p class="eyebrow">Baseline <span class="mono">8dfafb96</span> (7 Sep) → now <span class="mono">49eec709</span></p>
+      <p class="eyebrow">93 commits · 552 files</p>
     </div>
   </header>
-
-  <section>
-    <p class="eyebrow">A note on the gap</p>
-    <h2>Last week's audit was written, never merged — this one absorbs it</h2>
-    <div class="col">
-      <p>
-        A page audit for 7 September exists as a closed, unmerged draft PR
-        (<a href="https://github.com/hugorodgerbrown/snowdesk-data-pipeline/pull/828">#828</a>) and a
-        private Artifact, but never landed in <code>docs/page-audits/</code> — so the "most recent
-        audit" this run read was still 31 August. Its findings were real and were acted on anyway:
-        the Linear comment that closed SNOW-669 quotes it by name, and SNOW-855 and SNOW-885 both
-        quote its findings verbatim in their tickets. This audit re-verifies everything in both
-        windows (31 Aug → 7 Sep, and 7 → 13 Sep) directly against today's code, so nothing from the
-        unmerged draft is taken on trust — but the gap itself is worth fixing; see Recommendation.
-      </p>
-    </div>
-  </section>
 
   <section>
     <p class="eyebrow">The short version</p>
@@ -326,37 +308,33 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
         matches for any of the flagged phrases anywhere in <code>apps/*/templates</code>.
       </p>
       <p>
-        The same week, <code>docs/decisions/two-documents-and-a-map.md</code> reduced the site to
-        two document pages — the bulletin and the weather page — plus the map, deleting
-        <code>/observations/</code>, <code>/account/</code> and three list pages, and
-        <code>/favourites/&lt;uuid&gt;/</code>, each replaced by a redirect into a map sheet. That
-        closes this series' <strong>C1</strong> (the orphaned observations page) for good, and
-        correctly obsoleted SNOW-669, the ticket that had asked for a link into it. A new app,
-        <code>/trips/</code>, shipped the same week — reachable, tested, and already self-corrected
-        once for an overclaim (SNOW-876) before this audit had the chance to find it.
+        Last week's audit already reported the big structural news — the two-documents-and-a-map IA
+        rewrite and the new Trips app — so this run doesn't repeat it; both are unchanged since,
+        beyond one Trips overclaim SNOW-876 caught and fixed the same day. A new page,
+        <code>/compare/</code>, shipped hours after last week's audit ran and so is new to this one —
+        see below.
       </p>
       <p>
-        Against that: <strong>SNOW-674</strong> (no regions index) and <strong>SNOW-678</strong> (the
-        reading guide and examples are unreachable from the bulletin page) — both tracked three
-        audits running, both still "Ready for dev" as of the unmerged 7 September draft — were
-        cancelled on 7 September with no comment on either ticket explaining why. The code condition
-        behind both is completely unchanged: <code>apps/regions/</code> still has no
+        Against the SNOW-707 fix: <strong>SNOW-674</strong> (no regions index) and
+        <strong>SNOW-678</strong> (the reading guide and examples are unreachable from the bulletin
+        page) — both tracked three audits running, both still "Ready for dev" as of last week's
+        audit — were cancelled on 7 September with no comment on either ticket explaining why. The
+        code condition behind both is completely unchanged: <code>apps/regions/</code> still has no
         <code>views.py</code>; <code>/examples/random/</code> and <code>/examples/category/</code>
         still have zero inbound links anywhere in the codebase. This is a new failure mode for this
         series to watch — not a page going unfixed, but a <em>tracked finding going untracked</em>
-        while staying exactly as broken. A third page, <code>/compare/</code>, repeated the pattern in
-        miniature: shipped reachable, then had its one footer link deliberately removed two days
-        later with no ticket at all, and is now, by its own commit message, linked from nowhere on
-        the site.
+        while staying exactly as broken. <code>/compare/</code> repeated the pattern in miniature:
+        shipped reachable, then had its one footer link deliberately removed four days later with no
+        ticket at all, and is now, by its own commit message, linked from nowhere on the site.
       </p>
     </div>
 
     <div class="metrics">
       <div class="metric"><span class="figure">22</span><span class="label">false-promise surfaces found and corrected in one pass</span></div>
-      <div class="metric"><span class="figure">4</span><span class="label">findings closed this window</span></div>
+      <div class="metric"><span class="figure">3</span><span class="label">findings closed this window</span></div>
       <div class="metric"><span class="figure">3</span><span class="label">unchanged findings re-verified — two lost their tickets</span></div>
-      <div class="metric"><span class="figure">14</span><span class="label">apps — trips is new</span></div>
-      <div class="metric"><span class="figure">73</span><span class="label">decision docs, up from 46</span></div>
+      <div class="metric"><span class="figure">14</span><span class="label">apps, unchanged since last week</span></div>
+      <div class="metric"><span class="figure">73</span><span class="label">decision docs, up from 59</span></div>
     </div>
   </section>
 
@@ -367,24 +345,23 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
     <div class="findings">
       <article class="finding done">
         <div class="finding-head">
-          <span class="ref">A1 / A3 / D3</span>
+          <span class="ref">A1 / D3</span>
           <h3>The unsent-bulletin-email lie — four audits running — is dead, on all 22 surfaces</h3>
-          <span class="pill pill-ok">SNOW-707, SNOW-875, SNOW-805, SNOW-808</span>
+          <span class="pill pill-ok">SNOW-707, SNOW-875, SNOW-805</span>
         </div>
         <p>
           This series flagged the same underlying falsehood in the first audit (11 August) and every
           one since: Snowdesk told readers, in various forms, that it emails them when a bulletin
-          changes. Nothing ever did. The fix landed as a chain: SNOW-875 deleted the dead
+          changes. Nothing ever did. Last week's audit found SNOW-7 (the digest) newly cancelled for
+          good, its blocker resolved by unrelated work, and SNOW-707 — the bug tracking the false
+          claims, filed 21 August naming ten surfaces, cancelled 27 minutes later — reopened the same
+          day. This week that reopening turned into the actual fix: SNOW-875 deleted the dead
           email-subscription machinery (both send functions, the unsubscribe tokens, two views, two
-          routes, four templates); SNOW-805 dropped the <code>Subscription</code> table; SNOW-707 —
-          filed 21 August naming ten surfaces, cancelled 27 minutes later, reopened 7 September the
-          moment its cancellation's own reasoning (that SNOW-7 would eventually make the claims true)
-          stopped holding — rewrote the copy. Its rescope swept the whole template tree with a grep
-          rather than trusting the original list, and found <strong>22</strong> surfaces, not ten,
-          including <code>privacy.html:154</code>'s GDPR lawful-basis claim (a compliance defect, not
-          marketing copy) and a live transactional email template. <code>docs/user-journeys.md</code>
-          (SNOW-808) was rewritten the same week and now states plainly, in J4: "No scheduled job
-          sends a bulletin — every email is transactional."
+          routes, four templates); SNOW-805 dropped the <code>Subscription</code> table; SNOW-707's
+          rescope swept the whole template tree with a grep rather than trusting the original list,
+          and found <strong>22</strong> surfaces, not ten, including <code>privacy.html:154</code>'s
+          GDPR lawful-basis claim (a compliance defect, not marketing copy) and a live transactional
+          email template. All 22 are now clean.
         </p>
         <ul class="evidence">
           <li><span class="k">grep -rniE "daily bulletin|daily region|bulletin notification|email notification|email alert|subscribed region" apps/*/templates</span> → zero matches, verified this pass</li>
@@ -392,28 +369,6 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
           <li><span class="k">apps/public/templates/public/terms_of_service.html</span> — §7 "Email subscriptions" deleted outright, not reworded</li>
           <li><span class="k">tests/public/test_no_bulletin_alert_claims.py</span> — permanent grep-based regression guard, per-line <code>_ALLOWED</code> escape hatch, comments stripped before matching</li>
           <li><span class="k">apps/public/templates/public/help/_topic_accounts.html</span> — "Snowdesk sends no bulletin alerts — the only email it will send you is a sign-in link, a password reset, or a confirmation that you changed your address," with the RSS feeds offered as the real answer to "tell me when a bulletin lands"</li>
-        </ul>
-      </article>
-
-      <article class="finding done">
-        <div class="finding-head">
-          <span class="ref">C1</span>
-          <h3><code>/observations/</code> closed by deletion, not by linking — and its ticket correctly retired</h3>
-          <span class="pill pill-ok">SNOW-804, SNOW-669 closed as obsolete</span>
-        </div>
-        <p>
-          Three audits running, this series flagged <code>/observations/</code> as routed, viewed,
-          tested and reachable from nowhere. <code>docs/decisions/two-documents-and-a-map.md</code>
-          removed the page entirely: it is now a permanent redirect to <code>/?panel=reports</code>,
-          the same 48-hour community stream opened as a map sheet. SNOW-669, the ticket that had asked
-          for exactly one link into the old page, was closed the same day with a comment naming why:
-          "That page no longer exists... the work this ticket describes can no longer be done as
-          written." That is the right way to retire a tracked finding — compare the silent
-          cancellation of SNOW-674/678 below.
-        </p>
-        <ul class="evidence">
-          <li><span class="k">apps/public/urls.py:14-16</span> — <code>/observations/</code> → 301 → <code>/?panel=reports</code></li>
-          <li><span class="k">SNOW-669 comment, 2026-09-07</span> — "Closing as obsolete... Flagged by the 2026-09-07 page audit"</li>
         </ul>
       </article>
 
@@ -440,12 +395,12 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
 
       <article class="finding done">
         <div class="finding-head">
-          <span class="ref">N3 (unmerged 7 Sep draft)</span>
+          <span class="ref">N3 (7 Sep audit)</span>
           <h3>Resort page meta description no longer promises forecast tiers a resort doesn't have</h3>
           <span class="pill pill-ok">SNOW-855</span>
         </div>
         <p>
-          The unmerged 7 September draft found <code>resort.html</code>'s meta description
+          Last week's audit found <code>resort.html</code>'s meta description
           unconditionally naming "village, mid-station and summit" forecasts, true only for a fully
           hand-curated resort. The description now branches on whether the resort has any
           <code>locations</code> at all, and drops the three-tier claim entirely rather than
@@ -463,61 +418,26 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
     <p class="eyebrow">New</p>
     <h2>What the audit didn't anticipate</h2>
 
+    <div class="col">
+      <p>
+        Last week's audit already reported the two-documents-and-a-map IA rewrite (SNOW-795) and the
+        new Trips app (SNOW-819 and friends) in full — both are unchanged this week beyond SNOW-876's
+        same-day self-correction of one Trips overclaim on <code>/compare/</code>, noted there. Not
+        repeated here; see <a href="2026-09-07.html">2026-09-07</a>.
+      </p>
+    </div>
+
     <div class="findings">
-      <article class="finding newwork">
-        <div class="finding-head">
-          <span class="ref">N1</span>
-          <h3>Two documents and a map: the whole site's information architecture changed in one PR</h3>
-          <span class="pill pill-new">SNOW-795, nine child tickets</span>
-        </div>
-        <p>
-          One PR gave <code>Resort</code> a stored slug and <code>Location</code> a short opaque id,
-          taking every integer primary key out of a public URL; promoted the weather page with a
-          sitemap section, a canonical URL and two new MCP tools; deleted
-          <code>/favourites/&lt;uuid&gt;/</code>, the three account list pages, and
-          <code>/observations/</code>, each in favour of a redirect into a map sheet; folded
-          <code>Subscription</code> into a pinnable region; rebuilt the resort page as a router to the
-          two documents rather than a third one; and rewrote every doc describing the retired shape.
-          The stated rule: "a thing gets a page when it is read at length and is dated with an
-          issuer." Regions, resorts, locations, observations and routes are ways of reaching the
-          bulletin or the weather page, not destinations of their own.
-        </p>
-        <ul class="evidence">
-          <li><span class="k">docs/decisions/two-documents-and-a-map.md</span> — the decision, its "why," and every consequence enumerated</li>
-          <li>Every removed page keeps a redirect — confirmed this pass for <code>/observations/</code>, <code>/account/</code>, <code>/account/favourites/</code>, <code>/account/routes/</code>, <code>/favourites/&lt;uuid&gt;/</code></li>
-        </ul>
-      </article>
-
-      <article class="finding done">
-        <div class="finding-head">
-          <span class="ref">N2</span>
-          <h3>Trips shipped whole, reachable, and already self-corrected once</h3>
-          <span class="pill pill-new">SNOW-819, 823, 827, 834, 840, 848, 876</span>
-        </div>
-        <p>
-          A genuinely new, interactive, multi-user object — the first of its kind, per its own
-          decision doc — landed complete: nav entry, a public share page that sets
-          <code>Cache-Control: no-store</code> and renders a geometry snapshot rather than a live
-          reference, and 255-odd tests. SNOW-848's "take the roster off a trip" pass held up under
-          direct verification. SNOW-876 then caught and fixed, within a day, a stale claim on the new
-          <code>/compare/</code> page that a trip link "adds whoever opens it to the roster" — a
-          same-week self-correction rather than a drift this series had to find.
-        </p>
-        <ul class="evidence">
-          <li><span class="k">templates/includes/nav.html:407-410</span> — Trips entry, asserted by <code>tests/public/test_nav_partial.py</code></li>
-          <li><span class="k">docs/decisions/a-trip-is-one-object-with-a-roster.md</span> — disclosure bullet marked superseded by SNOW-848, matching the rendered templates</li>
-        </ul>
-      </article>
-
       <article class="finding orphan">
         <div class="finding-head">
-          <span class="ref">N3</span>
+          <span class="ref">N1</span>
           <h3>/compare/ shipped reachable, then was deliberately unlinked two days later — no ticket, no stated reason</h3>
           <span class="pill pill-orphan">new orphan</span>
         </div>
         <p>
-          SNOW-836 added <code>/compare/</code> on 5 September, linked from the footer beside Help.
-          Commit <code>d7f7c499</code>, six days later, removed it: "The <code>/compare/</code> page,
+          SNOW-836 shipped <code>/compare/</code> on 7 September — hours after last week's audit ran,
+          so it never had the chance to be reported — linked from the footer beside Help. Commit
+          <code>d7f7c499</code>, four days later, removed the link: "The <code>/compare/</code> page,
           its URL and its sitemap entry stay; only the footer link goes... nothing in the site links
           to it any more." That is the commit's own words, not this audit's inference. There is no
           <code>SNOW-</code> ticket reference on the commit and no explanation beyond the fact of the
@@ -534,7 +454,7 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
 
       <article class="finding newwork">
         <div class="finding-head">
-          <span class="ref">N4</span>
+          <span class="ref">N2</span>
           <h3>Alerting is being rebuilt from scratch — on push, not email — starting the same morning as this audit</h3>
           <span class="pill pill-new">SNOW-937, draft PR #917</span>
         </div>
@@ -646,7 +566,7 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
           Three audits running (downloads, then trips) shipped new surfaces with the reachability
           discipline designed in from the start, not retrofitted after this series caught a gap. This
           week that streak has an asterisk: <code>/compare/</code> shipped reachable, then had its only
-          inbound link deliberately removed six days later, in a commit whose own message admits the
+          inbound link deliberately removed four days later, in a commit whose own message admits the
           page is now unreachable. It is a smaller version of the same failure mode as SNOW-674/678
           above — a page that is fine and a decision that is unrecorded — rather than a returned bug.
         </p>
@@ -667,14 +587,22 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
       </div>
 
       <div class="qgroup">
-        <h3>An audit that never merges still changes what gets tracked</h3>
+        <h3>An audit whose PR sat closed and unmerged for a week still drove three real tickets</h3>
         <p>
-          The 7 September audit's PR was drafted, reviewed by nobody, and closed unmerged — yet its
-          findings drove three real tickets (SNOW-669's closure, SNOW-855, SNOW-885) via Linear
-          comments quoting it directly. That is a good outcome for those three findings and a bad
-          precedent for the series as a whole: this repository's own history of what was found and
-          when now has a week-shaped hole in it, recoverable only by reading Linear comments that
-          happen to cite an Artifact URL. See Recommendation.
+          The 7 September audit's PR (#828) was drafted, reviewed by nobody, and left closed
+          unmerged for a week — yet its findings drove three real tickets (SNOW-669's closure,
+          SNOW-855, SNOW-885) via Linear comments quoting it directly. That is a good outcome for
+          those three findings and a real gap for the series as a whole: for a week, this
+          repository's own history of what was found and when had a week-shaped hole in it,
+          recoverable only by reading Linear comments that happened to cite an Artifact URL.
+          <strong>Fixed today (14 September):</strong> the PR's author reopened and merged #828
+          retroactively once they noticed, so <a href="2026-09-07.html">2026-09-07</a> is now a real
+          entry in this directory and the baseline chain above is unbroken again. Nothing about this
+          audit's own findings needed correcting as a result — this run had already re-verified
+          everything directly against the code rather than trusting the draft — but the masthead,
+          README history table and several cross-references below were rewritten to treat 7 September
+          as the real predecessor it always should have been, rather than framing this audit as
+          absorbing two weeks at once.
         </p>
       </div>
     </div>
@@ -699,12 +627,6 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
         unreachable with no ticket attached.
       </p>
       <p>
-        <strong>Then either merge a record of the 7 September audit or note the gap in the
-        README.</strong> Its Artifact and closed PR are the only record that window's findings exist
-        outside of Linear comment archaeology; a one-line README note pointing at the PR would cost
-        almost nothing and save the next audit from having to reconstruct it, as this one did.
-      </p>
-      <p>
         <strong>Then B3, still the oldest open finding in this series.</strong> <code>docs/bulletin-
         guide.md</code> has been SLF-only since before the first audit; five audits running now.
       </p>
@@ -719,7 +641,10 @@ td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: 
     <p class="note">
       Re-verified against <span class="mono">49eec709</span> on 13 September 2026. Nothing was changed
       and no tickets were created or edited in this pass — the branch was fast-forwarded to
-      <span class="mono">main</span> to read current state, and that is all.
+      <span class="mono">main</span> to read current state, and that is all. Edited 14 September to
+      treat the retroactively-merged <a href="2026-09-07.html">2026-09-07</a> audit as the real
+      predecessor once it landed — baseline, metrics and several cross-references updated
+      accordingly; no finding below changed as a result.
     </p>
   </section>
 
