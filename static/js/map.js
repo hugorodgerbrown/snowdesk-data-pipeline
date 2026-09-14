@@ -5624,52 +5624,67 @@
   const SLOPE_REFETCH_DELAY_MS = 20000;
   let slopeRefetchTimer = null;
 
-  // Whether a write is UNCONFIRMED: a claim or an upload has put a route
-  // on the server and no network read issued since has been seen.
+  // How many writes have put a route on the server this session, and how
+  // many of those a returned network read has covered. A write is
+  // UNCONFIRMED while the first number leads the second.
   //
-  // ONE RULE, because four bugs came from not having it: the signal is
-  // cleared only by a successful network read that WE issued AFTER the
-  // write. Every earlier version consumed it against whatever payload
-  // happened to be at hand, and a payload can fail to answer for a write
-  // in at least four ways — it can belong to a different write's refresh,
-  // it can be an overlay load that started before the write, it can be
-  // the offline cache, or it can be a fetch that never arrived. Judging
-  // any of them leaves the new route flat, or absent, until a reload.
-  //
-  // `refreshPanelOverlay('routes')` is that read. It issues a fresh GET
-  // and rejects rather than resolving when the network fails, so "it
-  // resolved" is exactly the confirmation wanted, and a failure retains
-  // the signal for the next write or overlay load to retry.
-  let routeSamplingPending = false;
+  // A COUNTER, not a boolean, and that is the whole point. The rule is
+  // that a write is confirmed only by a network read ISSUED AFTER IT, and
+  // a boolean cannot express "after": two writes can be in flight at once,
+  // and the earlier one's read — which was issued before the later write
+  // and cannot possibly see it — would clear a shared flag on success and
+  // strand the later write with no retry. Five bugs on this mechanism all
+  // reduce to consuming a signal against something that could not answer
+  // for it; a read is now credited with exactly the writes that existed
+  // when it went out, and with none that followed.
+  let routeWriteSeq = 0;
+  let routeConfirmedSeq = 0;
 
   /**
-   * Confirm an unconfirmed write with a network read, and judge THAT.
+   * Whether some write is still waiting to be seen by a network read.
    *
-   * The only place `routeSamplingPending` is cleared. Callers do not
-   * decide whether their own payload is good enough — they hand the
-   * question here, and this asks the server.
+   * @returns {boolean} True while a write is unconfirmed.
+   */
+  const routeWritePending = () => routeWriteSeq > routeConfirmedSeq;
+
+  /**
+   * Credit a returned read with every write made before it was issued.
+   *
+   * @param {number} seq `routeWriteSeq` as it stood when the read went out.
+   * @param {boolean} applied Whether the read actually applied a payload.
+   *   `refreshPanelOverlay` swallows its own failures, so a settled promise
+   *   is NOT a served request and only this says which it was.
+   * @returns {void}
+   */
+  const creditRouteRead = (seq, applied) => {
+    if (!applied) return;
+    if (seq > routeConfirmedSeq) routeConfirmedSeq = seq;
+    scheduleSlopeRefetch();
+  };
+
+  /**
+   * Ask the server about an unconfirmed write, and judge that answer.
+   *
+   * The only path that advances `routeConfirmedSeq` other than a write's
+   * own refresh. Callers never decide whether their payload is good
+   * enough — `_loadOverlay`'s can predate the write or come from the
+   * offline cache — they hand the question here.
    *
    * @returns {void}
    */
   const confirmRouteWrite = () => {
-    if (!routeSamplingPending || !overlayLoaded.routes) return;
+    if (!routeWritePending() || !overlayLoaded.routes) return;
+    const seq = routeWriteSeq;
     refreshPanelOverlay('routes')
-      .then((applied) => {
-        // A FALSE here is a refetch that did not land — offline, or a
-        // refused origin. It says nothing about the write, so the signal
-        // stays up for the reconnect below to retry.
-        if (!applied) return;
-        routeSamplingPending = false;
-        scheduleSlopeRefetch();
-      })
-      // Offline, or the origin refused. The signal stays up, so the
+      .then((applied) => creditRouteRead(seq, applied))
+      // Offline, or the origin refused. Nothing is credited, so the
       // reconnect below — or the next write, or the next overlay load —
-      // asks again. Nothing is drawn wrongly in the meantime; the route
-      // is simply not there yet.
+      // asks again. Nothing is drawn wrongly meanwhile; the route is
+      // simply not there yet.
       .catch(() => {});
   };
 
-  // The retry that makes retaining the signal worth anything. An enable
+  // The retry that makes an uncredited write worth tracking. An enable
   // served from the offline cache installs a payload written before the
   // write, so the route can be missing from the map entirely — and
   // nothing refreshes an already-loaded overlay, so without this it
@@ -5819,19 +5834,18 @@
     const mayGainSlope = !!(detail.uploaded || detail.claimed);
     const refreshed = refreshPanelOverlay('routes');
     if (mayGainSlope) {
-      routeSamplingPending = true;
-      // When the overlay is loaded, the refresh above IS a post-write
-      // network read, so reuse it rather than issuing a second. When it
-      // is not, that call did nothing and the signal waits for
-      // `_loadOverlay` — which hands it straight back to
+      routeWriteSeq += 1;
+      // Captured now, so this read is credited with THIS write and never
+      // with one that follows it.
+      const seq = routeWriteSeq;
+      // When the overlay is loaded, the refresh above was issued after
+      // this write and so can answer for it; reuse it rather than firing
+      // a second. When it is not, that call did nothing, and the write
+      // waits for `_loadOverlay` — which hands the question to
       // `confirmRouteWrite` rather than judging its own payload.
       if (overlayLoaded.routes) {
         refreshed
-          .then((applied) => {
-            if (!applied) return;
-            routeSamplingPending = false;
-            scheduleSlopeRefetch();
-          })
+          .then((applied) => creditRouteRead(seq, applied))
           .catch(() => {});
       }
     }

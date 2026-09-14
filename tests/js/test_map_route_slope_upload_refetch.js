@@ -185,6 +185,39 @@ describe('two writes whose refreshes overlap', () => {
   });
 });
 
+describe('two loaded-overlay writes whose reads resolve out of turn', () => {
+  it('does not let an earlier read confirm a later write', async () => {
+    // The earlier write's GET went out BEFORE the later write, so it
+    // cannot have seen it. While a single boolean carried the signal, that
+    // earlier read succeeding cleared it for both — and when the later
+    // write's own read then failed, nothing was left to retry from, so its
+    // route could stay absent until a reload.
+    //
+    // A succeeds slowly; B is issued after it and fails.
+    harness.delays = [40];
+    harness.payload = ROUTES_SAMPLED;
+    announce({ claimed: true });
+
+    harness.offline = true;
+    announce({ uploaded: true });
+
+    // A returns and credits only itself; B's read never landed.
+    await vi.advanceTimersByTimeAsync(60);
+    const afterWrites = routesFetchCount();
+
+    // So the write is still outstanding, and reconnecting spends it.
+    harness.offline = false;
+    harness.payload = ROUTES_UNSAMPLED;
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(routesFetchCount()).toBe(afterWrites + 1);
+
+    // That payload is unsampled, so the delayed re-read follows.
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(routesFetchCount()).toBe(afterWrites + 2);
+  });
+});
+
 describe('a rename or a delete', () => {
   it('leaves a legacy unsampled route alone', async () => {
     // Neither can put a route on the server, so neither can produce one
