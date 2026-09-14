@@ -219,12 +219,18 @@ def _segment_facts(
 def _sample_coordinates(
     slope_samples: dict[str, Any] | None,
 ) -> list[tuple[float, float]]:
-    """Return each segment's start as ``(latitude, longitude)``.
+    """Return each segment's MIDDLE as ``(latitude, longitude)``.
 
-    The START of each segment rather than its midpoint, because these are
-    the coordinates the record actually stores — a midpoint would have to
-    be interpolated, and a region boundary is not fine enough for the
-    difference to matter.
+    The middle, not either end, and for the reason the sampler places its
+    angle there: an end-sampled segment takes its answer from a point it
+    only touches, and has to choose between its two ends to do it.
+
+    Taking the START would be worse than arbitrary here — it would mean
+    the track's final boundary never informed the walk at all, so a route
+    that ENDS in another region would never report that region's
+    bulletin. At a 25 m stride the midpoint and the start are almost
+    always in the same place; the case where they are not is exactly the
+    one that matters.
 
     Args:
         slope_samples: The terrain record.
@@ -236,7 +242,13 @@ def _sample_coordinates(
     if not slope_samples:
         return []
     points = slope_samples.get("points") or []
-    return [(point[1], point[0]) for point in points[:-1]]
+    return [
+        (
+            (points[index][1] + points[index + 1][1]) / 2,
+            (points[index][0] + points[index + 1][0]) / 2,
+        )
+        for index in range(len(points) - 1)
+    ]
 
 
 def _height_lookup(
