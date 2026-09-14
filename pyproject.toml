@@ -228,7 +228,13 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 90
+# Deliberately 0. The 90% gate is applied by ``tox -e test``'s
+# ``--cov-fail-under``, NOT here, because this key applies to *every*
+# coverage run — including the targeted ``uv run pytest <path>`` that
+# bin/claude-hook-deny-command prescribes. ``addopts`` measures all
+# fourteen apps whatever is selected, so one test file reports ~27% and
+# a threshold here would fail a run in which every selected test passed.
+fail_under = 0
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
