@@ -2335,9 +2335,26 @@
   // steepness would spend the one line on a second message and leave the
   // first with nothing to carry it. Saving it makes it an owned route, and
   // owned routes are coloured.
-  const FLAT_OWNED_ROUTE_FILTER = [
-    'all', OWNED_ROUTE_FILTER, ['!', ['has', 'slope']],
-  ];
+  //
+  // A FUNCTION, called at layer-install time, and both halves of that
+  // matter. `routeSlopeSegmentsFor` falls back to an empty collection when
+  // `route_slope_core.js` failed to load, so with no core the two slope
+  // layers draw NOTHING — and an unconditional exclusion here would then
+  // take every sampled route off the flat layer as well, leaving it as
+  // nothing but its own translucent casing. Excluding only when there is a
+  // core to do the painting means a sampled route falls back to its
+  // ordinary fuchsia line, which is exactly what the guard promises.
+  //
+  // And it cannot be a module-level const testing the same thing, because
+  // the core is in home.html's DEFERRED call-site script group: at the
+  // moment this file is parsed it is not guaranteed to exist yet, so a
+  // const would bake in "no core" on a page where the core arrives a
+  // moment later.
+  const flatOwnedRouteFilter = () => (
+    self.pwaRouteSlopeCore
+      ? ['all', OWNED_ROUTE_FILTER, ['!', ['has', 'slope']]]
+      : OWNED_ROUTE_FILTER
+  );
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
   // LineStrings (routes:geojson), drawn as TWO ``line`` layers (three
@@ -2384,8 +2401,9 @@
       // would be drawn twice, once in each colour, with whichever layer
       // sits on top winning.
       // SNOW-910 narrows it again to the routes nothing has sampled — see
-      // FLAT_OWNED_ROUTE_FILTER for why a sampled one must leave.
-      filter: FLAT_OWNED_ROUTE_FILTER,
+      // flatOwnedRouteFilter for why a sampled one must leave, and for why
+      // it stays when there is no core to paint it segment by segment.
+      filter: flatOwnedRouteFilter(),
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
         'line-cap': 'round',
