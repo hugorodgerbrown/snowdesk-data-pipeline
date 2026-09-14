@@ -36,7 +36,7 @@
  * vector's — bbox 7.0,46.0 → 7.2,46.2 at the micro band.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
@@ -341,6 +341,20 @@ let overlayStore;
  */
 let areaContentAnswer = () => AREA_CONTENT;
 
+/**
+ * Whether `/api/area-content/` stalls instead of answering (SNOW-958).
+ *
+ * The failure mode a bare `fetch` has no defence against, and the one an
+ * `ok: false` answer cannot stand in for: a connection that completes its
+ * handshake and then says nothing — a captive portal, a lift. The request
+ * neither resolves nor rejects, so there is no catch branch to reach and
+ * no tally to come back short. Only an abort ends it.
+ */
+let areaContentStalls = false;
+
+/** The `AbortSignal` the last `/api/area-content/` request carried, if any. */
+let lastAreaContentSignal = null;
+
 /** Select the region and click the control, settling out of 'busy'. */
 async function clickControl() {
   const btn = document.getElementById('map-download-control');
@@ -368,11 +382,22 @@ beforeAll(async () => {
   });
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => {
+    vi.fn((url, options) => {
       const href = String(url);
       let body = {};
       if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
       if (href.includes('area-content')) {
+        lastAreaContentSignal = (options && options.signal) || null;
+        if (areaContentStalls) {
+          // Settles only if something aborts it. An unbounded caller
+          // waits here for ever, which is the whole of SNOW-958.
+          return new Promise((_resolve, reject) => {
+            if (!lastAreaContentSignal) return;
+            lastAreaContentSignal.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+          });
+        }
         const answer = areaContentAnswer();
         // A null answer stands for an endpoint that could not be read —
         // the state that makes a plan SHORT rather than empty.
@@ -805,5 +830,75 @@ describe('a custom area catches up through the sheet (SNOW-932)', () => {
     expect(warmedUrls(0).some((url) => url.includes('tiles.example.invalid'))).toBe(
       false,
     );
+  });
+});
+
+describe('a stalled content endpoint gives up rather than hanging (SNOW-958)', () => {
+  // `fetchAreaContent` is the single funnel every content request goes
+  // through — the download runner's `assembleAreaContentURLs`, the region
+  // roundel's tap-to-refresh, and the Manage-downloads sheet's Refresh all
+  // await it — so bounding it here is what bounds all three. It is driven
+  // through `refreshAreaContent` because that is the one caller whose
+  // promise a test can hold: the other two settle into DOM state, and a
+  // run that never settles has no state to poll for.
+  const AREA_ID = 'custom-stall';
+
+  async function seedStallArea() {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        {
+          id: AREA_ID,
+          ordinal: 1,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          template: TEMPLATE,
+          basemapKey: 'openfreemap_liberty',
+          bytes: 4096,
+          savedAt: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+  }
+
+  afterEach(() => {
+    areaContentStalls = false;
+    lastAreaContentSignal = null;
+    vi.useRealTimers();
+  });
+
+  it('carries an abort signal on every request', async () => {
+    // The precondition for the bound existing at all. Asserted on the
+    // HAPPY path deliberately: a signal that only appears when something
+    // has already gone wrong is not a signal the timer can reach.
+    await seedStallArea();
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(lastAreaContentSignal).toBeInstanceOf(AbortSignal);
+    expect(lastAreaContentSignal.aborted).toBe(false);
+  });
+
+  it('aborts the request once the budget runs out', async () => {
+    await seedStallArea();
+    areaContentStalls = true;
+    vi.useFakeTimers();
+
+    const pending = window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    // Let the request be issued before the clock moves; the timer is armed
+    // inside `fetchAreaContent`, not before it.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lastAreaContentSignal.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(15000);
+
+    expect(lastAreaContentSignal.aborted).toBe(true);
+    // And the whole operation settles rather than sitting pending — an
+    // unbounded `fetch` never reaches this line, which is the regression
+    // this test exists to catch. `false` because an endpoint that could
+    // not be read leaves the plan short, and a short plan is a failed
+    // refresh: the honest answer, not a completion stamped over a gap.
+    vi.useRealTimers();
+    await expect(pending).resolves.toBe(false);
   });
 });

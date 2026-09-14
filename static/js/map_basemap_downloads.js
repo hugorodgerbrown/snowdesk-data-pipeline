@@ -713,22 +713,73 @@ async function assembleAreaContentURLs(blob) {
   return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: false };
 }
 
+// SNOW-958: the bound on the `/api/area-content/` request below. TWO
+// literals hold this value, one per script-loading context: this one and
+// `offline_audit.js`'s MANIFEST_FETCH_BUDGET_MS, which bounds the same
+// endpoint from the `/offline/` page's per-row Update control.
+//
+// They cannot share one literal, and that is a hard constraint rather
+// than an oversight. The obvious shared home is
+// `basemap_download_core.js` — the one module both pages load — but
+// `sw.js`'s AUDIT_SCRIPTS precaches exactly two files
+// (`offline_audit_core.js` and `offline_audit.js`) so the audit runs on
+// `/static/offline.html`, where the core module does not exist; and the
+// core module is a dependency-free pure IIFE by contract (its own
+// header, cited by `activeBasemapRenderDependencyURLs` above as the
+// reason THAT composer stays in this file), with no platform I/O in it
+// at all. So this is the same review-discipline duplication
+// BASEMAP_PINNED_CACHE_PREFIX below documents across its four contexts:
+// changing one copy means checking the other.
+//
+// Generous, because this is a deliberate press over a real network
+// rather than a storage probe, and because it is a ceiling on a hang
+// rather than a target — see `offline_audit.js`'s own comment on the
+// twin constant for the full reasoning.
+const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
+
 /**
  * Ask the server what one rectangle contains.
+ *
+ * BOUNDED (SNOW-958), for the reason
+ * `docs/decisions/bounded-offline-read-paths.md` gives and SNOW-918
+ * closed elsewhere: a connection that accepts the handshake but never
+ * answers — a captive portal, a lift — leaves a bare `fetch` pending for
+ * the browser's full network timeout, with no catch branch to reach
+ * because nothing rejects. Every caller of this function awaits it after
+ * its control is already painted `busy`: `assembleAreaContentURLs` →
+ * `basemap_download_runner.js`, `map_region_download.js`'s tap-to-refresh
+ * roundel, and `refreshAreaContent`'s Manage-downloads row. Unbounded,
+ * all three sat disabled with no way out short of a reload.
+ *
+ * An expired bound reads as an endpoint that did not answer, which is
+ * already the documented `null` case below — the plan comes back short
+ * and the run reports a shortfall, which is the honest outcome and the
+ * one every other read on this path degrades to.
  *
  * @param {string|undefined} endpoint `#map`'s `data-area-content-url`.
  * @param {number[]} bbox The area's rectangle, `[west, south, east, north]`.
  * @returns {Promise<{regions: Array<Object>, weather: Array<Object>}|null>}
- *   ``null`` for a missing endpoint, a failed request, or an answer that
- *   is not the documented shape — all three are "cannot say", which the
- *   caller reports as a shortfall rather than as an empty area.
+ *   ``null`` for a missing endpoint, a failed request, a request that ran
+ *   out of budget, or an answer that is not the documented shape — all
+ *   four are "cannot say", which the caller reports as a shortfall rather
+ *   than as an empty area.
  */
 async function fetchAreaContent(endpoint, bbox) {
   if (!endpoint) return null;
+  // Absent AbortController is not a reason to skip the request — it is a
+  // reason to run it unbounded, exactly as before this ticket. Every
+  // browser that reaches this code has it; the guard is here so a test
+  // harness or an ancient engine degrades to the old behaviour rather
+  // than throwing.
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer = null;
   try {
     const url = endpoint + '?bbox=' + encodeURIComponent(bbox.join(','));
-    const response = await fetch(url);
-    if (!response.ok) return null;
+    if (controller) {
+      timer = setTimeout(() => controller.abort(), AREA_CONTENT_FETCH_BUDGET_MS);
+    }
+    const response = await fetch(url, controller ? { signal: controller.signal } : {});
+    if (!response || !response.ok) return null;
     const data = await response.json();
     if (!data || !Array.isArray(data.regions) || !Array.isArray(data.weather)) {
       return null;
@@ -736,6 +787,8 @@ async function fetchAreaContent(endpoint, bbox) {
     return data;
   } catch (_e) {
     return null;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }
 
