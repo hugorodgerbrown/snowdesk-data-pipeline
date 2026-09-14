@@ -42,12 +42,19 @@ RECORD: dict[str, Any] = {
     "grid": "snowdesk-terrain-5m-3035",
     "points": [[7.0, 46.0], [7.0, 46.01]],
     "segments": [{"angle_deg": 34.2, "aspect_deg": 180.0}],
+    # A CURRENT record carries ``cruxes`` even when nothing was flagged
+    # (SNOW-911) — the key's presence is what marks the row up to date.
+    "cruxes": [],
 }
 
 
 def _route_record(angle_deg: float) -> dict[str, Any]:
     """Return a stored record distinguishable by its angle."""
-    return {**RECORD, "segments": [{"angle_deg": angle_deg, "aspect_deg": 180.0}]}
+    return {
+        **RECORD,
+        "segments": [{"angle_deg": angle_deg, "aspect_deg": 180.0}],
+        "cruxes": [],
+    }
 
 
 def _run(*args: str) -> str:
@@ -207,6 +214,47 @@ class TestReadOnlyByDefault:
         # The split is the figure an operator is previewing for: how many
         # of these need the origin at all.
         assert "1 trip(s) would inherit" in output
+
+    def test_a_record_written_before_cruxes_is_a_candidate_again(self) -> None:
+        """SNOW-911 added a key; the key's presence is what marks a row
+        current, and an empty list inside it is an answer.
+        """
+        legacy = {k: v for k, v in RECORD.items() if k != "cruxes"}
+        TripFactory.create(
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=legacy, route=None
+        )
+
+        output = _run()
+
+        assert "1 trip(s)" in output
+
+    def test_a_stale_route_record_is_not_inherited(self) -> None:
+        """Inheriting one would never converge.
+
+        The trip would still be missing the key the candidate queryset
+        selects on, so it would be re-copied on every run for ever.
+        """
+        organiser = UserFactory.create()
+        route = RouteFactory.create(
+            user=organiser,
+            points=MERIDIAN_TRACK,
+            slope_samples={k: v for k, v in RECORD.items() if k != "cruxes"},
+        )
+        trip = TripFactory.create(
+            created_by=organiser,
+            route=route,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+            slope_samples=None,
+        )
+
+        with patch(_BUILDER, return_value=RECORD) as builder:
+            _run("--commit")
+
+        builder.assert_called_once()
+        trip.refresh_from_db()
+        assert trip.slope_samples is not None
+        assert "cruxes" in trip.slope_samples
 
     def test_a_sampled_trip_is_not_a_candidate(self) -> None:
         """Idempotent — a second run selects only what the first missed."""

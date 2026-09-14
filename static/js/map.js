@@ -2150,6 +2150,17 @@
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
+  // SNOW-911. Registered `sdf: true`, unlike the two above, so the ring
+  // takes its colour from `icon-color` rather than from pixel data — see
+  // `cruxRingPixels`.
+  const ROUTE_CRUX_ICON = 'route-crux-ring';
+
+  // The crux ring's ink. A neutral slate, and deliberately NOT on the
+  // steepness scale: the ring marks WHERE to look, and the line under it
+  // is already saying how steep that ground is. Borrowing a scale colour
+  // would make the marker look like a sixth band. Mirrors
+  // `--color-crux-ring` in src/css/main.css.
+  const ROUTE_CRUX_COLOUR = '#1a1916';
 
   /**
    * Register the start dot and finish flag, unless the style already holds
@@ -2183,6 +2194,17 @@
         core.finishFlagPixels(...cssColourChannels(ROUTE_CASING_COLOUR)),
         ratio,
       );
+    }
+    if (!map.hasImage(ROUTE_CRUX_ICON) && core.cruxRingPixels) {
+      // `sdf: true`: the ring is an alpha mask and `icon-color` paints
+      // it. The guard on the function itself is for a cached older copy
+      // of the core, which the service worker can serve for a minute
+      // after a deploy — the ring is then simply absent, rather than the
+      // whole routes overlay throwing.
+      map.addImage(ROUTE_CRUX_ICON, core.cruxRingPixels(), {
+        pixelRatio: core.PIXEL_RATIO,
+        sdf: true,
+      });
     }
   };
 
@@ -2228,6 +2250,26 @@
     const core = self.pwaRouteSlopeCore;
     if (!core) return { type: 'FeatureCollection', features: [] };
     return core.segmentCollection(geojson);
+  };
+
+  /**
+   * The crux markers for a routes payload (SNOW-911).
+   *
+   * Guarded like the segments above, and for the same reason: a failed
+   * core load should cost the markers, not the routes overlay. An older
+   * cached copy of the core has no `cruxCollection` at all, which the
+   * service worker can serve for a minute after a deploy.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A Point
+   *   FeatureCollection, empty when there is nothing to mark.
+   */
+  const routeCruxesFor = (geojson) => {
+    const core = self.pwaRouteSlopeCore;
+    if (!core || !core.cruxCollection) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+    return core.cruxCollection(geojson);
   };
 
   /**
@@ -2558,6 +2600,42 @@
         ],
       },
     });
+    // SNOW-911: the crux rings, over the coloured line and under the
+    // start and finish markers — a route's two ends are landmarks the
+    // reader orients by, and a ring must not hide one.
+    //
+    // minzoom 11, one step in from the endpoints. A ring is an
+    // instruction to look at a 25-to-500 m passage, and at a country
+    // scale it would point at a stretch of track a few pixels long; the
+    // rings would also pile onto each other and read as a smear rather
+    // than as places.
+    map.addSource('route-cruxes', {
+      type: 'geojson',
+      data: routeCruxesFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-cruxes',
+      type: 'symbol',
+      source: 'route-cruxes',
+      minzoom: 11,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'icon-image': ROUTE_CRUX_ICON,
+        // Two cruxes on one track can be close together at this zoom, and
+        // dropping one would understate the day.
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-anchor': 'center',
+      },
+      paint: {
+        // Readable over all six band colours the ring sits on, which the
+        // scale's own colours are not — see ROUTE_CRUX_COLOUR.
+        'icon-color': ROUTE_CRUX_COLOUR,
+        'icon-halo-color': '#ffffff',
+        'icon-halo-width': 1,
+      },
+    });
+
     // The lines were just added on top of everything, so lift the pin
     // layers back over them — a favourite star or a report flag sitting on
     // a route must stay visible and stay tappable (MARKER_EXCLUSION_LAYERS
@@ -5583,14 +5661,16 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // THREE sources, not one: the lines, the derived start/finish
-          // points, and the slope segments (see installRoutesLayer).
-          // Refreshing only the first would leave a deleted route's flag
-          // standing on the map and its colours drawn along a track that
-          // is no longer there.
+          // FOUR sources, not one: the lines, the derived start/finish
+          // points, the slope segments and the crux rings (see
+          // installRoutesLayer). Refreshing only the first would leave a
+          // deleted route's flag standing on the map, its colours drawn
+          // along a track that is no longer there, and its rings marking
+          // passages on ground nothing is drawn across.
           map.getSource('routes')?.setData(data);
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-slopes')?.setData(routeSlopeSegmentsFor(data));
+          map.getSource('route-cruxes')?.setData(routeCruxesFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
           // already drawn, and the route that just landed is the first
@@ -7997,6 +8077,24 @@
       const terrainLines = slopeCore
         ? slopeCore.summaryLines(readFeatureJson(props.terrain))
         : [];
+      // SNOW-911: how many passages the terrain flagged, on the same
+      // line as the figures rather than a line of its own — it is one
+      // more fact about the ground, and a line carrying a single short
+      // count would read as more important than the steepness beside it.
+      //
+      // OMITTED AT ZERO. "0 key passages" is a claim that the algorithm
+      // looked and found nothing, which is exactly the reading
+      // /help/#help-topic-slope exists to prevent: the markers are not
+      // exhaustive, and a route with none is not a safe route.
+      const cruxes = slopeCore?.cruxCount
+        ? slopeCore.cruxCount({ properties: { slope: readFeatureJson(props.slope) } })
+        : 0;
+      if (cruxes > 0) {
+        terrainLines.push({
+          key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',
+          params: { count: String(cruxes) },
+        });
+      }
       if (terrainLines.length) {
         const terrainMeta = document.createElement('div');
         terrainMeta.className = 'mt-0.5 text-xs text-text-2';

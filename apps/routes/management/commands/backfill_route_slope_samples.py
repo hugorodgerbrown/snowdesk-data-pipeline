@@ -1,9 +1,11 @@
 """backfill_route_slope_samples — sample the terrain under existing routes.
 
-One-shot backfill for SNOW-910. Every ``Route`` uploaded before that
-ticket has a null ``slope_samples``, which means NEVER SAMPLED and draws
-as a flat line; this walks each of them and asks the terrain grid how
-steep the ground under it is.
+Backfill for SNOW-910, and for every later ticket that adds a key to the
+record — SNOW-911's ``cruxes`` is the first.
+
+Every ``Route`` uploaded before SNOW-910 has a null ``slope_samples``,
+which means NEVER SAMPLED and draws as a flat line; this walks each of
+them and asks the terrain grid how steep the ground under it is.
 
 **Not a data migration.** CLAUDE.md forbids bulk dataset updates in
 migrations, and this one could not be a migration even if it did not: the
@@ -12,8 +14,14 @@ origin outside this process, and a deploy's ``migrate`` step must not sit
 on a table making network calls. Migration ``0005`` adds the column and
 nothing else.
 
-**Null is the candidate, and stays honest.** The queryset selects rows
-whose ``slope_samples`` is null. A row that comes back with nothing
+**Two kinds of candidate.** The queryset selects rows whose
+``slope_samples`` is null — never sampled — and rows whose record has no
+``cruxes`` key, which is one sampled before SNOW-911 and so drawing its
+colours but none of its markers. A record carrying the key is current
+even when the list inside is empty, because that is "nothing was
+flagged".
+
+**Null stays honest.** A row that comes back with nothing
 learnable — the origin unreachable for the whole of it — is left null
 rather than written as a record of nothing, so a later run picks it up
 again; that rule is ``build_slope_samples``', not this command's, and is
@@ -47,6 +55,7 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
 from apps.routes.models import Route
@@ -125,7 +134,18 @@ class Command(BaseCommand):
         verbosity: int = options["verbosity"]
 
         # Streamed, not materialised: Route is a growable user table.
-        candidates = Route.objects.filter(slope_samples__isnull=True)
+        #
+        # TWO KINDS OF CANDIDATE, and the second is why this command is
+        # not one-shot after all. A null is a route nothing has sampled.
+        # A record with no ``cruxes`` key is one sampled before SNOW-911,
+        # which draws its colours but none of its markers — and nothing
+        # else would ever add them, because the sampler runs at upload.
+        # A record IS current when it carries the key, even if the list
+        # inside is empty: that is "nothing was flagged", which is an
+        # answer.
+        candidates = Route.objects.filter(
+            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="cruxes")
+        )
         total = candidates.count()
 
         flag_label = "" if commit else " [READ-ONLY]"

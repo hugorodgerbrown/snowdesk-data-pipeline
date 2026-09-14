@@ -43,6 +43,10 @@ RECORD: dict[str, Any] = {
     "grid": "snowdesk-terrain-5m-3035",
     "points": [[7.4, 46.1], [7.41, 46.11]],
     "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3}],
+    # A CURRENT record carries ``cruxes`` even when nothing was flagged
+    # (SNOW-911): the key's presence is what the candidate queryset reads
+    # as "this row is up to date", and an empty list is an answer.
+    "cruxes": [],
 }
 
 
@@ -123,6 +127,25 @@ class TestCommit:
 
         builder.assert_not_called()
         assert "0 route(s)" in output
+
+    def test_a_record_written_before_cruxes_is_a_candidate_again(self) -> None:
+        """SNOW-911 added a key, and nothing else would ever add it.
+
+        The sampler runs at upload, so a route sampled before that ticket
+        draws its colours and none of its markers for good unless this
+        command picks it up. The key's PRESENCE is the test, not the list
+        inside it — an empty list is "nothing was flagged", an answer.
+        """
+        legacy = {k: v for k, v in RECORD.items() if k != "cruxes"}
+        route = RouteFactory.create(slope_samples=legacy)
+
+        with patch(_BUILDER, return_value=RECORD) as builder:
+            _run("--commit")
+
+        builder.assert_called_once()
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert "cruxes" in route.slope_samples
 
     def test_a_route_the_sampler_could_not_answer_for_stays_null(self) -> None:
         """Null keeps meaning NEVER SAMPLED, so a later run picks it up again."""

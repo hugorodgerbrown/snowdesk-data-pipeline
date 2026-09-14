@@ -29,7 +29,7 @@ from unittest.mock import patch
 import pytest
 from django.db import connection
 
-from apps.locations.services.terrain import TerrainSlope
+from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.trips.models import Trip
 from apps.trips.services.slope import (
@@ -46,6 +46,28 @@ _GRID_FIXTURE = (
 # A short meridian track: two coordinates about 1.1 km apart, which is
 # enough to hold several 25 m strides.
 MERIDIAN_TRACK = [[7.0, 46.0, 1000.0], [7.0, 46.01, 1200.0]]
+
+
+@pytest.fixture(autouse=True)
+def _silent_crux_probes() -> Any:
+    """Answer every SNOW-911 uphill probe with "we did not see".
+
+    ``apps.routes.services.cruxes`` imports ``sample_slope`` itself, so
+    patching the walk's copy does not reach the probes, and an unpatched
+    one would walk out to the real tile origin from a unit test. What the
+    probes conclude is ``tests/routes/test_cruxes.py``'s subject.
+    """
+    with patch(
+        "apps.routes.services.cruxes.sample_slope",
+        return_value=TerrainSlope(
+            angle_deg=None,
+            aspect_deg=None,
+            window_m=10.0,
+            unknown=TerrainUnknown.OUTSIDE_COVERAGE,
+            source=None,
+        ),
+    ):
+        yield
 
 
 def _grid() -> TerrainGrid:

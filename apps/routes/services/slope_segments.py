@@ -22,8 +22,15 @@ The record written to ``Route.slope_samples``::
       "points":   [[lon, lat], …],                         # N + 1
       "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3},
                    {"unknown": "outside_coverage"}, …],    # N
-      "summary":  {"sampled_m": …, "surveyed_m": …, …}     # SNOW-961
+      "summary":  {"sampled_m": …, "surveyed_m": …, …},    # SNOW-961
+      "cruxes":   [[lon, lat], …]                          # SNOW-911
     }
+
+``cruxes`` are the passages where the ground AROUND the skier can
+release — one coordinate per run of flagged segments, never one per
+segment; a flagged segment also carries ``crux: true``, which is the
+server-side truth the markers are grouped from. See
+``apps.routes.services.cruxes``.
 
 ``summary`` is the track in figures — how much of it is steep, how steep
 it gets, how much went unsurveyed — written here because this is the only
@@ -86,6 +93,7 @@ from apps.core.geo import haversine_m
 from apps.locations.services.terrain import TerrainSlope, TerrainUnknown, sample_slope
 from apps.locations.services.terrain_grid import load_grid
 from apps.routes.models import Route
+from apps.routes.services.cruxes import crux_points, is_crux, uphill_max_angle
 from apps.routes.services.slope_summary import summarise
 
 logger = logging.getLogger(__name__)
@@ -239,8 +247,54 @@ def build_slope_samples(
         "segments": segments,
     }
 
+    # SNOW-911: what is ABOVE each sample, which the angle underfoot
+    # cannot say. After the walk rather than inside it, so a run that
+    # aborts on an outage pays for no probes at all.
+    _mark_cruxes(
+        _interpolate_along(points, cumulative, midpoints),
+        segments,
+        grid.default_analysis_window_m,
+    )
+    record["cruxes"] = crux_points(record["points"], segments)
     record["summary"] = _walk_summary(boundaries, segments)
     return record
+
+
+def _mark_cruxes(
+    midpoints: list[tuple[float, float]],
+    segments: list[dict[str, Any]],
+    window_m: float,
+) -> None:
+    """Flag the segments whose surrounding terrain can release (SNOW-911).
+
+    Mutates ``segments`` in place, setting ``crux`` on the ones that
+    qualify. The reasoning — what a crux is, why the search is an uphill
+    arc, and why the threshold is not the colouring's — is in
+    ``apps.routes.services.cruxes``.
+
+    **AN UNKNOWN SEGMENT IS NOT PROBED AND IS NEVER FLAGGED.** Ground the
+    walk could not answer for has no aspect to search uphill of, and
+    marking it would assert something about terrain nothing looked at.
+    The absence of a marker there is not a claim of safety; that is what
+    the dashed line and the help topic are for.
+
+    Args:
+        midpoints: The sample coordinate of each segment, as
+            ``(longitude, latitude)``, in the same order.
+        segments: The per-segment records. Mutated.
+        window_m: The analysis spacing the walk used, so a probe is
+            measured like the sample it belongs to.
+
+    """
+    for (longitude, latitude), segment in zip(midpoints, segments, strict=True):
+        angle_deg = segment.get("angle_deg")
+        if angle_deg is None:
+            continue
+        uphill_deg = uphill_max_angle(
+            latitude, longitude, segment.get("aspect_deg"), window_m
+        )
+        if is_crux(angle_deg, uphill_deg):
+            segment["crux"] = True
 
 
 def _walk_summary(

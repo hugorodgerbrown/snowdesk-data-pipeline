@@ -71,6 +71,25 @@ MERIDIAN_TRACK: list[list[float | None]] = [[7.0, 46.0, None], [7.0, 46.03, None
 MERIDIAN_LENGTH_M = 3 * LEG_M
 
 
+@pytest.fixture(autouse=True)
+def _silent_crux_probes() -> Any:
+    """Answer every SNOW-911 uphill probe with "we did not see".
+
+    ``apps.routes.services.cruxes`` imports ``sample_slope`` itself, so
+    patching this module's copy does not reach it — an unpatched probe
+    would walk out to the real tile origin from a unit test. Silenced
+    rather than answered here because the probe geometry and what it
+    concludes are ``tests/routes/test_cruxes.py``'s subject; with the
+    probes saying nothing, a segment's OWN angle is the only thing that
+    can flag it, which is what the assertions below rely on.
+    """
+    with patch(
+        "apps.routes.services.cruxes.sample_slope",
+        return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
+    ):
+        yield
+
+
 def _grid() -> TerrainGrid:
     """Return the committed terrain grid definition.
 
@@ -246,6 +265,51 @@ class TestBuildSlopeSamples:
         assert record["window_m"] == grid.default_analysis_window_m
         assert record["stride_m"] == SAMPLE_STRIDE_M
 
+    def test_the_record_carries_its_cruxes(self) -> None:
+        """SNOW-911: grouped markers, not one per flagged segment.
+
+        Every segment is 41°, which is over the crux threshold, so the
+        whole track is one continuous passage — and a continuous passage
+        is ONE marker however many strides it spans.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(41.0),
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert all(segment["crux"] for segment in record["segments"])
+        assert len(record["cruxes"]) == 1
+        # The marker is a coordinate on the walk, not an invented point.
+        assert record["cruxes"][0] in record["points"]
+
+    def test_a_gentle_track_carries_an_empty_crux_list(self) -> None:
+        """Empty, not absent: "nothing was flagged" is an answer, and the
+        backfill command reads the KEY's presence as "this row is current".
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert record["cruxes"] == []
+        assert not any("crux" in segment for segment in record["segments"])
+
     def test_the_record_carries_its_summary(self) -> None:
         """SNOW-961: written here, where the exact segment lengths exist.
 
@@ -360,7 +424,13 @@ class TestBuildSlopeSamples:
             record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
-        assert record["segments"][0] == {"angle_deg": 41.0, "aspect_deg": 180.0}
+        # 41° is at or above the crux threshold, so the segment carries
+        # the flag as well — see apps/routes/services/cruxes.py.
+        assert record["segments"][0] == {
+            "angle_deg": 41.0,
+            "aspect_deg": 180.0,
+            "crux": True,
+        }
         assert record["segments"][1] == {"unknown": "no_data"}
         assert record["segments"][2] == {"angle_deg": 28.5, "aspect_deg": 180.0}
 

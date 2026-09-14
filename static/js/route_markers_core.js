@@ -39,6 +39,7 @@
  *   endpointsGeojson(routesCollection)
  *   startDotPixels(r, g, b)
  *   finishFlagPixels(r, g, b)
+ *   cruxRingPixels()
  */
 
 // @ts-check
@@ -68,6 +69,10 @@
   const POLE_W = 3;
   const POLE_TOP = 5;
   const POLE_BOTTOM = 35;
+
+  /** The crux ring's outer radius and stroke, in device pixels. */
+  const CRUX_RADIUS = 13;
+  const CRUX_STROKE = 3;
 
   /** The cloth's box, in device pixels. Four columns by three rows. */
   const CLOTH_X = POLE_X + POLE_W;
@@ -287,11 +292,56 @@
     return { width: SIZE, height: SIZE, data: data };
   }
 
+  /**
+   * The crux marker: an open ring, hollow, with nothing inside it.
+   *
+   * SNOW-911. It sits ON the coloured line rather than beside it, so the
+   * middle is left empty: a filled disc would hide the very segment
+   * colour the reader is being sent to look at, and the whole marker says
+   * "look here" rather than "here is a thing".
+   *
+   * **NO COLOUR OF ITS OWN.** Every pixel is opaque white and the layer
+   * registers it `sdf: true`, which keeps only the alpha mask and lets
+   * `icon-color` paint it — so the ring's colour is a paint property one
+   * line away from the layer rather than baked into pixel data. That is
+   * also why this cannot be a two-tone glyph: an SDF image collapses to
+   * its silhouette, which is the trap `finishFlagPixels` documents and
+   * avoids by NOT being an SDF.
+   *
+   * Antialiasing is deliberate. A hard-edged ring at 26 device pixels
+   * reads as a polygon; the fractional coverage at the boundary is what
+   * makes it a circle, and an SDF's alpha channel carries it exactly.
+   *
+   * @returns {{width: number, height: number, data: Uint8ClampedArray}} A
+   *   MapLibre StyleImage.
+   */
+  function cruxRingPixels() {
+    const data = blank();
+    const centre = SIZE / 2 - 0.5;
+    const inner = CRUX_RADIUS - CRUX_STROKE;
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const dx = x - centre;
+        const dy = y - centre;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Coverage falls off over one pixel at each edge of the stroke,
+        // which is what an antialiased circle is.
+        const outerAlpha = Math.min(1, Math.max(0, CRUX_RADIUS - distance));
+        const innerAlpha = Math.min(1, Math.max(0, distance - inner));
+        const alpha = Math.min(outerAlpha, innerAlpha);
+        if (alpha > 0) put(data, x, y, [255, 255, 255, Math.round(alpha * 255)]);
+      }
+    }
+    return { width: SIZE, height: SIZE, data: data };
+  }
+
   self.pwaRouteMarkersCore = Object.freeze({
     SIZE: SIZE,
     PIXEL_RATIO: PIXEL_RATIO,
     endpointsGeojson: endpointsGeojson,
     startDotPixels: startDotPixels,
     finishFlagPixels: finishFlagPixels,
+    cruxRingPixels: cruxRingPixels,
   });
 })();

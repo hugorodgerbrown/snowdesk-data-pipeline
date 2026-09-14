@@ -54,6 +54,29 @@ half that fits.
             screen or buried under your finger.
         {% endblocktrans %}
     </p>
+    {# SNOW-911: the crux rings. Two paragraphs, and the second is the    #}
+    {# reason the first is allowed to exist — a marker that is not         #}
+    {# exhaustive has to say so where the reader will meet it, and the map #}
+    {# legend links here precisely because the caveat does not fit in a    #}
+    {# key. Skitourenguru tell their own users the same thing in as many   #}
+    {# words, and they have the fuller analysis.                            #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-cruxes">
+        {% blocktrans trimmed %}
+            A saved route also carries rings at its key passages: the stretches where the terrain AROUND you is steep
+            enough to release a slab you could set off. That is a different question from the colour under your skis,
+            and it is the one the colour cannot answer &mdash; a flat traverse along the foot of a 40 degree face is
+            drawn gently and is exactly the place a ring is for. The rings come from the ground alone and never move
+            with the forecast, which is why they stay put on a day the bulletin calls low.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-cruxes-not-exhaustive">
+        {% blocktrans trimmed %}
+            <strong>The rings are not a full list, and a route without any is not a safe route.</strong> They come from
+            one measurement &mdash; the steepest ground within about 80 metres uphill &mdash; and real terrain judgement
+            takes in the size and shape of a slope, what is below it, and the forest on it. Read them as places to look
+            harder at, cross-check them against the slope shading, and keep asking what the rings missed.
+        {% endblocktrans %}
+    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
         {% blocktrans trimmed %}

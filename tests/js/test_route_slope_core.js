@@ -365,3 +365,89 @@ describe('summaryLines', () => {
     expect(lines.map((line) => line.key)).not.toContain('route-terrain-unsurveyed-m');
   });
 });
+
+/*
+ * cruxCollection / cruxCount — the key-passage markers (SNOW-911).
+ *
+ * The server has already grouped a run of flagged segments into ONE
+ * coordinate, so the only claims here are about unpacking: a pending
+ * route contributes nothing, a route with no markers contributes nothing,
+ * and the count the popup prints is the number of markers drawn.
+ */
+describe('cruxCollection', () => {
+  /** A route feature carrying the given crux coordinates. */
+  function withCruxes(cruxes, identity = { uuid: 'r1' }) {
+    const feature = sampled([12, 40]);
+    feature.properties.slope.cruxes = cruxes;
+    Object.assign(feature.properties, identity);
+    return feature;
+  }
+
+  it('turns each stored coordinate into one Point', () => {
+    const collection = core.cruxCollection({
+      type: 'FeatureCollection',
+      features: [withCruxes([[7.4, 46.1], [7.42, 46.12]])],
+    });
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0].geometry).toEqual({
+      type: 'Point',
+      coordinates: [7.4, 46.1],
+    });
+    // Carried so a tap on a ring can find the route it belongs to.
+    expect(collection.features[0].properties.uuid).toBe('r1');
+  });
+
+  it('marks nothing on a pending route', () => {
+    // Its one line says "this one is not yours yet"; rings would spend
+    // that line on a second message, and a non-owner's feature must
+    // carry nothing but its token.
+    const collection = core.cruxCollection({
+      type: 'FeatureCollection',
+      features: [withCruxes([[7.4, 46.1]], { token: 'tok', pending: true })],
+    });
+
+    expect(collection.features).toEqual([]);
+  });
+
+  it('is a valid empty collection when nothing is marked', () => {
+    expect(core.cruxCollection(null)).toEqual({
+      type: 'FeatureCollection',
+      features: [],
+    });
+    expect(
+      core.cruxCollection({ type: 'FeatureCollection', features: [sampled([12])] })
+        .features,
+    ).toEqual([]);
+  });
+
+  it('skips a coordinate that is not one', () => {
+    const collection = core.cruxCollection({
+      type: 'FeatureCollection',
+      features: [withCruxes([[7.4, 46.1], null, [7.4]])],
+    });
+
+    expect(collection.features).toHaveLength(1);
+  });
+});
+
+describe('cruxCount', () => {
+  it('counts the markers on one route', () => {
+    const feature = sampled([12, 40]);
+    feature.properties.slope.cruxes = [[7.4, 46.1], [7.42, 46.12]];
+
+    expect(core.cruxCount(feature)).toBe(2);
+  });
+
+  it('is zero for a route with none and for one never sampled', () => {
+    // The popup tells those two apart by whether there is a terrain
+    // summary at all, never by this number — which is why it does not
+    // return null for one of them.
+    const none = sampled([12]);
+    none.properties.slope.cruxes = [];
+
+    expect(core.cruxCount(none)).toBe(0);
+    expect(core.cruxCount({ properties: { name: 'Tour' } })).toBe(0);
+    expect(core.cruxCount(null)).toBe(0);
+  });
+});

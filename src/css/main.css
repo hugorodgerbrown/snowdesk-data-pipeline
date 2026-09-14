@@ -420,6 +420,19 @@
   --color-slope-gentle: #38bdf8;   /* <30°              */
   --color-slope-unknown: #94a3b8;  /* sampled, no answer */
 
+  /* —— the crux ring (SNOW-911) ——
+     A marker, not a band, and so deliberately NOT on the
+     scale above: the ring says WHERE to look and the line
+     under it already says how steep that ground is.
+     Borrowing a scale colour would make it read as a
+     sixth class. Near-black, which is the one ink
+     readable over all six of them — the ring is drawn
+     over the coloured line it marks. Mirrored as a
+     literal in map.js (ROUTE_CRUX_COLOUR), which cannot
+     read a custom property in a MapLibre paint property.
+     ————————————————————————————————————————— */
+  --color-crux-ring: #1a1916;
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;
