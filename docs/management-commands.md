@@ -840,6 +840,38 @@ uv run python manage.py backfill_route_slope_samples --commit         # apply
 uv run python manage.py backfill_route_slope_samples --commit --limit 20
 ```
 
+### `backfill_trip_slope_samples` — give old trips the ground they cross
+
+The same one-shot backfill for `Trip.slope_samples` (SNOW-962). Every trip
+created before that ticket has a null, which draws the trip page's line
+and height profile flat, and **nothing else would ever fill one in**:
+sampling is enqueued at creation only, so rendering an old trip schedules
+nothing. Raised by review on the pull request that added the column.
+
+**It copies before it walks, and that is most of the point.** A trip's
+snapshot came from a route whose geometry never changes, so where the
+source route is still present, already sampled, and its `points` are
+identical to the snapshot's, its record answers this trip exactly — at no
+cost, where a walk is an HTTP request per terrain tile. The walk is the
+fallback for a trip whose route is gone, unsampled, or no longer matches.
+All three conditions are load-bearing: `Trip.route` is provenance and may
+be null, and a record copied off a different track would paint one
+track's steepness onto another's.
+
+The preview reports the split — how many would inherit and how many need
+the origin — because that is the figure an operator is previewing for.
+`--delay` paces only the rows that actually walk; a copied trip waits for
+nothing. Everything else follows the routes command above: read-only
+means no request, a walk that learns nothing leaves the row null for a
+later run rather than counting as a failure, and a sampled row is not a
+candidate.
+
+```bash
+uv run python manage.py backfill_trip_slope_samples                  # preview
+uv run python manage.py backfill_trip_slope_samples --commit         # apply
+uv run python manage.py backfill_trip_slope_samples --commit --limit 20
+```
+
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at

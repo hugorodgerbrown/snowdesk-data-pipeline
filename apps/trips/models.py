@@ -132,10 +132,11 @@ class Trip(BaseModel):
     """A planned outing: one route, one day, one meeting point, one roster.
 
     **The snapshot is the trip.** ``points``, ``bounds``, ``distance_m``,
-    ``ascent_m``, ``descent_m``, ``point_count`` and ``route_name`` are
-    copied from the source ``Route`` when the trip is created and are never
-    re-read from it. Everything a trip page draws comes from these fields,
-    so a trip stays exactly what its organiser shared even after they
+    ``ascent_m``, ``descent_m``, ``point_count``, ``route_name`` and
+    ``slope_samples`` are copied from the source ``Route`` when the trip is
+    created and are never re-read from it. Everything a trip page draws
+    comes from these fields, so a trip stays exactly what its organiser
+    shared even after they
     rename, re-upload or delete the route it came from — and a participant
     who saved the route (SNOW-824) got the geometry they were shown rather
     than whatever the organiser's row happens to hold today.
@@ -278,6 +279,19 @@ class Trip(BaseModel):
             "The source route's label at the moment the trip was created. "
             "The fallback for a trip with no name of its own, and the seed "
             "for a saved copy's name (SNOW-824)."
+        ),
+    )
+    slope_samples = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Snapshot of the source route's terrain record, in the shape "
+            "Route.slope_samples stores (see "
+            "apps/routes/services/slope_segments.py). Copied at creation "
+            "and never re-read, like the geometry beside it — the ground "
+            "under a track is as static as the track. Null means NEVER "
+            "SAMPLED, which is not the same fact as a segment carrying an "
+            "unknown reason."
         ),
     )
 

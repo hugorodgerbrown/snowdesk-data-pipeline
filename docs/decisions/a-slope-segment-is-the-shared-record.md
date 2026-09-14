@@ -1,6 +1,6 @@
 ---
 name: a-slope-segment-is-the-shared-record
-description: Route.slope_samples, slope_segments.py — a 25 m stride sampled from the terrain not the track; null means never sampled, not unknown
+description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
 last-reviewed: 2026-09-14
 ---
@@ -163,19 +163,34 @@ over the origin this record exists to avoid.
   samples the COPY when the source had nothing to give, which a claim that
   beats the sharer's own task sees. Nothing else would ever sample it: the
   sharer's task carries the source's pk, and the backfill runs once.
-- **A trip-saved route is re-sampled rather than handed a record**
-  (`save_trip_route` in `apps/trips/services/routes.py`, SNOW-910), which
-  is the opposite of the line above and not an inconsistency. A claim has
-  the record in hand — `share.route.slope_samples` is one field access.
-  A trip has no route to read: its geometry is a SNAPSHOT and `Trip.route`
-  is provenance only and may be null
-  ([a-trip-is-one-object-with-a-roster](a-trip-is-one-object-with-a-roster.md)).
-  So the question there is not "copy or re-sample" but "put a slope column
-  on `Trip` or ask the origin again", and the column was declined: the
-  snapshot exists to hold a trip still against changes the ORGANISER could
-  make, the terrain is nobody's to edit, no trip surface draws a coloured
-  line, and a trip snapshotted from a freshly-uploaded route would carry a
-  null record anyway — so the column would buy tile reads and never
-  correctness. The re-sample is the same question over the same geometry,
-  and the only thing that moves under it is the tileset, whose next
-  version is a correction rather than drift.
+- **A trip carries its own copy of the record, and a trip-saved route
+  inherits it** (`Trip.slope_samples`, `_snapshot_fields` and
+  `save_trip_route` in `apps/trips/services/`, SNOW-962).
+
+  SNOW-910 decided the opposite — no column on `Trip`, and every
+  trip-saved route re-sampled — on four grounds. Three of them still
+  stand and one did not survive the next ticket, so both are recorded
+  here rather than one being quietly replaced.
+
+  What still stands: the snapshot exists to hold a trip still against
+  changes the ORGANISER could make, and the terrain is nobody's to edit;
+  a trip snapshotted from a freshly-uploaded route carries a null record,
+  so an enqueue is needed either way; and the geometry is not editable on
+  either side, so a re-sample would have been the same question over the
+  same ground.
+
+  What changed: **"no trip surface draws a coloured line" was the
+  load-bearing premise, and SNOW-962 is the ticket that made it false.**
+  The trip page draws its line and its height profile in the slope
+  classes, and it has no route to read them from — `Trip.route` is
+  provenance only and may be null
+  ([a-trip-is-one-object-with-a-roster](a-trip-is-one-object-with-a-roster.md)),
+  and re-reading it would break the snapshot rule besides. That leaves a
+  column as the only place the answer can live: the alternative is asking
+  the tile origin on every page render, which is not an alternative.
+
+  Once the column exists, `save_trip_route` is in exactly
+  `claim_route_share`'s position — the record is one field access away —
+  so it copies, and enqueues only for the null case. The enqueue that
+  SNOW-910 made unconditional is now the branch rather than the rule, and
+  a trip-route save costs no tile reads in the common case.

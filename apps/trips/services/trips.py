@@ -41,6 +41,7 @@ from django.db.models import ProtectedError
 from apps.locations.models import Location
 from apps.routes.models import Route
 from apps.trips.models import Trip, TripParticipant
+from apps.trips.services.slope import enqueue_trip_slope_sampling
 
 if TYPE_CHECKING:
     import datetime
@@ -68,6 +69,12 @@ _SNAPSHOT_FIELDS = (
     "ascent_m",
     "descent_m",
     "point_count",
+    # SNOW-962. The ground under the track is as static as the track, so
+    # it belongs in the snapshot beside it rather than being re-read from
+    # a route that may since have been renamed, deleted, or resampled
+    # against a rebuilt grid. Null when the source has never been sampled,
+    # which ``create_trip`` answers by sampling the trip itself.
+    "slope_samples",
 )
 
 
@@ -268,6 +275,12 @@ def create_trip(
         # See TripParticipant's docstring for why this is a row rather than
         # a special case in every roster query.
         TripParticipant.objects.create(trip=trip, user=user)
+
+    # AFTER the block closes, which is the placement
+    # ``enqueue_trip_slope_sampling`` demands and the one every other
+    # enqueue in this codebase observes. A no-op unless the snapshot came
+    # from a route nothing had sampled yet.
+    enqueue_trip_slope_sampling(trip)
 
     logger.info(
         "Trip created: user=%s uuid=%s route=%s",

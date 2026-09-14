@@ -193,7 +193,7 @@ class Command(BaseCommand):
             counts["sampled"] += 1
             return
         try:
-            samples = build_slope_samples(route)
+            samples = build_slope_samples(route.points, f"route pk={route.pk}")
         except Exception:  # noqa: BLE001 — broad catch intentional: one route must not abort the batch
             logger.exception(
                 "backfill_route_slope_samples: failed on route id=%s uuid=%s",
