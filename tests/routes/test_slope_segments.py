@@ -246,6 +246,38 @@ class TestBuildSlopeSamples:
         assert record["window_m"] == grid.default_analysis_window_m
         assert record["stride_m"] == SAMPLE_STRIDE_M
 
+    def test_the_record_carries_its_summary(self) -> None:
+        """SNOW-961: written here, where the exact segment lengths exist.
+
+        Every segment is the same known angle, so the summary's own
+        arithmetic is checkable by hand: all of the walk is surveyed, all
+        of it is steep at 34.25°, and it all falls in one band.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(34.25),
+            ),
+        ):
+            record = build_slope_samples(route)
+
+        assert record is not None
+        summary = record["summary"]
+        assert summary["surveyed_m"] == summary["sampled_m"] > 0
+        assert summary["steep_m"] == summary["sampled_m"]
+        # The STORED angle, not the sampled one: the summary reads the
+        # record's own rounded figures, so the popup can never quote a
+        # steepest angle the coloured segment beside it disagrees with.
+        assert summary["steepest_deg"] == 34.2
+        assert list(summary["bands"]) == ["slope-30"]
+        # The walk's own length, and every metre of it accounted for in
+        # exactly one band — the two figures a reader compares.
+        assert summary["bands"]["slope-30"] == summary["sampled_m"]
+
     def test_a_known_segment_carries_an_angle_and_an_aspect(self) -> None:
         """Rounded to a tenth of a degree — see the module's precision note."""
         route = RouteFactory.create(points=MERIDIAN_TRACK)

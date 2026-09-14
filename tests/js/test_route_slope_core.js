@@ -252,3 +252,116 @@ describe('segmentCollection', () => {
     });
   });
 });
+
+/*
+ * summaryLines — the same record in words (SNOW-961).
+ *
+ * The claim worth testing is the one about silence. A route the terrain
+ * could not answer for must say SO, and a route nobody has sampled must
+ * say NOTHING: the first is a coverage gap the reader has to know about,
+ * the second is a line that has simply not been looked at yet, and
+ * collapsing them would either invent a gap or hide one. Neither may
+ * report a zero — "0m over 30°" is a claim that ground is gentle, made
+ * about ground nothing measured.
+ */
+describe('summaryLines', () => {
+  it('states the steepest angle, the steep length and the gap', () => {
+    const lines = core.summaryLines({
+      sampled_m: 10000,
+      surveyed_m: 8000,
+      steep_m: 2500,
+      steepest_deg: 43.4,
+      bands: { 'slope-gentle': 5500, 'slope-40': 2500 },
+    });
+
+    expect(lines).toEqual([
+      { key: 'route-terrain-steepest', params: { deg: '43' } },
+      { key: 'route-terrain-steep-km', params: { km: '2.5', deg: '30' } },
+      { key: 'route-terrain-unsurveyed-km', params: { km: '2.0' } },
+    ]);
+  });
+
+  it('writes a short length in metres rather than as a fraction of a km', () => {
+    const lines = core.summaryLines({
+      sampled_m: 5000,
+      surveyed_m: 5000,
+      steep_m: 80,
+      steepest_deg: 33,
+      bands: { 'slope-30': 80 },
+    });
+
+    expect(lines[1]).toEqual({
+      key: 'route-terrain-steep-m',
+      params: { m: '80', deg: '30' },
+    });
+  });
+
+  it('says a wholly unsurveyed route is unsurveyed, and nothing else', () => {
+    const lines = core.summaryLines({
+      sampled_m: 9000,
+      surveyed_m: 0,
+      steep_m: 0,
+      bands: {},
+    });
+
+    // One line. No steepest (there is none), and no "0m over 30°", which
+    // would read as a claim that the ground is gentle.
+    expect(lines).toEqual([{ key: 'route-terrain-unsurveyed-all', params: {} }]);
+  });
+
+  it('says nothing at all about a route that has never been sampled', () => {
+    expect(core.summaryLines(null)).toEqual([]);
+    expect(core.summaryLines(undefined)).toEqual([]);
+    // A record that walked nothing is the same silence: there is no
+    // coverage gap to report because there was no walk.
+    expect(core.summaryLines({ sampled_m: 0, surveyed_m: 0, bands: {} })).toEqual([]);
+  });
+
+  it('omits the steep line when no surveyed ground reaches the threshold', () => {
+    const lines = core.summaryLines({
+      sampled_m: 4000,
+      surveyed_m: 4000,
+      steep_m: 0,
+      steepest_deg: 22,
+      bands: { 'slope-gentle': 4000 },
+    });
+
+    expect(lines).toEqual([
+      { key: 'route-terrain-steepest', params: { deg: '22' } },
+    ]);
+  });
+
+  it('reports a gap as short as one unknown segment', () => {
+    // The two figures are summed from the same lengths, so the shortfall
+    // is EXACTLY the unknown segments' length — about one stride for a
+    // single one. Suppressing that would hide a real hole in the coverage
+    // on a short track, which is the track most likely to have one.
+    const lines = core.summaryLines({
+      sampled_m: 1025,
+      surveyed_m: 1000,
+      steep_m: 0,
+      steepest_deg: 12,
+      bands: { 'slope-gentle': 1000 },
+    });
+
+    expect(lines).toContainEqual({
+      key: 'route-terrain-unsurveyed-m',
+      params: { m: '25' },
+    });
+  });
+
+  it('does not report a tenth of a metre of float residue as a gap', () => {
+    // The only way a wholly-surveyed track differs from itself: the two
+    // figures are rounded independently.
+    const lines = core.summaryLines({
+      sampled_m: 10000.1,
+      surveyed_m: 10000,
+      steep_m: 0,
+      steepest_deg: 12,
+      bands: { 'slope-gentle': 10000 },
+    });
+
+    expect(lines.map((line) => line.key)).not.toContain('route-terrain-unsurveyed-km');
+    expect(lines.map((line) => line.key)).not.toContain('route-terrain-unsurveyed-m');
+  });
+});

@@ -110,6 +110,7 @@ from apps.routes.services.shares import (
     pending_shares,
     pending_tokens,
 )
+from apps.routes.services.slope_summary import summarise_record
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,19 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
             # own colours. Unknown-per-segment is expressed inside the
             # value, by a null angle; see _compact_slope.
             **({"slope": slope} if slope is not None else {}),
+            # SNOW-961: the same record in figures, and a SEPARATE key
+            # from ``slope`` rather than a field inside it. That one's
+            # presence answers "is this line already coloured"; this one
+            # answers "what does the ground under it amount to", and a
+            # reader that conflated them would be one refactor away from
+            # drawing an uncoloured line because a summary was missing.
+            # Carried for a pending route too — the figures describe the
+            # ground, which does not depend on whose route it is.
+            **(
+                {"terrain": terrain}
+                if (terrain := summarise_record(route.slope_samples)) is not None
+                else {}
+            ),
         },
     }
 

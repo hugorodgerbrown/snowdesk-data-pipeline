@@ -461,6 +461,27 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // third form for a case a ski tour does not have.
   'route-duration-hours': '%(hours)sh%(minutes)sm',
   'route-duration-minutes': '%(minutes)sm',
+  // SNOW-961: the popup's TERRAIN line — what the ground the track
+  // crosses amounts to, under the track's own figures. Six strings and
+  // not one, for the reason the figures above are separate: each is
+  // omitted entirely when there is nothing to say, and a length under a
+  // kilometre is written in metres rather than as "0.1km", a number the
+  // reader has to convert back.
+  //
+  // The threshold is INTERPOLATED rather than written into the copy. The
+  // metres were counted against it on the server
+  // (apps/routes/services/slope_summary.py), so a locale rewording this
+  // line cannot move the figure away from its own label.
+  'route-terrain-steepest': 'Steepest %(deg)s°',
+  'route-terrain-steep-km': '%(km)skm over %(deg)s°',
+  'route-terrain-steep-m': '%(m)sm over %(deg)s°',
+  // "Not surveyed" NEVER means "not steep". The terrain grid covers
+  // Switzerland, so a route beyond it was sampled and answered nothing —
+  // the one thing known about it, and the reason the whole-route case
+  // gets a line of its own rather than a zero in each band.
+  'route-terrain-unsurveyed-km': '%(km)skm not surveyed',
+  'route-terrain-unsurveyed-m': '%(m)sm not surveyed',
+  'route-terrain-unsurveyed-all': 'Terrain not surveyed',
   // The same last-resort label routes/partials/_route.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle

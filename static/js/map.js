@@ -7874,6 +7874,35 @@
         container.appendChild(meta);
       }
 
+      // SNOW-961: the ground, on its own line under the route's own
+      // figures. A SECOND line rather than three more segments on the
+      // first: distance and ascent are facts about the track, these are
+      // facts about what it crosses, and running them together invites
+      // the reader to take "43°" for something the GPX said.
+      //
+      // Absent entirely for a route that has never been sampled — see
+      // summaryLines, which distinguishes that from one we looked at and
+      // could not answer.
+      // The core is in home.html's DEFERRED group, so it is not
+      // guaranteed to exist when this runs — the same reason
+      // ``routeSlopeSegmentsFor`` and ``flatOwnedRouteFilter`` test for
+      // it rather than assuming it. Without the core the popup loses its
+      // terrain line and keeps everything else, which is the right
+      // degradation: the figures are an addition to a popup that stood
+      // on its own before them.
+      const slopeCore = self.pwaRouteSlopeCore;
+      const terrainLines = slopeCore
+        ? slopeCore.summaryLines(readFeatureJson(props.terrain))
+        : [];
+      if (terrainLines.length) {
+        const terrainMeta = document.createElement('div');
+        terrainMeta.className = 'mt-0.5 text-xs text-text-2';
+        terrainMeta.textContent = terrainLines
+          .map((line) => self.pwaStrings.interpolate(MAP_STRINGS[line.key], line.params))
+          .join(' · ');
+        container.appendChild(terrainMeta);
+      }
+
       // uuid for an owned route, token for a pending one — see
       // appendElevationProfile. The two can never collide: a pending
       // feature carries no uuid and an owned one carries no token.

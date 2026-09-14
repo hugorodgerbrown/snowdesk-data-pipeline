@@ -1411,6 +1411,105 @@ class TestRoutesGeojsonSlope:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonTerrain:
+    """The terrain summary on a route feature (SNOW-961).
+
+    A separate key from ``slope`` and a separate set of states: the
+    colouring answers "is this line already painted", the summary answers
+    "what does the ground under it amount to".
+    """
+
+    def test_a_never_sampled_route_carries_no_terrain_key(self, client: Client) -> None:
+        """Nothing looked, so there is nothing to say — not even a gap."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, slope_samples=None)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "terrain" not in properties
+
+    def test_a_stored_summary_reaches_the_feature(self, client: Client) -> None:
+        """The sampler's own figures, not a second count of the same track."""
+        user = UserFactory.create()
+        client.force_login(user)
+        record = _slope_record(
+            {"angle_deg": 34.2, "aspect_deg": 105.3},
+            {"angle_deg": 41.0, "aspect_deg": 110.0},
+        )
+        record["summary"] = {
+            "sampled_m": 50.0,
+            "surveyed_m": 50.0,
+            "steep_m": 50.0,
+            "bands": {"slope-30": 25.0, "slope-40": 25.0},
+            "steepest_deg": 41.0,
+        }
+        RouteFactory.create(user=user, slope_samples=record)
+
+        terrain = client.get(GEOJSON_URL).json()["features"][0]["properties"]["terrain"]
+
+        assert terrain["steepest_deg"] == 41.0
+        assert terrain["steep_m"] == 50.0
+
+    def test_a_record_written_before_the_summary_is_summarised_on_read(
+        self, client: Client
+    ) -> None:
+        """The legacy path, which is what spares a backfill over the origin."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 34.2, "aspect_deg": 105.3},
+                {"angle_deg": 41.0, "aspect_deg": 110.0},
+            ),
+        )
+
+        terrain = client.get(GEOJSON_URL).json()["features"][0]["properties"]["terrain"]
+
+        assert terrain["steepest_deg"] == 41.0
+        # Both segments are at or above 30°, so every surveyed metre is
+        # steep — measured from the stored coordinates rather than from
+        # boundaries the record no longer carries.
+        assert terrain["steep_m"] == terrain["surveyed_m"] > 0
+
+    def test_a_fully_unknown_route_reports_a_walk_with_nothing_surveyed(
+        self, client: Client
+    ) -> None:
+        """The coverage gap, stated — the whole point outside Switzerland."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"unknown": "outside_coverage"},
+                {"unknown": "outside_coverage"},
+            ),
+        )
+
+        terrain = client.get(GEOJSON_URL).json()["features"][0]["properties"]["terrain"]
+
+        assert terrain["sampled_m"] > 0
+        assert terrain["surveyed_m"] == 0
+        # No bands and no steepest: a zero here would be a claim about
+        # ground nothing measured.
+        assert terrain["bands"] == {}
+        assert "steepest_deg" not in terrain
+
+    def test_a_malformed_record_carries_no_terrain_key(self, client: Client) -> None:
+        """Same refusal the colouring makes, for the same reason."""
+        user = UserFactory.create()
+        client.force_login(user)
+        malformed = _slope_record({"angle_deg": 34.2, "aspect_deg": 105.3})
+        malformed["points"] = [[7.4, 46.1]]
+        RouteFactory.create(user=user, slope_samples=malformed)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "terrain" not in properties
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonScoping:
     """Owner scoping — the layer draws the requesting user's routes alone."""
 

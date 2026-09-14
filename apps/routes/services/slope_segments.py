@@ -21,8 +21,16 @@ The record written to ``Route.slope_samples``::
       "grid": "snowdesk-terrain-5m-3035",
       "points":   [[lon, lat], …],                         # N + 1
       "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3},
-                   {"unknown": "outside_coverage"}, …]     # N
+                   {"unknown": "outside_coverage"}, …],    # N
+      "summary":  {"sampled_m": …, "surveyed_m": …, …}     # SNOW-961
     }
+
+``summary`` is the track in figures — how much of it is steep, how steep
+it gets, how much went unsurveyed — written here because this is the only
+place the exact segment lengths exist, and read by every surface that
+quotes a number back to the user. Its shape and the reason it is stored
+rather than derived on each read are in
+``apps.routes.services.slope_summary``.
 
 ``points`` and ``segments`` share endpoints: N + 1 coordinates bound N
 segments, so consecutive segments are not each given their own copy of the
@@ -78,6 +86,7 @@ from apps.core.geo import haversine_m
 from apps.locations.services.terrain import TerrainSlope, TerrainUnknown, sample_slope
 from apps.locations.services.terrain_grid import load_grid
 from apps.routes.models import Route
+from apps.routes.services.slope_summary import summarise
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +216,7 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
         )
         return None
 
-    return {
+    record: dict[str, Any] = {
         "window_m": grid.default_analysis_window_m,
         "stride_m": SAMPLE_STRIDE_M,
         "grid": grid.grid,
@@ -220,6 +229,46 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
         ],
         "segments": segments,
     }
+
+    record["summary"] = _walk_summary(boundaries, segments)
+    return record
+
+
+def _walk_summary(
+    boundaries: list[float], segments: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Return the figures for a completed walk (SNOW-961).
+
+    Computed here rather than by a reader because this is the only place
+    the EXACT segment lengths exist: ``boundaries`` is the along-track
+    walk, so a delta between consecutive entries is the ground a segment
+    actually covers. A later reader has only the boundary coordinates and
+    has to measure the chord between them instead — see
+    ``apps.routes.services.slope_summary``.
+
+    Args:
+        boundaries: The along-track distance of every segment boundary.
+        segments: The per-segment records, one per gap between them.
+
+    Returns:
+        The summary. Never None: the two arguments pair by construction —
+        the walk builds one segment per boundary gap — so ``summarise``
+        declining would be a programming error in this module rather than
+        a fact about the track, and storing an empty summary for it would
+        state a track of zero metres.
+
+    """
+    lengths_m = [
+        boundaries[index + 1] - boundaries[index]
+        for index in range(len(boundaries) - 1)
+    ]
+    summary = summarise(segments, lengths_m)
+    if summary is None:  # pragma: no cover — the two pair by construction
+        raise ValueError(
+            f"slope walk produced {len(segments)} segment(s) for "
+            f"{len(lengths_m)} boundary gap(s)"
+        )
+    return summary
 
 
 def stride_distances(total_m: float, stride_m: float) -> list[float]:
