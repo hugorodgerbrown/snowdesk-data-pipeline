@@ -41,8 +41,12 @@ class _StubApps:
     """Minimal stand-in for the historical app registry.
 
     ``_backfill_descent`` only ever calls ``get_model("routes", "Route")``,
-    and the concrete model is a faithful stand-in here because the
-    migration is the latest one — no field it touches has moved since.
+    and the concrete model is a faithful stand-in here because every
+    migration since 0002 has only ADDED fields (``started_at`` /
+    ``finished_at`` in 0003, ``slope_samples`` in 0005) — none of the
+    three the backfill touches (``points``, ``descent_m``, ``updated_at``)
+    has moved, so the concrete model still answers as the historical one
+    would.
     """
 
     def get_model(self, app_label: str, model_name: str) -> Any:

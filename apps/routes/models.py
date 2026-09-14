@@ -117,6 +117,25 @@ class Route(BaseModel):
     bbox — ``[min_lon, min_lat, max_lon, max_lat]`` — over the stored
     coordinates, so a fit-to-bounds frames exactly the line that gets
     drawn.
+
+    ``slope_samples`` (SNOW-910) is how steep the GROUND the track crosses
+    is, sampled from the terrain grid at a fixed stride. It is NEVER
+    derived from ``points``' own third ordinate, even though that would be
+    free: a skin track zigzagging up a 38° face rises about 15° along its
+    own length, and a rising traverse across one rises near zero. Painting
+    either of those green is the failure the whole feature exists to
+    avoid. See ``apps.routes.services.slope_segments`` for the record's
+    shape and the stride.
+
+    **Null means NEVER SAMPLED.** That is a different fact from a segment
+    inside the record whose ``unknown`` reason is set, which means the
+    terrain was asked and had no answer there, and the two must never
+    render alike: one is a route nothing has looked at yet, the other is
+    ground no survey covers. All three of
+    ``apps.locations.services.terrain.TerrainUnknown``'s reasons are kept
+    per segment even though the map collapses them to one treatment,
+    because the module's contract is that a reason is never reduced to a
+    null and SNOW-911 and SNOW-839 read the same record.
     """
 
     user = models.ForeignKey(
@@ -194,6 +213,18 @@ class Route(BaseModel):
     bounds = models.JSONField(
         help_text=(
             "GeoJSON bbox over the stored points: [min_lon, min_lat, max_lon, max_lat]."
+        ),
+    )
+    slope_samples = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Steepness of the GROUND the track crosses, sampled from the "
+            "terrain grid at a fixed stride — never derived from the "
+            "track's own elevation. Null means NEVER SAMPLED, which is not "
+            "the same fact as a segment whose unknown reason is set (that "
+            "is ground the survey does not cover); the two must never "
+            "render alike."
         ),
     )
 
