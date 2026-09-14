@@ -805,6 +805,41 @@ uv run python manage.py backfill_location_short_ids           # preview
 uv run python manage.py backfill_location_short_ids --commit  # apply
 ```
 
+### `backfill_route_slope_samples` — sample the terrain under old routes
+
+One-shot backfill for SNOW-910. Every `Route` uploaded before that ticket
+has a null `slope_samples`, which means NEVER SAMPLED and draws as a flat
+line; this walks each track at the 25 m stride and asks the terrain grid
+how steep the ground under it is. Routes uploaded since are sampled by a
+background task at upload, so this is only ever the historical set.
+
+**It cannot be a migration.** The work is one HTTP request per terrain
+tile a track crosses, against an origin outside the process — a deploy's
+`migrate` step must not sit on a table making network calls. Migration
+`0005` adds the column and nothing else.
+
+**Read-only means no request, not merely no write.** A preview reports the
+candidate count off the queryset and asks the origin nothing, which is
+stricter than the usual `--commit` contract because the cost here is
+outbound traffic rather than an UPDATE.
+
+A route the sampler could not answer for at all — the origin unreachable
+for the whole of it — is left NULL rather than written as a record of
+nothing, so a later run picks it up again. That is not counted as a
+failure and does not make the command exit non-zero; only a raised error
+does. Idempotent: a sampled row is not a candidate.
+
+`--delay` defaults to a second between routes (politeness towards the tile
+origin, not a limit it imposes); `--limit` takes a first batch so an
+operator can watch one before committing to the whole table. Expect a long
+run — a 15 km tour is several hundred samples.
+
+```bash
+uv run python manage.py backfill_route_slope_samples                  # preview
+uv run python manage.py backfill_route_slope_samples --commit         # apply
+uv run python manage.py backfill_route_slope_samples --commit --limit 20
+```
+
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
