@@ -77,6 +77,20 @@ half that fits.
             harder at, cross-check them against the slope shading, and keep asking what the rings missed.
         {% endblocktrans %}
     </p>
+    {# SNOW-964: the no-fall passages. After the ring paragraphs because   #}
+    {# the two marks land on nearly the same ground — anything over 50     #}
+    {# degrees was already ringed at 35 — so the copy's first job is to    #}
+    {# say what each one means that the other does not.                    #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-passages">
+        {% blocktrans trimmed %}
+            Where a saved route crosses ground over 50 degrees, the line splits: the colour widens and a pale core runs
+            down the middle of it. That is a no-fall passage &mdash; not the terrain around you, but the ground you are
+            standing on, where a slip does not stop. The ring says the slope above you can release; the split says you
+            are on it, and the two usually appear together. The pop-up names how many there are and what the track does
+            with the slope: down the fall line, up it, or across it. A rising traverse of 50 degree ground is marked
+            like any other, because it is no place to fall either.
+        {% endblocktrans %}
+    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
         {% blocktrans trimmed %}
@@ -85,6 +99,19 @@ half that fits.
             gentle face will not appear at any zoom, and neither will a small bench in the middle of a steep one. Zoom
             in far enough and you will see the individual squares &mdash; that is the resolution of the data, not a
             fault in the map.
+        {% endblocktrans %}
+    </p>
+    {# SNOW-964: and the caveat the split line cannot carry itself. About #}
+    {# the ROUTE SAMPLING — a 10 m analysis window walked every 25 m —    #}
+    {# and deliberately not a restatement of the raster paragraph above,  #}
+    {# which is a different measurement of a different thing.             #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-passages-smoothed">
+        {% blocktrans trimmed %}
+            <strong>An unmarked route is not a route without no-fall ground.</strong> A route&rsquo;s steepness is
+            sampled every 25 metres, and each sample is the average slope over about ten metres of hillside, so a narrow
+            steep passage between two gentler samples is smoothed away before anything measures it. The same goes the
+            other way: a stretch marked as no-fall may be a few metres of rock in the middle of an easy slope. The marks
+            say where to look, and nothing more than that.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">
