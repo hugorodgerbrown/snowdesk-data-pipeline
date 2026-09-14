@@ -218,9 +218,14 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-911's 'routes-cruxes' joins on the same terms again: the rings
   // belong to the routes a user switched on, and a switch that left them
   // painted over an empty map would be markers pointing at nothing.
+  // SNOW-964's two passage layers join on the same terms once more, and
+  // are APPENDED rather than prepended for the reason the whole group is
+  // ordered this way: ``panelOverlayPainted`` answers from element [0],
+  // and the roundel's colour comes from the flat line deliberately.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
     'routes-slope-line', 'routes-slope-unknown', 'routes-cruxes',
+    'routes-passage-edge', 'routes-passage-core',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.

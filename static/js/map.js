@@ -2515,6 +2515,44 @@
       type: 'geojson',
       data: routeSlopeSegmentsFor(geojson),
     });
+    // SNOW-964: the no-fall passages, drawn as a SPLIT LINE — this wider
+    // under-stroke, with `routes-passage-core`'s light run down its
+    // centre after the unknowns below. Two layers over the SAME source
+    // the coloured line uses, so the mark cannot land on different
+    // geometry from the colour it marks.
+    //
+    // THE EDGE TAKES THE BAND COLOUR, not a flat ink. A passage grows
+    // outward through the 45–50 band, so painting the whole of it
+    // `slope-50`'s near-black would report 47° ground as over 50 — the
+    // one direction of error this feature exists to prevent. It is the
+    // SAME expression `routes-slope-line` paints with, read once here,
+    // so the two cannot drift.
+    //
+    // DISTINCT FROM THE UNSURVEYED DASH, and the two are orthogonal: the
+    // dash interrupts the line ALONG its length, this splits it ACROSS
+    // its width. A segment can never be both (route_slope_core.js).
+    //
+    // The widths stay at or inside `routes-line-casing`'s 3/7/11 at
+    // every stop, so the casing keeps framing the mark over a pale
+    // basemap. Do not widen the casing to suit a wider mark — it draws
+    // off the `routes` source and would thicken every route on the map.
+    map.addLayer({
+      id: 'routes-passage-edge',
+      type: 'line',
+      source: 'route-slopes',
+      filter: ['==', ['get', 'passage'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        // Butt caps, for the reason `routes-slope-line` has them: a round
+        // cap on a 25 m segment overlaps its neighbour.
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': routeSlopeColourExpression(),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 6.5, 16, 11],
+      },
+    });
     map.addLayer({
       id: 'routes-slope-line',
       type: 'line',
@@ -2558,6 +2596,32 @@
         // In line-widths, so the dash keeps its proportions as the line
         // thickens with zoom — the same reasoning as the pending line's.
         'line-dasharray': [2, 1.5],
+      },
+    });
+    // SNOW-964: the other half of the split — the light core, over both
+    // slope layers so it reads as a gap opening in the line itself. At
+    // z12 that is about 2px of band colour, 2.4px of light, 2px of band.
+    //
+    // NOT A SEVENTH BAND: the passage keeps the colour of the ground
+    // under it, and the core is off the steepness scale entirely (see
+    // PASSAGE_CORE_COLOUR). A hue of its own would make a mark about the
+    // TRACK read as a class of GROUND.
+    map.addLayer({
+      id: 'routes-passage-core',
+      type: 'line',
+      source: 'route-slopes',
+      filter: ['==', ['get', 'passage'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
+        // mirroring --color-passage-core, which a MapLibre paint
+        // property cannot read for itself.
+        'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2.4, 16, 4.2],
       },
     });
     syncRouteSlopeLegend();
@@ -7125,6 +7189,14 @@
     // route untappable and sent the tap through to the region underneath.
     // Their features carry the route's uuid for exactly this (see
     // route_slope_core.js's segmentFeatures).
+    //
+    // SNOW-964's two passage layers are DELIBERATELY ABSENT, and so is
+    // their entry in ROUTE_LINE_LAYERS below. They add no geometry:
+    // `routes-slope-line` still draws every passage, with the same
+    // coordinates and the same uuid, so nothing left the tap path the
+    // way `routes-line` did for a sampled route in SNOW-910. Adding them
+    // would return the same route two more times from one tap for no
+    // behavioural change at all.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
