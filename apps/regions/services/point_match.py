@@ -207,3 +207,91 @@ def region_for_point(lat: float, lon: float) -> "MicroRegion | None":
             return region
 
     return None
+
+
+def regions_for_points(
+    points: list[tuple[float, float]],
+) -> list["MicroRegion | None"]:
+    """Return the MicroRegion containing each of many points.
+
+    The batch form of ``region_for_point``, added for SNOW-839, which asks
+    the question once per segment of a track — several hundred times for
+    one tour. Calling the single-point version in a loop would re-run its
+    **whole-table query** each time; this runs it once and then answers
+    from memory.
+
+    **THE LAST ANSWER IS TRIED FIRST**, which is what makes the walk
+    cheap. Consecutive samples along a track are 25 m apart, so they are
+    almost always in the region the one before was in — a hit there costs
+    a single point-in-polygon test, and only a genuine crossing pays for
+    the sorted scan. A track that stayed in one region used to cost N
+    queries and N sorted scans; it now costs one query and N cheap tests.
+
+    Args:
+        points: ``(latitude, longitude)`` pairs, in any order, though a
+            track's own order is what makes the cache above pay.
+
+    Returns:
+        One entry per point, in the same order: the containing
+        MicroRegion, or None where the point is outside every known
+        region. **None is an answer about our coverage, not about the
+        ground** — a caller must not read it as "no bulletin applies".
+
+    """
+    from apps.regions.models import MicroRegion  # noqa: PLC0415
+
+    if not points:
+        return []
+
+    candidates = list(
+        MicroRegion.objects.exclude(boundary__isnull=True).select_related(
+            "centroid_location"
+        )
+    )
+
+    found: list[MicroRegion | None] = []
+    previous: MicroRegion | None = None
+    for latitude, longitude in points:
+        if previous is not None and point_in_polygon(
+            longitude, latitude, previous.boundary
+        ):
+            found.append(previous)
+            continue
+        # A miss falls back to the full scan, ordered nearest-centre-first
+        # exactly as the single-point form does.
+        match = _first_containing(candidates, latitude, longitude)
+        found.append(match)
+        if match is not None:
+            previous = match
+    return found
+
+
+def _first_containing(
+    candidates: list["MicroRegion"], latitude: float, longitude: float
+) -> "MicroRegion | None":
+    """Return the first candidate whose boundary contains a point.
+
+    Args:
+        candidates: Regions with a boundary, already loaded.
+        latitude: Latitude of the point.
+        longitude: Longitude of the point.
+
+    Returns:
+        The containing region, or None.
+
+    """
+
+    def _sq_distance(region: "MicroRegion") -> float:
+        """Return the squared distance from the region centre to the point."""
+        centre = region.centre_point()
+        if centre is None:
+            return float("inf")
+        centre_lat, centre_lon = centre
+        dlon = centre_lon - longitude
+        dlat = centre_lat - latitude
+        return dlon * dlon + dlat * dlat
+
+    for region in sorted(candidates, key=_sq_distance):
+        if point_in_polygon(longitude, latitude, region.boundary):
+            return region
+    return None

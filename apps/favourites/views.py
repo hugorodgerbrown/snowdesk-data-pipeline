@@ -69,6 +69,7 @@ from django_ratelimit.decorators import ratelimit
 from apps import analytics
 from apps.accounts.identity import user_identity
 from apps.bulletins.models import RegionDayRating
+from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.core.coordinates import validate_coordinates
 from apps.core.decorators import require_htmx
 from apps.core.freshness import (
@@ -89,7 +90,7 @@ from apps.favourites.services import (
 )
 from apps.locations.services.what3words import what3words_map_url
 from apps.public.templatetags.snowdesk_time import danger_level_digit
-from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
+from apps.public.views import problem_cards_for_bulletin
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import (
@@ -615,7 +616,7 @@ def _favourite_card_context(
         # Avalanche problems — this location (SNOW-422). Rides today's
         # default bulletin; highlight-never-suppress, so every card the
         # bulletin publishes is annotated, never dropped.
-        bulletin = _select_bulletin_for_date(favourite.region, today)
+        bulletin = select_bulletin_for_date(favourite.region, today)
         if bulletin is not None:
             cards = problem_cards_for_bulletin(bulletin)
             # SNOW-802: a region pin has no elevation, so there is no
