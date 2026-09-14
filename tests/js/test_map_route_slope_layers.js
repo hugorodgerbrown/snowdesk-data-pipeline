@@ -69,8 +69,29 @@ const ROUTES_FC = {
       },
       properties: { uuid: 'flat-route', name: 'Never sampled' },
     },
+    {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [[9.0, 45.0, 1100], [9.0, 45.015, 1700]],
+      },
+      properties: {
+        // No uuid: a non-owner is never handed one. `_route_feature` is
+        // shared between the owned and pending branches, though, so a
+        // sampled share DOES arrive carrying a slope record — which is
+        // what makes "the chart declines to use it" a real assertion.
+        token: 'tok-pending',
+        pending: true,
+        name: 'Shared with me',
+        bounds: [9.0, 45.0, 9.0, 45.015],
+        slope: SLOPE,
+      },
+    },
   ],
 };
+
+/** Every DOM node handed to a popup, newest last. */
+const popupNodes = [];
 
 /** Layer definitions as map.js added them, by id. */
 const layers = new Map();
@@ -155,7 +176,10 @@ function stubMapLibre() {
     Popup: function () {
       const popup = {
         setHTML: () => popup,
-        setDOMContent: () => popup,
+        setDOMContent: (node) => {
+          popupNodes.push(node);
+          return popup;
+        },
         setLngLat: () => popup,
         addTo: () => popup,
         getElement: () => document.createElement('div'),
@@ -235,6 +259,10 @@ beforeAll(async () => {
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/route_markers_core.js');
   await import('../../static/js/route_slope_core.js');
+  // SNOW-960: the popup's chart. Without it `appendElevationProfile`
+  // returns early and the two profile assertions below would pass
+  // vacuously against a popup carrying no <svg> at all.
+  await import('../../static/js/elevation_profile_core.js');
   core = globalThis.pwaRouteSlopeCore;
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -384,6 +412,57 @@ describe('tapping a coloured route', () => {
     tapSlopeSegment('routes-slope-unknown');
 
     expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
+  });
+
+  it('colours the profile of the route it opens', () => {
+    popupNodes.length = 0;
+    tapSlopeSegment('routes-slope-line');
+
+    const strokes = [...popupNodes.at(-1).querySelectorAll('path')]
+      .map((path) => path.getAttribute('stroke'));
+
+    expect(strokes.some((stroke) => /--color-slope-/.test(stroke))).toBe(true);
+  });
+});
+
+describe('tapping a sampled route somebody shared', () => {
+  it('leaves its profile uncoloured', () => {
+    // Codex flagged this on #933. The colouring was briefly extended to
+    // pending shares on the grounds that the chart is not the line, and
+    // the line's teal dash already carries "not yours yet". But the
+    // six-swatch key and its link to the slope caveats live on the MAP
+    // legend, and `anyRouteSampled` excludes pending routes from the
+    // condition that reveals it — so a visitor who follows a sampled
+    // share and owns no sampled route of their own would meet the whole
+    // palette with nothing on screen to say what it means, on the one
+    // path where the reader is newest to the feature. A pending share is
+    // not coloured, anywhere.
+    popupNodes.length = 0;
+    queryAnswer = (options) => (
+      (options.layers || []).includes('routes-line-pending')
+        ? [{
+          layer: { id: 'routes-line-pending' },
+          properties: {
+            token: 'tok-pending',
+            pending: true,
+            name: 'Shared with me',
+            bounds: JSON.stringify([9.0, 45.0, 9.0, 45.015]),
+          },
+        }]
+        : []
+    );
+    for (const handler of mapStub.handlers.click || []) {
+      handler({ point: { x: 10, y: 10 }, lngLat: { lng: 9, lat: 45.01 } });
+    }
+    queryAnswer = () => [];
+
+    const strokes = [...popupNodes.at(-1).querySelectorAll('path')]
+      .map((path) => path.getAttribute('stroke'));
+
+    // A chart was drawn — the share carries elevation — and none of it
+    // names a slope token.
+    expect(strokes.length).toBeGreaterThan(0);
+    for (const stroke of strokes) expect(stroke).not.toMatch(/--color-slope-/);
   });
 });
 

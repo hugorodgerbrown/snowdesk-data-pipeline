@@ -7521,16 +7521,22 @@
      * SNOW-960 COLOURS IT BY SLOPE where the route has been sampled,
      * from the `slope` property on the very feature this already found.
      *
-     * AND IT DOES SO FOR A PENDING SHARE TOO, which is a deliberate
-     * divergence from the line. `route_slope_core.js` leaves a pending
-     * route's LINE teal and dashed because one line cannot carry two
-     * messages and "this one is not yours yet" is the one that matters
-     * there. The chart is not that line: the pending message is already
-     * carried by the line and by the Save control directly beneath this,
-     * so the profile is free to say the more useful thing about a route
-     * someone has just been handed — where the steep ground on it is.
-     * `_route_feature` serves `slope` on both branches, so nothing new is
-     * disclosed by drawing it.
+     * NOT FOR A PENDING SHARE, and that restriction was learned rather
+     * than designed. `_route_feature` serves `slope` on the pending
+     * branch too, so colouring one was possible and at first sight
+     * better — the line is already spoken for by the teal dash saying
+     * "this one is not yours yet", and the chart is a different surface.
+     * But the six-swatch key and the link to /help/#help-topic-slope are
+     * on the MAP legend, and `anyRouteSampled` excludes pending routes
+     * from the condition that reveals it. A visitor who follows a sampled
+     * share and owns no sampled route of their own would therefore meet
+     * the whole steepness palette with nothing on screen to say what it
+     * means — on the one path where the reader is newest to the feature.
+     * Widening the legend instead would put a key for the map line over a
+     * map whose only route is drawn teal. So the rule stays the one
+     * `route_slope_core.js` already applies to the line: a pending share
+     * is not coloured, anywhere. Saving it makes it an owned route, and
+     * owned routes are coloured.
      *
      * SNOW-764: the key may be a uuid OR a share token. A pending route
      * carries no uuid at all — a non-owner must not be handed the
@@ -7557,15 +7563,17 @@
       const coordinates = cached && cached.geometry && cached.geometry.coordinates;
       if (!Array.isArray(coordinates)) return null;
 
+      const cachedProps = cached.properties || {};
       const profile = core.readProfile(coordinates);
       const svg = core.createProfileSvg(profile, {
         label: MAP_STRINGS['route-profile-label'],
         // SNOW-960: the same record the slope layers paint the line
         // from, read off the same CACHED feature — not the tapped one,
         // whose properties MapLibre would have serialised to JSON text
-        // on the way out. Undefined for a route nothing has sampled, and
-        // the chart draws its single-colour curve.
-        slope: (cached.properties || {}).slope,
+        // on the way out. Undefined for a route nothing has sampled and
+        // for a pending share (see above), and the chart then draws its
+        // single-colour curve.
+        slope: cachedProps.pending ? undefined : cachedProps.slope,
       });
       if (!svg) return null;
       container.appendChild(svg);

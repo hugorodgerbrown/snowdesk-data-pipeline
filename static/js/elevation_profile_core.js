@@ -72,21 +72,18 @@
  * `route_slope_core.js` owns both the palette and the bucketing. Nothing
  * here classifies an angle itself.
  *
- * TWO DISTANCE SERIES THAT DO NOT AGREE. This module's x-axis is summed
- * from the SIMPLIFIED geometry the client holds; the slope record's
- * boundaries were walked at a 25 m stride along the FULL-RESOLUTION track
- * (apps/routes/services/slope_segments.py). The two totals differ by
- * whatever simplification removed, so a band placed at its absolute
- * metre mark would sit progressively wrong along a long tour. Both series
- * accumulate along the SAME track, though, so their FRACTIONS agree: a
- * band is placed at its share of the track's length, and the arithmetic
- * needs neither total to be the truth.
- *
- * The stride is not read from the record either, and must not be: a
- * trailing stub is absorbed into the last segment rather than appended
- * (`stride_distances`), so the final segment is between half and one and
- * a half strides. Measuring the sample points themselves is both simpler
- * and correct for that case.
+ * BANDS ARE PLACED BY SHARE, AND THE SHARE COMES FROM THE INDEX. The
+ * sampler walks a fixed stride ALONG the track
+ * (apps/routes/services/slope_segments.py), so segment i owns the i-th of
+ * N equal shares of it — no distance needs to be measured on this side at
+ * all, and none should be. Neither of the two obvious alternatives works:
+ * an absolute metre mark is wrong because this module's x-axis is summed
+ * from the SIMPLIFIED geometry while the stride was walked on the
+ * full-resolution track, and measuring the straight chords between sample
+ * coordinates is wrong because a chord cuts the corner at every bend, by
+ * more on a switchback than on a straight, so the loss cannot be
+ * normalised away. See `slopeBands` for the measured cost of that second
+ * one.
  *
  * ## Exports (frozen `self.pwaElevationProfileCore`)
  *
@@ -375,31 +372,42 @@
   /**
    * Read a route's wire slope record into bands of the track.
    *
-   * The record's N + 1 coordinates bound N sampled segments. This
-   * measures them, turns each segment into its SHARE of the track's
-   * length, and merges consecutive segments of the same class — a tour
-   * that skins for two kilometres of gentle valley arrives as 80
-   * segments and leaves as one band.
+   * Each segment becomes its SHARE of the track, and consecutive segments
+   * of the same class merge — a tour that skins for two kilometres of
+   * gentle valley arrives as 80 segments and leaves as one band.
    *
-   * FRACTIONS, NOT METRES, and the module comment says why: the sample
-   * points were walked along the full-resolution track while this
-   * module's x-axis is summed from the simplified one, so the two totals
-   * are not the same number for the same route. Normalising each series
-   * by its own total is what makes them comparable.
+   * THE SHARE COMES FROM THE SEGMENT'S INDEX, NOT FROM MEASURING THE
+   * SAMPLE POINTS, and that is the whole subtlety of this function.
+   * `stride_distances` places every boundary but the last at a whole
+   * multiple of the stride ALONG THE TRACK, so segment i occupies exactly
+   * the i-th of N equal shares of it. Measuring instead the straight
+   * chords between consecutive sample coordinates answers a different
+   * question: wherever the track bends between two samples the chord cuts
+   * the corner and comes up short, and because a switchback loses more
+   * than a straight does, the shortfall accumulates unevenly and dividing
+   * by the shortened total cannot take it back out. Measured against both
+   * test tracks it displaced bands by up to 1.9 px of the 288-unit chart,
+   * concentrated exactly where a skin track zigzags — which is where the
+   * steep classes are. Index shares are off by at most 0.14 px, and that
+   * residue is the absorbed stub described below.
    *
-   * The last band is extended to exactly 1 rather than left at whatever
-   * the measurement produced. The two series differ in the last decimal,
-   * and a band ending at 0.9998 would leave a sliver of the curve at the
-   * end of the track belonging to no class at all.
+   * The one irregular segment is the last: `stride_distances` absorbs a
+   * trailing remainder into it rather than appending a sliver, so it runs
+   * between half and one and a half strides. Treating it as an equal
+   * share is the only approximation here, it is bounded by half a stride
+   * over the whole track, and the last band is pinned to exactly 1 so no
+   * sliver of curve is left belonging to no class at all.
    *
    * @param {?{points?: Array<Array<number>>, angles?: Array<?number>}}
    *   slope The compact record from the route feature's `slope` property.
+   *   `points` is not measured, but IS checked: N + 1 coordinates to N
+   *   angles is the record's own integrity claim, and a record failing it
+   *   is one whose segments would be placed against the wrong ground.
    * @returns {Array<{classIndex: ?number, from: number, to: number}>}
-   *   Bands covering [0, 1], gentlest-to-steepest nowhere implied — they
-   *   are in track order. `classIndex` is null for a segment the terrain
-   *   had no answer for. Empty when there is nothing to colour by: no
-   *   record, a malformed one, a track with no length, or a page that has
-   *   not loaded `route_slope_core.js`.
+   *   Bands covering [0, 1], in track order. `classIndex` is null for a
+   *   segment the terrain had no answer for. Empty when there is nothing
+   *   to colour by: no record, a malformed one, or a page that has not
+   *   loaded `route_slope_core.js`.
    */
   function slopeBands(slope) {
     // The palette and the bucketing both live there, and nothing here
@@ -417,36 +425,28 @@
     // the bands would be placed against the wrong ground.
     if (points.length !== angles.length + 1) return [];
 
-    var cumulative = [0];
-    for (var i = 1; i < points.length; i += 1) {
-      var from = points[i - 1];
-      var to = points[i];
-      if (!Array.isArray(from) || !Array.isArray(to)) return [];
-      cumulative.push(cumulative[i - 1] + haversineM(from[0], from[1], to[0], to[1]));
-    }
-
-    var total = cumulative[cumulative.length - 1];
-    if (!(total > 0)) return [];
+    var count = angles.length;
+    if (!count) return [];
 
     var bands = [];
-    for (var j = 0; j < angles.length; j += 1) {
-      var index = core.classify(angles[j]);
+    for (var i = 0; i < count; i += 1) {
+      var index = core.classify(angles[i]);
       var last = bands.length ? bands[bands.length - 1] : null;
       // `===` covers the null case too, which is what merges a run of
       // consecutive unknowns into one dashed stretch rather than one per
       // 25 m of unsurveyed ground.
       if (last && last.classIndex === index) {
-        last.to = cumulative[j + 1] / total;
+        last.to = (i + 1) / count;
         continue;
       }
       bands.push({
         classIndex: index,
-        from: cumulative[j] / total,
-        to: cumulative[j + 1] / total,
+        from: i / count,
+        to: (i + 1) / count,
       });
     }
 
-    if (bands.length) bands[bands.length - 1].to = 1;
+    bands[bands.length - 1].to = 1;
     return bands;
   }
 

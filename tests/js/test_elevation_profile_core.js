@@ -26,10 +26,11 @@
  * SNOW-960 added the slope colouring, and its half of this file asserts
  * the two things that can silently go wrong:
  *
- *   - the bands are placed by their SHARE of the track, because the
- *     sample points were walked along the full-resolution geometry and
- *     the x-axis is summed from the simplified one — so the two series
- *     agree in fractions and disagree in metres;
+ *   - the bands are placed by their SHARE of the track, taken from the
+ *     segment's INDEX rather than by measuring anything. The stride is
+ *     walked along the track, so segment i owns the i-th of N equal
+ *     shares; chords between sample coordinates cut every corner and
+ *     cannot be normalised back;
  *   - a class is drawn as ONE path however many pieces of the track it
  *     owns. Six hundred segments on a long tour must not become six
  *     hundred DOM nodes in a popup.
@@ -332,18 +333,64 @@ describe('slopeBands — placing the classes along the track', () => {
   });
 
   it('places a band by its share of the track, never by its metres', () => {
-    // The same two classes over ten times the ground. The sample points
-    // were walked along the full-resolution track and the profile's
-    // x-axis is summed from the simplified one, so absolute distances
-    // do not line up and only the fractions can.
+    // The same two classes over ten times the ground. The stride was
+    // walked on the full-resolution track and the x-axis is summed from
+    // the simplified one, so absolute distances cannot line up.
     const near = core.slopeBands(slopeRecord([10, 41], 0.02));
     const far = core.slopeBands(slopeRecord([10, 41], 0.2));
 
-    expect(far).toHaveLength(near.length);
-    far.forEach((band, index) => {
-      expect(band.from).toBeCloseTo(near[index].from, 9);
-    });
-    expect(far[1].from).toBeCloseTo(0.5, 9);
+    expect(far).toEqual(near);
+    expect(far[1].from).toBe(0.5);
+  });
+
+  it('takes the share from the index, not from the sample geometry', () => {
+    // Codex flagged this on #933, and it is the subtle one. Every
+    // boundary but the last sits at a whole multiple of the stride ALONG
+    // the track, so segment i owns exactly the i-th of N shares. Measure
+    // the straight chords between sample coordinates instead and every
+    // bend cuts a corner — by more on a switchback than on a straight, so
+    // the shortfall accumulates unevenly and dividing by the shortened
+    // total cannot take it back out. Measured on the two test tracks it
+    // displaced bands by up to 1.9 px of 288, concentrated exactly where
+    // a skin track zigzags.
+    //
+    // Four segments of one stride each, but their sample coordinates sit
+    // at wildly uneven straight-line spacing — which is what a bend
+    // between two samples produces. Measured by chord, the boundaries
+    // land at 0.417 / 0.5 / 0.917; by index they are the quarters they
+    // actually are.
+    const bends = {
+      points: [
+        [7.0, 46.0], [7.0, 46.01], [7.0, 46.012],
+        [7.0, 46.022], [7.0, 46.024],
+      ],
+      angles: [10, 10, 41, 41],
+    };
+
+    expect(core.slopeBands(bends)).toEqual([
+      { classIndex: 0, from: 0, to: 0.5 },
+      { classIndex: 3, from: 0.5, to: 1 },
+    ]);
+
+    // And the boundary of a four-class record falls on every quarter,
+    // however the coordinates are spaced.
+    const perClass = { points: bends.points, angles: [10, 31, 41, 55] };
+    expect(core.slopeBands(perClass).map((band) => band.from))
+      .toEqual([0, 0.25, 0.5, 0.75]);
+  });
+
+  it('survives a record whose sample points are all in one place', () => {
+    // Zero chord length throughout. The old measurement divided by that
+    // total; an index share has nothing to divide by.
+    const stationary = {
+      points: [[7.0, 46.0], [7.0, 46.0], [7.0, 46.0]],
+      angles: [10, 41],
+    };
+
+    expect(core.slopeBands(stationary)).toEqual([
+      { classIndex: 0, from: 0, to: 0.5 },
+      { classIndex: 3, from: 0.5, to: 1 },
+    ]);
   });
 
   it('refuses a record whose halves do not pair up', () => {
