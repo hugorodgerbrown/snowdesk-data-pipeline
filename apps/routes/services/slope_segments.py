@@ -129,19 +129,30 @@ _COORDINATE_PRECISION = 6
 _UNAVAILABLE_RUN_LIMIT = 3
 
 
-def build_slope_samples(route: Route) -> dict[str, Any] | None:
-    """Sample the terrain along a route and return the record for it.
+def build_slope_samples(
+    points: list[list[float | None]], label: str
+) -> dict[str, Any] | None:
+    """Sample the terrain along a track and return the record for it.
 
-    Pure of the database: takes a route, returns what should be stored on
-    it, and writes nothing. ``_worker_sample_route_slopes`` is what saves
-    the result, and the backfill command shares this function so the two
-    paths can never produce differently-shaped records.
+    Pure of the database: takes a stored track, returns what should be
+    stored beside it, and writes nothing. Takes the POINTS rather than the
+    row holding them, because a ``Trip`` snapshots the same track and is
+    sampled by the same walk (SNOW-962) — and because the points are the
+    whole of the input, so a signature naming a model would be claiming a
+    dependency this function does not have.
+
+    ``_worker_sample_route_slopes`` is what saves the result, and the
+    backfill command shares this function so the two paths can never
+    produce differently-shaped records.
 
     NEVER RAISES for a data problem, because ``sample_slope`` does not —
     every failure to answer arrives as a reason on a segment.
 
     Args:
-        route: The route to sample. Only its ``points`` are read.
+        points: The stored track, as ``[lon, lat, ele]`` triples.
+        label: How the caller names this track in a log line, e.g.
+            ``"route pk=12"``. Never a coordinate — no log line in this
+            module carries one (SNOW-718/732).
 
     Returns:
         The record described in the module docstring, or None when there
@@ -156,13 +167,12 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
         # No definition means no sample can succeed, so this is the
         # all-unavailable case reached before doing any work.
         logger.warning(
-            "route slope sampling: terrain grid unavailable, route pk=%s left "
-            "unsampled",
-            route.pk,
+            "slope sampling: terrain grid unavailable, %s left unsampled",
+            label,
         )
         return None
 
-    cumulative = _cumulative_distances(route.points)
+    cumulative = _cumulative_distances(points)
     if not cumulative or cumulative[-1] <= 0:
         return None
 
@@ -174,14 +184,14 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
         for index in range(len(boundaries) - 1)
     ]
 
-    coordinates = _interpolate_along(route.points, cumulative, boundaries)
+    coordinates = _interpolate_along(points, cumulative, boundaries)
 
     # A loop rather than a comprehension, for the short-circuit below: the
     # run of consecutive failures has to be counted AS the walk proceeds,
     # because the whole point is not to finish it.
     segments: list[dict[str, Any]] = []
     unavailable_run = 0
-    for longitude, latitude in _interpolate_along(route.points, cumulative, midpoints):
+    for longitude, latitude in _interpolate_along(points, cumulative, midpoints):
         segment = _segment_record(sample_slope(latitude, longitude))
         segments.append(segment)
         if segment.get("unknown") != TerrainUnknown.UNAVAILABLE:
@@ -196,10 +206,10 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
             # went down, and it names the route and nothing else (no
             # coordinate ever reaches a log line — SNOW-718/732).
             logger.warning(
-                "route slope sampling: %d consecutive unavailable samples, "
-                "route pk=%s abandoned unsampled",
+                "slope sampling: %d consecutive unavailable samples, %s "
+                "abandoned unsampled",
                 unavailable_run,
-                route.pk,
+                label,
             )
             return None
 
@@ -210,9 +220,8 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
         segment.get("unknown") == TerrainUnknown.UNAVAILABLE for segment in segments
     ):
         logger.warning(
-            "route slope sampling: every sample was unavailable, route pk=%s "
-            "left unsampled",
-            route.pk,
+            "slope sampling: every sample was unavailable, %s left unsampled",
+            label,
         )
         return None
 
@@ -495,7 +504,7 @@ def _worker_sample_route_slopes(route_pk: int) -> None:
         )
         return
 
-    samples = build_slope_samples(route)
+    samples = build_slope_samples(route.points, f"route pk={route.pk}")
     if samples is None:
         # Left null on purpose: null is "never sampled", which is what a
         # run that learned nothing leaves true. See the module docstring.

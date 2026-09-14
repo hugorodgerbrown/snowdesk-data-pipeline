@@ -223,7 +223,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(34.25),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert len(record["points"]) == len(record["segments"]) + 1
@@ -239,7 +239,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(34.25),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert record["grid"] == grid.grid
@@ -263,7 +263,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(34.25),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         summary = record["summary"]
@@ -290,7 +290,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(34.248, 105.34),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert record["segments"][0] == {"angle_deg": 34.2, "aspect_deg": 105.3}
@@ -309,7 +309,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.sample_slope", return_value=flat
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert record["segments"][0] == {"angle_deg": 0.0, "aspect_deg": None}
@@ -327,7 +327,7 @@ class TestBuildSlopeSamples:
                 return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert record["segments"][0] == {"unknown": "outside_coverage"}
@@ -357,7 +357,7 @@ class TestBuildSlopeSamples:
                 side_effect=_next_answer,
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert record["segments"][0] == {"angle_deg": 41.0, "aspect_deg": 180.0}
@@ -376,7 +376,7 @@ class TestBuildSlopeSamples:
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ),
         ):
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
 
     def test_an_outage_stops_the_walk_rather_than_finishing_it(self) -> None:
         """The CALL COUNT is the assertion: an outage is not waited out.
@@ -396,7 +396,7 @@ class TestBuildSlopeSamples:
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ) as sampler,
         ):
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
 
         assert sampler.call_count == _UNAVAILABLE_RUN_LIMIT
 
@@ -417,7 +417,7 @@ class TestBuildSlopeSamples:
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ) as sampler,
         ):
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
 
         assert sampler.call_count == 1
 
@@ -446,7 +446,7 @@ class TestBuildSlopeSamples:
                 side_effect=_one_bad_tile,
             ) as sampler,
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert sampler.call_count == len(record["segments"])
@@ -478,7 +478,7 @@ class TestBuildSlopeSamples:
             # Nothing is stored: a part-sampled track would be a record
             # whose second half says the ground is unknown, which is a
             # claim about our origin rather than about the ground.
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
 
         assert sampler.call_count == good_samples + _UNAVAILABLE_RUN_LIMIT
 
@@ -494,7 +494,7 @@ class TestBuildSlopeSamples:
                 return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert all(
@@ -508,7 +508,7 @@ class TestBuildSlopeSamples:
             patch("apps.routes.services.slope_segments.load_grid", return_value=None),
             patch("apps.routes.services.slope_segments.sample_slope") as sampler,
         ):
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
         sampler.assert_not_called()
 
     def test_a_track_with_no_length_is_not_sampled(self) -> None:
@@ -522,7 +522,7 @@ class TestBuildSlopeSamples:
             ),
             patch("apps.routes.services.slope_segments.sample_slope") as sampler,
         ):
-            assert build_slope_samples(route) is None
+            assert build_slope_samples(route.points, f"route pk={route.pk}") is None
         sampler.assert_not_called()
 
     def test_the_terrain_is_sampled_and_never_the_track(self) -> None:
@@ -544,7 +544,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(41.0),
             ),
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert {segment["angle_deg"] for segment in record["segments"]} == {41.0}
@@ -561,7 +561,7 @@ class TestBuildSlopeSamples:
                 return_value=_known(34.0),
             ) as sampler,
         ):
-            record = build_slope_samples(route)
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
 
         assert record is not None
         assert sampler.call_count == len(record["segments"])
@@ -832,15 +832,14 @@ class TestTripSavedRoutesAreSampled:
             segment["angle_deg"] == 34.2 for segment in route.slope_samples["segments"]
         )
 
-    def test_a_sampled_source_route_hands_nothing_over(self) -> None:
-        """The snapshot carries no slope record, on purpose.
+    def test_a_sampled_trip_hands_its_record_over(self) -> None:
+        """The snapshot's own record is inherited, not re-walked (SNOW-962).
 
-        The organiser's own route may be fully sampled and it makes no
-        difference: ``_snapshot_fields`` has no ``slope_samples`` to copy
-        because ``Trip`` has no such column, and the copy is answered by a
-        fresh walk rather than by an inherited one. See
-        ``docs/decisions/a-trip-is-one-object-with-a-roster.md`` on what
-        the snapshot is for.
+        This reverses SNOW-910, and the reason is on the ticket: once
+        ``Trip`` carries the record — which it must, for the trip page to
+        colour its own line — this path is in ``claim_route_share``'s
+        position, with the answer one field access away. Re-walking would
+        ask the tile origin a question already answered.
         """
         from apps.trips.services.routes import save_trip_route
 
@@ -860,24 +859,19 @@ class TestTripSavedRoutesAreSampled:
             route=source,
             points=MERIDIAN_TRACK,
             point_count=2,
+            slope_samples=record,
         )
 
-        with (
-            patch(
-                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
-            ),
-            patch(
-                "apps.routes.services.slope_segments.sample_slope",
-                return_value=_known(34.25),
-            ),
+        with patch(
+            "apps.routes.services.slope_segments.sample_slope",
+            side_effect=AssertionError("the origin must not be asked again"),
         ):
             route = save_trip_route(UserFactory.create(), trip)
 
         route.refresh_from_db()
         assert route.slope_samples is not None
-        # 51.0 is the organiser's record. Inheriting it would have been the
-        # other design; this angle is the one the fresh walk answered.
-        assert route.slope_samples["segments"][0]["angle_deg"] == 34.2
+        # The snapshot's own angle, carried across untouched.
+        assert route.slope_samples["segments"][0]["angle_deg"] == 51.0
 
     def test_an_unreachable_origin_leaves_the_copy_unsampled(self) -> None:
         """Null is "never sampled", and a failed walk must leave it true.

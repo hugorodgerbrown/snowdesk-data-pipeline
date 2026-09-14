@@ -63,6 +63,8 @@
  *   readPayload(doc)              → the parsed payload, or null
  *   fitBoundsFor(bounds)          → [[w, s], [e, n]], or null
  *   routeSourceData(payload)      → the LineString FeatureCollection
+ *   routeSlopeSourceData(payload) → its per-segment slope collection
+ *   isSlopeColoured(payload)      → whether the flat line is suppressed
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   profileFor(payload)           → the profile data, or null
  *   drawProfileRange(profile, doc) → writes the profile's scale caption
@@ -172,6 +174,72 @@
   }
 
   /**
+   * The MapLibre `step` expression painting a segment by its slope class.
+   *
+   * Built from the core's CLASSES rather than written out, so this page
+   * and the map page cannot drift: both read one list. A `step` takes the
+   * first colour, then a (stop, colour) pair per class after it — the
+   * stops are the CLASS INDICES the core assigns, not angles, because the
+   * angle was classified server-side and the expression only looks the
+   * colour up.
+   *
+   * @returns {Array<*>|string} The expression, or the flat route colour
+   *   when the core is unavailable and there is nothing to classify by.
+   */
+  function slopeColourExpression() {
+    var core = self.pwaRouteSlopeCore;
+    if (!core) return ROUTE_LINE_COLOUR;
+    var expression = ['step', ['get', 'slope_class'], core.CLASSES[0].hex];
+    for (var i = 1; i < core.CLASSES.length; i += 1) {
+      expression.push(i, core.CLASSES[i].hex);
+    }
+    return expression;
+  }
+
+  /**
+   * The trip's track as one two-point LineString per sampled segment.
+   *
+   * SNOW-962. The snapshot carries its own copy of the terrain record
+   * (`Trip.slope_samples`), and `route_slope_core.js` turns the wire form
+   * of it into the segments MapLibre paints — the same module, the same
+   * palette and the same three states the map page's routes layer uses,
+   * so one track reads identically on both surfaces.
+   *
+   * An empty collection whenever there is nothing to colour: no core
+   * loaded, or a trip nothing has sampled. Never null — `setData` throws
+   * on one.
+   *
+   * @param {?Object} payload
+   * @returns {Object} A FeatureCollection, possibly empty.
+   */
+  function routeSlopeSourceData(payload) {
+    var core = self.pwaRouteSlopeCore;
+    var feature = payload && payload.route;
+    if (!core || !feature) return { type: 'FeatureCollection', features: [] };
+    return { type: 'FeatureCollection', features: core.segmentFeatures(feature) };
+  }
+
+  /**
+   * Whether the trip's line is drawn segment by segment rather than flat.
+   *
+   * The flat line has to be SUPPRESSED when it is, or the two paint over
+   * each other and the route colour shows through at every butt-capped
+   * join — the same reason `map.js` filters its own flat layer on
+   * `['!', ['has', 'slope']]`.
+   *
+   * Asked of the produced segments rather than of the property, because
+   * the segments are what actually draw: with no core loaded the property
+   * is there and nothing is painted from it, and suppressing the flat
+   * line on that would leave the page with no track at all.
+   *
+   * @param {?Object} payload
+   * @returns {boolean} True when the slope layers will draw the track.
+   */
+  function isSlopeColoured(payload) {
+    return routeSlopeSourceData(payload).features.length > 0;
+  }
+
+  /**
    * Wrap the payload's meeting-point Feature the same way.
    *
    * @param {?Object} payload
@@ -228,6 +296,10 @@
     var svg = self.pwaElevationProfileCore.createProfileSvg(profile, {
       doc: doc,
       label: STRINGS['elevation-profile'],
+      // SNOW-962: the same record the line above is coloured from, so the
+      // two pictures of one track agree. Undefined for a trip nothing has
+      // sampled, which draws the plain curve it always did.
+      slope: (payload && payload.route && payload.route.properties || {}).slope,
     });
     if (!svg) return;
     host.appendChild(svg);
@@ -335,16 +407,66 @@
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
       },
     });
-    map.addLayer({
-      id: 'trip-route-line',
-      type: 'line',
-      source: 'trip-route',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_LINE_COLOUR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-      },
-    });
+    // SNOW-962: the flat line is drawn only where the slope layers below
+    // will not. The casing above stays either way — it is what makes one
+    // stroke readable over both a pale basemap and a dark one, and that
+    // is as true of six colours as of one.
+    var coloured = isSlopeColoured(payload);
+    if (!coloured) {
+      map.addLayer({
+        id: 'trip-route-line',
+        type: 'line',
+        source: 'trip-route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ROUTE_LINE_COLOUR,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+        },
+      });
+    }
+
+    if (coloured) {
+      var slopeCore = self.pwaRouteSlopeCore;
+      map.addSource('trip-route-slopes', {
+        type: 'geojson',
+        data: routeSlopeSourceData(payload),
+      });
+      map.addLayer({
+        id: 'trip-route-slope-line',
+        type: 'line',
+        source: 'trip-route-slopes',
+        // `step` needs a number and an unknown segment has no class at
+        // all, so unknowns are excluded here rather than left to fall on
+        // the expression's first stop — which is the GENTLE colour, and
+        // painting unsurveyed ground as gentle is the one outcome this
+        // whole feature exists to prevent.
+        filter: ['!=', ['get', 'unknown'], true],
+        // Butt caps, not round: a round cap on a 25 m segment overlaps
+        // its neighbour and smears each colour a few metres into the next.
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': slopeColourExpression(),
+          // The same widths as the flat line: a sampled track and an
+          // unsampled one are the same object and must read as the same
+          // weight of thing.
+          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+        },
+      });
+      map.addLayer({
+        id: 'trip-route-slope-unknown',
+        type: 'line',
+        source: 'trip-route-slopes',
+        filter: ['==', ['get', 'unknown'], true],
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': (slopeCore || {}).UNKNOWN_COLOUR || '#94a3b8',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+          // In line-widths, so the dash keeps its proportions as the line
+          // thickens with zoom.
+          'line-dasharray': [2, 1.5],
+        },
+      });
+    }
 
     ensureMeetingIcon(map);
     map.addSource('trip-meeting', {
@@ -576,6 +698,12 @@
     readPayload: readPayload,
     fitBoundsFor: fitBoundsFor,
     routeSourceData: routeSourceData,
+    // SNOW-962. Pure functions of the payload, and the pair that decides
+    // whether the flat line is drawn at all — a wrong answer there is
+    // either a track painted twice or no track at all, neither of which
+    // any server-side assertion can see.
+    routeSlopeSourceData: routeSlopeSourceData,
+    isSlopeColoured: isSlopeColoured,
     meetingSourceData: meetingSourceData,
     profileFor: profileFor,
     // SNOW-840. Writes into the DOM rather than returning a value, so it

@@ -199,6 +199,12 @@ Context:
 <script defer src="{% static 'js/i18n_strings.js' %}"></script>
 <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
 <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+{# SNOW-962: the palette and the segment geometry the trip's line and its  #}
+{# profile are both coloured from. The SAME module the map page's routes   #}
+{# layer uses, so one track cannot read as two different pictures — see    #}
+{# static/js/route_slope_core.js. Ordered before trip_map.js, which reads  #}
+{# `self.pwaRouteSlopeCore` when it installs its layers.                   #}
+<script defer src="{% static 'js/route_slope_core.js' %}"></script>
 {# SNOW-829: which basemap this reader gets, and whether it drew anything #}
 {# (window.pwaBasemapStyleCore). Read by trip_map.js at its top level, so #}
 {# document order is load-bearing here as it is for the three above.      #}

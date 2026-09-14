@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/elevation_profile_core.js';
 import '../../static/js/route_markers_core.js';
+import '../../static/js/route_slope_core.js';
 import '../../static/js/trip_map.js';
 
 const core = self.pwaTripMapCore;
@@ -299,5 +300,79 @@ describe('ensureMeetingIcon — the image handed to MapLibre', () => {
     core.ensureMeetingIcon(map);
 
     expect(map.calls).toHaveLength(0);
+  });
+});
+
+/*
+ * The trip's line, coloured by the ground under it (SNOW-962).
+ *
+ * The claim worth testing is the one about the FLAT line. A trip whose
+ * snapshot carries a slope record is painted segment by segment, and
+ * leaving the flat line in as well paints the track twice — the route
+ * colour showing through at every butt-capped join. A trip with no record
+ * must keep the flat line, because an unsampled track is not an unknown
+ * one and a page that drew nothing would look broken.
+ */
+
+/** A payload whose route carries a slope record with the given angles. */
+function sampled(angles) {
+  const points = [];
+  for (let i = 0; i <= angles.length; i += 1) points.push([7.4 + i / 1000, 46.1]);
+  const p = payload();
+  p.route.properties.slope = { points, angles };
+  return p;
+}
+
+describe('routeSlopeSourceData', () => {
+  it('pairs the record out into one LineString per segment', () => {
+    const data = core.routeSlopeSourceData(sampled([12, 34, 47]));
+
+    expect(data.features).toHaveLength(3);
+    expect(data.features[0].geometry.coordinates).toHaveLength(2);
+    // The middle segment is in the 30–35 band, which is index 1.
+    expect(data.features[1].properties.slope_class).toBe(1);
+  });
+
+  it('marks an unanswered segment unknown and gives it no class', () => {
+    // A class on an unknown is one step expression away from being
+    // painted as gentle ground, which is the outcome the whole feature
+    // exists to prevent.
+    const data = core.routeSlopeSourceData(sampled([12, null]));
+
+    expect(data.features[1].properties.unknown).toBe(true);
+    expect(data.features[1].properties.slope_class).toBeUndefined();
+  });
+
+  it('is a valid empty collection for a trip nothing has sampled', () => {
+    // setData throws on a null, so this must never be one.
+    expect(core.routeSlopeSourceData(payload())).toEqual({
+      type: 'FeatureCollection',
+      features: [],
+    });
+    expect(core.routeSlopeSourceData(null).features).toEqual([]);
+  });
+});
+
+describe('isSlopeColoured', () => {
+  it('is true when the record produces segments to paint', () => {
+    expect(core.isSlopeColoured(sampled([12, 34]))).toBe(true);
+  });
+
+  it('is false for a trip that has never been sampled', () => {
+    // The flat line stays, and the page draws the track it always did.
+    expect(core.isSlopeColoured(payload())).toBe(false);
+  });
+
+  it('is false for a record that pairs up wrongly', () => {
+    // Three coordinates bound two segments, not three. Rather than paint
+    // segments against the wrong ground, nothing is coloured and the flat
+    // line carries the track.
+    const p = payload();
+    p.route.properties.slope = {
+      points: [[7.4, 46.1], [7.41, 46.11], [7.42, 46.12]],
+      angles: [12, 34, 47],
+    };
+
+    expect(core.isSlopeColoured(p)).toBe(false);
   });
 });

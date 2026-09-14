@@ -163,9 +163,14 @@ class TestFailures:
         first = RouteFactory.create()
         second = RouteFactory.create()
 
-        def _explode_once(route: Any) -> dict[str, Any]:
-            """Fail for the first route processed, succeed for the rest."""
-            if route.pk == second.pk:
+        def _explode_once(points: Any, label: str) -> dict[str, Any]:
+            """Fail for the first route processed, succeed for the rest.
+
+            Keyed on the LABEL, which carries the pk — ``points`` alone
+            cannot tell two routes apart, and the label is what the walk
+            is given to name a track in its own log lines.
+            """
+            if label == f"route pk={second.pk}":
                 raise RuntimeError("tile origin misbehaved")
             return RECORD
 

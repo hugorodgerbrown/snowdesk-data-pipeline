@@ -35,43 +35,27 @@ becomes an ordinary route the viewer owns, renameable and deletable like
 any other; a back-pointer would make it a second class of route every
 surface would then have to know about.
 
-**THE COPY IS SAMPLED, NOT HANDED A SLOPE RECORD** (SNOW-910). A trip's
-snapshot deliberately does not carry ``Route.slope_samples``, and this
-module enqueues terrain sampling for the copy instead.
+**THE COPY IS HANDED THE TRIP'S OWN SLOPE RECORD** (SNOW-962), and is
+sampled only when the trip has none to give.
 
-The snapshot exists to hold a trip still under the people it was sent to,
-and what it holds still is the ORGANISER'S: their name for the route,
-their geometry, their figures — which they could otherwise rename or
-delete out from under a recipient. **The terrain is nobody's to edit.**
-Snapshotting it would defend the record against a change that cannot
-happen, in exchange for a third store of a derived answer that no trip
-surface reads: the trip page and the share page draw their line plain,
-and only the routes feed is coloured.
+SNOW-910 did the opposite here — re-sampled every time — and said why at
+length: a trip had no route to read (``Trip.route`` is provenance only
+and may be null), so the choice was "put a slope column on ``Trip`` or
+ask the origin again", and the column was declined because **no trip
+surface drew a coloured line**. That premise is what SNOW-962 changed.
+The trip page now draws its line and its height profile in the slope
+classes, so the record has to be on the snapshot for the page to have
+anything to draw — and once it is there, this path is in exactly
+``claim_route_share``'s position, with the record one field access away.
 
-Neither geometry is editable either, which is what makes the re-sample
-EXACT rather than merely acceptable: ``update_trip`` takes no geometry
-argument, and ``Route`` has only ``create_route`` and ``delete_route``,
-so a track is renamed or deleted but never redrawn. The record this
-enqueue produces answers the same question about the same ground the
-organiser's own record answered.
+So the re-sample is gone and the copy is back. What is left of the old
+reasoning is its last paragraph, which was right: a trip created from a
+route uploaded minutes earlier snapshots a null, so the enqueue is still
+needed for that race. It is now the branch rather than the rule.
 
-This is not the second pass over the tile origin that
-``docs/decisions/a-slope-segment-is-the-shared-record.md`` rejects.
-``claim_route_share`` copies because it has the record IN HAND —
-``share.route.slope_samples`` is one field access away. This path has no
-route to read: ``Trip.route`` is provenance only and may be null, which
-is the whole reason the snapshot exists. So the choice here is not "copy
-or re-sample" but "put a slope column on ``Trip`` or ask the origin
-again", and asking is the smaller of the two. The geometry is identical,
-so it is the same question with the same answer; the only thing that
-moves under a fixed line is the tileset itself, whose next version is a
-correction on a safety surface rather than drift.
-
-A column would not even remove the ask. A trip created from a route
-uploaded minutes earlier snapshots a ``slope_samples`` that is still
-null, so this path would need the enqueue anyway — exactly the race
-``claim_route_share`` handles. The column would buy tile reads, never
-correctness.
+The full argument, including the four grounds the column was declined on
+and which of them SNOW-962 overturned, is in
+``docs/decisions/a-slope-segment-is-the-shared-record.md``.
 
 The cap is ``settings.ROUTES_MAX_PER_USER``, enforced through
 ``apps.routes.services.shares.write_route_copy`` — the routes app's own
@@ -129,10 +113,10 @@ def _snapshot_fields(trip: Trip) -> dict[str, Any]:
     is no uploaded file behind a trip) and the ``started_at`` /
     ``finished_at`` pair (a trip is a plan, never a recording).
 
-    ``slope_samples`` is absent for a different reason and cannot be
-    supplied here at all: it is not on ``Trip``, on purpose (SNOW-910 —
-    see the module docstring). The copy is written with the field's own
-    null default, and ``save_trip_route`` enqueues sampling for it.
+    ``slope_samples`` IS supplied, from the snapshot's own copy of it
+    (SNOW-962). Null passes through as null — a trip nothing has sampled
+    hands the copy nothing, and ``save_trip_route`` enqueues sampling for
+    that case alone.
 
     Args:
         trip: The trip whose snapshot is being copied.
@@ -153,6 +137,7 @@ def _snapshot_fields(trip: Trip) -> dict[str, Any]:
         "finished_at": None,
         "point_count": trip.point_count,
         "bounds": trip.bounds,
+        "slope_samples": trip.slope_samples,
     }
 
 
@@ -200,13 +185,13 @@ def already_saved(user: "AbstractBaseUser | AnonymousUser", trip: Trip) -> bool:
 def save_trip_route(user: "User", trip: Trip) -> Route:
     """Copy ``trip``'s route onto ``user``'s own account.
 
-    Terrain sampling is enqueued for the copy, ALWAYS (SNOW-910). The
-    snapshot carries no slope record to inherit — see the module
-    docstring for why it does not — so the copy is written null, and
-    nothing else would ever sample it: the organiser's own task carries
-    the SOURCE route's pk, and the historical backfill runs once. Without
-    this a trip-saved route drew flat for good, beside an identical line
-    that was coloured wherever else it appeared.
+    The copy inherits the trip's terrain record and is sampled only when
+    there is none to inherit (SNOW-962 — the module docstring carries why
+    this reversed SNOW-910). The enqueue still matters in that branch:
+    nothing else would ever sample the copy, because the organiser's own
+    task carries the SOURCE route's pk and the historical backfill runs
+    once, so without it a trip-saved route drew flat for good beside an
+    identical line that was coloured wherever else it appeared.
 
     Args:
         user: The authenticated viewer saving the route.
@@ -234,10 +219,13 @@ def save_trip_route(user: "User", trip: Trip) -> Route:
     # row lock for a tile-origin round trip per terrain tile the track
     # crosses.
     #
-    # Unconditional rather than guarded on the field being null, because
-    # here it always is — ``_snapshot_fields`` has none to supply. A guard
-    # would read as though the other branch were reachable.
-    enqueue_route_slope_sampling(route)
+    # Guarded now, where SNOW-910 was unconditional: the snapshot usually
+    # HAS a record to hand over, and re-walking the same track would ask
+    # the tile origin a question already answered. The branch that remains
+    # is the race — a trip created before its source route's own sampler
+    # landed, which snapshotted a null.
+    if route.slope_samples is None:
+        enqueue_route_slope_sampling(route)
 
     logger.info(
         "Trip route saved: user=%s trip=%s route=%s",

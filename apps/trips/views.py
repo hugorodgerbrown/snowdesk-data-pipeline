@@ -94,6 +94,8 @@ from apps.core.http import client_ip
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
 from apps.routes.services.routes import RouteLimitReached
+from apps.routes.services.slope_summary import summarise_record
+from apps.routes.services.slope_wire import compact_slope
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services.participants import (
@@ -205,6 +207,7 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
+    slope = compact_slope(trip.slope_samples)
     return {
         "route": {
             "type": "Feature",
@@ -214,6 +217,18 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
                 # None passes straight through: "unknown", not zero.
                 "ascent_m": trip.ascent_m,
                 "descent_m": trip.descent_m,
+                # SNOW-962: the same two keys the routes feed carries, on
+                # the snapshot's own record. OMITTED ENTIRELY rather than
+                # nulled when the trip has never been sampled — the map
+                # page's layers read the key's PRESENCE to decide whether
+                # a line is already coloured, and this page's line follows
+                # the same rule so one track reads alike on both.
+                **({"slope": slope} if slope is not None else {}),
+                **(
+                    {"terrain": terrain}
+                    if (terrain := summarise_record(trip.slope_samples)) is not None
+                    else {}
+                ),
             },
         },
         "meeting": {

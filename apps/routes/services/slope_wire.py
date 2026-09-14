@@ -1,0 +1,70 @@
+"""
+apps/routes/services/slope_wire.py — a slope record as it goes to a client.
+
+One function, ``compact_slope``, and it is the ONE place the stored
+record is reduced to what a map draws. It lived in
+``apps/routes/views.py`` until SNOW-962 gave the trip page a coloured
+line of its own; a second caller in another app is what moved it here,
+rather than a second copy of a reduction whose two halves have to agree
+on an invariant.
+
+The stored record is the server-side truth SNOW-911 and SNOW-839 read —
+an aspect and a named unknown reason per segment. The wire form is the
+subset MapLibre paints. They are deliberately not the same shape; see
+docs/decisions/a-slope-segment-is-the-shared-record.md.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Reduce a stored slope record to what the map actually draws.
+
+    THE STORED RECORD AND THE WIRE FORM ARE DELIBERATELY DIFFERENT.
+    ``Route.slope_samples`` is the server-side truth SNOW-911 and SNOW-839
+    read, and it carries an aspect and a named unknown reason per segment.
+    The map needs neither: it paints one colour per angle band and one
+    dashed treatment for every unknown, whatever the reason. On a 15 km
+    tour that is several hundred segments, and sending the full record
+    would roughly double a payload the offline cache has to hold.
+
+    So ``angles`` is a flat list, one per segment, with **null for an
+    unknown**. That null means "sampled, no answer" and is safe here
+    precisely because the key's PRESENCE already carries the other fact:
+    a never-sampled route has no ``slope`` property at all. The two are
+    distinguishable on the client, which is the rule
+    ``Route.slope_samples``' help_text sets and the map's two layers
+    depend on. ``Trip.slope_samples`` carries the same rule.
+
+    Args:
+        samples: The row's ``slope_samples``, or None if never sampled.
+
+    Returns:
+        ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, or
+        None when there is nothing to draw — never sampled, or a record
+        whose halves do not pair up (N + 1 coordinates to N angles), which
+        would draw segments against the wrong ground.
+
+    """
+    if not samples:
+        return None
+
+    points = samples.get("points") or []
+    segments = samples.get("segments") or []
+    if len(points) != len(segments) + 1:
+        logger.warning(
+            "route slope record is malformed: %d point(s) to %d segment(s)",
+            len(points),
+            len(segments),
+        )
+        return None
+
+    return {
+        "points": points,
+        "angles": [segment.get("angle_deg") for segment in segments],
+    }
