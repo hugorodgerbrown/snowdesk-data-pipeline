@@ -459,12 +459,19 @@ function installDownloadsBridge(rows, cachesStub) {
       const core = getCore();
       const record = areaRecord(areaId);
       if (!record) return { tiles: 'none', content: false };
+      // SNOW-951 review: a record whose bucket is gone is refused, not
+      // half-mended — neither half of a sync fetches a tile grid.
+      if (cachesStub.bucketAbsent) return { tiles: 'absent', content: false };
       const activeKey = window.pwaBasemapDownloads.activeBasemapKey();
       const isActive = !!activeKey && record.basemapKey === activeKey;
-      const missing = core.missingRenderDependencies(
-        renderDependencyUrls(record.deps, isActive),
-        new Set(cachesStub.urls || []),
-      );
+      const resolved = renderDependencyUrls(record.deps, isActive);
+      // And an empty resolution is the rule's UNKNOWN row, which is a
+      // different answer from "nothing was missing" — the sheet must not
+      // report it as a success.
+      if (resolved.length === 0) {
+        return { tiles: 'unknown', content: await refreshContent(areaId) };
+      }
+      const missing = core.missingRenderDependencies(resolved, new Set(cachesStub.urls || []));
       let tiles = 'none';
       if (missing.length > 0) {
         if (cachesStub.repairFails) {
@@ -495,6 +502,11 @@ function installCachesStub(existing) {
     // every test in this file: no live deps means no row is judged.
     urls: [],
     liveDeps: [],
+    // SNOW-951 review: whether the area's pinned bucket is on this device
+    // at all. `syncArea` resolves it for real (`pinnedBucketAreaIds`);
+    // here it is one flag, because what the SHEET owns is only what it
+    // does with the answer.
+    bucketAbsent: false,
     delete: vi.fn(async (name) => names.delete(name)),
   };
   // jsdom has no `caches`; define it rather than stubGlobal so the
@@ -1640,7 +1652,46 @@ describe('"Sync now" (SNOW-951)', () => {
     expect(window.MapSheet.toast).toHaveBeenCalled();
   });
 
+  it('toasts when the tile half was never established', async () => {
+    // SNOW-951 review: `'unknown'` (a record naming no dependencies, on a
+    // basemap that is not loaded) and `'absent'` (no pinned bucket on this
+    // device) are not failures of a fetch — they are the absence of one.
+    // Reporting either as "Synced" is the false all-clear the whole
+    // control exists to rule out, so both take the same message as a
+    // fetch that fell short.
+    seed({ 'basemap.customAreas': healthyCustomArea({ deps: [], basemapKey: 'swisstopo_winter' }) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('toasts when the area has no bucket left to sync into', async () => {
+    seed({ 'basemap.customAreas': healthyCustomArea() });
+    window.caches.bucketAbsent = true;
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-sync]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
   it('says nothing when both halves land', async () => {
+    // The live style resolves to a dependency list and every URL in it is
+    // on disk. Both halves are needed: SNOW-951 review made an EMPTY
+    // resolution `'unknown'` rather than `'nothing missing'` — which is
+    // what `activeBasemapRenderDependencyURLs`'s own docstring has always
+    // said it means — so a fixture with no deps and no live style is an
+    // area nobody has judged, not a healthy one.
+    window.caches.liveDeps = ['https://tiles.example.invalid/liberty.json'];
+    window.caches.urls = ['https://tiles.example.invalid/liberty.json'];
     seed({ 'basemap.customAreas': healthyCustomArea() });
     await loadModule();
     openSheet();

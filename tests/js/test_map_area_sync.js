@@ -420,14 +420,52 @@ describe('the tile half', () => {
     // be judged — so the tile half declines rather than accusing it, and
     // the content half still runs, which is everything this can honestly
     // do for such an area.
+    //
+    // It reports `'unknown'`, NOT `'none'`. The two used to be the same
+    // answer, and that let a press report "Synced" for an area whose
+    // drawing dependencies had never been looked at — the false all-clear
+    // this control exists to rule out.
     holdDependencies([]);
     await seedArea({ deps: [], basemapKey: 'swisstopo_winter' });
 
     const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
 
-    expect(result.tiles).toBe('none');
+    expect(result.tiles).toBe('unknown');
     expect(result.content).toBe(true);
     expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a record whose bucket this device no longer holds', () => {
+  it('refuses both halves rather than half-mending it', async () => {
+    // A record outliving its pinned bucket is a supported state — the
+    // account keeps what you chose, the device keeps what it can. The
+    // network menu's list is built from records alone (pwa_offline.js
+    // does not load the download core), so such a row reaches here.
+    //
+    // Neither half of a sync fetches a tile grid, so running it would
+    // write a handful of documents into a fresh bucket, satisfy a render
+    // check that never inspected the tiles, and report an area as current
+    // that cannot draw one. The remedy is a re-download.
+    cachesStub.buckets.clear();
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result).toEqual({ tiles: 'absent', content: false });
+    expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+
+  it('leaves the content stamp exactly as it found it', async () => {
+    // The stamp is what every other surface reads for the area's age. A
+    // refusal must not move it, or the report would say the area was
+    // brought up to date by the press that declined to touch it.
+    await seedArea({ contentAt: '2026-01-02T10:00:00.000Z' });
+    cachesStub.buckets.clear();
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    const record = await storedArea();
+    expect(record.contentAt).toBe('2026-01-02T10:00:00.000Z');
   });
 });
 

@@ -1985,6 +1985,32 @@ describe('the per-area sync rows (SNOW-951)', () => {
     expect(rows()[0].state).toBe('failed');
   });
 
+  it('reports a run that never established the tiles at all', async () => {
+    // SNOW-951 review. This list is built from RECORDS — `pwa_offline.js`
+    // runs on every page and deliberately does not load the 140KB core it
+    // would need to name a pinned bucket — so a record whose bucket the
+    // device no longer holds gets a row here, and `syncArea` answers
+    // `'absent'` for it. That is not a fetch that fell short; it is a
+    // sync that could not apply, and saying "Synced" would be the false
+    // all-clear. `'unknown'` is the same shape of answer for a record
+    // naming no dependencies on an unloaded basemap.
+    for (const tiles of ['absent', 'unknown']) {
+      buildFixture();
+      stubDb({ 'basemap.regions': [{ region_id: 'CH-4115', name: 'Martigny' }] });
+      window.pwaBasemapDownloads = {
+        syncArea: vi.fn(async () => ({ tiles, content: tiles === 'unknown' })),
+      };
+      await loadModule();
+      await openMenu();
+
+      document.querySelector('[data-network-sync-area]').click();
+      await tick();
+      await tick();
+
+      expect(rows()[0].state).toBe('failed');
+    }
+  });
+
   it('navigates to /offline/ with the area named on a page that cannot', async () => {
     // Off the map there is no `syncArea` — `basemap_download_core.js` is
     // 140KB of map-and-/offline/-only code — so the press hands the area

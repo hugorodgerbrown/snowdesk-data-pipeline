@@ -734,8 +734,15 @@
     Promise.resolve(bridge.syncArea(resolveSyncAreaId(areaId)))
       .then((result) => {
         // Either half falling short means the area is not current, which
-        // is the only thing the press asked for.
-        const ok = !!result && result.tiles !== 'failed' && !!result.content;
+        // is the only thing the press asked for. SNOW-951 review: only
+        // `'ok'` (mended) and `'none'` (nothing to mend) are claims that
+        // the tiles were established — `'unknown'` and `'absent'` are not,
+        // and this list is built from records alone, so `'absent'` is
+        // exactly the row a bucket-less record puts here.
+        const ok =
+          !!result &&
+          (result.tiles === 'ok' || result.tiles === 'none') &&
+          !!result.content;
         syncStates.set(areaId, ok ? 'done' : 'failed');
         // The staleness line above has just moved, and it is read from
         // the records rather than told an answer.

@@ -3274,10 +3274,13 @@ async function refreshAreaContent(areaId) {
  * The rule itself is not restated: `areaRenderDependencyURLs` owns the
  * three-row resolution (recorded list / live style / unknown), and an
  * UNKNOWN answer resolves to `[]`, which `missingRenderDependencies` reads
- * as "no claim" rather than as "complete". That is the honest outcome
- * here too — an area on a basemap that is not loaded gets its content
- * refetched and its tiles left alone, which is everything this page can
- * truthfully do for it.
+ * as "no claim" rather than as "complete". An area on a basemap that is
+ * not loaded gets its content refetched and its tiles left alone, which is
+ * everything this page can truthfully do for it — but SNOW-951 review:
+ * that is not the same answer as "nothing was missing", and this returns
+ * `null` for it so `syncArea` can say so. Reporting the two alike let a
+ * press claim "Synced" for an area whose drawing dependencies had never
+ * been looked at.
  *
  * The slope raster is appended unconditionally, unlike the sheet's own
  * call, which excludes the shared base layer. No base layer can reach this
@@ -3285,27 +3288,84 @@ async function refreshAreaContent(areaId) {
  * `basemap.customAreas`, and a base layer lives in neither.
  *
  * @param {Object} record A `basemap.regions` or `basemap.customAreas` entry.
- * @returns {Promise<string[]>} Empty when nothing is missing, when nothing
- *   can be claimed, and when Cache Storage will not answer — a sync that
- *   cannot read the disk declines the tile half rather than refetching a
- *   list it has no evidence for.
+ * @returns {Promise<string[]|null>} The URLs to fetch — empty when nothing
+ *   is missing. `null` when the question could not be ASKED: no download
+ *   core, Cache Storage that will not answer, or a dependency list neither
+ *   recorded nor resolvable from the live style. A sync that cannot read
+ *   the disk declines the tile half rather than refetching a list it has
+ *   no evidence for, and says which of the two it is doing.
  */
 async function _missingAreaRenderDependencies(record) {
   const core = self.pwaBasemapDownloadCore;
-  if (!core || typeof core.missingRenderDependencies !== 'function') return [];
+  if (!core || typeof core.missingRenderDependencies !== 'function') return null;
   let cached;
   try {
     cached = await pinnedBasemapCacheURLs();
   } catch (_e) {
-    return [];
+    return null;
   }
   const activeKey = activeBasemapKey();
   const isActive = !!activeKey && record.basemapKey === activeKey;
-  const depURLs = [
-    ...areaRenderDependencyURLs(record.deps, isActive),
-    ...areaSlopeTileUrls(record),
-  ];
-  return core.missingRenderDependencies(depURLs, cached);
+  const recorded = areaRenderDependencyURLs(record.deps, isActive);
+  const slope = areaSlopeTileUrls(record);
+  // The three-row rule's UNKNOWN branch, and the only one that reaches
+  // here as an empty list: a record written before SNOW-844 stored its
+  // deps, on a basemap that is not the loaded one. The slope tiles are
+  // derived from the record rather than the style, so an area with those
+  // is still judgeable on them — the same distinction the sheet's own
+  // `markIncompleteRows` draws.
+  if (recorded.length === 0 && slope.length === 0) return null;
+  return core.missingRenderDependencies([...recorded, ...slope], cached);
+}
+
+/**
+ * SNOW-951 review: whether this device actually holds the area's bucket.
+ *
+ * A `basemap.regions` / `basemap.customAreas` entry is a RECORD, and a
+ * record outliving its pinned Cache Storage bucket is a state the estate
+ * supports on purpose — the account keeps what you chose, the device
+ * keeps what it can (`onDevice` in `basemap_manage_core.js`). Everything
+ * that offers a per-row action already reconciles the two: the Manage
+ * downloads sheet gates its controls on `onDevice`, and `/offline/`'s row
+ * gates on `areaState(...).status === 'ready'`.
+ *
+ * The network menu's list does not — it is built in `pwa_offline.js`,
+ * which runs on every page and deliberately does not load the 140KB
+ * download core it would need to name a bucket. So the reconciliation
+ * happens HERE instead, at the one place that can see both halves, and it
+ * covers every caller rather than one surface's list.
+ *
+ * It matters because the remedy does not fit the fault: `syncArea` mends
+ * render dependencies and content, and neither is the area's tile grid.
+ * Running it against a bucket-less record would write a handful of
+ * documents into a fresh bucket, satisfy the render check — which never
+ * inspected the tiles (see
+ * docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) —
+ * and report an area as current that cannot draw a single tile. The
+ * remedy for that record is a re-download, which the sheet already
+ * offers.
+ *
+ * `pinnedBucketAreaIds` answers `[]` both for a device holding nothing
+ * and for one whose Cache Storage would not answer, and that conflation
+ * is harmless here: every half of a sync WRITES to Cache Storage, so a
+ * device that cannot be read cannot be synced either, and refusing is the
+ * same outcome reached without spending the connection to find out.
+ *
+ * @param {string} areaId The pinned bucket id.
+ * @returns {Promise<boolean>} `true` when there is no reader on the page
+ *   to ask — an older cached shell without
+ *   `static/js/basemap_downloaded_areas.js` falls through to the sync it
+ *   was asked for rather than being refused on no evidence.
+ */
+async function _areaBucketOnDevice(areaId) {
+  const areas = window.pwaBasemapAreas;
+  if (!areas || typeof areas.pinnedBucketAreaIds !== 'function') return true;
+  try {
+    const ids = await areas.pinnedBucketAreaIds();
+    return Array.isArray(ids) && ids.includes(areaId);
+  } catch (_e) {
+    return true;
+  }
 }
 
 /**
@@ -3337,22 +3397,33 @@ async function _missingAreaRenderDependencies(record) {
  * of consistency in a report. They are independent remedies and they are
  * reported independently.
  *
+ * WHAT IT WILL NOT DO is stand in for a re-download. Both halves write
+ * documents into an area's EXISTING bucket; neither fetches a tile grid.
+ * So a record whose bucket this device no longer holds is refused outright
+ * (`'absent'`) rather than half-mended into something that passes the
+ * render check and still draws nothing — SNOW-951 review, and see
+ * `_areaBucketOnDevice` for where such a record comes from.
+ *
  * @param {string} areaId The pinned bucket id.
- * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
- *   `tiles` is `'none'` when there was nothing missing to fetch — the
- *   healthy case — and also for an area whose dependency list is unknowable
- *   (see `_missingAreaRenderDependencies`). `content` is
+ * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent',
+ *   content: boolean}>} `tiles` is `'none'` when there was nothing missing
+ *   to fetch — the healthy case; `'unknown'` when the dependency list
+ *   could not be resolved at all, which is NOT the same claim and must not
+ *   be reported as one (see `_missingAreaRenderDependencies`); `'absent'`
+ *   when this device holds no bucket for the id, in which case nothing is
+ *   fetched and `content` is `false`. `content` is otherwise
  *   `refreshAreaContent`'s own answer, unchanged, including its
- *   short-plan and empty-plan semantics. Both are `'none'`/`false` for an
+ *   short-plan and empty-plan semantics. `'none'`/`false` for an
  *   id nothing on this device carries.
  */
 async function syncArea(areaId) {
   const found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
+  if (!(await _areaBucketOnDevice(areaId))) return { tiles: 'absent', content: false };
 
-  let tiles = 'none';
   const missing = await _missingAreaRenderDependencies(found.record);
-  if (missing.length > 0) {
+  let tiles = missing === null ? 'unknown' : 'none';
+  if (missing && missing.length > 0) {
     const repaired = await new Promise((resolve) => {
       repairPinnedDownload({
         areaId: areaId,

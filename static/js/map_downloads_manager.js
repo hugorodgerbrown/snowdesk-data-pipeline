@@ -421,7 +421,11 @@
   //
   // Per AREA, not one global flag: two areas may legitimately be syncing
   // at once — they are separate buckets and separate fetches — and one
-  // running run must not disable every other row's control.
+  // running run must not disable every other row's control. They do not
+  // run SIMULTANEOUSLY, and cannot: `pwaWarmCache` queues (SNOW-951
+  // review, sw_register.js), so the second press starts its fetches when
+  // the first has finished with the worker. Both rows still say "running"
+  // throughout, which is what is true of both.
   var syncing = new Set();
 
   // SNOW-749: the sign-in gate's configuration, read off the roundel that
@@ -1823,7 +1827,13 @@
       // area to be current and it is not; which of the two halves missed
       // is a distinction they can act on nowhere — the remedy is the same
       // press again, on a better connection.
-      const ok = !!result && result.tiles !== 'failed' && result.content;
+      //
+      // SNOW-951 review: the tile half is judged on what it CLAIMS, not on
+      // the absence of a failure. `'ok'` mended what was missing and
+      // `'none'` found nothing to mend; `'unknown'` and `'absent'` are
+      // both "this was never established", and reporting either as a
+      // success is the false all-clear the whole control exists to avoid.
+      const ok = !!result && (result.tiles === 'ok' || result.tiles === 'none') && result.content;
       if (!ok) window.MapSheet?.toast(STRINGS['sync-failed']);
       // Re-render either way, from real cache state and the record as it
       // stands now — a run that half landed has still changed what is on

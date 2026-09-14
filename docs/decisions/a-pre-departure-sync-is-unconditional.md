@@ -109,3 +109,27 @@ load is spent at the one moment the network is there by definition.
   `includes/_icon_repair.html` existed for the sheet's Repair control
   alone and went with it; the private `repairPinnedDownload` is untouched
   and is still the tile path.
+- **A sync is not a re-download, and never reports as one.** Both halves
+  write documents into an area's existing pinned bucket; neither fetches a
+  tile grid. So `syncArea` reports the tile half as one of five answers,
+  and only two of them are a claim that the tiles are established:
+  `'ok'` (mended what was missing) and `'none'` (nothing was missing).
+  `'failed'` is a repair that did not land; `'unknown'` is a dependency
+  list that could not be resolved at all — a record written before
+  SNOW-844 stored its `deps`, on a basemap that is not the loaded one;
+  `'absent'` is a record whose pinned bucket this device no longer holds,
+  which is refused outright rather than half-mended into something that
+  satisfies the render check and still draws nothing. `'absent'` is the
+  one reconciliation the network menu's list cannot do for itself: it is
+  built in `pwa_offline.js`, which runs on every page and deliberately
+  does not load the download core it would need to name a bucket, so the
+  check lives in `syncArea` where both halves are visible and covers
+  every caller. The remedy for such a record is the re-download the
+  Manage downloads sheet already offers.
+- **Warm-cache calls queue.** `window.pwaWarmCache` tracks its run in one
+  slot and `sw.js` warms one list at a time, so two presses before the
+  first settles used to have the second overwrite the first's
+  `requestId` — the first then sat out its full silence timeout and
+  reported a failure while its documents were landing. `sw_register.js`
+  now serialises every call through one chain. Two rows may both read
+  "running"; they take the worker in turn.
