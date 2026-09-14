@@ -1637,6 +1637,27 @@
 .map-legend-swatch--slope-45 { background: var(--color-slope-45); }
 .map-legend-swatch--slope-50 { background: var(--color-slope-50); }
 
+/* SNOW-910: the two the route LINE adds to the five above. The raster has
+   no counterpart for either — it paints nothing under 30°, and it has no
+   way at all to say "sampled, no answer". See their tokens in
+   src/css/main.css for why a line needs both. */
+.map-legend-swatch--slope-gentle { background: var(--color-slope-gentle); }
+
+/* Drawn as a dash rather than a solid block, because on the map the dash
+   is half the signal: a reader who cannot separate this grey from the
+   over-50° one still reads the broken line as "not surveyed". A gradient
+   rather than a border-style, so the swatch keeps the square footprint
+   every other one in this key has. */
+.map-legend-swatch--slope-unknown {
+    background: repeating-linear-gradient(
+        90deg,
+        var(--color-slope-unknown) 0,
+        var(--color-slope-unknown) 3px,
+        transparent 3px,
+        transparent 5px
+    );
+}
+
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral
  * dark fill with a thin white stroke so it reads against any basemap or
  * EAWS rating fill. Smaller than the rating swatches so the pin looks

@@ -53,6 +53,25 @@ const readTodayDateParam = () => {
   return d && DATE_KEY_RE.test(d) ? d : null;
 };
 
+// SNOW-953: how many days BEHIND today an offline download carries
+// bulletins for, as the server rendered it onto ``#season-scrubber``'s
+// ``data-content-past-days``. Read from the DOM for the same reason
+// ``readTodayDateParam`` above is — the day window is anchored on the
+// SERVER's today, so its reach has to be too.
+//
+// Zero when the attribute is absent, negative, or not a whole number: an
+// older shell mid-rollout gets today-onwards, which is exactly what it did
+// before this setting existed. A malformed value is the same case — there
+// is no reading of it that would make a download better, and guessing one
+// would fetch days nobody configured.
+const readContentPastDays = () => {
+  const el = document.getElementById('season-scrubber');
+  const raw = el && el.dataset.contentPastDays;
+  if (!raw || !/^\d+$/.test(raw)) return 0;
+  const days = parseInt(raw, 10);
+  return Number.isFinite(days) && days >= 0 ? days : 0;
+};
+
 // SNOW-793: the day the map should be showing — the one the URL asked for,
 // and today when it asked for none.
 //

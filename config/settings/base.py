@@ -493,6 +493,11 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # not country-filtered) — same static-reference-data caching
         # rationale as the geojson endpoints above.
         "/api/region-basemap-tiles/",
+        # SNOW-953: what one rectangle contains, for an offline download's
+        # content plan. Bbox-keyed, date-free and public, so the same
+        # caching rationale applies — and without this exemption
+        # ``Vary: Cookie`` would defeat it.
+        "/api/area-content/",
         # SNOW-419's community-reports overlay is deliberately NOT listed.
         # SNOW-459 made it private/no-store (its waffle-flag gate is per-user,
         # so the response can't be shared-cached), so there is no
@@ -994,6 +999,27 @@ SLOPE_TILE_URL = config(
 )
 SLOPE_TILE_ORIGIN = basemap_origin(SLOPE_TILE_URL)
 
+# SNOW-917: the terrain HEIGHT tileset's origin — a 5 m Int16 grid over
+# Switzerland in EPSG:3035, published by SNOW-908 from the snowdesk-tiles
+# repo. It answers "how steep is the ground here", where SLOPE_TILE_URL
+# above only paints a picture of it.
+#
+# A BASE, NOT AN XYZ TEMPLATE, and the difference is deliberate.
+# ``SLOPE_TILE_URL`` is handed verbatim to MapLibre, which substitutes the
+# placeholders itself, so the template IS the setting. Django composes two
+# different paths under this one — ``grid.json`` for the geometry and
+# ``{x}/{y}.s16`` for a tile — so a template would have to be edited to
+# reach the definition that describes it.
+#
+# NO CSP ENTRY, and it must not go through ``basemap_origin`` or
+# ``csp_defaults``: nothing in a browser fetches this. Every request to it
+# is a server-side ``requests.get`` from
+# ``apps.locations.services.terrain``, which a page policy does not govern.
+TERRAIN_TILE_BASE_URL = config(
+    "TERRAIN_TILE_BASE_URL",
+    default="https://tiles.snowdesk-data.info/terrain/v1",
+)
+
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
 CSP_DEFAULTS = csp_defaults(OPENFREEMAP_ORIGIN, slope_origin=SLOPE_TILE_ORIGIN)
@@ -1334,6 +1360,28 @@ if _unknown_basemap_countries:
     )
 
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")
+
+# SNOW-953: how many PAST days an offline download carries bulletins for.
+# Zero-based and counted BACKWARDS from today: 0 is today onwards, 1 adds
+# yesterday, 3 adds the three days behind today. Forwards is not a setting
+# — it is data-driven off the last published day (SNOW-927's
+# ``latestKnownDate``), because "is tomorrow's bulletin out yet" is a fact
+# about the pipeline rather than a preference. Reaching backwards costs a
+# handful of small HTML pages, and a day a region has no bulletin for
+# renders a 200 empty state, so it cannot fail a download.
+OFFLINE_CONTENT_PAST_DAYS = config("OFFLINE_CONTENT_PAST_DAYS", default=3, cast=int)
+
+# A negative reach is not a smaller window, it is an inverted one: the day
+# loop would run from a start AFTER its end and yield nothing but the day on
+# screen, which reads as "downloads carry no bulletins" rather than as a
+# misconfigured number. Refused at startup, where the operator who typed it
+# is still watching, rather than absorbed by the client's own fallback.
+if OFFLINE_CONTENT_PAST_DAYS < 0:
+    raise ImproperlyConfigured(
+        f"OFFLINE_CONTENT_PAST_DAYS is {OFFLINE_CONTENT_PAST_DAYS}; it counts "
+        f"days BACKWARDS from today and cannot be negative. Use 0 for today "
+        f"onwards."
+    )
 
 # SNOW-791: which drawing of the weather icons to serve. Snowdesk draws its
 # own (bin/build-weather-icons) and that is the default; the other sets are

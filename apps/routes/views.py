@@ -232,6 +232,54 @@ def _pending_shares_for(request: HttpRequest) -> list[RouteShare]:
     return pending_shares(request.session)
 
 
+def _compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Reduce a stored slope record to what the map actually draws.
+
+    THE STORED RECORD AND THE WIRE FORM ARE DELIBERATELY DIFFERENT.
+    ``Route.slope_samples`` is the server-side truth SNOW-911 and SNOW-839
+    read, and it carries an aspect and a named unknown reason per segment.
+    The map needs neither: it paints one colour per angle band and one
+    dashed treatment for every unknown, whatever the reason. On a 15 km
+    tour that is several hundred segments, and sending the full record
+    would roughly double a payload the offline cache has to hold.
+
+    So ``angles`` is a flat list, one per segment, with **null for an
+    unknown**. That null means "sampled, no answer" and is safe here
+    precisely because the key's PRESENCE already carries the other fact:
+    a never-sampled route has no ``slope`` property at all. The two are
+    distinguishable on the client, which is the rule
+    ``Route.slope_samples``' help_text sets and the map's two layers
+    depend on.
+
+    Args:
+        samples: The row's ``slope_samples``, or None if never sampled.
+
+    Returns:
+        ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, or
+        None when there is nothing to draw — never sampled, or a record
+        whose halves do not pair up (N + 1 coordinates to N angles), which
+        would draw segments against the wrong ground.
+
+    """
+    if not samples:
+        return None
+
+    points = samples.get("points") or []
+    segments = samples.get("segments") or []
+    if len(points) != len(segments) + 1:
+        logger.warning(
+            "route slope record is malformed: %d point(s) to %d segment(s)",
+            len(points),
+            len(segments),
+        )
+        return None
+
+    return {
+        "points": points,
+        "angles": [segment.get("angle_deg") for segment in segments],
+    }
+
+
 def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
     """Build one GeoJSON LineString Feature for a route.
 
@@ -253,6 +301,7 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
         A GeoJSON Feature dict.
 
     """
+    slope = _compact_slope(route.slope_samples)
     return {
         "type": "Feature",
         "geometry": {
@@ -276,6 +325,15 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
                 else None
             ),
             "bounds": route.bounds,
+            # OMITTED ENTIRELY when the route has never been sampled, not
+            # passed through as a null like the two above. The key's
+            # presence is what the map's ``routes-line`` filter tests to
+            # decide whether a route is already being painted by the slope
+            # layers, and a present-but-null value would answer that
+            # question wrongly — a flat fuchsia line drawn underneath its
+            # own colours. Unknown-per-segment is expressed inside the
+            # value, by a null angle; see _compact_slope.
+            **({"slope": slope} if slope is not None else {}),
         },
     }
 
@@ -551,6 +609,13 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     no property of its own: it is already the third ordinate of every
     coordinate in ``geometry``, which RFC 7946 allows and MapLibre
     ignores. ``static/js/elevation_profile_core.js`` reads it from there.
+
+    SNOW-910 ADDS ``slope``, and only to a route that has been sampled —
+    the property is absent rather than null otherwise, because its
+    presence is what tells the map the route is already being painted by
+    the slope layers. Its shape is a COMPACT form of the stored record
+    (see ``_compact_slope``), not the record itself: the aspect and the
+    named unknown reason stay on the server for SNOW-911 and SNOW-839.
 
     Not ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX
     swap. Owner-scoped via ``Route.objects.for_user()``, in **one** query

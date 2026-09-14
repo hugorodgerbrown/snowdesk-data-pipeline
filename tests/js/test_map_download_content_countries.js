@@ -1,28 +1,32 @@
 /*
  * tests/js/test_map_download_content_countries.js — an area's content plan
- * considers every country's regions, not just the loaded ones (SNOW-931).
+ * no longer depends on which countries the client has loaded (SNOW-931,
+ * SNOW-953).
  *
  * SNOW-924 made an area's boundary the manifest for its content, and
  * `docs/decisions/inside-the-boundary-is-complete.md` states the contract
- * it rests on: inside the boundary, everything. The superset invariant that
- * backs it is pinned in `test_basemap_download_core.js` against 149 real CH
- * boundaries — but that test hands `areaContentPlan` the complete feed
- * directly, and `test_map_download_content.js` boots a fixture whose
- * `regions.geojson` stub answers the same whole FeatureCollection whatever
- * `?country=` asks for. Neither can see a candidate set that is short
- * before the geometry ever runs, which is exactly how SNOW-924 shipped
- * under-fetching the thing it was built to guarantee.
+ * it rests on: inside the boundary, everything. SNOW-924 shipped
+ * under-fetching the thing it was built to guarantee, because the
+ * candidate set was `featureByRegionId` — whatever countries boot happened
+ * to have loaded. SNOW-931 fixed that by loading and awaiting all four,
+ * which cost 764 KB of outlines to discover roughly 55 KB of pages.
  *
- * So the fixture here differs from that one in exactly two ways, and both
- * are the point:
+ * SNOW-953 removes the dependency instead of paying for it: the selection
+ * is `/api/area-content/`'s, made from every boundary the server holds. So
+ * this file asks the question SNOW-931 asked, of the new arrangement — and
+ * adds the one that only the new arrangement can answer: that the French
+ * bulletin arrives WITHOUT France's outlines ever being fetched.
+ *
+ * The fixture keeps SNOW-931's two load-bearing details, because they are
+ * what make the client's country set incomplete in the first place:
  *
  *   - the active basemap declares `data-basemap-countries="ch"`, as
  *     `swisstopo_winter` and `swisstopo_light` do in `BASEMAP_COUNTRIES`.
  *     Boot then loads CH and nothing else, where a fixture with the
- *     attribute absent falls back to all four and hides the bug;
+ *     attribute absent falls back to all four and hides the point;
  *   - the `regions.geojson` stub is keyed on `?country=`, so France exists
- *     on the server and is simply not on the client yet — the ordinary
- *     state of an Alpine map, not a contrived one.
+ *     on the server and is simply not on the client — the ordinary state
+ *     of an Alpine map, not a contrived one.
  *
  * The area straddles the border. France's bulletin has to be in the posted
  * list; a user who downloads Martigny — Verbier and skis west into
@@ -111,6 +115,21 @@ const REGION_BLOB = {
   over_ceiling: false,
   centre_tile: { z: 14, x: 8515, y: 5822 },
   z: { 14: [8510, 8519, 5815, 5828] },
+};
+
+/**
+ * The server's answer for this area's rectangle — BOTH countries.
+ *
+ * The endpoint selects over every boundary it holds, so a border area
+ * names its French region whether or not the client has ever asked for
+ * France's outlines. That is the whole of SNOW-953's claim here.
+ */
+const AREA_CONTENT = {
+  regions: [
+    { id: CH_REGION_ID, slug: CH_REGION_SLUG },
+    { id: FR_REGION_ID, slug: FR_REGION_SLUG },
+  ],
+  weather: [],
 };
 
 const WEATHER_GEOJSON = { type: 'FeatureCollection', features: [] };
@@ -233,6 +252,19 @@ function installDbStub() {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // SNOW-959: the stub's stand-in for db.js's one-transaction
+    // read-modify-write. The serialisation that helper exists for is
+    // IndexedDB's, and a Map cannot show it — so this reproduces only the
+    // CONTRACT its callers depend on: the mutator is handed the current
+    // row, and an `undefined` return writes nothing. The serialisation
+    // itself is proved against fake-indexeddb in tests/js/test_db.js.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),
@@ -267,6 +299,7 @@ function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
+         data-area-content-url="/api/area-content/"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
          data-weather-url="/api/weather.geojson"
@@ -339,6 +372,7 @@ beforeAll(async () => {
       if (href.includes('regions.geojson')) {
         body = href.includes('country=fr') ? FR_REGIONS_GEOJSON : CH_REGIONS_GEOJSON;
       }
+      if (href.includes('area-content')) body = AREA_CONTENT;
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
       if (href.includes('weather.geojson')) body = WEATHER_GEOJSON;
       if (href.includes('favourites.geojson')) body = EMPTY_GEOJSON;
@@ -401,14 +435,36 @@ describe('an area straddling a border takes both countries bulletins', () => {
   it('posts the bulletin for a country that was never loaded', () => {
     // THE assertion. France overlaps the area's western edge and exists on
     // the server, but a CH-only basemap never put it in
-    // `featureByRegionId`, so before SNOW-931 it was not a candidate at
-    // all — the rectangle test never got the chance to over-select it, and
-    // the run still reported complete and stamped `contentAt`.
+    // `featureByRegionId` — so before SNOW-931 it was not a candidate at
+    // all, and the run still reported complete and stamped `contentAt`.
     expect(posted).toContain(`/${FR_REGION_ID.toLowerCase()}/${FR_REGION_SLUG}/${TODAY}/`);
   });
 
+  it('never fetched a country outline to find that out (SNOW-953)', () => {
+    // What replaced SNOW-931's fix. That ticket bought the French bulletin
+    // by loading all four countries' outlines and awaiting them — 764 KB
+    // to discover roughly 55 KB of pages, on the connection this feature
+    // exists to serve. The plan comes from one bbox-keyed request now, so
+    // the outlines the client never needed are never asked for.
+    const asked = globalThis.fetch.mock.calls.map((call) => String(call[0]));
+
+    expect(asked.some((url) => url.includes('country=fr'))).toBe(false);
+    expect(asked.some((url) => url.includes('area-content'))).toBe(true);
+  });
+
+  it('takes today alone where the page names no backwards reach', () => {
+    // The default half of SNOW-953's day window: this fixture's scrubber
+    // carries no `data-content-past-days`, which an older shell
+    // mid-rollout also does not. Today onwards is exactly what a download
+    // took before the setting existed, so the absence degrades to the old
+    // behaviour rather than to a guess.
+    const yesterday = '2026-01-05';
+
+    expect(posted.some((url) => url.includes('/' + yesterday + '/'))).toBe(false);
+  });
+
   it('reports the run complete, having actually been complete', async () => {
-    // The stamp is what makes the gap invisible: weather comes from one
+    // The stamp is what makes a gap invisible: weather comes from one
     // global feed that succeeds regardless, so a plan short of a whole
     // country still tallied `ok === total` and went green. Asserting the
     // stamp alongside the French bulletin above pins the pair — the roundel

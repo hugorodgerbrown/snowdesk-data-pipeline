@@ -167,7 +167,7 @@ describe('window.pwaUpdateBanner (SNOW-623)', () => {
   });
 
   it('reveals and hides a class-toggled banner', () => {
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
     expect(el().classList.contains('hidden')).toBe(false);
 
     window.pwaUpdateBanner.hide();
@@ -175,8 +175,8 @@ describe('window.pwaUpdateBanner (SNOW-623)', () => {
   });
 
   it('is idempotent — a second reveal changes nothing', () => {
-    window.pwaUpdateBanner.reveal();
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
+    window.pwaUpdateBanner.revealNow();
 
     expect(el().classList.contains('hidden')).toBe(false);
   });
@@ -186,9 +186,21 @@ describe('window.pwaUpdateBanner (SNOW-623)', () => {
     // public partial is class-toggled. Revealing one with the other's
     // idiom leaves it invisible, which is the fork both owners had to
     // reproduce and only one now does.
-    window.pwaUpdateBanner.reveal();
+    window.pwaUpdateBanner.revealNow();
 
     expect(el().style.display).toBe('');
+  });
+
+  it('keeps the banner hidden when nothing is controlling the page', async () => {
+    // SNOW-952: `reveal` is the gated entry point, and this harness has no
+    // controller — nothing is cached, so nothing can be stale. The
+    // ungated `revealNow` above is what the copy tests use.
+    window.pwaUpdateBanner.hide();
+
+    const revealed = await window.pwaUpdateBanner.reveal();
+
+    expect(revealed).toBe(false);
+    expect(el().classList.contains('hidden')).toBe(true);
   });
 
   it('is frozen, so a third owner cannot quietly replace the reveal', () => {

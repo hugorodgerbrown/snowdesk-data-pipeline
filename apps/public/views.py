@@ -1425,6 +1425,11 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 if request.user.is_authenticated
                 else "",
                 "community_reports": reverse("api:community_reports_geojson"),
+                # SNOW-953: what an area's boundary contains, answered
+                # server-side. The region feeds above are still WARMED —
+                # the map needs them offline — but nothing here parses
+                # them to plan from any more.
+                "area_content": reverse("api:area_content"),
             },
             # The countries whose region geometry a boundary may overlap.
             # SNOW-931's lesson, applied where there is no
@@ -1433,6 +1438,10 @@ def offline_page(request: HttpRequest) -> HttpResponse:
             # area silently drops a country's bulletins.
             "content_countries": " ".join(settings.MAP_COUNTRY_CODES),
             "today": timezone.localdate().isoformat(),
+            # SNOW-953: the same backwards reach the map applies, so an
+            # area topped up from this page carries the same days as one
+            # topped up from the map.
+            "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
         },
     )
 
@@ -1601,6 +1610,7 @@ def _base_map_context(
         ``map_default_overlays`` / ``map_default_boundary`` /
         ``map_default_opacity_step`` (SNOW-872's configurable opening view),
         ``season_start``, ``season_end``, ``today``, ``today_pct``,
+        ``content_past_days`` (SNOW-953),
         ``scrubber_in_season``, and ``data_end`` (the latest
         ``RegionDayRating.date`` in the window, or ``None`` when the season
         has not started or the DB is empty).
@@ -1640,6 +1650,13 @@ def _base_map_context(
         "season_end": season_end,
         "today": today,
         "today_pct": today_pct,
+        # SNOW-953: how many days BEHIND today an offline download carries
+        # bulletins for, rendered onto #season-scrubber beside ``today``
+        # because that is the element ``map_shared.js`` already reads the
+        # day off. Forwards is not here and is not a setting: it runs to
+        # the last published day, which the client resolves off the season
+        # payload it already holds (SNOW-927).
+        "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
         "scrubber_in_season": scrubber_in_season,
         "data_end": data_end,
         # SNOW-792: the scrubber's calendar popup builds its month grid in

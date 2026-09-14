@@ -3977,12 +3977,26 @@ self.addEventListener('message', (event) => {
   // Replies down the transferred MessagePort (the SNOW-922 pattern above)
   // rather than to every client: one page asked about its own banner. A
   // caller that sent no port gets no reply and falls back to its meta.
+  //
+  // SNOW-952: the reply also carries this worker's CACHE_VERSION, which is
+  // what decides whether the banner appears at all. The build above names
+  // a DEPLOY and changes on every one of them; the cache name is derived
+  // from the shell content hash and changes only when a shell source does,
+  // so comparing it against the server's is the difference between "we
+  // shipped something" and "this device is holding a stale shell". The
+  // page cannot read this from anywhere else — it is the identity of the
+  // worker in control, not of the response that served the page.
+  //
+  // One reply, both values, for the reason the two build fields are taken
+  // whole (see the ADR): a page pairing this worker's cache name with some
+  // other worker's build would be describing two different things.
   if (event.data && event.data.type === 'build-identity') {
     const port = event.ports && event.ports[0];
     port?.postMessage({
       type: 'build-identity',
       build: BUILD_IDENTITY.build,
       release: BUILD_IDENTITY.release,
+      cache: CACHE_VERSION,
     });
   }
   if (event.data && event.data.type === 'can-open-offline') {

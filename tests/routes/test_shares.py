@@ -10,6 +10,9 @@ create_route_share:
 claim_route_share:
   copies every geometry and derived field onto a NEW route owned by the
     claimer, leaving the sharer's row untouched;
+  carries a sampled source's slope record over rather than re-sampling
+    identical geometry, and enqueues sampling for the COPY when the
+    source has not been sampled yet (SNOW-910);
   bumps claim_count and last_claimed_at;
   works twice — the link is reusable;
   raises RouteLimitReached at settings.ROUTES_MAX_PER_USER, without
@@ -215,6 +218,55 @@ class TestClaimRouteShare:
 
         assert copy.ascent_m is None
         assert copy.descent_m is None
+
+    def test_a_sampled_source_hands_its_slope_record_over(self) -> None:
+        """Identical geometry is identical terrain — SNOW-910's whole point.
+
+        And the tile origin is not asked again for an answer the sharer's
+        row already carries.
+        """
+        owner = UserFactory.create()
+        claimer = UserFactory.create()
+        record = {
+            "window_m": 10.0,
+            "stride_m": 25.0,
+            "grid": "snowdesk-terrain-5m-3035",
+            "points": [[7.0, 46.0], [7.0, 46.01]],
+            "segments": [{"angle_deg": 31.4, "aspect_deg": 180.0}],
+        }
+        route = RouteFactory.create(user=owner, slope_samples=record)
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        with patch(
+            "apps.routes.services.shares.enqueue_route_slope_sampling"
+        ) as enqueue:
+            copy = claim_route_share(claimer, share.token)
+
+        assert copy.slope_samples == record
+        enqueue.assert_not_called()
+
+    def test_an_unsampled_source_gets_the_copy_sampled(self) -> None:
+        """A claim can beat the sharer's own sampling task (SNOW-910).
+
+        The sharer's task carries the SOURCE's pk, so nothing else would
+        ever sample the copy: it would sit uncoloured for good beside an
+        identical, coloured line on the sharer's map.
+        """
+        owner = UserFactory.create()
+        claimer = UserFactory.create()
+        route = RouteFactory.create(user=owner)
+        assert route.slope_samples is None
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        with patch(
+            "apps.routes.services.shares.enqueue_route_slope_sampling"
+        ) as enqueue:
+            copy = claim_route_share(claimer, share.token)
+
+        enqueue.assert_called_once()
+        # The COPY's row, not the source's — sampling the source again
+        # would leave the claimer exactly where they started.
+        assert enqueue.call_args.args[0].pk == copy.pk
 
     def test_the_sharer_keeps_their_route(self) -> None:
         """A claim copies, it never transfers."""

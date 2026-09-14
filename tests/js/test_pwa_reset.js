@@ -271,11 +271,18 @@ describe('the trigger binding (SNOW-618)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
 
     trigger.click();
-    await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(window.pwaTelemetry.emit).toHaveBeenCalledWith(
-      'pwa.reset.user_initiated',
-      expect.objectContaining({ ok: true }),
+    // `vi.waitFor`, not a fixed sleep: the click starts a chain of real
+    // promises (the IndexedDB delete, the cache sweep, then the emit),
+    // and 10ms of wall clock was enough on a quiet laptop and not on a
+    // loaded CI runner — it failed there while passing everywhere else.
+    // The declining test below still sleeps, because you cannot poll for
+    // something continuing not to happen.
+    await vi.waitFor(() =>
+      expect(window.pwaTelemetry.emit).toHaveBeenCalledWith(
+        'pwa.reset.user_initiated',
+        expect.objectContaining({ ok: true }),
+      ),
     );
   });
 
@@ -285,12 +292,14 @@ describe('the trigger binding (SNOW-618)', () => {
     vi.stubGlobal('confirm', confirmSpy);
 
     triggerSkipConfirm.click();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Same reason as above — the positive half is polled rather than slept
+    // for. The negative half holds at any point after it.
+    await vi.waitFor(() => expect(window.pwaTelemetry.emit).toHaveBeenCalled());
 
     // Only the Update Required modal opts out, and it has already put its
     // own dialogue in front of the user — a second one reads as a bug.
     expect(confirmSpy).not.toHaveBeenCalled();
-    expect(window.pwaTelemetry.emit).toHaveBeenCalled();
   });
 });
 

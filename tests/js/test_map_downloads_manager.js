@@ -238,6 +238,19 @@ function installDbStub(initial) {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // SNOW-959: the stub's stand-in for db.js's one-transaction
+    // read-modify-write. The serialisation that helper exists for is
+    // IndexedDB's, and a Map cannot show it — so this reproduces only the
+    // CONTRACT its callers depend on: the mutator is handed the current
+    // row, and an `undefined` return writes nothing. The serialisation
+    // itself is proved against fake-indexeddb in tests/js/test_db.js.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),

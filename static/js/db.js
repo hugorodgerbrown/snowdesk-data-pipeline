@@ -360,6 +360,88 @@
     return _tx(store, 'readwrite', (s) => s.put(value));
   }
 
+  /**
+   * Read one row, transform it, and write the result back — all inside a
+   * SINGLE `readwrite` transaction (SNOW-959).
+   *
+   * ## Why this exists
+   *
+   * `get()` then `put()` is two transactions with a gap between them, and
+   * a row holding an ARRAY turns that gap into lost writes. Three
+   * independent functions each read the whole of `meta:app`'s
+   * `basemap.regions` / `basemap.customAreas`, change one entry in a copy,
+   * and write the copy back: `offline_audit.js`'s `stampAreaContent`,
+   * `map_basemap_downloads.js`'s `_stampAreaContent`, and
+   * `map_region_download.js`'s `_stampRegionContent`. Until SNOW-950/953
+   * only the map page ever wrote those rows; now `/offline/` writes them
+   * too, and both pages are `SHELL_PAGES` a user can have open at once. A
+   * region refreshed from the map's roundel while another tab taps Update
+   * on a different area meant both reads saw the same array and the second
+   * `put()` silently discarded the first area's change.
+   *
+   * IndexedDB already has the fix: transactions with overlapping scope and
+   * at least one `readwrite` are serialised by the browser, across every
+   * connection to the database — other tabs included. Reading and writing
+   * on the SAME transaction therefore makes the pair atomic with no lock,
+   * no version column and no retry loop. Two concurrent stamps queue
+   * instead of interleaving.
+   *
+   * ## `mutate` MUST be synchronous
+   *
+   * Not a style preference — the correctness condition. An IndexedDB
+   * transaction commits as soon as control returns to the event loop with
+   * no request outstanding on it, so a `mutate` that awaits anything hands
+   * back a transaction that has already closed, and the `put` throws
+   * `TransactionInactiveError`. Every caller's transform is a pure
+   * rearrangement of what it just read, which is the only shape this
+   * helper supports and the only shape it needs to.
+   *
+   * @param {string} storeName
+   * @param {IDBValidKey} key
+   * @param {(current: any) => any} mutate Receives the stored row, or
+   *   `undefined` when the key is absent. Return the row to write, or
+   *   `undefined` to leave the row untouched and commit nothing — the
+   *   "nothing here matched, don't rewrite the array" case all three
+   *   stampers have. A throw aborts the transaction and rejects.
+   * @returns {Promise<any>} The written row, or the unchanged current row
+   *   when `mutate` returned `undefined`.
+   */
+  async function readModifyWrite(storeName, key, mutate) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      const readReq = store.get(key);
+      readReq.onerror = () =>
+        reject(readReq.error || new Error('IDBRequest failed'));
+      readReq.onsuccess = () => {
+        let next;
+        try {
+          next = mutate(readReq.result);
+        } catch (err) {
+          // The read has already happened on this transaction; aborting
+          // is what keeps a half-applied change from committing.
+          try {
+            tx.abort();
+          } catch (_e) {
+            // Already settling — `tx.onabort` below still rejects.
+          }
+          reject(err);
+          return;
+        }
+        if (next === undefined) {
+          resolve(readReq.result);
+          return;
+        }
+        const writeReq = store.put(next);
+        writeReq.onerror = () =>
+          reject(writeReq.error || new Error('IDBRequest failed'));
+        writeReq.onsuccess = () => resolve(next);
+      };
+      tx.onabort = () => reject(tx.error || new Error('IDBTransaction aborted'));
+    });
+  }
+
   async function del(store, key) {
     return _tx(store, 'readwrite', (s) => s.delete(key));
   }
@@ -697,6 +779,7 @@
       open,
       get,
       put,
+      readModifyWrite,
       delete: del,
       getAll,
       count,

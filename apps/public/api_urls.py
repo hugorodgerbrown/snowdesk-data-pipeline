@@ -84,6 +84,15 @@ urlpatterns = [
         api.region_basemap_tiles,
         name="region_basemap_tiles",
     ),
+    # SNOW-953: what one rectangle contains — the micro-regions it touches
+    # and the public weather locations inside it. Date-free: the client
+    # holds its own day window and composes the urls, which is what makes
+    # this answer cacheable and the same for everyone.
+    path(
+        "area-content/",
+        api.area_content,
+        name="area_content",
+    ),
     # SNOW-323: dissolved bulletin grouping boundaries keyed by date.
     # The whole-season payload is cached client-side by map.js.
     path(

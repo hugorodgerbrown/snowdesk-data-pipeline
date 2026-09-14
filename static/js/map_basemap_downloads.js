@@ -553,15 +553,18 @@ function assembleBasemapDownloadFeedURLs() {
  * The eligibility gates are `map.js`'s, re-read rather than shared,
  * because they are page state (`#map`'s dataset) rather than module state.
  *
- * @returns {Promise<Object|null>} The weather GeoJSON, which the caller
- *   needs in order to resolve the area's detail sheets, or ``null`` when
- *   it could not be fetched. Every other feed's outcome is deliberately
- *   invisible: a failed favourites fetch must not fail a download.
+ * Returns nothing. It used to hand the weather GeoJSON back, because the
+ * caller resolved the area's detail sheets out of it; SNOW-953 moved that
+ * selection to the server, so the bytes are now the only purpose here.
+ * Every feed's outcome is deliberately invisible: a failed favourites
+ * fetch must not fail a download.
+ *
+ * @returns {Promise<void>}
  */
 async function cacheOverlayFeedsForDownload() {
   const mapEl = document.getElementById('map');
   const cache = window.pwaMapOverlayCache;
-  if (!mapEl || !cache) return null;
+  if (!mapEl || !cache) return;
 
   const feeds = [
     ['weather', mapEl.dataset.weatherUrl],
@@ -578,7 +581,6 @@ async function cacheOverlayFeedsForDownload() {
     ['routes', mapEl.dataset.routesEligible === 'true' ? mapEl.dataset.routesUrl : null],
   ];
 
-  let weather = null;
   await Promise.all(
     feeds.map(async ([resource, url]) => {
       if (!url) return;
@@ -586,14 +588,12 @@ async function cacheOverlayFeedsForDownload() {
         const data = await fetch(url).then((r) => (r.ok ? r.json() : null));
         if (!data) return;
         await cache.putOverlay(resource, data);
-        if (resource === 'weather') weather = data;
       } catch (_e) {
         // Best-effort, one feed at a time. The tiles are what the user
         // asked for and they are still worth having.
       }
     }),
   );
-  return weather;
 }
 
 /**
@@ -605,8 +605,16 @@ async function cacheOverlayFeedsForDownload() {
  * actually needs offline — is picked up the moment it is published,
  * without this function knowing that is what happened.
  *
- * The day on screen is included when it is in the past, because a visitor
- * who scrubbed back and then downloaded meant that day.
+ * SNOW-953 gives it a reach BACKWARDS too, sized by
+ * `readContentPastDays()` (`OFFLINE_CONTENT_PAST_DAYS`, rendered onto the
+ * scrubber). Forward-only meant a user carried today and tomorrow but not
+ * yesterday, and yesterday's bulletin is what says what the snowpack has
+ * just been through. A day a region has no bulletin for renders a 200
+ * empty state, so reaching back cannot fail a download.
+ *
+ * The day on screen is included when it falls outside that window,
+ * because a visitor who scrubbed to a day and then downloaded meant that
+ * day.
  *
  * @returns {Promise<string[]>} Date keys, oldest first. Empty only when
  *   the page carries no readable `data-today`.
@@ -627,9 +635,10 @@ async function downloadContentDays() {
   }
 
   const days = [];
-  const startMs = Date.parse(today);
+  const todayMs = Date.parse(today);
+  if (!Number.isFinite(todayMs)) return [];
+  const startMs = todayMs - readContentPastDays() * 86400000;
   const endMs = Date.parse(ceiling);
-  if (!Number.isFinite(startMs)) return [];
   for (let ms = startMs; Number.isFinite(endMs) && ms <= endMs; ms += 86400000) {
     days.push(new Date(ms).toISOString().slice(0, 10));
   }
@@ -644,82 +653,143 @@ async function downloadContentDays() {
  * Every content URL an area's boundary implies.
  *
  * The `contentUrls` dep, and the second half of a download run. Caches the
- * feeds first because the weather sheets are derived from the feed it
- * fetches; then asks `areaContentPlan` which regions and which locations
- * the area's rectangle contains.
+ * four overlay feeds first — whole and unfiltered, as they always were —
+ * then asks the server which regions and which weather locations the
+ * area's rectangle contains, and composes the urls from that.
  *
- * SNOW-931: every country is LOADED first, and awaited. This paragraph used
- * to read "an empty one (a country not yet loaded) simply yields no
- * bulletins for that country rather than a wrong answer", which was the
- * defect written down as a design choice — for this function a missing
- * bulletin IS the wrong answer, and it was the one
- * `inside-the-boundary-is-complete.md` promises not to produce.
+ * SNOW-953: the selection is `/api/area-content/`'s now. It used to be
+ * made here, against `regions.geojson` features held in
+ * `snowdeskMapState.featureByRegionId` — a lazily-built set, not the
+ * estate, which is why SNOW-931 had to load and await all four countries
+ * before reading it (a Swiss border area otherwise resolved to zero
+ * French bulletins, silently, and the run stamped `contentAt` over a plan
+ * missing a country). That fix cost 764 KB of outlines to discover
+ * roughly 55 KB of pages. The endpoint answers from every boundary it
+ * holds, so neither the cost nor the failure mode survives, and both the
+ * `ensureAllLoaded()` await and the `featureByRegionId` read are gone
+ * from this path. `pwaMapCountries.ensureAllLoaded` itself stays — the
+ * map still draws those outlines.
  *
- * `featureByRegionId` is a lazily-built set, not the estate: boot fetches
- * Switzerland, then the basemap's declared countries un-awaited, and under
- * `swisstopo_*` (which declares `ch` alone) the other three never arrive at
- * all. A Swiss border area therefore resolved to zero French bulletins —
- * silently, because the weather feed is global and still succeeded, so the
- * run tallied complete and stamped `contentAt` over a plan missing a
- * country. See `pwaMapCountries.ensureAllLoaded` for why the fix loads all
- * four rather than the ones a rectangle overlaps.
- *
- * SNOW-932: the return is a PAIR now, not a bare list. An empty list and a
- * list assembled while a country was unreachable are different facts, and
- * only the second is a shortfall — see `short` below.
+ * SNOW-932: the return is a PAIR, not a bare list. An empty list and a
+ * list assembled from an answer that never arrived are different facts,
+ * and only the second is a shortfall — see `short` below.
  *
  * @param {Object} blob The run's download blob, for its tile ranges.
  * @returns {Promise<{urls: string[], short: boolean}>} `urls` is possibly
  *   empty, which every caller reads as "nothing to add" rather than as a
- *   failure. `short` is true when the plan was resolved against an
- *   INCOMPLETE country set, so the list is missing bulletins it should
- *   have named — a shortfall no tally over that list can detect, because
- *   every url in it can land.
+ *   failure. `short` is true when the endpoint could not be read, so the
+ *   list is missing bulletins it should have named — a shortfall no tally
+ *   over that list can detect, because every url in it can land.
  */
 async function assembleAreaContentURLs(blob) {
   const core = self.pwaBasemapDownloadCore;
   const mapEl = document.getElementById('map');
-  if (!core || !core.areaContentPlan || !mapEl) return { urls: [], short: false };
+  if (!core || !core.areaContentURLs || !mapEl) return { urls: [], short: false };
 
-  const weather = await cacheOverlayFeedsForDownload();
+  await cacheOverlayFeedsForDownload();
 
   const bbox = core.areaBBox(blob);
   if (!bbox) return { urls: [], short: false };
 
-  // Before the lookup is read, not after: the whole point is that the set
-  // it answers from is complete. Best-effort on the surface being absent,
-  // as every other cross-module reach here is — an older shell mid-rollout
-  // gets the pre-SNOW-931 answer rather than no download.
-  const countries = await window.pwaMapCountries?.ensureAllLoaded();
-  const short = !!(countries && countries.failed.length > 0);
-  if (short) {
-    // A country the client could not fetch leaves the plan short in exactly
-    // the way SNOW-931 closed, so it is recorded rather than shrugged off.
-    //
-    // SNOW-932: and it is reported now, not just logged. This comment used
-    // to end "it is NOT yet reflected in the run's own completeness — that
-    // needs the durable-incompleteness plumbing SNOW-932 adds"; that
-    // plumbing is here, so the flag rides out on the return value and the
-    // run records `contentIncomplete` against the area. The debug record
-    // stays: it names WHICH countries were missed, which the boolean
-    // cannot, and that is the line an operator reads when an area keeps
-    // going amber.
-    window.pwaDebugLog?.record('net', 'download.countries.short', {
-      loaded: countries.loaded,
-      failed: countries.failed,
+  const content = await fetchAreaContent(mapEl.dataset.areaContentUrl, bbox);
+  if (!content) {
+    // A short plan, never a confidently empty one. The endpoint failing is
+    // exactly the shortfall SNOW-931 closed and SNOW-932 made reportable:
+    // every url the run does fetch can still land, so no tally over the
+    // list can tell that a country's bulletins were never named. The debug
+    // line is what an operator reads when an area keeps going amber.
+    window.pwaDebugLog?.record('net', 'download.areaContent.failed', {
+      bbox: bbox,
     });
+    return { urls: [], short: true };
   }
 
-  const state = window.snowdeskMapState;
-  const byRegion = (state && state.featureByRegionId) || {};
-  const plan = core.areaContentPlan({
-    bbox,
-    regionFeatures: Object.keys(byRegion).map((key) => byRegion[key]),
-    weatherFeatures: (weather && weather.features) || [],
+  const plan = core.areaContentURLs({
+    regions: content.regions,
+    weather: content.weather,
     days: await downloadContentDays(),
     weatherDetailTemplate: mapEl.dataset.weatherDetailUrl || '',
   });
-  return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: short };
+  return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: false };
+}
+
+// SNOW-958: the bound on the `/api/area-content/` request below. TWO
+// literals hold this value, one per script-loading context: this one and
+// `offline_audit.js`'s MANIFEST_FETCH_BUDGET_MS, which bounds the same
+// endpoint from the `/offline/` page's per-row Update control.
+//
+// They cannot share one literal, and that is a hard constraint rather
+// than an oversight. The obvious shared home is
+// `basemap_download_core.js` — the one module both pages load — but
+// `sw.js`'s AUDIT_SCRIPTS precaches exactly two files
+// (`offline_audit_core.js` and `offline_audit.js`) so the audit runs on
+// `/static/offline.html`, where the core module does not exist; and the
+// core module is a dependency-free pure IIFE by contract (its own
+// header, cited by `activeBasemapRenderDependencyURLs` above as the
+// reason THAT composer stays in this file), with no platform I/O in it
+// at all. So this is the same review-discipline duplication
+// BASEMAP_PINNED_CACHE_PREFIX below documents across its four contexts:
+// changing one copy means checking the other.
+//
+// Generous, because this is a deliberate press over a real network
+// rather than a storage probe, and because it is a ceiling on a hang
+// rather than a target — see `offline_audit.js`'s own comment on the
+// twin constant for the full reasoning.
+const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
+
+/**
+ * Ask the server what one rectangle contains.
+ *
+ * BOUNDED (SNOW-958), for the reason
+ * `docs/decisions/bounded-offline-read-paths.md` gives and SNOW-918
+ * closed elsewhere: a connection that accepts the handshake but never
+ * answers — a captive portal, a lift — leaves a bare `fetch` pending for
+ * the browser's full network timeout, with no catch branch to reach
+ * because nothing rejects. Every caller of this function awaits it after
+ * its control is already painted `busy`: `assembleAreaContentURLs` →
+ * `basemap_download_runner.js`, `map_region_download.js`'s tap-to-refresh
+ * roundel, and `refreshAreaContent`'s Manage-downloads row. Unbounded,
+ * all three sat disabled with no way out short of a reload.
+ *
+ * An expired bound reads as an endpoint that did not answer, which is
+ * already the documented `null` case below — the plan comes back short
+ * and the run reports a shortfall, which is the honest outcome and the
+ * one every other read on this path degrades to.
+ *
+ * @param {string|undefined} endpoint `#map`'s `data-area-content-url`.
+ * @param {number[]} bbox The area's rectangle, `[west, south, east, north]`.
+ * @returns {Promise<{regions: Array<Object>, weather: Array<Object>}|null>}
+ *   ``null`` for a missing endpoint, a failed request, a request that ran
+ *   out of budget, or an answer that is not the documented shape — all
+ *   four are "cannot say", which the caller reports as a shortfall rather
+ *   than as an empty area.
+ */
+async function fetchAreaContent(endpoint, bbox) {
+  if (!endpoint) return null;
+  // Absent AbortController is not a reason to skip the request — it is a
+  // reason to run it unbounded, exactly as before this ticket. Every
+  // browser that reaches this code has it; the guard is here so a test
+  // harness or an ancient engine degrades to the old behaviour rather
+  // than throwing.
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer = null;
+  try {
+    const url = endpoint + '?bbox=' + encodeURIComponent(bbox.join(','));
+    if (controller) {
+      timer = setTimeout(() => controller.abort(), AREA_CONTENT_FETCH_BUDGET_MS);
+    }
+    const response = await fetch(url, controller ? { signal: controller.signal } : {});
+    if (!response || !response.ok) return null;
+    const data = await response.json();
+    if (!data || !Array.isArray(data.regions) || !Array.isArray(data.weather)) {
+      return null;
+    }
+    return data;
+  } catch (_e) {
+    return null;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
 }
 
 // SNOW-586: the Cache Storage name prefix every per-area pinned basemap
@@ -3164,22 +3234,46 @@ async function _stampAreaContent(areaId, regionId, complete) {
     return { ...rest, contentAt: new Date().toISOString() };
   };
   try {
+    if (!window.pwaDb) return;
+    // SNOW-959: one transaction per stamp, not a `get` and a later `put`.
+    // Both of these rows are whole ARRAYS rewritten to change one entry,
+    // and three functions across two simultaneously-open pages write them
+    // — so the gap between a read and its write was a lost update. See
+    // `readModifyWrite`'s docstring for the mechanism, and note the
+    // constraint it imposes: `stamp` must stay synchronous.
     if (!regionId) {
-      const existing = await _readCustomAreas();
-      if (!existing.some((entry) => entry && entry.id === areaId)) return;
-      await _writeCustomAreas(
-        existing.map((entry) => (entry && entry.id === areaId ? stamp(entry) : entry)),
-      );
+      const key = window.pwaBasemapAreas.CUSTOM_AREAS_KEY;
+      // One read before the transaction, and its RESULT is deliberately
+      // thrown away. `_readCustomAreas` owns the lazy migration off the
+      // legacy single-row `basemap.customArea` key, and that migration
+      // cannot happen inside the transaction below — it writes one key and
+      // deletes another. Calling it here keeps a pre-SNOW-635 device's
+      // stamp working exactly as it did; the authoritative read is still
+      // the one inside the transaction, so this adds no gap to close.
+      await _readCustomAreas();
+      await window.pwaDb.readModifyWrite('meta:app', key, (row) => {
+        const existing = Array.isArray(row && row.value) ? row.value : [];
+        if (!existing.some((entry) => entry && entry.id === areaId)) return undefined;
+        return {
+          key,
+          value: existing.map((entry) =>
+            entry && entry.id === areaId ? stamp(entry) : entry,
+          ),
+        };
+      });
       return;
     }
-    const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
-    const existing = Array.isArray(row && row.value) ? row.value : [];
-    if (!existing.some((entry) => entry && entry.region_id === regionId)) return;
-    await window.pwaDb?.put('meta:app', {
-      key: 'basemap.regions',
-      value: existing.map((entry) =>
-        entry && entry.region_id === regionId ? stamp(entry) : entry,
-      ),
+    await window.pwaDb.readModifyWrite('meta:app', 'basemap.regions', (row) => {
+      const existing = Array.isArray(row && row.value) ? row.value : [];
+      if (!existing.some((entry) => entry && entry.region_id === regionId)) {
+        return undefined;
+      }
+      return {
+        key: 'basemap.regions',
+        value: existing.map((entry) =>
+          entry && entry.region_id === regionId ? stamp(entry) : entry,
+        ),
+      };
     });
   } catch (_e) {
     // Best-effort — see the docstring.
@@ -3235,10 +3329,20 @@ async function refreshAreaContent(areaId) {
     // Refresh re-resolved the same empty list and re-reported the same
     // failure, so the row stayed amber permanently.
     //
-    // `short` is what separates the two. A plan assembled while a country
-    // was unreachable says nothing about what the boundary holds, so it
-    // stays flagged and still reports failure.
-    if (content.short) return false;
+    // `short` is what separates the two. A plan whose endpoint never
+    // answered says nothing about what the boundary holds, so it reports
+    // failure — and SNOW-953 makes it RECORD that failure rather than
+    // merely return it. The two used to be the same thing in practice: a
+    // plan short of one country still named the others, so the run below
+    // reached `_stampAreaContent` and the flag survived the next repaint.
+    // With the whole selection behind one endpoint, a short plan is an
+    // EMPTY one, which lands here — and returning without stamping would
+    // leave the roundel amber only until something repainted it, which is
+    // exactly the message-not-a-state SNOW-932 closed.
+    if (content.short) {
+      await _stampAreaContent(areaId, found.regionId, false);
+      return false;
+    }
     await _stampAreaContent(areaId, found.regionId, true);
     return true;
   }

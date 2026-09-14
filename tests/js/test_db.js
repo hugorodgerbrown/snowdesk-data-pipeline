@@ -353,3 +353,71 @@ describe('log:debug helpers', () => {
     expect(await window.pwaDb.count('log:debug')).toBe(0);
   });
 });
+
+describe('readModifyWrite (SNOW-959)', () => {
+  // The unlocked `get` → mutate → `put` pair this replaces lost updates
+  // whenever two writers touched the same row, and the rows in question are
+  // whole ARRAYS rewritten to change one entry. Three functions write them
+  // across two pages a user can have open at once, so "two concurrent
+  // stamps, both survive" is the entire contract.
+  const KEY = 'basemap.regions';
+
+  /** Append `marker` to the stored array, the way a stamper rewrites it. */
+  function appender(marker) {
+    return (row) => {
+      const value = Array.isArray(row && row.value) ? row.value : [];
+      return { key: KEY, value: [...value, marker] };
+    };
+  }
+
+  it('round-trips a row that does not exist yet', async () => {
+    const written = await window.pwaDb.readModifyWrite('meta:app', KEY, appender('a'));
+
+    expect(written).toEqual({ key: KEY, value: ['a'] });
+    expect((await window.pwaDb.get('meta:app', KEY)).value).toEqual(['a']);
+  });
+
+  it('keeps both writers when two run concurrently', async () => {
+    // The regression itself. Fired without awaiting the first, these are
+    // the two tabs of the ticket: a `get`/`put` pair leaves whichever
+    // lands second writing an array it read BEFORE the first one's change,
+    // so one marker disappears. On one transaction each they queue, and
+    // the second reads what the first committed.
+    await window.pwaDb.put('meta:app', { key: KEY, value: ['seed'] });
+
+    await Promise.all([
+      window.pwaDb.readModifyWrite('meta:app', KEY, appender('from-map')),
+      window.pwaDb.readModifyWrite('meta:app', KEY, appender('from-offline-page')),
+    ]);
+
+    const stored = (await window.pwaDb.get('meta:app', KEY)).value;
+    expect(stored).toContain('from-map');
+    expect(stored).toContain('from-offline-page');
+    expect(stored).toHaveLength(3);
+  });
+
+  it('writes nothing when the mutator returns undefined', async () => {
+    // The "nothing here matched" case every stamper has, and the reason it
+    // is expressed as a return value rather than an early `return` in the
+    // caller: the decision is made from the row read INSIDE the
+    // transaction, so it cannot be made before opening one.
+    await window.pwaDb.put('meta:app', { key: KEY, value: ['untouched'] });
+
+    const result = await window.pwaDb.readModifyWrite('meta:app', KEY, () => undefined);
+
+    expect(result).toEqual({ key: KEY, value: ['untouched'] });
+    expect((await window.pwaDb.get('meta:app', KEY)).value).toEqual(['untouched']);
+  });
+
+  it('leaves the row alone when the mutator throws', async () => {
+    await window.pwaDb.put('meta:app', { key: KEY, value: ['before'] });
+
+    await expect(
+      window.pwaDb.readModifyWrite('meta:app', KEY, () => {
+        throw new Error('mutator blew up');
+      }),
+    ).rejects.toThrow();
+
+    expect((await window.pwaDb.get('meta:app', KEY)).value).toEqual(['before']);
+  });
+});

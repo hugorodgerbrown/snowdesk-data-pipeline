@@ -14,6 +14,11 @@ along the way makes the suite deterministic: a developer with
 ``PWA_TELEMETRY_ENABLED=False`` in ``.env`` was previously watching 28
 analytics tests fail locally that pass in CI.
 
+The ``_no_live_terrain_origin`` autouse fixture (SNOW-910) is its sibling
+for the other host a test run can reach on its own: since terrain sampling
+is enqueued from ``create_route`` and the test task backend runs inline,
+an ordinary upload test would otherwise walk the real tile origin.
+
 Email tests no longer need a sync-force fixture — the test settings module
 inherits ``ImmediateBackend`` from ``development.py``, which runs tasks inline
 and populates ``mail.outbox`` synchronously.
@@ -83,3 +88,29 @@ def _disable_posthog(settings: Settings) -> None:
     settings.PWA_TELEMETRY_ENABLED = True
     posthog.api_key = ""
     posthog.disabled = True
+
+
+@pytest.fixture(autouse=True)
+def _no_live_terrain_origin(settings: Settings) -> None:
+    """Guarantee no test run reaches the terrain tile origin (SNOW-910).
+
+    The sibling of ``_disable_posthog``, and it exists for the same
+    reason: an unguarded default sends real requests to a real host from
+    a test run. Since SNOW-910 an ordinary ``create_route`` enqueues
+    terrain sampling, and the task backend in tests is ``ImmediateBackend``
+    — so the sampler runs INLINE inside a plain upload test and would walk
+    ``https://tiles.snowdesk-data.info`` a tile at a time.
+
+    Pointed at a closed local port rather than patched out, because the
+    behaviour under test is then the real one:
+    ``apps.locations.services.terrain`` promises that an unreachable
+    origin is a ``TerrainUnknown.UNAVAILABLE`` result and never an
+    exception, and a refused connection is exactly the path that promise
+    covers. A test that wants real answers mocks the transport itself
+    (``tests/locations/services/test_terrain.py``) or overrides this
+    setting, and either wins over an autouse fixture.
+
+    Port 9 is the discard port and is closed on every machine this runs
+    on, so the refusal is immediate — no DNS, no timeout, no wait.
+    """
+    settings.TERRAIN_TILE_BASE_URL = "http://127.0.0.1:9/terrain/v1"

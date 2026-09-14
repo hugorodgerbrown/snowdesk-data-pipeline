@@ -36,7 +36,7 @@
  * vector's — bbox 7.0,46.0 → 7.2,46.2 at the micro band.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
@@ -97,6 +97,20 @@ const WEATHER_GEOJSON = {
       geometry: { type: 'Point', coordinates: [9.8, 46.8] },
     },
   ],
+};
+
+/**
+ * The server's answer for this area's rectangle (SNOW-953).
+ *
+ * The selection is the endpoint's now, so the fixture states its RESULT
+ * rather than the geometry it was made from: the region the boundary
+ * covers, and the one weather location inside it. `OUTSIDEbbbb` (Davos,
+ * in the weather feed above) is absent for the same reason the server
+ * would leave it out — it is not in the box.
+ */
+const AREA_CONTENT = {
+  regions: [{ id: REGION_ID, slug: REGION_SLUG }],
+  weather: [{ short_id: 'INSIDEaaaaa' }],
 };
 
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
@@ -218,6 +232,19 @@ function installDbStub() {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // SNOW-959: the stub's stand-in for db.js's one-transaction
+    // read-modify-write. The serialisation that helper exists for is
+    // IndexedDB's, and a Map cannot show it — so this reproduces only the
+    // CONTRACT its callers depend on: the mutator is handed the current
+    // row, and an `undefined` return writes nothing. The serialisation
+    // itself is proved against fake-indexeddb in tests/js/test_db.js.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),
@@ -254,6 +281,7 @@ function buildFixture() {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
+         data-area-content-url="/api/area-content/"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
          data-weather-url="/api/weather.geojson"
@@ -267,6 +295,7 @@ function buildFixture() {
          data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <div id="season-scrubber" data-today="${TODAY}" data-today-pct="50"
+         data-content-past-days="1"
          data-season-start="2025-11-01" data-season-end="2026-05-31" data-state="ready">
       <div class="season-scrubber-track"><div class="season-scrubber-thumb"></div></div>
       <div class="season-scrubber-loading"></div>
@@ -316,6 +345,29 @@ function warmedUrls(callIndex) {
 let mapStub;
 let overlayStore;
 
+/**
+ * What `/api/area-content/` answers on the next call.
+ *
+ * A function rather than a constant so a test can make the endpoint fail
+ * or come back empty — the two states that used to be reached by emptying
+ * the client's own feature set, which no longer decides anything.
+ */
+let areaContentAnswer = () => AREA_CONTENT;
+
+/**
+ * Whether `/api/area-content/` stalls instead of answering (SNOW-958).
+ *
+ * The failure mode a bare `fetch` has no defence against, and the one an
+ * `ok: false` answer cannot stand in for: a connection that completes its
+ * handshake and then says nothing — a captive portal, a lift. The request
+ * neither resolves nor rejects, so there is no catch branch to reach and
+ * no tally to come back short. Only an abort ends it.
+ */
+let areaContentStalls = false;
+
+/** The `AbortSignal` the last `/api/area-content/` request carried, if any. */
+let lastAreaContentSignal = null;
+
 /** Select the region and click the control, settling out of 'busy'. */
 async function clickControl() {
   const btn = document.getElementById('map-download-control');
@@ -343,10 +395,31 @@ beforeAll(async () => {
   });
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => {
+    vi.fn((url, options) => {
       const href = String(url);
       let body = {};
       if (href.includes('regions.geojson')) body = REGIONS_GEOJSON;
+      if (href.includes('area-content')) {
+        lastAreaContentSignal = (options && options.signal) || null;
+        if (areaContentStalls) {
+          // Settles only if something aborts it. An unbounded caller
+          // waits here for ever, which is the whole of SNOW-958.
+          return new Promise((_resolve, reject) => {
+            if (!lastAreaContentSignal) return;
+            lastAreaContentSignal.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+          });
+        }
+        const answer = areaContentAnswer();
+        // A null answer stands for an endpoint that could not be read —
+        // the state that makes a plan SHORT rather than empty.
+        return Promise.resolve(
+          answer
+            ? { ok: true, json: () => Promise.resolve(answer) }
+            : { ok: false, json: () => Promise.resolve({}) },
+        );
+      }
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
       if (href.includes('weather.geojson')) body = WEATHER_GEOJSON;
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
@@ -399,10 +472,25 @@ describe('a download takes the content inside its boundary', () => {
     expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
   });
 
+  it('reaches BACK the number of days the deployment asks for (SNOW-953)', () => {
+    // `data-content-past-days="1"` in the fixture. Forward-only meant a
+    // user carried today and tomorrow but not yesterday — and yesterday's
+    // bulletin is what says what the snowpack has just been through.
+    expect(posted).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-05/`);
+  });
+
+  it('does not reach further back than that', () => {
+    // The window is a setting, not an appetite: every extra day is a page
+    // per region over the connection this feature exists for.
+    expect(posted).not.toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/2026-01-04/`);
+  });
+
   it('posts the weather sheet for a location inside, and not one outside', () => {
     // The whole feed is cached either way — it is one small request. What
     // the boundary narrows is the per-location sheets, of which there are
-    // ~550 across the estate.
+    // ~550 across the estate. Since SNOW-953 the narrowing is the
+    // server's, so what this asserts is that the client asks for exactly
+    // what it was told and invents nothing from the feed it also holds.
     expect(posted).toContain('/api/weather/INSIDEaaaaa/detail/');
     expect(posted).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
   });
@@ -554,18 +642,24 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
   });
 
   it('counts a short PLAN, even when every url in it lands', async () => {
-    // SNOW-931's hanging thread. A country the client could not fetch is
-    // never listed, so there is nothing in the tally to fail — the run
-    // reports `ok === total` over a list that was missing bulletins. Before
-    // this the shortfall reached the debug log and nothing else.
-    const countries = window.pwaMapCountries;
-    window.pwaMapCountries = {
-      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
-    };
+    // SNOW-931's hanging thread, in SNOW-953's shape: the plan can no
+    // longer be short of a COUNTRY, but it can still be short of
+    // everything, when the endpoint that answers for it cannot be read.
+    // Nothing in the tally fails either way — the run reports
+    // `ok === total` over a list that was missing bulletins — so the
+    // shortfall has to ride out on its own flag.
+    const btn = document.getElementById('map-download-control');
+    areaContentAnswer = () => null;
     try {
-      expect(await tapAndSettle()).toBe('partial');
+      btn.click();
+      // No warm-cache call to wait on: a plan the endpoint could not
+      // answer for is EMPTY as well as short, so nothing is dispatched.
+      // That is exactly why the flag has to be written here rather than
+      // by the run's `finish` — see `refreshAreaContent`.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(btn.dataset.downloadState).toBe('partial');
     } finally {
-      window.pwaMapCountries = countries;
+      areaContentAnswer = () => AREA_CONTENT;
     }
 
     const record = await recordedRegion();
@@ -575,28 +669,13 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
   /**
    * Run `body` with this area's boundary resolving to NOTHING to fetch.
    *
-   * Both halves have to go: `areaContentPlan` takes the region features and
-   * the weather features separately, and either one left populated still
-   * yields urls. The core is frozen, so the plan is emptied through its real
-   * inputs rather than by stubbing the resolver — which also keeps the test
-   * honest about what an empty plan actually is.
+   * SNOW-953: an empty plan is an empty ANSWER now — both lists, because
+   * either one left populated still yields urls. It used to be produced by
+   * emptying the client's own `featureByRegionId` and its weather feed,
+   * which no longer decide anything.
    */
   async function withEmptyPlan(body) {
-    // `featureByRegionId` is a getter on the state object, so the set it
-    // returns is emptied in place and refilled afterwards rather than
-    // swapped out.
-    const features = window.snowdeskMapState.featureByRegionId;
-    const saved = { ...features };
-    const realFetch = globalThis.fetch;
-    for (const key of Object.keys(features)) delete features[key];
-    globalThis.fetch = vi.fn((url) =>
-      String(url).includes('weather.geojson')
-        ? Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ type: 'FeatureCollection', features: [] }),
-          })
-        : realFetch(url),
-    );
+    areaContentAnswer = () => ({ regions: [], weather: [] });
     try {
       const btn = document.getElementById('map-download-control');
       btn.click();
@@ -605,8 +684,7 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
       await body(btn);
     } finally {
-      Object.assign(features, saved);
-      globalThis.fetch = realFetch;
+      areaContentAnswer = () => AREA_CONTENT;
     }
   }
 
@@ -629,9 +707,9 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
 
   it('leaves the flag alone when an empty plan was itself SHORT', async () => {
     // The other half of the same rule, and why `short` cannot be collapsed
-    // into "the list was empty". A plan assembled while a country was
-    // unreachable says nothing about what the boundary holds, so an empty
-    // one is not evidence of completeness and must not clear anything.
+    // into "the list was empty". A plan whose endpoint never answered says
+    // nothing about what the boundary holds, so an empty one is not
+    // evidence of completeness and must not clear anything.
     const row = await window.pwaDb.get('meta:app', 'basemap.regions');
     await window.pwaDb.put('meta:app', {
       key: 'basemap.regions',
@@ -642,17 +720,15 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
       ),
     });
 
-    const countries = window.pwaMapCountries;
-    window.pwaMapCountries = {
-      ensureAllLoaded: async () => ({ loaded: ['ch', 'at', 'it'], failed: ['fr'] }),
-    };
+    areaContentAnswer = () => null;
     try {
-      await withEmptyPlan(async () => {
-        const record = await recordedRegion();
-        expect(record.contentIncomplete).toBe(true);
-      });
+      const btn = document.getElementById('map-download-control');
+      btn.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const record = await recordedRegion();
+      expect(record.contentIncomplete).toBe(true);
     } finally {
-      window.pwaMapCountries = countries;
+      areaContentAnswer = () => AREA_CONTENT;
     }
   });
 });
@@ -767,5 +843,138 @@ describe('a custom area catches up through the sheet (SNOW-932)', () => {
     expect(warmedUrls(0).some((url) => url.includes('tiles.example.invalid'))).toBe(
       false,
     );
+  });
+});
+
+describe('both stampers write through one transaction (SNOW-959)', () => {
+  // The rows these two write are whole ARRAYS rewritten to change one
+  // entry, and since SNOW-950/953 three functions across two
+  // simultaneously-open pages write them. A `get` and a later `put` loses
+  // whichever change lands first, so the pair has to ride one IndexedDB
+  // transaction — see `readModifyWrite` in static/js/db.js.
+  //
+  // What is asserted here is the ROUTING, because that is what can
+  // regress: someone reaching for the familiar `get`/`put` pair in a
+  // later ticket. That the helper actually serialises is proved against
+  // fake-indexeddb in tests/js/test_db.js, with the lost update
+  // reproduced — a stub over a Map could not show it.
+
+  /** Every key `put` was called with since the last clear. */
+  function putKeys() {
+    return window.pwaDb.put.mock.calls.map((call) => call[1] && call[1].key);
+  }
+
+  /** Every key `readModifyWrite` was called with since the last clear. */
+  function rmwKeys() {
+    return window.pwaDb.readModifyWrite.mock.calls.map((call) => call[1]);
+  }
+
+  it('the region roundel stamps through readModifyWrite, not put', async () => {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: [{ region_id: REGION_ID, bytes: 4096, savedAt: '2026-01-05T10:00:00.000Z' }],
+    });
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+
+    expect(rmwKeys()).toContain('basemap.regions');
+    expect(putKeys()).not.toContain('basemap.regions');
+  });
+
+  it('the custom-area sheet stamps through readModifyWrite, not put', async () => {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        {
+          id: 'custom-rmw',
+          ordinal: 1,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          template: TEMPLATE,
+          basemapKey: 'openfreemap_liberty',
+          bytes: 4096,
+          savedAt: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await window.pwaBasemapDownloads.refreshAreaContent('custom-rmw');
+
+    expect(rmwKeys()).toContain('basemap.customAreas');
+    expect(putKeys()).not.toContain('basemap.customAreas');
+  });
+});
+
+describe('a stalled content endpoint gives up rather than hanging (SNOW-958)', () => {
+  // `fetchAreaContent` is the single funnel every content request goes
+  // through — the download runner's `assembleAreaContentURLs`, the region
+  // roundel's tap-to-refresh, and the Manage-downloads sheet's Refresh all
+  // await it — so bounding it here is what bounds all three. It is driven
+  // through `refreshAreaContent` because that is the one caller whose
+  // promise a test can hold: the other two settle into DOM state, and a
+  // run that never settles has no state to poll for.
+  const AREA_ID = 'custom-stall';
+
+  async function seedStallArea() {
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.customAreas',
+      value: [
+        {
+          id: AREA_ID,
+          ordinal: 1,
+          bbox: [7.0, 46.0, 7.2, 46.2],
+          band: [10, 14],
+          template: TEMPLATE,
+          basemapKey: 'openfreemap_liberty',
+          bytes: 4096,
+          savedAt: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+  }
+
+  afterEach(() => {
+    areaContentStalls = false;
+    lastAreaContentSignal = null;
+    vi.useRealTimers();
+  });
+
+  it('carries an abort signal on every request', async () => {
+    // The precondition for the bound existing at all. Asserted on the
+    // HAPPY path deliberately: a signal that only appears when something
+    // has already gone wrong is not a signal the timer can reach.
+    await seedStallArea();
+
+    await window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+
+    expect(lastAreaContentSignal).toBeInstanceOf(AbortSignal);
+    expect(lastAreaContentSignal.aborted).toBe(false);
+  });
+
+  it('aborts the request once the budget runs out', async () => {
+    await seedStallArea();
+    areaContentStalls = true;
+    vi.useFakeTimers();
+
+    const pending = window.pwaBasemapDownloads.refreshAreaContent(AREA_ID);
+    // Let the request be issued before the clock moves; the timer is armed
+    // inside `fetchAreaContent`, not before it.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lastAreaContentSignal.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(15000);
+
+    expect(lastAreaContentSignal.aborted).toBe(true);
+    // And the whole operation settles rather than sitting pending — an
+    // unbounded `fetch` never reaches this line, which is the regression
+    // this test exists to catch. `false` because an endpoint that could
+    // not be read leaves the plan short, and a short plan is a failed
+    // refresh: the honest answer, not a completion stamped over a gap.
+    vi.useRealTimers();
+    await expect(pending).resolves.toBe(false);
   });
 });

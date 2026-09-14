@@ -98,9 +98,6 @@
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/basemap_download_core.js';
-// SNOW-924: real CH micro-region boundaries, for the superset invariant
-// at the foot of this file. The same source the app loads them from.
-import CH_FIXTURE from '../../apps/regions/fixtures/eaws_CH.json';
 
 const core = self.pwaBasemapDownloadCore;
 
@@ -1772,6 +1769,13 @@ describe('slopeTileURLs from a rebuilt custom-area blob', () => {
  * outside, whatever happens to be there. Under-fetching is the only
  * defect, so every test below is checking that the selection is big
  * enough rather than that it is tight.
+ *
+ * SNOW-953 moved the SELECTION to the server — the rectangle predicates
+ * and the sweep over 149 real CH boundaries that used to sit here now
+ * live in `tests/regions/services/test_area_content.py` and
+ * `tests/public/test_area_content_api.py`. What stays is the geometry a
+ * client still derives (`featureBBox`, `areaBBox`) and the urls it
+ * composes from the server's answer (`areaContentURLs`).
  * -------------------------------------------------------------------- */
 
 describe('featureBBox', () => {
@@ -1806,35 +1810,6 @@ describe('featureBBox', () => {
     expect(core.featureBBox({})).toBe(null);
     expect(core.featureBBox({ geometry: { type: 'Point', coordinates: [7, 46] } })).toBe(null);
     expect(core.featureBBox({ geometry: { type: 'Polygon', coordinates: [] } })).toBe(null);
-  });
-});
-
-describe('bboxesOverlap and pointInBBox', () => {
-  const BOX = [7, 46, 8, 47];
-
-  it('counts a shared edge as an overlap', () => {
-    // The one behavioural difference from `intersectBBox`, which uses a
-    // strict `<` because it returns the overlapping REGION and a
-    // zero-area overlap is not one. Here the question is "might anything
-    // of this region be in the area", and the contract answers a shared
-    // edge with the cheap inclusion.
-    expect(core.bboxesOverlap(BOX, [8, 46, 9, 47])).toBe(true);
-    expect(core.bboxesOverlap(BOX, [6, 45, 7, 46])).toBe(true);
-    expect(core.pointInBBox(7, 46, BOX)).toBe(true);
-    expect(core.pointInBBox(8, 47, BOX)).toBe(true);
-  });
-
-  it('refuses a box or point genuinely outside', () => {
-    expect(core.bboxesOverlap(BOX, [8.01, 46, 9, 47])).toBe(false);
-    expect(core.bboxesOverlap(BOX, [7, 47.01, 8, 48])).toBe(false);
-    expect(core.pointInBBox(8.01, 46.5, BOX)).toBe(false);
-  });
-
-  it('treats an unanswerable question as "no", never as an overlap', () => {
-    expect(core.bboxesOverlap(BOX, null)).toBe(false);
-    expect(core.bboxesOverlap(null, BOX)).toBe(false);
-    expect(core.bboxesOverlap(BOX, [7, 46, 8])).toBe(false);
-    expect(core.pointInBBox(NaN, 46, BOX)).toBe(false);
   });
 });
 
@@ -1878,67 +1853,53 @@ describe('areaBBox', () => {
   });
 });
 
-describe('areaContentPlan', () => {
-  const region = (id, slug, bbox) => ({
-    properties: { id, slug },
-    geometry: {
-      type: 'Polygon',
-      coordinates: [[
-        [bbox[0], bbox[1]], [bbox[2], bbox[1]],
-        [bbox[2], bbox[3]], [bbox[0], bbox[3]], [bbox[0], bbox[1]],
-      ]],
-    },
-  });
+describe('areaContentURLs', () => {
+  // SNOW-953: the SELECTION moved to `/api/area-content/`, so what is left
+  // here is composition — the urls, over the answer the server gives. The
+  // rectangle rule those tests used to exercise is now
+  // `apps/regions/services/area_content.py`'s, with its own golden vector
+  // and its own superset sweep over all 149 real CH boundaries in
+  // `tests/public/test_area_content_api.py`.
   const REGIONS = [
-    region('CH-1111', 'inside', [7.0, 46.0, 7.3, 46.3]),
-    region('CH-2222', 'straddles', [7.2, 46.2, 7.6, 46.6]),
-    region('CH-3333', 'far-away', [9.0, 47.0, 9.5, 47.5]),
+    { id: 'CH-1111', slug: 'inside' },
+    { id: 'CH-2222', slug: 'straddles' },
   ];
   const DAYS = ['2026-01-06'];
-
-  it('takes every region the rectangle touches and no further', () => {
-    const plan = core.areaContentPlan({
-      bbox: [7.1, 46.1, 7.25, 46.25],
-      regionFeatures: REGIONS,
-      days: DAYS,
-    });
-    expect(plan.regionIds).toEqual(['CH-1111', 'CH-2222']);
-  });
 
   it('lowercases the region id in the url', () => {
     // `bulletin_detail` is wrapped in `@lowercase_region_id` and 301s a
     // mixed-case one — a redirect the worker would cache as the entry for
     // a url nothing ever requests again.
-    //
-    // The box stops short of 7.2/46.2, which is CH-2222's corner — and an
-    // inclusive test counts a shared corner, as the case above asserts.
-    const plan = core.areaContentPlan({
-      bbox: [7.05, 46.05, 7.15, 46.15],
-      regionFeatures: REGIONS,
-      days: DAYS,
-    });
+    const plan = core.areaContentURLs({ regions: [REGIONS[0]], days: DAYS });
+
     expect(plan.bulletinUrls).toEqual(['/ch-1111/inside/2026-01-06/']);
   });
 
   it('takes one url per region per day', () => {
-    const plan = core.areaContentPlan({
-      bbox: [7.05, 46.05, 7.15, 46.15],
-      regionFeatures: REGIONS,
+    const plan = core.areaContentURLs({
+      regions: REGIONS,
       days: ['2026-01-06', '2026-01-07'],
     });
+
     expect(plan.bulletinUrls).toEqual([
       '/ch-1111/inside/2026-01-06/',
       '/ch-1111/inside/2026-01-07/',
+      '/ch-2222/straddles/2026-01-06/',
+      '/ch-2222/straddles/2026-01-07/',
     ]);
   });
 
-  it('yields nothing for an area whose boundary contains no region', () => {
-    const plan = core.areaContentPlan({
-      bbox: [1.0, 41.0, 1.1, 41.1],
-      regionFeatures: REGIONS,
-      days: DAYS,
-    });
-    expect(plan.regionIds).toEqual([]);
+  it('yields nothing for an answer naming no region', () => {
+    const plan = core.areaContentURLs({ regions: [], days: DAYS });
+
+    expect(plan.bulletinUrls).toEqual([]);
+  });
+
+  it('skips a region the answer gave no slug for', () => {
+    // A url cannot be built without one, and `/ch-3333/undefined/…` is a
+    // 404 the worker would cache.
+    const plan = core.areaContentURLs({ regions: [{ id: 'CH-3333' }], days: DAYS });
+
     expect(plan.bulletinUrls).toEqual([]);
   });
 
@@ -1948,138 +1909,27 @@ describe('areaContentPlan', () => {
     // a url per day would cache six "no weather was recorded here" pages
     // out of every seven. The forward days live inside that row. See
     // docs/decisions/weather-day-picker-is-a-selector-not-navigation.md.
-    const weather = [
-      { properties: { short_id: 'AAAAAAAAAAA' }, geometry: { coordinates: [7.15, 46.15] } },
-      { properties: { short_id: 'BBBBBBBBBBB' }, geometry: { coordinates: [9.2, 47.2] } },
-    ];
-    const plan = core.areaContentPlan({
-      bbox: [7.1, 46.1, 7.2, 46.2],
-      weatherFeatures: weather,
+    const plan = core.areaContentURLs({
+      weather: [{ short_id: 'AAAAAAAAAAA' }, { short_id: 'AAAAAAAAAAA' }],
       days: ['2026-01-06', '2026-01-07'],
       weatherDetailTemplate: '/api/weather/__SHORTID__/detail/',
     });
+
     expect(plan.weatherDetailUrls).toEqual(['/api/weather/AAAAAAAAAAA/detail/']);
   });
 
   it('yields no weather at all without a template to build one from', () => {
-    const plan = core.areaContentPlan({
-      bbox: [7.1, 46.1, 7.2, 46.2],
-      weatherFeatures: [
-        { properties: { short_id: 'AAAAAAAAAAA' }, geometry: { coordinates: [7.15, 46.15] } },
-      ],
+    const plan = core.areaContentURLs({
+      weather: [{ short_id: 'AAAAAAAAAAA' }],
       days: DAYS,
     });
+
     expect(plan.weatherDetailUrls).toEqual([]);
   });
-});
 
-describe('areaContentPlan — the superset invariant (SNOW-924)', () => {
-  // THE assertion this whole group exists to protect, and the one that must
-  // never be relaxed.
-  //
-  // `areaContentPlan` selects regions by RECTANGLE overlap, not by real
-  // geometry. That is a deliberate over-selection: the contract is "inside
-  // the boundary, everything; outside, whatever happens to be there", so a
-  // region wrongly included costs one HTML page while one wrongly excluded
-  // costs a user their bulletin. A future reader "fixing" the crude test
-  // into point-in-polygon would be trading a free over-selection for that.
-  //
-  // Mirrors tests/regions/services/test_basemap_tiles.py's
-  // `test_clip_ranges_is_a_subset_of_the_candidate_rectangle`, which makes
-  // the same argument at the other end of the pipeline and also runs
-  // against every real CH boundary rather than a hand-built one. The JS
-  // mechanics — a generated sweep inside one `it` — follow
-  // `budgetScaleForBBox`'s loops above.
+  it('survives an answer that is missing either list', () => {
+    const plan = core.areaContentURLs({ days: DAYS });
 
-  /** Every CH micro-region in the fixture, as a geojson-shaped feature. */
-  const REGIONS = CH_FIXTURE
-    .filter((entry) => entry.model === 'regions.microregion')
-    .map((entry) => ({
-      properties: { id: entry.fields.region_id, slug: entry.fields.slug },
-      geometry: entry.fields.boundary,
-    }));
-
-  /**
-   * Regions with at least one boundary VERTEX inside the box.
-   *
-   * A sound under-approximation of "really intersects": a vertex inside
-   * the box proves the region does, while a region crossing the box with
-   * every vertex outside it is missed. That asymmetry is the right way
-   * round — everything this set contains MUST be in the rectangle
-   * selection, and anything it misses only weakens the test rather than
-   * making it wrong.
-   */
-  function regionsWithVertexInside(bbox) {
-    const hit = [];
-    for (const feature of REGIONS) {
-      const rings = feature.geometry.coordinates.flat();
-      let found = false;
-      for (const ring of rings) {
-        for (const [lon, lat] of ring) {
-          if (lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]) {
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
-      }
-      if (found) hit.push(feature.properties.id);
-    }
-    return hit;
-  }
-
-  it('loaded real boundaries to test against', () => {
-    // Guards the guard: a fixture that stopped parsing would make every
-    // assertion below vacuously true.
-    expect(REGIONS.length).toBe(149);
-    expect(REGIONS.every((f) => f.geometry && f.geometry.coordinates.length > 0)).toBe(true);
-  });
-
-  it('never selects fewer regions than really intersect, anywhere over CH', () => {
-    // A sweep across Switzerland at a spread of sizes — a valley-sized box
-    // up to one covering several cantons — rather than one hand-picked
-    // rectangle, because the failure this catches is a bbox derivation
-    // that is subtly tight rather than one that is obviously wrong.
-    let checked = 0;
-    for (let lon = 6.0; lon <= 10.0; lon += 0.5) {
-      for (let lat = 45.9; lat <= 47.6; lat += 0.4) {
-        for (const size of [0.05, 0.2, 0.75]) {
-          const bbox = [lon, lat, lon + size, lat + size];
-          const selected = new Set(
-            core.areaContentPlan({ bbox, regionFeatures: REGIONS, days: [] }).regionIds,
-          );
-          for (const id of regionsWithVertexInside(bbox)) {
-            expect(selected.has(id)).toBe(true);
-          }
-          checked += 1;
-        }
-      }
-    }
-    // The sweep is worth nothing if the loop bounds ever collapse.
-    expect(checked).toBeGreaterThan(100);
-  });
-
-  it('holds for the boxes an actual download produces, not just tidy ones', () => {
-    // The real path: a framed bbox becomes a blob, the blob's tile rows
-    // become the area's rectangle, and THAT is what selects the regions.
-    // Each step can only widen the ground, so the invariant has to survive
-    // the round trip — this is where a wrong Mercator inverse in
-    // `bboxFromZoomRanges` would show up.
-    for (const framed of [
-      [7.0, 46.0, 7.2, 46.2],
-      [8.5, 46.5, 8.6, 46.6],
-      [9.6, 46.4, 10.1, 46.9],
-    ]) {
-      const blob = core.buildBlob(framed, ...core.MICRO_BAND);
-      const derived = core.areaBBox({ z: blob.z });
-      const selected = new Set(
-        core.areaContentPlan({ bbox: derived, regionFeatures: REGIONS, days: [] }).regionIds,
-      );
-      // Everything the FRAMED box really touches must survive into the
-      // selection made against the DERIVED one.
-      for (const id of regionsWithVertexInside(framed)) {
-        expect(selected.has(id)).toBe(true);
-      }
-    }
+    expect(plan).toEqual({ bulletinUrls: [], weatherDetailUrls: [] });
   });
 });

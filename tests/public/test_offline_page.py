@@ -176,11 +176,35 @@ class TestContentEndpoints:
             in html
         )
 
-    def test_it_names_every_country_the_map_carries(self) -> None:
+    def test_it_renders_the_endpoint_the_plan_now_comes_from(self) -> None:
         """
-        SNOW-931's lesson, applied where there is no ``pwaMapCountries`` to
-        ask: a border area resolved against only the countries some client
-        state happens to hold silently drops a country's bulletins.
+        SNOW-953: the plan is one bbox-keyed request, not four feeds parsed
+        on the client.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert f'data-area-content-url="{reverse("api:area_content")}"' in html
+
+    def test_it_renders_how_far_back_a_download_reaches(self) -> None:
+        """
+        SNOW-953: the backwards reach is a setting, so the page has to say
+        what it is — a client that guessed would carry different days from
+        the map.
+        """
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert f'data-content-past-days="{settings.OFFLINE_CONTENT_PAST_DAYS}"' in html
+
+    def test_it_still_names_every_country_the_map_carries(self) -> None:
+        """
+        The four region feeds are still WARMED from here — the map needs
+        them offline — so the page still names every country.
+
+        What changed with SNOW-953 is why: this attribute used to decide
+        which feeds the CONTENT PLAN was resolved against, and a missing
+        country silently dropped its bulletins (SNOW-931). The plan comes
+        from ``data-area-content-url`` now, which cannot be short of a
+        country, so this list is a warm list and nothing more.
         """
         html = Client().get(reverse("public:offline_page")).content.decode()
 

@@ -63,6 +63,11 @@ class RouteAdmin(admin.ModelAdmin):
         "finished_at",
         "point_count",
         "bounds",
+        # SNOW-910. Read-only like the rest, though for a different
+        # reason: this one is not the user's content but the sampler's
+        # answer, and an edited copy would claim a steepness no terrain
+        # tile ever reported.
+        "slope_samples",
         "created_at",
         "updated_at",
     ]

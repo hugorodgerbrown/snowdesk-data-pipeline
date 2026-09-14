@@ -1228,18 +1228,16 @@
    * reason the entry will be servable offline. A ``cache.put`` from this
    * page writes an entry the worker refuses for ever.
    *
-   * The feed DOCUMENTS are fetched here as well as warmed, because the
-   * plan is derived from them: which regions a rectangle contains comes
-   * out of ``regions.geojson``, and which weather locations out of
-   * ``weather.geojson``. Those two reads are the reason this page needs
-   * the endpoints rendered onto the panel at all.
-   *
-   * Every country, not the ones some client state happens to hold. That
-   * is SNOW-931's lesson applied where there is no ``pwaMapCountries`` to
-   * ask: a border area whose plan is short of a country is exactly the
-   * under-fetch ``inside-the-boundary-is-complete.md`` promises not to
-   * produce. A country whose feed fails leaves the plan short, and the
-   * run reports failure rather than stamping a completion over it.
+   * SNOW-953: the plan comes from ``/api/area-content/`` — one bbox-keyed
+   * request answering which regions and which weather locations the
+   * boundary contains. The four country region feeds are still WARMED,
+   * because the map needs those outlines offline, but nothing here parses
+   * them any more: a plan derived from four feeds is short of a country
+   * whenever one of them fails, which is the under-fetch
+   * ``inside-the-boundary-is-complete.md`` promises not to produce, and a
+   * feed that fails to warm is already counted by ``warm``'s own tally.
+   * An endpoint that cannot be read leaves the plan short, and the run
+   * reports failure rather than stamping a completion over it.
    *
    * @param {HTMLElement} root The panel, carrying the endpoints.
    * @param {string} areaId
@@ -1247,11 +1245,70 @@
    *   its ``app-opens`` row is what decides whether the shell is warmed.
    * @returns {Promise<boolean>} Whether everything asked for landed.
    */
+  /**
+   * Ask the server what one rectangle contains (SNOW-953).
+   *
+   * Through ``fetchJson``, so it inherits that reader's bound: a
+   * connection that stalls without rejecting reads as an endpoint that did
+   * not answer, which makes the plan short and the run report failure —
+   * rather than leaving the control disabled for the browser's full
+   * network timeout (SNOW-918).
+   *
+   * @param {string|undefined} endpoint The panel's ``data-area-content-url``.
+   * @param {number[]} bbox ``[west, south, east, north]``.
+   * @returns {Promise<{regions: Array<Object>, weather: Array<Object>}|null>}
+   *   ``null`` for a missing endpoint, a failed request, or an answer that
+   *   is not the documented shape — all three are "cannot say".
+   */
+  async function fetchAreaContentPlan(endpoint, bbox) {
+    if (!endpoint) return null;
+    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')));
+    if (!data || !Array.isArray(data.regions) || !Array.isArray(data.weather)) {
+      return null;
+    }
+    return data;
+  }
+
+  /**
+   * How many days behind today this deployment carries bulletins for.
+   *
+   * @param {Object} data The panel root's dataset.
+   * @returns {number} A non-negative whole number; 0 when the attribute is
+   *   absent or malformed, which is what this page did before SNOW-953.
+   */
+  function readPastDays(data) {
+    var raw = (data && data.contentPastDays) || '';
+    if (!/^\d+$/.test(raw)) return 0;
+    var days = parseInt(raw, 10);
+    return Number.isFinite(days) && days >= 0 ? days : 0;
+  }
+
+  /**
+   * The day window an area's bulletins are taken for, oldest first.
+   *
+   * Today and the days behind it, and no further forward: reaching to the
+   * last published day needs the season payload the map holds and this
+   * page does not.
+   *
+   * @param {string} today An ISO date key.
+   * @param {number} pastDays How many days to reach back.
+   * @returns {string[]} Date keys, oldest first.
+   */
+  function contentDays(today, pastDays) {
+    var todayMs = Date.parse(today);
+    if (!Number.isFinite(todayMs)) return [today];
+    var days = [];
+    for (var back = pastDays; back >= 0; back -= 1) {
+      days.push(new Date(todayMs - back * 86400000).toISOString().slice(0, 10));
+    }
+    return days;
+  }
+
   async function fetchAreaContent(root, areaId, report) {
     var core = self.pwaBasemapDownloadCore;
     var warm = self.pwaWarmCache;
     var data = (root && root.dataset) || {};
-    if (!core || typeof core.areaContentPlan !== 'function') return false;
+    if (!core || typeof core.areaContentURLs !== 'function') return false;
     if (typeof warm !== 'function' || !data.regionsUrl) return false;
 
     var record = await readAreaRecordById(areaId);
@@ -1287,56 +1344,40 @@
       data.communityReportsUrl,
     ].filter(Boolean);
 
-    // Step 3: the plan, from the two feeds it is derived from.
+    // Step 3: the plan, from the one endpoint that answers for it.
+    // The country region feeds below are warmed, not read: the map needs
+    // those outlines offline, and a feed that fails to warm is already
+    // counted by `warm`'s own tally.
     var countries = String(data.contentCountries || '')
       .split(/\s+/)
       .filter(Boolean);
     var regionUrls = countries.map(function (code) {
       return data.regionsUrl + '?country=' + encodeURIComponent(code);
     });
-    var fetched = await Promise.all(
-      regionUrls.concat([data.weatherUrl]).map(function (url) {
-        return url ? fetchJson(url) : null;
-      }),
-    );
-    var weatherFeed = fetched[fetched.length - 1];
-    var regionFeatures = [];
-    var short = false;
-    for (var i = 0; i < regionUrls.length; i += 1) {
-      var feed = fetched[i];
-      if (!feed || !Array.isArray(feed.features)) {
-        short = true;
-        continue;
-      }
-      regionFeatures = regionFeatures.concat(feed.features);
-    }
-    // The weather manifest is held to the same standard as each region
-    // feed, and the first cut did not: a request that failed or came back
-    // malformed left `weatherFeed` null, the plan named no weather sheets,
-    // and the warm of everything else still succeeded — so an area full of
-    // weather locations was stamped complete having saved none of them.
-    // The manifest is what the sheet urls are DERIVED from, so losing it
-    // is a short plan by exactly the same reasoning a lost country is.
-    if (!weatherFeed || !Array.isArray(weatherFeed.features)) short = true;
+    var content = await fetchAreaContentPlan(data.areaContentUrl, bbox);
+    // An endpoint that cannot be read is a short plan, never a
+    // confidently empty one: every url the warm does fetch can still
+    // land, so no tally over the list could tell that the area's
+    // bulletins were never named.
+    var short = !content;
 
-    var plan = core.areaContentPlan({
-      bbox: bbox,
-      regionFeatures: regionFeatures,
-      weatherFeatures: (weatherFeed && weatherFeed.features) || [],
-      // Today alone. The map widens this to the last published day
-      // (SNOW-927) off the season payload the scrubber already holds;
-      // this page holds none, and fetching one to widen a bulletin set by
-      // a day would be a second copy of that rule for a marginal gain.
+    var plan = core.areaContentURLs({
+      regions: (content && content.regions) || [],
+      weather: (content && content.weather) || [],
+      // Today, plus the days behind it the deployment asks for
+      // (`data-content-past-days`, SNOW-953). Forwards is still the map's
+      // alone: widening to the last published day (SNOW-927) needs the
+      // season payload the scrubber holds and this page does not.
       //
-      // Resolved at PRESS time, not read off the rendered attribute.
-      // `data-today` is the date the HTML was rendered on, and this page
-      // is warmed into the shell and reopened from cache — so on a tab
-      // left open across midnight, or a cached copy reconnecting the next
-      // morning, it names yesterday. The first cut warmed yesterday's
-      // bulletins and then stamped a completion with the current
-      // timestamp, after which the report called the area fresh and took
-      // the control away with today's bulletins never saved.
-      days: [day],
+      // Today itself is resolved at PRESS time, not read off the rendered
+      // attribute. `data-today` is the date the HTML was rendered on, and
+      // this page is warmed into the shell and reopened from cache — so
+      // on a tab left open across midnight, or a cached copy reconnecting
+      // the next morning, it names yesterday. The first cut warmed
+      // yesterday's bulletins and then stamped a completion with the
+      // current timestamp, after which the report called the area fresh
+      // with today's bulletins never saved.
+      days: contentDays(day, readPastDays(data)),
       weatherDetailTemplate: data.weatherDetailUrl || '',
     });
 
@@ -1434,33 +1475,52 @@
     try {
       var db = self.pwaDb;
       if (!db) return;
-      var customRow = await db.get('meta:app', 'basemap.customAreas');
-      var custom = (customRow && customRow.value) || [];
-      if (
-        Array.isArray(custom) &&
-        custom.some(function (area) {
-          return area && area.id === areaId;
-        })
-      ) {
-        await db.put('meta:app', {
+      // SNOW-959: read and write on ONE transaction each. This page became
+      // the SECOND writer of these two rows in SNOW-950/953 — the map page
+      // was the first — and `/offline/` and the map are both SHELL_PAGES,
+      // so a user can hold them open in separate tabs. Each row is a whole
+      // ARRAY rewritten to change one entry, so a `get` followed later by a
+      // `put` meant the tab that wrote second silently discarded the
+      // other's stamp. IndexedDB serialises overlapping `readwrite`
+      // transactions across every connection, tabs included, so doing both
+      // halves on one transaction is the whole fix. `readModifyWrite`'s
+      // docstring has the mechanism; its one constraint is that `apply`
+      // and the mutators below stay synchronous.
+      //
+      // `undefined` from a mutator commits nothing, which is what each of
+      // the old early returns did.
+      var wroteCustom = false;
+      await db.readModifyWrite('meta:app', 'basemap.customAreas', function (row) {
+        var custom = (row && row.value) || [];
+        if (!Array.isArray(custom)) return undefined;
+        if (
+          !custom.some(function (area) {
+            return area && area.id === areaId;
+          })
+        ) {
+          return undefined;
+        }
+        wroteCustom = true;
+        return {
           key: 'basemap.customAreas',
           value: custom.map(function (area) {
             return area && area.id === areaId ? apply(area) : area;
           }),
-        });
-        return;
-      }
-      var regionRow = await db.get('meta:app', 'basemap.regions');
-      var regions = (regionRow && regionRow.value) || [];
-      if (!Array.isArray(regions)) return;
-      var touched = false;
-      var next = regions.map(function (entry) {
-        if (!entry || 'region-' + entry.region_id !== areaId) return entry;
-        touched = true;
-        return apply(entry);
+        };
       });
-      if (!touched) return;
-      await db.put('meta:app', { key: 'basemap.regions', value: next });
+      if (wroteCustom) return;
+      await db.readModifyWrite('meta:app', 'basemap.regions', function (row) {
+        var regions = (row && row.value) || [];
+        if (!Array.isArray(regions)) return undefined;
+        var touched = false;
+        var next = regions.map(function (entry) {
+          if (!entry || 'region-' + entry.region_id !== areaId) return entry;
+          touched = true;
+          return apply(entry);
+        });
+        if (!touched) return undefined;
+        return { key: 'basemap.regions', value: next };
+      });
     } catch (_err) {
       // Best-effort, per the docstring.
     }

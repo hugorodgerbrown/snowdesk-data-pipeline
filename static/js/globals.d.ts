@@ -58,6 +58,8 @@ interface Window {
   pwaElevationProfileCore: any;
   /** static/js/route_markers_core.js — start/end marker placement. */
   pwaRouteMarkersCore: any;
+  /** static/js/route_slope_core.js — slope class buckets and segment split. */
+  pwaRouteSlopeCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */

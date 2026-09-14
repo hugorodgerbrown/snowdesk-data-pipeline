@@ -300,6 +300,22 @@ def test_sw_js_answers_the_build_identity_message() -> None:
     assert "BUILD_IDENTITY.build" in content
 
 
+def test_sw_js_reports_its_cache_version_in_the_build_identity_reply() -> None:
+    """The reply carries ``CACHE_VERSION`` — the value the banner is gated on.
+
+    SNOW-952: the build names a deploy and changes on every one of them;
+    the cache name is derived from the shell content hash and changes only
+    when a shell source does. ``sw_register.js`` compares this against the
+    ``shell`` field on ``/api/version`` to decide whether to reveal the
+    banner at all, and a reply missing the field reads as "cannot confirm"
+    — which reveals. So dropping it would not fail loudly; it would put
+    the every-deploy interruption straight back.
+    """
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
+    content = path.read_text(encoding="utf-8")
+    assert "cache: CACHE_VERSION," in content
+
+
 # ---------------------------------------------------------------------------
 # Dev shell-cache bypass (SNOW-585)
 # ---------------------------------------------------------------------------
