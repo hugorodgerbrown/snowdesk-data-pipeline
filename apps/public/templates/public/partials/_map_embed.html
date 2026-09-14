@@ -1338,6 +1338,25 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Under 30°" %}
                 </div>
+                {# SNOW-964: the no-fall passage. Inside this key and after  #}
+                {# the six bands, because it is not a seventh one — the mark  #}
+                {# keeps the colour of the ground under it and says something #}
+                {# about the TRACK: that it is on ground over 50°.            #}
+                {#                                                            #}
+                {# Distinct from the dashed row below, and the two are        #}
+                {# orthogonal: the dash interrupts the line ALONG its length, #}
+                {# the split divides it ACROSS its width.                     #}
+                {#                                                            #}
+                {# "not a full list" for the crux row's reason, and a sharper #}
+                {# one — a narrow steep passage between two gentler samples   #}
+                {# is averaged away before it is ever measured, so an         #}
+                {# unmarked route is not a route without no-fall ground.      #}
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--passage"
+                        aria-hidden="true"
+                    ></span>{% trans "No-fall passage — not a full list" %}
+                </div>
                 {# SNOW-911: the crux ring. Inside the route-steepness key   #}
                 {# rather than a section of its own — it is the same         #}
                 {# reading of the same terrain, marked rather than shaded,   #}
@@ -1362,7 +1381,9 @@ Optional context:
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
                         The colour is the steepness of the ground the track crosses, not of the track itself. Dashed
-                        means the terrain data does not cover that stretch — never that it is gentle.
+                        means the terrain data does not cover that stretch — never that it is gentle. A narrow steep
+                        passage often reads gentler than it is, because each colour is an average over the ground around
+                        it: an unmarked route is not a route without no-fall ground.
                     {% endblocktrans %}
                 </p>
             </section>

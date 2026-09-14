@@ -1772,6 +1772,27 @@ def test_the_passage_wording_separates_the_split_from_the_ring() -> None:
 
 
 @pytest.mark.django_db
+def test_the_route_steepness_key_explains_the_no_fall_passage() -> None:
+    """The split line has a row, and the key carries its caveat.
+
+    A mark nobody can look up is a mark that gets guessed at, and the
+    guess here is the dangerous one: that an unmarked route has no
+    no-fall ground on it. The section heading links to
+    ``/help/#help-topic-slope`` for the long version; this is the short
+    one, on the surface the mark appears on.
+    """
+    content = Client().get(reverse("public:home")).content.decode()
+    section = content.split('id="map-route-slope-section"', 1)[1]
+    key = section.split("</section>", 1)[0]
+
+    assert "map-legend-swatch--passage" in key
+    assert "No-fall passage" in key
+    # The two marks are different claims and the key has to hold both.
+    assert "Key passage" in key
+    assert "reads gentler than it is" in key
+
+
+@pytest.mark.django_db
 class TestFakeLocationGate:
     """``data-fake-location-allowed`` opens ``?loc=`` for testing only.
 
