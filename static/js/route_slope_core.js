@@ -47,6 +47,7 @@
  *
  *   CLASSES                — the six buckets, gentlest first
  *   UNKNOWN_COLOUR         — the dashed line's colour
+ *   UNKNOWN_TOKEN          — and the token that colour mirrors
  *   classify(angle)        — a bucket index, or null for an unknown
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
@@ -97,6 +98,19 @@
    * Mirrors `--color-slope-unknown` in `src/css/main.css`.
    */
   const UNKNOWN_COLOUR = '#94a3b8';
+
+  /**
+   * The `@theme` custom property `UNKNOWN_COLOUR` is the value of.
+   *
+   * The six painted classes each carry a `token` beside their `hex`; the
+   * unknown treatment is not one of them and so had nowhere to record its
+   * own. SNOW-960 gave it one, because the popup's elevation profile
+   * paints this same six-plus-one scale as an inline SVG — where a CSS
+   * variable IS readable, unlike in a MapLibre paint property — and
+   * reading the token is what keeps the chart from carrying a second copy
+   * of the palette that could drift from this one.
+   */
+  const UNKNOWN_TOKEN = '--color-slope-unknown';
 
   /**
    * Which bucket an angle falls in.
@@ -203,6 +217,7 @@
   self.pwaRouteSlopeCore = Object.freeze({
     CLASSES: CLASSES,
     UNKNOWN_COLOUR: UNKNOWN_COLOUR,
+    UNKNOWN_TOKEN: UNKNOWN_TOKEN,
     classify: classify,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,

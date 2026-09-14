@@ -7518,6 +7518,20 @@
      * Returns the profile either way, so appendRouteCaption can caption a
      * chart that exists without having to re-read the geometry.
      *
+     * SNOW-960 COLOURS IT BY SLOPE where the route has been sampled,
+     * from the `slope` property on the very feature this already found.
+     *
+     * AND IT DOES SO FOR A PENDING SHARE TOO, which is a deliberate
+     * divergence from the line. `route_slope_core.js` leaves a pending
+     * route's LINE teal and dashed because one line cannot carry two
+     * messages and "this one is not yours yet" is the one that matters
+     * there. The chart is not that line: the pending message is already
+     * carried by the line and by the Save control directly beneath this,
+     * so the profile is free to say the more useful thing about a route
+     * someone has just been handed — where the steep ground on it is.
+     * `_route_feature` serves `slope` on both branches, so nothing new is
+     * disclosed by drawing it.
+     *
      * SNOW-764: the key may be a uuid OR a share token. A pending route
      * carries no uuid at all — a non-owner must not be handed the
      * identifier the owner-scoped endpoints are addressed by — so the
@@ -7546,6 +7560,12 @@
       const profile = core.readProfile(coordinates);
       const svg = core.createProfileSvg(profile, {
         label: MAP_STRINGS['route-profile-label'],
+        // SNOW-960: the same record the slope layers paint the line
+        // from, read off the same CACHED feature — not the tapped one,
+        // whose properties MapLibre would have serialised to JSON text
+        // on the way out. Undefined for a route nothing has sampled, and
+        // the chart draws its single-colour curve.
+        slope: (cached.properties || {}).slope,
       });
       if (!svg) return null;
       container.appendChild(svg);

@@ -311,6 +311,38 @@ class TestHelpPageFlagGating:
         ):
             assert testid in content, testid
 
+    def test_slope_panel_explains_both_surfaces_the_colouring_reaches(
+        self, client: Client
+    ) -> None:
+        """SNOW-910/SNOW-960: the line and the popup's height profile.
+
+        Both are asserted, because the panel is where the rule that the
+        colour is the GROUND's steepness and not the track's is written
+        down, and a reader who meets the colours first on the profile
+        needs to be sent to the same explanation as one who meets them on
+        the line.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-slope-route-colouring",
+            b"help-slope-profile-colouring",
+        ):
+            assert testid in content, testid
+
+    def test_slope_panel_explains_a_flat_traverse_drawn_steep(
+        self, client: Client
+    ) -> None:
+        """SNOW-960: the mirror of the zigzag case, and the one that looks broken.
+
+        A path cut across a face is level underfoot while the ground it
+        crosses is not, and a 10 m analysis window cannot see a track a few
+        metres wide. So a dead-flat stretch of a profile can carry 40 and 50
+        degree colours, which reads as a defect until it is explained. The
+        panel explains it beside the rule it follows from.
+        """
+        content = client.get(reverse("public:help")).content
+        assert b"help-slope-flat-on-steep" in content
+
 
 @pytest.mark.django_db
 class TestHelpPageDiscoverability:
