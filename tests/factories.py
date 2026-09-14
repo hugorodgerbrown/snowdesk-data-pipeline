@@ -584,6 +584,17 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     a planned ``<rte>``, or a row predating migration ``0003`` — passes
     ``started_at=None, finished_at=None``; the pair is always set or unset
     together, never one of the two.
+
+    ``slope_samples`` (SNOW-910) is deliberately NOT set, and is the one
+    field the consistency promise above does not extend to. It is not
+    derived from ``points`` at all — it is the terrain's own steepness,
+    which only the tile origin can answer — so there is no figure this
+    factory could compute that would be true of these coordinates. Its
+    default null is the honest state for a row nothing has sampled, which
+    is also the state every route is in between its upload and its
+    background sampling landing. A test that needs a sampled route passes
+    a record of the shape
+    ``apps.routes.services.slope_segments.build_slope_samples`` returns.
     """
 
     class Meta:

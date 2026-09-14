@@ -174,6 +174,13 @@ _COPIED_FIELDS = (
     "finished_at",
     "point_count",
     "bounds",
+    # SNOW-910. Carried rather than re-sampled: the copy has the same
+    # geometry, so the terrain under it is the same terrain, and asking
+    # the tile origin again would spend a request per tile to learn what
+    # the sharer's row already says. A copy that started null would also
+    # read as "never sampled" on the claimer's map while the identical
+    # line on the sharer's map was fully coloured.
+    "slope_samples",
 )
 
 
