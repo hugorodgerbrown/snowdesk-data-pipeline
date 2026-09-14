@@ -224,7 +224,10 @@ class Route(BaseModel):
             "track's own elevation. Null means NEVER SAMPLED, which is not "
             "the same fact as a segment whose unknown reason is set (that "
             "is ground the survey does not cover); the two must never "
-            "render alike."
+            "render alike. Carries a 'summary' key holding the same walk "
+            "in figures (apps/routes/services/slope_summary.py), written "
+            "by the sampler and recomputed on read when a record predates "
+            "it."
         ),
     )
 

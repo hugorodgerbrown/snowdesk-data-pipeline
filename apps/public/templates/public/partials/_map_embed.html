@@ -2444,6 +2444,29 @@ Optional context:
     {# differently ("4 h 05") can say so in each form independently.         #}
     <span data-string="route-duration-hours">{% blocktrans %}%(hours)sh%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-duration-minutes">{% blocktrans %}%(minutes)sm{% endblocktrans %}</span>
+    {# SNOW-961: the route's TERRAIN line — what the ground under the track #}
+    {# amounts to, on its own line under the track's own figures. Six       #}
+    {# strings and not one, for the reasons the figures above are separate: #}
+    {# each is omitted entirely when there is nothing to say, and a length  #}
+    {# under a kilometre is written in metres rather than as "0.1km", which #}
+    {# is a number the reader has to convert back.                          #}
+    {#                                                                       #}
+    {# "over 30°" NAMES ITS THRESHOLD rather than assuming it. The angle is  #}
+    {# a parameter because the count was made against it on the server       #}
+    {# (apps/routes/services/slope_summary.py), and a locale that wants      #}
+    {# "steeper than 30°" can say so without the figure drifting from its    #}
+    {# own label.                                                            #}
+    <span data-string="route-terrain-steepest">{% blocktrans %}Steepest %(deg)s°{% endblocktrans %}</span>
+    <span data-string="route-terrain-steep-km">{% blocktrans %}%(km)skm over %(deg)s°{% endblocktrans %}</span>
+    <span data-string="route-terrain-steep-m">{% blocktrans %}%(m)sm over %(deg)s°{% endblocktrans %}</span>
+    {# The unsurveyed pair, and the whole-route case last. "Not surveyed"   #}
+    {# never means "not steep" — the terrain tileset covers Switzerland, so #}
+    {# a route elsewhere is sampled and answered nothing, which is the one  #}
+    {# thing this line exists to say out loud. /help/#help-topic-slope      #}
+    {# carries the long version, and the map legend's own key repeats it.   #}
+    <span data-string="route-terrain-unsurveyed-km">{% blocktrans %}%(km)skm not surveyed{% endblocktrans %}</span>
+    <span data-string="route-terrain-unsurveyed-m">{% blocktrans %}%(m)sm not surveyed{% endblocktrans %}</span>
+    <span data-string="route-terrain-unsurveyed-all">{% trans "Terrain not surveyed" %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-764: the shared-route popup — the Save control's label and its   #}
     {# three outcomes. There is deliberately no "Shared with you" qualifier  #}

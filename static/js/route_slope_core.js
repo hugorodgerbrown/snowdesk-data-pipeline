@@ -48,9 +48,11 @@
  *   CLASSES                — the six buckets, gentlest first
  *   UNKNOWN_COLOUR         — the dashed line's colour
  *   UNKNOWN_TOKEN          — and the token that colour mirrors
+ *   STEEP_THRESHOLD_DEG    — the angle a length is counted against
  *   classify(angle)        — a bucket index, or null for an unknown
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
+ *   summaryLines(terrain)  — the same record in words (SNOW-961)
  */
 
 // @ts-check
@@ -214,12 +216,143 @@
     return { type: 'FeatureCollection', features: segments };
   }
 
+  /**
+   * The angle at and above which ground is reported as steep.
+   *
+   * Mirrors `STEEP_THRESHOLD_DEG` in
+   * `apps/routes/services/slope_summary.py`, which is where the reasoning
+   * for 30° lives. Only the LABEL is built here — the metres were counted
+   * against that threshold on the server, so changing this constant alone
+   * would relabel a figure without recounting it.
+   */
+  const STEEP_THRESHOLD_DEG = 30;
+
+  // Below this many metres a length is reported in metres rather than
+  // kilometres. "0.1km over 30°" is a figure the reader has to convert
+  // back; "80m over 30°" is the same fact already in the unit they think
+  // in for a short passage.
+  const KILOMETRE_M = 1000;
+
+  // A shortfall under this is not reported as unsurveyed ground.
+  //
+  // One metre, which is small enough to report every real gap and exists
+  // only to absorb float residue. `sampled_m` and `surveyed_m` are summed
+  // from the SAME lengths, so their difference is the exact length of the
+  // segments the terrain could not answer for — not an estimate, and not
+  // a comparison between two different measurements of the track. A
+  // single unknown segment is about one stride (25 m) and IS a coverage
+  // gap the reader should be told about, so the floor must stay far below
+  // it. The two figures are rounded independently to a tenth of a metre,
+  // which is the only way a wholly-surveyed track can differ from itself.
+  const UNSURVEYED_FLOOR_M = 1;
+
+  /**
+   * The server's terrain summary for one route.
+   *
+   * Every field is optional because this arrives from a feature property
+   * and is checked rather than trusted — `apps/routes/services/
+   * slope_summary.py` omits `steepest_deg` entirely for a walk that
+   * surveyed nothing, which is the distinction the whole module turns on.
+   *
+   * @typedef {object} TerrainSummary
+   * @property {number} [sampled_m] The walk's own length, in metres.
+   * @property {number} [surveyed_m] Of it, the part with an answer.
+   * @property {number} [steep_m] Of that, the part at or above the
+   *   threshold.
+   * @property {number} [steepest_deg] The steepest sampled angle.
+   * @property {Object<string, number>} [bands] Metres per slope class.
+   */
+
+  /**
+   * One rendered line, as the string key and the params it interpolates.
+   *
+   * @typedef {object} TerrainLine
+   * @property {string} key The `data-string` key in the surface partial.
+   * @property {{km?: string, m?: string, deg?: string}} params Its values.
+   */
+
+  /**
+   * One length, as the string key and params that render it.
+   *
+   * @param {number} metres The length.
+   * @param {string} kmKey The string key for a kilometre rendering.
+   * @param {string} mKey The string key for a metre rendering.
+   * @returns {TerrainLine} The descriptor.
+   */
+  function lengthLine(metres, kmKey, mKey) {
+    if (metres < KILOMETRE_M) {
+      return { key: mKey, params: { m: String(Math.round(metres)) } };
+    }
+    return { key: kmKey, params: { km: (metres / KILOMETRE_M).toFixed(1) } };
+  }
+
+  /**
+   * What a route's terrain summary says, as string keys and params.
+   *
+   * Returns DESCRIPTORS rather than text: the caller owns the strings
+   * (`window.pwaStrings`, from the surface partial's `<template>`), so
+   * nothing here can ship an English literal to a translated page — the
+   * rule `tox -e i18n-lint` enforces.
+   *
+   * THE ALL-UNKNOWN CASE IS ITS OWN LINE, not a set of zeroes. A route
+   * outside the terrain coverage has no steepest angle and no steep
+   * length, and printing "0m over 30°" for it would state the ground is
+   * gentle on the strength of never having looked at it. It says only
+   * that it is unsurveyed, which is the one thing known about it.
+   *
+   * @param {?TerrainSummary} terrain The feature's `terrain` property —
+   *   the server's summary (`apps/routes/services/slope_summary.py`),
+   *   already parsed. Null/absent for a route that has never been
+   *   sampled, which produces no lines at all rather than an unsurveyed
+   *   claim.
+   * @returns {Array<TerrainLine>} The lines, in order.
+   */
+  function summaryLines(terrain) {
+    if (!terrain || typeof terrain !== 'object') return [];
+
+    const sampled = typeof terrain.sampled_m === 'number' ? terrain.sampled_m : 0;
+    const surveyed = typeof terrain.surveyed_m === 'number' ? terrain.surveyed_m : 0;
+    if (surveyed <= 0) {
+      return sampled > 0 ? [{ key: 'route-terrain-unsurveyed-all', params: {} }] : [];
+    }
+
+    const lines = [];
+    if (typeof terrain.steepest_deg === 'number') {
+      lines.push({
+        key: 'route-terrain-steepest',
+        params: { deg: String(Math.round(terrain.steepest_deg)) },
+      });
+    }
+    if (typeof terrain.steep_m === 'number' && terrain.steep_m > 0) {
+      const line = lengthLine(
+        terrain.steep_m,
+        'route-terrain-steep-km',
+        'route-terrain-steep-m',
+      );
+      line.params.deg = String(STEEP_THRESHOLD_DEG);
+      lines.push(line);
+    }
+    const unsurveyed = sampled - surveyed;
+    if (unsurveyed >= UNSURVEYED_FLOOR_M) {
+      lines.push(
+        lengthLine(
+          unsurveyed,
+          'route-terrain-unsurveyed-km',
+          'route-terrain-unsurveyed-m',
+        ),
+      );
+    }
+    return lines;
+  }
+
   self.pwaRouteSlopeCore = Object.freeze({
     CLASSES: CLASSES,
     UNKNOWN_COLOUR: UNKNOWN_COLOUR,
     UNKNOWN_TOKEN: UNKNOWN_TOKEN,
+    STEEP_THRESHOLD_DEG: STEEP_THRESHOLD_DEG,
     classify: classify,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
+    summaryLines: summaryLines,
   });
 })();
