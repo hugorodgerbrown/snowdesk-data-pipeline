@@ -11,10 +11,15 @@ Covers:
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
-from apps.regions.services.point_match import point_in_polygon, region_for_point
+from apps.regions.services.point_match import (
+    point_in_polygon,
+    region_for_point,
+    regions_for_points,
+)
 from tests.factories import LocationFactory, MicroRegionFactory
 
 # ---------------------------------------------------------------------------
@@ -412,3 +417,92 @@ class TestRegionForPointReadsCentroidLocations:
         )
 
         assert region_for_point(5.0, 5.0) == wanted
+
+
+@pytest.mark.django_db
+class TestRegionsForPoints:
+    """The batch form, and the pruning that makes it usable (SNOW-839)."""
+
+    def _region(self, region_id: str, west: float) -> Any:
+        """Create a one-degree square region with its west edge at ``west``."""
+        return MicroRegionFactory.create(
+            region_id=region_id,
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [west, 46.0],
+                        [west + 1, 46.0],
+                        [west + 1, 47.0],
+                        [west, 47.0],
+                        [west, 46.0],
+                    ]
+                ],
+            },
+        )
+
+    def test_it_answers_one_region_per_point(self) -> None:
+        self._region("CH-P01", 7.0)
+        self._region("CH-P02", 9.0)
+
+        found = regions_for_points([(46.5, 7.5), (46.5, 9.5), (46.5, 7.5)])
+
+        assert [region.region_id if region else None for region in found] == [
+            "CH-P01",
+            "CH-P02",
+            "CH-P01",
+        ]
+
+    def test_a_point_outside_every_region_answers_none(self) -> None:
+        """None is about OUR coverage, never about the ground."""
+        self._region("CH-P03", 7.0)
+
+        assert regions_for_points([(10.0, 20.0)]) == [None]
+
+    def test_an_uncovered_point_does_not_ray_cast_every_region(self) -> None:
+        """The request-path claim, and the reason the boxes exist.
+
+        A track outside the covered countries cannot use the
+        previous-answer shortcut, so without a bounding-box prune every
+        sample would ray-cast all 461 real regions and their ~67,000
+        vertices. This asserts the prune by counting the ray-casts: a
+        point far from every box must reach none of them.
+        """
+        for index, west in enumerate((7.0, 9.0, 11.0)):
+            self._region(f"CH-P1{index}", west)
+
+        with patch(
+            "apps.regions.services.point_match.point_in_polygon",
+            wraps=point_in_polygon,
+        ) as spy:
+            regions_for_points([(10.0, 20.0)] * 5)
+
+        assert spy.call_count == 0
+
+    def test_a_point_inside_a_box_is_still_tested_properly(self) -> None:
+        """The box is a filter, never the answer.
+
+        An L-shaped region's box contains ground the region does not, so
+        a point in the notch must come back as no match rather than as a
+        match on the box.
+        """
+        MicroRegionFactory.create(
+            region_id="CH-P20",
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [7.0, 46.0],
+                        [8.0, 46.0],
+                        [8.0, 46.5],
+                        [7.5, 46.5],
+                        [7.5, 47.0],
+                        [7.0, 47.0],
+                        [7.0, 46.0],
+                    ]
+                ],
+            },
+        )
+
+        # (46.8, 7.8) is inside the bounding box and inside the notch.
+        assert regions_for_points([(46.8, 7.8)]) == [None]

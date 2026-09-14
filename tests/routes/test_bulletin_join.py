@@ -119,6 +119,24 @@ class TestElevationMatches:
 
         assert elevation_matches(band, 2500.0) is None
 
+    def test_a_MIXED_treeline_band_cannot_be_decided_either(self) -> None:
+        """CAAML mixes them, and half a decidable band is not decidable.
+
+        ``lowerBound="treeline"`` with ``upperBound=2500`` means "above
+        the treeline and below 2500 m". Deciding only the half we can
+        measure would report a confirmed match on a band whose other edge
+        we cannot place, and a reader could not tell that answer from one
+        where both edges were known.
+        """
+        band = {
+            "lower": None,
+            "upper": 2500,
+            "treeline": True,
+            "treeline_side": "lower",
+        }
+
+        assert elevation_matches(band, 2000.0) is None
+
     def test_a_track_with_no_height_cannot_be_decided(self) -> None:
         assert elevation_matches(_band(lower=2200), None) is None
 

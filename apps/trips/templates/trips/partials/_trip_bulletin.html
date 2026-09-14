@@ -29,7 +29,7 @@ Context:
     trip             : Trip — for its date, which is the day asked about.
     bulletin_readings: list[dict] — one entry per region, each carrying
                        ``region``, ``bulletin``, ``overlaps`` (already
-                       display-shaped) and ``length_km``.
+                       display-shaped) and ``length_km``, the region total.
 {% endcomment %}
 {% if bulletin_readings %}
     {% card %}
@@ -81,12 +81,12 @@ Context:
                                 {# and 2500 m" is what a range template   #}
                                 {# says about a stretch that sits at one  #}
                                 {# height, and it reads as a bug.         #}
-                                {% blocktrans trimmed with km=overlap.length_km aspects=overlap.aspects metres=overlap.lowest_m problem=overlap.problem_label %}
-                                    <strong>{{ km }} km</strong> on {{ aspects }}, at {{ metres }} m — {{ problem }}
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects metres=overlap.lowest_m problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }}, at {{ metres }} m — {{ problem }}
                                 {% endblocktrans %}
                             {% elif overlap.lowest_m and not overlap.elevation_undecided %}
-                                {% blocktrans trimmed with km=overlap.length_km aspects=overlap.aspects low=overlap.lowest_m high=overlap.highest_m problem=overlap.problem_label %}
-                                    <strong>{{ km }} km</strong> on {{ aspects }}, between {{ low }} and {{ high }} m
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects low=overlap.lowest_m high=overlap.highest_m problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }}, between {{ low }} and {{ high }} m
                                     —
                                     {{ problem }}
                                 {% endblocktrans %}
@@ -95,8 +95,8 @@ Context:
                                 {# no elevation or the problem's band is    #}
                                 {# pinned to the treeline, which we hold no #}
                                 {# model of. The aspect half still stands.  #}
-                                {% blocktrans trimmed with km=overlap.length_km aspects=overlap.aspects problem=overlap.problem_label %}
-                                    <strong>{{ km }} km</strong> on {{ aspects }} — {{ problem }}
+                                {% blocktrans trimmed with length=overlap.length_label aspects=overlap.aspects problem=overlap.problem_label %}
+                                    <strong>{{ length }}</strong> on {{ aspects }} — {{ problem }}
                                 {% endblocktrans %}
                             {% endif %}
                         </li>

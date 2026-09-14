@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -254,18 +255,24 @@ def _sample_coordinates(
 def _height_lookup(
     points: list[list[float | None]],
 ) -> Callable[[float, float], float | None]:
-    """Return a function giving the track's height nearest a coordinate.
+    """Return a function giving the track's height at a coordinate.
 
     **THE TRACK'S OWN ELEVATION, WHICH IS THE INVERSE OF SNOW-910'S
     RULE.** Steepness must never come from the track; height must. See
     ``bulletin_join``'s module docstring for why both follow from one
     principle.
 
-    Nearest-point rather than interpolated: the sample coordinates sit
-    between stored points at a 25 m stride, and a bulletin's elevation
-    bands are hundreds of metres wide, so the nearest stored height is
-    inside the same band as the exact one in every case that is not
-    already a coin-toss at a boundary.
+    **INTERPOLATED ALONG THE LEG, NOT SNAPPED TO THE NEARER END.** A
+    stored track is SIMPLIFIED, so one leg can be kilometres long and
+    climb hundreds of metres. Taking the nearer vertex's height would
+    give every sample in the leg's first half the height of its start and
+    every sample in the second half the height of its end — a step
+    halfway up, where the route actually climbs steadily. Against a
+    bulletin band that is a real miscount: a band boundary crossed
+    somewhere in the middle of a leg would be placed at the leg's
+    midpoint instead, and the length reported inside the band would be
+    wrong by whatever the difference was. The terrain sampler
+    interpolates coordinates along the track for the same reason.
 
     Args:
         points: The stored track, ``[lon, lat, ele]``.
@@ -276,26 +283,119 @@ def _height_lookup(
         all — which is "unknown", never zero.
 
     """
-    # Narrowed to three floats on the way in, so the nearest-point search
-    # below is arithmetic rather than a walk through Nones. A point with
-    # no height is not a point at height zero.
-    known: list[tuple[float, float, float]] = [
-        (float(point[1] or 0.0), float(point[0] or 0.0), float(point[2]))
+    # (latitude, longitude, elevation) for every stored point, with the
+    # elevation left as None where the file had none: a leg between two
+    # heights can be interpolated, and one with a gap at either end
+    # cannot, so the gaps have to survive this far.
+    track: list[tuple[float, float, float | None]] = [
+        (
+            float(point[1] or 0.0),
+            float(point[0] or 0.0),
+            None if len(point) < 3 or point[2] is None else float(point[2]),
+        )
         for point in points
-        if len(point) > 2 and point[2] is not None
     ]
+    if not any(height is not None for _, _, height in track):
+        return lambda latitude, longitude: None
 
     def _height(latitude: float, longitude: float) -> float | None:
-        """Return the height of the nearest stored point, or None."""
-        if not known:
+        """Return the interpolated height at a point on the track."""
+        leg = _nearest_leg(track, latitude, longitude)
+        if leg is None:
             return None
-        best = min(
-            known,
-            key=lambda p: (p[0] - latitude) ** 2 + (p[1] - longitude) ** 2,
-        )
-        return best[2]
+        first, second = leg
+        if first[2] is None or second[2] is None:
+            # One end of this leg has no height. The other end's is a
+            # fact about a different place, so the honest answer is that
+            # we do not know this one's.
+            return first[2] if second[2] is None else second[2]
+        fraction = _leg_fraction(first, second, latitude, longitude)
+        return first[2] + (second[2] - first[2]) * fraction
 
     return _height
+
+
+def _nearest_leg(
+    track: list[tuple[float, float, float | None]],
+    latitude: float,
+    longitude: float,
+) -> tuple[tuple[float, float, float | None], tuple[float, float, float | None]] | None:
+    """Return the two stored points the sample sits between.
+
+    Nearest by the sum of the distances to each end, which picks the leg
+    the point lies ON rather than the leg with the nearest single vertex
+    — the distinction that matters at a switchback, where the nearest
+    vertex can belong to a leg running the other way.
+
+    Args:
+        track: The stored points as ``(lat, lon, ele)``.
+        latitude: The sample's latitude.
+        longitude: The sample's longitude.
+
+    Returns:
+        The pair, or None for a track with fewer than two points.
+
+    """
+    if len(track) < 2:
+        return None
+
+    def _detour(index: int) -> float:
+        """Return the sample's summed distance to this leg's two ends.
+
+        The SUM, not the nearer end: it is smallest for the leg the
+        sample lies on, which at a switchback is not the leg owning the
+        nearest single vertex.
+        """
+        first, second = track[index], track[index + 1]
+        to_first = math.sqrt(_sq(first, latitude, longitude))
+        to_second = math.sqrt(_sq(second, latitude, longitude))
+        return to_first + to_second
+
+    best = min(range(len(track) - 1), key=_detour)
+    return track[best], track[best + 1]
+
+
+def _sq(
+    point: tuple[float, float, float | None], latitude: float, longitude: float
+) -> float:
+    """Return the squared degree distance from a stored point to a sample."""
+    return (point[0] - latitude) ** 2 + (point[1] - longitude) ** 2
+
+
+def _leg_fraction(
+    first: tuple[float, float, float | None],
+    second: tuple[float, float, float | None],
+    latitude: float,
+    longitude: float,
+) -> float:
+    """Return how far along a leg the sample lies, from 0 to 1.
+
+    The scalar projection of the sample onto the leg, clamped to the
+    leg's own ends — a sample slightly off the line projects to the
+    nearest point ON it, which is what "how far along" means.
+
+    Degrees rather than metres throughout: the ratio is scale-free, and
+    over one leg of a ski track the latitude distortion is far below the
+    precision a bulletin band needs.
+
+    Args:
+        first: The leg's start, as ``(lat, lon, ele)``.
+        second: Its end.
+        latitude: The sample's latitude.
+        longitude: The sample's longitude.
+
+    Returns:
+        A fraction in [0, 1]. Zero for a leg of no length, which is a
+        duplicated point rather than a position.
+
+    """
+    d_lat = second[0] - first[0]
+    d_lon = second[1] - first[1]
+    length_sq = d_lat * d_lat + d_lon * d_lon
+    if length_sq == 0:
+        return 0.0
+    along: float = (latitude - first[0]) * d_lat + (longitude - first[1]) * d_lon
+    return max(0.0, min(1.0, along / length_sq))
 
 
 @dataclass(frozen=True)
@@ -311,7 +411,13 @@ class OverlapDisplay:
 
     problem_label: str
     aspects: str
-    length_km: float
+    # The length as a phrase rather than a number, because the UNIT is
+    # part of the rounding decision: one or two 25 m segments is a real
+    # overlap and "0.0 km" is what a kilometre figure makes of it — a
+    # named avalanche problem beside a length of zero, which reads as a
+    # bug and understates the day. Under a kilometre it is metres, the
+    # same rule ``route_slope_core.js``'s own figures follow.
+    length_label: str
     lowest_m: int | None
     highest_m: int | None
     elevation_undecided: bool
@@ -344,13 +450,29 @@ def display_overlaps(overlaps_: list[ProblemOverlap]) -> list[OverlapDisplay]:
             # visible rather than swallowed, so a reader can report it.
             problem_label=str(labels.get(overlap.problem_type, overlap.problem_type)),
             aspects=_aspect_phrase(overlap.aspects),
-            length_km=round(overlap.length_m / 1000, 1),
+            length_label=_length_phrase(overlap.length_m),
             lowest_m=None if overlap.lowest_m is None else round(overlap.lowest_m),
             highest_m=None if overlap.highest_m is None else round(overlap.highest_m),
             elevation_undecided=overlap.elevation_undecided,
         )
         for overlap in ordered
     ]
+
+
+def _length_phrase(metres: float) -> str:
+    """Return a stretch's length, in the unit that does not round it away.
+
+    Args:
+        metres: The stretch, in metres.
+
+    Returns:
+        ``"1.4 km"`` at a kilometre and over, ``"80 m"`` below it. A real
+        overlap is never rendered as zero.
+
+    """
+    if metres < 1000:
+        return f"{round(metres)} m"
+    return f"{metres / 1000:.1f} km"
 
 
 def _aspect_phrase(aspects: set[str]) -> str:

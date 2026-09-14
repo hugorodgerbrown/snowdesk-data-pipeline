@@ -153,7 +153,13 @@ def elevation_matches(
 
     lower = elevation.get("lower")
     upper = elevation.get("upper")
-    if elevation.get("treeline") and lower is None and upper is None:
+    # ANY treeline bound makes the band undecidable, not only a band with
+    # no numbers at all. CAAML mixes them — ``lowerBound="treeline"`` with
+    # ``upperBound=2500`` is "above the treeline and below 2500 m" — and
+    # deciding the half we CAN measure would report a confirmed match on
+    # a band whose other edge we cannot place. A reader would have no way
+    # to tell that answer from one where both edges were known.
+    if elevation.get("treeline"):
         return None
     if metres is None:
         return None

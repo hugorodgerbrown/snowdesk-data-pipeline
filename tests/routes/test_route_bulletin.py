@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from apps.routes.services.route_bulletin import readings_for_track
+from apps.routes.services.route_bulletin import _segment_facts, readings_for_track
 from tests.factories import BulletinFactory, MicroRegionFactory
 
 # A square region, and a second one beside it. Small and synthetic: the
@@ -152,6 +152,49 @@ class TestReadingsForTrack:
 
         assert low[0].problem_overlaps == []
         assert len(high[0].problem_overlaps) == 1
+
+    def test_the_height_is_interpolated_along_a_simplified_leg(self) -> None:
+        """A stored track is SIMPLIFIED, so one leg can climb hundreds of
+        metres. Snapping each sample to the nearer end's height would put
+        a step halfway up a leg the route actually climbs steadily —
+        which miscounts the length inside a bulletin's band by however
+        much of the leg sits the wrong side of the boundary.
+
+        Here the leg runs 2000 m to 3000 m and the problem starts at
+        2500 m. Only the upper half of the leg is inside it, and the
+        sample nearest the top must be matched while the one nearest the
+        bottom must not.
+        """
+        self._region_with_bulletin("CH-T11", _WEST, ["N"], lower=2500)
+        # Two stored points, far apart, 1000 m of climb between them.
+        track: list[list[float | None]] = [
+            [7.02, 46.01, 2000.0],
+            [7.02, 46.09, 3000.0],
+        ]
+        # Four sampled segments spread along that one leg.
+        boundaries = [
+            (7.02, 46.01),
+            (7.02, 46.03),
+            (7.02, 46.05),
+            (7.02, 46.07),
+            (7.02, 46.09),
+        ]
+        record = _record(boundaries, [0.0, 0.0, 0.0, 0.0])
+
+        readings = readings_for_track(track, record, DAY)
+
+        assert len(readings) == 1
+        overlap = readings[0].problem_overlaps[0]
+        assert overlap.lowest_m is not None
+        # Interpolated, the four samples sit at roughly 2125, 2375, 2625
+        # and 2875 m, so the lowest one INSIDE the band is about 2625.
+        # Snapped to the nearer vertex they would sit at 2000 or 3000
+        # only, and the lowest matched height would be 3000 — so this
+        # bound is what separates the two implementations, rather than
+        # merely being true under both.
+        assert 2500 <= overlap.lowest_m < 2900
+        walked = sum(segment.length_m for segment in _segment_facts(track, record))
+        assert overlap.length_m < walked
 
     def test_a_track_crossing_two_regions_reports_under_both(self) -> None:
         """On a border that is two providers, and neither is the winner."""
