@@ -13,6 +13,11 @@ save_trip_route:
   refuses at settings.ROUTES_MAX_PER_USER, through the routes app's own
     cap rather than a second copy of the arithmetic.
 
+The terrain sampling save_trip_route enqueues (SNOW-910) is covered in
+tests/routes/test_slope_segments.py::TestTripSavedRoutesAreSampled, beside
+the same assertions for create_route and claim_route_share — that module
+owns the grid fixture and the sample_slope patch the end-to-end path needs.
+
 already_saved:
   False for a stranger's route and for an anonymous viewer;
   True once the geometry is on the caller's account, which is what makes a

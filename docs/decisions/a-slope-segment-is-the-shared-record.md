@@ -137,9 +137,21 @@ over the origin this record exists to avoid.
 
 - A newly uploaded route draws flat until its background task lands. That
   is visible and is the intended reading: it has not been sampled yet. The
-  map re-reads the routes feed ONCE, twenty seconds after an upload whose
-  route came back without a record, so the colouring arrives without a page
-  reload; one shot, never a poll, and inert wherever the task ran inline.
+  map re-reads the routes feed ONCE, twenty seconds later, so the colouring
+  arrives without a page reload; one shot, never a poll, and inert wherever
+  the task ran inline.
+
+  **Armed by the two writes that PUT A ROUTE ON THE SERVER — an upload and
+  a claim — and by neither of the two that do not.** A rename and a delete
+  raise the same `snowdesk:routes-changed` announcement and can never
+  produce a route about to gain a record, so arming off them would cost a
+  refetch on every visit for the life of any legacy route the backfill
+  never reached. The claim was excluded at first, on the reasoning that it
+  copies the sharer's record and so arrives already coloured; it does,
+  except when it beats the sharer's own sampling task, which is the same
+  race the enqueue below exists for. Both claim paths flag it — the
+  panel's row form in `static/js/routes.js` and the map popup's own Save
+  in `static/js/map.js`.
 - Routes uploaded before SNOW-910 stay flat until an operator runs
   `backfill_route_slope_samples --commit`.
 - Coverage is the terrain tileset's — Switzerland and its immediate
@@ -151,3 +163,19 @@ over the origin this record exists to avoid.
   samples the COPY when the source had nothing to give, which a claim that
   beats the sharer's own task sees. Nothing else would ever sample it: the
   sharer's task carries the source's pk, and the backfill runs once.
+- **A trip-saved route is re-sampled rather than handed a record**
+  (`save_trip_route` in `apps/trips/services/routes.py`, SNOW-910), which
+  is the opposite of the line above and not an inconsistency. A claim has
+  the record in hand — `share.route.slope_samples` is one field access.
+  A trip has no route to read: its geometry is a SNAPSHOT and `Trip.route`
+  is provenance only and may be null
+  ([a-trip-is-one-object-with-a-roster](a-trip-is-one-object-with-a-roster.md)).
+  So the question there is not "copy or re-sample" but "put a slope column
+  on `Trip` or ask the origin again", and the column was declined: the
+  snapshot exists to hold a trip still against changes the ORGANISER could
+  make, the terrain is nobody's to edit, no trip surface draws a coloured
+  line, and a trip snapshotted from a freshly-uploaded route would carry a
+  null record anyway — so the column would buy tile reads and never
+  correctness. The re-sample is the same question over the same geometry,
+  and the only thing that moves under it is the tileset, whose next
+  version is a correction rather than drift.

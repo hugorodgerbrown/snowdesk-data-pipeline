@@ -374,11 +374,17 @@
    * route the server has not finished describing. In production terrain
    * sampling is a queued task, so the record the map reads a moment later
    * carries no `slope` and the line is drawn flat; map.js re-reads the
-   * feed once, later, on this detail alone. A rename, a delete and a claim
-   * raise the same event with nothing attached.
+   * feed once, later, on this detail alone.
    *
-   * @param {{uploaded?: boolean}} [detail] What changed, when the map
-   *   needs to know more than "something did".
+   * `claimed` says the same thing about the other write that PUTS A ROUTE
+   * ON THE SERVER: a claim copies the sharer's record, but inherits null
+   * when it beats the sharer's own sampling task, and `claim_route_share`
+   * then samples the copy (SNOW-910). A rename and a delete raise the
+   * event with nothing attached — neither can produce a route that is
+   * about to gain a record.
+   *
+   * @param {{uploaded?: boolean, claimed?: boolean}} [detail] What changed,
+   *   when the map needs to know more than "something did".
    * @returns {void}
    */
   function announceRoutesChanged(detail) {
@@ -997,7 +1003,10 @@
     '[data-routes-rows]',
     function () {
       window.pwaTelemetry?.emit('map.route.claimed', {});
-      announceRoutesChanged();
+      // Flagged as a claim (SNOW-910) — a claim that beat the sharer's
+      // sampling task leaves the copy unsampled, and the server enqueues
+      // sampling for it. See announceRoutesChanged.
+      announceRoutesChanged({ claimed: true });
     },
     '[data-row-claimed]'
   );

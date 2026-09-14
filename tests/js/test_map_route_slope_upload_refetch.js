@@ -16,10 +16,11 @@
  *
  *   1. it fires ONCE. A retry ladder would turn a worker that is merely
  *      busy into a stream of requests from every device that uploaded;
- *   2. it is armed by an UPLOAD and nothing else. A legacy route the
- *      backfill never reached is unsampled on every load, and scheduling
- *      off that alone would cost a pointless refetch on every visit for
- *      the rest of its life;
+ *   2. it is armed by the writes that PUT A ROUTE ON THE SERVER — an
+ *      upload and a claim — and by neither of the two that do not. A
+ *      legacy route the backfill never reached is unsampled on every
+ *      load, and arming off a rename or a delete would cost a pointless
+ *      refetch on every visit for the rest of its life;
  *   3. it is inert if there is nothing left to paint — twenty seconds is
  *      long enough for the overlay to have been torn down.
  *
@@ -195,7 +196,7 @@ function routesFetchCount() {
   ).length;
 }
 
-/** Announce a write, optionally as the upload path does. */
+/** Announce a write, optionally as the upload or claim path does. */
 function announce(detail) {
   document.dispatchEvent(
     new CustomEvent('snowdesk:routes-changed', { detail: detail || null }),
@@ -295,19 +296,61 @@ describe('an upload of a route the server has not sampled yet', () => {
 
     // A basemap swap or a teardown between the schedule and the fire: the
     // sources are gone, so there is nothing to write the payload to.
+    const removed = mapStub.sources.get('route-slopes');
     mapStub.sources.delete('route-slopes');
+
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(routesFetchCount()).toBe(1);
+
+    // RESTORED, because the bundle is booted once for the whole file and
+    // this is the only test that takes a source away. Leaving it deleted
+    // makes every later test read as "the overlay is gone" and pass by
+    // asserting the wrong reason — which is how the claim case below
+    // could have looked green while doing nothing.
+    mapStub.sources.set('route-slopes', removed);
+  });
+});
+
+describe('a claim that beat the sharer\'s sampling task (SNOW-910)', () => {
+  it('re-reads the feed once, exactly as an upload does', async () => {
+    // A claim copies the sharer's record, so it USUALLY arrives coloured.
+    // But the link works from the moment it is minted, so a claim can beat
+    // the sharer's own sampling task: the copy inherits null and
+    // ``claim_route_share`` samples it. Same race an upload runs, and
+    // until SNOW-910 the claim was excluded from the cure.
+    announce({ claimed: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(routesFetchCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(routesFetchCount()).toBe(2);
+
+    // One shot here too.
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(routesFetchCount()).toBe(2);
+  });
+
+  it('schedules nothing when the copy inherited a record', async () => {
+    // The common case: the sharer's row was already sampled, so the copy
+    // carries it and there is nothing to wait for.
+    routesPayload = ROUTES_SAMPLED;
+
+    announce({ claimed: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(routesFetchCount()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(120000);
     expect(routesFetchCount()).toBe(1);
   });
 });
 
-describe('every other write', () => {
+describe('a rename or a delete', () => {
   it('leaves a legacy unsampled route alone', async () => {
-    // A rename, a delete or a claim. The payload here is unsampled — the
+    // Neither can put a route on the server, so neither can produce one
+    // that is about to gain a record. The payload here is unsampled — the
     // state a route the one-shot backfill never reached is in for good —
-    // and scheduling off that would cost a refetch on every page load for
-    // the rest of its life.
+    // and arming off that would cost a refetch on every page load for the
+    // rest of its life.
     announce();
     await vi.advanceTimersByTimeAsync(1);
     expect(routesFetchCount()).toBe(1);

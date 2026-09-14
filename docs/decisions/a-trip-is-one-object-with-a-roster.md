@@ -2,7 +2,7 @@
 name: a-trip-is-one-object-with-a-roster
 description: Trip is one row with a TripParticipant roster, never copied per person; the geometry is a snapshot and the meeting point a per-trip Location
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-09-14
 ---
 
 # A trip is one object with a roster
@@ -165,6 +165,36 @@ would show a group member abroad a different time for the same meeting.
   [`two-documents-and-a-map`](two-documents-and-a-map.md). A trip is
   authored to be *sent*, so its link has to unfurl as a card and open as
   something a recipient can read before being asked for anything.
+- **The snapshot freezes what a PERSON can change, and stops there**
+  (SNOW-910). Seven fields are copied because the organiser can rename
+  their route or delete it, and neither may reach into a plan other people
+  are holding. A DERIVED fact about fixed ground is not in that class:
+  `Route.slope_samples` — the steepness of the terrain under the track
+  ([a-slope-segment-is-the-shared-record](a-slope-segment-is-the-shared-record.md))
+  — is deliberately NOT a `Trip` column, and `save_trip_route` enqueues
+  sampling for the copy instead of inheriting a record. Nothing a trip
+  surface draws reads it: the trip page and the share page draw the line
+  plain, and it is the routes feed that is coloured.
+
+  **Neither geometry is editable, and that is what makes the re-sample
+  exact rather than merely acceptable.** A trip's snapshot is written once
+  by `create_trip` and has no writer afterwards — `update_trip` takes no
+  geometry argument and says so, `TripForm` backs create and edit with the
+  same fields precisely because the snapshot is excluded from both, and
+  every snapshot field is in `TripAdmin.readonly_fields`. A `Route` is the
+  same: `create_route` and `delete_route` are the only services, so a
+  track is renamed or deleted, never redrawn. So a record sampled at trip
+  creation and a record sampled at save time answer the same question
+  about the same ground, and a `Trip.slope_samples` column would have been
+  harmless but useless. Were the geometry ever made editable, the column
+  would become the hazard rather than the saving — a stale steepness claim
+  over a redrawn line, on a safety surface — and the re-sample would be
+  the only correct answer. It is the right answer under both regimes,
+  which is why it is the one taken.
+
+  A future field faces the same question: is this the organiser's to
+  change, or is it an answer about ground that does not move? Only the
+  first belongs in the snapshot.
 - **A trip is the first interactive multi-user object.** Everything else the
   map holds is one account's own data drawn on shared reference data. The
   next such object should read this file rather than re-argue it.
