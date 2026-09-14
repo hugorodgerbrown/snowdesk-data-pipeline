@@ -48,7 +48,7 @@
  *   CLASSES                — the six buckets, gentlest first
  *   UNKNOWN_COLOUR         — the dashed line's colour
  *   classify(angle)        — a bucket index, or null for an unknown
- *   segmentFeatures(f)     — one route feature -> its segment features
+ *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
  */
 
@@ -127,23 +127,30 @@
    * from `points[i]` to `points[i + 1]`. Pairing them back out here is
    * what lets the payload carry half the coordinates it otherwise would.
    *
-   * Each feature carries the owning route's identity — `uuid` for an owned
-   * route, `token` plus `pending` for a followed share — because these
-   * layers are what a tap on a sampled route lands on, and `map.js` has to
-   * get from the segment back to the route to open its popup. It is the
-   * same pair `appendElevationProfile` looks a route up by, and the two can
-   * never collide: an owned feature carries no token and a pending one
-   * carries no uuid.
+   * Each feature carries the owning route's `uuid`, because these layers
+   * are what a tap on a sampled route lands on and `map.js` has to get
+   * from the segment back to the route to open its popup.
    *
-   * A route with no `slope` property produces NOTHING — see the module
-   * comment's three states. So does a record whose halves do not pair up,
-   * which would otherwise draw segments against the wrong ground.
+   * A PENDING ROUTE PRODUCES NOTHING. A followed share is drawn as a teal
+   * dashed line saying "this one is not yours yet", which is the fact that
+   * matters about it and the only action it offers; recolouring it by
+   * steepness would spend the one line on a second message and leave the
+   * first with nothing to carry it. Saving it makes it an owned route, and
+   * owned routes are coloured. That also means no segment here ever
+   * carries a `token`, so the layers cannot hand a non-owner's identifier
+   * to a popup built for owners.
+   *
+   * A route with no `slope` property produces NOTHING either — see the
+   * module comment's three states. So does a record whose halves do not
+   * pair up, which would otherwise draw segments against the wrong ground.
    *
    * @param {?object} feature One route feature from the routes payload.
    * @returns {Array<object>} Its segment features, possibly empty.
    */
   function segmentFeatures(feature) {
     const properties = (feature && feature.properties) || {};
+    if (properties.pending) return [];
+
     const slope = properties.slope;
     if (!slope) return [];
 
@@ -152,10 +159,7 @@
     if (!Array.isArray(points) || !Array.isArray(angles)) return [];
     if (points.length !== angles.length + 1) return [];
 
-    const identity = {};
-    if (properties.uuid) identity.uuid = properties.uuid;
-    if (properties.token) identity.token = properties.token;
-    if (properties.pending) identity.pending = true;
+    const identity = properties.uuid ? { uuid: properties.uuid } : {};
 
     const features = [];
     for (let i = 0; i < angles.length; i += 1) {

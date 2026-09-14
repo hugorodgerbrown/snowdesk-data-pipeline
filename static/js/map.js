@@ -2210,6 +2210,100 @@
     return core.endpointsGeojson(geojson);
   };
 
+  /**
+   * The slope-coloured segments for a routes payload (SNOW-910).
+   *
+   * A guarded wrapper over `route_slope_core.js`, on the same terms as
+   * `routeEndpointsFor` above: a load failure should cost the colouring,
+   * not the routes overlay. An empty collection is what the fallback has
+   * to be — `setData` throws on a null — and it paints nothing, which
+   * leaves every route drawn by `routes-line` as it was before this
+   * existed.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A line
+   *   FeatureCollection, empty when the core is unavailable.
+   */
+  const routeSlopeSegmentsFor = (geojson) => {
+    const core = self.pwaRouteSlopeCore;
+    if (!core) return { type: 'FeatureCollection', features: [] };
+    return core.segmentCollection(geojson);
+  };
+
+  /**
+   * The MapLibre `step` expression painting a segment by its slope class.
+   *
+   * Built from the core's CLASSES rather than written out, so the line and
+   * the legend swatches beside it cannot drift: both read the same list.
+   * A `step` takes the first colour, then a (stop, colour) pair per class
+   * after it — the stops are the CLASS INDICES the core assigns, not the
+   * angles, because the angle was already classified server-side and the
+   * expression's job is only to look the colour up.
+   *
+   * @returns {Array<*>|string} The expression, or the flat route colour
+   *   when the core is unavailable and there is nothing to classify by.
+   */
+  const routeSlopeColourExpression = () => {
+    const core = self.pwaRouteSlopeCore;
+    if (!core) return ROUTE_LINE_COLOUR;
+    const expression = ['step', ['get', 'slope_class'], core.CLASSES[0].hex];
+    for (let i = 1; i < core.CLASSES.length; i += 1) {
+      expression.push(i, core.CLASSES[i].hex);
+    }
+    return expression;
+  };
+
+  /**
+   * Whether any route in the current payload has been sampled (SNOW-910).
+   *
+   * The legend's condition. Read off the payload rather than off the
+   * source's feature count, because the two answer different questions: a
+   * route sampled entirely outside the terrain coverage produces only
+   * unknown segments, which is still a sampled route and still needs the
+   * key that explains the dashes.
+   *
+   * @returns {boolean} True when at least one owned route carries a slope
+   *   record.
+   */
+  const anyRouteSampled = () => {
+    const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
+    return features.some(
+      (f) => f && f.properties && f.properties.slope && !f.properties.pending,
+    );
+  };
+
+  /**
+   * Show the legend card's route-steepness key while it applies (SNOW-910).
+   *
+   * TWO conditions, and both are needed. The overlay has to be drawn — a
+   * key for something not on screen is clutter on every other visit, which
+   * is `syncCoverageLegend`'s reasoning above — AND something on screen has
+   * to be coloured. Most readers have no routes at all, and every one of
+   * them would otherwise get a six-swatch key explaining a line they have
+   * never uploaded.
+   *
+   * Reads live layer state rather than a flag of its own, which is what
+   * makes it correct however the caller reached here: boot, a toggle, a
+   * basemap swap, or an upload landing. Bound to
+   * `snowdesk:overlay-visibility-changed` for the first three and called
+   * directly for the last.
+   *
+   * `hidden` rather than a class, matching the two sections it sits
+   * beside. A missing element is not an error — this partial is embedded
+   * on pages that carry no legend.
+   *
+   * @returns {void}
+   */
+  const syncRouteSlopeLegend = () => {
+    const section = document.getElementById('map-route-slope-section');
+    if (!section) return;
+    section.hidden = !layerPainted('routes-slope-line') || !anyRouteSampled();
+  };
+
+  document.addEventListener(
+    'snowdesk:overlay-visibility-changed', syncRouteSlopeLegend,
+  );
+
   // SNOW-764: which features each of the three route line layers draws.
   //
   // ``pending`` is present and true only on a share this session has
@@ -2219,6 +2313,31 @@
   // null for it, which is not equal to false either.
   const OWNED_ROUTE_FILTER = ['!=', ['get', 'pending'], true];
   const PENDING_ROUTE_FILTER = ['==', ['get', 'pending'], true];
+
+  // SNOW-910: and which of the OWNED ones are drawn flat.
+  //
+  // A sampled route is painted segment by segment by `routes-slope-line`
+  // and `routes-slope-unknown` over the whole of its length, so leaving it
+  // in the flat layer as well would paint it twice — the fuchsia showing
+  // through at every join, where the segments meet with butt caps.
+  //
+  // ``['!', ['has', 'slope']]`` and not a test on the value: the server
+  // OMITS the property entirely for a route it has never sampled
+  // (apps/routes/views.py's `_route_feature` says why), so presence is
+  // exactly the question. A route sampled with no answer anywhere DOES
+  // carry the property, and is right to leave this layer — it is drawn
+  // dashed instead, which is a different statement from a flat line.
+  //
+  // `routes-line-pending` is deliberately NOT filtered, and the pending
+  // routes produce no segments at all (route_slope_core.js). A pending
+  // line's teal dash says "this one is not yours yet", which is the fact
+  // that matters about it and the only action it offers; recolouring it by
+  // steepness would spend the one line on a second message and leave the
+  // first with nothing to carry it. Saving it makes it an owned route, and
+  // owned routes are coloured.
+  const FLAT_OWNED_ROUTE_FILTER = [
+    'all', OWNED_ROUTE_FILTER, ['!', ['has', 'slope']],
+  ];
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
   // LineStrings (routes:geojson), drawn as TWO ``line`` layers (three
@@ -2264,7 +2383,9 @@
       // below so they can be painted differently; without the filter they
       // would be drawn twice, once in each colour, with whichever layer
       // sits on top winning.
-      filter: OWNED_ROUTE_FILTER,
+      // SNOW-910 narrows it again to the routes nothing has sampled — see
+      // FLAT_OWNED_ROUTE_FILTER for why a sampled one must leave.
+      filter: FLAT_OWNED_ROUTE_FILTER,
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
         'line-cap': 'round',
@@ -2310,6 +2431,77 @@
         'line-dasharray': [2, 1.5],
       },
     });
+    // SNOW-910: the slope-coloured line. TWO more layers over a source of
+    // their own, because neither the geometry nor the paint can come off
+    // the routes source.
+    //
+    // THE GEOMETRY. A route is one LineString and MapLibre paints a line
+    // layer in one colour per feature, so a track that changes colour
+    // every 25 m has to arrive as one feature per 25 m. The segments are
+    // built client-side (route_slope_core.js) from the compact record on
+    // each route's `slope` property — sampled coordinates, not the stored
+    // ones, since the stride interpolates between them.
+    //
+    // THE SECOND LAYER. The unknown segments are DASHED, and
+    // `line-dasharray` is not a data-driven property in MapLibre — it
+    // cannot vary per feature. Exactly the reason `routes-line-pending`
+    // exists above, and the same remedy.
+    //
+    // `routes-line-casing` is deliberately NOT split alongside these: it
+    // is one flat colour that never varies per feature, so it keeps
+    // drawing the whole route off the routes source and these lines sit
+    // over it like the flat one does.
+    map.addSource('route-slopes', {
+      type: 'geojson',
+      data: routeSlopeSegmentsFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-slope-line',
+      type: 'line',
+      source: 'route-slopes',
+      // `step` needs a number and an unknown segment has no class at all,
+      // so the unknowns are excluded here rather than left to fall on the
+      // expression's first stop — which is the GENTLE colour, and painting
+      // unsurveyed ground as gentle is the one outcome this whole feature
+      // exists to prevent.
+      filter: ['!=', ['get', 'unknown'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        // Butt caps, not round: a round cap on a 25 m segment overlaps its
+        // neighbour and smears each colour a few metres into the next.
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': routeSlopeColourExpression(),
+        // The same widths as the flat line above, deliberately: a sampled
+        // route and an unsampled one are the same object and must read as
+        // the same weight of thing on the map.
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    map.addLayer({
+      id: 'routes-slope-unknown',
+      type: 'line',
+      source: 'route-slopes',
+      filter: ['==', ['get', 'unknown'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        // See UNKNOWN_COLOUR in route_slope_core.js — a neutral grey that
+        // is not on the steepness scale, mirroring --color-slope-unknown.
+        'line-color': (self.pwaRouteSlopeCore || {}).UNKNOWN_COLOUR || '#94a3b8',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+        // In line-widths, so the dash keeps its proportions as the line
+        // thickens with zoom — the same reasoning as the pending line's.
+        'line-dasharray': [2, 1.5],
+      },
+    });
+    syncRouteSlopeLegend();
+
     // SNOW-687 follow-up: the start dot and finish flag. Their own point
     // source, derived from the same payload — MapLibre cannot symbolise
     // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
@@ -5358,11 +5550,19 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // TWO sources, not one: the lines and the derived start/finish
-          // points (see installRoutesLayer). Refreshing only the first
-          // would leave a deleted route's flag standing on the map.
+          // THREE sources, not one: the lines, the derived start/finish
+          // points, and the slope segments (see installRoutesLayer).
+          // Refreshing only the first would leave a deleted route's flag
+          // standing on the map and its colours drawn along a track that
+          // is no longer there.
           map.getSource('routes')?.setData(data);
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
+          map.getSource('route-slopes')?.setData(routeSlopeSegmentsFor(data));
+          // An upload is the one way the key's condition changes with no
+          // visibility event behind it: the overlay was already on and
+          // already drawn, and the route that just landed is the first
+          // sampled one.
+          syncRouteSlopeLegend();
         } else {
           // Cached pristine above, mutated here — the same order
           // ``_loadOverlay`` uses, so the stored copy is the server's
@@ -6642,11 +6842,21 @@
     // above the owned line, so a pending route drawn over one of your own
     // takes the tap — it is the one carrying an action (Save) the user has
     // not taken yet.
+    //
+    // SNOW-910: and the two slope layers, alongside 'routes-line' rather
+    // than instead of it. They are not an addition to what is tappable —
+    // they are where a SAMPLED route now draws, and 'routes-line' no
+    // longer draws it, so leaving them out would have made every coloured
+    // route untappable and sent the tap through to the region underneath.
+    // Their features carry the route's uuid for exactly this (see
+    // route_slope_core.js's segmentFeatures).
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
       'community-reports-point',
       'routes-line-pending',
+      'routes-slope-line',
+      'routes-slope-unknown',
       'routes-line',
     ];
 
@@ -6666,7 +6876,12 @@
     const ROUTE_TAP_SLOP_PX = 8;
 
     /** The exclusion layers that are lines rather than points (SNOW-764). */
-    const ROUTE_LINE_LAYERS = ['routes-line', 'routes-line-pending'];
+    const ROUTE_LINE_LAYERS = [
+      'routes-line',
+      'routes-line-pending',
+      'routes-slope-line',
+      'routes-slope-unknown',
+    ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
     // point, or null. Filters to layers actually present because these
@@ -7430,6 +7645,32 @@
       container.appendChild(button);
     };
 
+    /**
+     * The route feature one of its slope segments belongs to (SNOW-910).
+     *
+     * A slope segment carries a uuid and a class and nothing else — the
+     * popup needs the name, the figures and the bbox, and copying those
+     * onto several hundred segments per route to save this lookup would
+     * be a large amount of duplicated string for a tap that happens once.
+     *
+     * Reads the same cache and the same key `appendElevationProfile`
+     * does, so a segment and the chart its popup draws can never resolve
+     * to different routes. Owned routes only: a pending share produces no
+     * segments at all (route_slope_core.js), so there is no token branch
+     * here and no way for one to appear.
+     *
+     * @param {?string} uuid The segment's route uuid.
+     * @returns {?object} The route feature, or null if it is not in the
+     *   cache — a deletion landing between the paint and the tap.
+     */
+    const routeFeatureByUuid = (uuid) => {
+      if (!uuid || !routesGeojsonCache) return null;
+      const features = routesGeojsonCache.features || [];
+      return features.find(
+        (f) => f && f.properties && f.properties.uuid === uuid,
+      ) || null;
+    };
+
     // SNOW-687: tapping a saved route frames the whole track and opens its
     // detail. Two halves, and the order matters: the fit runs first and the
     // popup anchors to the tap point, which MapLibre keeps pinned to its
@@ -7543,6 +7784,17 @@
         case 'routes-line-pending':
           activateRoute(feature, lngLat);
           break;
+        // SNOW-910: a tap on a slope segment opens the route it belongs
+        // to. The segment carries the uuid and nothing else — the popup
+        // needs the name, the figures and the bbox — so the route feature
+        // is looked up before activation. A miss is silent: better no
+        // popup than a popup about the wrong route.
+        case 'routes-slope-line':
+        case 'routes-slope-unknown': {
+          const route = routeFeatureByUuid(feature.properties?.uuid);
+          if (route) activateRoute(route, lngLat);
+          break;
+        }
       }
     };
 

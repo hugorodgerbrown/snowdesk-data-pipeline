@@ -180,14 +180,26 @@ describe('segmentFeatures', () => {
     expect(features.every((f) => f.properties.uuid === 'abc')).toBe(true);
   });
 
-  it('carries a pending route\'s token and never invents a uuid', () => {
+  it('produces nothing for a pending route, sampled or not', () => {
+    // A followed share's teal dash says "this one is not yours yet",
+    // which is the only action it offers. Recolouring it by steepness
+    // would spend the one line on a second message.
     const features = core.segmentFeatures(
-      sampled([31], { token: 'tok123', pending: true }),
+      sampled([31, 36], { token: 'tok123', pending: true }),
     );
 
-    expect(features[0].properties.token).toBe('tok123');
-    expect(features[0].properties.pending).toBe(true);
-    expect(features[0].properties).not.toHaveProperty('uuid');
+    expect(features).toEqual([]);
+  });
+
+  it('never puts a share token on a segment', () => {
+    // The corollary of the rule above: these layers hand their properties
+    // to a popup built for owners, so a non-owner's identifier must never
+    // reach one.
+    const features = core.segmentFeatures(sampled([31], { token: 'tok123' }));
+
+    for (const feature of features) {
+      expect(feature.properties).not.toHaveProperty('token');
+    }
   });
 
   it('tolerates a null feature', () => {
@@ -211,6 +223,19 @@ describe('segmentCollection', () => {
       type: 'FeatureCollection',
       features: [
         { type: 'Feature', properties: { uuid: 'flat' } },
+        sampled([41], { uuid: 'r2' }),
+      ],
+    });
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0].properties.uuid).toBe('r2');
+  });
+
+  it('skips the pending routes, which keep their own line', () => {
+    const collection = core.segmentCollection({
+      type: 'FeatureCollection',
+      features: [
+        sampled([31], { token: 'tok', pending: true }),
         sampled([41], { uuid: 'r2' }),
       ],
     });

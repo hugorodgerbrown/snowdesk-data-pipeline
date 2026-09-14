@@ -211,8 +211,13 @@ const OVERLAY_LAYERS = Object.freeze({
   // 'routes-line-pending' is NOT first either: a visitor holding only a
   // pending share is the exception, not the case the roundel ring is
   // painted from.
+  // SNOW-910's two slope layers join on the same terms and after the flat
+  // line: they are the same overlay, so the switch has to reach them, but
+  // the roundel ring is still painted from the flat line's colour because
+  // a sampled route has no single colour to take one from.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
+    'routes-slope-line', 'routes-slope-unknown',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.
