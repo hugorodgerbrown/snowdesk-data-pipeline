@@ -106,6 +106,16 @@ leaves the field as it found it and logs a warning. A PARTIALLY unavailable
 record is stored: a mixed result is genuine information about where the
 sampling got to.
 
+Nor is an outage waited out. A failure is deliberately not memoised — it
+has to be retried, not cached — so every remaining midpoint would re-attempt
+the same dead tiles at the transport's full timeout, which for a long track
+is minutes of a shared task worker spent reaching an answer already known.
+Three CONSECUTIVE `UNAVAILABLE` results end the walk with the same "left
+unsampled" outcome (`_UNAVAILABLE_RUN_LIMIT`). Consecutive, because an
+isolated dead tile on an otherwise good track must still store its other
+hundred-odd samples, and any other result — including `OUTSIDE_COVERAGE`
+and `NO_DATA`, which are answers rather than failures — resets the count.
+
 ## Alternatives rejected
 
 **Sample at the segment boundaries rather than the midpoints.** An
@@ -126,7 +136,10 @@ over the origin this record exists to avoid.
 ## Consequences
 
 - A newly uploaded route draws flat until its background task lands. That
-  is visible and is the intended reading: it has not been sampled yet.
+  is visible and is the intended reading: it has not been sampled yet. The
+  map re-reads the routes feed ONCE, twenty seconds after an upload whose
+  route came back without a record, so the colouring arrives without a page
+  reload; one shot, never a poll, and inert wherever the task ran inline.
 - Routes uploaded before SNOW-910 stay flat until an operator runs
   `backfill_route_slope_samples --commit`.
 - Coverage is the terrain tileset's — Switzerland and its immediate
@@ -134,4 +147,7 @@ over the origin this record exists to avoid.
   `/help/#help-topic-slope` says so, beside the raster's own coverage
   caveat.
 - A claimed share copies the record rather than re-sampling identical
-  geometry (`_COPIED_FIELDS` in `apps/routes/services/shares.py`).
+  geometry (`_COPIED_FIELDS` in `apps/routes/services/shares.py`) — and
+  samples the COPY when the source had nothing to give, which a claim that
+  beats the sharer's own task sees. Nothing else would ever sample it: the
+  sharer's task carries the source's pk, and the backfill runs once.
