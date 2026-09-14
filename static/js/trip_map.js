@@ -64,6 +64,7 @@
  *   fitBoundsFor(bounds)          → [[w, s], [e, n]], or null
  *   routeSourceData(payload)      → the LineString FeatureCollection
  *   routeSlopeSourceData(payload) → its per-segment slope collection
+ *   routeCruxSourceData(payload)  → its crux markers as Points
  *   isSlopeColoured(payload)      → whether the flat line is suppressed
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   profileFor(payload)           → the profile data, or null
@@ -90,6 +91,14 @@
 
   /** The image ids the meeting marker is registered under. */
   var MEETING_ICON = 'trip-meeting-point';
+
+  /** And the crux ring's (SNOW-911). */
+  var CRUX_ICON = 'trip-crux-ring';
+
+  /** Its ink. Mirrors `--color-crux-ring`, as ROUTE_CRUX_COLOUR does on
+   *  the map page — a MapLibre paint property cannot read a custom
+   *  property, so the value is a literal in both places. */
+  var CRUX_COLOUR = '#1a1916';
 
   // The English fallbacks are the only copy of these strings a reader of
   // this file can see, so they double as documentation of what each key
@@ -217,6 +226,30 @@
     var feature = payload && payload.route;
     if (!core || !feature) return { type: 'FeatureCollection', features: [] };
     return { type: 'FeatureCollection', features: core.segmentFeatures(feature) };
+  }
+
+  /**
+   * The trip's crux markers, as a Point FeatureCollection (SNOW-911).
+   *
+   * The snapshot carries them (`Trip.slope_samples`), the payload sends
+   * them, and this is what draws them — so the same track marks the same
+   * passages here as on the map page. A trip that showed rings on one
+   * surface and not the other would be two answers to one question about
+   * one day.
+   *
+   * Empty when there is nothing to mark or no core loaded; never null,
+   * because `setData` throws on one.
+   *
+   * @param {?Object} payload
+   * @returns {Object} A FeatureCollection, possibly empty.
+   */
+  function routeCruxSourceData(payload) {
+    var core = self.pwaRouteSlopeCore;
+    var feature = payload && payload.route;
+    if (!core || !core.cruxCollection || !feature) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+    return core.cruxCollection({ type: 'FeatureCollection', features: [feature] });
   }
 
   /**
@@ -468,6 +501,43 @@
       });
     }
 
+    // SNOW-911: the crux rings, BEFORE the meeting marker — MapLibre
+    // paints later layers above earlier ones, and the meeting point is
+    // the one thing on this page a reader has to be able to find. Same
+    // ordering rule as the map page's own rings against its endpoints.
+    var cruxes = routeCruxSourceData(payload);
+    if (cruxes.features.length) {
+      var markersCore = self.pwaRouteMarkersCore;
+      if (markersCore && markersCore.cruxRingPixels && !map.hasImage(CRUX_ICON)) {
+        // `sdf: true`, so `icon-color` paints the ring — see
+        // route_markers_core.js's cruxRingPixels.
+        map.addImage(CRUX_ICON, markersCore.cruxRingPixels(), {
+          pixelRatio: markersCore.PIXEL_RATIO,
+          sdf: true,
+        });
+      }
+      if (map.hasImage(CRUX_ICON)) {
+        map.addSource('trip-route-cruxes', { type: 'geojson', data: cruxes });
+        map.addLayer({
+          id: 'trip-route-cruxes',
+          type: 'symbol',
+          source: 'trip-route-cruxes',
+          minzoom: 11,
+          layout: {
+            'icon-image': CRUX_ICON,
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            'icon-anchor': 'center',
+          },
+          paint: {
+            'icon-color': CRUX_COLOUR,
+            'icon-halo-color': '#ffffff',
+            'icon-halo-width': 1,
+          },
+        });
+      }
+    }
+
     ensureMeetingIcon(map);
     map.addSource('trip-meeting', {
       type: 'geojson',
@@ -503,7 +573,9 @@
    * omitted source. `trip-route-slopes` (SNOW-962) is installed only for
    * a SAMPLED trip, which is the subset that would have lost the notice.
    */
-  var OUR_SOURCE_IDS = ['trip-route', 'trip-route-slopes', 'trip-meeting'];
+  var OUR_SOURCE_IDS = [
+    'trip-route', 'trip-route-slopes', 'trip-route-cruxes', 'trip-meeting',
+  ];
 
   /**
    * Read the {key: url} basemap catalogue the page emitted.
@@ -711,6 +783,7 @@
     // either a track painted twice or no track at all, neither of which
     // any server-side assertion can see.
     routeSlopeSourceData: routeSlopeSourceData,
+    routeCruxSourceData: routeCruxSourceData,
     isSlopeColoured: isSlopeColoured,
     meetingSourceData: meetingSourceData,
     profileFor: profileFor,

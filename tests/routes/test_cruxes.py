@@ -36,6 +36,17 @@ from apps.routes.services.cruxes import (
 _SAMPLE = "apps.routes.services.cruxes.sample_slope"
 
 
+def _unavailable() -> TerrainSlope:
+    """Return the answer an unreachable tile origin gives."""
+    return TerrainSlope(
+        angle_deg=None,
+        aspect_deg=None,
+        window_m=10.0,
+        unknown=TerrainUnknown.UNAVAILABLE,
+        source=None,
+    )
+
+
 def _slope(angle_deg: float | None) -> TerrainSlope:
     """Return a sampler answer, or an out-of-coverage one for None."""
     if angle_deg is None:
@@ -71,9 +82,10 @@ class TestUphillMaxAngle:
             return _slope(42.0 if latitude < 46.0 else 5.0)
 
         with patch(_SAMPLE, side_effect=_answer):
-            steepest = uphill_max_angle(46.0, 7.0, aspect_deg=0.0)
+            probe = uphill_max_angle(46.0, 7.0, aspect_deg=0.0)
 
-        assert steepest == 42.0
+        assert probe.steepest_deg == 42.0
+        assert probe.unavailable is False
 
     def test_it_does_not_look_downhill(self) -> None:
         """A track along the TOP of a face is not marked by it.
@@ -133,13 +145,29 @@ class TestUphillMaxAngle:
         "nothing steep" — the rule terrain.py sets one layer down.
         """
         with patch(_SAMPLE, return_value=_slope(None)):
-            assert uphill_max_angle(46.0, 7.0, aspect_deg=180.0) is None
+            probe = uphill_max_angle(46.0, 7.0, aspect_deg=180.0)
+
+        assert probe.steepest_deg is None
+        # Outside coverage is a fact about the GROUND, so the answer is
+        # final and the record written over it is complete.
+        assert probe.unavailable is False
+
+    def test_an_unreachable_origin_is_reported_as_such(self) -> None:
+        """OUR outage, not the survey's — and the distinction is the whole
+        retry story: a record stored over one would file "we could not
+        look" as "nothing was flagged" and never look again.
+        """
+        with patch(_SAMPLE, return_value=_unavailable()):
+            probe = uphill_max_angle(46.0, 7.0, aspect_deg=180.0)
+
+        assert probe.steepest_deg is None
+        assert probe.unavailable is True
 
     def test_one_unanswerable_probe_does_not_void_the_others(self) -> None:
         answers = [_slope(None), _slope(41.0)] + [_slope(5.0)] * 10
 
         with patch(_SAMPLE, side_effect=answers):
-            assert uphill_max_angle(46.0, 7.0, aspect_deg=180.0) == 41.0
+            assert uphill_max_angle(46.0, 7.0, aspect_deg=180.0).steepest_deg == 41.0
 
 
 class TestIsCrux:

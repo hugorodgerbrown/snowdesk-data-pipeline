@@ -310,6 +310,70 @@ class TestBuildSlopeSamples:
         assert record["cruxes"] == []
         assert not any("crux" in segment for segment in record["segments"])
 
+    def test_an_unreachable_origin_during_probing_stores_no_crux_key(self) -> None:
+        """A transient outage must not be filed as "nothing was flagged".
+
+        Both backfill commands read the KEY's presence as "this record is
+        current", so an empty list written over an outage would mean a
+        real key passage stayed unmarked for good. The angles are still
+        stored — they are a complete answer about the ground the walk
+        reached — and the missing key is what makes the row a candidate
+        again.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch(
+                "apps.routes.services.cruxes.sample_slope",
+                return_value=_unknown(TerrainUnknown.UNAVAILABLE),
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert "cruxes" not in record
+        assert record["segments"][0]["angle_deg"] == 12.0
+
+    def test_probing_gives_up_on_a_sustained_outage(self) -> None:
+        """The walk's own rule, applied to a pass that costs six times more.
+
+        Each probe is a request the transport waits the full timeout for
+        and ``_fetch_tile`` deliberately does not memoise a failure, so
+        without a cutoff a long track spends thousands of timeouts
+        reaching an answer known after the third.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        probes = 0
+
+        def _count(*args: Any, **kwargs: Any) -> TerrainSlope:
+            nonlocal probes
+            probes += 1
+            return _unknown(TerrainUnknown.UNAVAILABLE)
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch("apps.routes.services.cruxes.sample_slope", side_effect=_count),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        # 133 segments at six probes each would be 798. The cutoff stops
+        # after three segments' worth, which is a small multiple of six.
+        assert probes <= 6 * _UNAVAILABLE_RUN_LIMIT
+        assert "cruxes" not in record
+
     def test_the_record_carries_its_summary(self) -> None:
         """SNOW-961: written here, where the exact segment lengths exist.
 

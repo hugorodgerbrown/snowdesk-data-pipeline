@@ -70,10 +70,11 @@ ground, it does not issue a verdict about a day.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from apps.core.geo import destination
-from apps.locations.services.terrain import sample_slope
+from apps.locations.services.terrain import TerrainUnknown, sample_slope
 
 # The angle at and above which surrounding ground makes a passage a crux.
 #
@@ -112,12 +113,31 @@ PROBE_BEARINGS_DEG = (-45.0, 0.0, 45.0)
 FLAT_PROBE_BEARINGS_DEG = (0.0, 90.0, 180.0, 270.0)
 
 
+@dataclass(frozen=True)
+class UphillProbe:
+    """What the arc search found, and whether it could look at all.
+
+    ``unavailable`` is the distinction the whole retry story rests on. An
+    ``OUTSIDE_COVERAGE`` probe is a fact about the GROUND — there is no
+    survey there and there never will be on this tileset — so a record
+    written over it is complete and final. ``UNAVAILABLE`` is a fact
+    about US: the tile origin could not be read, and the same probe will
+    answer next time. Collapsing the two would let a transient outage be
+    stored as "nothing was flagged", which
+    ``apps/locations/services/terrain.py`` refuses one layer down for the
+    same reason and in the same words.
+    """
+
+    steepest_deg: float | None
+    unavailable: bool
+
+
 def uphill_max_angle(
     latitude: float,
     longitude: float,
     aspect_deg: float | None,
     window_m: float | None = None,
-) -> float | None:
+) -> UphillProbe:
     """Return the steepest ground found uphill of one point.
 
     Args:
@@ -130,10 +150,10 @@ def uphill_max_angle(
             to. Defaults to None, meaning the grid's own default.
 
     Returns:
-        The steepest angle any probe answered for, or None when none of
-        them could be answered — outside coverage, over a hole, or the
-        origin unreachable. **None is "we did not see", never "nothing
-        steep"**, and the caller must not mark or clear a crux on it.
+        An ``UphillProbe``. ``steepest_deg`` is None when no probe could
+        be answered — **"we did not see", never "nothing steep"** — and
+        ``unavailable`` says whether that was our fault rather than the
+        survey's.
 
     """
     bearings: tuple[float, ...]
@@ -148,17 +168,21 @@ def uphill_max_angle(
         radii = PROBE_RADII_M
 
     steepest: float | None = None
+    unavailable = False
     for radius_m in radii:
         for bearing_deg in bearings:
             probe_lat, probe_lon = destination(
                 latitude, longitude, bearing_deg, radius_m
             )
             probe = sample_slope(probe_lat, probe_lon, window_m)
+            if probe.unknown == TerrainUnknown.UNAVAILABLE:
+                unavailable = True
+                continue
             if probe.angle_deg is None:
                 continue
             if steepest is None or probe.angle_deg > steepest:
                 steepest = probe.angle_deg
-    return steepest
+    return UphillProbe(steepest_deg=steepest, unavailable=unavailable)
 
 
 def is_crux(angle_deg: float | None, uphill_deg: float | None) -> bool:

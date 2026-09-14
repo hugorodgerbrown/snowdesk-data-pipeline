@@ -2573,36 +2573,14 @@
     // than littering a country-scale view with flags on tracks a few
     // pixels long. It is also the zoom at which a route's two ends are far
     // enough apart to read as two markers.
-    ensureRouteMarkerImages();
-    map.addSource('route-endpoints', {
-      type: 'geojson',
-      data: routeEndpointsFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-endpoints',
-      type: 'symbol',
-      source: 'route-endpoints',
-      minzoom: 10,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': [
-          'case', ['==', ['get', 'role'], 'start'], ROUTE_START_ICON, ROUTE_END_ICON,
-        ],
-        // Both ends of a short track can sit close together, and the whole
-        // point of these markers is that BOTH are visible — MapLibre's
-        // default collision would silently drop one.
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        // The dot is centred on its point; the flag hangs off a pole whose
-        // foot is the point, so it is anchored bottom-left.
-        'icon-anchor': [
-          'case', ['==', ['get', 'role'], 'start'], 'center', 'bottom-left',
-        ],
-      },
-    });
-    // SNOW-911: the crux rings, over the coloured line and under the
-    // start and finish markers — a route's two ends are landmarks the
-    // reader orients by, and a ring must not hide one.
+    // SNOW-911: the crux rings, over the coloured line and BEFORE the
+    // endpoint markers — MapLibre paints later layers above earlier
+    // ones, so installing after them would let a ring and its white halo
+    // cover a start dot. That is not hypothetical: ``crux_points``
+    // places a one-segment run's marker on the run's first boundary, so
+    // a route whose very first segment is flagged puts a ring exactly on
+    // its own start. A route's two ends are the landmarks a reader
+    // orients by, and the ring must give way to them.
     //
     // minzoom 11, one step in from the endpoints. A ring is an
     // instruction to look at a 25-to-500 m passage, and at a country
@@ -2636,6 +2614,33 @@
       },
     });
 
+    ensureRouteMarkerImages();
+    map.addSource('route-endpoints', {
+      type: 'geojson',
+      data: routeEndpointsFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-endpoints',
+      type: 'symbol',
+      source: 'route-endpoints',
+      minzoom: 10,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'icon-image': [
+          'case', ['==', ['get', 'role'], 'start'], ROUTE_START_ICON, ROUTE_END_ICON,
+        ],
+        // Both ends of a short track can sit close together, and the whole
+        // point of these markers is that BOTH are visible — MapLibre's
+        // default collision would silently drop one.
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        // The dot is centred on its point; the flag hangs off a pole whose
+        // foot is the point, so it is anchored bottom-left.
+        'icon-anchor': [
+          'case', ['==', ['get', 'role'], 'start'], 'center', 'bottom-left',
+        ],
+      },
+    });
     // The lines were just added on top of everything, so lift the pin
     // layers back over them — a favourite star or a report flag sitting on
     // a route must stay visible and stay tappable (MARKER_EXCLUSION_LAYERS
