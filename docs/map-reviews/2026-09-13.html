@@ -641,7 +641,7 @@ footer {
   <div class="sec-head">
     <div class="sec-num">05</div>
     <div>
-      <h2>How 75 files that can't call each other manage to co-operate</h2>
+      <h2>How 79 files that can't call each other manage to co-operate</h2>
       <p class="kicker">A message bus, and a rule that each fact has exactly one writer.</p>
     </div>
   </div>
@@ -752,7 +752,7 @@ footer {
   <div class="body">
     <div class="col">
       <ul class="holds">
-        <li><span class="tick">✓</span><p><strong>The server is genuinely fast.</strong> 4 queries and 8 ms for the heaviest page on the site, with a monitored query-count budget to stop that drifting.</p></li>
+        <li><span class="tick">✓</span><p><strong>The server is genuinely fast.</strong> 6 queries and 30 ms warm for the heaviest page on the site, with a monitored query-count budget to stop that drifting — two of those six are the site-wide admin banners feature (not map-owned); the map's own render cost is unchanged from cycle 01's 4/8 ms.</p></li>
         <li><span class="tick">✓</span><p><strong>The payload is already handled.</strong> 3.0 MB of source becomes 345 KB gzipped on the wire, because the deploy minifies first-party JS in place before hashing. Two-thirds of what remains is MapLibre itself. If someone raises "you ship unminified JavaScript", they are reading the repository, not production.</p></li>
         <li><span class="tick">✓</span><p><strong>Client-side security posture is clean.</strong> One assignment of raw HTML in 8,360 lines, into an attribution string that is server-controlled, with the reasoning written next to it. User-supplied names go in as text everywhere.</p></li>
         <li><span class="tick">✓</span><p><strong>Extracting pure logic works and is already a habit.</strong> Twenty-one <code>*_core.js</code> modules now hold the maths — the choropleth palette, the calendar grid, tile arithmetic, elevation profiles, and this cycle's new <code>country_load_core.js</code> — and every one of them is unit-tested without a map at all.</p></li>
