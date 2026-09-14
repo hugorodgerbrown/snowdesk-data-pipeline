@@ -10,8 +10,8 @@ Covers ``apps.routes.services.slope_segments``:
     with a hand-worked sample count;
   - ``build_slope_samples``: the record's shape, N + 1 coordinates bounding
     N segments, a mixed known/unknown track keeping the reason it was given,
-    and an all-unavailable run storing NOTHING rather than a record of
-    nothing;
+    an all-unavailable run storing NOTHING rather than a record of
+    nothing, and an outage ENDING the walk rather than being waited out;
   - ``_worker_sample_route_slopes``: the write, the one-column save, and a
     route deleted between the enqueue and the run being an expected race;
   - ``create_route``: the enqueue happens exactly once, and OUTSIDE the
@@ -43,6 +43,7 @@ from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.routes.models import Route
 from apps.routes.services.routes import create_route
 from apps.routes.services.slope_segments import (
+    _UNAVAILABLE_RUN_LIMIT,
     SAMPLE_STRIDE_M,
     _worker_sample_route_slopes,
     build_slope_samples,
@@ -341,6 +342,110 @@ class TestBuildSlopeSamples:
             ),
         ):
             assert build_slope_samples(route) is None
+
+    def test_an_outage_stops_the_walk_rather_than_finishing_it(self) -> None:
+        """The CALL COUNT is the assertion: an outage is not waited out.
+
+        A failure is deliberately never memoised, so without the
+        short-circuit every one of this track's 133 midpoints would
+        re-attempt the same dead tiles at the transport's full timeout to
+        reach the same answer.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_unknown(TerrainUnknown.UNAVAILABLE),
+            ) as sampler,
+        ):
+            assert build_slope_samples(route) is None
+
+        assert sampler.call_count == _UNAVAILABLE_RUN_LIMIT
+
+    def test_a_short_route_can_be_all_unavailable_below_the_limit(self) -> None:
+        """The all-unavailable check still earns its place.
+
+        This track holds ONE segment, so the consecutive-run limit is never
+        reached and nothing but that check keeps the empty record out of
+        the row.
+        """
+        route = RouteFactory.create(points=[[7.0, 46.0, None], [7.0, 46.0002, None]])
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_unknown(TerrainUnknown.UNAVAILABLE),
+            ) as sampler,
+        ):
+            assert build_slope_samples(route) is None
+
+        assert sampler.call_count == 1
+
+    def test_an_isolated_unavailable_does_not_abandon_a_good_run(self) -> None:
+        """CONSECUTIVE, not cumulative — one dead tile is a blip.
+
+        Aborting here would throw away 132 good samples, and leave the row
+        null for a route the origin was answering perfectly well about.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        calls = {"count": 0}
+
+        def _one_bad_tile(latitude: float, longitude: float) -> TerrainSlope:
+            """Fail on the sixth sample only, answer every other one."""
+            calls["count"] += 1
+            if calls["count"] == 6:
+                return _unknown(TerrainUnknown.UNAVAILABLE)
+            return _known(30.0)
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                side_effect=_one_bad_tile,
+            ) as sampler,
+        ):
+            record = build_slope_samples(route)
+
+        assert record is not None
+        assert sampler.call_count == len(record["segments"])
+        assert record["segments"][5] == {"unknown": "unavailable"}
+        assert record["segments"][6] == {"angle_deg": 30.0, "aspect_deg": 180.0}
+
+    def test_an_outage_beginning_mid_route_is_caught_too(self) -> None:
+        """The origin goes down part-way, so the run that matters starts there."""
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        good_samples = 10
+        calls = {"count": 0}
+
+        def _origin_dies(latitude: float, longitude: float) -> TerrainSlope:
+            """Answer ten samples, then fail for the rest of the track."""
+            calls["count"] += 1
+            if calls["count"] <= good_samples:
+                return _known(30.0)
+            return _unknown(TerrainUnknown.UNAVAILABLE)
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                side_effect=_origin_dies,
+            ) as sampler,
+        ):
+            # Nothing is stored: a part-sampled track would be a record
+            # whose second half says the ground is unknown, which is a
+            # claim about our origin rather than about the ground.
+            assert build_slope_samples(route) is None
+
+        assert sampler.call_count == good_samples + _UNAVAILABLE_RUN_LIMIT
 
     def test_an_all_outside_coverage_run_is_stored(self) -> None:
         """Permanently uncovered ground IS a fact, and asking again won't help."""

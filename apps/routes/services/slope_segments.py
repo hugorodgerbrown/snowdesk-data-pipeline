@@ -57,6 +57,14 @@ track. Writing that out would be a record that says nothing about the
 ground AND would take the row out of the backfill command's candidate set,
 which selects on the field being null. So a sampling run that learned
 nothing leaves the field as it found it.
+
+**AND IT IS NOT WAITED OUT.** The walk gives up the moment an outage is
+confirmed rather than at the end. A failure is deliberately not memoised
+by ``terrain.py`` — an outage has to be retried, not cached — so without
+this every midpoint on a long track re-attempts the same dead tiles at the
+transport's full timeout, which on a production task worker is minutes of
+a shared worker spent to reach the same "learned nothing" answer. See
+``_UNAVAILABLE_RUN_LIMIT``.
 """
 
 from __future__ import annotations
@@ -67,7 +75,7 @@ from typing import Any
 from django_tasks import task
 
 from apps.core.geo import haversine_m
-from apps.locations.services.terrain import TerrainSlope, sample_slope
+from apps.locations.services.terrain import TerrainSlope, TerrainUnknown, sample_slope
 from apps.locations.services.terrain_grid import load_grid
 from apps.routes.models import Route
 
@@ -95,6 +103,22 @@ _ANGLE_PRECISION = 1
 # it keeps a coordinate to a fixed, short length in the JSON.
 _COORDINATE_PRECISION = 6
 
+# How many UNAVAILABLE answers IN A ROW end the walk.
+#
+# Three. One or two are a blip — a single tile the origin failed to serve,
+# on a track whose other 130 samples are fine — and aborting on those would
+# throw away a run that was about to store good data. Three consecutive is
+# the origin being down, and every remaining midpoint would spend the
+# transport's full timeout to be told so again: a 15 km track is 600
+# samples, which at a 10 s timeout is over an hour of a task worker for an
+# answer already known after the third.
+#
+# CONSECUTIVE, not cumulative, and the counter resets on ANY other result.
+# ``OUTSIDE_COVERAGE`` and ``NO_DATA`` are answers about the ground rather
+# than failures to reach it, so they break a run exactly as an angle does —
+# a track along the coverage edge must not read as an outage.
+_UNAVAILABLE_RUN_LIMIT = 3
+
 
 def build_slope_samples(route: Route) -> dict[str, Any] | None:
     """Sample the terrain along a route and return the record for it.
@@ -113,8 +137,9 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
     Returns:
         The record described in the module docstring, or None when there
         is nothing worth storing: a track too short to hold one segment,
-        or a run in which the tile origin answered nothing at all (see the
-        module docstring on ``UNAVAILABLE``).
+        a run in which the tile origin answered nothing at all, or one
+        abandoned part-way because it had (see the module docstring on
+        ``UNAVAILABLE``).
 
     """
     grid = load_grid()
@@ -141,14 +166,40 @@ def build_slope_samples(route: Route) -> dict[str, Any] | None:
     ]
 
     coordinates = _interpolate_along(route.points, cumulative, boundaries)
-    segments = [
-        _segment_record(sample_slope(latitude, longitude))
-        for longitude, latitude in _interpolate_along(
-            route.points, cumulative, midpoints
-        )
-    ]
 
-    if all(segment.get("unknown") == "unavailable" for segment in segments):
+    # A loop rather than a comprehension, for the short-circuit below: the
+    # run of consecutive failures has to be counted AS the walk proceeds,
+    # because the whole point is not to finish it.
+    segments: list[dict[str, Any]] = []
+    unavailable_run = 0
+    for longitude, latitude in _interpolate_along(route.points, cumulative, midpoints):
+        segment = _segment_record(sample_slope(latitude, longitude))
+        segments.append(segment)
+        if segment.get("unknown") != TerrainUnknown.UNAVAILABLE:
+            unavailable_run = 0
+            continue
+        unavailable_run += 1
+        if unavailable_run >= _UNAVAILABLE_RUN_LIMIT:
+            # Same outcome as the all-unavailable branch below — the field
+            # is left null for the backfill to retry — reached in seconds
+            # instead of minutes. Logged separately because the two say
+            # different things to an operator: this one is an origin that
+            # went down, and it names the route and nothing else (no
+            # coordinate ever reaches a log line — SNOW-718/732).
+            logger.warning(
+                "route slope sampling: %d consecutive unavailable samples, "
+                "route pk=%s abandoned unsampled",
+                unavailable_run,
+                route.pk,
+            )
+            return None
+
+    # Still needed with the short-circuit above: a route short enough to
+    # hold fewer than _UNAVAILABLE_RUN_LIMIT segments can be entirely
+    # unavailable without ever reaching it.
+    if all(
+        segment.get("unknown") == TerrainUnknown.UNAVAILABLE for segment in segments
+    ):
         logger.warning(
             "route slope sampling: every sample was unavailable, route pk=%s "
             "left unsampled",
