@@ -242,13 +242,51 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
     FoundationCategory(
         slug="surfaces",
         label="Surfaces",
-        description="Page background and card surface fills.",
+        description=(
+            "Page background and card surface fills, plus the translucent "
+            "fills that sit over them — the chip pair, the two frosted "
+            "glasses and the scrim behind a popover. The translucent five "
+            "are black on light and white on dark (the same idiom as the "
+            "border pair) so each reads correctly over whatever surface "
+            "happens to be underneath."
+        ),
         kind="swatches",
         tokens=(
             Token("--color-bg", "Page background", "#f2f0ec", "#1c1b19"),
             Token("--color-card", "Card", "#ffffff", "#2a2825"),
             Token("--color-card-subtle", "Card (subtle)", "#fafaf8", "#23211f"),
+            Token("--color-card-hover", "Card (hover)", "#eeeae2", "#353330"),
             Token("--color-tag", "Tag", "#f5f3ef", "#302e2a"),
+            Token(
+                "--color-chip",
+                "Chip",
+                "rgba(0, 0, 0, 0.06)",
+                "rgba(255, 255, 255, 0.06)",
+            ),
+            Token(
+                "--color-chip-strong",
+                "Chip (hover)",
+                "rgba(0, 0, 0, 0.08)",
+                "rgba(255, 255, 255, 0.08)",
+            ),
+            Token(
+                "--color-glass",
+                "Glass (overlay)",
+                "rgba(255, 255, 255, 0.85)",
+                "rgba(20, 22, 26, 0.78)",
+            ),
+            Token(
+                "--color-popup-glass",
+                "Glass (map popup)",
+                "rgba(248, 246, 240, 0.65)",
+                "rgba(20, 22, 26, 0.6)",
+            ),
+            Token(
+                "--color-scrim",
+                "Scrim (popover backdrop)",
+                "rgba(0, 0, 0, 0.4)",
+                "rgba(0, 0, 0, 0.6)",
+            ),
         ),
     ),
     FoundationCategory(
@@ -265,7 +303,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
     FoundationCategory(
         slug="borders",
         label="Borders",
-        description="Hairlines and stronger separators.",
+        description=(
+            "Hairlines and stronger separators, plus the selection ring "
+            "the calendar draws around the chosen date."
+        ),
         kind="swatches",
         tokens=(
             Token(
@@ -280,12 +321,37 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
                 "rgba(0, 0, 0, 0.16)",
                 "rgba(255, 255, 255, 0.16)",
             ),
+            Token("--color-ring-selected", "Selected ring", "#3b82f6", "#60a5fa"),
+        ),
+    ),
+    FoundationCategory(
+        slug="accent",
+        label="Accent",
+        description=(
+            "The one plain interactive blue — every link, the accent "
+            "button, the overlay switch's ON state, the meteogram's "
+            "freezing-level series. Deliberately NOT --color-status-info-*: "
+            "that is the \u201cinfo\u201d severity on the flash-message "
+            "scale, and a link carries no severity. The hover step is a "
+            "shade DOWN on light and a shade UP on dark; the text colour "
+            "is white in both themes, because it is only ever read against "
+            "a fill of the accent itself."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-accent", "Accent", "#2563eb", "#3b82f6"),
+            Token("--color-accent-hover", "Accent (hover)", "#1d4ed8", "#60a5fa"),
+            Token("--color-accent-text", "Accent (on-fill text)", "#ffffff", "#ffffff"),
         ),
     ),
     FoundationCategory(
         slug="status",
         label="Status",
-        description="Flash messages and status badges.",
+        description=(
+            "Flash messages and status badges, the inline form-validation "
+            "ink, and the info callout the day-character banner sits in — "
+            "each a background paired with the text that goes on it."
+        ),
         kind="swatches",
         tokens=(
             Token("--color-status-error-bg", "Error bg", "#fee2e2", "#451a1a"),
@@ -296,6 +362,36 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-status-success-text", "Success text", "#065f46", "#6ee7b7"),
             Token("--color-status-info-bg", "Info bg", "#dbeafe", "#1e2a4a"),
             Token("--color-status-info-text", "Info text", "#1e40af", "#93c5fd"),
+            Token("--color-form-error", "Form error text", "#ef4444", "#f87171"),
+            Token("--color-callout-info-bg", "Callout bg", "#ffffff", "#2a2825"),
+            Token(
+                "--color-callout-info-border",
+                "Callout border",
+                "rgba(0, 0, 0, 0.12)",
+                "rgba(255, 255, 255, 0.12)",
+            ),
+            Token("--color-callout-info-text", "Callout text", "#6b6860", "#a8a49c"),
+        ),
+    ),
+    FoundationCategory(
+        slug="sync",
+        label="Sync status",
+        description=(
+            "The four states of offline availability — the map layers "
+            "popover's dots and the download roundel. Its own scale rather "
+            "than a borrowing from Status above: this says whether "
+            "something is on the device, not how severe a message is. "
+            "Partial is the one to read twice — downloaded, but missing "
+            "something it needs to render, so a one-tap repair rather than "
+            "a dead end."
+        ),
+        kind="swatches",
+        swatch_columns=4,
+        tokens=(
+            Token("--color-sync-ok", "Cached", "#16a34a", "#4ade80"),
+            Token("--color-sync-partial", "Incomplete", "#d97706", "#fbbf24"),
+            Token("--color-sync-blocked", "Unavailable", "#dc2626", "#f87171"),
+            Token("--color-sync-off", "Not cached", "#9ca3af", "#6b7280"),
         ),
     ),
     FoundationCategory(
@@ -361,10 +457,39 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="map-marks",
+        label="Map marks",
+        description=(
+            "What the map draws OVER the choropleth: the saved-route line "
+            "and its casing, and the two point markers. Theme-invariant, "
+            "because the ground underneath is a basemap rather than a card "
+            "\u2014 the line has to hold over pale satellite imagery and "
+            "over the danger ramp alike, and neither changes with the site "
+            "theme. The hues are picked by elimination: the EAWS 1\u20135 "
+            "ramp is a standard and is not ours to reuse, so the markers "
+            "take blue and amber and the route line takes the one hue "
+            "family left. MapLibre paint properties cannot read a CSS "
+            "custom property, so static/js/map.js carries these literals in "
+            "module constants and points back at @theme; they are declared "
+            "here so the set can be read side by side."
+        ),
+        kind="swatches",
+        swatch_columns=4,
+        tokens=(
+            Token("--color-route-line", "Saved route", "#c026d3", None),
+            Token("--color-route-line-casing", "Saved route (casing)", "#1a1916", None),
+            Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
+            Token("--color-marker-observation", "Community report", "#e8711a", None),
+        ),
+    ),
+    FoundationCategory(
         slug="weather",
         label="Weather header",
         description=(
-            "Bulletin-header backdrops, 7 buckets × day/night (theme-invariant)."
+            "Bulletin-header backdrops, 7 buckets × day/night "
+            "(theme-invariant), plus the condition icon's halo — the one "
+            "token here that DOES change with the theme, because the pale "
+            "cloud it outlines on a light card needs no edge on a dark one."
         ),
         kind="swatches",
         tokens=(
@@ -393,6 +518,12 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-weather-thunder-day", "Thunder · day", "#5e6470", None),
             Token("--color-weather-thunder-night", "Thunder · night", "#101220", None),
             Token("--color-weather-fallback", "Fallback", "#3a3733", None),
+            Token(
+                "--color-weather-icon-halo",
+                "Condition icon halo",
+                "rgba(41, 45, 54, 0.85)",
+                "transparent",
+            ),
         ),
     ),
     FoundationCategory(
