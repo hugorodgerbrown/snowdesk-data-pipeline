@@ -190,14 +190,15 @@ class TestComponentLibraryPanel:
     ) -> None:
         """The two line MARKS are in the key, not only the seven bands.
 
-        SNOW-969. The registry-vs-CSS check in ``apps/public/checks.py``
-        is one-directional on purpose — the CSS may declare tokens the
-        registry does not list — so a colour added to ``@theme`` and used
-        on the map draws correctly while being invisible here, which is
-        how ``--color-crux-ring`` (SNOW-911) and ``--color-passage-core``
-        (SNOW-964) both went unregistered. Nothing else in the build
-        notices, and this panel is exactly the surface someone reads
-        before adding the next colour.
+        SNOW-969. ``--color-crux-ring`` (SNOW-911) and
+        ``--color-passage-core`` (SNOW-964) were both added to ``@theme``,
+        used on the map and never registered, because the check in
+        ``apps/public/checks.py`` was one-directional and nothing else in
+        the build looked. The check now runs both ways on existence, so
+        the next unregistered colour fails ``manage.py check`` rather than
+        shipping; this test stays because the two marks belong in THIS
+        panel specifically — read against the slope scale, not filed
+        under the map marks they resemble.
         """
         response = htmx_staff_client.get(_panel_url("slope"))
 

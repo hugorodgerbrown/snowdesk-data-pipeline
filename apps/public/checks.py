@@ -9,18 +9,43 @@ runtime. If the two ever disagree, the design-system page would be lying
 about the live values; this check fails fast at ``manage.py check`` time
 rather than letting the lie ship.
 
-The check is one-directional: every token in the registry must exist in
-the CSS with a matching value. The CSS is allowed to declare tokens that
-are not surfaced in the library (admin chrome, callouts, chip overlays,
-etc.) — those don't trigger errors here.
+On VALUES the check stays one-directional, and deliberately so: the CSS
+is what the browser reads, so it is the source of truth for what a token
+resolves to, and the registry is what has to follow.
+
+On EXISTENCE it runs both ways (SNOW-969). It used to be one-directional
+there too — the CSS was free to declare a colour the library never listed
+— which let ``--color-route-line``, ``--color-accent`` and 29 others be
+added to ``@theme``, mirrored into a MapLibre paint literal, drawn and
+shipped while staying invisible on the page that claims to be the
+complete account of the design system. Nothing else in the build noticed,
+and the page a reviewer reads before picking the next colour was reading
+short. So every ``--color-*`` in ``@theme {}`` must now be either
+registered in ``FOUNDATION_CATEGORIES`` or listed in
+``TOKEN_EXEMPTIONS`` with a reason.
+
+An exemption is how a token opts out of being BROWSABLE without opting
+out of being CHECKED: an exempted name is still value-checked if it is
+registered later, and the exemption itself must carry a reason — same
+contract as ``bin/ds-lint``'s per-line allow comments, where a blank
+reason fails the build and a vague one fails review.
+
+The reverse check covers ``--color-*`` only. The other namespaces
+(``--text-*``, ``--z-*``, ``--shadow-*``, ``--container-*``) hold
+mechanical values a reviewer does not browse for a decision, and pulling
+them in would turn every spacing tweak into a registry edit; a colour is
+the thing that gets chosen, mirrored into JavaScript and then lost.
 """
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.checks import Error, Tags, register
+
+if TYPE_CHECKING:  # pragma: no cover — import cycle at runtime, not at type time
+    from apps.public.design_tokens import TokenExemption
 
 CSS_PATH = Path("src") / "css" / "main.css"
 
@@ -30,7 +55,13 @@ CSS_PATH = Path("src") / "css" / "main.css"
 # E004 — token marked theme-invariant in registry but declared in .dark {}.
 # E005 — token has dark value in registry but missing from .dark {}.
 # E006 — token dark-value mismatch between registry and .dark {}.
+# E007 — --color-* declared in @theme {} but neither registered nor exempted.
+# E008 — exemption declared with a blank reason.
 CHECK_ID_PREFIX = "apps.public.design_tokens"
+
+# The reverse check's scope — see the module docstring for why it is
+# colours only.
+COLOUR_PREFIX = "--color-"
 
 
 @register(Tags.compatibility)
@@ -40,7 +71,11 @@ def check_design_tokens_match_css(app_configs: Any, **kwargs: Any) -> list[Error
     Errors include the offending token name and both the registry value
     and the CSS value, so the fix is mechanical (copy/paste either side).
     """
-    from apps.public.design_tokens import FOUNDATION_CATEGORIES, Token
+    from apps.public.design_tokens import (
+        FOUNDATION_CATEGORIES,
+        TOKEN_EXEMPTIONS,
+        Token,
+    )
 
     css_file = Path(settings.BASE_DIR) / CSS_PATH
     if not css_file.exists():
@@ -60,13 +95,65 @@ def check_design_tokens_match_css(app_configs: Any, **kwargs: Any) -> list[Error
     dark_tokens = _extract_tokens(_extract_block(raw, ".dark"))
 
     errors: list[Error] = []
+    registered: set[str] = set()
     for category in FOUNDATION_CATEGORIES:
         # IconToken entries don't map to CSS custom properties — they're
         # static-asset paths, validated by Django's collectstatic, not here.
         for token in category.tokens:
             if not isinstance(token, Token):
                 continue
+            registered.add(token.name)
             errors.extend(_diff_token(token, category.slug, light_tokens, dark_tokens))
+
+    errors.extend(_unregistered_colours(light_tokens, registered, TOKEN_EXEMPTIONS))
+    return errors
+
+
+def _unregistered_colours(
+    light_tokens: dict[str, str],
+    registered: set[str],
+    exemptions: "tuple[TokenExemption, ...]",
+) -> list[Error]:
+    """Return an error per ``--color-*`` in the CSS that the registry omits.
+
+    Args:
+        light_tokens: Every declaration parsed out of ``@theme {}``.
+        registered: Names carried by ``FOUNDATION_CATEGORIES``.
+        exemptions: ``TokenExemption`` entries, each a name or a
+            ``*``-suffixed prefix plus the reason it is not browsable.
+
+    """
+    errors: list[Error] = [
+        Error(
+            f"Token exemption {exemption.pattern!r} carries no reason",
+            hint=(
+                "Every entry in TOKEN_EXEMPTIONS says why the token is not "
+                "browsable at /_components/ — a reviewer has to be able to "
+                "judge whether the omission still holds."
+            ),
+            id=f"{CHECK_ID_PREFIX}.E008",
+        )
+        for exemption in exemptions
+        if not exemption.reason.strip()
+    ]
+
+    for name in sorted(light_tokens):
+        if not name.startswith(COLOUR_PREFIX) or name in registered:
+            continue
+        if any(exemption.matches(name) for exemption in exemptions):
+            continue
+        errors.append(
+            Error(
+                f"{name}: declared in @theme {{}} in {CSS_PATH} but neither "
+                "registered in FOUNDATION_CATEGORIES nor exempted",
+                hint=(
+                    "Add it to a category in design_tokens.py so it shows at "
+                    "/_components/, or add a TokenExemption with the reason "
+                    "it should not."
+                ),
+                id=f"{CHECK_ID_PREFIX}.E007",
+            )
+        )
     return errors
 
 

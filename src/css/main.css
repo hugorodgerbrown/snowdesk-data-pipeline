@@ -255,14 +255,22 @@
      those occupy.
 
      MapLibre paint properties cannot reference a CSS custom property at
-     all, so static/js/map.js's installRoutesLayer carries these two hex
+     all, so static/js/map.js's installRoutesLayer carries these three hex
      literals directly and points back here — the same by-hand-kept-in-sync
      idiom installFavouritesLayer already uses for its star colour, and the
      case CLAUDE.md's design-system rule exempts from the template-side hex
      ban. Declared here anyway so the palette has one home and a reviewer
-     can see the whole set side by side. */
+     can see the whole set side by side.
+
+     SNOW-969: --color-route-line-pending was the one the set was missing.
+     map.js's ROUTE_PENDING_COLOUR has named it since SNOW-764 and nothing
+     declared it, so the JS pointed back at a token that did not exist and
+     "the whole set side by side" was two thirds of a set. Nothing could
+     have caught it from here — the reverse token check reads this file and
+     cannot see a claim made in a JavaScript comment. */
   --color-route-line:        #c026d3;   /* fuchsia-600                        */
   --color-route-line-casing: #1a1916;   /* same ink as --color-text-1         */
+  --color-route-line-pending: #0d9488;  /* teal-600 — shared, not yours yet   */
 
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
