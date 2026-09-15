@@ -70,6 +70,7 @@ def _record(
     *,
     stride_m: float | None = 25.0,
     points: list[list[float]] | None = None,
+    sampled_m: float | None = None,
 ) -> dict[str, Any]:
     """Return a stored slope record for the given per-segment angles.
 
@@ -82,6 +83,10 @@ def _record(
             a record written before the sampler stored one.
         points: Override the generated boundaries, for the degenerate
             and short-chord cases.
+        sampled_m: The walk's own total length, written under
+            ``summary``. None omits the key, which is a record predating
+            SNOW-961 and is what makes the final segment fall back to
+            its chord.
 
     Returns:
         The record, shaped as ``Route.slope_samples``.
@@ -101,7 +106,20 @@ def _record(
     }
     if stride_m is not None:
         record["stride_m"] = stride_m
+    if sampled_m is not None:
+        record["summary"] = {"sampled_m": sampled_m}
     return record
+
+
+# Three segments whose LAST chord is about 12 m — half a stride — while
+# the two before it are full strides. The shape every final-segment test
+# below needs: a track that ends in a bend.
+_BENT_TAIL_POINTS: list[list[float]] = [
+    [7.0, 46.0],
+    [7.0, 46.00025],
+    [7.0, 46.0005],
+    [7.0, 46.00061],
+]
 
 
 class TestAngularDifference:
@@ -306,6 +324,62 @@ class TestLengths:
         passages = route_passages(_record([10.0, 52.0, 52.0, 52.0, 10.0]))
         assert passages is not None
         assert passages[0]["m"] == pytest.approx(75.0)
+
+    def test_a_final_segment_passage_is_recovered_from_the_summary(self) -> None:
+        """The stub-absorbing last segment is recovered, never chorded.
+
+        THE SAME TRAP AS THE FIRST TEST IN THIS CLASS, on the one segment
+        that used to be exempt from the fix. ``stride_distances`` folds
+        the track's remainder into the final segment, so it is the one
+        length the stride does not state — and measuring it as a chord
+        across a bend loses most of it. Here the tail is a genuine 30 m
+        of track whose chord is about 12, and a passage that is only that
+        segment has to survive the 25 m minimum.
+        """
+        passages = route_passages(
+            _record(
+                [10.0, 10.0, 52.0],
+                points=_BENT_TAIL_POINTS,
+                stride_m=25.0,
+                sampled_m=80.0,  # 25 + 25 + a 30 m tail
+            )
+        )
+        assert passages is not None
+        assert len(passages) == 1
+        assert passages[0]["from"] == 2
+        assert passages[0]["m"] == pytest.approx(30.0)
+
+    def test_a_final_segment_without_a_summary_falls_back_to_its_chord(self) -> None:
+        """A record predating SNOW-961 has nothing to recover the tail from.
+
+        The chord is then the only figure available and it under-measures
+        the bend, so this passage is dropped. Asserted rather than
+        wished away: it is the bounded, documented cost of an old record,
+        and it is the reason the summary is preferred wherever there is
+        one.
+        """
+        passages = route_passages(
+            _record([10.0, 10.0, 52.0], points=_BENT_TAIL_POINTS, stride_m=25.0)
+        )
+        assert passages == []
+
+    def test_a_summary_that_contradicts_the_segments_is_not_trusted(self) -> None:
+        """A remainder outside half-to-one-and-a-half strides is refused.
+
+        ``stride_distances`` bounds the final segment to that range, so a
+        summary implying anything else describes a different walk from
+        the one the segments describe. Two figures that cannot both be
+        right, and the geometry is the one to believe.
+        """
+        passages = route_passages(
+            _record(
+                [10.0, 10.0, 52.0],
+                points=_BENT_TAIL_POINTS,
+                stride_m=25.0,
+                sampled_m=500.0,  # implies a 450 m final segment
+            )
+        )
+        assert passages == []
 
     def test_a_record_with_no_stride_falls_back_to_chords(self) -> None:
         """A record written before the stride was stored measures its geometry.

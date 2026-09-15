@@ -29,6 +29,7 @@ from typing import Any
 import pytest
 from django.core.management import call_command
 
+from apps.routes.management.commands.report_route_passages import _p90
 from apps.routes.models import Route
 from tests.factories import RouteFactory, TripFactory
 
@@ -200,3 +201,35 @@ def _alignment_rows(output: str) -> dict[str, tuple[int, int, int, int]]:
             counts = [int(value) for value in parts[1:5]]
             rows[parts[0]] = (counts[0], counts[1], counts[2], counts[3])
     return rows
+
+
+class TestPercentile:
+    """The tuning table's own arithmetic.
+
+    Unit-level rather than through ``call_command``, because a percentile
+    is wrong only at particular counts and building a database of ten
+    passages to reach one of them would test the fixture, not the
+    formula.
+    """
+
+    def test_the_p90_is_nearest_rank_and_does_not_round_up_a_place(self) -> None:
+        """Ten lengths report the ninth, not the tenth.
+
+        ``round(0.9 * n + 0.5)`` is the nearest-rank formula's usual
+        disguise and is a different function: Python rounds halves to
+        even, so wherever ``0.9 * n`` is an odd integer — 10, 30, 50 —
+        it goes up a rank and the column reports the longest passage as
+        its 90th percentile. A tuning table that overstates its own tail
+        is read by someone choosing a threshold from it.
+        """
+        assert _p90([float(n) for n in range(1, 11)]) == 9.0
+        assert _p90([float(n) for n in range(1, 31)]) == 27.0
+
+    def test_the_p90_names_a_length_that_exists(self) -> None:
+        """Nearest-rank, so never an interpolated value between two."""
+        lengths = [25.0, 50.0, 400.0]
+        assert _p90(lengths) in lengths
+
+    def test_the_p90_of_nothing_is_zero(self) -> None:
+        """An empty sweep cell reports 0.0 rather than raising."""
+        assert _p90([]) == 0.0

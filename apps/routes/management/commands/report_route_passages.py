@@ -37,6 +37,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
@@ -427,6 +428,14 @@ def _p90(values: list[float]) -> float:
     column is "how long do the long ones get", and a rank names a passage
     that actually exists.
 
+    ``ceil`` and not ``round(x + 0.5)``, which is the nearest-rank
+    formula's usual disguise and is not the same function. Python rounds
+    halves to even, so at any count where ``0.9 * n`` is an odd integer —
+    10, 30, 50 — ``round(n' + 0.5)`` goes UP a rank and the column
+    reports the longest passage as its 90th percentile. A tuning table
+    that overstates its own tail is the one kind of error this command
+    must not make, because the numbers it prints are chosen from.
+
     Args:
         values: The lengths, in any order.
 
@@ -437,8 +446,7 @@ def _p90(values: list[float]) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    index = min(len(ordered) - 1, int(round(0.9 * len(ordered) + 0.5)) - 1)
-    return ordered[index]
+    return ordered[math.ceil(0.9 * len(ordered)) - 1]
 
 
 def _pct(numerator: int, denominator: int) -> int:
