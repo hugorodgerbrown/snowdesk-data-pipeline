@@ -35,11 +35,11 @@ from django.utils import timezone
 from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.trips.models import Trip
+from apps.trips.services.shares import mint_trip_share
 from apps.trips.services.slope import (
     _worker_sample_trip_slopes,
     enqueue_trip_slope_sampling,
 )
-from apps.trips.services.shares import mint_trip_share
 from apps.trips.views import _trip_map_payload
 from tests.factories import RouteFactory, TripFactory, UserFactory
 
@@ -424,7 +424,7 @@ class TestTheTerrainHelpLink:
     caveat neither marker can: neither is a full list.
     """
 
-    def _sampled(self) -> Any:
+    def _sampled(self) -> Trip:
         """Return a trip whose snapshot carries a record.
 
         Dated tomorrow so the share link is live: ``share_expiry_for``
