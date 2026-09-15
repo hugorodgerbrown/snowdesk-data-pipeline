@@ -75,7 +75,10 @@ its own metadata.
             {# SNOW-839: under the map, because it is about the line the   #}
             {# map just drew — and after it, because the drawing is what   #}
             {# the reader orients on before reading a word about it.       #}
-            {% include "trips/partials/_trip_bulletin.html" with trip=trip bulletin_readings=bulletin_readings %}
+            {# SNOW-973 moved the partial to includes/ and gave the map's #}
+            {# route panel the same rows; ``card_extra`` is the trip      #}
+            {# page's own column gap and nothing else changed here.       #}
+            {% include "includes/_bulletin_readings.html" with bulletin_readings=bulletin_readings card_extra="mt-3" %}
 
             {# SNOW-848: the saved state, and the way out of it. NOT rendered   #}
             {# for the organiser: their trip is on their agenda by authorship,  #}

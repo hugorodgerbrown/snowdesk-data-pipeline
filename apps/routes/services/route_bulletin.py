@@ -493,3 +493,54 @@ def _aspect_phrase(aspects: set[str]) -> str:
     from apps.routes.services.bulletin_join import OCTANTS  # noqa: PLC0415
 
     return ", ".join(octant for octant in OCTANTS if octant in aspects)
+
+
+def display_readings(
+    points: list[list[float | None]],
+    slope_samples: dict[str, Any] | None,
+    target_date: datetime.date,
+) -> list[dict[str, Any]]:
+    """Return what each region's bulletin says about this track, template-shaped.
+
+    ``readings_for_track`` in the shape ``includes/_bulletin_readings.html``
+    renders: template-shaped rather than raw, because the partial should
+    not be reaching into a dataclass for a URL, and the bulletin link has
+    to be built where ``get_absolute_url`` is in scope.
+
+    SNOW-973 moved this off ``apps.trips.views`` and gave it the three
+    arguments a trip used to supply from itself. The docstring it carried
+    there said "a route would have to assume today", which is what the
+    map's scrubber answers: a route on the map is read on the day the
+    scrubber is showing, and the panel names that day.
+
+    Args:
+        points: The stored track, ``[lon, lat, ele]`` triples.
+        slope_samples: The terrain record, or None for a track nothing
+            has sampled.
+        target_date: The day to ask about. A trip has one of its own; a
+            route is read on the day the surface showing it is showing.
+
+    Returns:
+        One entry per region the line crosses, longest stretch first, or
+        an empty list — which the caller must not render as "the line
+        meets nothing", since it is also what an unsampled track and a
+        track outside every boundary produce. Each entry carries
+        ``bulletin_url`` for the DAY asked about, so the link out of the
+        panel opens the bulletin the rows were read from rather than
+        today's.
+
+    """
+    return [
+        {
+            "region": reading.region,
+            "bulletin": reading.bulletin,
+            "bulletin_url": (
+                reading.region.get_absolute_url(target_date)
+                if reading.bulletin is not None
+                else None
+            ),
+            "overlaps": display_overlaps(reading.problem_overlaps),
+            "length_km": round(reading.length_m / 1000, 1),
+        }
+        for reading in readings_for_track(points, slope_samples, target_date)
+    ]
