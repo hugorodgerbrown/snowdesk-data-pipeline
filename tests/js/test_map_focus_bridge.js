@@ -189,18 +189,30 @@ describe('window.pwaMapFocus', () => {
     // [[west, south], [east, north]] — an axis slip here frames the wrong
     // rectangle rather than throwing.
     expect(corners).toEqual([[7.1, 46.0], [7.3, 46.2]]);
-    expect(options.maxZoom).toBe(10);
+    // SNOW-972: NO cap. This asserted `maxZoom: 10` — the value borrowed
+    // from the region fit — and that cap is what stopped a short route
+    // ever being framed close enough for the marks drawn on it to render.
+    //
+    // `region()` still passes `REGION_FIT_MAX_ZOOM`, and is NOT asserted
+    // anywhere: reaching it needs `FEATURE_BY_REGION_ID` populated, which
+    // this harness deliberately does not do (it never runs the `load`
+    // handlers). That gap predates this ticket — the region cap has never
+    // had a test — so it is recorded rather than papered over.
+    expect(options).not.toHaveProperty('maxZoom');
   });
 
-  it('bounds() zooms out where a point would not', () => {
+  it('bounds() zooms out where a point would not, and in as far as needed', () => {
     // A route is an extent, so framing it whole may mean going wider than
-    // the viewer's current zoom — the asymmetry with point() above.
+    // the viewer's current zoom — the asymmetry with point() above. It
+    // also means going NARROWER than a region ever would: the extent of a
+    // 1 km route is a close view, and SNOW-972 is what stopped the cap
+    // refusing it.
     mapStub.setTestZoom(15);
 
     window.pwaMapFocus.bounds([7.1, 46.0, 7.3, 46.2]);
 
     expect(mapStub.fitBounds).toHaveBeenCalledOnce();
-    expect(mapStub.fitBounds.mock.calls[0][1].maxZoom).toBe(10);
+    expect(mapStub.fitBounds.mock.calls[0][1]).not.toHaveProperty('maxZoom');
   });
 
   it('refuses a malformed argument rather than handing MapLibre a NaN', () => {

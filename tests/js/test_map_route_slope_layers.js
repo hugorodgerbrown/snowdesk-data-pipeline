@@ -23,6 +23,12 @@
  *     route becomes untappable and the tap falls through to the region
  *     underneath.
  *
+ * SNOW-972 added the FRAMING invariant to this file rather than a new
+ * one, because the two facts it relates — where the camera comes to rest
+ * on a route, and the minzoom of each mark drawn on that route — are both
+ * already recorded by this harness. A route framed below its own marks'
+ * minzoom is the defect, and nothing else here would have caught it.
+ *
  * Booting map.js in jsdom follows tests/js/test_map_route_endpoints.js's
  * pattern — see its header for the rationale.
  */
@@ -107,6 +113,8 @@ const layers = new Map();
 const sources = new Map();
 /** Every bbox map.js asked the camera to frame. */
 const fitBoundsCalls = [];
+/** And the options it framed each with, in step with the array above. */
+const fitBoundsOptions = [];
 /** What the next queryRenderedFeatures call should answer, by layer id. */
 let queryAnswer = () => [];
 
@@ -165,7 +173,10 @@ function stubMapLibre() {
     hasImage: () => true,
     addImage: () => {},
     triggerRepaint: () => {},
-    fitBounds: (bbox) => { fitBoundsCalls.push(bbox); },
+    fitBounds: (bbox, options) => {
+      fitBoundsCalls.push(bbox);
+      fitBoundsOptions.push(options || {});
+    },
     easeTo: () => {},
     flyTo: () => {},
     getZoom: () => 8,
@@ -501,6 +512,46 @@ describe('tapping a coloured route', () => {
     }
     queryAnswer = () => [];
   }
+
+  it('frames it without a zoom cap, so its marks can render', () => {
+    // SNOW-972. This fit carried `zoomToFeatureBounds`' `maxZoom: 10`,
+    // borrowed on the reasoning that "a route and a region frame alike".
+    // A region is tens of kilometres across; a route is often one or two,
+    // so the cap stopped a route ever reaching a legible size.
+    tapSlopeSegment('routes-slope-line');
+
+    expect(fitBoundsOptions.at(-1)).not.toHaveProperty('maxZoom');
+  });
+
+  it('frames it far enough in for every mark drawn on it', () => {
+    // THE INVARIANT, and deliberately not "maxZoom is not 10".
+    //
+    // What made the cap a defect rather than a preference is that the
+    // marks drawn ON a route have minzooms of their own, so the camera
+    // came to rest BELOW the zoom at which the things the popup was
+    // describing in words could render at all.
+    //
+    // So this reads the minzooms off the layers as installed rather than
+    // naming any of them: a mark added later, or an existing one moved a
+    // step further in, is covered here without this test being touched —
+    // and a cap reintroduced a step too low fails whatever marks exist by
+    // then.
+    tapSlopeSegment('routes-slope-line');
+    const options = fitBoundsOptions.at(-1);
+
+    const marks = [...layers.values()].filter(
+      (layer) => layer.type === 'symbol'
+        && layer.source !== 'routes'
+        && String(layer.id).startsWith('routes-')
+        && typeof layer.minzoom === 'number',
+    );
+    // A guard on the guard: with no marks found this test would pass
+    // vacuously, which is exactly how an invariant quietly stops holding.
+    expect(marks.length).toBeGreaterThan(0);
+
+    const deepest = Math.max(...marks.map((layer) => layer.minzoom));
+    expect(options.maxZoom === undefined || options.maxZoom >= deepest).toBe(true);
+  });
 
   it('opens the route the segment belongs to', () => {
     // The regression this guards: `routes-line` no longer draws a sampled
