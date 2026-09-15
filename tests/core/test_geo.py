@@ -9,6 +9,9 @@ The equivalence tests carry verbatim transcriptions of those four
 implementations as they stood at 132a679c. They are the only thing proving
 the consolidation is behaviour-preserving rather than merely assumed to be,
 and they are meant to be deleted once nobody doubts it.
+
+``initial_bearing_deg`` (SNOW-964) is covered at the end, including the
+round trip against ``destination`` that keeps the two inverses in step.
 """
 
 from __future__ import annotations
@@ -17,7 +20,14 @@ import math
 
 import pytest
 
-from apps.core.geo import EARTH_RADIUS_KM, EARTH_RADIUS_M, haversine_km, haversine_m
+from apps.core.geo import (
+    EARTH_RADIUS_KM,
+    EARTH_RADIUS_M,
+    destination,
+    haversine_km,
+    haversine_m,
+    initial_bearing_deg,
+)
 
 # A spread of pairs covering the scales the four callers actually work at:
 # identical points, a GPX leg, a forecast-cell reuse radius, an observation
@@ -238,3 +248,85 @@ class TestEquivalenceWithReplacedCopies:
         assert haversine_m(lat1, lon1, lat2, lon2) == pytest.approx(
             _ref_weather_haversine_m(lat1, lon1, lat2, lon2), abs=1e-8
         )
+
+
+class TestInitialBearing:
+    """``initial_bearing_deg`` — the direction one point lies from another.
+
+    SNOW-964 reads a track's direction of travel off the chord of each
+    segment and compares it against the ground's aspect, so a bearing that
+    is a quadrant out would label a descent a traverse. The cardinals are
+    checked exactly, and the round trip against ``destination`` is what
+    pins the two down as inverses of one another.
+    """
+
+    def test_due_north(self) -> None:
+        """A point directly north bears 0."""
+        assert initial_bearing_deg(46.0, 7.0, 46.01, 7.0) == pytest.approx(0.0)
+
+    def test_due_east_on_the_equator(self) -> None:
+        """A point east along the equator bears exactly 90.
+
+        Only on the equator. A great circle between two points at the SAME
+        mid-latitude bows poleward, so its initial bearing is a fraction
+        under 90 — the next test is that fraction, and it is why this one
+        is pinned at the one latitude where the two agree.
+        """
+        assert initial_bearing_deg(0.0, 7.0, 0.0, 7.01) == pytest.approx(90.0)
+
+    def test_due_east_at_an_alpine_latitude_is_a_shade_under_90(self) -> None:
+        """At 46°N the great circle to a point due east leaves just north of it.
+
+        A hundredth of a degree of separation over a hundredth of a degree
+        of longitude, so the deviation is thousandths of a degree — three
+        orders of magnitude inside the alignment tolerance SNOW-964 reads
+        this bearing against, and recorded here so nobody later "fixes" it
+        into a rhumb-line bearing.
+        """
+        bearing = initial_bearing_deg(46.0, 7.0, 46.0, 7.01)
+        assert bearing is not None
+        assert 89.99 < bearing < 90.0
+
+    def test_due_south(self) -> None:
+        """A point directly south bears 180."""
+        assert initial_bearing_deg(46.0, 7.0, 45.99, 7.0) == pytest.approx(180.0)
+
+    def test_due_west_is_270_not_minus_90(self) -> None:
+        """A westward bearing is normalised into ``[0, 360)``."""
+        assert initial_bearing_deg(0.0, 7.0, 0.0, 6.99) == pytest.approx(270.0)
+
+    def test_coincident_points_have_no_bearing(self) -> None:
+        """Two identical coordinates answer None, never "due north".
+
+        ``atan2(0, 0)`` is 0.0, so the arithmetic alone would report a
+        chord with no direction as pointing north — a guess that would
+        land a degenerate segment in whichever alignment bucket north
+        happens to fall in.
+        """
+        assert initial_bearing_deg(46.0961, 7.2286, 46.0961, 7.2286) is None
+
+    def test_is_stable_across_the_antimeridian(self) -> None:
+        """A chord straddling ±180 still bears east rather than west."""
+        assert initial_bearing_deg(0.0, 179.999, 0.0, -179.999) == pytest.approx(
+            90.0, abs=1e-6
+        )
+
+    @pytest.mark.parametrize("bearing", [0.0, 37.5, 90.0, 174.0, 180.0, 271.3, 359.9])
+    def test_round_trips_against_destination(self, bearing: float) -> None:
+        """Walking a bearing and then measuring it returns the same bearing.
+
+        The two functions are inverses on the same sphere, which is the
+        property that stops one of them drifting from the other.
+        """
+        latitude, longitude = destination(46.0, 7.0, bearing, 500.0)
+        assert initial_bearing_deg(46.0, 7.0, latitude, longitude) == pytest.approx(
+            bearing, abs=1e-6
+        )
+
+    @pytest.mark.parametrize(("lat1", "lon1", "lat2", "lon2"), PAIRS)
+    def test_is_always_in_range_or_none(
+        self, lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> None:
+        """Every answer is a compass bearing, or no answer at all."""
+        bearing = initial_bearing_deg(lat1, lon1, lat2, lon2)
+        assert bearing is None or 0.0 <= bearing < 360.0

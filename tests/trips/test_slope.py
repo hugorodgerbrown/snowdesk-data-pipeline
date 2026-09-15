@@ -262,6 +262,36 @@ class TestTripMapPayload:
         assert properties["slope"]["angles"] == [41.0]
         assert properties["terrain"]["steepest_deg"] == 41.0
 
+    def test_a_sampled_trip_carries_its_no_fall_passages(self) -> None:
+        """SNOW-964 reaches the trip page, on the same record (SNOW-962).
+
+        A trip is what the GROUP sees — the people who did not plan the
+        route — so the mark that says "you are on it" belongs here at
+        least as much as on the owner's own map. ``_record``'s one
+        segment runs due north over south-facing ground, which is a
+        climb of the fall line.
+        """
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=_record(52.0))
+
+        properties = _trip_map_payload(trip)["route"]["properties"]
+
+        assert properties["slope"]["passages"] == [
+            {
+                "from": 0,
+                "to": 0,
+                "m": pytest.approx(1112.0, abs=2.0),
+                "fall_line": "climbing",
+            }
+        ]
+
+    def test_a_gentle_trip_carries_an_empty_passage_list(self) -> None:
+        """Nothing qualified, said out loud — never a missing key."""
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=_record(34.2))
+
+        properties = _trip_map_payload(trip)["route"]["properties"]
+
+        assert properties["slope"]["passages"] == []
+
     def test_an_unsampled_trip_carries_neither(self) -> None:
         """Omitted, not nulled — the layers read the key's PRESENCE."""
         trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)

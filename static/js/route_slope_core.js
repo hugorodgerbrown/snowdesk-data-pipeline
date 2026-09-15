@@ -48,6 +48,8 @@
  *   CLASSES                — the six buckets, gentlest first
  *   UNKNOWN_COLOUR         — the dashed line's colour
  *   UNKNOWN_TOKEN          — and the token that colour mirrors
+ *   PASSAGE_CORE_COLOUR    — the no-fall split line's core (SNOW-964)
+ *   PASSAGE_CORE_TOKEN     — and the token that colour mirrors
  *   STEEP_THRESHOLD_DEG    — the angle a length is counted against
  *   classify(angle)        — a bucket index, or null for an unknown
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
@@ -55,6 +57,14 @@
  *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
  *   cruxCount(f)           — how many one route carries
  *   summaryLines(terrain)  — the same record in words (SNOW-961)
+ *   passageLines(f)        — its no-fall passages in words (SNOW-964)
+ *
+ * SNOW-964 adds `passages` to the record — the stretches where the TRACK
+ * is on no-fall ground — and a `passage: true` flag on the segments they
+ * name. Only ever `true`, never `false`, and only ever on a segment that
+ * already has an angle: a feature can never carry both `unknown` and
+ * `passage`, because unsurveyed ground is never inside a passage
+ * (apps/routes/services/passages.py).
  */
 
 // @ts-check
@@ -117,6 +127,31 @@
   const UNKNOWN_TOKEN = '--color-slope-unknown';
 
   /**
+   * The light core down the middle of a no-fall passage (SNOW-964).
+   *
+   * A passage is drawn as a SPLIT LINE: the band colour widened, with
+   * this run down its centre. The mark has to be legible over all six
+   * band colours and read as a GAP in the line rather than as a seventh
+   * class of ground, so it is a near-white off the steepness scale
+   * entirely.
+   *
+   * `transparent` is not an option: MapLibre cannot punch a hole through
+   * one line layer to another, so a transparent core would reveal the
+   * dark casing under the route and read as a shadow. `#ffffff` is
+   * avoided because it is the crux ring's halo, and the two marks
+   * co-occur on nearly every passage — any segment over 50° has already
+   * fired `is_crux` at 35°.
+   *
+   * Mirrors `--color-passage-core` in `src/css/main.css`; the literal is
+   * here because a MapLibre paint property cannot read a custom
+   * property, the same convention `UNKNOWN_COLOUR` follows.
+   */
+  const PASSAGE_CORE_COLOUR = '#f8fafc';
+
+  /** The `@theme` custom property `PASSAGE_CORE_COLOUR` is the value of. */
+  const PASSAGE_CORE_TOKEN = '--color-passage-core';
+
+  /**
    * Which bucket an angle falls in.
    *
    * @param {?number} angle Degrees from horizontal, or null/undefined for
@@ -136,6 +171,48 @@
       if (angle >= CLASSES[i].from) return i;
     }
     return 0;
+  }
+
+  /**
+   * One no-fall passage, as the server sends it (SNOW-964).
+   *
+   * Every field is optional because this arrives from a feature property
+   * and is checked rather than trusted. `fall_line` is ABSENT — never
+   * null — on a passage nothing could classify, which is a real state:
+   * steep ground earns the mark, and a missing aspect is a fact about
+   * the survey.
+   *
+   * @typedef {object} Passage
+   * @property {number} [from] First segment index, inclusive.
+   * @property {number} [to] Last segment index, inclusive.
+   * @property {number} [m] Its along-track length, in metres.
+   * @property {string} [fall_line] `descending`, `climbing` or `crossing`.
+   */
+
+  /**
+   * The segment indices the passages name.
+   *
+   * The server sends INDEX PAIRS into the same `angles` array this module
+   * is already pairing into segments, so there is only one geometry and
+   * nothing to disagree with it. A malformed entry is skipped rather than
+   * thrown on: the record arrives from a feature property, and a route
+   * that fails to draw is worse than one drawn without its marks.
+   *
+   * @param {*} passages The record's `passages`, unchecked.
+   * @returns {Set<number>} Every index inside a passage, possibly empty.
+   */
+  function passageIndices(passages) {
+    const marked = new Set();
+    if (!Array.isArray(passages)) return marked;
+    for (let i = 0; i < passages.length; i += 1) {
+      const passage = passages[i] || {};
+      const from = passage.from;
+      const to = passage.to;
+      if (typeof from !== 'number' || typeof to !== 'number') continue;
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) continue;
+      for (let index = from; index <= to; index += 1) marked.add(index);
+    }
+    return marked;
   }
 
   /**
@@ -179,6 +256,7 @@
     if (points.length !== angles.length + 1) return [];
 
     const identity = properties.uuid ? { uuid: properties.uuid } : {};
+    const marked = passageIndices(slope.passages);
 
     const features = [];
     for (let i = 0; i < angles.length; i += 1) {
@@ -190,9 +268,19 @@
         // known one the reverse. Never both, never neither — the two
         // layers filter on exactly this and a segment answering to both
         // would be painted twice.
+        //
+        // SNOW-964's `passage` joins the KNOWN branch only, and is set
+        // to `true` or left off entirely — never `false`, the rule
+        // `_mark_cruxes` follows server-side. The server never names an
+        // unknown segment in a passage, and this is the second place
+        // that holds: a feature cannot carry both.
         properties: slopeClass === null
           ? Object.assign({ unknown: true }, identity)
-          : Object.assign({ slope_class: slopeClass }, identity),
+          : Object.assign(
+            { slope_class: slopeClass },
+            marked.has(i) ? { passage: true } : {},
+            identity,
+          ),
       });
     }
     return features;
@@ -270,7 +358,10 @@
    *
    * @typedef {object} TerrainLine
    * @property {string} key The `data-string` key in the surface partial.
-   * @property {{km?: string, m?: string, deg?: string}} params Its values.
+   * @property {{km?: string, m?: string, deg?: string, count?: string}} params
+   *   Its values. `count` is the marker counts' — SNOW-911's cruxes,
+   *   built in `map.js`, and SNOW-964's passages below — and a direction
+   *   descriptor interpolates nothing at all, so every key is optional.
    */
 
   /**
@@ -404,10 +495,72 @@
     return Array.isArray(cruxes) ? cruxes.length : 0;
   }
 
+  /**
+   * The order the direction descriptors are emitted in.
+   *
+   * Fixed, and not the order the passages happen to arrive in: the popup
+   * is re-rendered on every tap, and a line whose words reshuffle between
+   * two taps on the same route reads as new information. Down first,
+   * because it is the case a reader is most exposed on.
+   */
+  const PASSAGE_DIRECTIONS = Object.freeze(['descending', 'climbing', 'crossing']);
+
+  /**
+   * What a route's no-fall passages say, as string keys and params.
+   *
+   * Returns DESCRIPTORS rather than text, the rule `summaryLines`
+   * follows: the caller owns the strings, so nothing here can ship an
+   * English literal to a translated page (`tox -e i18n-lint`).
+   *
+   * NOT part of `summaryLines`, and deliberately. That one renders the
+   * server's `terrain` summary, which is written by the sampler and
+   * stored; the passages are derived on every read at thresholds nothing
+   * has frozen, and putting them in the summary would be the first step
+   * towards storing them.
+   *
+   * OMITTED ENTIRELY AT ZERO, the `cruxCount` rule. "0 no-fall passages"
+   * claims the algorithm looked and found none, which is exactly the
+   * reading `/help/#help-topic-slope` exists to prevent: a narrow steep
+   * passage between two gentler samples reads gentler than it is.
+   *
+   * The count comes first, then ONE descriptor per distinct direction
+   * present — not one per passage, which on a long tour would run to a
+   * paragraph of the same three words.
+   *
+   * @param {?{properties?: object}} feature One route Feature.
+   * @returns {Array<TerrainLine>} The lines, in order; empty when the
+   *   route has no passages and empty when it has never been sampled.
+   */
+  function passageLines(feature) {
+    const properties = /** @type {{slope?: {passages?: Array<Passage>}}} */ (
+      (feature && feature.properties) || {}
+    );
+    const passages = properties.slope && properties.slope.passages;
+    if (!Array.isArray(passages) || !passages.length) return [];
+
+    // Annotated rather than inferred: the count line carries a param and
+    // the direction lines carry none, and an array typed from its first
+    // element would reject the rest.
+    const lines = /** @type {Array<TerrainLine>} */ ([{
+      key: passages.length === 1
+        ? 'route-terrain-passage-one'
+        : 'route-terrain-passages',
+      params: { count: String(passages.length) },
+    }]);
+    for (let i = 0; i < PASSAGE_DIRECTIONS.length; i += 1) {
+      const direction = PASSAGE_DIRECTIONS[i];
+      const present = passages.some((p) => p && p.fall_line === direction);
+      if (present) lines.push({ key: `route-terrain-passage-${direction}`, params: {} });
+    }
+    return lines;
+  }
+
   self.pwaRouteSlopeCore = Object.freeze({
     CLASSES: CLASSES,
     UNKNOWN_COLOUR: UNKNOWN_COLOUR,
     UNKNOWN_TOKEN: UNKNOWN_TOKEN,
+    PASSAGE_CORE_COLOUR: PASSAGE_CORE_COLOUR,
+    PASSAGE_CORE_TOKEN: PASSAGE_CORE_TOKEN,
     STEEP_THRESHOLD_DEG: STEEP_THRESHOLD_DEG,
     classify: classify,
     segmentFeatures: segmentFeatures,
@@ -415,5 +568,6 @@
     cruxCollection: cruxCollection,
     cruxCount: cruxCount,
     summaryLines: summaryLines,
+    passageLines: passageLines,
   });
 })();

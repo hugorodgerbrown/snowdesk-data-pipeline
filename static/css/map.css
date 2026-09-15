@@ -1643,6 +1643,26 @@
    src/css/main.css for why a line needs both. */
 .map-legend-swatch--slope-gentle { background: var(--color-slope-gentle); }
 
+/* SNOW-964: the no-fall passage, drawn as the SPLIT it is — two rails of
+   band colour with the light core between them. A gradient sandwich rather
+   than a border, following --slope-unknown's precedent below of depicting a
+   line TREATMENT in a 10px square while keeping every swatch the same
+   footprint.
+
+   The rails take --color-slope-50 because the gate is that band, even
+   though a grown-in segment can be in the one below: the key has to name
+   one colour, and the ground that earns the mark is the over-50 ground. */
+.map-legend-swatch--passage {
+    background: linear-gradient(
+        180deg,
+        var(--color-slope-50) 0,
+        var(--color-slope-50) 3.5px,
+        var(--color-passage-core) 3.5px,
+        var(--color-passage-core) 6.5px,
+        var(--color-slope-50) 6.5px
+    );
+}
+
 /* SNOW-911: the crux marker, drawn as the ring it is rather than as a
    filled block. Hollow is the whole shape — on the map the middle is left
    empty so the segment colour the reader is being sent to look at is not

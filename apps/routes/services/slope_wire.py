@@ -2,7 +2,11 @@
 apps/routes/services/slope_wire.py — a slope record as it goes to a client.
 
 One function, ``compact_slope``, and it is the ONE place the stored
-record is reduced to what a map draws. It lived in
+record is reduced to — and, since SNOW-964, DERIVED FROM — for what a map
+draws. The reduction was the whole job until the no-fall passages, which
+are computed here on every read rather than stored (see
+``apps.routes.services.passages`` for why a stored one would manufacture
+a backfill candidate). It lived in
 ``apps/routes/views.py`` until SNOW-962 gave the trip page a coloured
 line of its own; a second caller in another app is what moved it here,
 rather than a second copy of a reduction whose two halves have to agree
@@ -18,6 +22,8 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+
+from apps.routes.services.passages import route_passages
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +58,25 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     before cruxes existed, so "nothing was flagged" and "nothing looked"
     stay apart on the client exactly as they do one level up.
 
+    ``passages`` (SNOW-964) are the stretches where the TRACK is on
+    no-fall ground, and they are DERIVED HERE rather than read out of the
+    record: both their inputs are already stored, so caching them would
+    freeze today's threshold into a row and make re-tuning a backfill.
+    Each one is two inclusive segment indices into the ``angles`` array
+    the client already holds — never a second copy of the geometry, which
+    could disagree with the first — the length in metres, and a word for
+    what the track does with the fall line. **Empty means nothing
+    qualified**, and unlike ``cruxes`` that is always a complete answer:
+    a passage needs no probe, so there is no "we could not look" state.
+
     Args:
         samples: The row's ``slope_samples``, or None if never sampled.
 
     Returns:
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
-        ``cruxes`` where the record has them. None when there is nothing
-        to draw — never sampled, or a record whose halves do not pair up
+        ``cruxes`` where the record has them and ``passages`` whenever
+        the record could be read at all. None when there is nothing to
+        draw — never sampled, or a record whose halves do not pair up
         (N + 1 coordinates to N angles), which would draw segments
         against the wrong ground.
 
@@ -77,8 +95,16 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
 
     cruxes = samples.get("cruxes")
+    passages = route_passages(samples)
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
         **({"cruxes": cruxes} if isinstance(cruxes, list) else {}),
+        # The ``cruxes`` rule verbatim, and it reads the same because the
+        # two keys mean different things by their absence: a missing
+        # ``cruxes`` is an outage, a missing ``passages`` is a record this
+        # function has already refused above. ``route_passages`` can only
+        # answer None on a record the pairing check has rejected, so in
+        # practice the key is always present here.
+        **({"passages": passages} if isinstance(passages, list) else {}),
     }

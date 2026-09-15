@@ -35,10 +35,18 @@ import { loadMapBundle } from './_load_map_bundle.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/** Four sampled boundaries bounding three segments: gentle, steep, unknown. */
+/** Four sampled boundaries bounding three segments: gentle, steep, unknown.
+ *
+ * The steep one is over 50°, so SNOW-964 names it a no-fall passage —
+ * which is what the two passage layers below are filtered on. The
+ * unknown one is deliberately NOT in the list: the server never names
+ * unsurveyed ground, and the layer order here is what proves a segment
+ * cannot be drawn dashed and split at once.
+ */
 const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01], [7.0, 46.015]],
-  angles: [12.0, 41.0, null],
+  angles: [12.0, 52.0, null],
+  passages: [{ from: 1, to: 1, m: 25.0, fall_line: 'descending' }],
 };
 
 /** One sampled route and one that has never been sampled. */
@@ -377,6 +385,103 @@ describe('the routes overlay switch', () => {
   });
 });
 
+describe('the no-fall passage layers (SNOW-964)', () => {
+  /** The ids in the order installRoutesLayer added them. */
+  const order = () => [...layers.keys()];
+
+  it('draw off the same source as the colour they mark', () => {
+    // Not a second source: a mark on different geometry from the colour
+    // it marks is a mark that can disagree with it.
+    expect(layers.get('routes-passage-edge').source).toBe('route-slopes');
+    expect(layers.get('routes-passage-core').source).toBe('route-slopes');
+  });
+
+  it('draw only the segments the server named', () => {
+    expect(layers.get('routes-passage-edge').filter)
+      .toEqual(['==', ['get', 'passage'], true]);
+    expect(layers.get('routes-passage-core').filter)
+      .toEqual(['==', ['get', 'passage'], true]);
+  });
+
+  it('sandwich the two slope layers', () => {
+    // MapLibre paints later layers over earlier ones, so the edge has to
+    // be UNDER the coloured line and the core OVER both — that is what
+    // makes the mark read as a split in the line rather than as a second
+    // line beside it.
+    const ids = order();
+
+    expect(ids.indexOf('routes-passage-edge'))
+      .toBeLessThan(ids.indexOf('routes-slope-line'));
+    expect(ids.indexOf('routes-passage-core'))
+      .toBeGreaterThan(ids.indexOf('routes-slope-unknown'));
+  });
+
+  it('paints the edge with the band colour, not a flat ink', () => {
+    // A passage grows outward through the 45–50 band, so a flat
+    // `slope-50` edge would report 47° ground as over 50.
+    expect(layers.get('routes-passage-edge').paint['line-color'])
+      .toEqual(layers.get('routes-slope-line').paint['line-color']);
+  });
+
+  it('paints the core off the steepness scale', () => {
+    expect(layers.get('routes-passage-core').paint['line-color'])
+      .toBe(core.PASSAGE_CORE_COLOUR);
+  });
+
+  it('keeps the edge at or inside the casing at every zoom stop', () => {
+    // The casing frames the mark over a pale basemap, and it draws off
+    // the `routes` source — widening IT to suit a wider mark would
+    // thicken every route on the map.
+    const edge = layers.get('routes-passage-edge').paint['line-width'];
+    const casing = layers.get('routes-line-casing').paint['line-width'];
+
+    for (let i = 3; i < edge.length; i += 2) {
+      expect(edge[i + 1]).toBeLessThanOrEqual(casing[i + 1]);
+    }
+  });
+
+  it('keeps the core narrower than the edge at every zoom stop', () => {
+    // Or there is no band colour left either side of it, and the mark
+    // reads as a white line rather than as a split one.
+    const edge = layers.get('routes-passage-edge').paint['line-width'];
+    const inner = layers.get('routes-passage-core').paint['line-width'];
+
+    for (let i = 3; i < edge.length; i += 2) {
+      expect(inner[i + 1]).toBeLessThan(edge[i + 1]);
+    }
+  });
+
+  it('uses butt caps, like every other per-segment layer', () => {
+    expect(layers.get('routes-passage-edge').layout['line-cap']).toBe('butt');
+    expect(layers.get('routes-passage-core').layout['line-cap']).toBe('butt');
+  });
+
+  it('leaves routes-slope-line untouched', () => {
+    // The passage keeps the colour and the weight of the ground under
+    // it: the split is added to the line, it does not replace it.
+    expect(layers.get('routes-slope-line').paint['line-width'])
+      .toEqual(layers.get('routes-line').paint['line-width']);
+    expect(layers.get('routes-slope-line').filter)
+      .toEqual(['!=', ['get', 'unknown'], true]);
+  });
+
+  it('is reached by the routes overlay switch', () => {
+    expect(layers.get('routes-passage-edge').layout.visibility).toBe('visible');
+    expect(layers.get('routes-passage-core').layout.visibility).toBe('visible');
+  });
+
+  it('never marks the unsurveyed segment', () => {
+    // The dash interrupts the line ALONG its length and the split
+    // divides it ACROSS its width; the two are orthogonal and must never
+    // land on one segment.
+    const marked = sources.get('route-slopes').data.features
+      .filter((f) => f.properties.passage);
+
+    expect(marked).toHaveLength(1);
+    expect(marked[0].properties).not.toHaveProperty('unknown');
+  });
+});
+
 describe('tapping a coloured route', () => {
   /** Fire the map-level click, with the slope layers answering the query. */
   function tapSlopeSegment(layerId) {
@@ -412,6 +517,40 @@ describe('tapping a coloured route', () => {
     tapSlopeSegment('routes-slope-unknown');
 
     expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
+  });
+
+  it('does not query the passage layers, which add no geometry', () => {
+    // `routes-slope-line` still draws every passage, with the same
+    // coordinates and the same uuid, so nothing left the tap path the
+    // way `routes-line` did for a sampled route in SNOW-910. Querying
+    // them as well would return the same route twice more per tap.
+    const queried = [];
+    queryAnswer = (options) => {
+      queried.push(...(options.layers || []));
+      return [];
+    };
+    for (const handler of mapStub.handlers.click || []) {
+      handler({ point: { x: 10, y: 10 }, lngLat: { lng: 7, lat: 46.01 } });
+    }
+    queryAnswer = () => [];
+
+    expect(queried).toContain('routes-slope-line');
+    expect(queried).not.toContain('routes-passage-edge');
+    expect(queried).not.toContain('routes-passage-core');
+  });
+
+  it('names the no-fall passage and what the track does with it', () => {
+    // SNOW-964. The count and the direction ride on the terrain line
+    // with the steepness figures, not on a line of their own — and the
+    // direction is a WORD, because the fall line is measured from one
+    // 25 m chord of a recorded track.
+    popupNodes.length = 0;
+    tapSlopeSegment('routes-slope-line');
+
+    const text = popupNodes.at(-1).textContent;
+
+    expect(text).toContain('1 no-fall passage');
+    expect(text).toContain('down the fall line');
   });
 
   it('colours the profile of the route it opens', () => {

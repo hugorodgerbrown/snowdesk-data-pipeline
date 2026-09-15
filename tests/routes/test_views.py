@@ -1411,6 +1411,106 @@ class TestRoutesGeojsonSlope:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonPassages:
+    """The no-fall passages on a route feature (SNOW-964).
+
+    Derived on every read rather than stored, so the states here are not
+    ``cruxes``': there is no "we could not look". A record that can be
+    read at all carries the key, and an empty list means nothing
+    qualified.
+
+    ``_slope_record`` lays its boundaries out due EAST, so a segment
+    facing 90 degrees is one the track descends.
+    """
+
+    def test_a_clean_route_carries_an_empty_list(self, client: Client) -> None:
+        """Nothing qualified is a complete answer, and is said out loud."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 34.2, "aspect_deg": 90.0},
+                {"angle_deg": 41.0, "aspect_deg": 90.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["passages"] == []
+
+    def test_a_no_fall_stretch_travels_as_indices_a_length_and_a_word(
+        self, client: Client
+    ) -> None:
+        """Two indices into ``angles``, not a second copy of the geometry.
+
+        A second geometry could disagree with the first; two ints into an
+        array the client already holds cannot.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 20.0, "aspect_deg": 90.0},
+                {"angle_deg": 52.0, "aspect_deg": 90.0},
+                {"angle_deg": 20.0, "aspect_deg": 90.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["passages"] == [
+            {"from": 1, "to": 1, "m": 25.0, "fall_line": "descending"}
+        ]
+
+    def test_the_word_is_a_word_and_never_the_angle_behind_it(
+        self, client: Client
+    ) -> None:
+        """A number on the wire invites a client to draw a barb on the line."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 52.0, "aspect_deg": 270.0},
+                {"angle_deg": 20.0, "aspect_deg": 90.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["passages"][0]["fall_line"] == "climbing"
+        assert "fall_line_deg" not in slope["passages"][0]
+
+    def test_a_never_sampled_route_carries_no_slope_key_and_so_no_passages(
+        self, client: Client
+    ) -> None:
+        """The passages ride INSIDE ``slope``, which is absent when unsampled."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "slope" not in properties
+
+    def test_nothing_is_written_back_to_the_record(self, client: Client) -> None:
+        """The derivation is read-only — no threshold ever reaches the row."""
+        user = UserFactory.create()
+        client.force_login(user)
+        record = _slope_record({"angle_deg": 52.0, "aspect_deg": 90.0})
+        route = RouteFactory.create(user=user, slope_samples=record)
+
+        client.get(GEOJSON_URL)
+
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert "passages" not in route.slope_samples
+        assert "passages" not in route.slope_samples.get("summary", {})
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonTerrain:
     """The terrain summary on a route feature (SNOW-961).
 

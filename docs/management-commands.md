@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, fill_location_elevations, import_resorts, backfill_*
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-09-15
 ---
 
 # Management commands
@@ -1237,6 +1237,32 @@ incident that invalidates derived state:
   A/B/C buckets (has ratings / missing rating but present in raw /
   never seen). Run after a pipeline outage to confirm coverage has
   recovered.
+- `report_route_passages` — sweeps SNOW-964's four no-fall passage
+  thresholds over every sampled `Route` and reports what each setting
+  would mark: a gate sweep (40/45/50/55°), a gate × floor sweep at the
+  shipped 25 m minimum, and the alignment split at three tolerances. The
+  instrument the shipped constants are tuned with, so re-run it before
+  moving any of them. Trips are excluded — a trip's record is a verbatim
+  snapshot of a route's and would weight one route by its party size.
+  Pure SELECT, and **never exits non-zero**: a distribution cannot be
+  wrong, which is what separates this from `diagnose_region_coverage`
+  above. The sweeps re-run the derivation over a record already in
+  memory rather than querying again, which is possible only because
+  `route_passages` takes its thresholds as keyword arguments.
+
+  ```bash
+  # The three tables.
+  uv run python manage.py report_route_passages
+
+  # Plus a per-route block naming each passage at the shipped defaults.
+  uv run python manage.py report_route_passages -v 2
+
+  # A first batch, on a large table.
+  uv run python manage.py report_route_passages --limit 50
+  ```
+
+  Flags: `--limit N` (default: 0, meaning every sampled route).
+
 - `parse_wet_snow_coverage` — reports the hit rate of the wet-snow prose
   parser over the local bulletin archive. For each `(lang, source)` pair
   that contains wet-snow or gliding-snow problems it prints counts for

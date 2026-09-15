@@ -329,6 +329,26 @@ class TestHelpPageFlagGating:
         ):
             assert testid in content, testid
 
+    def test_slope_panel_separates_the_ring_from_the_split(
+        self, client: Client
+    ) -> None:
+        """SNOW-964: two marks, nearly the same ground, different claims.
+
+        Anything over 50 degrees was already ringed at 35, so the two
+        appear together on nearly every passage — and a reader who takes
+        them for one mark has learned nothing from the second. The panel
+        is where the difference is written down, and the caveat paragraph
+        is what earns the mark the right to exist: an unmarked route is
+        not a route without no-fall ground.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-slope-passages",
+            b"help-slope-passages-smoothed",
+        ):
+            assert testid in content, testid
+        assert b"An unmarked route is not a route without no-fall ground." in content
+
     def test_slope_panel_explains_a_flat_traverse_drawn_steep(
         self, client: Client
     ) -> None:

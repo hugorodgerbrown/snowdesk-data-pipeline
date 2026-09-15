@@ -1338,6 +1338,25 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Under 30°" %}
                 </div>
+                {# SNOW-964: the no-fall passage. Inside this key and after  #}
+                {# the six bands, because it is not a seventh one — the mark  #}
+                {# keeps the colour of the ground under it and says something #}
+                {# about the TRACK: that it is on ground over 50°.            #}
+                {#                                                            #}
+                {# Distinct from the dashed row below, and the two are        #}
+                {# orthogonal: the dash interrupts the line ALONG its length, #}
+                {# the split divides it ACROSS its width.                     #}
+                {#                                                            #}
+                {# "not a full list" for the crux row's reason, and a sharper #}
+                {# one — a narrow steep passage between two gentler samples   #}
+                {# is averaged away before it is ever measured, so an         #}
+                {# unmarked route is not a route without no-fall ground.      #}
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--passage"
+                        aria-hidden="true"
+                    ></span>{% trans "No-fall passage — not a full list" %}
+                </div>
                 {# SNOW-911: the crux ring. Inside the route-steepness key   #}
                 {# rather than a section of its own — it is the same         #}
                 {# reading of the same terrain, marked rather than shaded,   #}
@@ -1362,7 +1381,9 @@ Optional context:
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
                         The colour is the steepness of the ground the track crosses, not of the track itself. Dashed
-                        means the terrain data does not cover that stretch — never that it is gentle.
+                        means the terrain data does not cover that stretch — never that it is gentle. A narrow steep
+                        passage often reads gentler than it is, because each colour is an average over the ground around
+                        it: an unmarked route is not a route without no-fall ground.
                     {% endblocktrans %}
                 </p>
             </section>
@@ -2493,6 +2514,24 @@ Optional context:
     {# below links to.                                                      #}
     <span data-string="route-terrain-crux-one">{% trans "1 key passage" %}</span>
     <span data-string="route-terrain-cruxes">{% blocktrans %}%(count)s key passages{% endblocktrans %}</span>
+    {# SNOW-964: the no-fall passages — the stretches where the TRACK is  #}
+    {# on ground over 50°. Two count forms, on the pair rule above, then  #}
+    {# one word per direction present.                                    #}
+    {#                                                                     #}
+    {# THE RING AND THE SPLIT SAY DIFFERENT THINGS, and the copy has to    #}
+    {# keep them apart because they land on nearly the same ground: the    #}
+    {# ring above says the terrain AROUND you can release, this says you   #}
+    {# are ON it. "No-fall" is the touring word for exactly that and is    #}
+    {# what the legend row uses.                                          #}
+    {#                                                                     #}
+    {# The direction is a WORD and never a number. The fall line is        #}
+    {# measured from one 25 m chord of a recorded track, which supports    #}
+    {# "this descends the slope" and not "this descends it at 14°".       #}
+    <span data-string="route-terrain-passage-one">{% trans "1 no-fall passage" %}</span>
+    <span data-string="route-terrain-passages">{% blocktrans %}%(count)s no-fall passages{% endblocktrans %}</span>
+    <span data-string="route-terrain-passage-descending">{% trans "down the fall line" %}</span>
+    <span data-string="route-terrain-passage-climbing">{% trans "up the fall line" %}</span>
+    <span data-string="route-terrain-passage-crossing">{% trans "across the fall line" %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-764: the shared-route popup — the Save control's label and its   #}
     {# three outcomes. There is deliberately no "Shared with you" qualifier  #}

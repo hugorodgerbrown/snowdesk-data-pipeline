@@ -433,6 +433,30 @@
      ————————————————————————————————————————— */
   --color-crux-ring: #1a1916;
 
+  /* —— the no-fall passage's core (SNOW-964) ——
+     A passage is drawn as a SPLIT line: the band
+     colour widened, with this run down its centre. It
+     is meant to read as a GAP in the line — the track
+     opening up under the reader — and NOT as a seventh
+     class of ground, so it is off the scale above
+     entirely.
+
+     `transparent` is not an option: MapLibre cannot
+     punch a hole through one line layer to another, so
+     a transparent core would reveal the dark casing
+     and read as a shadow rather than a gap. #ffffff is
+     avoided because it is the crux ring's halo, and
+     the two marks co-occur on nearly every passage —
+     anything over 50° has already been flagged a crux
+     at 35°.
+
+     Mirrored as a literal in route_slope_core.js
+     (PASSAGE_CORE_COLOUR / PASSAGE_CORE_TOKEN), which
+     is where the map layers read it from: a MapLibre
+     paint property cannot resolve a custom property.
+     ————————————————————————————————————————— */
+  --color-passage-core: #f8fafc;
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;
