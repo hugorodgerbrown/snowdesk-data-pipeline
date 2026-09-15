@@ -32,7 +32,10 @@ Context:
                        display-shaped) and ``length_km``, the region total.
 {% endcomment %}
 {% if bulletin_readings %}
-    {% card %}
+    {# ``mt-3`` is the gap every other card on the trip page carries — the #}
+    {# notes, the details, the map. Without it this card butted straight   #}
+    {# onto the map card's footer and the two read as one surface.          #}
+    {% card extra="mt-3" %}
     <h2 class="text-summary font-semibold text-text-1">{% trans "This day's bulletin, along your line" %}</h2>
     {# The caveat sits ABOVE the rows, not under them. A reader who scans #}
     {# the figures and stops has still read the sentence that says what   #}
