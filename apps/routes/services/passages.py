@@ -399,7 +399,12 @@ def passage_alignment_detail(
     if len(points) != len(segments) + 1 or not segments:
         return None
 
-    lengths_m = _segment_lengths(record, points)
+    # ``segment_lengths_m`` rather than the private helper this module
+    # used to carry: SNOW-971 added this caller and SNOW-974 promoted the
+    # helper into ``slope_summary`` in the same window, so a clean textual
+    # merge left a call to a function that no longer existed here. Both
+    # callers now read the one definition, which is the point of the move.
+    lengths_m = segment_lengths_m(record)
     return _alignment_detail(points, segments, lengths_m, first, last, tolerance_deg)
 
 
