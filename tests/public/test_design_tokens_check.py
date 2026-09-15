@@ -6,6 +6,13 @@ the @theme {} and .dark {} blocks in src/css/main.css. These tests cover
 the parser internals (so a future formatting change in main.css doesn't
 silently break the check) and a behavioural integration test against a
 synthetic CSS file.
+
+Since SNOW-969 that lockstep runs both ways on EXISTENCE: a --color-* in
+@theme must be registered or exempted (E007), and an exemption must carry
+a reason (E008). The synthetic-registry tests below cover both, and one
+test at the bottom runs the real registry against the real main.css —
+the only assertion here that fails when someone adds a colour and forgets
+the library.
 """
 
 from __future__ import annotations
@@ -16,7 +23,12 @@ import pytest
 from django.test import override_settings
 
 from apps.public import checks
-from apps.public.design_tokens import FoundationCategory, IconToken, Token
+from apps.public.design_tokens import (
+    FoundationCategory,
+    IconToken,
+    Token,
+    TokenExemption,
+)
 
 
 def test_strip_comments_removes_block_comments() -> None:
@@ -244,3 +256,147 @@ def test_check_normalises_whitespace_in_values(
     with override_settings(BASE_DIR=str(fake_css_dir)):
         errors = checks.check_design_tokens_match_css(app_configs=None)
     assert errors == []
+
+
+# ── Reverse check: @theme → registry (SNOW-969) ───────────────────────────────
+
+
+def _patch_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tokens: tuple[Token, ...] = (),
+    exemptions: tuple[TokenExemption, ...] = (),
+) -> None:
+    """Point the check at a synthetic registry and exemption list.
+
+    Args:
+        monkeypatch: pytest's patcher.
+        tokens: Tokens the synthetic single category carries.
+        exemptions: Exemptions the check should read instead of the real set.
+
+    """
+    monkeypatch.setattr(
+        "apps.public.design_tokens.FOUNDATION_CATEGORIES",
+        _patched_categories(*tokens),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "apps.public.design_tokens.TOKEN_EXEMPTIONS", exemptions, raising=False
+    )
+
+
+def test_exemption_matches_an_exact_name() -> None:
+    """A pattern with no trailing ``*`` matches that one name and no other."""
+    exemption = TokenExemption("--color-admin-bg", "admin chrome")
+    assert exemption.matches("--color-admin-bg")
+    assert not exemption.matches("--color-admin-bg-hover")
+    assert not exemption.matches("--color-admin")
+
+
+def test_exemption_matches_a_family_by_prefix() -> None:
+    """A trailing ``*`` covers every name beginning with the prefix."""
+    exemption = TokenExemption("--color-basemap-*", "one per BASEMAP_STYLES key")
+    assert exemption.matches("--color-basemap-ign-plan")
+    assert exemption.matches("--color-basemap-anything-added-tomorrow")
+    assert not exemption.matches("--color-base")
+
+
+def test_check_flags_colour_declared_in_theme_but_not_registered(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A --color-* in @theme that nothing lists → E007.
+
+    This is the case SNOW-969 exists for: a colour added to the CSS,
+    used on the map, and invisible at /_components/.
+    """
+    _write_css(fake_css_dir, "--color-route-line: #c026d3;", "")
+    _patch_registry(monkeypatch)
+    with override_settings(BASE_DIR=str(fake_css_dir)):
+        errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert len(errors) == 1
+    assert errors[0].id == "apps.public.design_tokens.E007"
+    assert "--color-route-line" in errors[0].msg
+
+
+def test_check_passes_when_the_unregistered_colour_is_exempted(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exemption naming the token silences E007."""
+    _write_css(fake_css_dir, "--color-admin-bg: #f9fafb;", "")
+    _patch_registry(
+        monkeypatch,
+        exemptions=(
+            TokenExemption("--color-admin-bg", "Django admin chrome, not public"),
+        ),
+    )
+    with override_settings(BASE_DIR=str(fake_css_dir)):
+        errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert errors == []
+
+
+def test_check_passes_when_a_family_is_exempted_by_prefix(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One prefix exemption covers a family that grows a member."""
+    _write_css(
+        fake_css_dir,
+        "--color-basemap-ign-plan: #9333ea; --color-basemap-new-one: #123456;",
+        "",
+    )
+    _patch_registry(
+        monkeypatch,
+        exemptions=(
+            TokenExemption("--color-basemap-*", "one per settings.BASEMAP_STYLES key"),
+        ),
+    )
+    with override_settings(BASE_DIR=str(fake_css_dir)):
+        errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert errors == []
+
+
+def test_check_rejects_an_exemption_with_no_reason(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A blank (or whitespace-only) reason → E008, even though it silences E007.
+
+    The reason is the whole contract — ``bin/ds-lint``'s per-line allows
+    work the same way. A vague reason is a review problem; an absent one
+    is a build failure.
+    """
+    _write_css(fake_css_dir, "--color-admin-bg: #f9fafb;", "")
+    _patch_registry(
+        monkeypatch, exemptions=(TokenExemption("--color-admin-bg", "   "),)
+    )
+    with override_settings(BASE_DIR=str(fake_css_dir)):
+        errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert [error.id for error in errors] == ["apps.public.design_tokens.E008"]
+
+
+def test_reverse_check_ignores_non_colour_namespaces(
+    fake_css_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only --color-* is reverse-checked; sizes and z-indices are not.
+
+    A spacing token is a mechanical value nobody browses the library to
+    choose, so requiring a registry edit for one would tax every tweak
+    without protecting anything.
+    """
+    _write_css(
+        fake_css_dir,
+        "--text-sheet-title: 22px; --z-toast: 50; --shadow-glass: 0 2px 14px #000;",
+        "",
+    )
+    _patch_registry(monkeypatch)
+    with override_settings(BASE_DIR=str(fake_css_dir)):
+        errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert errors == []
+
+
+def test_the_real_registry_accounts_for_every_colour_in_main_css() -> None:
+    """The live registry + exemptions cover every --color-* in main.css.
+
+    The other tests here prove the check works; this one is the check
+    running for real, and is what fails when a colour is added to
+    @theme and left out of the library.
+    """
+    errors = checks.check_design_tokens_match_css(app_configs=None)
+    assert errors == [], [error.msg for error in errors]
