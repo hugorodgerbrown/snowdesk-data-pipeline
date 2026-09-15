@@ -21,7 +21,10 @@ tie-break) and cannot say which produced any figure, which is exactly
 what the first staging run showed: 0/0/10 at every one of 20, 30 and 40
 degrees. So the fall-line sweep histograms the per-segment angles
 themselves, and the alignment table says how many of its crossings a tie
-chose (SNOW-971).
+chose (SNOW-971). A fall-line row that holds a tolerance's inclusive edge
+names the segments sitting exactly on it, because ``descending`` is
+closed at the top while a bucket is closed at the bottom and they would
+otherwise be summed into the wrong class.
 
 **Pure SELECT** — no ``--commit`` flag at all, because there is nothing
 to commit. Nothing here writes, and nothing here derives anything that is
@@ -103,9 +106,19 @@ _TOLERANCE_CANDIDATES = (20.0, 30.0, 40.0)
 # width is chosen from the tolerances the table above sweeps rather than
 # for its own sake: 20, 30 and 40 — and their mirrors at 140, 150 and 160
 # — all land on a bucket EDGE, so a reader can add up the rows either
-# side of a candidate and see exactly what moving the tolerance to it
-# would reclassify. A 15 degree bucket would straddle every one of them
-# and answer nothing.
+# side of a candidate and see what moving the tolerance to it would
+# reclassify. A 15 degree bucket would straddle every one of them and
+# answer nothing.
+#
+# The edge itself is the one thing the rows cannot carry on their own.
+# ``descending`` is ``delta <= tolerance`` and so is closed at the TOP,
+# while a bucket is closed at the BOTTOM — so a segment lying exactly on
+# a candidate sits one bucket above the class it belongs to, and a reader
+# summing rows would miss it. No bucketing fixes that: ``climbing`` is
+# closed at the bottom, so any convention that suits one end breaks the
+# other. The count is therefore carried separately, on the row that holds
+# it, rather than reasoned away in a docstring nobody reads next to the
+# number they are adding up.
 _BUCKET_WIDTH_DEG = 10.0
 _BUCKET_COUNT = 18
 
@@ -163,6 +176,13 @@ class _SweepStats:
 
     buckets: list[int] = field(default_factory=lambda: [0] * _BUCKET_COUNT)
     unmeasured: int = 0
+    # How many of each bucket's segments lie EXACTLY on its lower edge —
+    # a subset of ``buckets``, never a separate population, so it is not
+    # part of ``total``. Reachable rather than theoretical: a track
+    # running due north between two boundaries at the same longitude has
+    # a bearing of exactly 0.0, so a stored aspect of 30.0 separates from
+    # it by exactly 30.0.
+    on_edge: list[int] = field(default_factory=lambda: [0] * _BUCKET_COUNT)
 
     @property
     def total(self) -> int:
@@ -411,6 +431,13 @@ class Command(BaseCommand):
         shipped 30 the first three rows are descents and the last three
         climbs, and moving to 20 or 40 moves one row across each end.
 
+        **A ROW THAT HOLDS AN INCLUSIVE EDGE SAYS SO.** ``descending`` is
+        closed at the top and a bucket at the bottom, so a segment lying
+        exactly on a candidate is printed on the row ABOVE the class it
+        belongs to. Those are counted and named in the row's own note, so
+        the sums stay exact instead of being out by however many segments
+        happen to sit on the boundary.
+
         Segments nothing could measure get their own line rather than
         being dropped, because a histogram that silently omits them
         overstates how much of the terrain it describes.
@@ -433,9 +460,17 @@ class Command(BaseCommand):
         self.stdout.write("-" * len(header))
         total = sweep.total
         for index, count in enumerate(sweep.buckets):
+            verdict = _bucket_verdict(index)
+            edge_verdict = _edge_verdict(index)
+            note = ""
+            if sweep.on_edge[index] and edge_verdict != verdict:
+                note = (
+                    f"  ({sweep.on_edge[index]} exactly "
+                    f"{index * _BUCKET_WIDTH_DEG:.0f}°: {edge_verdict})"
+                )
             self.stdout.write(
                 f"{_bucket_label(index):>11}  {count:>6} "
-                f"{_pct(count, total):>4}%  {_bucket_verdict(index)}"
+                f"{_pct(count, total):>4}%  {verdict}{note}"
             )
         self.stdout.write(
             f"{'unmeasured':>11}  {sweep.unmeasured:>6} "
@@ -551,7 +586,14 @@ def _accumulate_sweep(record: dict[str, Any] | None, sweep: _SweepStats) -> None
             if segment.delta_deg is None:
                 sweep.unmeasured += 1
                 continue
-            sweep.buckets[_bucket_index(segment.delta_deg)] += 1
+            index = _bucket_index(segment.delta_deg)
+            sweep.buckets[index] += 1
+            # The exact comparison is the point, and 180.0 is why the
+            # index is computed first: it CLAMPS into the last bucket,
+            # whose lower edge is 170, so testing the delta against the
+            # width alone would call it an edge hit that it is not.
+            if segment.delta_deg == index * _BUCKET_WIDTH_DEG:
+                sweep.on_edge[index] += 1
 
 
 def _bucket_index(delta_deg: float) -> int:
@@ -589,9 +631,11 @@ def _bucket_verdict(index: int) -> str:
 
     Asked of ``fall_line_alignment`` itself rather than restated here, so
     the column cannot drift from the rule it is describing. The bucket's
-    MIDPOINT is the angle asked about: the shipped tolerance is inclusive,
-    so the single value 30.0 is a descent while the rest of the 30–40
-    bucket is a crossing, and the midpoint is what the row is true of.
+    MIDPOINT is the angle asked about, which is what the row is true of
+    for every value it holds BUT ONE: the tolerance is inclusive, so a
+    delta of exactly 30.0 is a descent while the rest of the 30–40 bucket
+    is a crossing. That single value is counted by ``_edge_verdict`` and
+    printed beside the row rather than left for the reader to know.
 
     Args:
         index: The bucket's index.
@@ -604,6 +648,23 @@ def _bucket_verdict(index: int) -> str:
     # A due-north bearing against an aspect that far round from it, which
     # makes the separation the midpoint itself.
     return fall_line_alignment(0.0, midpoint) or CROSSING
+
+
+def _edge_verdict(index: int) -> str:
+    """Return the label carried by the bucket's lower edge exactly.
+
+    The companion to ``_bucket_verdict``, and the reason the table can be
+    summed at all: where the two disagree, every segment sitting exactly
+    on the edge belongs to the CLASS BELOW the row printing it.
+
+    Args:
+        index: The bucket's index.
+
+    Returns:
+        One of the three labels.
+
+    """
+    return fall_line_alignment(0.0, index * _BUCKET_WIDTH_DEG) or CROSSING
 
 
 def _median(values: list[float]) -> float:

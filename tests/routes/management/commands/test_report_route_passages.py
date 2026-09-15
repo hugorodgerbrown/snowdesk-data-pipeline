@@ -112,6 +112,26 @@ TIE_RECORD: dict[str, Any] = {
 }
 
 
+# A passage whose first segment sits EXACTLY on the shipped tolerance and
+# whose second is past it. A due-north track between two boundaries at the
+# same longitude has a bearing of exactly 0.0, so the aspect IS the delta —
+# which is what makes a delta of exactly 30.0 a reachable case rather than
+# a theoretical one.
+EDGE_RECORD: dict[str, Any] = {
+    "stride_m": 25.0,
+    "points": [
+        [7.40, 46.10],
+        [7.40, 46.10025],
+        [7.40, 46.10050],
+    ],
+    "segments": [
+        {"angle_deg": 52.0, "aspect_deg": 30.0},
+        {"angle_deg": 52.0, "aspect_deg": 35.0},
+    ],
+    "summary": {"sampled_m": 50.0},
+}
+
+
 def _run(*args: str) -> str:
     """Run the command and return its stdout.
 
@@ -235,6 +255,48 @@ class TestReportRoutePassages:
         assert all(counts[2] == 1 for counts in rows.values())
         assert all(counts[4] == 1 for counts in rows.values())
 
+    def test_a_segment_on_the_inclusive_edge_is_named_on_its_row(self) -> None:
+        """Exactly 30 degrees is a descent, printed on the crossing row.
+
+        ``descending`` is ``delta <= tolerance`` and so closed at the
+        TOP, while a bucket is closed at the bottom — so a segment lying
+        exactly on a candidate sits one row above the class it belongs
+        to. Unnamed, a reader summing the rows up to a candidate would
+        miss it, and the row would mean two things at once, which is the
+        very fault this table was added to fix. No bucketing can fix it
+        instead: ``climbing`` is closed at the bottom, so any convention
+        that suits one end breaks the other.
+        """
+        RouteFactory.create(slope_samples=EDGE_RECORD)
+        assert "exactly 30°: descending" in _sweep_row(_run(), "30-40")
+
+    def test_a_row_holding_no_edge_carries_no_note(self) -> None:
+        """The note appears only where a segment really is on the edge.
+
+        ``BUCKET_RECORD``'s 30-40 segment is at 35 degrees, so the row
+        is uniformly a crossing and has nothing to declare.
+        """
+        RouteFactory.create(slope_samples=BUCKET_RECORD)
+        assert "exactly" not in _sweep_row(_run(), "30-40")
+
+    def test_a_half_turn_is_not_mistaken_for_a_bucket_edge(self) -> None:
+        """180 degrees clamps into the last bucket without being its edge.
+
+        The last bucket's lower edge is 170, so a delta of exactly 180 —
+        divisible by the bucket width like every edge is — must not be
+        counted as sitting on one.
+        """
+        RouteFactory.create(
+            slope_samples=EDGE_RECORD
+            | {
+                "segments": [
+                    {"angle_deg": 52.0, "aspect_deg": 180.0},
+                    {"angle_deg": 52.0, "aspect_deg": 175.0},
+                ],
+            }
+        )
+        assert "exactly" not in _sweep_row(_run(), "170-180")
+
     def test_limit_stops_where_it_says(self) -> None:
         """``--limit 1`` walks one route out of two."""
         RouteFactory.create(slope_samples=RECORD)
@@ -309,6 +371,27 @@ def _alignment_rows(output: str) -> dict[str, tuple[int, int, int, int, int]]:
                 counts[4],
             )
     return rows
+
+
+def _sweep_row(output: str, bucket: str) -> str:
+    """Return one fall-line row's whole printed line.
+
+    ``_sweep_rows`` keeps only the count; the inclusive-edge note lives
+    at the end of the line, so a test asserting on it needs the text.
+
+    Args:
+        output: The command's stdout.
+        bucket: The row's range, hyphenated, e.g. ``"30-40"``.
+
+    Returns:
+        The matching line, or "" when the table has no such row.
+
+    """
+    table = output.split("Fall-line sweep")[1]
+    for line in table.splitlines():
+        if line.replace("°", "").replace("–", "-").split()[:1] == [bucket]:
+            return line
+    return ""
 
 
 def _sweep_rows(output: str) -> dict[str, int]:
