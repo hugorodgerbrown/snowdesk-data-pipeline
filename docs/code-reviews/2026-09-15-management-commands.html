@@ -748,8 +748,10 @@
   <section>
     <h2>Diagnostics and gates <span class="count">— 6</span></h2>
     <p class="lede">
-      Pure SELECT — none of these takes a <code>--commit</code> flag, because none of them
-      has anything to commit.
+      None of these derives stored state, and four are pure SELECT with no way to write
+      anything at all. The two that do write, write <em>a repository file rather than a
+      database row</em>: <code>monitor_query_counts --commit</code> rewrites the committed
+      baseline, and <code>export_day_character_csv --output</code> writes its CSV to a path.
     </p>
     <div class="rows">
       <div class="row">
@@ -769,7 +771,7 @@
         <div class="job">Replays representative URLs and diffs their SQL counts against the committed baseline.</div>
         <div class="when">CI, and after touching a monitored page</div>
         <div class="chip req">Required</div>
-        <div class="note">A gate, not a report: any un-approved regression exits non-zero.</div>
+        <div class="note">A gate, not a report: any un-approved regression exits non-zero. Accepting an intentional change is the one write in this section — <code>--commit</code> rewrites <code>perf/query_counts.txt</code>, so the new numbers land in the PR diff where a reviewer sees them.</div>
       </div>
       <div class="row">
         <div class="cmd">report_route_passages</div>
@@ -783,6 +785,7 @@
         <div class="job">Emits one CSV row per bulletin carrying every input to the day-character cascade, so a row can be hand-verified against the rules.</div>
         <div class="when">When auditing day-character output</div>
         <div class="chip keep">Keep</div>
+        <div class="note">Writes to stdout by default; <code>--output PATH</code> writes the file instead, which is also what turns the per-row countdown on — stdout carries the CSV itself, so a progress line there would corrupt it.</div>
       </div>
       <div class="row">
         <div class="cmd">parse_wet_snow_coverage</div>

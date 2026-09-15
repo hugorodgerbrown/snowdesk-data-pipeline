@@ -1236,7 +1236,11 @@ incident that invalidates derived state:
 
 - `monitor_query_counts` — diff against the committed query-count baseline
   (`perf/query_counts.txt`). Runs in CI; locally surfaces regressions
-  before a PR.
+  before a PR. The one command under this heading that is not read-only in
+  every mode: `--commit` rewrites the baseline file, which is how an
+  intentional change is accepted. It writes a repository file, never a
+  database row, so the new numbers land in the PR diff where a reviewer
+  sees them.
 - `diagnose_region_coverage` — partitions every fixture region into
   A/B/C buckets (has ratings / missing rating but present in raw /
   never seen). Run after a pipeline outage to confirm coverage has
