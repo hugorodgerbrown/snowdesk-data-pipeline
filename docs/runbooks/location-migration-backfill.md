@@ -116,12 +116,14 @@ longer exist; the location rows they were run alongside do.*
 | verification | ✅ both surfaces render |
 
 **The step-5 row above did not hold, and nobody noticed for six days.**
-`bin/build.sh` reloads the EAWS fixtures on every deploy, and `loaddata`
-resets every column they do not carry — so all 461 `centroid_location`
-links were NULLed by the next deploy, leaving 461 orphaned `Location` rows.
-The table records what the command reported, not what survived. Diagnosed
-2026-08-30 as SNOW-771 and fixed by making `build.sh` re-link after every
-`loaddata`; see
+`bin/build.sh` reloaded the EAWS fixtures on every deploy at the time, and
+`loaddata` resets every column they do not carry — so all 461
+`centroid_location` links were NULLed by the next deploy, leaving 461
+orphaned `Location` rows. The table records what the command reported, not
+what survived. Diagnosed 2026-08-30 as SNOW-771 and first patched by making
+`build.sh` re-link after every `loaddata`; PR #758 then removed the reload
+itself, so no deploy loads a fixture and the re-link is an operator's
+command. See
 [`region-centroid-backfill.md`](region-centroid-backfill.md). Read every
 "linked N regions" record in this file with that in mind.
 

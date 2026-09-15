@@ -5,13 +5,18 @@ known coordinate so weather can hang off them, and neither is a curated
 place in its own right — so both anchor to an **anonymous** row.
 
 **Reuse is the point, not an optimisation** (SNOW-771). ``bin/build.sh``
-reloads the EAWS fixtures on every deploy and ``loaddata`` NULLs every
-column those fixtures do not carry, so ``MicroRegion.centroid_location`` is
-wiped and re-linked on each deploy. If the re-link minted a fresh row each
-time, the previous one would be orphaned along with every ``Weather`` row
-hanging off it — the map would go blank after every deploy until the next
-fetch, and the estate would grow without bound. Staging reproduced exactly
-that: 467 locations carrying weather before a deploy, 6 after.
+used to reload the EAWS fixtures on every deploy, and ``loaddata`` NULLs
+every column those fixtures do not carry, so ``MicroRegion.centroid_location``
+was wiped and re-linked on each one. A re-link that minted a fresh row each
+time orphaned the previous one along with every ``Weather`` row hanging off
+it — the map went blank after every deploy until the next fetch, and the
+estate grew without bound. Staging reproduced exactly that: 467 locations
+carrying weather before a deploy, 6 after.
+
+PR #758 removed the reload, so the wipe is gone and the re-link is now an
+operator's command. Reuse still matters for exactly the same reason: every
+run of ``link_region_centroid_locations`` against an already-linked estate
+must rebind to the surviving row rather than strand it.
 
 One implementation, shared by both callers, because two would drift and the
 direction that fails is silent.

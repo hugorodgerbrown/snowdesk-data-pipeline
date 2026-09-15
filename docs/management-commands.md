@@ -309,9 +309,13 @@ dirty-tracking state, and a full recompute on every run is safe and idempotent.
 a region with no `boundary` is skipped and **counted as a failure**, so the
 command exits non-zero rather than silently under-covering the map.
 
-`build.sh` runs it with `--commit` on every deploy (SNOW-521), after the
-`loaddata` step above. The `eaws_CH` fixture already ships `basemap_download`
-for Switzerland; this is what backfills the FR/AT/IT fixtures, which don't —
+**An operator runs it; the deploy does not.** It ran with `--commit` from
+`build.sh` until PR #758 took every bulk data write out of that script — 461
+rows is not something a deploy should half-apply across three concurrently
+deploying services. Run it when seeding an environment
+([`reset-live-db`](runbooks/reset-live-db.md)) and after any boundary or
+fixture change. The `eaws_CH` fixture already ships `basemap_download` for
+Switzerland; this is what backfills the FR/AT/IT fixtures, which don't —
 see [`docs/offline-map.md`](offline-map.md).
 
 ```bash
@@ -1232,7 +1236,11 @@ incident that invalidates derived state:
 
 - `monitor_query_counts` — diff against the committed query-count baseline
   (`perf/query_counts.txt`). Runs in CI; locally surfaces regressions
-  before a PR.
+  before a PR. The one command under this heading that is not read-only in
+  every mode: `--commit` rewrites the baseline file, which is how an
+  intentional change is accepted. It writes a repository file, never a
+  database row, so the new numbers land in the PR diff where a reviewer
+  sees them.
 - `diagnose_region_coverage` — partitions every fixture region into
   A/B/C buckets (has ratings / missing rating but present in raw /
   never seen). Run after a pipeline outage to confirm coverage has
