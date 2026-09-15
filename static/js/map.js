@@ -6318,16 +6318,35 @@
     return [[w, s], [e, n]];
   };
 
+  // How far in a REGION's fit is allowed to go.
+  //
+  // SNOW-972: named, and named for regions, because it is a fact about a
+  // micro-region rather than about fitting. A region is tens of kilometres
+  // across, so a cap keeps a tap on one from diving to street level; the
+  // same cap on a 1 km route is what stopped that route ever reaching a
+  // legible size. Ten is the value every region fit has always used.
+  const REGION_FIT_MAX_ZOOM = 10;
+
   // The fit behind both `bounds` and `region` below. A module-scope
   // function rather than one bridge method calling another through `this`:
   // a caller that destructures the frozen bridge (`const { region } =
   // window.pwaMapFocus`) would lose `this` and take the method with it.
-  const focusBounds = (bbox) => {
+  //
+  // `maxZoom` is the CALLER's to decide and there is deliberately no
+  // default: the two callers frame different kinds of thing at different
+  // scales, and a default here would silently hand one of them the
+  // other's answer — which is the defect SNOW-972 fixed.
+  const focusBounds = (bbox, maxZoom) => {
     if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
     if (!bbox.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
       padding: { top: 60, right: 40, bottom: 40, left: 40 },
-      maxZoom: 10,
+      // The key is OMITTED, not set to undefined, when no cap is given.
+      // A present-but-undefined `maxZoom` leaves the behaviour to
+      // MapLibre's own handling of it, which is not a thing to depend on
+      // — and it makes "no cap" untestable, since the property is there
+      // either way.
+      ...(maxZoom === undefined ? {} : { maxZoom: maxZoom }),
       duration: 400,
     });
   };
@@ -6359,9 +6378,17 @@
      *
      * No zoom floor here, and no "in only" rule: a bbox names an extent
      * rather than a place, and a long route can only be seen whole by
-     * zooming out. Padding, ``maxZoom`` and duration match
-     * ``activateRoute``'s own fit, so a route framed from its panel row and
-     * the same route framed by tapping its line come to rest identically.
+     * zooming out. Padding and duration match ``activateRoute``'s own fit,
+     * so a route framed from its panel row and the same route framed by
+     * tapping its line come to rest identically — which is why SNOW-972
+     * had to uncap BOTH: fixing the tap alone would have made the row
+     * disagree with it, and this docstring is what said they must not.
+     *
+     * NO ``maxZoom``, deliberately. Every caller of this bridge frames a
+     * thing whose size is its own — a route, a downloaded area — and the
+     * cap only ever bites on the SMALL ones, which are exactly the ones
+     * that need the zoom. A region is framed by ``region`` below, which
+     * keeps the cap because a region is never small.
      *
      * @param {number[]} bbox GeoJSON bbox — [west, south, east, north].
      * @returns {void}
@@ -6400,7 +6427,7 @@
       const feature = FEATURE_BY_REGION_ID[regionId];
       if (!feature || !feature.geometry) return;
       const [[w, s], [e, n]] = featureBBox(feature);
-      focusBounds([w, s, e, n]);
+      focusBounds([w, s, e, n], REGION_FIT_MAX_ZOOM);
     },
   });
 
@@ -6978,10 +7005,15 @@
     // gesture and the panel rows' focus press so both use the same padding,
     // maxZoom, and duration — the extra top padding leaves room for the
     // popup body above.
+    //
+    // THE CAP IS CORRECT HERE and is the only place it still is: this
+    // frames a micro-region, which is tens of kilometres across. SNOW-972
+    // removed it from the two paths that frame a ROUTE, where it was
+    // borrowed from this one on the reasoning that the two "frame alike".
     const zoomToFeatureBounds = (feature) => {
       map.fitBounds(featureBBox(feature), {
         padding: { top: 60, right: 40, bottom: 40, left: 40 },
-        maxZoom: 10,
+        maxZoom: REGION_FIT_MAX_ZOOM,
         duration: 400,
       });
     };
@@ -8190,11 +8222,29 @@
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
         // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
-        // [[west, south], [east, north]]. Same padding/maxZoom/duration as
-        // zoomToFeatureBounds, so a route and a region frame alike.
+        // [[west, south], [east, north]].
+        //
+        // SNOW-972: NO `maxZoom`. This fit carried `zoomToFeatureBounds`'
+        // cap of 10 on the reasoning that "a route and a region frame
+        // alike" — and they do not. A micro-region is tens of kilometres
+        // across and a route is often one or two, so the cap that stops a
+        // region filling the screen stopped a route ever reaching a size
+        // worth looking at.
+        //
+        // What made it a defect rather than a preference is that the
+        // marks drawn ON a route have minzooms of their own — the crux
+        // rings at 11, and every later mark at or above it — so the
+        // camera came to rest BELOW the zoom at which the things the
+        // popup was describing in words could render at all. The popup
+        // said "3 key passages" over a map that had decided not to show
+        // them.
+        //
+        // `tests/js/test_map_route_tap.js` holds the invariant against
+        // every route mark's own minzoom rather than against the number
+        // 10, so a cap reintroduced a step too low fails there whatever
+        // marks exist by then.
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
           padding: { top: 60, right: 40, bottom: 40, left: 40 },
-          maxZoom: 10,
           duration: 400,
         });
       }
