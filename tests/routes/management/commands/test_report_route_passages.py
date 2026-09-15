@@ -9,12 +9,19 @@ Covers ``report_route_passages`` (SNOW-964):
   - It runs with no arguments and exits zero on every distribution,
     including an empty database. This is a tuning instrument, not a
     check: there is no wrong answer for it to fail on.
-  - The three tables appear, and the sweeps genuinely vary — the gate
+  - The four tables appear, and the sweeps genuinely vary — the gate
     sweep reaches ground the shipped gate does not, which is the only
     evidence that the thresholds are arguments rather than constants
     baked into the walk.
   - Trips are not counted, since a trip is a verbatim snapshot of a
     route's record and would weight one route by its party size.
+  - The fall-line sweep counts SEGMENTS, which is the unit the tolerance
+    acts on — the alignment table counts passages, with the coverage vote
+    in between, and so cannot say whether a ``crossing`` came from the
+    tolerance or from the tie-break (SNOW-971). ``_alignment_rows`` below
+    parses the tie column: a parser left at the old column count would
+    match no rows at all and pass every assertion vacuously, which is how
+    a table can break in silence.
 
 The grouping itself is ``tests/routes/test_passages.py``'s subject; what
 is asserted here is the command around it.
@@ -60,6 +67,71 @@ RECORD: dict[str, Any] = {
 }
 
 
+# A single five-segment passage whose aspects put one segment in each of
+# four widely separated buckets, plus one segment with no aspect at all.
+# The track runs due north, so every bearing is 0 and the aspect IS the
+# per-segment angle from the fall line.
+BUCKET_RECORD: dict[str, Any] = {
+    "stride_m": 25.0,
+    "points": [
+        [7.40, 46.10],
+        [7.40, 46.10025],
+        [7.40, 46.10050],
+        [7.40, 46.10075],
+        [7.40, 46.10100],
+        [7.40, 46.10125],
+    ],
+    "segments": [
+        {"angle_deg": 52.0, "aspect_deg": 5.0},
+        {"angle_deg": 52.0, "aspect_deg": 35.0},
+        {"angle_deg": 52.0, "aspect_deg": 95.0},
+        {"angle_deg": 52.0, "aspect_deg": 175.0},
+        {"angle_deg": 52.0, "aspect_deg": None},
+    ],
+}
+
+# A passage of exactly two full-stride segments, one descending and one
+# climbing: equal coverage each way, so its label is the tie-break's and
+# not the tolerance's. The two tying segments are deliberately NOT the
+# track's last one, which takes its chord and would break the tie.
+TIE_RECORD: dict[str, Any] = {
+    "stride_m": 25.0,
+    "points": [
+        [7.40, 46.10],
+        [7.40, 46.10025],
+        [7.40, 46.10050],
+        [7.40, 46.10075],
+        [7.40, 46.10100],
+    ],
+    "segments": [
+        {"angle_deg": 10.0, "aspect_deg": None},
+        {"angle_deg": 52.0, "aspect_deg": 0.0},
+        {"angle_deg": 52.0, "aspect_deg": 180.0},
+        {"angle_deg": 10.0, "aspect_deg": None},
+    ],
+}
+
+
+# A passage whose first segment sits EXACTLY on the shipped tolerance and
+# whose second is past it. A due-north track between two boundaries at the
+# same longitude has a bearing of exactly 0.0, so the aspect IS the delta —
+# which is what makes a delta of exactly 30.0 a reachable case rather than
+# a theoretical one.
+EDGE_RECORD: dict[str, Any] = {
+    "stride_m": 25.0,
+    "points": [
+        [7.40, 46.10],
+        [7.40, 46.10025],
+        [7.40, 46.10050],
+    ],
+    "segments": [
+        {"angle_deg": 52.0, "aspect_deg": 30.0},
+        {"angle_deg": 52.0, "aspect_deg": 35.0},
+    ],
+    "summary": {"sampled_m": 50.0},
+}
+
+
 def _run(*args: str) -> str:
     """Run the command and return its stdout.
 
@@ -80,12 +152,13 @@ class TestReportRoutePassages:
     """The command's behaviour over a small database."""
 
     def test_runs_with_no_arguments(self) -> None:
-        """The bare invocation prints all three tables."""
+        """The bare invocation prints all four tables."""
         RouteFactory.create(slope_samples=RECORD)
         output = _run()
         assert "Gate sweep" in output
         assert "Passage sweep" in output
         assert "Alignment" in output
+        assert "Fall-line sweep" in output
 
     def test_writes_nothing(self) -> None:
         """The stored record is byte-identical afterwards.
@@ -137,6 +210,92 @@ class TestReportRoutePassages:
         # every one of the three tolerances.
         assert sorted(rows) == ["20", "30", "40"]
         assert all(counts[0] == 1 for counts in rows.values())
+        # A clear winner, so no tie anywhere: the column is a subset of
+        # crossing and crossing is empty here.
+        assert all(counts[4] == 0 for counts in rows.values())
+
+    def test_the_fall_line_sweep_buckets_each_segment_by_its_own_angle(
+        self,
+    ) -> None:
+        """Four known aspects land in four separate 10 degree buckets.
+
+        The table the tolerance is actually tuned from: the alignment
+        table above would report this whole record as one ``crossing``,
+        which says nothing about where the segments sit relative to a
+        candidate tolerance.
+        """
+        RouteFactory.create(slope_samples=BUCKET_RECORD)
+        rows = _sweep_rows(_run())
+        assert rows["0-10"] == 1
+        assert rows["30-40"] == 1
+        assert rows["90-100"] == 1
+        assert rows["170-180"] == 1
+        assert sum(rows.values()) == 5
+
+    def test_an_unmeasurable_segment_is_counted_rather_than_dropped(
+        self,
+    ) -> None:
+        """Level ground faces nowhere, and the table says how much of it there was.
+
+        A histogram that silently omitted them would overstate how much of
+        the terrain it describes.
+        """
+        RouteFactory.create(slope_samples=BUCKET_RECORD)
+        assert _sweep_rows(_run())["unmeasured"] == 1
+
+    def test_the_tie_column_counts_a_passage_the_tie_break_decided(self) -> None:
+        """One segment each way is a ``crossing`` the tolerance did not produce.
+
+        Without this column the row is indistinguishable from a passage
+        that genuinely runs across the fall line, and the tolerance sweep
+        is uninterpretable — which is what the first staging run showed.
+        """
+        RouteFactory.create(slope_samples=TIE_RECORD)
+        rows = _alignment_rows(_run())
+        assert all(counts[2] == 1 for counts in rows.values())
+        assert all(counts[4] == 1 for counts in rows.values())
+
+    def test_a_segment_on_the_inclusive_edge_is_named_on_its_row(self) -> None:
+        """Exactly 30 degrees is a descent, printed on the crossing row.
+
+        ``descending`` is ``delta <= tolerance`` and so closed at the
+        TOP, while a bucket is closed at the bottom — so a segment lying
+        exactly on a candidate sits one row above the class it belongs
+        to. Unnamed, a reader summing the rows up to a candidate would
+        miss it, and the row would mean two things at once, which is the
+        very fault this table was added to fix. No bucketing can fix it
+        instead: ``climbing`` is closed at the bottom, so any convention
+        that suits one end breaks the other.
+        """
+        RouteFactory.create(slope_samples=EDGE_RECORD)
+        assert "exactly 30°: descending" in _sweep_row(_run(), "30-40")
+
+    def test_a_row_holding_no_edge_carries_no_note(self) -> None:
+        """The note appears only where a segment really is on the edge.
+
+        ``BUCKET_RECORD``'s 30-40 segment is at 35 degrees, so the row
+        is uniformly a crossing and has nothing to declare.
+        """
+        RouteFactory.create(slope_samples=BUCKET_RECORD)
+        assert "exactly" not in _sweep_row(_run(), "30-40")
+
+    def test_a_half_turn_is_not_mistaken_for_a_bucket_edge(self) -> None:
+        """180 degrees clamps into the last bucket without being its edge.
+
+        The last bucket's lower edge is 170, so a delta of exactly 180 —
+        divisible by the bucket width like every edge is — must not be
+        counted as sitting on one.
+        """
+        RouteFactory.create(
+            slope_samples=EDGE_RECORD
+            | {
+                "segments": [
+                    {"angle_deg": 52.0, "aspect_deg": 180.0},
+                    {"angle_deg": 52.0, "aspect_deg": 175.0},
+                ],
+            }
+        )
+        assert "exactly" not in _sweep_row(_run(), "170-180")
 
     def test_limit_stops_where_it_says(self) -> None:
         """``--limit 1`` walks one route out of two."""
@@ -183,23 +342,75 @@ def _gate_rows(output: str) -> dict[str, int]:
     return rows
 
 
-def _alignment_rows(output: str) -> dict[str, tuple[int, int, int, int]]:
-    """Return the alignment table's four counts, keyed by tolerance.
+def _alignment_rows(output: str) -> dict[str, tuple[int, int, int, int, int]]:
+    """Return the alignment table's five counts, keyed by tolerance.
+
+    **THE COLUMN COUNT IS LOAD-BEARING.** This parser matches a row by its
+    width, so leaving it at the four-column shape when SNOW-971 added the
+    tie column would have matched nothing and passed every assertion
+    above on an empty dict — a table that broke in silence.
 
     Args:
         output: The command's stdout.
 
     Returns:
-        ``{"30": (descending, climbing, crossing, unclassified), …}``.
+        ``{"30": (descending, climbing, crossing, unclassified, tied), …}``.
 
     """
     table = output.split("Alignment")[1]
-    rows: dict[str, tuple[int, int, int, int]] = {}
+    rows: dict[str, tuple[int, int, int, int, int]] = {}
     for line in table.splitlines():
         parts = line.replace("°", "").replace("*", "").split()
-        if len(parts) == 5 and parts[0].isdigit():
-            counts = [int(value) for value in parts[1:5]]
-            rows[parts[0]] = (counts[0], counts[1], counts[2], counts[3])
+        if len(parts) == 6 and parts[0].isdigit():
+            counts = [int(value) for value in parts[1:6]]
+            rows[parts[0]] = (
+                counts[0],
+                counts[1],
+                counts[2],
+                counts[3],
+                counts[4],
+            )
+    return rows
+
+
+def _sweep_row(output: str, bucket: str) -> str:
+    """Return one fall-line row's whole printed line.
+
+    ``_sweep_rows`` keeps only the count; the inclusive-edge note lives
+    at the end of the line, so a test asserting on it needs the text.
+
+    Args:
+        output: The command's stdout.
+        bucket: The row's range, hyphenated, e.g. ``"30-40"``.
+
+    Returns:
+        The matching line, or "" when the table has no such row.
+
+    """
+    table = output.split("Fall-line sweep")[1]
+    for line in table.splitlines():
+        if line.replace("°", "").replace("–", "-").split()[:1] == [bucket]:
+            return line
+    return ""
+
+
+def _sweep_rows(output: str) -> dict[str, int]:
+    """Return the fall-line sweep's count column, keyed by bucket.
+
+    Args:
+        output: The command's stdout.
+
+    Returns:
+        ``{"0-10": 1, …, "unmeasured": 1}`` — the en dash of the printed
+        range is normalised to a hyphen so a test can write the key.
+
+    """
+    table = output.split("Fall-line sweep")[1]
+    rows: dict[str, int] = {}
+    for line in table.splitlines():
+        parts = line.replace("°", "").replace("%", "").replace("–", "-").split()
+        if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+            rows[parts[0]] = int(parts[1])
     return rows
 
 

@@ -74,6 +74,22 @@ and it is why ``routes-slope-unknown`` needs no change: no feature can
 ever carry both ``unknown`` and ``passage``. Ground nothing surveyed is
 not ground we may mark.
 
+## The vote is readable, and it still does not reach the wire
+
+``passage_alignment_detail`` returns the per-segment angles the label was
+voted from, because ``FALL_LINE_TOLERANCE_DEG`` cannot be tuned from a
+count of passages: the vote sits between the tolerance and the label, so
+``crossing`` has two routes to victory — the tolerance's residue and the
+tie-break — and a passage-level table cannot say which produced a count
+(SNOW-971).
+
+**IT IS FOR THE INSTRUMENT, NOT FOR THE PAGE.** ``route_passages``'
+dicts go straight to the wire, and the constants above argue that a
+number beside a passage invites a client to draw a barb on a bearing
+taken from one 25 m chord. So the detail is a SEPARATE return value that
+nothing serialises, and the shape ``route_passages`` returns is unchanged
+by its existence.
+
 ## Honesty
 
 **AN UNMARKED ROUTE IS NOT A ROUTE WITHOUT NO-FALL GROUND.** The gate is
@@ -85,6 +101,7 @@ gentler than it is. The surfaces say so — the legend row and
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from apps.core.geo import initial_bearing_deg
@@ -151,6 +168,50 @@ CROSSING = "crossing"
 # matching ``slope_summary``'s stored figures so the two cannot disagree
 # about a rounding.
 _LENGTH_PRECISION = 1
+
+
+@dataclass(frozen=True)
+class SegmentAlignment:
+    """What one segment inside a passage contributed to its label.
+
+    Frozen, because it is a reading of a record rather than a thing with
+    a life of its own — and nothing may edit a vote after it was cast.
+
+    Attributes:
+        index: The segment's index in the record's ``segments``, which is
+            the same index space a passage's ``from``/``to`` use.
+        delta_deg: The angle between the segment's track bearing and its
+            ``aspect_deg``, in ``[0, 180]``, or None when either is
+            missing.
+        label: The label this segment voted for, or None when it cast no
+            vote.
+        length_m: The along-track metres it voted with.
+
+    """
+
+    index: int
+    delta_deg: float | None
+    label: str | None
+    length_m: float
+
+
+@dataclass(frozen=True)
+class PassageAlignment:
+    """One passage's label, with the per-segment votes behind it.
+
+    Attributes:
+        label: The winning label, or None when nothing could vote.
+        resolved_by_tie: True when the most-covered label was not unique
+            and the tie-to-``crossing`` rule chose it. This is the
+            distinction a passage-level count cannot make: a ``crossing``
+            here is not the tolerance's residue.
+        segments: One entry per segment of the passage, in track order.
+
+    """
+
+    label: str | None
+    resolved_by_tie: bool
+    segments: tuple[SegmentAlignment, ...]
 
 
 def angular_difference(bearing_deg: float, aspect_deg: float) -> float:
@@ -289,13 +350,57 @@ def route_passages(
             "to": last,
             "m": round(metres, _LENGTH_PRECISION),
         }
-        fall_line = _passage_alignment(
+        alignment = _alignment_detail(
             points, segments, lengths_m, first, last, tolerance_deg
         )
-        if fall_line is not None:
-            passage["fall_line"] = fall_line
+        if alignment.label is not None:
+            passage["fall_line"] = alignment.label
         passages.append(passage)
     return passages
+
+
+def passage_alignment_detail(
+    record: dict[str, Any] | None,
+    first: int,
+    last: int,
+    *,
+    tolerance_deg: float = FALL_LINE_TOLERANCE_DEG,
+) -> PassageAlignment | None:
+    """Return the per-segment votes behind one passage's label.
+
+    Takes the WHOLE record and a passage's inclusive index pair, mirroring
+    ``route_passages``' convention so a caller that has just read a
+    passage can ask about it with the two numbers that passage carries.
+
+    **FOR THE TUNING INSTRUMENT, NOT FOR A RESPONSE.** The angles here
+    are the ones the vote used, which is the point — the histogram and
+    the label must not be two measurements that can drift — but they are
+    not on the wire and the module docstring says why.
+
+    Args:
+        record: A ``Route.slope_samples`` value, or None.
+        first: Index of the passage's first segment.
+        last: Index of its last, inclusive. Both must come from a passage
+            ``route_passages`` returned for this same record.
+        tolerance_deg: Passed to ``fall_line_alignment``, so the command
+            can re-label the same segments at a candidate tolerance.
+
+    Returns:
+        The alignment detail, or None for a record there was nothing to
+        read in — the same refusals ``route_passages`` makes, for the
+        same reason.
+
+    """
+    if not record:
+        return None
+
+    points = record.get("points") or []
+    segments = record.get("segments") or []
+    if len(points) != len(segments) + 1 or not segments:
+        return None
+
+    lengths_m = _segment_lengths(record, points)
+    return _alignment_detail(points, segments, lengths_m, first, last, tolerance_deg)
 
 
 def _angle_of(segment: dict[str, Any]) -> float | None:
@@ -356,15 +461,15 @@ def _runs(
     return runs
 
 
-def _passage_alignment(
+def _alignment_detail(
     points: list[list[float]],
     segments: list[dict[str, Any]],
     lengths_m: list[float],
     first: int,
     last: int,
     tolerance_deg: float,
-) -> str | None:
-    """Return one passage's alignment label, by a vote of its segments.
+) -> PassageAlignment:
+    """Return one passage's alignment label and the votes behind it.
 
     **A VOTE, NOT A CIRCULAR MEAN.** A mean bearing misleads on a passage
     that crosses a col — two opposite headings average to a third that
@@ -375,7 +480,15 @@ def _passage_alignment(
     **A TIE GOES TO ``crossing``**, which is the label that claims least.
     A passage genuinely split between climbing and descending is not a
     descent, and saying so would be the more confident of two readings on
-    the evidence for neither.
+    the evidence for neither. The tie is RECORDED as well as applied
+    (``resolved_by_tie``), because a ``crossing`` reached that way is not
+    evidence about the tolerance and a table that cannot tell the two
+    apart says nothing about it (SNOW-971).
+
+    **ONE WALK, ONE DEFINITION.** The per-segment angles are kept rather
+    than recomputed by the caller: the tuning instrument must histogram
+    the numbers the vote actually used, or the two can drift and the
+    table would be describing a measurement nothing ships.
 
     Args:
         points: The record's boundary coordinates, as ``[lon, lat]``.
@@ -386,16 +499,19 @@ def _passage_alignment(
         tolerance_deg: Passed to ``fall_line_alignment``.
 
     Returns:
-        One of the three labels, or None when NOTHING in the passage
-        could vote — every segment either has no aspect (exactly level
-        ground faces nowhere) or no bearing (a chord between two
-        coincident boundaries has no direction). The caller omits the key
-        entirely on a None.
+        The label, whether a tie chose it, and one ``SegmentAlignment``
+        per segment in track order. ``label`` is None when NOTHING in the
+        passage could vote — every segment either has no aspect (exactly
+        level ground faces nowhere) or no bearing (a chord between two
+        coincident boundaries has no direction). ``route_passages`` omits
+        the key entirely on a None.
 
     """
     covered: dict[str, float] = {}
+    votes: list[SegmentAlignment] = []
     for index in range(first, last + 1):
-        aspect_deg = segments[index].get("aspect_deg")
+        aspect = segments[index].get("aspect_deg")
+        aspect_deg = float(aspect) if isinstance(aspect, int | float) else None
         # (lat, lon), the house argument order — the record stores
         # GeoJSON axis order, so the pairs are swapped at the call.
         bearing_deg = initial_bearing_deg(
@@ -404,17 +520,33 @@ def _passage_alignment(
             points[index + 1][1],
             points[index + 1][0],
         )
-        label = fall_line_alignment(
-            bearing_deg,
-            float(aspect_deg) if isinstance(aspect_deg, int | float) else None,
-            tolerance_deg,
+        label = fall_line_alignment(bearing_deg, aspect_deg, tolerance_deg)
+        delta_deg = (
+            angular_difference(bearing_deg, aspect_deg)
+            if bearing_deg is not None and aspect_deg is not None
+            else None
+        )
+        votes.append(
+            SegmentAlignment(
+                index=index,
+                delta_deg=delta_deg,
+                label=label,
+                length_m=lengths_m[index],
+            )
         )
         if label is None:
             continue
         covered[label] = covered.get(label, 0.0) + lengths_m[index]
 
     if not covered:
-        return None
+        return PassageAlignment(
+            label=None, resolved_by_tie=False, segments=tuple(votes)
+        )
     winner = max(covered.values())
     leaders = [label for label, metres in covered.items() if metres == winner]
-    return leaders[0] if len(leaders) == 1 else CROSSING
+    tied = len(leaders) > 1
+    return PassageAlignment(
+        label=CROSSING if tied else leaders[0],
+        resolved_by_tie=tied,
+        segments=tuple(votes),
+    )
