@@ -2,19 +2,18 @@
  * tests/js/test_map_detail_popup_exclusivity.js — the anchored map-detail
  * popup takes part in "one open map overlay at a time" (SNOW-658).
  *
- * The popup — a resort pin's, an existing favourite pin's, or (since
- * SNOW-687) a saved route's detail, anchored to the point it describes — is
- * the one map overlay that cannot be reached without booting map.js, so it
- * sits here rather than in the surfaces matrix
- * (tests/js/test_map_overlay_exclusivity_surfaces.js).
+ * The popup — a resort pin's or an existing favourite pin's detail,
+ * anchored to the point it describes — is the one map overlay that cannot
+ * be reached without booting map.js, so it sits here rather than in the
+ * surfaces matrix (tests/js/test_map_overlay_exclusivity_surfaces.js).
  *
- * SNOW-687's route popup belongs HERE and not in that matrix, which already
- * carries `route-sheet` — the routes PANEL, registered by SNOW-686 through
- * window.MapSheet.attach. The panel and the popup are two different
- * surfaces owned by one feature: the panel is a sheet, the popup is this
- * registry member, and reaching the second needs the whole bundle booted
- * against a MapLibre stub, which is exactly the fixture cost that keeps it
- * out of the matrix.
+ * SNOW-973 TOOK THE ROUTE OUT OF THAT POPUP. A saved route's detail is now
+ * the docked `#route-detail-sheet` (static/js/map_route_detail.js), so the
+ * route half of this file tests a SHEET reached through the same tap —
+ * still here rather than in the matrix, because reaching it needs the whole
+ * bundle booted against a MapLibre stub, which is the fixture cost that
+ * keeps it out. The routes PANEL (`route-sheet`, SNOW-686) is a third
+ * surface again, and stays in the matrix where it always was.
  *
  * Both directions matter, and before this ticket only one existed: map.js
  * dispatched ``snowdesk:map-detail-opening``, which favourites.js alone
@@ -187,7 +186,14 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>`;
+    <ul id="search-results" hidden></ul>
+    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
+    <template id="route-detail-template">
+      <div>
+        <div data-route-detail-figures></div>
+        <div data-route-detail-bulletin></div>
+      </div>
+    </template>`;
 }
 
 /** Tap the map at the given point, whatever the hit-test currently returns. */
@@ -218,6 +224,12 @@ function openPopup() {
   return popups.filter((popup) => popup.open).at(-1) || null;
 }
 
+/** The route detail sheet, if it is open. */
+function openRouteSheet() {
+  const el = document.getElementById('route-detail-sheet');
+  return el && !el.hasAttribute('hidden') ? el : null;
+}
+
 let mapStub;
 
 beforeAll(async () => {
@@ -240,6 +252,12 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
+  // SNOW-973: the route detail sheet and the controller it attaches
+  // through. Imported BEFORE the bundle so `window.pwaRouteDetail` exists
+  // by the time map.js's route tap reaches for it — the page loads them in
+  // the same order, both deferred.
+  await import('../../static/js/map_sheet.js');
+  await import('../../static/js/map_route_detail.js');
   loadMapBundle();
   // MapLibre never fires 'load' in jsdom, and the detail-popup surface
   // hangs off it.
@@ -262,6 +280,7 @@ beforeEach(() => {
   popups.length = 0;
   fits.length = 0;
   hitFeatures = [FAVOURITE_FEATURE];
+  window.pwaRouteDetail.close();
 });
 
 describe('the anchored detail popup and the shared registry', () => {
@@ -292,36 +311,42 @@ describe('the anchored detail popup and the shared registry', () => {
   });
 });
 
-describe('a saved route opens the same popup (SNOW-687)', () => {
-  it('opens the anchored popup on a route tap', () => {
+describe('a saved route opens the docked sheet (SNOW-973)', () => {
+  it('opens the sheet on a route tap, and no anchored popup', () => {
     tapTheRoute(mapStub);
 
-    expect(openPopup()).not.toBeNull();
+    expect(openRouteSheet()).not.toBeNull();
+    // The point of the ticket: the detail left the shared popup chrome
+    // entirely rather than widening it for one of its three callers.
+    expect(openPopup()).toBeNull();
   });
 
   it('closes every other overlay as it opens, like any other detail', () => {
-    // The whole reason the route popup reuses mountDetailPopup rather than
-    // building a popup of its own, as the community-report pin does: it
-    // joins the exclusivity registry for free.
-    const sheet = { open: true };
+    // Free from MapSheet.attach, which registers the sheet under its own
+    // DOM id — the same way the route popup got it from mountDetailPopup.
+    const panel = { open: true };
     window.pwaMapOverlays.register('routes-panel-stub', {
-      isOpen: () => sheet.open,
-      close: () => { sheet.open = false; },
+      isOpen: () => panel.open,
+      close: () => { panel.open = false; },
     });
 
     tapTheRoute(mapStub);
 
-    expect(openPopup()).not.toBeNull();
-    expect(sheet.open).toBe(false);
+    expect(openRouteSheet()).not.toBeNull();
+    expect(panel.open).toBe(false);
   });
 
   it('is closed when another overlay opens', () => {
     tapTheRoute(mapStub);
-    expect(openPopup()).not.toBeNull();
+    expect(openRouteSheet()).not.toBeNull();
 
     window.pwaMapOverlays.opening('routes-panel-stub');
 
-    expect(openPopup()).toBeNull();
+    expect(openRouteSheet()).toBeNull();
+  });
+
+  it('registers under its own DOM id', () => {
+    expect(window.pwaMapOverlays.names()).toContain('route-detail-sheet');
   });
 
   it('fits the viewport to the route bounds', () => {
@@ -345,10 +370,10 @@ describe('a saved route opens the same popup (SNOW-687)', () => {
     tapTheMap(mapStub);
 
     expect(fits[0].bounds).toEqual([[7.5, 46.1], [7.54, 46.14]]);
-    expect(openPopup()).not.toBeNull();
+    expect(openRouteSheet()).not.toBeNull();
   });
 
-  it('still opens the popup when bounds are unusable', () => {
+  it('still opens the sheet when bounds are unusable', () => {
     // A route whose bbox cannot be read is a route the user can still be
     // told about — skip the fit, keep the detail. Throwing here would take
     // the tap out entirely.
@@ -359,20 +384,20 @@ describe('a saved route opens the same popup (SNOW-687)', () => {
 
     expect(() => tapTheMap(mapStub)).not.toThrow();
     expect(fits).toHaveLength(0);
-    expect(openPopup()).not.toBeNull();
+    expect(openRouteSheet()).not.toBeNull();
   });
 });
 
-describe('what the route popup says', () => {
-  /** The text of the popup currently on the map, whitespace-collapsed. */
-  function popupText() {
-    return (openPopup().node.textContent || '').replace(/\s+/g, ' ').trim();
+describe('what the route sheet says', () => {
+  /** The text of the open sheet, whitespace-collapsed. */
+  function sheetText() {
+    return (openRouteSheet().textContent || '').replace(/\s+/g, ' ').trim();
   }
 
   it('names the route and states distance and ascent', () => {
     tapTheRoute(mapStub);
 
-    const text = popupText();
+    const text = sheetText();
     expect(text).toContain('Rosablanche');
     expect(text).toContain('12.4km');
     expect(text).toContain('850m ↑');
@@ -391,7 +416,7 @@ describe('what the route popup says', () => {
     }];
     tapTheMap(mapStub);
 
-    const text = popupText();
+    const text = sheetText();
     expect(text).toContain('Rosablanche');
     expect(text).toContain('12.4km');
     expect(text).not.toContain('m ↑');
@@ -409,6 +434,6 @@ describe('what the route popup says', () => {
     }];
     tapTheMap(mapStub);
 
-    expect(popupText()).toContain('0m ↑');
+    expect(sheetText()).toContain('0m ↑');
   });
 });

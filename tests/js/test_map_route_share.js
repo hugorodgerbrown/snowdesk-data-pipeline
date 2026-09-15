@@ -11,9 +11,12 @@
  *   so `['==', ..., false]` would match nothing and every owned route
  *   would vanish.
  *
- *   THE POPUP OFFERS SAVE. The deep link lands on the map, so the popup is
- *   where the recipient meets the action — the routes panel is a thing
- *   they would have to know to open.
+ *   THE DETAIL PANEL OFFERS SAVE. The deep link lands on the map, so the
+ *   panel is where the recipient meets the action — the routes panel is a
+ *   thing they would have to know to open. It was an anchored popup until
+ *   SNOW-973 and is the docked `#route-detail-sheet` now; the control, its
+ *   two states and its wording are unchanged, which is what these
+ *   assertions are about.
  *
  *   THE DEEP LINK IS CONSUMED. `?route_share=<token>` is stripped from the
  *   address bar on arrival, for the same reason `?favourite=` is: the
@@ -95,9 +98,6 @@ const PENDING_FEATURE = {
     bounds: JSON.stringify([7.2, 46.0, 7.2, 46.04]),
   },
 };
-
-/** Every DOM node handed to a popup, newest last. */
-const popupNodes = [];
 
 /** Every addLayer spec map.js asked for, by id. */
 const addedLayers = {};
@@ -225,19 +225,31 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>`;
+    <ul id="search-results" hidden></ul>
+    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
+    <template id="route-detail-template">
+      <div>
+        <div data-route-detail-figures></div>
+        <div data-route-detail-bulletin></div>
+      </div>
+    </template>`;
 }
 
 let mapStub;
 
 /**
- * Tap the map at a screen position, and return the popup it opened.
+ * Tap the map at a screen position, and return the detail it opened.
+ *
+ * The sheet is closed first, so what comes back belongs to THIS tap —
+ * MapSheet's teardown empties the body, so a leftover node cannot be
+ * found after a close.
  *
  * @param {number} y The tap's y in pixels.
- * @returns {HTMLElement|undefined} The popup's node, if one opened.
+ * @returns {HTMLElement|undefined} The figures map.js built, if the sheet
+ *   opened.
  */
 function tapAt(y) {
-  const before = popupNodes.length;
+  window.pwaRouteDetail.close();
   for (const handler of mapStub.handlers.click || []) {
     handler({
       point: { x: 10, y },
@@ -245,7 +257,9 @@ function tapAt(y) {
       originalEvent: { target: document.body },
     });
   }
-  return popupNodes.length > before ? popupNodes.at(-1) : undefined;
+  const sheetEl = document.getElementById('route-detail-sheet');
+  if (!sheetEl || sheetEl.hasAttribute('hidden')) return undefined;
+  return sheetEl.querySelector('[data-route-detail]') || undefined;
 }
 
 beforeAll(async () => {
@@ -276,6 +290,10 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
+  // SNOW-973: the sheet the tap opens, and the controller it attaches
+  // through. Both before the bundle, as the page loads them.
+  await import('../../static/js/map_sheet.js');
+  await import('../../static/js/map_route_detail.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
@@ -346,7 +364,7 @@ describe('the shared-route deep link', () => {
   });
 });
 
-describe('the pending route popup', () => {
+describe('the pending route detail panel', () => {
   it('opens on a tap and names the route', () => {
     const node = tapAt(LINE_Y);
 
@@ -355,13 +373,14 @@ describe('the pending route popup', () => {
   });
 
   it('does not repeat the qualifier above the control', () => {
-    // The popup shipped with a "Shared with you" line above the Save
+    // The detail shipped with a "Shared with you" line above the Save
     // control and it said nothing the control did not: both its labels —
     // "Save route" and "Sign in to save this route" — already state that
     // this is somebody else's route being offered. The pending PANEL ROW
     // keeps its own prefix, because a row sits in a list beside owned ones
-    // and has only its actions to tell them apart; a popup has no such
-    // neighbour. Asserted as an absence so the line cannot creep back.
+    // and has only its actions to tell them apart; this surface has no
+    // such neighbour. Asserted as an absence so the line cannot creep
+    // back.
     expect(tapAt(LINE_Y).textContent).not.toContain('Shared with you');
   });
 

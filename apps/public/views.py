@@ -1748,8 +1748,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         Dict with ``routes_eligible``, ``routes_upload_eligible``,
         ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
-        ``route_claim_url_template``, ``routes_geojson_url`` and
-        ``routes_signin_url``.
+        ``route_claim_url_template``, ``route_bulletin_url_template``,
+        ``routes_geojson_url`` and ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1789,6 +1789,15 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
             "routes:share_create", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
         "route_claim_url_template": reverse("routes:share_claim", args=["__TOKEN__"]),
+        # SNOW-973: the route detail panel's bulletin reading. Templated on
+        # the uuid like rename and share above, and for the same reason —
+        # static/js must not know how this project spells its URLs.
+        # Unconditional: the endpoint is owner-scoped and answers 403 for
+        # anyone else, and map_route_detail.js asks for a reading only for
+        # a route carrying a uuid, which a pending share never does.
+        "route_bulletin_url_template": reverse(
+            "routes:bulletin", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
         # SNOW-687: the map layer's data. Emitted only for an eligible user
         # (see the template) — the endpoint 403s for anyone else, and there
         # is nothing to draw.

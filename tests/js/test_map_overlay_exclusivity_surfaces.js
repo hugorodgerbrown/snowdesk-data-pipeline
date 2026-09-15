@@ -32,7 +32,12 @@
  * The anchored detail popup is registered too (map.js), and is covered in
  * tests/js/test_map_detail_popup_exclusivity.js — reaching it needs the
  * whole map bundle booted against a MapLibre stub, which is a fixture of
- * its own rather than an eighth entry in this one.
+ * its own rather than an eighth entry in this one. SNOW-973's route detail
+ * sheet (#route-detail-sheet) is absent from this matrix for the same
+ * reason and is covered in that same file: it registers through
+ * window.MapSheet.attach like the panels below, but it is opened by a TAP
+ * ON THE MAP rather than by a roundel, so "open it the way a user does"
+ * needs the bundle and the stub.
  *
  * The fixture is a hand-copy of the seven surfaces' markup, reduced to what
  * the modules bind to — the standing trade-off for this harness (Vitest

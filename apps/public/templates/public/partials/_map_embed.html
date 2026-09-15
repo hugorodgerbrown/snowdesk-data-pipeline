@@ -164,6 +164,12 @@ Optional context:
     {% if routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
     data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
     data-route-claim-url-template="{{ route_claim_url_template }}"
+    {# SNOW-973: where the route detail panel fetches this route's reading #}
+    {# of the day's bulletin. ``__UUID__`` is substituted per tap, the      #}
+    {# same idiom data-resort-popup-url and data-weather-detail-url use.    #}
+    {# Read by static/js/map_route_detail.js, not by map.js: map.js knows   #}
+    {# only window.pwaRouteDetail.open().                                   #}
+    data-route-bulletin-url-template="{{ route_bulletin_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
     {# SNOW-828: where map.js fetches a trip's route from when it arrives   #}

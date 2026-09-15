@@ -7054,6 +7054,26 @@
       p.remove();
     };
 
+    // SNOW-973: the two surfaces that describe ONE thing on the map — the
+    // anchored popup (a resort pin, a favourite pin) and the route detail
+    // sheet. Both are dismissed by the gestures that move the reader on
+    // from what they were looking at: deselecting a region, tapping a
+    // different one, entering pin-placement focus.
+    //
+    // Deliberately NOT `pwaMapOverlays.closeAll()`, which would take the
+    // layers menu and the three UGC panels with it. Two of the three
+    // callers below are MAP TAPS, and map_sheet.js suppresses click-outside
+    // for `#map` on purpose — a panel is not dismissed by working the map
+    // underneath it, and routing these through the registry would reverse
+    // that decision for every sheet as a side effect of this ticket.
+    //
+    // `isOpen` is checked before closing for the reason the registry checks
+    // it: the sheet's teardown empties its body, which is not free.
+    const closeMapDetailSurfaces = () => {
+      closeDetailPopup();
+      if (window.pwaRouteDetail?.isOpen()) window.pwaRouteDetail.close();
+    };
+
     // SNOW-658: the anchored detail popup is a map overlay like the layers
     // menu and the three UGC panels, so it takes part in the same
     // "only one at a time" rule through window.pwaMapOverlays
@@ -7143,7 +7163,7 @@
     // clearTooltip.
     document.addEventListener('snowdesk:placement-focus', (e) => {
       if (!(e.detail && e.detail.active)) return;
-      closeDetailPopup();
+      closeMapDetailSurfaces();
     });
 
     // Clear the selection state for the currently-focused region (deselects
@@ -7207,7 +7227,7 @@
     // empty-canvas tap and the re-tap-to-deselect gesture so both produce
     // exactly the same end state.
     const deselectRegion = () => {
-      closeDetailPopup();
+      closeMapDetailSurfaces();
       clearTooltip();
       document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
         detail: { region_id: null, region_name: null },
@@ -7757,12 +7777,12 @@
         if (!feature) return false;
         const bounds = readFeatureJson(feature.properties.bounds);
         if (!Array.isArray(bounds) || bounds.length !== 4) return false;
-        // activateRoute fits the camera to these same bounds; the anchor
-        // is their centre because there is no tap point to honour.
-        activateRoute(feature, [
-          (bounds[0] + bounds[2]) / 2,
-          (bounds[1] + bounds[3]) / 2,
-        ]);
+        // activateRoute fits the camera to these same bounds. It used to
+        // be handed their centre as a popup anchor, because a deep-link
+        // arrival has no tap point to honour; SNOW-973's sheet is docked
+        // to the viewport and needs no anchor at all, so the synthesised
+        // centre went with the popup.
+        activateRoute(feature);
         return true;
       };
 
@@ -8153,7 +8173,10 @@
                 detail: { claimed: true },
               }),
             );
-            closeDetailPopup();
+            // SNOW-973: the route detail is a sheet now, and this control
+            // is built into its body — closing the popup would close
+            // something that is not on screen.
+            window.pwaRouteDetail?.close();
           })
           .catch(function (resp) {
             button.disabled = false;
@@ -8194,15 +8217,17 @@
     };
 
     // SNOW-687: tapping a saved route frames the whole track and opens its
-    // detail. Two halves, and the order matters: the fit runs first and the
-    // popup anchors to the tap point, which MapLibre keeps pinned to its
-    // lng/lat for the duration of the ease — so the popup travels with the
-    // line rather than being left behind at a screen position.
+    // detail. Two halves, and the order matters: the fit runs first, so the
+    // map is already easing towards the track by the time the panel it
+    // describes is on screen.
     //
-    // The anchor is passed in rather than derived. Every other member of
-    // MARKER_EXCLUSION_LAYERS is a point with one natural anchor; a line
-    // has none, and anchoring at (say) its midpoint would open the popup
-    // somewhere the user did not touch, possibly off screen.
+    // SNOW-973 TOOK THE ANCHOR AWAY. The detail was a popup anchored at the
+    // tap point — a line has no single natural anchor, so the honest one
+    // was where the finger went — and it is now the docked sheet
+    // (map_route_detail.js), which is anchored to the viewport rather than
+    // to the ground. That is what removed the `lngLat` argument from this
+    // function, from activateMarker, and from the share deep link's
+    // synthesised bounds centre.
     //
     // The body is the panel row's own two lines, in the panel's own order
     // and format ("12.4 km · 850 m asc · 1100 m desc"), for the
@@ -8210,13 +8235,15 @@
     // same whichever surface it is reached from. Built with createElement,
     // never innerHTML — the name is user-supplied.
     //
-    // The popup then adds what the panel row cannot: the elevation profile
-    // itself. The row is includes/_ugc_panel_row.html, whose five-slot
-    // anatomy is shared with favourites, observations and downloads — a
-    // chart inside it would be a shape only one of the four panels has. The
-    // popup is already this route's detail surface, so the picture goes
-    // where the tap goes. See appendElevationProfile just above.
-    const activateRoute = (feature, lngLat) => {
+    // It then adds what the panel row cannot: the elevation profile itself.
+    // The row is includes/_ugc_panel_row.html, whose five-slot anatomy is
+    // shared with favourites, observations and downloads — a chart inside
+    // it would be a shape only one of the four panels has. What the SHEET
+    // adds on top of both is the day's bulletin along this line, which the
+    // 320px popup never had room for; that half is fetched by
+    // map_route_detail.js and is the whole reason this function hands over
+    // a node instead of mounting one.
+    const activateRoute = (feature) => {
       const props = feature.properties || {};
 
       const bounds = readFeatureJson(props.bounds);
@@ -8361,17 +8388,30 @@
 
       if (props.pending) appendRouteClaimCta(container, props.token);
 
-      // The already-registered 'map-detail-popup' exclusivity member, so a
-      // route tap closes every other map overlay and needs no registration
-      // of its own.
-      mountDetailPopup(lngLat, { node: container });
+      // SNOW-973: over to the sheet. map.js knows only this call — the
+      // clone, the fetch, the offline read-back and the sheet's own
+      // exclusivity registration are map_route_detail.js's, exactly as
+      // the weather sheet's are map_weather_detail.js's.
+      //
+      // `uuid` is absent for a pending share, which is what tells the
+      // module not to ask for a reading: routes:bulletin is owner-scoped,
+      // and a recipient who has not saved the route yet would only be
+      // shown a 404's failure line.
+      //
+      // The day is the one the scrubber is showing, so the reading answers
+      // for the day on screen rather than for today.
+      window.pwaRouteDetail?.open({
+        node: container,
+        uuid: props.uuid || null,
+        day: currentDisplayedDate,
+      });
     };
 
     // Dispatch a marker the exclusion zone claimed to its activation, by
-    // layer. ``lngLat`` is the tap's own coordinate — only the route needs
-    // it (a line has no single natural anchor), but it is passed
-    // unconditionally rather than as a special case at the call site.
-    const activateMarker = (feature, lngLat) => {
+    // layer. No tap coordinate: it was here for the route alone, whose
+    // popup had to be anchored somewhere the user had actually touched,
+    // and SNOW-973 replaced that popup with a docked sheet.
+    const activateMarker = (feature) => {
       switch (feature.layer.id) {
         case 'community-reports-clusters':
           activateCommunityCluster(feature);
@@ -8384,7 +8424,7 @@
           break;
         case 'routes-line':
         case 'routes-line-pending':
-          activateRoute(feature, lngLat);
+          activateRoute(feature);
           break;
         // SNOW-910: a tap on a slope segment opens the route it belongs
         // to. The segment carries the uuid and nothing else — the popup
@@ -8394,7 +8434,7 @@
         case 'routes-slope-line':
         case 'routes-slope-unknown': {
           const route = routeFeatureByUuid(feature.properties?.uuid);
-          if (route) activateRoute(route, lngLat);
+          if (route) activateRoute(route);
           break;
         }
       }
@@ -8456,9 +8496,7 @@
       // playback, matching the pre-consolidation behaviour.
       const marker = markerUnderPoint(e.point);
       if (marker) {
-        // SNOW-687: the tap's own lng/lat goes through too — the route
-        // popup anchors there, having no single natural anchor of its own.
-        activateMarker(marker, e.lngLat);
+        activateMarker(marker);
         return;
       }
 
@@ -8525,9 +8563,10 @@
           deselectRegion();
           return;
         }
-        // SNOW-499: close any anchored resort/favourite detail popup so it
-        // doesn't linger over a region the user has moved on from.
-        closeDetailPopup();
+        // SNOW-499: close any anchored resort/favourite detail popup — and
+        // since SNOW-973 the route detail sheet too — so neither lingers
+        // over a region the user has moved on from.
+        closeMapDetailSurfaces();
         selectFeature(region.id);
       }
     });
