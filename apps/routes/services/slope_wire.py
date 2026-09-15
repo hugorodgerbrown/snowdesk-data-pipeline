@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from apps.routes.services.fall_line import fall_line_marks
 from apps.routes.services.passages import route_passages
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,18 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     before cruxes existed, so "nothing was flagged" and "nothing looked"
     stay apart on the client exactly as they do one level up.
 
+    ``fall_lines`` are the fall-line marks — which way the ground under
+    the track falls, at a point every few hundred metres of steep ground.
+    DERIVED HERE on the ``passages`` terms and for the same reasons
+    (``apps.routes.services.fall_line``). This is where the decision
+    doc's "aspect is stored and not sent" stopped being true, and it is
+    sent as a BEARING PER PLACE rather than as the per-segment aspect the
+    record holds: a flat ``aspects`` array beside ``angles`` would have
+    been the doubled payload that doc rejects, and 600 arrows is not a
+    drawing anyone can read. The key is present whenever the record could
+    be read at all, and **empty means nothing qualified** — a complete
+    answer, the ``passages`` rule again.
+
     ``passages`` (SNOW-964) are the stretches where the TRACK is on
     no-fall ground, and they are DERIVED HERE rather than read out of the
     record: both their inputs are already stored, so caching them would
@@ -74,11 +87,11 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
 
     Returns:
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
-        ``cruxes`` where the record has them and ``passages`` whenever
-        the record could be read at all. None when there is nothing to
-        draw — never sampled, or a record whose halves do not pair up
-        (N + 1 coordinates to N angles), which would draw segments
-        against the wrong ground.
+        ``cruxes`` where the record has them, and ``passages`` and
+        ``fall_lines`` whenever the record could be read at all. None
+        when there is nothing to draw — never sampled, or a record whose
+        halves do not pair up (N + 1 coordinates to N angles), which
+        would draw segments against the wrong ground.
 
     """
     if not samples:
@@ -96,6 +109,7 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
 
     cruxes = samples.get("cruxes")
     passages = route_passages(samples)
+    fall_lines = fall_line_marks(samples)
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
@@ -107,4 +121,9 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
         # answer None on a record the pairing check has rejected, so in
         # practice the key is always present here.
         **({"passages": passages} if isinstance(passages, list) else {}),
+        # The ``passages`` rule a third time, and the same note applies:
+        # ``fall_line_marks`` can only answer None on a record the
+        # pairing check above has already refused, so in practice the key
+        # is always present here.
+        **({"fall_lines": fall_lines} if isinstance(fall_lines, list) else {}),
     }

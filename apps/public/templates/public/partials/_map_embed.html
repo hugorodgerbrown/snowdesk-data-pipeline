@@ -1357,6 +1357,21 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "No-fall passage — not a full list" %}
                 </div>
+                {# The fall-line arrow. Inside this key and after the split, #}
+                {# because it is the third mark on the same line and not a    #}
+                {# further band: it says which way the ground falls, and the  #}
+                {# colour under it still says how steep that ground is.       #}
+                {#                                                            #}
+                {# The wording has to carry what the mark cannot. "Steep      #}
+                {# ground only" is the whole caveat in three words — an arrow #}
+                {# is absent on everything under 30°, and an absent arrow     #}
+                {# must not read as level ground.                             #}
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--fall-line"
+                        aria-hidden="true"
+                    ></span>{% trans "Fall line — steep ground only" %}
+                </div>
                 {# SNOW-911: the crux ring. Inside the route-steepness key   #}
                 {# rather than a section of its own — it is the same         #}
                 {# reading of the same terrain, marked rather than shaded,   #}
@@ -1380,10 +1395,11 @@ Optional context:
                 </div>
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
-                        The colour is the steepness of the ground the track crosses, not of the track itself. Dashed
-                        means the terrain data does not cover that stretch — never that it is gentle. A narrow steep
-                        passage often reads gentler than it is, because each colour is an average over the ground around
-                        it: an unmarked route is not a route without no-fall ground.
+                        The colour is the steepness of the ground the track crosses, not of the track itself. The arrows
+                        point the way that ground falls, so you can see whether the track cuts across a face or runs
+                        down it. Dashed means the terrain data does not cover that stretch — never that it is gentle.
+                        A narrow steep passage often reads gentler than it is, because each colour is an average over
+                        the ground around it: an unmarked route is not a route without no-fall ground.
                     {% endblocktrans %}
                 </p>
             </section>

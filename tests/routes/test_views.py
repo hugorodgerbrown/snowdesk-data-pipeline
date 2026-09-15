@@ -1511,6 +1511,116 @@ class TestRoutesGeojsonPassages:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonFallLines:
+    """The fall-line marks on a route feature.
+
+    Derived on every read, on the ``passages`` terms and with the same
+    states: a record that can be read at all carries the key, and an
+    empty list means nothing qualified.
+
+    ``_slope_record`` lays its boundaries out due EAST, which is what
+    makes the aspects below distinguishable from the track's own heading
+    — a mark reporting a bearing off the chord would answer 90.
+    """
+
+    def test_a_steep_stretch_travels_as_an_index_and_a_bearing(
+        self, client: Client
+    ) -> None:
+        """An index into ``angles``, not a second copy of the geometry.
+
+        The ``passages`` rule: the client already holds the boundary
+        coordinates, so a mark that carried its own could disagree with
+        the colour drawn under it.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 12.0, "aspect_deg": 10.0},
+                {"angle_deg": 38.0, "aspect_deg": 205.0},
+                {"angle_deg": 12.0, "aspect_deg": 10.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["fall_lines"] == [{"i": 1, "deg": 205}]
+
+    def test_a_gentle_route_carries_an_empty_list(self, client: Client) -> None:
+        """Nothing qualified is a complete answer, and is said out loud.
+
+        The aspect is present on every segment and is deliberately not
+        sent: an arrow on ground the colour scale calls gentle is a
+        bearing off a stream bank.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 8.0, "aspect_deg": 205.0},
+                {"angle_deg": 21.0, "aspect_deg": 205.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert slope["fall_lines"] == []
+
+    def test_the_per_segment_aspect_itself_is_never_sent(self, client: Client) -> None:
+        """A bearing per PLACE, not an aspect per segment.
+
+        The distinction the decision doc's payload objection turns on: a
+        flat ``aspects`` array beside ``angles`` would roughly double a
+        payload the offline cache holds, and would be 600 arrows nobody
+        could read.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record({"angle_deg": 38.0, "aspect_deg": 205.0}),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert "aspects" not in slope
+        assert all("aspect_deg" not in mark for mark in slope["fall_lines"])
+
+    def test_a_never_sampled_route_carries_no_slope_key_and_so_no_marks(
+        self, client: Client
+    ) -> None:
+        """The marks ride INSIDE ``slope``, which is absent when unsampled."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "slope" not in properties
+
+    def test_nothing_is_written_back_to_the_record(self, client: Client) -> None:
+        """The derivation is read-only — no threshold ever reaches the row.
+
+        The whole reason the marks are derived rather than stored: a
+        stored list would select into ``backfill_route_slope_samples``
+        and make re-tuning a walk over the tile origin.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        record = _slope_record({"angle_deg": 38.0, "aspect_deg": 205.0})
+        route = RouteFactory.create(user=user, slope_samples=record)
+
+        client.get(GEOJSON_URL)
+
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert "fall_lines" not in route.slope_samples
+        assert "fall_lines" not in route.slope_samples.get("summary", {})
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonTerrain:
     """The terrain summary on a route feature (SNOW-961).
 

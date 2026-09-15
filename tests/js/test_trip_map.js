@@ -419,6 +419,43 @@ describe('isSlopeColoured', () => {
   });
 });
 
+describe('routeFallLineSourceData', () => {
+  /** A payload whose route carries the given fall-line marks. */
+  function withMarks(marks) {
+    const p = payload();
+    p.route.properties.slope = {
+      points: [[7.4, 46.1], [7.42, 46.12]],
+      angles: [40],
+      fall_lines: marks,
+    };
+    return p;
+  }
+
+  it('draws the arrows the snapshot carries', () => {
+    // The trip page is what the GROUP sees — the people who did not
+    // plan the route and have never looked at the ground — so "which
+    // way does this face fall" is the question it is least safe to
+    // answer only on the map page.
+    const data = core.routeFallLineSourceData(withMarks([{ i: 0, deg: 205 }]));
+
+    expect(data.features).toHaveLength(1);
+    expect(data.features[0].properties.deg).toBe(205);
+    // The segment's midpoint, where the aspect was sampled.
+    expect(data.features[0].geometry.coordinates[0]).toBeCloseTo(7.41, 9);
+  });
+
+  it('is a valid empty collection when there is nothing to mark', () => {
+    // A snapshot taken before the marks existed carries no key at all
+    // and draws none, rather than failing the page.
+    expect(core.routeFallLineSourceData(withMarks([]))).toEqual({
+      type: 'FeatureCollection',
+      features: [],
+    });
+    expect(core.routeFallLineSourceData(payload()).features).toEqual([]);
+    expect(core.routeFallLineSourceData(null).features).toEqual([]);
+  });
+});
+
 describe('routeCruxSourceData', () => {
   /** A payload whose route carries the given crux coordinates. */
   function withCruxes(cruxes) {

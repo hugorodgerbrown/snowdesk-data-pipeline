@@ -581,8 +581,12 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     the property is absent rather than null otherwise, because its
     presence is what tells the map the route is already being painted by
     the slope layers. Its shape is a COMPACT form of the stored record
-    (see ``compact_slope``), not the record itself: the aspect and the
-    named unknown reason stay on the server for SNOW-911 and SNOW-839.
+    (see ``compact_slope``), not the record itself: the PER-SEGMENT
+    aspect and the named unknown reason stay on the server for SNOW-911
+    and SNOW-839. What travels beside the angles is DERIVED rather than
+    reduced — the no-fall passages (SNOW-964) and the fall-line marks,
+    which are a bearing at a point every few hundred metres of steep
+    ground rather than an aspect per segment.
 
     Not ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX
     swap. Owner-scoped via ``Route.objects.for_user()``, in **one** query

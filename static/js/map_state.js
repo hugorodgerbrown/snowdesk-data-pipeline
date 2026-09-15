@@ -222,10 +222,13 @@ const OVERLAY_LAYERS = Object.freeze({
   // are APPENDED rather than prepended for the reason the whole group is
   // ordered this way: ``panelOverlayPainted`` answers from element [0],
   // and the roundel's colour comes from the flat line deliberately.
+  // 'routes-fall-lines' appends on those terms too — an arrow on a route
+  // the reader has switched off is a direction with nothing to be the
+  // direction of.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
     'routes-slope-line', 'routes-slope-unknown', 'routes-cruxes',
-    'routes-passage-edge', 'routes-passage-core',
+    'routes-passage-edge', 'routes-passage-core', 'routes-fall-lines',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.

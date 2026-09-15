@@ -465,6 +465,29 @@
      ————————————————————————————————————————— */
   --color-passage-core: #f8fafc;
 
+  /* —— the fall-line arrow ——
+     A small arrow on a saved route, pointing the way
+     the ground under it FALLS. A mark rather than a
+     band, so off the scale above for the crux ring's
+     reason — a marker tinted from the ramp reads as a
+     further class of ground.
+
+     The ring's own value, and named separately on
+     purpose. The two are one family of mark and should
+     look like it, but they can be re-inked
+     independently, and a token named for one mark that
+     two marks read is the drift SNOW-969 spent two
+     tickets closing. `--color-route-line-casing`
+     already carries this value under a third name on
+     the same reasoning.
+
+     Mirrored as a literal in route_slope_core.js
+     (FALL_LINE_COLOUR / FALL_LINE_TOKEN), which is
+     where both map surfaces read it from: a MapLibre
+     paint property cannot resolve a custom property.
+     ————————————————————————————————————————— */
+  --color-fall-line-arrow: #1a1916;
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;

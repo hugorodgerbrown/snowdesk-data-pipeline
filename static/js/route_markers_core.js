@@ -40,6 +40,7 @@
  *   startDotPixels(r, g, b)
  *   finishFlagPixels(r, g, b)
  *   cruxRingPixels()
+ *   fallLineArrowPixels()
  */
 
 // @ts-check
@@ -73,6 +74,26 @@
   /** The crux ring's outer radius and stroke, in device pixels. */
   const CRUX_RADIUS = 13;
   const CRUX_STROKE = 3;
+
+  /**
+   * The fall-line arrow, in device pixels: tip, the head's base, the
+   * tail, and the two half-widths.
+   *
+   * It is drawn POINTING UP — towards the top of the buffer, which is
+   * north on an unrotated map — because `icon-rotate` turns it clockwise
+   * from there and the bearing it is given is a compass bearing. Drawing
+   * it any other way round would make every arrow wrong by a constant,
+   * which is the class of bug that looks plausible on screen.
+   *
+   * Shorter than the crux ring is wide (26 px) and much narrower, so the
+   * two read as different marks where they co-occur — which is often,
+   * since any ground over 50 degrees was ringed at 35.
+   */
+  const ARROW_TIP_Y = 6;
+  const ARROW_HEAD_Y = 21;
+  const ARROW_TAIL_Y = 34;
+  const ARROW_HEAD_HALF_W = 8;
+  const ARROW_SHAFT_HALF_W = 2.5;
 
   /** The cloth's box, in device pixels. Four columns by three rows. */
   const CLOTH_X = POLE_X + POLE_W;
@@ -336,6 +357,50 @@
     return { width: SIZE, height: SIZE, data: data };
   }
 
+  /**
+   * The fall-line mark: an arrow pointing the way the ground falls.
+   *
+   * A head and a short shaft rather than a bare triangle. At 20 CSS
+   * pixels a triangle alone reads as a wedge of colour and its direction
+   * has to be worked out; the shaft is what makes it an arrow at a
+   * glance, which matters because the reader is being asked to compare
+   * its direction with the direction of the TRACK it sits on.
+   *
+   * **NO COLOUR OF ITS OWN**, the `cruxRingPixels` rule: every pixel is
+   * opaque white and the layer registers it `sdf: true`, so `icon-color`
+   * paints it and the ink stays one paint property away from the layer.
+   * That also means it cannot be two-tone — an SDF keeps only the alpha
+   * mask — which is the trap `finishFlagPixels` documents.
+   *
+   * Antialiased across the boundary, for `cruxRingPixels`' reason: at
+   * these sizes the fractional coverage is what stops a sloped edge
+   * reading as a staircase, and an SDF's alpha channel carries it
+   * exactly.
+   *
+   * @returns {{width: number, height: number, data: Uint8ClampedArray}} A
+   *   MapLibre StyleImage.
+   */
+  function fallLineArrowPixels() {
+    const data = blank();
+    const centre = SIZE / 2 - 0.5;
+
+    for (let y = ARROW_TIP_Y; y <= ARROW_TAIL_Y; y += 1) {
+      // The head is a triangle widening from the tip to its base, and
+      // the shaft below it is a constant width. One half-width per row
+      // is all either shape is.
+      const halfWidth = y <= ARROW_HEAD_Y
+        ? (ARROW_HEAD_HALF_W * (y - ARROW_TIP_Y)) / (ARROW_HEAD_Y - ARROW_TIP_Y)
+        : ARROW_SHAFT_HALF_W;
+      for (let x = 0; x < SIZE; x += 1) {
+        // Coverage falls off over one pixel at the edge, measured from
+        // the half-width — which is what an antialiased edge is.
+        const alpha = Math.min(1, Math.max(0, halfWidth - Math.abs(x - centre) + 0.5));
+        if (alpha > 0) put(data, x, y, [255, 255, 255, Math.round(alpha * 255)]);
+      }
+    }
+    return { width: SIZE, height: SIZE, data: data };
+  }
+
   self.pwaRouteMarkersCore = Object.freeze({
     SIZE: SIZE,
     PIXEL_RATIO: PIXEL_RATIO,
@@ -343,5 +408,6 @@
     startDotPixels: startDotPixels,
     finishFlagPixels: finishFlagPixels,
     cruxRingPixels: cruxRingPixels,
+    fallLineArrowPixels: fallLineArrowPixels,
   });
 })();

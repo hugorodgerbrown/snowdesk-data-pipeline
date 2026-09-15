@@ -2154,6 +2154,9 @@
   // takes its colour from `icon-color` rather than from pixel data — see
   // `cruxRingPixels`.
   const ROUTE_CRUX_ICON = 'route-crux-ring';
+  // The fall-line arrow, registered `sdf: true` on the crux ring's terms
+  // and for its reason — see `fallLineArrowPixels`.
+  const ROUTE_FALL_LINE_ICON = 'route-fall-line-arrow';
 
   // The crux ring's ink. A neutral slate, and deliberately NOT on the
   // steepness scale: the ring marks WHERE to look, and the line under it
@@ -2202,6 +2205,15 @@
       // after a deploy — the ring is then simply absent, rather than the
       // whole routes overlay throwing.
       map.addImage(ROUTE_CRUX_ICON, core.cruxRingPixels(), {
+        pixelRatio: core.PIXEL_RATIO,
+        sdf: true,
+      });
+    }
+    if (!map.hasImage(ROUTE_FALL_LINE_ICON) && core.fallLineArrowPixels) {
+      // The crux ring's registration, verbatim: an alpha mask painted by
+      // `icon-color`, guarded on the function so a cached older core
+      // costs the arrows rather than the whole routes overlay.
+      map.addImage(ROUTE_FALL_LINE_ICON, core.fallLineArrowPixels(), {
         pixelRatio: core.PIXEL_RATIO,
         sdf: true,
       });
@@ -2270,6 +2282,25 @@
       return { type: 'FeatureCollection', features: [] };
     }
     return core.cruxCollection(geojson);
+  };
+
+  /**
+   * The fall-line arrows for a routes payload.
+   *
+   * Guarded like the cruxes above, and for the same reason: a failed or
+   * stale core should cost the arrows, not the routes overlay. An older
+   * cached copy has no `fallLineCollection` at all.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A Point
+   *   FeatureCollection, empty when there is nothing to mark.
+   */
+  const routeFallLinesFor = (geojson) => {
+    const core = self.pwaRouteSlopeCore;
+    if (!core || !core.fallLineCollection) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+    return core.fallLineCollection(geojson);
   };
 
   /**
@@ -2622,6 +2653,71 @@
         // property cannot read for itself.
         'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2.4, 16, 4.2],
+      },
+    });
+    // The fall-line arrows. Their own Point source over the same
+    // payload, because a symbol cannot be placed on a line layer — and
+    // one arrow per segment is not what is wanted anyway: the server
+    // spaced them (`apps/routes/services/fall_line.py`) and this draws
+    // what it was given.
+    //
+    // ABOVE the coloured line and its split, BELOW the crux rings and
+    // the endpoint markers. MapLibre paints later layers over earlier
+    // ones, so this is a statement about what gives way to what: an
+    // arrow is ambient, a ring is an instruction to look at one place,
+    // and a start dot is how the reader orients. The arrow yields to
+    // both.
+    map.addSource('route-fall-lines', {
+      type: 'geojson',
+      data: routeFallLinesFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-fall-lines',
+      type: 'symbol',
+      source: 'route-fall-lines',
+      // minzoom 12, one step in from the crux rings. At z11 a 250 m
+      // spacing is about 9 CSS pixels and a 20 px arrow, so the marks
+      // would overlap into a textured line that reads as decoration on
+      // the track rather than as a direction.
+      minzoom: 12,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'icon-image': ROUTE_FALL_LINE_ICON,
+        // THE ONE MARK ON THIS MAP THAT LETS ITSELF BE DROPPED, and the
+        // difference from the rings beside it is the whole point:
+        // dropping a crux ring understates the day, while the arrows are
+        // a density — the ones that survive say the same thing about the
+        // same face as the one that did not. So the collision engine is
+        // allowed to thin them wherever the zoom has pushed them
+        // together, which is what keeps a steep face legible at z12 and
+        // detailed at z15 without a second spacing rule.
+        'icon-allow-overlap': false,
+        // It does not block anything else either: the rings and markers
+        // above set `icon-ignore-placement`, and a basemap label losing
+        // out to an ambient arrow would be the wrong trade.
+        'icon-ignore-placement': true,
+        'icon-anchor': 'center',
+        // The arrow is drawn pointing up (north) and this turns it
+        // clockwise onto the compass bearing the ground faces, which is
+        // downhill. `icon-rotation-alignment: 'map'` is what makes that
+        // a bearing rather than a screen angle — the arrow then keeps
+        // pointing at real downhill when the reader rotates the map,
+        // which is the only behaviour that is ever right for a fall
+        // line.
+        'icon-rotate': ['get', 'deg'],
+        'icon-rotation-alignment': 'map',
+      },
+      paint: {
+        // See FALL_LINE_COLOUR in route_slope_core.js — the crux ring's
+        // near-black under a token of its own, mirroring
+        // --color-fall-line-arrow, which a MapLibre paint property
+        // cannot read for itself.
+        'icon-color': (self.pwaRouteSlopeCore || {}).FALL_LINE_COLOUR || '#1a1916',
+        // The ring's halo, for the ring's reason: over `slope-50`'s
+        // near-black band the ink alone would vanish, and the halo is
+        // what carries the shape there.
+        'icon-halo-color': '#ffffff',
+        'icon-halo-width': 1,
       },
     });
     syncRouteSlopeLegend();
@@ -5730,16 +5826,17 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // FOUR sources, not one: the lines, the derived start/finish
-          // points, the slope segments and the crux rings (see
-          // installRoutesLayer). Refreshing only the first would leave a
-          // deleted route's flag standing on the map, its colours drawn
-          // along a track that is no longer there, and its rings marking
-          // passages on ground nothing is drawn across.
+          // FIVE sources, not one: the lines, the derived start/finish
+          // points, the slope segments, the crux rings and the fall-line
+          // arrows (see installRoutesLayer). Refreshing only the first
+          // would leave a deleted route's flag standing on the map, its
+          // colours drawn along a track that is no longer there, and its
+          // rings and arrows marking ground nothing is drawn across.
           map.getSource('routes')?.setData(data);
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-slopes')?.setData(routeSlopeSegmentsFor(data));
           map.getSource('route-cruxes')?.setData(routeCruxesFor(data));
+          map.getSource('route-fall-lines')?.setData(routeFallLinesFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
           // already drawn, and the route that just landed is the first
@@ -7197,6 +7294,16 @@
     // way `routes-line` did for a sampled route in SNOW-910. Adding them
     // would return the same route two more times from one tap for no
     // behavioural change at all.
+    //
+    // 'routes-fall-lines' is ABSENT on the endpoint markers' reasoning
+    // rather than the passages': it IS new geometry — a point source of
+    // its own — but every arrow sits on the middle of a segment
+    // `routes-slope-line` still draws, which is well inside the 8px
+    // tolerance below. So a tap on an arrow already opens its route,
+    // and putting the layer in this set would maintain a second path to
+    // the same popup. An arrow is also the one mark here the collision
+    // engine may drop, so a tap path through it would be one that comes
+    // and goes with the zoom.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
