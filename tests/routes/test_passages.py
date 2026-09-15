@@ -36,6 +36,7 @@ from apps.routes.services.passages import (
     NO_FALL_GATE_DEG,
     angular_difference,
     fall_line_alignment,
+    passage_alignment_detail,
     route_passages,
 )
 
@@ -482,6 +483,137 @@ class TestAlignment:
         )
         assert passages is not None
         assert passages[0]["fall_line"] == CLIMBING
+
+
+class TestAlignmentDetail:
+    """The per-segment votes the label was reached from.
+
+    The instrument's half of SNOW-964's tuning story, and the reason it
+    exists: ``FALL_LINE_TOLERANCE_DEG`` acts on a SEGMENT while the
+    alignment table counts PASSAGES, with the coverage vote in between —
+    so a passage-level table cannot say whether a ``crossing`` came from
+    the tolerance's residue or from the tie-break. None of this reaches
+    the wire; ``TestTheWireShape`` below is what holds that line.
+    """
+
+    def test_one_entry_per_segment_in_track_order(self) -> None:
+        """Every segment of the passage is reported, with its own angle."""
+        record = _record([52.0, 52.0], [20.0, 100.0])
+        detail = passage_alignment_detail(record, 0, 1)
+        assert detail is not None
+        assert [segment.index for segment in detail.segments] == [0, 1]
+        assert [segment.delta_deg for segment in detail.segments] == [
+            pytest.approx(20.0),
+            pytest.approx(100.0),
+        ]
+        assert [segment.label for segment in detail.segments] == [DESCENDING, CROSSING]
+
+    def test_a_segment_with_no_aspect_has_no_angle_and_casts_no_vote(self) -> None:
+        """Level ground faces nowhere, so there is no angle to bucket.
+
+        It must be visible as unmeasured rather than dropped: a histogram
+        that silently omits what it could not read overstates how much of
+        the terrain it describes.
+        """
+        record = _record([52.0, 52.0], [None, 180.0])
+        detail = passage_alignment_detail(record, 0, 1)
+        assert detail is not None
+        assert detail.segments[0].delta_deg is None
+        assert detail.segments[0].label is None
+        assert detail.label == CLIMBING
+
+    def test_a_degenerate_chord_has_no_angle_and_casts_no_vote(self) -> None:
+        """A segment between two identical boundaries points nowhere.
+
+        Its aspect would say ``descending`` if it were allowed to vote,
+        so the climbing answer is the evidence that it was not.
+        """
+        points = [
+            [7.0, 46.0],
+            [7.0, 46.0],  # the same coordinate twice: no bearing at all
+            [7.0, 46.00025],
+        ]
+        record = _record([52.0, 52.0], [0.0, 180.0], points=points)
+        detail = passage_alignment_detail(record, 0, 1)
+        assert detail is not None
+        assert detail.segments[0].delta_deg is None
+        assert detail.segments[0].label is None
+        assert detail.label == CLIMBING
+
+    def test_a_split_passage_records_that_a_tie_chose_its_label(self) -> None:
+        """One segment each way is a ``crossing`` the tie-break produced."""
+        record = _record([10.0, 52.0, 52.0, 10.0], [None, 0.0, 180.0, None])
+        detail = passage_alignment_detail(record, 1, 2)
+        assert detail is not None
+        assert detail.label == CROSSING
+        assert detail.resolved_by_tie is True
+
+    def test_a_clear_winner_is_not_a_tie(self) -> None:
+        """Three segments descending against one climbing is no tie."""
+        record = _record([52.0, 52.0, 52.0, 52.0, 10.0], [0.0, 0.0, 0.0, 180.0, None])
+        detail = passage_alignment_detail(record, 0, 3)
+        assert detail is not None
+        assert detail.label == DESCENDING
+        assert detail.resolved_by_tie is False
+
+    @pytest.mark.parametrize(
+        "aspects",
+        [
+            [None, 0.0, None],
+            [None, 180.0, None],
+            [None, 90.0, None],
+            [None, None, None],
+        ],
+    )
+    def test_the_detail_agrees_with_the_reported_label(
+        self, aspects: list[float | None]
+    ) -> None:
+        """The vote is computed once, so the two can never drift apart.
+
+        The whole reason the walk was extracted rather than reimplemented
+        in the tuning command: a histogram of a second measurement would
+        describe something nothing ships.
+        """
+        record = _record([10.0, 52.0, 10.0], aspects)
+        passages = route_passages(record)
+        assert passages is not None
+        detail = passage_alignment_detail(record, 1, 1)
+        assert detail is not None
+        assert passages[0].get("fall_line") == detail.label
+
+    def test_an_unreadable_record_has_no_detail(self) -> None:
+        """The same refusals ``route_passages`` makes, for the same reason."""
+        assert passage_alignment_detail(None, 0, 0) is None
+        assert passage_alignment_detail({}, 0, 0) is None
+        malformed = _record([52.0, 52.0])
+        malformed["points"] = malformed["points"][:-1]
+        assert passage_alignment_detail(malformed, 0, 1) is None
+
+
+class TestTheWireShape:
+    """What a passage dict carries, key for key.
+
+    ``route_passages``' dicts go straight to the wire —
+    ``apps.routes.services.slope_wire`` puts them in ``passages`` and
+    ``static/js/route_slope_core.js`` reads ``fall_line`` off them — so
+    the keys are an interface, not an implementation detail. SNOW-964
+    argues deliberately against a raw bearing-derived NUMBER reaching a
+    client, which would invite a barb drawn on a direction measured from
+    one 25 m chord; SNOW-971 added exactly such numbers for the tuning
+    command, and this is the test that keeps them off the wire.
+    """
+
+    def test_a_classified_passage_carries_four_keys_and_no_more(self) -> None:
+        """``from``, ``to``, ``m`` and ``fall_line`` — nothing else."""
+        passages = route_passages(_record([10.0, 52.0, 10.0], [None, 0.0, None]))
+        assert passages is not None
+        assert set(passages[0]) == {"from", "to", "m", "fall_line"}
+
+    def test_an_unclassifiable_passage_carries_three(self) -> None:
+        """``fall_line`` is ABSENT, never null, and no key replaces it."""
+        passages = route_passages(_record([10.0, 52.0, 10.0], [None, None, None]))
+        assert passages is not None
+        assert set(passages[0]) == {"from", "to", "m"}
 
 
 class TestTheGatesAreArguments:
