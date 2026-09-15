@@ -6327,6 +6327,79 @@
   // legible size. Ten is the value every region fit has always used.
   const REGION_FIT_MAX_ZOOM = 10;
 
+  // The padding every bounds fit on this page starts from. A little more
+  // at the top, where the search pill sits.
+  const FIT_PADDING = Object.freeze({ top: 60, right: 40, bottom: 40, left: 40 });
+
+  // No single edge of a fit's padding may take more than this share of the
+  // canvas (SNOW-973). MapLibre throws outright when the padding exceeds
+  // the canvas, and a padding that merely swallows most of it frames the
+  // route into a strip — a tall sheet on a short phone reaches both. Two
+  // opposite edges capped here always leave a fifth of the map to fit into.
+  const MAX_FIT_PADDING_FRACTION = 0.4;
+
+  /**
+   * Reserve `want` pixels along one edge of a fit's padding, in place.
+   *
+   * Caps BOTH the edge being reserved and the one opposite it, so the pair
+   * can never add up to more than the canvas — a 900px sheet over a 700px
+   * map degrades to a usable fit rather than to a MapLibre exception.
+   *
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   The padding object, mutated.
+   * @param {string} edge The edge the overlay covers.
+   * @param {string} opposite The edge facing it.
+   * @param {number} want Pixels the overlay wants, before the cap.
+   * @param {number} extent The canvas dimension `edge` is measured along.
+   * @returns {void}
+   */
+  const reserveFitEdge = (padding, edge, opposite, want, extent) => {
+    const cap = Math.max(0, Math.floor(extent * MAX_FIT_PADDING_FRACTION));
+    padding[edge] = Math.min(padding[edge] + Math.max(0, Math.round(want)), cap);
+    padding[opposite] = Math.min(padding[opposite], cap);
+  };
+
+  /**
+   * Fit padding that frames into the map an open sheet has NOT covered.
+   *
+   * Every dimension is MEASURED. The sheet's width lives in a Tailwind
+   * class on the partial (`sm:w-[28rem]`), so a number here would be a
+   * second source of truth that stops matching the first time the class
+   * changes; what is reserved is the gap from the sheet's near edge to the
+   * far edge of the map, which also picks up whatever inset
+   * map_overlay_bounds.js gave it — ground the track cannot use either.
+   *
+   * Measured ONCE, by the caller, right after the sheet opens. On a phone
+   * the dock's height grows when the bulletin lands, and chasing that with
+   * a second camera move reads as a glitch; the first frame is the answer.
+   *
+   * @param {?HTMLElement} sheetEl The sheet docked over the map, if one is
+   *   open. Null gives the plain padding, which is every other caller's.
+   * @returns {{top: number, right: number, bottom: number, left: number}}
+   */
+  const paddingClearing = (sheetEl) => {
+    const padding = { ...FIT_PADDING };
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!sheetEl || !container) return padding;
+
+    const canvas = container.getBoundingClientRect();
+    const box = sheetEl.getBoundingClientRect();
+    // A canvas or a sheet with no box — jsdom, `display: none`, a sheet
+    // measured before layout — is not a measurement to reserve against.
+    if (!(canvas.width > 0) || !(canvas.height > 0)) return padding;
+    if (!(box.width > 0) || !(box.height > 0)) return padding;
+
+    if (window.pwaOverlayBounds && window.pwaOverlayBounds.isDesktop()) {
+      // A floating card against the right-hand side.
+      reserveFitEdge(padding, 'right', 'left', canvas.right - box.left, canvas.width);
+    } else {
+      // Below `sm` the same partial is a full-width bottom dock, so the
+      // space it takes is height rather than width.
+      reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
+    }
+    return padding;
+  };
+
   // The fit behind both `bounds` and `region` below. A module-scope
   // function rather than one bridge method calling another through `this`:
   // a caller that destructures the frozen bridge (`const { region } =
@@ -6336,11 +6409,18 @@
   // default: the two callers frame different kinds of thing at different
   // scales, and a default here would silently hand one of them the
   // other's answer — which is the defect SNOW-972 fixed.
+  // NO SHEET RESERVATION HERE, deliberately (SNOW-973). `activateRoute`'s
+  // own fit reserves the space its sheet is about to take, and this one
+  // does not, because the panel a row was pressed in is already CLOSED by
+  // the time the camera moves — step 2 of static/js/row_focus.js, which
+  // dismisses the panel before calling this bridge. There is nothing
+  // docked over the map to frame around, and padding for a surface that
+  // is not on screen would push the route off-centre for no one.
   const focusBounds = (bbox, maxZoom) => {
     if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
     if (!bbox.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
-      padding: { top: 60, right: 40, bottom: 40, left: 40 },
+      padding: { ...FIT_PADDING },
       // The key is OMITTED, not set to undefined, when no cap is given.
       // A present-but-undefined `maxZoom` leaves the behaviour to
       // MapLibre's own handling of it, which is not a thing to depend on
@@ -6378,11 +6458,19 @@
      *
      * No zoom floor here, and no "in only" rule: a bbox names an extent
      * rather than a place, and a long route can only be seen whole by
-     * zooming out. Padding and duration match ``activateRoute``'s own fit,
-     * so a route framed from its panel row and the same route framed by
-     * tapping its line come to rest identically — which is why SNOW-972
-     * had to uncap BOTH: fixing the tap alone would have made the row
-     * disagree with it, and this docstring is what said they must not.
+     * zooming out. Duration and the zoom cap — which is to say, its
+     * absence — match ``activateRoute``'s own fit, so a route framed from
+     * its panel row and the same route framed by tapping its line come to
+     * rest at the same scale. That is why SNOW-972 had to uncap BOTH:
+     * fixing the tap alone would have made the row disagree with it.
+     *
+     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves the
+     * route detail sheet docked over the map, so that fit reserves the
+     * room it takes (``paddingClearing`` above); a row press has already
+     * dismissed its panel, so this one has nothing to frame around. The
+     * two still agree on the question they answer — frame the track into
+     * the map the user can actually see — and now differ on the answer
+     * because the map they can see is different.
      *
      * NO ``maxZoom``, deliberately. Every caller of this bridge frames a
      * thing whose size is its own — a route, a downloaded area — and the
@@ -8217,11 +8305,20 @@
     };
 
     // SNOW-687: tapping a saved route frames the whole track and opens its
-    // detail. Two halves, and the order matters: the fit runs first, so the
-    // map is already easing towards the track by the time the panel it
-    // describes is on screen.
+    // detail. Two halves, and the order matters — SNOW-973 INVERTED IT.
+    // The fit used to run first, so that the map was already easing
+    // towards the track by the time the panel describing it appeared. That
+    // rationale belonged to the ANCHORED POPUP, which opened at the tap
+    // point and covered a card's worth of map wherever the finger landed.
+    // A docked sheet is anchored to the viewport and takes a known edge of
+    // it, and you cannot frame a route into the space a sheet leaves
+    // without having measured the sheet. So the sheet opens first, is
+    // measured, and the fit then frames into what is left
+    // (`paddingClearing`) — otherwise a horizontally-extended route has
+    // its eastern end sitting behind the 28rem panel, which is the exact
+    // complaint the popup was replaced over.
     //
-    // SNOW-973 TOOK THE ANCHOR AWAY. The detail was a popup anchored at the
+    // SNOW-973 ALSO TOOK THE ANCHOR AWAY. The detail was a popup at the
     // tap point — a line has no single natural anchor, so the honest one
     // was where the finger went — and it is now the docked sheet
     // (map_route_detail.js), which is anchored to the viewport rather than
@@ -8245,36 +8342,6 @@
     // a node instead of mounting one.
     const activateRoute = (feature) => {
       const props = feature.properties || {};
-
-      const bounds = readFeatureJson(props.bounds);
-      if (Array.isArray(bounds) && bounds.length === 4) {
-        // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
-        // [[west, south], [east, north]].
-        //
-        // SNOW-972: NO `maxZoom`. This fit carried `zoomToFeatureBounds`'
-        // cap of 10 on the reasoning that "a route and a region frame
-        // alike" — and they do not. A micro-region is tens of kilometres
-        // across and a route is often one or two, so the cap that stops a
-        // region filling the screen stopped a route ever reaching a size
-        // worth looking at.
-        //
-        // What made it a defect rather than a preference is that the
-        // marks drawn ON a route have minzooms of their own — the crux
-        // rings at 11, and every later mark at or above it — so the
-        // camera came to rest BELOW the zoom at which the things the
-        // popup was describing in words could render at all. The popup
-        // said "3 key passages" over a map that had decided not to show
-        // them.
-        //
-        // `tests/js/test_map_route_tap.js` holds the invariant against
-        // every route mark's own minzoom rather than against the number
-        // 10, so a cap reintroduced a step too low fails there whatever
-        // marks exist by then.
-        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: { top: 60, right: 40, bottom: 40, left: 40 },
-          duration: 400,
-        });
-      }
 
       const container = document.createElement('div');
       container.setAttribute('data-route-detail', '');
@@ -8400,11 +8467,50 @@
       //
       // The day is the one the scrubber is showing, so the reading answers
       // for the day on screen rather than for today.
-      window.pwaRouteDetail?.open({
+      const opened = window.pwaRouteDetail?.open({
         node: container,
         uuid: props.uuid || null,
         day: currentDisplayedDate,
       });
+
+      const bounds = readFeatureJson(props.bounds);
+      if (Array.isArray(bounds) && bounds.length === 4) {
+        // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
+        // [[west, south], [east, north]].
+        //
+        // SNOW-973: the padding reserves the sheet opened just above —
+        // measured now, while it is on screen and before its bulletin half
+        // lands, because a second camera move chasing that reflow reads as
+        // a glitch. With no sheet open (no module, or a body it refused)
+        // this is the plain padding every other fit uses.
+        //
+        // SNOW-972: NO `maxZoom`. This fit carried `zoomToFeatureBounds`'
+        // cap of 10 on the reasoning that "a route and a region frame
+        // alike" — and they do not. A micro-region is tens of kilometres
+        // across and a route is often one or two, so the cap that stops a
+        // region filling the screen stopped a route ever reaching a size
+        // worth looking at.
+        //
+        // What made it a defect rather than a preference is that the
+        // marks drawn ON a route have minzooms of their own — the crux
+        // rings at 11, and every later mark at or above it — so the
+        // camera came to rest BELOW the zoom at which the things the
+        // panel was describing in words could render at all. The panel
+        // said "3 key passages" over a map that had decided not to show
+        // them.
+        //
+        // `tests/js/test_map_route_slope_layers.js` holds the invariant
+        // against every route mark's own minzoom rather than against the
+        // number 10, so a cap reintroduced a step too low fails there
+        // whatever marks exist by then. Padding is not a cap: it frames
+        // into less map, which zooms the camera OUT, never past a floor.
+        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+          padding: paddingClearing(
+            opened ? window.pwaRouteDetail.element : null,
+          ),
+          duration: 400,
+        });
+      }
     };
 
     // Dispatch a marker the exclusion zone claimed to its activation, by

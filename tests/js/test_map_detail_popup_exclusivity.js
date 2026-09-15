@@ -30,7 +30,7 @@
  * its own in tests/js/test_favourites.js).
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
@@ -123,7 +123,18 @@ function stubMapLibre() {
     hasImage: () => true,
     addImage: () => {},
     triggerRepaint: () => {},
-    fitBounds: (bounds, opts) => { fits.push({ bounds, opts }); },
+    // `sheetOpen` records the sheet's state AT THE MOMENT OF THE FIT,
+    // which is the only way to observe SNOW-973's inverted order: the
+    // sheet has to be on screen and measurable before the camera can
+    // frame the route into the map it leaves.
+    fitBounds: (bounds, opts) => {
+      const sheet = document.getElementById('route-detail-sheet');
+      fits.push({
+        bounds,
+        opts,
+        sheetOpen: !!sheet && !sheet.hasAttribute('hidden'),
+      });
+    },
     easeTo: () => {},
     flyTo: () => {},
     getZoom: () => 8,
@@ -385,6 +396,148 @@ describe('a saved route opens the docked sheet (SNOW-973)', () => {
     expect(() => tapTheMap(mapStub)).not.toThrow();
     expect(fits).toHaveLength(0);
     expect(openRouteSheet()).not.toBeNull();
+  });
+
+  it('frames with the plain padding when nothing can be measured', () => {
+    // jsdom lays nothing out, so every rect is zero — the same answer a
+    // `display: none` sheet or a pre-layout measurement gives. A fit that
+    // reserved space against a zero-width box would push the route off
+    // centre for a panel that occupies nothing.
+    tapTheRoute(mapStub);
+
+    expect(fits[0].opts.padding).toEqual({
+      top: 60, right: 40, bottom: 40, left: 40,
+    });
+  });
+});
+
+describe('framing a route around the sheet (SNOW-973)', () => {
+  /** A DOMRect-shaped literal; jsdom returns all zeros without one. */
+  function rect({ top, left, width, height }) {
+    return {
+      top, left, width, height, right: left + width, bottom: top + height,
+    };
+  }
+
+  /**
+   * Give #map and the detail sheet real boxes, the way a browser would.
+   *
+   * @param {object} mapBox The map container's rect.
+   * @param {object} sheetBox The sheet's rect, once it is open.
+   * @param {boolean} desktop What window.pwaOverlayBounds.isDesktop() says.
+   */
+  function layOut(mapBox, sheetBox, desktop) {
+    document.getElementById('map').getBoundingClientRect = () => mapBox;
+    document.getElementById('route-detail-sheet').getBoundingClientRect =
+      () => sheetBox;
+    window.pwaOverlayBounds = {
+      isDesktop: () => desktop,
+      positionSheet: () => {},
+      compute: () => null,
+    };
+  }
+
+  afterEach(() => {
+    delete document.getElementById('map').getBoundingClientRect;
+    delete document.getElementById('route-detail-sheet').getBoundingClientRect;
+    delete window.pwaOverlayBounds;
+  });
+
+  it('opens the sheet BEFORE the fit, so there is something to measure', () => {
+    // The inversion itself. The fit ran first until this ticket, on a
+    // rationale that belonged to the anchored popup — and you cannot frame
+    // a route into free space you have not measured.
+    layOut(
+      rect({ top: 0, left: 0, width: 1600, height: 900 }),
+      rect({ top: 60, left: 1136, width: 448, height: 700 }),
+      true,
+    );
+
+    tapTheRoute(mapStub);
+
+    expect(fits[0].sheetOpen).toBe(true);
+  });
+
+  it('reserves the room the sheet takes on the right, on desktop', () => {
+    layOut(
+      rect({ top: 0, left: 0, width: 1600, height: 900 }),
+      rect({ top: 60, left: 1136, width: 448, height: 700 }),
+      true,
+    );
+
+    tapTheRoute(mapStub);
+
+    // The sheet's near edge to the map's far edge — 464px, which is its
+    // measured width plus the inset map_overlay_bounds.js gave it — on top
+    // of the 40 every fit starts with. Nothing here names 28rem: the width
+    // lives in the partial's Tailwind class.
+    expect(fits[0].opts.padding).toEqual({
+      top: 60, right: 504, bottom: 40, left: 40,
+    });
+  });
+
+  it('reserves the bottom instead below the sm breakpoint', () => {
+    // The same partial is a full-width bottom dock on a phone, so what it
+    // takes is height rather than width.
+    layOut(
+      rect({ top: 0, left: 0, width: 390, height: 800 }),
+      rect({ top: 600, left: 0, width: 390, height: 200 }),
+      false,
+    );
+
+    tapTheRoute(mapStub);
+
+    expect(fits[0].opts.padding).toEqual({
+      top: 60, right: 40, bottom: 240, left: 40,
+    });
+  });
+
+  it('clamps a sheet that would swallow the map', () => {
+    // MapLibre throws outright when the padding exceeds the canvas, and a
+    // tall sheet on a short phone reaches that honestly: here it covers
+    // 700 of 800px. It must degrade to a usable fit, not an exception.
+    layOut(
+      rect({ top: 0, left: 0, width: 390, height: 800 }),
+      rect({ top: 100, left: 0, width: 390, height: 700 }),
+      false,
+    );
+
+    tapTheRoute(mapStub);
+
+    const padding = fits[0].opts.padding;
+    // 40% of the 800px canvas, and no more.
+    expect(padding.bottom).toBe(320);
+    expect(padding.top + padding.bottom).toBeLessThan(800);
+  });
+
+  it('clamps the desktop side the same way', () => {
+    layOut(
+      rect({ top: 0, left: 0, width: 700, height: 900 }),
+      rect({ top: 60, left: 236, width: 448, height: 700 }),
+      true,
+    );
+
+    tapTheRoute(mapStub);
+
+    const padding = fits[0].opts.padding;
+    expect(padding.right).toBe(280);
+    expect(padding.left + padding.right).toBeLessThan(700);
+  });
+
+  it('reserves space without reintroducing a zoom cap', () => {
+    // SNOW-972's invariant, restated where it could most easily be lost:
+    // padding frames into less map, which zooms OUT, and is not a floor.
+    // tests/js/test_map_route_slope_layers.js holds the full version
+    // against each route mark's own minzoom.
+    layOut(
+      rect({ top: 0, left: 0, width: 1600, height: 900 }),
+      rect({ top: 60, left: 1136, width: 448, height: 700 }),
+      true,
+    );
+
+    tapTheRoute(mapStub);
+
+    expect(fits[0].opts).not.toHaveProperty('maxZoom');
   });
 });
 

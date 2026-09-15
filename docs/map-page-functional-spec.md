@@ -287,14 +287,25 @@ danger ramp, which is mandated by the standard and must never be borrowed
 for something that is not a danger rating, and is distinct from the
 favourite pin and report flag colours.
 
-**Tapping a route** fits the viewport to that route's stored bounds and
-opens the **route detail panel** — the docked sheet (`#route-detail-sheet`,
-SNOW-973) that replaced the anchored popup once five tickets of terrain
-reading had outgrown a 320px card. It carries the route's name, distance
+**Tapping a route** opens the **route detail panel** — the docked sheet
+(`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once
+five tickets of terrain reading had outgrown a 320px card — and then fits
+the viewport to that route's stored bounds **around it**: the panel is
+opened and measured first, and the track is framed into the map the panel
+leaves (the right-hand side on desktop, the bottom dock's height on a
+phone). Framing first and opening over the result is what put the eastern
+end of a long route behind the panel describing it. The reservation is
+measured rather than declared, and capped at 40% of the map in any one
+direction, so a tall panel on a short screen degrades to a usable fit. It
+carries the route's name, distance
 and ascent, the terrain lines, the elevation profile, and what each
 region's bulletin says about the line **on the day the scrubber is
-showing**, which the popup never had room for. The resort pin and the
-favourite pin keep the anchored popup. The tap priority puts a route
+showing**, which the popup never had room for. That reading **follows the
+day**: the scrubber sits inside the map, which never dismisses an open
+sheet, so moving it re-fetches the panel's bulletin half for the new day
+rather than leaving yesterday's reading on screen. The figures are
+untouched — a route's distance, ascent and terrain do not move with the
+calendar. The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
 *below* the point markers: where a favourite star or a report flag sits on
 top of a line, the pin wins, because a pin is a smaller and more
 deliberate target.
