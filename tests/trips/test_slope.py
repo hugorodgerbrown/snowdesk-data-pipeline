@@ -497,3 +497,9 @@ class TestTheTerrainHelpLink:
 
         assert 'data-testid="trip-terrain-help"' not in body
         assert 'data-testid="trip-view-on-map"' in body
+        # And the row reads as ONE link, not one and a trailing middot.
+        # Asserting only the link's absence would pass a separator left
+        # outside the branch, which is the whole mistake being guarded
+        # against and is invisible to every other test here.
+        strip = body.split('data-testid="trip-view-on-map"')[1]
+        assert "·" not in strip.split("</div>")[0]
