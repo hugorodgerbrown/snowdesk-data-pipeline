@@ -12,6 +12,17 @@ should be re-run before any of the four is moved again.
 no such thing as a wrong one, so it never exits non-zero. Compare that
 with ``diagnose_region_coverage``, which finds a problem and says so.
 
+**THE FOURTH TABLE IS THE ONE THAT MEASURES THE TOLERANCE.** The other
+three count passages, which is the right unit for the gate, the floor
+and the minimum — but ``FALL_LINE_TOLERANCE_DEG`` acts on a SEGMENT, and
+the coverage vote sits between the two. A passage-level count therefore
+gives ``crossing`` two routes to victory (the tolerance's residue and the
+tie-break) and cannot say which produced any figure, which is exactly
+what the first staging run showed: 0/0/10 at every one of 20, 30 and 40
+degrees. So the fall-line sweep histograms the per-segment angles
+themselves, and the alignment table says how many of its crossings a tie
+chose (SNOW-971).
+
 **Pure SELECT** — no ``--commit`` flag at all, because there is nothing
 to commit. Nothing here writes, and nothing here derives anything that is
 stored: ``route_passages`` takes its four thresholds as keyword arguments,
@@ -24,7 +35,7 @@ how many people are going on it.
 
 Usage::
 
-    # The three tables.
+    # The four tables.
     uv run python manage.py report_route_passages
 
     # Plus a per-route block naming each passage at the shipped defaults.
@@ -55,6 +66,8 @@ from apps.routes.services.passages import (
     NO_FALL_GATE_DEG,
     PASSAGE_GROW_FLOOR_DEG,
     PASSAGE_MIN_M,
+    fall_line_alignment,
+    passage_alignment_detail,
     route_passages,
 )
 
@@ -84,6 +97,18 @@ _FLOOR_CANDIDATES = (55.0, 50.0, 45.0, 40.0)
 # only evidence of anything when read against 20 and 40.
 _TOLERANCE_CANDIDATES = (20.0, 30.0, 40.0)
 
+# The width of one fall-line bucket, in degrees, and how many there are.
+#
+# Ten degrees, giving 18 buckets over the 0-180 the angle can take. The
+# width is chosen from the tolerances the table above sweeps rather than
+# for its own sake: 20, 30 and 40 — and their mirrors at 140, 150 and 160
+# — all land on a bucket EDGE, so a reader can add up the rows either
+# side of a candidate and see exactly what moving the tolerance to it
+# would reclassify. A 15 degree bucket would straddle every one of them
+# and answer nothing.
+_BUCKET_WIDTH_DEG = 10.0
+_BUCKET_COUNT = 18
+
 # The minimum the second and third tables hold fixed, in metres.
 #
 # The shipped one. The minimum is the one of the four thresholds with no
@@ -112,12 +137,42 @@ class _PassageStats:
 
 @dataclass
 class _AlignmentStats:
-    """How one tolerance splits the passages it is given."""
+    """How one tolerance splits the passages it is given.
+
+    ``tied`` is a SUBSET of ``crossing`` and never a fifth category: a
+    tie resolves to ``crossing``, so it is already counted there. It is
+    reported because the two kinds of crossing say different things — one
+    is the tolerance's residue and is evidence about the tolerance, the
+    other is a passage genuinely split in half and is not.
+    """
 
     descending: int = 0
     climbing: int = 0
     crossing: int = 0
     unclassified: int = 0
+    tied: int = 0
+
+
+@dataclass
+class _SweepStats:
+    """The per-segment fall-line angles inside the shipped passages.
+
+    The unit is a SEGMENT, which is the unit the tolerance acts on — the
+    whole reason this table exists beside the passage-level one above.
+    """
+
+    buckets: list[int] = field(default_factory=lambda: [0] * _BUCKET_COUNT)
+    unmeasured: int = 0
+
+    @property
+    def total(self) -> int:
+        """Return how many segments were seen, measurable or not.
+
+        Returns:
+            The denominator of the table's percentage column.
+
+        """
+        return sum(self.buckets) + self.unmeasured
 
 
 class Command(BaseCommand):
@@ -152,7 +207,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Walk the sampled routes and print the three sweep tables.
+        """Walk the sampled routes and print the four sweep tables.
 
         Args:
             *args: Unused positional arguments.
@@ -174,6 +229,7 @@ class Command(BaseCommand):
         tolerances: dict[float, _AlignmentStats] = {
             tolerance: _AlignmentStats() for tolerance in _TOLERANCE_CANDIDATES
         }
+        sweep = _SweepStats()
 
         routes = 0
         # Only the two columns the sweeps read. A record is the large part
@@ -193,6 +249,7 @@ class Command(BaseCommand):
             _accumulate_gates(record, gates)
             _accumulate_pairs(record, pairs)
             _accumulate_tolerances(record, tolerances)
+            _accumulate_sweep(record, sweep)
             if verbosity >= 2:
                 self._print_route_detail(record)
             if limit and routes >= limit:
@@ -216,6 +273,9 @@ class Command(BaseCommand):
         self._print_gate_table(gates, routes)
         self._print_pair_table(pairs, routes)
         self._print_alignment_table(tolerances)
+        self._print_sweep_table(sweep)
+        self.stdout.write("")
+        self.stdout.write("* the shipped setting.")
 
         logger.info("report_route_passages finished: routes=%d", routes)
 
@@ -305,7 +365,10 @@ class Command(BaseCommand):
 
         Read against the geometry, not on its own: at a 30 degree
         tolerance ``crossing`` covers 120 of the 180 degrees available, so
-        it wins two thirds of a uniform distribution by chance.
+        it wins two thirds of a uniform distribution by chance. And read
+        with the fall-line sweep below it, which is where the tolerance's
+        own unit is counted: the ``of which tied`` column names the
+        crossings this table cannot attribute to the tolerance at all.
 
         Args:
             tolerances: The accumulated per-tolerance figures.
@@ -317,7 +380,7 @@ class Command(BaseCommand):
         )
         header = (
             f"{'tol':>5}  {'descending':>11}  {'climbing':>9}  "
-            f"{'crossing':>9}  {'unclassified':>13}"
+            f"{'crossing':>9}  {'unclassified':>13}  {'of which tied':>14}"
         )
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
@@ -326,10 +389,58 @@ class Command(BaseCommand):
             marker = " *" if tolerance == FALL_LINE_TOLERANCE_DEG else ""
             self.stdout.write(
                 f"{tolerance:>4.0f}°  {stats.descending:>11}  {stats.climbing:>9}  "
-                f"{stats.crossing:>9}  {stats.unclassified:>13}{marker}"
+                f"{stats.crossing:>9}  {stats.unclassified:>13}  "
+                f"{stats.tied:>14}{marker}"
             )
+        self.stdout.write(
+            "  'of which tied' is a SUBSET of 'crossing', not a fifth column:"
+        )
+        self.stdout.write(
+            "  a tie resolves to crossing, so those passages are in both."
+        )
+
+    def _print_sweep_table(self, sweep: _SweepStats) -> None:
+        """Print the distribution of the per-segment fall-line angles.
+
+        **THE ONLY TABLE COUNTED IN THE TOLERANCE'S OWN UNIT.** Every
+        other one counts passages, and the coverage vote between a
+        segment and a passage is what made the alignment table unable to
+        say anything about ``FALL_LINE_TOLERANCE_DEG``. Here each segment
+        inside a shipped-threshold passage contributes its own angle, so
+        a candidate tolerance can be read straight off the rows: at the
+        shipped 30 the first three rows are descents and the last three
+        climbs, and moving to 20 or 40 moves one row across each end.
+
+        Segments nothing could measure get their own line rather than
+        being dropped, because a histogram that silently omits them
+        overstates how much of the terrain it describes.
+
+        Args:
+            sweep: The accumulated per-segment figures.
+
+        """
         self.stdout.write("")
-        self.stdout.write("* the shipped setting.")
+        self.stdout.write(
+            "Fall-line sweep — per-segment angle between track bearing and aspect,"
+        )
+        self.stdout.write(
+            f"inside every passage at the shipped gate and floor "
+            f"(min_m={_SWEEP_MIN_M:.0f}):"
+        )
+        label_column = f"at {FALL_LINE_TOLERANCE_DEG:.0f}°"
+        header = f"{'bucket':>11}  {'count':>6} {'(%)':>5}  {label_column}"
+        self.stdout.write(header)
+        self.stdout.write("-" * len(header))
+        total = sweep.total
+        for index, count in enumerate(sweep.buckets):
+            self.stdout.write(
+                f"{_bucket_label(index):>11}  {count:>6} "
+                f"{_pct(count, total):>4}%  {_bucket_verdict(index)}"
+            )
+        self.stdout.write(
+            f"{'unmeasured':>11}  {sweep.unmeasured:>6} "
+            f"{_pct(sweep.unmeasured, total):>4}%  (no vote)"
+        )
 
 
 def _accumulate_gates(
@@ -388,6 +499,11 @@ def _accumulate_tolerances(
     the question is how the SAME passages are labelled, not how many there
     are.
 
+    The tie count is read back from ``passage_alignment_detail`` because
+    the label alone cannot carry it: a tie always resolves to
+    ``crossing``, so the two kinds are indistinguishable on the wire — and
+    that is deliberate, since a client has no use for the distinction.
+
     Args:
         record: The row's ``slope_samples``.
         tolerances: The accumulator, mutated.
@@ -405,6 +521,89 @@ def _accumulate_tolerances(
                 stats.crossing += 1
             else:
                 stats.unclassified += 1
+            detail = passage_alignment_detail(
+                record,
+                passage["from"],
+                passage["to"],
+                tolerance_deg=tolerance,
+            )
+            if detail is not None and detail.resolved_by_tie:
+                stats.tied += 1
+
+
+def _accumulate_sweep(record: dict[str, Any] | None, sweep: _SweepStats) -> None:
+    """Add one route's per-segment fall-line angles to the distribution.
+
+    The angles come from ``passage_alignment_detail`` rather than from a
+    second walk of the geometry, so the histogram is of the numbers the
+    label was actually voted from and the two cannot drift.
+
+    Args:
+        record: The row's ``slope_samples``.
+        sweep: The accumulator, mutated.
+
+    """
+    for passage in route_passages(record) or []:
+        detail = passage_alignment_detail(record, passage["from"], passage["to"])
+        if detail is None:
+            continue
+        for segment in detail.segments:
+            if segment.delta_deg is None:
+                sweep.unmeasured += 1
+                continue
+            sweep.buckets[_bucket_index(segment.delta_deg)] += 1
+
+
+def _bucket_index(delta_deg: float) -> int:
+    """Return which fall-line bucket one per-segment angle falls in.
+
+    Args:
+        delta_deg: The angle between track bearing and aspect, in
+            ``[0, 180]``.
+
+    Returns:
+        An index into ``_SweepStats.buckets``. Exactly 180 degrees — a
+        track straight up the fall line — is clamped into the last
+        bucket rather than falling off the end of the table.
+
+    """
+    return min(int(delta_deg // _BUCKET_WIDTH_DEG), _BUCKET_COUNT - 1)
+
+
+def _bucket_label(index: int) -> str:
+    """Return one bucket's printed range.
+
+    Args:
+        index: The bucket's index.
+
+    Returns:
+        ``"20–30°"`` and so on, the half-open range the bucket holds.
+
+    """
+    low = index * _BUCKET_WIDTH_DEG
+    return f"{low:.0f}–{low + _BUCKET_WIDTH_DEG:.0f}°"
+
+
+def _bucket_verdict(index: int) -> str:
+    """Return the label a bucket's segments carry at the shipped tolerance.
+
+    Asked of ``fall_line_alignment`` itself rather than restated here, so
+    the column cannot drift from the rule it is describing. The bucket's
+    MIDPOINT is the angle asked about: the shipped tolerance is inclusive,
+    so the single value 30.0 is a descent while the rest of the 30–40
+    bucket is a crossing, and the midpoint is what the row is true of.
+
+    Args:
+        index: The bucket's index.
+
+    Returns:
+        One of the three labels.
+
+    """
+    midpoint = index * _BUCKET_WIDTH_DEG + _BUCKET_WIDTH_DEG / 2.0
+    # A due-north bearing against an aspect that far round from it, which
+    # makes the separation the midpoint itself.
+    return fall_line_alignment(0.0, midpoint) or CROSSING
 
 
 def _median(values: list[float]) -> float:
