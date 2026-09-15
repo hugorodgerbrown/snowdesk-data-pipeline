@@ -6,8 +6,11 @@ Hand-curated catalogue of everything the design-system page at
 ``FoundationCategory`` dataclass:
 
 1. **Foundations** — design tokens, mirroring src/css/main.css's
-   ``@theme {}`` block. ``kind`` is one of ``"swatches"``, ``"typography"``,
-   ``"radius"``, ``"layout"``, ``"icons"``. Each entry's ``tokens`` field
+   ``@theme {}`` block. Mirroring it COMPLETELY: every ``--color-*``
+   declared there is either listed here or carries a reason in
+   ``TOKEN_EXEMPTIONS`` below (SNOW-969). ``kind`` is one of
+   ``"swatches"``, ``"typography"``, ``"radius"``, ``"layout"``,
+   ``"icons"``. Each entry's ``tokens`` field
    carries ``Token`` and/or ``IconToken`` instances. The
    registry-vs-CSS sync check in ``apps/public/checks.py`` walks this group.
 
@@ -207,6 +210,81 @@ class LibraryGroup:
     slug: str
     label: str
     categories: tuple[FoundationCategory, ...]
+
+
+@dataclass(frozen=True)
+class TokenExemption:
+    """One ``--color-*`` property, or family of them, the library omits.
+
+    The registry is authoritative over which colours EXIST (the reverse
+    check in ``apps/public/checks.py``), so a token declared in
+    ``@theme {}`` and left out of ``FOUNDATION_CATEGORIES`` has to say why
+    here. The reason is the whole point: it is what a reviewer reads to
+    judge whether the omission is still true, and "not needed" answers
+    nothing. The set is auditable by reading this tuple: it is short by
+    design, one entry per omission plus a prefix form for a family, and
+    an entry that stops matching anything in ``@theme`` should be deleted
+    along with the token it covered.
+
+    Attributes:
+        pattern: A CSS custom-property name, or — with a trailing ``*`` —
+            a name prefix covering a whole family. The prefix form exists
+            for families keyed to something outside the design system
+            (one token per ``settings.BASEMAP_STYLES`` entry), where
+            listing today's members would make adding the next one a
+            check failure with nothing to learn from it.
+        reason: Why the token is not browsable at ``/_components/``.
+            Required; a blank one is a check error, not a silent pass.
+
+    """
+
+    pattern: str
+    reason: str
+
+    def matches(self, name: str) -> bool:
+        """Return whether ``name`` is covered by this exemption.
+
+        Args:
+            name: CSS custom-property name including the leading ``--``.
+
+        """
+        if self.pattern.endswith("*"):
+            return name.startswith(self.pattern[:-1])
+        return name == self.pattern
+
+
+# Exemptions live HERE rather than in checks.py because they are a
+# statement about the registry below — these are the colours the
+# component library deliberately does not show — and the person adding a
+# token should meet both options on one screen: list it, or say why not.
+# checks.py stays mechanical: it reads this and reports, and holds no
+# opinion about any individual token.
+TOKEN_EXEMPTIONS: tuple[TokenExemption, ...] = (
+    TokenExemption(
+        "--color-admin-bg",
+        "Django admin chrome (the pipeline admin's page background), not a "
+        "public-site surface: /_components/ documents what the public site "
+        "is built from, and an admin-only colour browsable there would read "
+        "as available to a page that must never use it.",
+    ),
+    TokenExemption(
+        "--color-admin-nav",
+        "Django admin chrome (the admin top nav bar) — see --color-admin-bg.",
+    ),
+    TokenExemption(
+        "--color-admin-nav-text",
+        "Django admin chrome (ink on the admin top nav bar) — see --color-admin-bg.",
+    ),
+    TokenExemption(
+        "--color-basemap-*",
+        "One identity colour per settings.BASEMAP_STYLES key, so the set is "
+        "keyed to the basemap catalogue rather than to the design system: "
+        "adding a basemap adds a token, and the choice of hue is made by "
+        "elimination against the ones already taken (see the block comment "
+        "in main.css), not by a designer browsing swatches. Exempted by "
+        "prefix so the next basemap is a one-line change in the CSS.",
+    ),
+)
 
 
 FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
