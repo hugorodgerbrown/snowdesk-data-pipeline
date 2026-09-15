@@ -18,6 +18,12 @@
  *   a reading past its ``unsafe_after_seconds`` → REPLACED by the expired
  *   sentence, never repainted as a current reading of avalanche terrain;
  *   nothing held at all → the ordinary failure line.
+ *
+ * It also covers the panel FOLLOWING the map's day. The season scrubber is
+ * inside #map, which map_sheet.js excludes from click-outside dismissal, so
+ * the sheet genuinely stays open across a date change — and a sheet that
+ * stayed open showing the previous day's reading while the map repainted to
+ * the new one was the defect.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,8 +32,11 @@ import '../../static/js/i18n_strings.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const DAY = '2026-03-01';
+/** The day the scrubber is moved to, in the date-change cases below. */
+const OTHER_DAY = '2026-03-02';
 const STORE = 'data:route_bulletins';
 const KEY = `${UUID}:${DAY}`;
+const OTHER_KEY = `${UUID}:${OTHER_DAY}`;
 const HTML = '<div data-testid="route-bulletin">Aletsch · 1.4 km on N</div>';
 const CACHED = '<div data-testid="route-bulletin">A saved reading</div>';
 const UNSAFE_AFTER = 48 * 60 * 60;
@@ -82,6 +91,28 @@ function answerWith({ generatedAt, unsafeAfter, day = DAY } = {}) {
   );
 }
 
+/**
+ * One JSON answer from routes:bulletin, with no freshness headers.
+ *
+ * @param {string} html The fragment the server rendered.
+ * @param {string} day The day it answered for.
+ * @returns {object} A Response-shaped object.
+ */
+function jsonAnswer(html, day) {
+  return {
+    ok: true,
+    headers: { get: () => null },
+    json: () => Promise.resolve({ html: html, day: day }),
+  };
+}
+
+/** Move the map's day, exactly as map_scrubber.js commits one. */
+function changeDateTo(date) {
+  document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+    detail: { date: date, source: 'scrubber' },
+  }));
+}
+
 /** Stub a fetch that fails the way a dead radio does. */
 function answerWithFailure() {
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
@@ -100,6 +131,7 @@ async function waitFor(predicate, timeoutMs = 2000) {
 beforeEach(async () => {
   window.pwaRouteDetail.close();
   await window.pwaDb.delete(STORE, KEY);
+  await window.pwaDb.delete(STORE, OTHER_KEY);
   vi.unstubAllGlobals();
 });
 
@@ -252,5 +284,96 @@ describe('two taps in flight', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(bulletinSlot().textContent).not.toContain('the first tap');
+  });
+});
+
+describe('when the map\'s day moves under an open panel', () => {
+  it('asks again, for the day the scrubber moved to', async () => {
+    // The defect: the scrubber lives inside #map, which map_sheet.js
+    // excludes from click-outside dismissal, so the panel stays open — and
+    // it went on showing the previous day's reading while the map
+    // repainted to the new one.
+    answerWith();
+    window.pwaRouteDetail.open({ node: figures(), uuid: UUID, day: DAY });
+    await waitFor(() => globalThis.fetch.mock.calls.length > 0);
+
+    changeDateTo(OTHER_DAY);
+
+    await waitFor(() => globalThis.fetch.mock.calls.length > 1);
+    expect(globalThis.fetch.mock.calls[1][0]).toBe(
+      `/routes/${UUID}/bulletin/?d=${OTHER_DAY}`,
+    );
+  });
+
+  it('re-fetches rather than closing the panel', async () => {
+    // map_region_panel.js's own answer to this event. The reading IS the
+    // answer to "what does this day say about this line", so a new day is
+    // a new answer rather than a reason to take the surface away.
+    answerWith();
+    window.pwaRouteDetail.open({ node: figures(), uuid: UUID, day: DAY });
+
+    changeDateTo(OTHER_DAY);
+
+    expect(window.pwaRouteDetail.isOpen()).toBe(true);
+  });
+
+  it('leaves the figures exactly where map.js put them', async () => {
+    // A route's distance, ascent and terrain are facts about the track and
+    // do not move with the calendar — so the node map.js built is not
+    // rebuilt, and not even touched.
+    answerWith();
+    const node = figures();
+    window.pwaRouteDetail.open({ node: node, uuid: UUID, day: DAY });
+
+    changeDateTo(OTHER_DAY);
+    await waitFor(() => globalThis.fetch.mock.calls.length > 1);
+
+    expect(document.querySelector('[data-route-detail]')).toBe(node);
+  });
+
+  it('lets the new day\'s answer beat the old day\'s slow one', async () => {
+    // The race the request token exists for, reached by a second route:
+    // the previous day's request is still in flight when the new day's
+    // lands, and a reading of the wrong day painted over the right one is
+    // exactly the defect this fix is about.
+    let release;
+    const slow = new Promise((resolve) => { release = resolve; });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => (String(url).includes(OTHER_DAY)
+        ? Promise.resolve(jsonAnswer('<p>the new day</p>', OTHER_DAY))
+        : slow.then(() => jsonAnswer('<p>the old day</p>', DAY)))),
+    );
+
+    window.pwaRouteDetail.open({ node: figures(), uuid: UUID, day: DAY });
+    changeDateTo(OTHER_DAY);
+    await waitFor(() => bulletinSlot().textContent.includes('the new day'));
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(bulletinSlot().textContent).toContain('the new day');
+    expect(bulletinSlot().textContent).not.toContain('the old day');
+  });
+
+  it('asks for nothing at all for a pending share', () => {
+    // No uuid, so nothing to re-fetch — and a date change over one must be
+    // a no-op rather than a request for `undefined`'s bulletin.
+    answerWith();
+    window.pwaRouteDetail.open({ node: figures(), uuid: null, day: DAY });
+
+    expect(() => changeDateTo(OTHER_DAY)).not.toThrow();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(bulletinSlot().textContent.trim()).toBe('');
+  });
+
+  it('asks for nothing once the panel is closed', () => {
+    answerWith();
+    window.pwaRouteDetail.open({ node: figures(), uuid: UUID, day: DAY });
+    window.pwaRouteDetail.close();
+    globalThis.fetch.mockClear();
+
+    changeDateTo(OTHER_DAY);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

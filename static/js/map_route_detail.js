@@ -16,9 +16,10 @@
  * the one thing the popup never had room for — what each region's bulletin
  * says about this line, on the day the map is showing.
  *
- * They meet at `window.pwaRouteDetail.open({ node, uuid, day })` and nowhere
- * else, which is `map_weather_detail.js`'s own boundary and is why this file
- * has no reference to `map`, a layer id or a feature.
+ * They meet at `window.pwaRouteDetail.open({ node, uuid, day })` — plus
+ * `.element`, which map.js measures and never reads into — and nowhere
+ * else, which is `map_weather_detail.js`'s own boundary and is why this
+ * file has no reference to `map`, a layer id or a feature.
  *
  * REBUILT ON EVERY OPEN. `MapSheet.attach`'s teardown does
  * `el.innerHTML = ''` on every close, so nothing here may assume the body
@@ -38,6 +39,18 @@
  * the scrubber is showing, and it is part of both the request and the cache
  * key, which is what stops a cached reading being painted under a date it
  * does not belong to.
+ *
+ * AND IT FOLLOWS THE MAP'S DAY. The scrubber sits inside #map, which
+ * map_sheet.js deliberately excludes from click-outside dismissal, so a
+ * sheet left open across a date change stays open — and until it listened
+ * for `snowdesk:date-changed` it went on showing the reading fetched for
+ * the day before while the map repainted to the new one. The sheet
+ * RE-FETCHES rather than closing, which is map_region_panel.js's own answer
+ * to the same event: the reading is the answer to "what does this day say
+ * about this line", so a new day is a new answer rather than a reason to
+ * take the surface away. Only the bulletin half reloads — a route's
+ * distance, ascent and terrain are facts about the track and do not move
+ * with the calendar.
  */
 
 (function routeDetailInit() {
@@ -75,6 +88,15 @@
   // on top of it — routes cross on the map, and a mis-tap followed by a
   // correction is the ordinary case rather than an edge one.
   var requestToken = 0;
+
+  // What the open sheet is showing, so a date change can re-ask for it.
+  // `currentUuid` is null for a pending share, whose reading is
+  // owner-scoped and was never asked for — there is nothing to re-fetch
+  // for one, and a date change over it must do nothing rather than fail.
+  /** @type {string|null} */
+  var currentUuid = null;
+  /** @type {string} */
+  var currentDay = '';
 
   /** @type {HTMLElement|null} */
   var figuresSlot = null;
@@ -246,6 +268,8 @@
     if (!detail || !detail.node) return false;
 
     var token = ++requestToken;
+    currentUuid = detail.uuid ? String(detail.uuid) : null;
+    currentDay = detail.day || '';
     sheet.open();
 
     var body = /** @type {HTMLTemplateElement} */ (
@@ -256,20 +280,41 @@
     bulletinSlot = sheetEl.querySelector('[data-route-detail-bulletin]');
     if (figuresSlot) figuresSlot.replaceChildren(detail.node);
 
-    if (detail.uuid && URL_TEMPLATE) {
-      loadBulletin(String(detail.uuid), detail.day || '', token).catch(
-        function () {
-          // loadBulletin handles its own failures; this is the guard
-          // against an unhandled rejection escaping the open.
-        },
-      );
+    if (currentUuid && URL_TEMPLATE) {
+      loadBulletin(currentUuid, currentDay, token).catch(function () {
+        // loadBulletin handles its own failures; this is the guard
+        // against an unhandled rejection escaping the open.
+      });
     }
     return true;
   }
+
+  // The map's day moved under an open sheet. Re-ask for the reading, under
+  // a FRESH token: a re-fetch is a request like any other, so the in-flight
+  // one for the previous day loses the same race a superseded tap's does
+  // and cannot land on top of the newer answer.
+  //
+  // The figures are left exactly as they are — `bulletinSlot` is the only
+  // node loadBulletin touches — because nothing map.js put in the sheet is
+  // a function of the date.
+  document.addEventListener('snowdesk:date-changed', function (ev) {
+    currentDay = (ev.detail && ev.detail.date) || '';
+    if (!sheet.isOpen() || !currentUuid || !URL_TEMPLATE) return;
+    var token = ++requestToken;
+    loadBulletin(currentUuid, currentDay, token).catch(function () {
+      // As in `open`: loadBulletin reports its own failures in the sheet.
+    });
+  });
 
   window.pwaRouteDetail = Object.freeze({
     open: open,
     close: sheet.close,
     isOpen: sheet.isOpen,
+    // The sheet's own element, read by map.js to MEASURE how much of the
+    // map this sheet is about to cover (SNOW-973 finding 2). The boundary
+    // in this file's header still holds — map.js learns a rectangle, not
+    // what is drawn in it — and an id looked up in map.js would be the
+    // same coupling with none of it written down.
+    element: sheetEl,
   });
 }());
