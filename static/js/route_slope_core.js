@@ -50,12 +50,15 @@
  *   UNKNOWN_TOKEN          — and the token that colour mirrors
  *   PASSAGE_CORE_COLOUR    — the no-fall split line's core (SNOW-964)
  *   PASSAGE_CORE_TOKEN     — and the token that colour mirrors
+ *   FALL_LINE_COLOUR       — the fall-line arrow's ink
+ *   FALL_LINE_TOKEN        — and the token that colour mirrors
  *   STEEP_THRESHOLD_DEG    — the angle a length is counted against
  *   classify(angle)        — a bucket index, or null for an unknown
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
  *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
  *   cruxCount(f)           — how many one route carries
+ *   fallLineCollection(fc) — its fall-line arrows as Points
  *   summaryLines(terrain)  — the same record in words (SNOW-961)
  *   passageLines(f)        — its no-fall passages in words (SNOW-964)
  *
@@ -65,6 +68,15 @@
  * already has an angle: a feature can never carry both `unknown` and
  * `passage`, because unsurveyed ground is never inside a passage
  * (apps/routes/services/passages.py).
+ *
+ * The fall-line marks are the newest key: `fall_lines`, a list of
+ * `{i, deg}` — an index into the same `angles` array, and the compass
+ * bearing the ground there FACES, which is the direction downhill. They
+ * arrive as a bearing per PLACE rather than as an aspect per segment, so
+ * this module PLACES each one and classifies nothing: the server decided
+ * where an arrow goes and how many there are
+ * (apps/routes/services/fall_line.py), and a client that re-thinned them
+ * would be a second opinion about which way a face runs.
  */
 
 // @ts-check
@@ -150,6 +162,36 @@
 
   /** The `@theme` custom property `PASSAGE_CORE_COLOUR` is the value of. */
   const PASSAGE_CORE_TOKEN = '--color-passage-core';
+
+  /**
+   * The fall-line arrow's ink.
+   *
+   * The crux ring's near-black, value for value, and deliberately not a
+   * hue of its own. The two are ONE FAMILY of mark — each says where to
+   * look or which way to look, and neither says anything about how steep
+   * the ground is — and the whole reason the ring borrows nothing from
+   * the scale is that a marker tinted from the ramp reads as a further
+   * class of ground. A third colour would make an arrow look like a
+   * seventh band.
+   *
+   * It has a token of its own rather than reading `--color-crux-ring`,
+   * because the two marks can be re-inked independently and a token
+   * named for one mark but used by two is exactly the drift SNOW-969
+   * spent two tickets closing. `--color-route-line-casing` already
+   * carries this same value under a third name, on the same reasoning.
+   *
+   * Registered `sdf: true` in `map.js`, so this value reaches the map as
+   * `icon-color` rather than as pixel data — the arrow itself is an
+   * alpha mask (`route_markers_core.js`).
+   *
+   * Mirrors `--color-fall-line-arrow` in `src/css/main.css`; the literal
+   * is here because a MapLibre paint property cannot read a custom
+   * property, the convention `UNKNOWN_COLOUR` follows.
+   */
+  const FALL_LINE_COLOUR = '#1a1916';
+
+  /** The `@theme` custom property `FALL_LINE_COLOUR` is the value of. */
+  const FALL_LINE_TOKEN = '--color-fall-line-arrow';
 
   /**
    * Which bucket an angle falls in.
@@ -496,6 +538,85 @@
   }
 
   /**
+   * One fall-line mark, as the server sends it.
+   *
+   * Both fields are optional because this arrives from a feature
+   * property and is checked rather than trusted.
+   *
+   * @typedef {object} FallLineMark
+   * @property {number} [i] The segment index the mark sits on.
+   * @property {number} [deg] The bearing the ground there faces, in
+   *   whole compass degrees — which is downhill.
+   */
+
+  /**
+   * Every route's fall-line arrows, as one Point FeatureCollection.
+   *
+   * The mark names a SEGMENT and the arrow is placed at that segment's
+   * MIDPOINT, which is where the aspect was sampled — the "sample at the
+   * midpoints" rule in
+   * docs/decisions/a-slope-segment-is-the-shared-record.md. Placing it
+   * on the named boundary instead, as `cruxCollection` does for its own
+   * reasons, would put the arrow a dozen metres from the ground it
+   * describes.
+   *
+   * A straight average of the two boundary coordinates, not a
+   * great-circle midpoint: over one 25 m stride the two differ by well
+   * under a millimetre, and the spherical form would be arithmetic
+   * nobody could check by eye.
+   *
+   * A PENDING ROUTE PRODUCES NOTHING — `segmentFeatures`' rule, for its
+   * reason: a followed share's one line says "this one is not yours
+   * yet", and hanging marks off it would spend that line on a second
+   * message. It also keeps a non-owner's feature carrying nothing but
+   * its token.
+   *
+   * Always a valid collection, even when nothing is marked — `setData`
+   * throws on a null.
+   *
+   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} The arrows, each
+   *   carrying `deg` for `icon-rotate` and the owning route's `uuid`.
+   */
+  function fallLineCollection(geojson) {
+    const features = (geojson && geojson.features) || [];
+    const arrows = [];
+    for (let i = 0; i < features.length; i += 1) {
+      const properties = (features[i] && features[i].properties) || {};
+      if (properties.pending) continue;
+      const slope = properties.slope;
+      const marks = slope && slope.fall_lines;
+      const points = (slope && slope.points) || [];
+      if (!Array.isArray(marks) || !Array.isArray(points)) continue;
+      for (let j = 0; j < marks.length; j += 1) {
+        const mark = marks[j] || {};
+        const index = mark.i;
+        const deg = mark.deg;
+        if (typeof index !== 'number' || typeof deg !== 'number') continue;
+        if (!Number.isFinite(index) || !Number.isFinite(deg)) continue;
+        // An index past the end of the geometry is a record whose halves
+        // disagree. Skipping it loses one arrow; trusting it would throw
+        // out of the whole routes overlay.
+        const from = points[index];
+        const to = points[index + 1];
+        if (!Array.isArray(from) || !Array.isArray(to)) continue;
+        arrows.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2],
+          },
+          properties: Object.assign(
+            { deg: deg },
+            properties.uuid ? { uuid: properties.uuid } : {},
+          ),
+        });
+      }
+    }
+    return { type: 'FeatureCollection', features: arrows };
+  }
+
+  /**
    * The order the direction descriptors are emitted in.
    *
    * Fixed, and not the order the passages happen to arrive in: the popup
@@ -561,12 +682,15 @@
     UNKNOWN_TOKEN: UNKNOWN_TOKEN,
     PASSAGE_CORE_COLOUR: PASSAGE_CORE_COLOUR,
     PASSAGE_CORE_TOKEN: PASSAGE_CORE_TOKEN,
+    FALL_LINE_COLOUR: FALL_LINE_COLOUR,
+    FALL_LINE_TOKEN: FALL_LINE_TOKEN,
     STEEP_THRESHOLD_DEG: STEEP_THRESHOLD_DEG,
     classify: classify,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
     cruxCollection: cruxCollection,
     cruxCount: cruxCount,
+    fallLineCollection: fallLineCollection,
     summaryLines: summaryLines,
     passageLines: passageLines,
   });

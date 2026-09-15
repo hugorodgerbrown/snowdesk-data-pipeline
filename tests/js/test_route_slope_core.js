@@ -597,6 +597,115 @@ describe('passageLines', () => {
   });
 });
 
+describe('fallLineCollection', () => {
+  /** A route feature whose record carries the given fall-line marks. */
+  function withMarks(marks, identity = { uuid: 'r1' }) {
+    const feature = sampled([12, 40, 40]);
+    feature.properties.slope.fall_lines = marks;
+    Object.assign(feature.properties, identity);
+    return feature;
+  }
+
+  it('places each mark at its segment MIDPOINT, not on a boundary', () => {
+    // Where the aspect was sampled. The boundary is a dozen metres from
+    // the ground the arrow describes, and `sampled` lays its boundaries
+    // out a thousandth of a degree apart, so the midpoint of segment 1
+    // is 7.4015.
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 1, deg: 205 }])],
+    });
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0].geometry.type).toBe('Point');
+    expect(collection.features[0].geometry.coordinates[0]).toBeCloseTo(7.4015, 9);
+    expect(collection.features[0].geometry.coordinates[1]).toBeCloseTo(46.1, 9);
+  });
+
+  it('carries the bearing for icon-rotate, and the route uuid', () => {
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 0, deg: 205 }])],
+    });
+
+    expect(collection.features[0].properties.deg).toBe(205);
+    expect(collection.features[0].properties.uuid).toBe('r1');
+  });
+
+  it('marks nothing on a pending route', () => {
+    // `segmentFeatures`' rule: a followed share's one line says "this
+    // one is not yours yet", and a non-owner's feature must carry
+    // nothing but its token.
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 0, deg: 205 }], { token: 'tok', pending: true })],
+    });
+
+    expect(collection.features).toEqual([]);
+  });
+
+  it('is a valid empty collection when nothing is marked', () => {
+    // `setData` throws on a null, and a route with no marks at all is
+    // the common case.
+    expect(core.fallLineCollection(null)).toEqual({
+      type: 'FeatureCollection',
+      features: [],
+    });
+    expect(
+      core.fallLineCollection({
+        type: 'FeatureCollection',
+        features: [sampled([12])],
+      }).features,
+    ).toEqual([]);
+  });
+
+  it('skips a mark whose index runs past the geometry', () => {
+    // A record whose halves disagree. Losing one arrow is the cost;
+    // trusting it would throw out of the whole routes overlay.
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 0, deg: 10 }, { i: 99, deg: 10 }])],
+    });
+
+    expect(collection.features).toHaveLength(1);
+  });
+
+  it('skips a mark missing either half', () => {
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 0 }, { deg: 10 }, null, { i: 1, deg: 10 }])],
+    });
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0].properties.deg).toBe(10);
+  });
+
+  it('classifies nothing and re-thins nothing', () => {
+    // The server decided which segments carry a mark and how many there
+    // are; a client that dropped one for being gentle, or added one for
+    // being steep, would be a second opinion about a face. Segment 0 is
+    // 12° here and is marked BECAUSE the record says so.
+    const collection = core.fallLineCollection({
+      type: 'FeatureCollection',
+      features: [withMarks([{ i: 0, deg: 10 }, { i: 1, deg: 20 }, { i: 2, deg: 30 }])],
+    });
+
+    expect(collection.features.map((f) => f.properties.deg)).toEqual([10, 20, 30]);
+  });
+});
+
+describe('FALL_LINE_COLOUR', () => {
+  it('is off the steepness scale entirely', () => {
+    // A mark about a direction must not read as a further class of
+    // ground — the crux ring's rule.
+    expect(core.CLASSES.map((c) => c.hex)).not.toContain(core.FALL_LINE_COLOUR);
+  });
+
+  it('names the token it mirrors', () => {
+    expect(core.FALL_LINE_TOKEN).toBe('--color-fall-line-arrow');
+  });
+});
+
 describe('PASSAGE_CORE_COLOUR', () => {
   it('is off the steepness scale entirely', () => {
     // The core is a GAP in the line, not a seventh class of ground, so

@@ -91,6 +91,28 @@ half that fits.
             like any other, because it is no place to fall either.
         {% endblocktrans %}
     </p>
+    {# The fall-line arrows. After the passage paragraph because they are #}
+    {# the general case of the reading it makes at 50 degrees only: the    #}
+    {# words "down the fall line" in a pop-up describe one passage, and    #}
+    {# the arrows put the same fact on every steep stretch of the map.     #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line">
+        {% blocktrans trimmed %}
+            Small arrows along a saved route point the way the ground under it falls &mdash; the fall line, the
+            direction water runs and a slab slides. Compare an arrow with the track beside it and you can see what the
+            colour alone cannot tell you: whether the line cuts across a face, climbs it, or runs straight down it. A
+            traverse across a 40 degree slope and a descent of the same slope are the same colour, and they are not the
+            same day out.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line-gate">
+        {% blocktrans trimmed %}
+            <strong>Arrows are drawn on steep ground only, and where there is no arrow there is no claim.</strong> Below
+            30 degrees they are left off: on nearly level ground the direction a 5 metre elevation grid calls downhill
+            comes off a stream bank or a road cutting as often as off the hillside, and drawing it would be confident
+            about nothing. So read the absence of an arrow as the colour of the line under it, never as flat ground
+            &mdash; and remember an arrow sits every few hundred metres, not on every step.
+        {% endblocktrans %}
+    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
         {% blocktrans trimmed %}
@@ -112,6 +134,18 @@ half that fits.
             steep passage between two gentler samples is smoothed away before anything measures it. The same goes the
             other way: a stretch marked as no-fall may be a few metres of rock in the middle of an easy slope. The marks
             say where to look, and nothing more than that.
+        {% endblocktrans %}
+    </p>
+    {# And the caveat the arrow cannot carry. Its own paragraph rather    #}
+    {# than a clause on the smoothing one above, because it is a          #}
+    {# different measurement: that one is about the ANGLE being an        #}
+    {# average, this one about the DIRECTION being one.                   #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line-averaged">
+        {% blocktrans trimmed %}
+            An arrow is one direction for about ten metres of hillside, so it describes the shape of the slope rather
+            than the ground at your feet. On a rolling face, a gully, or a ridge the real fall line swings either side
+            of it within a ski length, and on convex ground it changes as you cross. It is a reading of which way the
+            slope runs, not a line to follow.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">
