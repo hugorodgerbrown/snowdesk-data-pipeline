@@ -338,9 +338,13 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "swisstopo slope-angle classes, SLF classification "
             "(theme-invariant; the raster leaves below 30° unpainted). The "
-            "last two are the route line's own (SNOW-910) — a line cannot "
-            "go blank where the raster does without reading as a break, "
-            "and a sampled-but-unanswered stretch is not a gentle one."
+            "last four are the route line's own — a line cannot go blank "
+            "where the raster does without reading as a break, and a "
+            "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
+            "The final two are MARKS drawn over that line rather than bands "
+            "of it, and borrow no colour from the scale on purpose: a "
+            "marker tinted from the ramp reads as a further class of "
+            "ground (SNOW-911, SNOW-964)."
         ),
         kind="swatches",
         swatch_columns=5,
@@ -352,6 +356,8 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
             Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
+            Token("--color-crux-ring", "Key passage (marker)", "#1a1916", None),
+            Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
         ),
     ),
     FoundationCategory(

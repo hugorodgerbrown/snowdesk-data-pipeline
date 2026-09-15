@@ -36,7 +36,12 @@ from django.urls import reverse
 
 from apps.accounts.models import Account
 from apps.core.sw_shell import cache_version
-from apps.public.design_tokens import LIBRARY_GROUPS, FoundationCategory, IconToken
+from apps.public.design_tokens import (
+    LIBRARY_GROUPS,
+    FoundationCategory,
+    IconToken,
+    Token,
+)
 from tests.factories import AccountFactory, UserFactory
 
 
@@ -179,6 +184,35 @@ class TestComponentLibraryPanel:
         # Inner template via the panel wrapper.
         template_names = [t.name for t in response.templates]
         assert "_components/partials/_panel.html" in template_names
+
+    def test_the_slope_panel_carries_the_marks_as_well_as_the_bands(
+        self, htmx_staff_client: Client
+    ) -> None:
+        """The two line MARKS are in the key, not only the seven bands.
+
+        SNOW-969. The registry-vs-CSS check in ``apps/public/checks.py``
+        is one-directional on purpose — the CSS may declare tokens the
+        registry does not list — so a colour added to ``@theme`` and used
+        on the map draws correctly while being invisible here, which is
+        how ``--color-crux-ring`` (SNOW-911) and ``--color-passage-core``
+        (SNOW-964) both went unregistered. Nothing else in the build
+        notices, and this panel is exactly the surface someone reads
+        before adding the next colour.
+        """
+        response = htmx_staff_client.get(_panel_url("slope"))
+
+        assert response.status_code == 200
+        names = [
+            token.name
+            for token in response.context["active"].tokens
+            if isinstance(token, Token)
+        ]
+        assert "--color-crux-ring" in names
+        assert "--color-passage-core" in names
+
+        body = response.content.decode()
+        assert "Key passage (marker)" in body
+        assert "No-fall passage (marker)" in body
 
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
