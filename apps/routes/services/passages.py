@@ -57,9 +57,14 @@ track it stands for — a switchback is the extreme case, and
 is where that is argued. Measuring a passage by chords and then testing
 it against a 25 m minimum would silently drop most single-segment
 passages, and a single segment is the COMMON case: one steep roll on an
-otherwise moderate face. The track's last segment is the exception and
-gets its chord, because ``stride_distances`` absorbs the trailing stub
-into it and it can be anything between half and one and a half strides.
+otherwise moderate face.
+
+The rule itself lives in ``slope_summary.segment_lengths_m``, which was
+private to this module until ``apps.routes.services.fall_line`` became
+its second caller. The track's LAST segment is the one the stride does
+not state — ``stride_distances`` absorbs the trailing stub into it — and
+that function recovers its length from the sampler's own total rather
+than measuring a chord across it.
 
 ## An unknown segment is never inside a passage
 
@@ -99,8 +104,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from apps.core.geo import haversine_m, initial_bearing_deg
-from apps.routes.services.slope_summary import segment_lengths_from_points
+from apps.core.geo import initial_bearing_deg
+from apps.routes.services.slope_summary import segment_lengths_m
 
 # The angle at and above which the ground under the track is no-fall.
 #
@@ -333,7 +338,7 @@ def route_passages(
     # the two are ordered here rather than trusted. Only a sweep can
     # produce that pairing, and it should answer rather than misbehave.
     grow_floor = min(floor_deg, gate_deg)
-    lengths_m = _segment_lengths(record, points)
+    lengths_m = segment_lengths_m(record)
 
     passages: list[dict[str, Any]] = []
     for first, last in _runs(angles, gate_deg, grow_floor):
@@ -394,7 +399,12 @@ def passage_alignment_detail(
     if len(points) != len(segments) + 1 or not segments:
         return None
 
-    lengths_m = _segment_lengths(record, points)
+    # ``segment_lengths_m`` rather than the private helper this module
+    # used to carry: SNOW-971 added this caller and SNOW-974 promoted the
+    # helper into ``slope_summary`` in the same window, so a clean textual
+    # merge left a call to a function that no longer existed here. Both
+    # callers now read the one definition, which is the point of the move.
+    lengths_m = segment_lengths_m(record)
     return _alignment_detail(points, segments, lengths_m, first, last, tolerance_deg)
 
 
@@ -412,92 +422,6 @@ def _angle_of(segment: dict[str, Any]) -> float | None:
     """
     angle = segment.get("angle_deg")
     return float(angle) if isinstance(angle, int | float) else None
-
-
-def _segment_lengths(record: dict[str, Any], points: list[list[float]]) -> list[float]:
-    """Return the along-track length of each segment, in metres.
-
-    The stride, not the chord — see the module docstring for the trap
-    that avoids. The LAST segment is the one the stride does not state,
-    because ``stride_distances`` absorbs the track's trailing stub into
-    it; ``_final_length_m`` recovers it rather than measuring it.
-
-    Args:
-        record: The stored record, read for its ``stride_m``.
-        points: The record's boundary coordinates, as ``[lon, lat]``.
-
-    Returns:
-        One length per segment, in track order.
-
-    """
-    stride_m = record.get("stride_m")
-    if not isinstance(stride_m, int | float) or stride_m <= 0:
-        # A record written before the sampler stored its stride has only
-        # its coordinates left, so every length is the chord between two
-        # of them — the read-time half of the pair.
-        return segment_lengths_from_points(points)
-
-    lengths = [float(stride_m)] * (len(points) - 1)
-    if lengths:
-        lengths[-1] = _final_length_m(record, points, float(stride_m), len(lengths))
-    return lengths
-
-
-def _final_length_m(
-    record: dict[str, Any],
-    points: list[list[float]],
-    stride_m: float,
-    count: int,
-) -> float:
-    """Return the along-track length of the track's LAST segment.
-
-    **THE CHORD IS THE LAST RESORT HERE, NOT THE RULE.** Every other
-    segment is exactly one stride, so the chord trap the module docstring
-    describes was closed for all of them — but the final segment is the
-    stub-absorbing one, and measuring THAT as a chord reopens the same
-    trap on the one segment most likely to be a lone passage. It is worse
-    there than elsewhere: ``stride_distances`` bounds it to between half
-    and one and a half strides, so a genuine 37 m of track can chord to
-    well under ``PASSAGE_MIN_M`` across a bend, and even a straight one
-    loses a decimetre or so to the six-decimal rounding of the stored
-    coordinates. A qualifying passage would vanish, and it would vanish
-    silently.
-
-    So the length is RECOVERED rather than measured. ``summary`` carries
-    ``sampled_m``, the walk's own total, and every segment but this one
-    is known to be exactly a stride — so the remainder is the sampler's
-    own figure for it, arrived at without re-reading any geometry.
-
-    Args:
-        record: The stored record, read for its ``summary``.
-        points: The record's boundary coordinates, as ``[lon, lat]``.
-        stride_m: The record's stride, already validated by the caller.
-        count: How many segments the record holds.
-
-    Returns:
-        The final segment's length in metres.
-
-    """
-    summary = record.get("summary")
-    if isinstance(summary, dict):
-        sampled_m = summary.get("sampled_m")
-        if isinstance(sampled_m, int | float):
-            remainder = float(sampled_m) - stride_m * (count - 1)
-            # ``stride_distances`` bounds every segment to between half
-            # and one and a half strides. A remainder outside that came
-            # from a record whose summary and segments disagree about the
-            # same walk, and the chord is the more trustworthy of two
-            # figures that cannot both be right.
-            if stride_m / 2.0 <= remainder <= stride_m * 1.5:
-                return remainder
-
-    # No summary to recover it from — a record predating SNOW-961 — so
-    # the chord is all there is. It under-measures a bend, which is a
-    # known and bounded loss on one segment of an old record.
-    #
-    # haversine_m takes latitude first (the house rule) and the record
-    # stores GeoJSON axis order, so the pair is swapped here.
-    return haversine_m(points[-2][1], points[-2][0], points[-1][1], points[-1][0])
 
 
 def _runs(

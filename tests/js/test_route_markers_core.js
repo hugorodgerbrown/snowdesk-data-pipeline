@@ -13,6 +13,13 @@
  *     parity is wrong is still a rectangle of squares, so it fails
  *     silently — it just stops reading as a finish flag, in a way no
  *     assertion on the layer or the image id would catch.
+ *
+ * The fall-line arrow is here for the second reason and one sharper than
+ * it: the arrow is ROTATED by a compass bearing, so it has to be drawn
+ * pointing UP in the buffer. An arrow drawn pointing down is still an
+ * arrow, still rotates, and is wrong by 180 degrees everywhere at once —
+ * a map of fall lines pointing uphill, which nothing but a test or a
+ * skier on the ground would catch.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -227,5 +234,88 @@ describe('finishFlagPixels — the finish marker', () => {
     const image = core.finishFlagPixels(...INK);
 
     expect(pixel(image, 30, 32)[3]).toBe(0);
+  });
+});
+
+describe('fallLineArrowPixels — the fall-line mark', () => {
+  /** The alpha channel of one pixel. */
+  function alpha(image, x, y) {
+    return pixel(image, x, y)[3];
+  }
+
+  /** The widest row's half-width, measured from the buffer's centre. */
+  function coveredHalfWidth(image, y) {
+    let widest = -1;
+    for (let x = 0; x < image.width; x += 1) {
+      if (alpha(image, x, y) > 0) widest = Math.max(widest, Math.abs(x - 19.5));
+    }
+    return widest;
+  }
+
+  it('points UP, so icon-rotate can turn it onto a compass bearing', () => {
+    const image = core.fallLineArrowPixels();
+
+    // The head is a triangle narrowing towards the tip, so the rows
+    // near the top of the buffer are narrower than the rows below them.
+    // Drawn upside down this comparison reverses, and every arrow on
+    // every map would be 180 degrees wrong.
+    expect(coveredHalfWidth(image, 8)).toBeLessThan(coveredHalfWidth(image, 18));
+  });
+
+  it('is widest at the head, then narrows to a shaft', () => {
+    const image = core.fallLineArrowPixels();
+
+    const head = coveredHalfWidth(image, 21);
+    const shaft = coveredHalfWidth(image, 30);
+    // The shaft is what makes it read as an arrow rather than a wedge
+    // at 20 CSS pixels; a head with no shaft would measure the same
+    // width all the way down.
+    expect(head).toBeGreaterThan(shaft);
+    expect(shaft).toBeGreaterThan(0);
+  });
+
+  it('is symmetric about its centre line', () => {
+    const image = core.fallLineArrowPixels();
+
+    // An asymmetric arrow reads as pointing a few degrees off the
+    // bearing it was given.
+    for (const y of [10, 18, 28]) {
+      for (const dx of [1, 3, 5]) {
+        expect(alpha(image, 19 - dx + 1, y)).toBe(alpha(image, 20 + dx - 1, y));
+      }
+    }
+  });
+
+  it('is an alpha mask in white, so icon-color can paint it', () => {
+    const image = core.fallLineArrowPixels();
+
+    // Registered `sdf: true`: an SDF keeps only the alpha channel, so
+    // the ink has to stay a paint property. Any colour in the pixel
+    // data would be discarded, and a two-tone glyph would collapse.
+    expect(pixel(image, 20, 30).slice(0, 3)).toEqual([255, 255, 255]);
+  });
+
+  it('is antialiased along the head\'s sloped edge', () => {
+    const image = core.fallLineArrowPixels();
+
+    // A hard-edged slope at this size reads as a staircase. Somewhere
+    // along the head's edge there is a partially-covered pixel.
+    const partials = [];
+    for (let y = 8; y <= 20; y += 1) {
+      for (let x = 0; x < image.width; x += 1) {
+        const a = alpha(image, x, y);
+        if (a > 0 && a < 255) partials.push([x, y]);
+      }
+    }
+    expect(partials.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the buffer above the tip and below the tail empty', () => {
+    const image = core.fallLineArrowPixels();
+
+    // The arrow is shorter than the crux ring is wide, so the two read
+    // as different marks where they co-occur — which is most passages.
+    expect(alpha(image, 20, 2)).toBe(0);
+    expect(alpha(image, 20, 38)).toBe(0);
   });
 });

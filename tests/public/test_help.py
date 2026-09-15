@@ -349,6 +349,26 @@ class TestHelpPageFlagGating:
             assert testid in content, testid
         assert b"An unmarked route is not a route without no-fall ground." in content
 
+    def test_slope_panel_explains_the_fall_line_arrows(self, client: Client) -> None:
+        """What the arrows say, and the two things they cannot.
+
+        The gate paragraph is the one that earns the mark: arrows are
+        drawn on steep ground only, so an absent arrow is no claim at
+        all — and a reader who takes a bare stretch for flat ground has
+        drawn the one wrong conclusion this feature could produce. The
+        averaging paragraph is a different caveat from the passages'
+        one: that is about the ANGLE being an average, this about the
+        DIRECTION being one.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-slope-fall-line",
+            b"help-slope-fall-line-gate",
+            b"help-slope-fall-line-averaged",
+        ):
+            assert testid in content, testid
+        assert b"where there is no arrow there is no claim" in content
+
     def test_slope_panel_explains_a_flat_traverse_drawn_steep(
         self, client: Client
     ) -> None:

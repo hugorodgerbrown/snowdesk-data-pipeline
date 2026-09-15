@@ -1793,6 +1793,28 @@ def test_the_route_steepness_key_explains_the_no_fall_passage() -> None:
 
 
 @pytest.mark.django_db
+def test_the_route_steepness_key_explains_the_fall_line_arrow() -> None:
+    """The arrow has a row, and the row carries what the mark cannot.
+
+    The dangerous reading is the ABSENCE of an arrow: nothing is drawn
+    under 30 degrees, and a reader who takes a bare stretch for flat
+    ground has been misled by this key. "Steep ground only" is the whole
+    caveat in three words, and the section heading links to
+    ``/help/#help-topic-slope`` for the long version.
+    """
+    content = Client().get(reverse("public:home")).content.decode()
+    section = content.split('id="map-route-slope-section"', 1)[1]
+    key = section.split("</section>", 1)[0]
+
+    assert "map-legend-swatch--fall-line" in key
+    assert "Fall line" in key
+    assert "steep ground only" in key
+    # And the key's closing paragraph says what the arrows are FOR,
+    # which the three-word row cannot.
+    assert "point the way that ground falls" in key
+
+
+@pytest.mark.django_db
 class TestFakeLocationGate:
     """``data-fake-location-allowed`` opens ``?loc=`` for testing only.
 

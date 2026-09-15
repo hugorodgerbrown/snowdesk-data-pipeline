@@ -515,10 +515,12 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             "last four are the route line's own — a line cannot go blank "
             "where the raster does without reading as a break, and a "
             "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
-            "The final two are MARKS drawn over that line rather than bands "
-            "of it, and borrow no colour from the scale on purpose: a "
-            "marker tinted from the ramp reads as a further class of "
-            "ground (SNOW-911, SNOW-964)."
+            "The last three are MARKS drawn over that line rather than "
+            "bands of it, and borrow no colour from the scale on purpose: "
+            "a marker tinted from the ramp reads as a further class of "
+            "ground (SNOW-911, SNOW-964). The fall-line arrow shares the "
+            "crux ring's value under a name of its own — one family of "
+            "mark, two marks that can be re-inked apart."
         ),
         kind="swatches",
         swatch_columns=5,
@@ -532,6 +534,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
             Token("--color-crux-ring", "Key passage (marker)", "#1a1916", None),
             Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
+            Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
         ),
     ),
     FoundationCategory(

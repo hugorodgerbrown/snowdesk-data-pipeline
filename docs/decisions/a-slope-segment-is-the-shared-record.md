@@ -30,7 +30,9 @@ Five rules go with it:
   them to one dashed treatment.
 - **The wire form is compact and different**: `properties.slope` is
   `{points, angles}` with a null angle for an unknown, and the key is
-  **omitted entirely** for a route that has never been sampled.
+  **omitted entirely** for a route that has never been sampled. What
+  rides alongside is derived rather than reduced — `passages` (SNOW-964)
+  and `fall_lines` — and never the per-segment aspect itself.
 - **A run in which every sample was `UNAVAILABLE` stores nothing.**
 
 ## Why
@@ -73,24 +75,37 @@ That presence is also load-bearing on the map: `routes-line` filters on
 `['!', ['has', 'slope']]` so a sampled route is not painted flat underneath
 its own colours. A present-but-null value would answer that filter wrongly.
 
-### Aspect is stored and not sent
+### The per-segment aspect is stored and not sent
 
 `sample_slope` computes the angle and the aspect from one kernel, so the
 bearing is free at sampling time and would cost a second full pass over the
 tile origin to recover later. SNOW-839 needs it to score a route against a
-bulletin's aspect bands. Nothing draws it.
+bulletin's aspect bands.
 
-Sending it anyway would roughly double the payload for a 15 km tour — 600
-segments — on a feed the offline cache holds. So the stored record is the
-server-side truth that SNOW-911 (cruxes) and SNOW-839 (bulletin scoring)
-read, and the wire form is the subset the map paints. They are deliberately
-not the same shape, and `compact_slope` in
+Sending the aspect per segment would roughly double the payload for a 15 km
+tour — 600 segments — on a feed the offline cache holds. So the stored
+record is the server-side truth that SNOW-911 (cruxes) and SNOW-839
+(bulletin scoring) read, and the wire form is the subset the map paints.
+They are deliberately not the same shape, and `compact_slope` in
 `apps/routes/services/slope_wire.py` is the one place the reduction
 happens — it moved out of `apps/routes/views.py` in SNOW-962, when the
 trip page became a second caller. SNOW-964 made it the one place the
 record is DERIVED from as well: the no-fall passages are computed on
 every read rather than stored, precisely so that re-tuning a threshold
 never touches a row.
+
+**This section closed with "Nothing draws it", and the fall-line arrows
+are what made that false** — recorded here rather than quietly replaced,
+the way SNOW-962's reversal of the trip-column decision is recorded
+below. What has NOT changed is the sentence above it: the per-segment
+aspect still never travels. The arrows are a **bearing per place** —
+`fall_lines`, a handful of `{i, deg}` marks spaced along the steep
+ground, about a kilobyte on that same 15 km tour — derived at read time
+by `apps/routes/services/fall_line.py` on the `passages` terms. A flat
+`aspects` array beside `angles` remains rejected, and for both of this
+section's reasons at once: it is the doubled payload, and 600 arrows is
+not a drawing anybody can read
+([the-fall-line-arrow-is-a-bearing-per-place](the-fall-line-arrow-is-a-bearing-per-place.md)).
 
 ### The sample points have to travel
 
