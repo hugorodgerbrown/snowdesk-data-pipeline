@@ -19,9 +19,17 @@ compute tile coverage from.
 
 Safe-by-default: read-only unless ``--commit`` is passed. A bare
 invocation reports what would change and exits 0 without writing
-anything. Wired into ``build.sh``'s post-deploy step, alongside the
-other derived-data commands, so a boundary change (a rare hand-edit,
-not part of ordinary deploys) is picked up automatically.
+anything.
+
+**Run by an operator, never by a deploy.** It was wired into
+``bin/build.sh`` until PR #758 took every bulk data write out of that
+script: it writes one row per region — 461 of them — and a deploy that
+times out mid-run leaves the estate half computed, on three services that
+deploy concurrently against one database. Bulk data writes are management
+commands for the same reason they are not data migrations. Run it after a
+boundary or fixture change (a rare hand-edit, not part of ordinary
+deploys), and when seeding an environment — see
+``docs/runbooks/reset-live-db.md``.
 
 Usage:
     # Preview what would change (default — no writes).

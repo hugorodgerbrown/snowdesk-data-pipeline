@@ -309,9 +309,13 @@ dirty-tracking state, and a full recompute on every run is safe and idempotent.
 a region with no `boundary` is skipped and **counted as a failure**, so the
 command exits non-zero rather than silently under-covering the map.
 
-`build.sh` runs it with `--commit` on every deploy (SNOW-521), after the
-`loaddata` step above. The `eaws_CH` fixture already ships `basemap_download`
-for Switzerland; this is what backfills the FR/AT/IT fixtures, which don't —
+**An operator runs it; the deploy does not.** It ran with `--commit` from
+`build.sh` until PR #758 took every bulk data write out of that script — 461
+rows is not something a deploy should half-apply across three concurrently
+deploying services. Run it when seeding an environment
+([`reset-live-db`](runbooks/reset-live-db.md)) and after any boundary or
+fixture change. The `eaws_CH` fixture already ships `basemap_download` for
+Switzerland; this is what backfills the FR/AT/IT fixtures, which don't —
 see [`docs/offline-map.md`](offline-map.md).
 
 ```bash

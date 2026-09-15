@@ -6,15 +6,21 @@ derived offline: the coordinate is ``centre_from_bbox(boundary)`` and the
 boundary is already in the fixture, but the ground height at that point has
 to be asked of Open-Meteo.
 
-**Why it lives in the fixture at all** (SNOW-771). ``bin/build.sh`` reloads
-these fixtures on every deploy, and ``loaddata`` writes back every field a
-fixture carries — resetting the ones it does not to their model default.
-``MicroRegion.centroid_location`` is one of those, so a deploy unlinks every
-region and orphans the ``Location`` rows behind it. The fix is not to defend
-the FK but to make it cheap to rebuild: with the elevation in the fixture,
-``link_region_centroid_locations`` becomes a pure offline derivation that
-``build.sh`` can re-run immediately after ``loaddata``, on every deploy, for
-free. That turns a silent data-loss bug into a self-healing step.
+**Why it lives in the fixture at all** (SNOW-771). ``bin/build.sh`` used to
+reload these fixtures on every deploy, and ``loaddata`` writes back every
+field a fixture carries — resetting the ones it does not to their model
+default. ``MicroRegion.centroid_location`` is one of those, so every deploy
+unlinked all 461 regions and orphaned the ``Location`` rows behind them. The
+fix was not to defend the FK but to make it cheap to rebuild: with the
+elevation in the fixture, ``link_region_centroid_locations`` is a pure
+offline derivation that can be re-run at any time for free.
+
+PR #758 then removed the reload itself, along with every other bulk data
+write on the deploy path, so nothing wipes the link any more and nothing
+has to heal it. The elevation stays in the fixture regardless: it is what
+keeps the re-link offline, and the re-link is still run by an operator when
+seeding an environment or after a fixture change
+(``docs/runbooks/region-centroid-backfill.md``).
 
 The consequence for this command is that it is run **by a developer, once,
 against the committed fixtures** — not per environment. Every environment

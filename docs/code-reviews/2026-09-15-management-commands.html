@@ -1,0 +1,989 @@
+<title>Snowdesk Command Inventory</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root {
+    --ground: #f4f7f9;
+    --surface: #ffffff;
+    --surface-2: #e9eff3;
+    --ink: #14202a;
+    --ink-2: #435362;
+    --ink-3: #6f8392;
+    --line: #d7e1e8;
+    --line-soft: #e6edf1;
+    --accent: #1d6a86;
+    --accent-soft: #dceef5;
+    --keep: #2f7355;
+    --keep-soft: #dfece5;
+    --retire: #97511f;
+    --retire-soft: #f3e4d7;
+    --shadow: 0 1px 2px rgba(20, 32, 42, .05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d151b;
+      --surface: #14212a;
+      --surface-2: #1b2b35;
+      --ink: #e7eff4;
+      --ink-2: #aabecb;
+      --ink-3: #7c909e;
+      --line: #263845;
+      --line-soft: #1e2e39;
+      --accent: #5db9da;
+      --accent-soft: #123340;
+      --keep: #74c69d;
+      --keep-soft: #16302a;
+      --retire: #dc9a68;
+      --retire-soft: #33241a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0d151b;
+    --surface: #14212a;
+    --surface-2: #1b2b35;
+    --ink: #e7eff4;
+    --ink-2: #aabecb;
+    --ink-3: #7c909e;
+    --line: #263845;
+    --line-soft: #1e2e39;
+    --accent: #5db9da;
+    --accent-soft: #123340;
+    --keep: #74c69d;
+    --keep-soft: #16302a;
+    --retire: #dc9a68;
+    --retire-soft: #33241a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 44px 72px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, .fig-n, .when, th {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  code, .cmd, .mono {
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-size: clamp(30px, 5.4vw, 46px);
+    font-weight: 700;
+    letter-spacing: -.022em;
+    line-height: 1.06;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+
+  .standfirst {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0 0 24px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: var(--ink-3);
+    padding-block: 16px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* ---------- figures ---------- */
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin-block: 40px;
+  }
+
+  .fig {
+    background: var(--surface);
+    padding: 18px 20px 20px;
+  }
+
+  .fig-n {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .fig-retire .fig-n { color: var(--retire); }
+  .fig-req .fig-n { color: var(--accent); }
+
+  .fig-l {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    line-height: 1.4;
+    display: block;
+  }
+
+  /* ---------- schedule ---------- */
+
+  .schedule {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 22px 22px 14px;
+    margin-block: 40px;
+    box-shadow: var(--shadow);
+  }
+
+  .schedule h2 { margin-top: 0; }
+
+  .lanes { margin-top: 22px; }
+
+  .lane {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    align-items: center;
+    gap: 14px;
+    padding-block: 9px;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .lane:first-child { border-top: 0; }
+
+  .lane-name {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  .track {
+    position: relative;
+    height: 20px;
+    background: var(--surface-2);
+    border-radius: 2px;
+  }
+
+  .tick {
+    position: absolute;
+    top: 3px;
+    width: 3px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 1px;
+    transform: translateX(-1.5px);
+  }
+
+  .tick.read { background: var(--ink-3); }
+
+  .axis {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 14px;
+    margin-top: 6px;
+  }
+
+  .axis-marks {
+    position: relative;
+    height: 16px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--ink-3);
+  }
+
+  .axis-marks span {
+    position: absolute;
+    transform: translateX(-50%);
+  }
+
+  .axis-marks span:first-child { transform: none; }
+  .axis-marks span:last-child { transform: translateX(-100%); }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-top: 16px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 1px;
+    margin-right: 6px;
+    vertical-align: baseline;
+  }
+
+  .swatch.w { background: var(--accent); }
+  .swatch.r { background: var(--ink-3); }
+
+  /* ---------- sections ---------- */
+
+  section { margin-block: 44px; }
+
+  h2 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin: 0 0 6px;
+  }
+
+  .count {
+    color: var(--ink-3);
+    font-weight: 500;
+    letter-spacing: .06em;
+  }
+
+  .lede {
+    color: var(--ink-2);
+    font-size: 15.5px;
+    max-width: 70ch;
+    margin: 0 0 18px;
+  }
+
+  .rows {
+    border-top: 1px solid var(--line);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 250px 1fr 210px 92px;
+    gap: 6px 18px;
+    align-items: start;
+    padding-block: 14px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .cmd {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    padding-top: 1px;
+  }
+
+  .cmd .flag { color: var(--accent); }
+
+  .job {
+    font-size: 15.5px;
+    color: var(--ink-2);
+  }
+
+  .job em {
+    font-style: normal;
+    color: var(--ink);
+    box-shadow: inset 0 -.42em 0 var(--accent-soft);
+  }
+
+  .when {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.45;
+    padding-top: 2px;
+  }
+
+  .chip {
+    justify-self: start;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .chip.req { background: var(--accent-soft); color: var(--accent); }
+  .chip.keep { background: var(--keep-soft); color: var(--keep); }
+  .chip.retire { background: var(--retire-soft); color: var(--retire); }
+
+  .note {
+    grid-column: 2 / -1;
+    font-size: 14px;
+    color: var(--ink-3);
+    border-left: 2px solid var(--line);
+    padding-left: 12px;
+    margin-top: 4px;
+  }
+
+  /* ---------- findings ---------- */
+
+  .findings {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    padding: 26px 26px 10px;
+    margin-block: 44px;
+    box-shadow: var(--shadow);
+  }
+
+  .findings h2 { margin-bottom: 10px; }
+
+  .finding {
+    padding-block: 18px;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .finding h3 {
+    font-size: 14.5px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    overflow-wrap: anywhere;
+  }
+
+  .finding p {
+    margin: 0 0 8px;
+    font-size: 15.5px;
+    color: var(--ink-2);
+    max-width: 78ch;
+  }
+
+  .said {
+    font-size: 15px;
+    color: var(--ink-2);
+    border-left: 2px solid var(--retire);
+    padding-left: 12px;
+    margin: 0 0 10px;
+  }
+
+  .said strong {
+    font-family: Archivo, sans-serif;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--retire);
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  code {
+    font-size: .88em;
+    background: var(--surface-2);
+    padding: 1px 4px;
+    border-radius: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .findings code { background: var(--ground); }
+
+  .method {
+    font-size: 14px;
+    color: var(--ink-3);
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+    max-width: 78ch;
+  }
+
+  .method p { margin: 0 0 10px; }
+
+  @media (max-width: 860px) {
+    .row {
+      grid-template-columns: 1fr auto;
+      gap: 4px 14px;
+    }
+    .cmd { grid-column: 1; }
+    .chip { grid-column: 2; grid-row: 1; justify-self: end; }
+    .job { grid-column: 1 / -1; }
+    .when { grid-column: 1 / -1; }
+    .note { grid-column: 1 / -1; }
+    .lane, .axis { grid-template-columns: 1fr; gap: 4px; }
+    .axis { margin-left: 0; }
+  }
+</style>
+
+<div class="page">
+
+  <p class="eyebrow">Snowdesk · command audit</p>
+  <h1>Fifty commands, and which ones still earn their place</h1>
+  <p class="standfirst">
+    Every custom <code>manage.py</code> command in the pipeline — what it does, when it
+    should run, and whether it is still required. Seven run themselves. Eleven are
+    finished work waiting to be deleted.
+  </p>
+
+  <div class="meta">
+    <span>2026-09-15</span>
+    <span>snowdesk-data-pipeline</span>
+    <span>50 commands · 14 apps</span>
+    <span>all documented · all tested</span>
+  </div>
+
+  <div class="figures">
+    <div class="fig fig-req">
+      <span class="fig-n">7</span>
+      <span class="fig-l">Run without a human — five on the scheduler, one on deploy, one worker entry point</span>
+    </div>
+    <div class="fig">
+      <span class="fig-n">27</span>
+      <span class="fig-l">Operator tools, fixture builders and diagnostics, run on demand</span>
+    </div>
+    <div class="fig">
+      <span class="fig-n">5</span>
+      <span class="fig-l">One-shot backfills still load-bearing or re-armed by later tickets</span>
+    </div>
+    <div class="fig fig-retire">
+      <span class="fig-n">11</span>
+      <span class="fig-l">Spent one-offs — deletable once confirmed run in production</span>
+    </div>
+  </div>
+
+  <div class="schedule">
+    <h2>The day, in UTC <span class="count">— five scheduled jobs</span></h2>
+    <p class="lede">
+      Everything that runs unattended fires from <code>schedule.py</code> on the
+      <code>snowdesk-scheduler</code> worker. Bulletin ingest is the only job on a
+      sub-daily cadence; the rest are housekeeping placed on hours no fetch uses.
+    </p>
+
+    <div class="lanes">
+      <div class="lane">
+        <div class="lane-name">fetch_bulletins</div>
+        <div class="track">
+          <span class="tick" style="left:0%"></span><span class="tick" style="left:0.35%"></span>
+          <span class="tick" style="left:4.17%"></span><span class="tick" style="left:4.52%"></span>
+          <span class="tick" style="left:8.33%"></span><span class="tick" style="left:8.68%"></span>
+          <span class="tick" style="left:12.5%"></span><span class="tick" style="left:12.85%"></span>
+          <span class="tick" style="left:16.67%"></span><span class="tick" style="left:17.02%"></span>
+          <span class="tick" style="left:20.83%"></span><span class="tick" style="left:21.18%"></span>
+          <span class="tick" style="left:25%"></span><span class="tick" style="left:25.35%"></span>
+          <span class="tick" style="left:29.17%"></span><span class="tick" style="left:29.52%"></span>
+          <span class="tick" style="left:33.33%"></span><span class="tick" style="left:33.68%"></span>
+          <span class="tick" style="left:37.5%"></span><span class="tick" style="left:37.85%"></span>
+          <span class="tick" style="left:41.67%"></span><span class="tick" style="left:42.02%"></span>
+          <span class="tick" style="left:45.83%"></span><span class="tick" style="left:46.18%"></span>
+          <span class="tick" style="left:50%"></span><span class="tick" style="left:50.35%"></span>
+          <span class="tick" style="left:54.17%"></span><span class="tick" style="left:54.52%"></span>
+          <span class="tick" style="left:58.33%"></span><span class="tick" style="left:58.68%"></span>
+          <span class="tick" style="left:62.5%"></span><span class="tick" style="left:62.85%"></span>
+          <span class="tick" style="left:66.67%"></span><span class="tick" style="left:67.02%"></span>
+          <span class="tick" style="left:70.83%"></span><span class="tick" style="left:71.18%"></span>
+          <span class="tick" style="left:75%"></span><span class="tick" style="left:75.35%"></span>
+          <span class="tick" style="left:79.17%"></span><span class="tick" style="left:79.52%"></span>
+          <span class="tick" style="left:83.33%"></span><span class="tick" style="left:83.68%"></span>
+          <span class="tick" style="left:87.5%"></span><span class="tick" style="left:87.85%"></span>
+          <span class="tick" style="left:91.67%"></span><span class="tick" style="left:92.02%"></span>
+          <span class="tick" style="left:95.83%"></span><span class="tick" style="left:96.18%"></span>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-name">fetch_weather</div>
+        <div class="track">
+          <span class="tick" style="left:0%"></span>
+          <span class="tick" style="left:25%"></span>
+          <span class="tick" style="left:50%"></span>
+          <span class="tick" style="left:75%"></span>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-name">purge_request_logs</div>
+        <div class="track"><span class="tick" style="left:14.58%"></span></div>
+      </div>
+      <div class="lane">
+        <div class="lane-name">fill_what3words</div>
+        <div class="track"><span class="tick" style="left:16.67%"></span></div>
+      </div>
+      <div class="lane">
+        <div class="lane-name">link_resort_locations --check</div>
+        <div class="track"><span class="tick read" style="left:20.83%"></span></div>
+      </div>
+    </div>
+
+    <div class="axis">
+      <div></div>
+      <div class="axis-marks">
+        <span style="left:0%">00:00</span>
+        <span style="left:25%">06:00</span>
+        <span style="left:50%">12:00</span>
+        <span style="left:75%">18:00</span>
+        <span style="left:100%">24:00</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><span class="swatch w"></span>writes, runs with <code>--commit</code></span>
+      <span><span class="swatch r"></span>reads only, exits non-zero when it finds a gap</span>
+    </div>
+  </div>
+
+  <section>
+    <h2>Scheduled <span class="count">— 5</span></h2>
+    <p class="lede">
+      All five exit non-zero on failure, so a missed run shows up in the worker log rather
+      than passing silently.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">fetch_bulletins</div>
+        <div class="job">Fetches CAAML bulletins from SLF, ALBINA and Météo-France and upserts them; walks from each source's latest stored day, so <em>a missed run self-heals on the next one</em>.</div>
+        <div class="when">Hourly, :00 and :05 UTC</div>
+        <div class="chip req">Required</div>
+      </div>
+      <div class="row">
+        <div class="cmd">fetch_weather</div>
+        <div class="job">Writes today's Open-Meteo forecast row for every active Location.</div>
+        <div class="when">00:00 · 06:00 · 12:00 · 18:00 UTC</div>
+        <div class="chip req">Required</div>
+        <div class="note">Four passes because a location has no on-demand fetch behind its page render the way a bulletin region does — this batch is the only thing keeping today's row current.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">purge_request_logs</div>
+        <div class="job">Deletes <code>RequestLog</code> rows past the twelve-month retention window.</div>
+        <div class="when">Daily, 03:30 UTC</div>
+        <div class="chip req">Required</div>
+        <div class="note">Enforces a promise the Privacy Policy already makes. Deliberately on the half hour, on an hour no fetch uses: it holds a delete transaction over a table the request path writes to.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">fill_what3words</div>
+        <div class="job">Converts each Location still lacking a three word address.</div>
+        <div class="when">Daily, 04:00 UTC</div>
+        <div class="chip req">Required</div>
+        <div class="note">A clean no-op when no API key is set, which is what lets it be registered unconditionally.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">link_resort_locations <span class="flag">--check</span></div>
+        <div class="job">Reports geocoded resorts carrying no <code>ResortLocation</code> — each one a resort page rendering no Forecasts section with nothing saying so.</div>
+        <div class="when">Daily, 05:00 UTC</div>
+        <div class="chip req">Required</div>
+        <div class="note">The only scheduled job that writes nothing. The response is an operator running <code>--commit</code> by hand; PR&nbsp;#758 took that write off the deploy path on purpose.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deploy and process entry points <span class="count">— 2</span></h2>
+    <p class="lede">
+      <code>build.sh</code> runs exactly one data-touching command, and it is idempotent.
+      Every other bulk write was removed from the deploy in PR&nbsp;#758.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">sync_waffle_flags</div>
+        <div class="job">Reconciles <code>waffle.Flag</code> rows to the JSON manifest by <em>create and delete only</em>, so an operator's admin-tuned targeting survives every deploy.</div>
+        <div class="when">Every deploy, from <code>build.sh</code></div>
+        <div class="chip req">Required</div>
+      </div>
+      <div class="row">
+        <div class="cmd">run_scheduler</div>
+        <div class="job">Blocking APScheduler entry point; builds the job graph and waits for SIGTERM.</div>
+        <div class="when"><code>startCommand</code> for the scheduler worker</div>
+        <div class="chip req">Required</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Operator tools, run on demand <span class="count">— 12</span></h2>
+    <p class="lede">
+      Reach for these after a code change or data edit that invalidates derived state.
+      All are read-only until <code>--commit</code>.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">rebuild_render_models</div>
+        <div class="job">Rebuilds stale <code>render_model</code> JSON and refreshes the day ratings it touches.</div>
+        <div class="when">After a <code>RENDER_MODEL_VERSION</code> bump</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">recompute_day_ratings</div>
+        <div class="job">Re-derives every <code>RegionDayRating</code> under the current policy.</div>
+        <div class="when">After a day-rating policy change</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">import_resorts</div>
+        <div class="job">Reconciles the <code>Resort</code> table against <code>resorts.tsv</code>, in add / update / delete modes.</div>
+        <div class="when">After editing the sheet</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">dump_resorts_sheet</div>
+        <div class="job">Writes <code>resorts.tsv</code> back out of the database so map-editor edits can be diffed and committed.</div>
+        <div class="when">After a map-editor session</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">These two are the halves of one loop: sheet → DB, DB → sheet. An edit only becomes durable once it is back in the sheet.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">import_locations</div>
+        <div class="job">Reconciles <code>Location</code> and <code>ResortLocation</code> against their two sheets, in one transaction.</div>
+        <div class="when">After editing the sheets</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">dump_locations_sheets</div>
+        <div class="job">Re-emits both location sheets from the current rows, carrying curator notes forward.</div>
+        <div class="when">After an in-map location session</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">link_region_centroid_locations</div>
+        <div class="job">Gives every bounded MicroRegion a Location at its centroid — wholly offline, no network at all.</div>
+        <div class="when">Seeding an environment; after a fixture change</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">compute_basemap_download</div>
+        <div class="job">Precomputes each region's offline basemap tile coverage, clipped to the real boundary plus one margin tile.</div>
+        <div class="when">After a boundary or fixture change</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">Its docstring and the catalogue both claimed the deploy ran this. Neither is true any more — see the findings below.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">fill_location_elevations</div>
+        <div class="job">Resolves <code>elevation_m</code> from each coordinate; <code>--report</code> prints the rows whose resolved height disagrees with the curator's note, which is <em>how a mis-pinned peak gets caught</em>.</div>
+        <div class="when">After importing or re-pinning locations</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">prune_orphan_locations</div>
+        <div class="job">Deletes anonymous Locations nothing points at, cascading their weather with them.</div>
+        <div class="when">Occasional sweep</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">The cause it was written for (a deploy minting a fresh centroid row each time) is fixed, so this is maintenance now rather than repair. Never touches a named location.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_weather</div>
+        <div class="job">Fills the missing <em>past</em> days for every active location against the historical endpoint — never today.</div>
+        <div class="when">When a coverage gap is spotted</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">audit_resort_regions</div>
+        <div class="job">Tests each resort's pin against the micro-region polygons and reports wrong FKs; <code>--commit</code> re-points them and rewrites the sheet.</div>
+        <div class="when">After editing coordinates or polygons</div>
+        <div class="chip keep">Keep</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fixture builders <span class="count">— 6</span></h2>
+    <p class="lede">
+      Developer-side tools whose output is committed, so every environment gets the result
+      for free. They run when EAWS republishes, not on any schedule.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">build_switzerland_fixture</div>
+        <div class="job">Builds <code>eaws_CH.json</code> — 9 major regions, 21 sub-regions, 149 micro-regions — from vendored EAWS GeoJSON.</div>
+        <div class="when">On an EAWS data update</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">build_austria_fixture</div>
+        <div class="job">Same for Austria's seven avalanche-service states.</div>
+        <div class="when">On an EAWS data update</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">build_italy_fixture</div>
+        <div class="job">Same for Italy's seven alpine regions, keeping South Tyrol and Trentino as separate L1 rows.</div>
+        <div class="when">On an EAWS data update</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">build_france_fixture</div>
+        <div class="job">Same for the 35 French massifs, grouped into four L1 ranges from the Météo-France massif list.</div>
+        <div class="when">On an EAWS data update</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">refresh_eaws_fixtures</div>
+        <div class="job">Derives L1 and L2 geometry from the union of their L4 children, since only micro-regions have published polygons.</div>
+        <div class="when">After rebuilding a fixture</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">refresh_centroid_elevations</div>
+        <div class="job">Resolves each region centroid's ground height into the committed fixtures — <em>the only part of a centroid that cannot be derived offline</em>.</div>
+        <div class="when">Once per fixture rebuild, by a developer</div>
+        <div class="chip keep">Keep</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Diagnostics and gates <span class="count">— 6</span></h2>
+    <p class="lede">
+      Pure SELECT — none of these takes a <code>--commit</code> flag, because none of them
+      has anything to commit.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">diagnose_region_coverage</div>
+        <div class="job">Partitions regions into rated, published-but-unrated, and never-published — separating <em>our bug from an upstream gap</em>.</div>
+        <div class="when">When coverage looks wrong</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">dump_settings</div>
+        <div class="job">Prints every environment-derived setting with secrets redacted, each row carrying its validation problem.</div>
+        <div class="when">First stop on a failing deploy</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">monitor_query_counts</div>
+        <div class="job">Replays representative URLs and diffs their SQL counts against the committed baseline.</div>
+        <div class="when">CI, and after touching a monitored page</div>
+        <div class="chip req">Required</div>
+        <div class="note">A gate, not a report: any un-approved regression exits non-zero.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">report_route_passages</div>
+        <div class="job">Sweeps the four no-fall-passage thresholds over real routes and reports the distribution at each setting.</div>
+        <div class="when">Before moving any of the four constants</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">A tuning instrument, not a check — there is no such thing as a wrong distribution, so it never exits non-zero.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">export_day_character_csv</div>
+        <div class="job">Emits one CSV row per bulletin carrying every input to the day-character cascade, so a row can be hand-verified against the rules.</div>
+        <div class="when">When auditing day-character output</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">parse_wet_snow_coverage</div>
+        <div class="job">Reports the wet-snow prose parser's hit rate over the archive, per language and source.</div>
+        <div class="when">When the prose parser changes</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">The weakest of the six — a coverage probe that is only useful while someone is actively working on the parser. Worth revisiting if that stays quiet.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Development and bootstrap <span class="count">— 4</span></h2>
+    <p class="lede">
+      Never scheduled. The first two are wired into <code>bin/init-worktree</code>, so every
+      Claude worktree gets a navigable database without asking.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">seed_test_data</div>
+        <div class="job">Builds a navigable dataset by calling the real factories against the database, which exercises them as a side benefit.</div>
+        <div class="when">New dev or CI database</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">Refuses to run when <code>DEBUG</code> is <code>False</code>, so it cannot touch production.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">seed_test_week</div>
+        <div class="job">Loads seven consecutive real days across all three providers from the committed mirrors — no network, no dev server.</div>
+        <div class="when">When realistic data is needed</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">dev_magic_link</div>
+        <div class="job">Prints a ready-to-open magic-link URL so the passkey and account flows can be tested without SMTP.</div>
+        <div class="when">Local dev only</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">mint_vapid_keypair</div>
+        <div class="job">Generates the Web Push VAPID keypair and writes the raw private scalar; refuses to overwrite an existing file.</div>
+        <div class="when">Once, at environment setup</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">Rotating invalidates every live push subscription, which is why the refusal is deliberate rather than a convenience.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>One-shot backfills <span class="count">— 15, of which 11 are retirement candidates</span></h2>
+    <p class="lede">
+      All are read-only by default and idempotent by queryset — a second run after a
+      successful commit selects nothing. That property is also what makes them safe to
+      delete: <em>each is confirmable before removal by running it read-only and seeing zero
+      rows</em>.
+    </p>
+    <div class="rows">
+      <div class="row">
+        <div class="cmd">backfill_location_short_ids</div>
+        <div class="job">Mints <code>Location.short_id</code> — the <code>/weather/&lt;id&gt;/</code> identifier — on rows that pre-date the column.</div>
+        <div class="when">Still live</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_resort_slugs</div>
+        <div class="job">Mints <code>Resort.slug</code> on rows that pre-date the column; a collision is a failure, never a numeric suffix.</div>
+        <div class="when">Still live</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">Both docstrings promise that "a later migration tightens the column to <code>null=False</code> once every environment has run it". That migration never landed — both columns are still <code>null=True</code>, so both commands are still load-bearing.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_route_slope_samples</div>
+        <div class="job">Samples the terrain under routes uploaded before the column existed, one HTTP request per terrain tile crossed.</div>
+        <div class="when">Re-armed by each new record key</div>
+        <div class="chip keep">Keep</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_trip_slope_samples</div>
+        <div class="job">Same for trips, copying the source route's record where the geometry still matches exactly rather than re-walking it.</div>
+        <div class="when">Re-armed by each new record key</div>
+        <div class="chip keep">Keep</div>
+        <div class="note">Not one-offs despite the name: both explicitly re-arm for "every later ticket that adds a key to the record", and SNOW-911's <code>cruxes</code> already did that once.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_bulletin_groupings</div>
+        <div class="job">Computes the grouping row for bulletins ingested before the ingest hook existed.</div>
+        <div class="when">Spent — SNOW-323</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_bulletin_target_dates</div>
+        <div class="job">Derives <code>target_date</code> for rows that pre-date the field.</div>
+        <div class="when">Spent — SNOW-560</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_bulletin_source</div>
+        <div class="job">Detects each bulletin's provider from the raw payload and writes <code>source</code> where it is blank.</div>
+        <div class="when">Spent — SNOW-581</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_pdf_urls</div>
+        <div class="job">Populates <code>pdf_url</code> by dispatching to the per-provider URL helper.</div>
+        <div class="when">Spent — SNOW-295</div>
+        <div class="chip retire">Retire</div>
+        <div class="note">Additionally decaying: for Météo-France rows it calls an archive index endpoint that is being decommissioned.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">reformat_mf_comments</div>
+        <div class="job">Retroactively HTML-formats the prose comment fields on French bulletins ingested before the formatter existed.</div>
+        <div class="when">Spent — SNOW-207</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">backfill_observation_locations</div>
+        <div class="job">Mints the Location each pre-existing field report happened at and points its FK there.</div>
+        <div class="when">Spent — SNOW-709</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">uppercase_bulletin_choice_values</div>
+        <div class="job">Rewrites pipeline status and bulletin source to their upper-case members, plus one targeted JSON key.</div>
+        <div class="when">Spent — SNOW-582</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">uppercase_resort_choice_values</div>
+        <div class="job">Rewrites <code>Resort.geocode_source</code> from its legacy lower-case values.</div>
+        <div class="when">Spent — SNOW-582</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">uppercase_account_choice_values</div>
+        <div class="job">Rewrites <code>PushSubscription.mechanism</code> from its legacy lower-case values.</div>
+        <div class="when">Spent — SNOW-582</div>
+        <div class="chip retire">Retire</div>
+        <div class="note">These three shipped together for one convention change. They are also each other's evidence: if one has run everywhere, all three have.</div>
+      </div>
+      <div class="row">
+        <div class="cmd">purge_legacy_meteofrance_bulletins</div>
+        <div class="job">Deletes old-grammar French bulletins, but only where the rebuilt archive has already supplied the exact replacement.</div>
+        <div class="when">Spent once the purge has run</div>
+        <div class="chip retire">Retire</div>
+      </div>
+      <div class="row">
+        <div class="cmd">rekey_meteofrance_bulletins</div>
+        <div class="job">Re-keys French bulletins onto the publication-stamped identifier, deriving the new id from each row's own payload.</div>
+        <div class="when">Obsolete</div>
+        <div class="chip retire">Retire</div>
+        <div class="note"><em>The strongest single deletion candidate.</em> Its own successor's docstring states it "cannot repair production" — no pre-SNOW-559 row carries a usable publication timestamp — and the rebuild runbook says it cannot be the first step against that population. <code>purge_legacy_meteofrance_bulletins</code> superseded it.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="findings">
+    <h2>Drift found, and fixed</h2>
+    <p class="lede">
+      One deploy change in PR&nbsp;#758 — taking every bulk data write out of
+      <code>build.sh</code> — left five statements across the codebase describing a deploy
+      that no longer happens. All five are corrected in this commit.
+    </p>
+
+    <div class="finding">
+      <h3>compute_basemap_download.py + docs/management-commands.md</h3>
+      <p class="said"><strong>Said</strong>"Wired into <code>build.sh</code>'s post-deploy step, alongside the other derived-data commands" — and, in the catalogue, "<code>build.sh</code> runs it with <code>--commit</code> on every deploy (SNOW-521), after the <code>loaddata</code> step above."</p>
+      <p>Neither is true. <code>build.sh</code> names the command only inside the comment block explaining that all three bulk-write steps were removed. Nothing computes these blobs on deploy, and nothing said so — which matters, because a stale blob is an offline map that silently under-covers. Both now say an operator runs it.</p>
+    </div>
+
+    <div class="finding">
+      <h3>refresh_centroid_elevations.py</h3>
+      <p class="said"><strong>Said</strong>"<code>bin/build.sh</code> reloads these fixtures on every deploy … <code>link_region_centroid_locations</code> becomes a pure offline derivation that <code>build.sh</code> can re-run immediately after <code>loaddata</code>, on every deploy, for free."</p>
+      <p>The whole rationale for storing the elevation in the fixture was written in the present tense about a self-healing deploy step that has since been deleted. The elevation still belongs in the fixture — it is what keeps the re-link offline — but the reason now has to be stated without the deploy.</p>
+    </div>
+
+    <div class="finding">
+      <h3>MicroRegion.centroid_location help text</h3>
+      <p class="said"><strong>Said</strong>"Derived, NOT durable … loaddata resets it to NULL every time. Never treat a value here as surviving a deploy."</p>
+      <p>Read by whoever opens the region in the Django admin, and now exactly backwards: the column <em>is</em> durable, because no deploy loads a fixture any more. Corrected, with a migration for the changed help text.</p>
+    </div>
+
+    <div class="finding">
+      <h3>locations/services/anchor.py + the location-migration runbook</h3>
+      <p class="said"><strong>Said</strong>"<code>bin/build.sh</code> reloads the EAWS fixtures on every deploy … wiped and re-linked on each deploy" — and, in the runbook, that SNOW-771 was "fixed by making <code>build.sh</code> re-link after every <code>loaddata</code>."</p>
+      <p>That was the first patch; PR&nbsp;#758 then removed the reload itself. The reuse rule the service exists to enforce still holds for the same reason — an operator's re-run must rebind to the surviving row rather than strand it and its weather — so the rationale is rewritten rather than dropped.</p>
+    </div>
+  </div>
+
+  <div class="method">
+    <p>
+      <strong>Method.</strong> Every one of the 50 command modules read in full, against
+      <code>docs/management-commands.md</code>, <code>schedule.py</code>,
+      <code>bin/build.sh</code> and <code>bin/init-worktree</code>. Retirement calls rest on
+      a command's own stated purpose being finished, not on production state — each is
+      conditional on confirming the command has run in every environment, which a read-only
+      invocation reporting zero rows will settle.
+    </p>
+    <p>
+      No command is undocumented and none is untested: all 50 carry a catalogue entry and at
+      least one test module. The audit found no shape violations against the five
+      management-command design rules — only the drift above.
+    </p>
+  </div>
+
+</div>

@@ -347,13 +347,14 @@ class MicroRegion(BaseModel):
         related_name="micro_regions",
         help_text=(
             "The Location at this region's centroid, which the bulletin "
-            "page reads its forecast through (SNOW-696). Derived, NOT "
-            "durable: bin/build.sh reloads the EAWS fixtures on every "
-            "deploy, and a fixture carries no value for this column, so "
-            "loaddata resets it to NULL every time (SNOW-771). "
-            "link_region_centroid_locations re-derives it immediately "
-            "afterwards from ``boundary`` and ``centroid_elevation_m``. "
-            "Never treat a value here as surviving a deploy."
+            "page reads its forecast through (SNOW-696). Derived, and "
+            "durable since PR #758: no deploy loads a fixture any more, so "
+            "nothing NULLs this column. It was wiped on every deploy while "
+            "build.sh reloaded the EAWS fixtures, because loaddata resets "
+            "every column a fixture does not carry (SNOW-771). Null on a "
+            "region an operator has not yet run "
+            "link_region_centroid_locations against; that command derives "
+            "it offline from ``boundary`` and ``centroid_elevation_m``."
         ),
     )
     boundary = models.JSONField(
