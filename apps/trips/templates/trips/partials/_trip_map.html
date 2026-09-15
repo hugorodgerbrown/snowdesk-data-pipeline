@@ -167,6 +167,30 @@ Context:
         class="text-summary font-medium text-accent hover:text-accent-hover"
         data-testid="trip-view-on-map"
     >{% trans "View on the map" %}</a>
+    {# SNOW-968: the way to what the marks MEAN. This canvas draws three   #}
+    {# readings of the terrain — the six slope colours on the line and    #}
+    {# the profile (SNOW-962), the crux rings (SNOW-911) and the no-fall  #}
+    {# split line (SNOW-964) — and the map page explains all three in its #}
+    {# legend, which this page has no room for and should not carry a     #}
+    {# third copy of. One link to the topic that already holds them, and  #}
+    {# that carries the caveat a marker cannot: neither mark is a full    #}
+    {# list. This is the page the GROUP reads, so it is the page least    #}
+    {# able to assume the reader has met these marks before.              #}
+    {#                                                                    #}
+    {# Gated on the snapshot having been sampled at all, which mirrors    #}
+    {# `isSlopeColoured` in static/js/trip_map.js and costs nothing:      #}
+    {# `_trip_map_payload` already omits `slope` for an unsampled trip.   #}
+    {# That line draws no marks, so a link explaining marks would point   #}
+    {# at nothing. The separator sits INSIDE the branch so it cannot be   #}
+    {# left dangling after the one link.                                  #}
+    {% if map_payload.route.properties.slope %}
+        <span class="px-1 text-text-3" aria-hidden="true">·</span>
+        <a
+            href="{% url 'public:help' %}#help-topic-slope"
+            class="text-summary font-medium text-accent hover:text-accent-hover"
+            data-testid="trip-terrain-help"
+        >{% trans "What the colours and marks mean" %}</a>
+    {% endif %}
 </div>
 {% endcard %}
 {# Every user-facing string trip_map.js writes into the DOM. makemessages  #}

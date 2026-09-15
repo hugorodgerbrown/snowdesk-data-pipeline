@@ -28,10 +28,14 @@ from unittest.mock import patch
 
 import pytest
 from django.db import connection
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
 
 from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.trips.models import Trip
+from apps.trips.services.shares import mint_trip_share
 from apps.trips.services.slope import (
     _worker_sample_trip_slopes,
     enqueue_trip_slope_sampling,
@@ -405,3 +409,97 @@ class TestTripBulletinPanel:
         trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
 
         assert _bulletin_readings(trip) == []
+
+
+@pytest.mark.django_db
+class TestTheTerrainHelpLink:
+    """The way from a mark on this page to what the mark means (SNOW-968).
+
+    The trip page draws three readings of the terrain — the slope colours
+    on the line and the profile, the crux rings, and the no-fall split
+    line — and unlike the map it has no legend to explain any of them.
+    This is also the page the GROUP reads rather than the planner, so it
+    is the one least able to assume the reader has met the marks before.
+    One link to the help topic that holds all three, and that carries the
+    caveat neither marker can: neither is a full list.
+    """
+
+    def _sampled(self) -> Trip:
+        """Return a trip whose snapshot carries a record.
+
+        Dated tomorrow so the share link is live: ``share_expiry_for``
+        measures from the END of the trip's own day, so a factory default
+        in the past would mint a token that ``TripQuerySet.shared()``
+        answers 404 for.
+        """
+        import datetime
+
+        return TripFactory.create(
+            date=timezone.localdate() + datetime.timedelta(days=1),
+            points=MERIDIAN_TRACK,
+            slope_samples=_record(),
+        )
+
+    def test_the_object_page_carries_it(self, client: Client) -> None:
+        """The organiser's own view of the trip."""
+        trip = self._sampled()
+        client.force_login(trip.created_by)
+
+        body = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-terrain-help"' in body
+
+    def test_the_share_page_carries_it(self, client: Client) -> None:
+        """AND the surface a stranger opens, which is the whole point.
+
+        A share link is what reaches the people who did not plan the
+        tour; explaining the marks only to the organiser would explain
+        them to the one reader who already knows.
+        """
+        trip = self._sampled()
+        mint_trip_share(trip.created_by, trip.uuid)
+        trip.refresh_from_db()
+
+        body = client.get(
+            reverse("trips:share_page", args=[trip.share_token])
+        ).content.decode()
+
+        assert 'data-testid="trip-terrain-help"' in body
+
+    def test_it_points_at_the_slope_topic_and_not_the_top_of_the_page(
+        self, client: Client
+    ) -> None:
+        """The fragment is asserted, so a renamed anchor fails HERE.
+
+        Without it, renaming ``#help-topic-slope`` would land every
+        reader at the top of a long help page with no sign of which
+        panel they were sent to, and nothing in the build would notice.
+        """
+        trip = self._sampled()
+        client.force_login(trip.created_by)
+
+        body = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert "#help-topic-slope" in body
+
+    def test_an_unsampled_trip_carries_no_link(self, client: Client) -> None:
+        """A line with no marks on it must not offer to explain them.
+
+        The gate mirrors ``isSlopeColoured`` in ``static/js/trip_map.js``
+        and costs nothing — ``_trip_map_payload`` already omits ``slope``
+        for a trip nothing has sampled. The separator is inside the same
+        branch, so the row is not left with a dangling middot either.
+        """
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
+        client.force_login(trip.created_by)
+
+        body = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-terrain-help"' not in body
+        assert 'data-testid="trip-view-on-map"' in body
+        # And the row reads as ONE link, not one and a trailing middot.
+        # Asserting only the link's absence would pass a separator left
+        # outside the branch, which is the whole mistake being guarded
+        # against and is invisible to every other test here.
+        strip = body.split('data-testid="trip-view-on-map"')[1]
+        assert "·" not in strip.split("</div>")[0]
