@@ -34,6 +34,8 @@ const V4_STORES = [...V3_STORES, 'data:map_overlays'];
 const V5_STORES = [...V4_STORES, 'log:debug'];
 // SNOW-661 (schema v6) — added alongside the eight version-5 stores above.
 const V6_STORES = [...V5_STORES, 'data:panel_rows'];
+// SNOW-973 (schema v7) — added alongside the nine version-6 stores above.
+const V7_STORES = [...V6_STORES, 'data:route_bulletins'];
 
 /**
  * Delete the PWA database and wait for the deletion to actually complete.
@@ -64,10 +66,10 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('fresh open', () => {
-  it('creates all nine stores at version 6', async () => {
+  it('creates all ten stores at version 7', async () => {
     const db = await window.pwaDb.open();
-    expect(db.version).toBe(6);
-    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V6_STORES].sort());
+    expect(db.version).toBe(7);
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V7_STORES].sort());
   });
 });
 
@@ -214,8 +216,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(6);
-    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -224,8 +226,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(6);
-    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -234,12 +236,12 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(6);
-    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v4 DB (seven stores) gains log:debug + data:panel_rows', async () => {
+  it('a pre-existing v4 DB (seven stores) gains every store added since', async () => {
     // SNOW-812: log:debug is created for EVERY client at v5, not only for
     // those holding the debug_log waffle flag. The store is a schema fact —
     // gating its creation on a per-user flag would leave two populations on
@@ -249,12 +251,12 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(6);
-    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v5 DB (eight stores) gains data:panel_rows', async () => {
+  it('a pre-existing v5 DB (eight stores) gains every store added since', async () => {
     // SNOW-661: the store the field-observation panel repaints itself from
     // offline. Created generically by _runMigrations — the point of the case
     // is that a device already on v5 reaches v6 without losing the rows it
@@ -263,8 +265,23 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(6);
-    expect(result.names).toEqual([...V6_STORES].sort());
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
+  });
+
+  it('a pre-existing v6 DB (nine stores) gains data:route_bulletins', async () => {
+    // SNOW-973: the store the map's route detail panel repaints its
+    // bulletin reading from offline. Created generically by
+    // _runMigrations — the point of the case is that a device already on
+    // v6 reaches v7 without losing the rows it seeded there, not that a
+    // new branch was written.
+    const seeded = await seedLegacyDb(6, V6_STORES);
+    expect(seeded).toBe(1);
+
+    const result = await openViaDbJsAndRead();
+    expect(result.version).toBe(7);
+    expect(result.names).toEqual([...V7_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 });
