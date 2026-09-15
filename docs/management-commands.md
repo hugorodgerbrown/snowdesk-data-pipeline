@@ -1240,9 +1240,26 @@ incident that invalidates derived state:
 - `report_route_passages` — sweeps SNOW-964's four no-fall passage
   thresholds over every sampled `Route` and reports what each setting
   would mark: a gate sweep (40/45/50/55°), a gate × floor sweep at the
-  shipped 25 m minimum, and the alignment split at three tolerances. The
-  instrument the shipped constants are tuned with, so re-run it before
-  moving any of them. Trips are excluded — a trip's record is a verbatim
+  shipped 25 m minimum, the alignment split at three tolerances, and a
+  fall-line sweep. The instrument the shipped constants are tuned with,
+  so re-run it before moving any of them.
+
+  **The fourth table is the only one counted in the tolerance's own
+  unit** (SNOW-971). The other three count passages, which is right for
+  the gate, the floor and the minimum — but `FALL_LINE_TOLERANCE_DEG`
+  acts on a *segment* and the coverage vote sits between the two, so
+  `crossing` has two routes to victory (the tolerance's residue and the
+  tie-break) and a passage-level count cannot say which produced a
+  figure. The first staging run showed exactly that: 0/0/10 at every one
+  of 20, 30 and 40°. So the fall-line sweep histograms the per-segment
+  angle between track bearing and `aspect_deg` over every segment inside
+  a shipped-threshold passage, in 10° buckets — chosen because 20/30/40
+  and their mirrors at 140/150/160 all land on a bucket edge, so the
+  rows either side of a candidate are what moving to it would
+  reclassify. Segments nothing could measure are counted on their own
+  line rather than dropped. The alignment table above it gains an `of
+  which tied` column, which is a **subset** of `crossing` and not a
+  fifth category. Trips are excluded — a trip's record is a verbatim
   snapshot of a route's and would weight one route by its party size.
   Pure SELECT, and **never exits non-zero**: a distribution cannot be
   wrong, which is what separates this from `diagnose_region_coverage`
@@ -1251,7 +1268,7 @@ incident that invalidates derived state:
   `route_passages` takes its thresholds as keyword arguments.
 
   ```bash
-  # The three tables.
+  # The four tables.
   uv run python manage.py report_route_passages
 
   # Plus a per-route block naming each passage at the shipped defaults.
