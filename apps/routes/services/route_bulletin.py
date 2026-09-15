@@ -88,7 +88,10 @@ def readings_for_track(
             join needs an aspect, and inventing one would be inventing
             exposure.
         target_date: The day to ask about. A trip has one of its own; a
-            route implies today.
+            route takes the day the surface asking is showing — the map's
+            scrubbed day for the route detail sheet (SNOW-973), which is
+            ``?d=`` first and today behind it. Never assumed here: a
+            caller that means today passes today.
 
     Returns:
         One ``RegionReading`` per region the track crosses, longest
