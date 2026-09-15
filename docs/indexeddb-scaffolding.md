@@ -23,9 +23,10 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **6** (SNOW-661 added `data:panel_rows`;
-  SNOW-812 added `log:debug`; SNOW-492 added `data:map_overlays`;
-  SNOW-482 added `log:sync`; v2 added `data:favourites`).
+- Current schema version: **7** (SNOW-973 added `data:route_bulletins`;
+  SNOW-661 added `data:panel_rows`; SNOW-812 added `log:debug`;
+  SNOW-492 added `data:map_overlays`; SNOW-482 added `log:sync`; v2
+  added `data:favourites`).
 
 ## Object stores
 
@@ -43,6 +44,7 @@ never removed.
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
 | `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`, and `'routes'` since SNOW-950), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) and `static/js/routes_offline.js` (`window.pwaRoutesOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
+| `data:route_bulletins` | `key`       | false         | SNOW-973 one saved route's reading of one day's bulletin — one row per `(route uuid, day)`, written/read by `static/js/routes_bulletin_offline.js` (`window.pwaRoutesBulletinOffline`) when the map's route detail panel is opened. The only `data:*` row carrying the response's freshness envelope, because this one expires |
 | `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
 
 Alongside `basemap.origins` and `sw.devShellCache`, `meta:app` also
@@ -52,7 +54,8 @@ and restarted can rehydrate it (`sw.js`'s `_hydrateDebugLogEnabled()`).
 
 `data:*` is a reserved namespace for cached server-data copies.
 `data:favourites` (v2) was its first occupant; `data:map_overlays` (v4,
-SNOW-492) is the second and `data:panel_rows` (v6, SNOW-661) the third —
+SNOW-492) is the second, `data:panel_rows` (v6, SNOW-661) the third and
+`data:route_bulletins` (v7, SNOW-973) the fourth —
 see [`docs/offline-first.md`](offline-first.md) §12.6 for the
 cached-with-explicit-staleness contract they follow. When a further
 consumer adds a store, bump `DB_VERSION` — `_runMigrations` creates any
@@ -102,6 +105,42 @@ container: `observations_offline.js` matches `[data-report-rows]` and
 `routes_offline.js` matches `[data-routes-rows]`, which is what stops one
 panel caching another's list (SNOW-722). The favourites panel keeps no
 row here — it has its own `data:favourites` store.
+
+### `data:route_bulletins` row shape (SNOW-973)
+
+```js
+{
+  key,                   // '<route uuid>:<YYYY-MM-DD>' — the route AND
+                         // the day, because a reading belongs to one day
+  body,                  // routes:bulletin's rendered fragment, verbatim
+  generated_at,          // the response's X-Data-Generated-At — the
+                         // OLDEST issue among the bulletins read
+  unsafe_after_seconds,  // its X-Data-Unsafe-After (48h), or null when
+                         // the answer carried no bulletin to expire
+  cached_at,             // ISO 8601 — what the panel's "as of HH:MM"
+                         // line is stamped with
+  principal,             // the signed-in account (SNOW-493), or null.
+                         // Compared UNTOUCHED, so a row written before
+                         // the partitioning matches nobody
+}
+```
+
+**The only `data:*` row that expires**, and the reason it is a store of
+its own rather than another key in `data:panel_rows` — those are one body
+per PANEL, this is one body per (route, day). A route's track does not go
+stale, so `data:panel_rows`' routes row carries `cached_at` and nothing
+else; this row is the forecaster's problems joined to that track, which
+changes twice a day. Past `unsafe_after_seconds`
+(`core.freshness.DEFAULT_UNSAFE_AFTER_SECONDS`) the panel renders the
+expired sentence instead of the rows — `favourites_offline.js`'s
+`_isExpired` rule, on `routes_offline.js`'s rendered-body shape.
+
+The day in the key is load-bearing: the panel asks for the day the map's
+scrubber is showing and gets that day's row or nothing, so a cached
+reading can never be repainted under a date it does not belong to.
+
+Nothing warms this store. A reading is a real per-region join on the
+server, so what a device holds is what it has already been shown.
 
 ### `meta:app` row shape — `basemap.customAreas` (SNOW-522, SNOW-586, SNOW-635)
 
@@ -351,12 +390,12 @@ the wipe covers it even without the enumeration API.
 see [`client-side-tests.md`](client-side-tests.md)) covers:
 
 1. Fresh open — all static stores exist at the current version
-   (currently 6), including `log:sync`, `data:map_overlays` and
-   `data:panel_rows`.
+   (currently 7), including `log:sync`, `data:map_overlays`,
+   `data:panel_rows` and `data:route_bulletins`.
 2. Round-trip — `put/get/delete/getAll/count/clear` on `queue:events`.
 3. `context()` returns the expected seven envelope-context keys with
    sane defaults, and is stable within a page load.
-4. v1→v6 through v5→v6 migrations — open an older-version DB, upgrade,
+4. v1→v7 through v6→v7 migrations — open an older-version DB, upgrade,
    and assert the new store(s) exist without disturbing existing rows.
 5. `appendSyncLog`/`getSyncLog` — newest-100 trim and newest-first read
    order.

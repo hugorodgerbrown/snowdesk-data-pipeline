@@ -288,17 +288,23 @@ for something that is not a danger rating, and is distinct from the
 favourite pin and report flag colours.
 
 **Tapping a route** fits the viewport to that route's stored bounds and
-opens the anchored detail popup with its name, distance, and ascent. The
-tap priority puts a route *below* the point markers: where a favourite
-star or a report flag sits on top of a line, the pin wins, because a pin
-is a smaller and more deliberate target.
+opens the **route detail panel** — the docked sheet (`#route-detail-sheet`,
+SNOW-973) that replaced the anchored popup once five tickets of terrain
+reading had outgrown a 320px card. It carries the route's name, distance
+and ascent, the terrain lines, the elevation profile, and what each
+region's bulletin says about the line **on the day the scrubber is
+showing**, which the popup never had room for. The resort pin and the
+favourite pin keep the anchored popup. The tap priority puts a route
+*below* the point markers: where a favourite star or a report flag sits on
+top of a line, the pin wins, because a pin is a smaller and more
+deliberate target.
 
 **Ascent is omitted when unknown.** A GPX file with no elevation data
 produces a route with no ascent figure at all — not zero. "We don't know
 how much climbing this is" and "this route is flat" are different facts
 about a mountain day, and showing the second for the first is the kind of
-error somebody could plan on. The popup simply has no ascent line in that
-case, exactly as the panel row does not.
+error somebody could plan on. The detail panel simply has no ascent line
+in that case, exactly as the panel row does not.
 
 **Default off.** Unlike favourites, the routes overlay starts switched
 off and is opt-in. Favourites are pins, and a handful of extra pins costs
@@ -586,11 +592,12 @@ The **downloads** panel has no such control: its rows are basemap areas,
 not places, and its own "zoom to this area" question is already answered
 by the map behind it.
 
-This does not open the item's popup, which a tap on the pin or the line
-does. The three panels share one row, and only one of the three could
-offer a popup — the community-reports feed is anonymised and carries no
-identifier a row could name — so the gesture means the same thing on all
-three rather than more on one.
+This does not open the item's own detail — the favourite's popup, or the
+route's panel — which a tap on the pin or the line does. The three panels
+share one row, and only one of the three could offer a detail surface at
+all — the community-reports feed is anonymised and carries no identifier a
+row could name — so the gesture means the same thing on all three rather
+than more on one.
 
 ## 3.8 Overlay roundel state — is it on the map right now?
 
