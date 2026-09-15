@@ -9,11 +9,17 @@
  * `regions-fill`, and selected the region the track crosses. The popup
  * existed and never opened.
  *
- * So these tests are about the hit test, not the popup's contents (those
+ * So these tests are about the hit test, not the detail's contents (those
  * are tests/js/test_elevation_profile_core.js's job). The stub below
  * models a thin line honestly: it answers an exact-point query the way a
  * 1.5px line really would — with nothing — and only reports the route
  * when the query geometry is a box that actually covers it.
+ *
+ * SNOW-973: what the tap OPENS is now the docked `#route-detail-sheet`
+ * rather than an anchored popup, so the fixture carries the sheet and its
+ * body template and `tapAt` reads the figures map.js seats in it. Every
+ * assertion below is unchanged — the hit test is the subject, and the
+ * surface it feeds is incidental to it.
  *
  * Booting map.js in jsdom follows tests/js/test_map_detail_popup_exclusivity.js's
  * pattern — see its header for the rationale.
@@ -73,9 +79,6 @@ const FAVOURITE_FEATURE = {
   geometry: { type: 'Point', coordinates: [7.0, 46.01] },
   properties: { uuid: 'fav', name: 'Hut' },
 };
-
-/** Every DOM node handed to a popup, newest last. */
-const popupNodes = [];
 
 /** Layers the stub pretends are installed; a test may narrow this. */
 let installedLayers = new Set(['routes-line', 'routes-line-casing']);
@@ -206,19 +209,31 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>`;
+    <ul id="search-results" hidden></ul>
+    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
+    <template id="route-detail-template">
+      <div>
+        <div data-route-detail-figures></div>
+        <div data-route-detail-bulletin></div>
+      </div>
+    </template>`;
 }
 
 let mapStub;
 
 /**
- * Tap the map at a screen position, and return the popup it opened.
+ * Tap the map at a screen position, and return the detail it opened.
+ *
+ * The sheet is closed first, so "did this tap open one" is answered by
+ * this tap rather than by a previous one — MapSheet's teardown empties
+ * the body, so a leftover node cannot be found after a close.
  *
  * @param {number} y The tap's y in pixels.
- * @returns {HTMLElement|undefined} The popup's node, if one opened.
+ * @returns {HTMLElement|undefined} The figures map.js built, if the sheet
+ *   opened.
  */
 function tapAt(y) {
-  const before = popupNodes.length;
+  window.pwaRouteDetail.close();
   for (const handler of mapStub.handlers.click || []) {
     handler({
       point: { x: 10, y },
@@ -226,7 +241,9 @@ function tapAt(y) {
       originalEvent: { target: document.body },
     });
   }
-  return popupNodes.length > before ? popupNodes.at(-1) : undefined;
+  const sheetEl = document.getElementById('route-detail-sheet');
+  if (!sheetEl || sheetEl.hasAttribute('hidden')) return undefined;
+  return sheetEl.querySelector('[data-route-detail]') || undefined;
 }
 
 beforeAll(async () => {
@@ -253,6 +270,10 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
+  // SNOW-973: the sheet the tap opens, and the controller it attaches
+  // through. Both before the bundle, as the page loads them.
+  await import('../../static/js/map_sheet.js');
+  await import('../../static/js/map_route_detail.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 

@@ -13,13 +13,18 @@ URL structure:
   routes/partials/share/<token>/claim/
                                      POST — claim a copy (SNOW-764)
   routes/routes.geojson              GET  — owner's routes as GeoJSON (SNOW-687)
+  routes/<uuid>/bulletin/            GET  — this route against one day's
+                                            bulletins (SNOW-973)
   routes/<uuid>/share/               POST — mint a share link (SNOW-764)
   routes/s/<token>/                  GET  — follow a share link (SNOW-764)
 
 ``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
 prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
 is a plain-JSON layer consumed by a ``fetch()`` from static/js/map.js.
-Mirrors ``favourites/favourites.geojson``.
+Mirrors ``favourites/favourites.geojson``. ``<uuid>/bulletin/`` is outside
+it on the same rule and for the same reason: it answers a ``fetch()`` from
+static/js/map_route_detail.js, which puts the body in the map's route
+detail sheet itself rather than letting htmx swap it.
 
 The two SNOW-764 endpoints outside that prefix are outside it for the same
 rule, each for its own reason. ``<uuid>/share/`` answers JSON to a plain
@@ -66,6 +71,11 @@ urlpatterns = [
         "routes.geojson",
         views.routes_geojson,
         name="geojson",
+    ),
+    path(
+        "<uuid:uuid>/bulletin/",
+        views.route_bulletin_fragment,
+        name="bulletin",
     ),
     path(
         "<uuid:uuid>/share/",

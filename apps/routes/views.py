@@ -16,11 +16,15 @@ the sharing half of SNOW-764:
 - ``route_share_claim`` (POST) — SNOW-764: takes a COPY of a shared route
   onto the requesting user's account and returns the new row.
 
-plus two navigation/JSON endpoints outside the ``partials/`` prefix:
+plus three navigation/JSON endpoints outside the ``partials/`` prefix:
 
 - ``routes_geojson`` (GET) — SNOW-687: a ``LineString`` FeatureCollection of
   the requesting user's own routes, for the map's routes layer. Not
   ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX swap.
+- ``route_bulletin_fragment`` (GET) — SNOW-973: what each region's bulletin
+  says about one saved route, on the day the map is showing. Rendered HTML
+  inside a JSON envelope, for the map's route detail panel; not
+  ``@require_htmx``, for the same reason as the endpoint above.
 - ``route_share_redirect`` (GET/HEAD) — SNOW-764: follows a share link,
   records the token in the session and 302s to the map. A navigation, not
   a fragment, which is why it sits outside ``partials/``.
@@ -75,7 +79,7 @@ Three properties keep that widening honest:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -89,6 +93,7 @@ from django.http import (
     JsonResponse,
 )
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import cache_control
@@ -96,10 +101,11 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
-from apps.core.freshness import apply_freshness_headers
+from apps.core.freshness import DEFAULT_UNSAFE_AFTER_SECONDS, apply_freshness_headers
 from apps.core.http import client_ip, is_top_level_navigation
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.gpx import GPXParseError
+from apps.routes.services.route_bulletin import display_readings
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
 from apps.routes.services.shares import (
     RouteShareTokenCollision,
@@ -657,6 +663,124 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
         response,
         generated_at=newest or timezone.now(),
         unsafe_after=None,
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# route_bulletin_fragment (SNOW-973) — this route, against one day's bulletin
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+# Per-user data — one user's own track, read against a bulletin — so
+# ``private`` and ``no-store``, exactly as ``routes_geojson`` above. The
+# CLIENT is allowed to keep it, and does: static/js/routes_bulletin_offline.js
+# stores the rendered body in IndexedDB under the freshness envelope this
+# response carries. That is a deliberate, stamped copy that expires; a
+# shared cache holding the same bytes for a different reader is not.
+@cache_control(private=True, no_store=True)
+def route_bulletin_fragment(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Return what each region's bulletin says about one saved route.
+
+    The reading the trip page has rendered since SNOW-839, for a route
+    instead of a trip and for the day the map's scrubber is showing
+    instead of the trip's own date. A trip is planned for a day; a route
+    is not, so the day has to come from the surface asking — which is
+    what ``?d=`` carries and why the answer names the day back.
+
+    NOT ``@require_htmx``: consumed by a ``fetch()`` from
+    ``static/js/map_route_detail.js``, not an HTMX swap, following
+    ``routes_geojson``'s precedent above and the placement rule in
+    ``apps.routes.urls``.
+
+    OWNER-SCOPED, and 404 rather than 403 for another user's uuid — the
+    no-existence-oracle rule in this module's header. There is no pending
+    -share widening here, unlike ``route_list`` and ``routes_geojson``: a
+    recipient who has not saved a shared route is being shown a line and
+    an offer, and the panel omits this section for them entirely.
+
+    THE EMPTY LIST IS TWO DIFFERENT FACTS. ``readings_for_track`` returns
+    ``[]`` both for a route nothing has sampled and for a sampled route
+    that crosses no region we hold a boundary for, so ``sampled`` travels
+    to the template beside the readings and the two are worded
+    separately.
+
+    Freshness follows ``apps.favourites.views._card_freshness`` rather
+    than ``routes_geojson``, which passes ``unsafe_after=None`` on the
+    stated grounds that a user's own uploaded track is not
+    safety-critical. This body is not the track: it is the forecaster's
+    problems, joined to it. So ``unsafe_after`` is the 48h default
+    whenever a bulletin was actually read — the client renders a cached
+    row past that horizon as expired rather than as a current reading —
+    and with no bulletin in the answer there is nothing safety-critical
+    to expire, so the pair is ``(now, None)``.
+
+    ``generated_at`` is the OLDEST ``issued_at`` among the bulletins
+    read, not the newest. A route crossing two regions is showing both
+    readings at once, so the panel is only as fresh as its stalest
+    constituent — the same rule, and the same sentence, as
+    ``_card_freshness``'s ``min(present)``. Taking the newest would let
+    one freshly-issued region hide a neighbour's day-old bulletin behind
+    a current-looking timestamp, on precisely the surface where the two
+    are read together.
+
+    Args:
+        request: The incoming GET request. ``?d=YYYY-MM-DD`` selects the
+            day; absent, the server's own local date is used, which is
+            what a map with no day chosen is showing.
+        uuid: The Route's uuid, from the URL.
+
+    Returns:
+        ``JsonResponse`` carrying ``html`` (the rendered fragment) and
+        ``day`` (the ISO date it answers for) — the shape
+        ``openResortPopup`` and ``map_weather_detail.js`` already consume.
+
+    Errors:
+        400 — ``?d=`` is not an ISO date.
+        403 — anonymous request.
+        404 — an unknown uuid, or one belonging to another user.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    raw_date = request.GET.get("d", "")
+    if raw_date:
+        try:
+            target_date = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "invalid_date"}, status=400)
+    else:
+        target_date = timezone.localdate()
+
+    try:
+        route = Route.objects.for_user(request.user).get(uuid=uuid)
+    except Route.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    readings = display_readings(route.points, route.slope_samples, target_date)
+
+    issued = [
+        reading["bulletin"].issued_at
+        for reading in readings
+        if reading["bulletin"] is not None
+    ]
+
+    html = render_to_string(
+        "routes/partials/_route_bulletin.html",
+        {
+            "bulletin_readings": readings,
+            "target_date": target_date,
+            "sampled": route.slope_samples is not None,
+        },
+        request=request,
+    )
+    response = JsonResponse({"html": html, "day": target_date.isoformat()})
+    apply_freshness_headers(
+        response,
+        generated_at=min(issued) if issued else timezone.now(),
+        unsafe_after=DEFAULT_UNSAFE_AFTER_SECONDS if issued else None,
     )
     return response
 

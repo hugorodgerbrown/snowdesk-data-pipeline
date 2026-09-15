@@ -44,6 +44,15 @@ Optional context:
                 footer stay pinned as ordinary, non-growing flex
                 children. See _map_downloads_sheet.html for the concrete
                 shape.
+  width       — Tailwind width utility for the DESKTOP layout; default
+                ``sm:w-96``, which is what all five sheets predating
+                SNOW-973 render and is what keeps them byte-identical.
+                The map's route detail panel passes a wider value because
+                its content is a column of figures, a chart and the day's
+                bulletin reading rather than a list of rows — a defaulted
+                variant, not a fork. Below the ``sm`` breakpoint it is
+                not applied at all: the sheet spans the viewport there,
+                which is the point of the two layouts described below.
 
 ``tabindex="-1"`` (SNOW-538) makes the container a programmatic focus
 target without putting it in the tab order: favourites.js and report.js
@@ -108,7 +117,7 @@ bug in a subtler form.
     {% if not static %}hidden{% endif %}
     tabindex="-1"
     data-overlay
-    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-96"
+    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}"
     aria-label="{{ aria_label }}"
 >
     {% if static %}

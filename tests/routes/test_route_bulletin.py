@@ -16,6 +16,12 @@ What is asserted here is the wiring a unit test cannot see:
     reader whose route leaves the forecast should be told so;
   - an unsampled track produces nothing at all — the join needs an
     aspect, and inventing one would invent exposure.
+
+plus ``display_readings`` (SNOW-973), the template-shaping half that was
+``apps.trips.views._bulletin_readings`` until the map's route panel
+became its second caller: the bulletin link is built for the DAY asked
+about rather than for today, which is the whole difference between a
+trip's fixed date and a route read under a scrubber.
 """
 
 from __future__ import annotations
@@ -25,7 +31,11 @@ from typing import Any
 
 import pytest
 
-from apps.routes.services.route_bulletin import _segment_facts, readings_for_track
+from apps.routes.services.route_bulletin import (
+    _segment_facts,
+    display_readings,
+    readings_for_track,
+)
 from tests.factories import BulletinFactory, MicroRegionFactory
 
 # A square region, and a second one beside it. Small and synthetic: the
@@ -268,3 +278,69 @@ class TestReadingsForTrack:
             )
             == []
         )
+
+
+@pytest.mark.django_db
+class TestDisplayReadings:
+    """The template-shaped half, shared by the trip page and the map."""
+
+    def _region(self, region_id: str) -> Any:
+        """Create the western region, publishing one N-facing problem."""
+        region = MicroRegionFactory.create(
+            region_id=region_id, boundary=_boundary(_WEST)
+        )
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2026, 3, 1, 6, tzinfo=datetime.UTC),
+            valid_to=datetime.datetime(2026, 3, 1, 23, tzinfo=datetime.UTC),
+            render_model=_render_model(["N"]),
+            render_model_version=1,
+        )
+        bulletin.regions.add(region)
+        return region
+
+    def test_each_row_is_shaped_for_the_partial(self) -> None:
+        region = self._region("CH-D01")
+        coordinates = [(7.02, 46.02), (7.03, 46.03)]
+
+        rows = display_readings(
+            _track(coordinates, 2500.0), _record(coordinates, [0.0]), DAY
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["region"] == region
+        assert rows[0]["overlaps"][0].problem_label == "Persistent weak layers"
+        assert rows[0]["length_km"] == round(rows[0]["length_km"], 1)
+
+    def test_the_bulletin_link_is_for_the_day_asked_about(self) -> None:
+        """Not today's: a route read under the scrubber links to the day
+        its rows were read from, or the page it opens contradicts them.
+        """
+        region = self._region("CH-D02")
+        coordinates = [(7.02, 46.02), (7.03, 46.03)]
+
+        rows = display_readings(
+            _track(coordinates, 2500.0), _record(coordinates, [0.0]), DAY
+        )
+
+        assert rows[0]["bulletin_url"] == region.get_absolute_url(DAY)
+        assert rows[0]["bulletin_url"] != region.get_absolute_url()
+
+    def test_a_region_with_no_bulletin_carries_no_link(self) -> None:
+        """There is nothing to open, and a link to nothing is worse than
+        the sentence the partial prints instead.
+        """
+        MicroRegionFactory.create(region_id="CH-D03", boundary=_boundary(_WEST))
+        coordinates = [(7.02, 46.02), (7.03, 46.03)]
+
+        rows = display_readings(
+            _track(coordinates, 2500.0), _record(coordinates, [0.0]), DAY
+        )
+
+        assert rows[0]["bulletin"] is None
+        assert rows[0]["bulletin_url"] is None
+
+    def test_an_unsampled_track_shapes_nothing(self) -> None:
+        self._region("CH-D04")
+        coordinates = [(7.02, 46.02), (7.03, 46.03)]
+
+        assert display_readings(_track(coordinates, 2500.0), None, DAY) == []

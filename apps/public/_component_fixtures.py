@@ -3360,3 +3360,122 @@ def _build_hourly_chart_variants() -> tuple[dict[str, Any], ...]:
 
 
 HOURLY_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_hourly_chart_variants()
+
+
+# ---------------------------------------------------------------------------
+# includes/_bulletin_readings.html (SNOW-839, shared by SNOW-973)
+# ---------------------------------------------------------------------------
+
+
+def _overlap(
+    problem_label: str,
+    aspects: str,
+    length_label: str,
+    lowest_m: int | None = None,
+    highest_m: int | None = None,
+    elevation_undecided: bool = False,
+) -> Any:
+    """Return one display-shaped problem overlap for the library.
+
+    The real dataclass rather than a stub: it is frozen, takes six plain
+    values and imports nothing that touches the database, so constructing
+    it here keeps the fixture honest about the shape the template is
+    handed.
+
+    Args:
+        problem_label: The avalanche problem's own label.
+        aspects: The crossed octants, in compass order.
+        length_label: The stretch, already phrased with its unit.
+        lowest_m: The lowest metre of the stretch, or None.
+        highest_m: The highest metre of the stretch, or None.
+        elevation_undecided: Whether the height half is unusable.
+
+    Returns:
+        An ``OverlapDisplay``.
+
+    """
+    from apps.routes.services.route_bulletin import OverlapDisplay  # noqa: PLC0415
+
+    return OverlapDisplay(
+        problem_label=problem_label,
+        aspects=aspects,
+        length_label=length_label,
+        lowest_m=lowest_m,
+        highest_m=highest_m,
+        elevation_undecided=elevation_undecided,
+    )
+
+
+# ``region`` is read for its ``name`` alone and ``bulletin`` for its
+# truthiness, so both are stubs — this module renders with no database.
+BULLETIN_READINGS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Two regions, longest stretch first (the ordinary case)",
+        "context": {
+            "testid_prefix": "component-library-bulletin-readings",
+            "bulletin_readings": [
+                {
+                    "region": SimpleNamespace(name="Aletsch"),
+                    "bulletin": SimpleNamespace(),
+                    "bulletin_url": "/CH-2131/2026-03-01/",
+                    "length_km": 4.2,
+                    "overlaps": [
+                        _overlap(
+                            "Persistent weak layers",
+                            "N, NE",
+                            "1.4 km",
+                            lowest_m=2200,
+                            highest_m=2800,
+                        ),
+                        _overlap(
+                            "Wind-drifted snow",
+                            "NE",
+                            "320 m",
+                            lowest_m=2500,
+                            highest_m=2500,
+                        ),
+                    ],
+                },
+                {
+                    "region": SimpleNamespace(name="Lötschental"),
+                    "bulletin": SimpleNamespace(),
+                    "bulletin_url": "/CH-2132/2026-03-01/",
+                    "length_km": 1.1,
+                    "overlaps": [
+                        _overlap(
+                            "Wet snow",
+                            "S, SW",
+                            "900 m",
+                            elevation_undecided=True,
+                        )
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        # Both of the "nothing to report" states, which are different
+        # claims: one region published nothing, the other published a
+        # bulletin whose problems this line stays out of.
+        "caption": "Unforecast region, and a line that enters no problem",
+        "context": {
+            "testid_prefix": "component-library-bulletin-readings-empty",
+            "bulletin_readings": [
+                {
+                    "region": SimpleNamespace(name="Val Ferret"),
+                    "bulletin": None,
+                    "bulletin_url": None,
+                    "length_km": 2.0,
+                    "overlaps": [],
+                },
+                {
+                    "region": SimpleNamespace(name="Grand Combin"),
+                    "bulletin": SimpleNamespace(),
+                    "bulletin_url": "/CH-2133/2026-03-01/",
+                    "length_km": 0.6,
+                    "overlaps": [],
+                },
+            ],
+        },
+    },
+)

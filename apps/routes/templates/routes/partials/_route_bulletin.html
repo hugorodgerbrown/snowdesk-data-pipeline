@@ -1,0 +1,55 @@
+{% load i18n components %}
+{% comment %}
+routes/partials/_route_bulletin.html — a saved route, against the day the
+map is showing (SNOW-973).
+
+Server-rendered by ``apps.routes.views.route_bulletin_fragment`` and
+fetched into the map's route detail panel by
+``static/js/map_route_detail.js``. The rows themselves are
+``includes/_bulletin_readings.html``, the same partial the trip page
+renders — this file is only the day line above them and the two ways the
+list can be empty.
+
+THE TWO EMPTY CASES ARE DIFFERENT CLAIMS, and ``readings_for_track``
+returns ``[]`` for both, which is why the view passes ``sampled``
+separately. A route nothing has sampled has not been looked at; a sampled
+route with no readings has been looked at and crosses no ground we hold a
+forecast boundary for. Rendering either as "your line meets nothing" would
+be a statement about avalanche terrain that this page has not earned.
+
+Nothing here is user-supplied — a region's name is curated and the day is
+the server's own — with one exception that is not on this surface: the
+route's NAME is written into the panel by map.js with ``textContent``.
+
+Context:
+    bulletin_readings : list[dict] — display-shaped readings, longest
+                        stretch first. Possibly empty.
+    target_date       : datetime.date — the day asked about, which is the
+                        day the map's scrubber is showing.
+    sampled           : bool — whether this route has a terrain record at
+                        all (``Route.slope_samples is not None``).
+{% endcomment %}
+<div data-testid="route-bulletin" data-day="{{ target_date|date:'Y-m-d' }}">
+    <p class="mt-4 text-meta text-text-3" data-testid="route-bulletin-day">{{ target_date|date:"l j F Y" }}</p>
+    {% if bulletin_readings %}
+        {% include "includes/_bulletin_readings.html" with bulletin_readings=bulletin_readings testid_prefix="route-bulletin" card_extra="mt-1" %}
+    {% else %}
+        {% card padding="p-4" extra="mt-1" %}
+        {% if sampled %}
+            <p class="text-meta text-text-3" data-testid="route-bulletin-unplaced">
+                {% blocktrans trimmed %}
+                    None of this route could be placed in a region we hold a forecast boundary for, so there is no
+                    bulletin to read it against.
+                {% endblocktrans %}
+            </p>
+        {% else %}
+            <p class="text-meta text-text-3" data-testid="route-bulletin-unsampled">
+                {% blocktrans trimmed %}
+                    This route hasn't been measured against the terrain yet, so there is nothing to read against the
+                    bulletin. Try again shortly.
+                {% endblocktrans %}
+            </p>
+        {% endif %}
+        {% endcard %}
+    {% endif %}
+</div>

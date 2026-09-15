@@ -82,6 +82,13 @@ Context expected:
 {# `min-h-0 flex-1` and owns its own scroll region.                        #}
 {% trans "Routes" as route_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True %}
+{# SNOW-973: the OTHER route sheet — one route's detail, opened by a tap  #}
+{# on its line rather than by the roundel, and the surface that replaced  #}
+{# the anchored popup activateRoute used to mount. Its own partial        #}
+{# because it carries its own body template, its own strings block and    #}
+{# two scripts of its own; included here rather than from home.html so    #}
+{# the page's routes surface stays one include.                           #}
+{% include "public/partials/_route_detail_sheet.html" %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}
