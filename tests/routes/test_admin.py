@@ -2,15 +2,22 @@
 tests/routes/test_admin.py — Admin registration smoke test for routes.
 
 Verifies that Route and RouteShare are registered with Django admin and
-that both admin classes are read-mostly, mirroring FavouriteAdmin.
+that both admin classes are read-mostly, mirroring FavouriteAdmin, plus
+SNOW-988's download action — the one action on either model, and a read.
 """
 
 from __future__ import annotations
 
+from typing import cast
+
+import pytest
 from django.contrib import admin
+from django.contrib.messages.storage.cookie import CookieStorage
+from django.test import RequestFactory
 
 from apps.routes.admin import RouteAdmin, RouteShareAdmin
 from apps.routes.models import Route, RouteShare
+from tests.factories import RouteFactory, UserFactory
 
 
 class TestRouteAdminRegistration:
@@ -88,3 +95,66 @@ class TestRouteShareAdminRegistration:
         """A support request arrives carrying the link, so the token is the key."""
         registered = admin.site._registry[RouteShare]
         assert "token" in registered.search_fields
+
+
+class TestDownloadAsGpxAction:
+    """The one action on RouteAdmin (SNOW-988) — a read, not a write."""
+
+    def _action(self) -> "RouteAdmin":
+        """Return the registered RouteAdmin.
+
+        Returns:
+            The admin instance the site holds, so the test exercises what
+            is actually wired up rather than a fresh construction.
+
+        """
+        return cast(RouteAdmin, admin.site._registry[Route])
+
+    def test_action_is_registered(self) -> None:
+        """The action is on the changelist."""
+        assert "download_as_gpx" in self._action().actions
+
+    @pytest.mark.django_db
+    def test_returns_a_gpx_attachment_for_one_route(self, rf: RequestFactory) -> None:
+        """One selected route streams back as a named .gpx attachment."""
+        route = RouteFactory.create(name="Col de la Chaux")
+        request = rf.post("/admin/routes/route/")
+        request.user = UserFactory.create(is_staff=True)
+
+        response = self._action().download_as_gpx(
+            request, Route.objects.filter(pk=route.pk)
+        )
+
+        assert response is not None
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/gpx+xml"
+        assert response["Content-Disposition"] == (
+            'attachment; filename="Col-de-la-Chaux.gpx"'
+        )
+        assert b"<trkpt" in response.content
+
+    @pytest.mark.django_db
+    def test_refuses_a_multi_row_selection(self, rf: RequestFactory) -> None:
+        """Two routes cannot become one file, and the operator is told."""
+        RouteFactory.create_batch(2)
+        request = rf.post("/admin/routes/route/")
+        request.user = UserFactory.create(is_staff=True)
+        storage = CookieStorage(request)
+        setattr(request, "_messages", storage)
+
+        response = self._action().download_as_gpx(request, Route.objects.all())
+
+        assert response is None
+        assert "Select exactly one route" in str(list(storage)[0])
+
+    @pytest.mark.django_db
+    def test_refuses_an_empty_selection(self, rf: RequestFactory) -> None:
+        """Nothing selected is the same refusal, not an empty file."""
+        request = rf.post("/admin/routes/route/")
+        request.user = UserFactory.create(is_staff=True)
+        storage = CookieStorage(request)
+        setattr(request, "_messages", storage)
+
+        response = self._action().download_as_gpx(request, Route.objects.none())
+
+        assert response is None

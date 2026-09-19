@@ -118,6 +118,22 @@ class Route(BaseModel):
     coordinates, so a fit-to-bounds frames exactly the line that gets
     drawn.
 
+    ``source_point_count`` (SNOW-988) is the OTHER count: how many
+    coordinates the uploaded file carried, before
+    ``apps.routes.services.gpx._simplify`` ran. Equal to ``point_count``
+    on every track under ``MAX_POINTS``, because simplification returns
+    such a track untouched; larger on one that was thinned. Storing both
+    is what makes "is the point cap ever binding, and on how many routes"
+    a query rather than an argument — a row with 894 points might have
+    been recorded at 894 or cut down from 30,000, and until this column
+    existed the two read identically.
+
+    **Null means WE DID NOT RECORD IT**, which is neither zero nor
+    ``point_count``. Rows created before this column cannot be backfilled:
+    the uploaded ``.gpx`` is parsed and discarded, so the figure is gone
+    for them. Same contract as ``ascent_m``'s null — a missing measurement
+    is not a measurement of nothing.
+
     ``slope_samples`` (SNOW-910) is how steep the GROUND the track crosses
     is, sampled from the terrain grid at a fixed stride. It is NEVER
     derived from ``points``' own third ordinate, even though that would be
@@ -209,6 +225,15 @@ class Route(BaseModel):
     )
     point_count = models.PositiveIntegerField(
         help_text="Number of coordinates stored in points.",
+    )
+    source_point_count = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "How many coordinates the uploaded file carried, before "
+            "simplification. Null means we did not record it — not zero, and "
+            "not the same as point_count."
+        ),
     )
     bounds = models.JSONField(
         help_text=(
