@@ -140,6 +140,28 @@ this session changed the egress policy, so either a human updated the
 allowlist between passes or the blocks were intermittent — this doc still
 can't tell which.
 
+## Requested — 2026-09-19 (SNOW-909 route breakdown design)
+
+`snowdesk.info` returned `connect_rejected` — "gateway answered 403 to
+CONNECT (policy denial)" — when following a route share link to read a real
+track's geometry. The design work on the level-1 leg breakdown needs one
+real per-point elevation series; without it every profile shape and every
+maximum in the mocks is a plausible shape rather than a measurement.
+
+Render's MCP server **does** ship a Postgres query tool
+(`query_render_postgres`), but it is not exposed by the connector this
+session sees: the ten tools offered are deploys, services, logs, metrics
+and workspaces. Confirmed by exact-name lookup, which returns no match.
+So `routes_route` could not be read through it either, and the fix is a
+connector setting rather than an allowlist row — worth knowing before
+anyone reaches for Render as the way round the block above, because
+enabling it would sidestep egress entirely: the query runs through
+Render's own API, not through this session's HTTPS egress.
+
+| Domain | Why it matters |
+|---|---|
+| `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
+
 ## How to add these
 
 1. Open the environment's settings on claude.ai/code (the environment this
@@ -192,28 +214,6 @@ part and it should only be paid once.
 Browser pane can show a rendered map. Screenshots of map surfaces prove
 the DOM and the app's own CSS, and nothing about the basemap beneath
 them. Say so explicitly when handing one over.
-
-## Requested — 2026-09-19 (SNOW-909 route breakdown design)
-
-`snowdesk.info` returned `connect_rejected` — "gateway answered 403 to
-CONNECT (policy denial)" — when following a route share link to read a real
-track's geometry. The design work on the level-1 leg breakdown needs one
-real per-point elevation series; without it every profile shape and every
-maximum in the mocks is a plausible shape rather than a measurement.
-
-Render's MCP server **does** ship a Postgres query tool
-(`query_render_postgres`), but it is not exposed by the connector this
-session sees: the ten tools offered are deploys, services, logs, metrics
-and workspaces. Confirmed by exact-name lookup, which returns no match.
-So `routes_route` could not be read through it either, and the fix is a
-connector setting rather than an allowlist row — worth knowing before
-anyone reaches for Render as the way round the block above, because
-enabling it would sidestep egress entirely: the query runs through
-Render's own API, not through this session's HTTPS egress.
-
-| Domain | Why it matters |
-|---|---|
-| `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
 
 ## Actioned
 
