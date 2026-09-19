@@ -201,9 +201,15 @@ track's geometry. The design work on the level-1 leg breakdown needs one
 real per-point elevation series; without it every profile shape and every
 maximum in the mocks is a plausible shape rather than a measurement.
 
-Render's MCP server cannot substitute: the tools exposed are deploys,
-services, logs, metrics and workspaces, with no SQL or shell, so the
-`routes_route` table cannot be read through it.
+Render's MCP server **does** ship a Postgres query tool
+(`query_render_postgres`), but it is not exposed by the connector this
+session sees: the ten tools offered are deploys, services, logs, metrics
+and workspaces. Confirmed by exact-name lookup, which returns no match.
+So `routes_route` could not be read through it either, and the fix is a
+connector setting rather than an allowlist row — worth knowing before
+anyone reaches for Render as the way round the block above, because
+enabling it would sidestep egress entirely: the query runs through
+Render's own API, not through this session's HTTPS egress.
 
 | Domain | Why it matters |
 |---|---|
