@@ -173,6 +173,7 @@ egress.
 
 | Domain | Why it matters |
 |---|---|
+| `semgrep.dev` | Where `tox -e sast` fetches its rule packs (`p/django`, `p/python`, `p/security-audit`). Blocked, so semgrep exits 2 locally on a proxy error and a session cannot reproduce a CI SAST failure — the finding has to be read out of the GitHub job log instead |
 | `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
 
 ## How to add these

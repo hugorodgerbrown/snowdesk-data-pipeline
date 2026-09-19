@@ -47,6 +47,13 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+
+# ``escape`` is a pure string function — it replaces &, < and > and parses
+# nothing. The defusedxml rule fires on any ``xml.*`` import because the
+# PARSERS in that package are XXE-vulnerable; this module only ever WRITES
+# XML, and there is no document here to attack. Same suppression, for the
+# same reason, as the type-only import in ``apps.routes.services.gpx``.
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
