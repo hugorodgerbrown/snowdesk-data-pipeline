@@ -1371,7 +1371,7 @@ class Command(BaseCommand):
         return counts
 
     def _seed_routes(self, owner: "User", verbosity: int) -> "list[Route]":
-        """Create the dev user's one route, through the real upload path.
+        """Create the dev user's routes, through the real upload path.
 
         Writes a GPX document from ``_SEED_ROUTE_POINTS`` and hands it to
         ``create_route``, rather than calling ``RouteFactory`` with the
@@ -1382,26 +1382,47 @@ class Command(BaseCommand):
         its own geometry — and the seed exercises that parser against a live
         database, which is the side benefit this command is built on.
 
+        SNOW-989 adds the canonical corpus after it — four real tracks from
+        ``apps/routes/fixtures/canonical/``, through the same
+        ``create_route``. The synthetic route stays, and stays FIRST in the
+        returned list, because ``_seed_trips`` plans its trip off
+        ``routes[0]`` and that trip's figures are asserted in tests: a
+        corpus track taking that slot would change them for a reason that
+        has nothing to do with trips.
+
+        The canonical tracks carry no per-point ``<time>`` — they were
+        exported from stored points, which never held any — so their rows
+        have a null ``started_at`` / ``finished_at`` pair. That is the
+        untimed case a seeded environment otherwise never shows.
+
         Args:
             owner: The seeded normal dev user.
             verbosity: Verbosity level.
 
         Returns:
-            The created Route instances.
+            The created Route instances, the synthetic one first.
 
         """
+        from apps.routes.services.canonical import canonical_documents
         from apps.routes.services.routes import create_route
 
-        route = create_route(
-            owner, _seed_route_gpx().encode("utf-8"), source_filename="seed-route.gpx"
-        )
+        routes = [
+            create_route(
+                owner,
+                _seed_route_gpx().encode("utf-8"),
+                source_filename="seed-route.gpx",
+            )
+        ]
+        for filename, raw in canonical_documents():
+            routes.append(create_route(owner, raw, source_filename=filename))
 
         if verbosity >= 2:
-            self.stdout.write(
-                f"  Created Route {route.name!r} "
-                f"({route.point_count} points, {route.distance_m / 1000:.1f} km)"
-            )
-        return [route]
+            for route in routes:
+                self.stdout.write(
+                    f"  Created Route {route.name!r} "
+                    f"({route.point_count} points, {route.distance_m / 1000:.1f} km)"
+                )
+        return routes
 
     def _seed_trips(self, routes: "list[Route]", owner: "User", verbosity: int) -> int:
         """Plan one trip off the seeded route, through the real service.

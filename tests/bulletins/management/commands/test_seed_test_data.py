@@ -66,6 +66,7 @@ from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.routes.models import Route
+from apps.routes.services.canonical import canonical_paths
 from apps.trips.models import Trip
 
 User = get_user_model()
@@ -597,21 +598,29 @@ class TestTripSeeding:
     otherwise empty until you uploaded a GPX by hand.
     """
 
-    def test_all_seeds_one_route_and_one_trip(self) -> None:
-        """Both belong to the seeded normal dev user."""
+    def test_all_seeds_the_routes_and_one_trip(self) -> None:
+        """All belong to the seeded normal dev user, and the trip picks one.
+
+        Five routes since SNOW-989: the synthetic one this command has
+        always written, plus the four canonical tracks. The trip is still
+        planned off the synthetic one, which ``_seed_routes`` returns first
+        for exactly that reason.
+        """
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
 
-        route = Route.objects.get()
+        routes = Route.objects.all()
         trip = Trip.objects.get()
-        assert route.user.email == NORMAL_USER_EMAIL
-        assert trip.created_by == route.user
-        assert trip.route == route
+        assert routes.count() == 1 + len(canonical_paths())
+        assert {route.user.email for route in routes} == {NORMAL_USER_EMAIL}
+        assert trip.created_by.email == NORMAL_USER_EMAIL
+        assert trip.route is not None
+        assert trip.route.source_filename == "seed-route.gpx"
 
     def test_include_trip_pulls_in_route_and_user(self) -> None:
         """Neither prerequisite has to be named."""
         call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
 
-        assert Route.objects.count() == 1
+        assert Route.objects.count() == 1 + len(canonical_paths())
         assert Trip.objects.count() == 1
         assert User.objects.filter(email=NORMAL_USER_EMAIL).exists()
 
@@ -635,7 +644,7 @@ class TestTripSeeding:
         """The dependency runs one way only."""
         call_command("seed_test_data", "--include", "route", commit=True, verbosity=0)
 
-        assert Route.objects.count() == 1
+        assert Route.objects.count() == 1 + len(canonical_paths())
         assert Trip.objects.count() == 0
 
     def test_the_route_derived_fields_come_from_the_parser(self) -> None:
@@ -647,7 +656,7 @@ class TestTripSeeding:
         """
         call_command("seed_test_data", "--include", "route", commit=True, verbosity=0)
 
-        route = Route.objects.get()
+        route = Route.objects.get(source_filename="seed-route.gpx")
         assert route.point_count == len(route.points)
         longitudes = [point[0] for point in route.points]
         latitudes = [point[1] for point in route.points]
@@ -685,7 +694,7 @@ class TestTripSeeding:
         call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
 
         trip = Trip.objects.get()
-        route = Route.objects.get()
+        route = Route.objects.get(source_filename="seed-route.gpx")
         assert trip.points == route.points
         assert trip.meeting_point is not None
         assert trip.participants.filter(user=trip.created_by).exists()
