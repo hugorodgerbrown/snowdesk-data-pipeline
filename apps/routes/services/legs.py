@@ -30,8 +30,11 @@ points — the same route as a coarser recording of itself:
 * a metres window held the leg COUNT on all four tracks at every level;
   a points window broke it, turning Col de la Chaux's seven legs into
   eleven at 1/6;
-* interior boundaries moved less under a metres window in **all sixteen**
-  comparisons, typically by about half.
+* interior boundaries moved less under a metres window in **every one of
+  the fifteen** comparisons where a points window still found the same
+  legs to compare, typically by about half. The sixteenth is the Col de
+  la Chaux case above, where a points window found no comparable
+  boundaries because it had found four extra legs.
 
 **What it does NOT do is make boundaries invariant**, and the figures say
 so plainly: Hidden Valley's boundaries still move up to ~600 m at 1/6.
