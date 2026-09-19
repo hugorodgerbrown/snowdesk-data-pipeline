@@ -78,7 +78,10 @@ Everything SNOW-908 settled stays settled:
 
 So: **ingest at build time in `snowdesk-tiles`, not at read time in Django.**
 Decode terrarium → warp to EPSG:3035 at 5 m → cut the same Int16 tiles. A new
-first stage in `build-terrain.sh`, nothing downstream.
+first stage in `build-terrain.sh`, nothing downstream. The same decoded heights
+are also what an Alps-wide **rendered** slope raster would be derived from — see
+the correction under "Recommended next step": that raster is SNOW-693's actual
+deliverable, and it rides on this ingest rather than competing with it.
 
 ## The two questions that decide it — both now answered from the pipeline source
 
@@ -134,12 +137,37 @@ so nothing upstream would catch a source that is ellipsoidal.
    is the list of *available* sources, not proof of what a given published tile
    contains. Confirm per source against `attribution.json` (or the coverage
    index) before relying on a resolution figure.
-4. **Provenance granularity, now mostly answered.** One registry entry called
-   "mapterhorn" would claim 1 m LIDAR over ground that is 30 m radar — exactly
-   the false-accuracy claim our native-vs-cell-size split exists to prevent. The
-   catalogue is already one entry per model with its own resolution and licence,
-   so the honest mapping is mechanical: one `TerrainSource` per catalogue entry
-   we actually ingest, with its own coverage box and tier.
+4. **Provenance in a MERGED mosaic — the one real design problem, and it is not
+   solved by more registry rows.** Mapterhorn publishes a single merged surface:
+   a tile holds national-model cells where one exists and GLO-30 cells where one
+   does not, with no per-cell marker. Our registry is bbox-plus-tier —
+   `select_source` returns the highest-ranked source whose **deliberately
+   supersetted** rectangle contains the point — so a GLO-30 cell just outside the
+   Austrian coverage but inside `at1`'s box would be reported as 1 m LIDAR.
+   Worse, it breaks the rule that carries coverage today: **the 204 currently IS
+   the coverage answer**, and a GLO-30 baseline means a tile exists everywhere,
+   so nothing distinguishes "surveyed at 1 m" from "30 m radar upsampled onto a
+   5 m grid". The superset box is safe today precisely because the origin's 204
+   corrects it; against a merged source it has nothing correcting it.
+
+   Three ways out, cheapest first:
+
+   - **Clip on ingest to each model's own coverage polygon** and leave the rest
+     204 — we hold only ground we can speak to, the existing semantics survive
+     untouched, and the Alps gap closes for the terrain that has a national
+     model. Mapterhorn already produces those polygons (`source_polygonize.py`,
+     `create_coverage_index.py`, the per-source coverage GeoPackages), so this is
+     ingest-time clipping, not geometry we invent.
+   - **Store the source per cell** — a parallel byte grid alongside the heights,
+     which makes provenance exact at the cost of a second artefact and a
+     `grid.json` change.
+   - **Hold exact (non-rectangular) coverage in the registry** and test the
+     polygon per sample — honest, but it puts a point-in-polygon test on every
+     sample, which is what the superset box was chosen to avoid.
+
+   **Recommendation: clip.** Taking GLO-30's fill as well would trade a known
+   unknown for an unmarked 30 m answer wearing a 1 m label, and that is the exact
+   failure `native_resolution_m` and the 204 rule were both written to prevent.
 
 ## Things it suggests that we should NOT do
 
@@ -161,13 +189,30 @@ so nothing upstream would catch a source that is ellipsoidal.
 
 ## Recommended next step
 
-Amend SNOW-693 in place: same shape ("add a source onto a grid that already
-exists"), swap the dataset from GLO-30 to the Mapterhorn catalogue's national
-models pulled at z14, and keep the datum spot-check as a stop condition before
-any bulk download — the discipline SNOW-908 applied to the licence. A
-Zermatt-sized bbox already runs the whole pipeline in 22 seconds; the honest
-first move is a Zillertal-sized one, verified against known ground on both sides
-of the Austrian border.
+**First, a correction to the framing above: SNOW-693's user-visible deliverable
+is the RENDERED slope raster, not the sampling grid.**
+`docs/map-page-functional-spec.md` assigns that ticket the job of widening the
+painted layer — today the menu row disables itself outside swisstopo's rectangle
+because "inside it unshaded means under 30°; outside it unshaded means not
+surveyed" — and `docs/runbooks/terrain-tileset.md` is explicit that the Int16
+grid **is never rendered**. They are two surfaces with one subject.
+
+So this must not be rescoped into "extend the sampling grid" and closed. What
+Mapterhorn supplies is the **heights underneath both**: the same ingest feeds the
+Int16 grid Django samples *and* the raster MapLibre paints, which is the argument
+for doing them off one source rather than two. Either SNOW-693 keeps the rendered
+raster as its deliverable and gains the grid extension, or the raster splits into
+its own ticket — but it does not get amended away, or the Zillertal, the
+Dolomites and the Queyras keep the disabled layer row this whole line of work
+exists to remove.
+
+With that fixed, the change to SNOW-693 is narrow: swap the dataset from GLO-30
+to the Mapterhorn catalogue's national models pulled at z14, clip on ingest to
+each model's coverage polygon (above), and keep the datum spot-check as a stop
+condition before any bulk download — the discipline SNOW-908 applied to the
+licence. A Zermatt-sized bbox already runs the whole pipeline in 22 seconds; the
+honest first move is a Zillertal-sized one, verified against known ground on both
+sides of the Austrian border.
 
 ## Verification notes
 
