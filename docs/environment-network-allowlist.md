@@ -58,7 +58,7 @@ resolutions could not be read from the projects' own pages.
 | Domain | Why it matters |
 |---|---|
 | `mapterhorn.com` | Mapterhorn's attribution page (which national DEM covers which ground, under which licence) and data-access page (PMTiles layout, sizes, mirrors) — the two documents SNOW-693 needs before it can pick a source |
-| `download.mapterhorn.com` | The PMTiles download server and its `download_urls.json` / `mirrorstatus.json` — needed to size an Alps extract |
+| `download.mapterhorn.com` | The PMTiles download server, and the host that serves `attribution.json` — which is what `mapterhorn.com/attribution` and `/data-access/` render from, so blocking it blocks both pages' contents as well as the archive sizes needed to plan an Alps extract |
 | `protomaps.com` | Protomaps' Mapterhorn write-up, and the PMTiles format docs the extract path depends on |
 | `oliverwipfli.ch` | Mapterhorn's maintainer's release notes — the only running record of what coverage has landed |
 | `source.coop` | The Source Cooperative mirror of the tileset |

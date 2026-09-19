@@ -6,27 +6,22 @@ nothing about the architecture, and it should not. Every other use it suggests
 (a hillshade layer, a serving-layer swap, replacing the Open-Meteo elevation
 lookup) is either a different question or a worse trade.
 
----
-
 ## What Mapterhorn is
 
 An open-source terrain pipeline and tileset: Copernicus GLO-30 as a global
-baseline, refined with national high-resolution models where an open one
+baseline, refined with national high-resolution models wherever an open one
 exists, published as Terrarium-encoded 512 px **lossless** WebP tiles and as
 PMTiles archives.
 
 | | |
 |---|---|
-| Encoding | Terrarium (`(R·256 + G + B/256) − 32768` metres, ~4 mm quantisation) |
-| Container | Lossless WebP, 512 px; PMTiles archives for bulk |
-| Pyramid | `planet.pmtiles` z0–12 global; z13–17 in per-region files named by their z6 tile (e.g. `6-33-22.pmtiles` = Interlaken) |
-| Switzerland | swissALTI3D (0.5 m native) |
-| Also refined | France, Austria, Italy, Germany, and ~17 other European countries from national models |
+| Encoding | Terrarium (`(R·256 + G + B/256) − 32768` metres), lossless WebP, 512 px |
+| Pyramid | `planet.pmtiles` z0–12 global; z13–17 in per-region files named by their z6 tile |
 | Elsewhere | Copernicus GLO-30 (30 m) |
 | Licence | Code BSD-3; data under each source's own open licence, attribution required |
-| Distribution | `download.mapterhorn.com` + mirrors; ~9.8 TiB total, built from ~14.5 TiB of source |
-| Hosted endpoint | `tiles.mapterhorn.com/{z}/{x}/{y}.webp` — real, but **hotlinking is discouraged**; the project asks you to copy the archives |
-| Backing | NLnet-funded, Cloudflare R2/Workers sponsorship; komoot, Graphhopper and ORF.at self-host the archives |
+| Distribution | `download.mapterhorn.com` + mirrors (`mirrors.json`, `mirrorstatus.json`); extracts via the `pmtiles` CLI against a bbox |
+| Hosted endpoint | `tiles.mapterhorn.com/{z}/{x}/{y}.webp` + `tilejson.json` — real, but the project asks you to copy the archives rather than hotlink |
+| Backing | NLnet-funded, Cloudflare R2/Workers/bandwidth; komoot, Graphhopper and ORF.at self-host |
 
 ## Why it matters here specifically
 
@@ -40,33 +35,43 @@ and route scoring (SNOW-839) all return `OUTSIDE_COVERAGE` for two of our three
 providers' ground.
 
 The plan of record fills that hole with GLO-30 at 30 m. Mapterhorn fills the
-same hole with the national LIDAR models — roughly 1 m native in France and
-Austria — and falls back to GLO-30 only where nothing better is open.
+same hole with the open national models. Every row below is a catalogue entry
+read from `source-catalog/<id>/metadata.json`, not an inference:
 
-| Ground | Today | SNOW-693 as scoped | With Mapterhorn |
-|---|---|---|---|
-| Switzerland | swissALTI3D, 2 m native → our 5 m grid | unchanged | unchanged (same source, already ours) |
-| French Alps / Écrins / Queyras | nothing | GLO-30, 30 m | RGE ALTI, ~1 m |
-| Tirol / Zillertal | nothing | GLO-30, 30 m | Austrian ALS, ~1 m |
-| Dolomites / South Tyrol | nothing | GLO-30, 30 m | regional Italian LIDAR (verify per province) |
-| Everywhere else | nothing | GLO-30, 30 m | GLO-30, 30 m — identical |
+| Ground | SNOW-693 as scoped | Mapterhorn entry | Native | Licence |
+|---|---|---|---|---|
+| Tirol / Zillertal (AT-07) | GLO-30, 30 m | `at1` — BEV ALS-DGM Höhenraster | **1 m** | CC-BY-4.0 |
+| French Alps / Écrins / Queyras | GLO-30, 30 m | `frrgealti1metro` — IGN RGE ALTI® | **1 m** | Licence Ouverte 2.0 |
+| South Tyrol / Dolomites | GLO-30, 30 m | `itbozen` — Provincia di Bolzano DGM | **2.5 m** | CC0 |
+| Trentino / Brenta | GLO-30, 30 m | `ittrentino` — LiDAR PAT 2014+2018 | **5 m** | CC BY 2.5 |
+| Aosta, Lombardia, Piemonte | GLO-30, 30 m | `itaosta`, `itlombardia`, `itpiemonte` | not yet read | — |
+| Bavarian / Allgäu Alps | GLO-30, 30 m | `debayern` | not yet read | — |
+| Everywhere else | GLO-30, 30 m | `glo30` | 30 m | identical |
 
-It is never worse than the plan of record and an order of magnitude better on
-the terrain the ticket was actually raised for. That is the entire case.
+It is never worse than the plan of record and 6–30× better on the terrain the
+ticket was actually raised for. That is the entire case.
+
+**The catalogue refuses share-alike and non-commercial sources by policy**
+(`source-catalog/README.md`), so every entry is redistribution-safe by
+construction — the same stop condition SNOW-908 applied by hand, applied
+upstream. The obligation is attribution, per source, which is what
+`grid.json`'s source entries already carry.
 
 ## What it does NOT change
 
 Mapterhorn is a **data acquisition and licence-normalisation shortcut**, not an
-architecture. Sourcing RGE ALTI, Austrian ALS and Italian regional LIDAR
-ourselves means four licence reviews and four heterogeneous formats; Mapterhorn
-has already done that work and publishes a STAC catalogue of what it used.
+architecture. Sourcing RGE ALTI, BEV ALS-DGM and four Italian provincial models
+ourselves means six licence reviews and six formats; Mapterhorn has done that,
+and publishes the result as a catalogue of one folder per source carrying
+`{name, website, license, producer, resolution, access_year}` plus the original
+licence PDF — **a near 1:1 mapping onto our own `TerrainSource`.**
 
 Everything SNOW-908 settled stays settled:
 
 - the 5 m EPSG:3035 grid, unmoved — an equal-area metric projection is what
-  makes a slope kernel honest, and Web Mercator is not (its scale factor is
-  `1/cos(lat)`, so a gradient computed on mercator pixels is wrong by ~45% at
-  46° unless corrected);
+  makes a slope kernel honest, and Web Mercator (which is what Mapterhorn
+  publishes in) is not: its scale factor is `1/cos(lat)`, so a gradient computed
+  on mercator pixels is wrong by ~45% at 46° unless corrected;
 - `grid.json` as the contract, the 204-outside-coverage rule, `TERRAIN_VERSION`;
 - `apps/locations/services/terrain.py` and the unknown-is-a-reason rule —
   **unchanged, and it must not learn a second backend.**
@@ -75,34 +80,66 @@ So: **ingest at build time in `snowdesk-tiles`, not at read time in Django.**
 Decode terrarium → warp to EPSG:3035 at 5 m → cut the same Int16 tiles. A new
 first stage in `build-terrain.sh`, nothing downstream.
 
-## Open questions before committing (in order of how much they could bite)
+## The two questions that decide it — both now answered from the pipeline source
 
-1. **Vertical datum.** GLO-30 is EGM2008 orthometric, swissALTI3D is LN02,
-   RGE ALTI is NGF-IGN69. If Mapterhorn does not normalise these, a seam
-   between two sources carries a step — up to tens of metres in the Alps.
-   Slope over a 10 m window barely notices a smooth offset; a **step at a seam**
-   would render as a cliff that isn't there, and displayed heights would
-   disagree across a border. Verify before building, the same way SNOW-908 made
-   the licence a stop condition.
-2. **Provenance granularity.** `TerrainSource` records one `quality` tier and one
-   `native_resolution_m` per entry, deliberately. One registry entry called
-   "mapterhorn" would claim 0.5 m LIDAR over ground that is 30 m radar — exactly
-   the false-accuracy claim the registry's native-vs-cell-size split exists to
-   prevent. Derive **one entry per underlying national model** from Mapterhorn's
-   STAC catalogue, with its own coverage box and tier.
-3. **Double resampling.** Mapterhorn tiles are already resampled onto a mercator
-   pyramid; warping them to EPSG:3035 is a second generation. At z14 a pixel is
-   ~3.3 m at 46°, comfortably under our 5 m cell, so this is acceptable — but
-   it is a real (small) loss against sourcing the national DEMs natively.
-   z15 (~1.7 m) removes the concern at 4× the bytes.
-4. **Volume.** An Alps-wide bbox (~5–16.5 E, 43–48 N) is roughly 210k tiles at
-   z13–14 — tens of GB to pull once. Output is ~30–40 GB of Int16 tiles in R2,
-   under a dollar a month, and egress is free. Not a blocker; it is a build-box
-   disk figure, in the same class as SNOW-908's 100 GB.
-5. **Attribution.** Multi-source, each with its own wording. `grid.json` already
-   carries attribution on the source entry so the credit travels with the data —
-   the pattern holds, it just gets more rows, and anything surfacing a height or
-   a slope has to show them.
+**1. Vertical precision is zoom-dependent, and it is fine at the zoom we want.**
+`utils.get_rounded_elevation_data` quantises before encoding:
+`factor = 2**(19 - z) / 256`, capped at 1 m. So the tiles carry
+
+| z | vertical step | horizontal at 46° |
+|---|---|---|
+| 15 | 0.0625 m | 1.7 m |
+| **14** | **0.125 m** | **3.3 m** |
+| 13 | 0.25 m | 6.6 m |
+| 12 | 0.5 m | 13.3 m |
+| ≤11 | 1 m (capped) | ≥26 m |
+
+Terrarium's headline 1/256 m exists only at z19. **Pull z14**: 3.3 m horizontal
+is comfortably under our 5 m cell, and 0.125 m vertical is *twice as fine as
+what we store*. z13 lands exactly on our own 0.25 m step. SNOW-908 rejected
+whole-metre quantisation because it puts ±1.0° of noise on a 10 m window —
+z12 and below hit that, z14 does not, by a factor of eight.
+
+**2. Vertical datums are not transformed at all.** `aggregation_reproject.py`
+warps to `EPSG:3857` with `-r cubicspline` and does nothing vertical; the
+catalogue's `metadata.json` records no vertical CRS field. Each source keeps its
+own reference and the merge blends edges horizontally.
+
+This is a smaller risk than it first looks, and the earlier draft of this
+assessment overstated it. The tens-of-metres failure is ellipsoidal-vs-
+orthometric mixing, and **none of the Alpine entries are ellipsoidal** — LN02,
+NGF-IGN69, the Austrian and Italian national datums and GLO-30's EGM2008 are all
+orthometric, mutually offset by decimetres. A ~0.5 m step across one 5 m cell is
+~5.7° on a 10 m window: bounded, confined to the seam line itself, softened by
+the edge blending, and it would render as a thin line one class too steep rather
+than as a plausible wrong answer over an area. **Still spot-check it** with a
+profile across a border before ingest — the catalogue does not record the datum,
+so nothing upstream would catch a source that is ellipsoidal.
+
+## Remaining open questions
+
+1. **Double resampling.** Mapterhorn tiles are already on a mercator pyramid,
+   cubic-spline resampled; warping them to EPSG:3035 is a second generation, and
+   cubic spline can overshoot at cliff edges. At z14 this is acceptable; it is a
+   real (small) loss against sourcing the national DEMs natively, which is the
+   work Mapterhorn is saving us.
+2. **Volume.** An Alps-wide bbox (~5–16.5 E, 43–48 N) is roughly 210k tiles at
+   z13–14 — tens of GB pulled once, against ~30–40 GB of Int16 output in R2 at
+   well under a dollar a month. A build-box disk figure, in the same class as
+   SNOW-908's 100 GB.
+3. **Which sources are actually live.** Switzerland appears in the catalogue as
+   `debug-swissalti3d` (0.5 m) alongside `debug-glo30`, and that prefix reads
+   like a test fixture rather than a production entry. Irrelevant to us — we hold
+   swissALTI3D natively and keep it inside its box — but it means the catalogue
+   is the list of *available* sources, not proof of what a given published tile
+   contains. Confirm per source against `attribution.json` (or the coverage
+   index) before relying on a resolution figure.
+4. **Provenance granularity, now mostly answered.** One registry entry called
+   "mapterhorn" would claim 1 m LIDAR over ground that is 30 m radar — exactly
+   the false-accuracy claim our native-vs-cell-size split exists to prevent. The
+   catalogue is already one entry per model with its own resolution and licence,
+   so the honest mapping is mechanical: one `TerrainSource` per catalogue entry
+   we actually ingest, with its own coverage box and tier.
 
 ## Things it suggests that we should NOT do
 
@@ -111,8 +148,8 @@ first stage in `build-terrain.sh`, nothing downstream.
   service whose own docs discourage hotlinking — to avoid a build stage we
   already run.
 - **Add a Mapterhorn hillshade / 3D terrain layer to the map.** Possibly a good
-  idea, genuinely a different ticket, and it is not free: a raster terrain
-  source costs one more tile per cell per source on every offline area download
+  idea, genuinely a different ticket, and not free: a raster terrain source costs
+  one more tile per cell per source on every offline area download
   (`sourceScaledMb`). swisstopo's winter style already carries relief inside
   Switzerland. Decide it on its own merits, not as a rider.
 - **Replace the Open-Meteo elevation lookup.** One caller left
@@ -125,19 +162,28 @@ first stage in `build-terrain.sh`, nothing downstream.
 ## Recommended next step
 
 Amend SNOW-693 in place: same shape ("add a source onto a grid that already
-exists"), swap the dataset from GLO-30 to Mapterhorn-derived national models,
-and add the datum check as a stop condition before any download — the same
-discipline SNOW-908 applied to the licence. A Zermatt-sized bbox already runs
-the whole pipeline in 22 seconds; the honest first move is a Zillertal-sized one
-against known ground on both sides of a seam.
+exists"), swap the dataset from GLO-30 to the Mapterhorn catalogue's national
+models pulled at z14, and keep the datum spot-check as a stop condition before
+any bulk download — the discipline SNOW-908 applied to the licence. A
+Zermatt-sized bbox already runs the whole pipeline in 22 seconds; the honest
+first move is a Zillertal-sized one, verified against known ground on both sides
+of the Austrian border.
 
-## Verification gaps
+## Verification notes
 
-`mapterhorn.com`, `protomaps.com`, `oliverwipfli.ch`, `source.coop` and
-`spatialists.ch` all returned `EGRESS_BLOCKED` from this session, so the figures
-above are **search-corroborated, not read from the primary source** — in
-particular the country list, the 9.8 TiB total and the per-country native
-resolutions. Domains recorded in
-[`docs/environment-network-allowlist.md`](../../environment-network-allowlist.md).
-Confirm from `mapterhorn.com/attribution` and `/data-access/` before the ticket
-is scoped.
+`mapterhorn.com`, `download.mapterhorn.com`, `protomaps.com`, `oliverwipfli.ch`,
+`source.coop` and `spatialists.ch` all return `EGRESS_BLOCKED` from Claude Code
+on the web (recorded in
+[`docs/environment-network-allowlist.md`](../../environment-network-allowlist.md)),
+so the attribution and data-access pages could not be read directly — **their
+underlying data is served from `download.mapterhorn.com/attribution.json`, which
+is blocked too.** Everything above that carries a number was instead read from
+the project's own repository (`source-catalog/*/metadata.json`,
+`source-catalog/README.md`, `pipelines/utils.py`,
+`pipelines/aggregation_reproject.py`, `pipelines/README.md`), which is primary
+source of a better kind for this purpose: it is what the build actually does.
+
+What remains search-corroborated only, and should be confirmed before scoping:
+the published tileset's total size (~9.8 TiB from ~14.5 TiB of source), the
+hosted endpoint's usage figures, and which catalogue entries are live in the
+current build.
