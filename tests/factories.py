@@ -619,6 +619,11 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     started_at = datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC)
     finished_at = datetime.datetime(2026, 3, 13, 11, 0, tzinfo=UTC)
     point_count = 3
+    # SNOW-988. Equal to ``point_count``, which is what a real ingest
+    # writes for any track under ``gpx.MAX_POINTS`` — simplification
+    # returns such a track untouched. A test for the thinned case sets a
+    # larger value; one for a pre-SNOW-988 row sets None.
+    source_point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
 
 

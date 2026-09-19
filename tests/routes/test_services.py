@@ -722,3 +722,26 @@ class TestDeleteRoute:
             delete_route(other, route.uuid)
 
         assert Route.objects.filter(pk=route.pk).exists()
+
+
+class TestSourcePointCountIsPersisted:
+    """create_route keeps what the parser counted (SNOW-988)."""
+
+    @pytest.mark.django_db
+    def test_matches_point_count_for_a_track_under_the_cap(self) -> None:
+        """A short track is stored whole, so the two counts agree."""
+        user = UserFactory.create()
+        gpx = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<gpx version="1.1" creator="t" '
+            'xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>'
+            '<trkpt lat="46.1" lon="7.4"><ele>2000</ele></trkpt>'
+            '<trkpt lat="46.11" lon="7.41"><ele>2100</ele></trkpt>'
+            '<trkpt lat="46.12" lon="7.42"><ele>2200</ele></trkpt>'
+            "</trkseg></trk></gpx>"
+        ).encode("utf-8")
+
+        route = create_route(user, gpx, source_filename="t.gpx")
+
+        assert route.source_point_count == 3
+        assert route.point_count == 3

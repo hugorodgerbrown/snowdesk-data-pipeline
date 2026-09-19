@@ -157,6 +157,7 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
             started_at=parsed.started_at,
             finished_at=parsed.finished_at,
             point_count=parsed.point_count,
+            source_point_count=parsed.source_point_count,
             bounds=parsed.bounds,
         )
 

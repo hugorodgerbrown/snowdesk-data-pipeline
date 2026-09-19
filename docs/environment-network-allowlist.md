@@ -140,6 +140,42 @@ this session changed the egress policy, so either a human updated the
 allowlist between passes or the blocks were intermittent — this doc still
 can't tell which.
 
+## Requested — 2026-09-19 (SNOW-909 route breakdown design)
+
+`snowdesk.info` returned `connect_rejected` — "gateway answered 403 to
+CONNECT (policy denial)" — when following a route share link to read a real
+track's geometry. The design work on the level-1 leg breakdown needs one
+real per-point elevation series; without it every profile shape and every
+maximum in the mocks is a plausible shape rather than a measurement.
+
+**Render's MCP is not the way round it, and the reason is this
+repository's own config.** `.claude/settings.json` lists
+`mcp__*__query_render_postgres` in `permissions.deny`, alongside
+`get_postgres` and `list_postgres_instances`. A denied tool is filtered out
+of the toolset rather than refused on call, so it does not appear at all —
+an exact-name lookup returns no match, which reads identically to the
+server not offering it. Render's MCP server does ship the tool, and Claude
+Chat has it, because Chat does not read this file.
+
+Two earlier passes of this section got that wrong: the first said the
+server has no SQL tool, the second blamed the connector. Both are recorded
+here rather than quietly replaced, because the misdiagnosis is the
+expensive part and the next session should not pay for it again. **A tool
+that is absent from the toolset has been denied somewhere; check
+`permissions.deny` before concluding anything about the server.**
+
+Lifting the deny is a separate decision from this allowlist row, and one an
+agent cannot make for itself — editing the deny list that governs its own
+toolset is self-modification, and the permission classifier blocks it. It
+needs a human hand. Were it lifted, it would sidestep egress entirely: the
+query runs through Render's own API rather than this session's HTTPS
+egress.
+
+| Domain | Why it matters |
+|---|---|
+| `semgrep.dev` | Where `tox -e sast` fetches its rule packs (`p/django`, `p/python`, `p/security-audit`). Blocked, so semgrep exits 2 locally on a proxy error and a session cannot reproduce a CI SAST failure — the finding has to be read out of the GitHub job log instead |
+| `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
+
 ## How to add these
 
 1. Open the environment's settings on claude.ai/code (the environment this
