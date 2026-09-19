@@ -193,6 +193,22 @@ Browser pane can show a rendered map. Screenshots of map surfaces prove
 the DOM and the app's own CSS, and nothing about the basemap beneath
 them. Say so explicitly when handing one over.
 
+## Requested — 2026-09-19 (SNOW-909 route breakdown design)
+
+`snowdesk.info` returned `connect_rejected` — "gateway answered 403 to
+CONNECT (policy denial)" — when following a route share link to read a real
+track's geometry. The design work on the level-1 leg breakdown needs one
+real per-point elevation series; without it every profile shape and every
+maximum in the mocks is a plausible shape rather than a measurement.
+
+Render's MCP server cannot substitute: the tools exposed are deploys,
+services, logs, metrics and workspaces, with no SQL or shell, so the
+`routes_route` table cannot be read through it.
+
+| Domain | Why it matters |
+|---|---|
+| `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
+
 ## Actioned
 
 *(none yet — 2026-08-30 and 2026-09-05 requests both outstanding)*
