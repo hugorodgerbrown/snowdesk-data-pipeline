@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-09-19
 ---
 
 # Environment network allow-list
@@ -46,6 +46,23 @@ the target site's own bot protection (a 403/timeout *from the site itself*
 would come through differently — see `/root/.ccr/README.md` in-session for
 the full diagnostic playbook). Only the former is fixed by an allowlist
 change.
+
+## Requested — 2026-09-19 (Mapterhorn assessment)
+
+All returned `EGRESS_BLOCKED` while assessing whether
+[Mapterhorn](research/mapterhorn/README.md) should supply the terrain source
+SNOW-693 adds outside Switzerland. The findings are search-corroborated only:
+the coverage list, the published tileset size and the per-country native
+resolutions could not be read from the projects' own pages.
+
+| Domain | Why it matters |
+|---|---|
+| `mapterhorn.com` | Mapterhorn's attribution page (which national DEM covers which ground, under which licence) and data-access page (PMTiles layout, sizes, mirrors) — the two documents SNOW-693 needs before it can pick a source |
+| `download.mapterhorn.com` | The PMTiles download server and its `download_urls.json` / `mirrorstatus.json` — needed to size an Alps extract |
+| `protomaps.com` | Protomaps' Mapterhorn write-up, and the PMTiles format docs the extract path depends on |
+| `oliverwipfli.ch` | Mapterhorn's maintainer's release notes — the only running record of what coverage has landed |
+| `source.coop` | The Source Cooperative mirror of the tileset |
+| `spatialists.ch` | Swiss geospatial coverage of the same, used here as corroboration |
 
 ## Requested — 2026-09-09 (SNOW-887)
 
