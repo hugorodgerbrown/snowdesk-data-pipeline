@@ -4,6 +4,9 @@ tests/bulletins/management/commands/test_backfill_bulletin_groupings.py
 Covers:
   - Read-only by default (no BulletinGrouping rows written without --commit).
   - --commit backfills all missing groupings.
+  - A bulletin covering one boundaried region is not a candidate (SNOW-1001) —
+    it can never be given a grouping, so it must not be re-attempted on every
+    run and counted as skipped.
   - A forced partial failure from compute_bulletin_grouping_boundary raises
     CommandError (non-zero exit).
   - Nothing-to-do path (no eligible bulletins) exits cleanly.
@@ -18,22 +21,62 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.bulletins.models import Bulletin, BulletinGrouping
-from tests.factories import BulletinFactory, BulletinGroupingFactory, PipelineRunFactory
+from tests.factories import (
+    BulletinFactory,
+    BulletinGroupingFactory,
+    MajorRegionFactory,
+    MicroRegionFactory,
+    PipelineRunFactory,
+    RegionBulletinFactory,
+    SubRegionFactory,
+)
 
 _PATCH_TARGET = (
     "apps.bulletins.management.commands.backfill_bulletin_groupings"
     ".compute_bulletin_grouping_boundary"
 )
 
+_BOUNDARY = {
+    "type": "Polygon",
+    "coordinates": [[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]],
+}
+
+
+def _link_regions(bulletin: Bulletin, *, boundaried: int, prefix: str) -> None:
+    """Link ``boundaried`` micro-regions carrying a boundary to ``bulletin``.
+
+    Args:
+        bulletin: The bulletin to link regions to.
+        boundaried: How many boundaried micro-regions to create and link.
+        prefix: A per-bulletin token keeping the region ids unique.
+
+    """
+    major = MajorRegionFactory.create(prefix=f"CH-{prefix}", country="CH")
+    sub = SubRegionFactory.create(prefix=f"CH-{prefix}1", major=major)
+    for index in range(boundaried):
+        region = MicroRegionFactory.create(
+            region_id=f"{prefix}-{index}", subregion=sub, boundary=_BOUNDARY
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
 
 def _make_bulletins(n: int) -> None:
-    """Seed n Bulletin rows without any BulletinGrouping."""
+    """Seed n candidate Bulletin rows — two boundaried regions, no grouping.
+
+    Two regions is the minimum that earns a grouping (MIN_GROUPED_REGIONS),
+    so these rows are what the command is expected to select.
+
+    Args:
+        n: How many bulletins to create.
+
+    """
     run = PipelineRunFactory.create()
     for i in range(n):
-        BulletinFactory.create(
+        bulletin = BulletinFactory.create(
             bulletin_id=f"backfill-test-{i:04d}",
             pipeline_run=run,
         )
+        _link_regions(bulletin, boundaried=2, prefix=f"bt{i:04d}")
 
 
 @pytest.mark.django_db
@@ -82,11 +125,13 @@ class TestBackfillBulletinGroupingsCommand:
         already_grouped = BulletinFactory.create(
             bulletin_id="already-0", pipeline_run=run
         )
+        _link_regions(already_grouped, boundaried=2, prefix="alr")
         BulletinGroupingFactory.create(
             bulletin=already_grouped,
             countries=["CH"],
         )
-        BulletinFactory.create(bulletin_id="ungrouped-0", pipeline_run=run)
+        ungrouped = BulletinFactory.create(bulletin_id="ungrouped-0", pipeline_run=run)
+        _link_regions(ungrouped, boundaried=2, prefix="ung")
 
         with patch(_PATCH_TARGET, return_value=None) as mock_fn:
             call_command("backfill_bulletin_groupings", commit=True)
@@ -94,12 +139,28 @@ class TestBackfillBulletinGroupingsCommand:
         # Only the ungrouped bulletin should be passed to the service.
         assert mock_fn.call_count == 1
 
+    def test_single_region_bulletins_are_not_candidates(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A bulletin that can never have a grouping is out of the candidate set."""
+        run = PipelineRunFactory.create()
+        single = BulletinFactory.create(bulletin_id="single-0", pipeline_run=run)
+        _link_regions(single, boundaried=1, prefix="sgl")
+        BulletinFactory.create(bulletin_id="regionless-0", pipeline_run=run)
+
+        with patch(_PATCH_TARGET, return_value=None) as mock_fn:
+            call_command("backfill_bulletin_groupings", commit=True)
+
+        assert mock_fn.call_count == 0
+        assert "Nothing to do" in capsys.readouterr().out
+
     def test_nothing_to_do_exits_cleanly(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """When all bulletins already have groupings the command exits without error."""
         run = PipelineRunFactory.create()
         bulletin = BulletinFactory.create(pipeline_run=run)
+        _link_regions(bulletin, boundaried=2, prefix="ntd")
         BulletinGroupingFactory.create(bulletin=bulletin, countries=["CH"])
 
         call_command("backfill_bulletin_groupings", commit=True)

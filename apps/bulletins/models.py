@@ -43,7 +43,7 @@ from datetime import date as _date
 from typing import Any
 
 from django.db import models
-from django.db.models import CASCADE
+from django.db.models import CASCADE, Count, Q
 from django.utils import timezone
 
 from apps.bulletins.schema import AvalancheProblem, DangerRating
@@ -869,6 +869,16 @@ class BulletinShareClick(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# A grouping only says something the micro-region layer does not when it
+# dissolves two or more boundaried regions (SNOW-1001; see
+# docs/decisions/a-grouping-outline-asserts-an-aggregation.md). This is the
+# single definition of "worth a row" — the ingest-time guard in
+# ``apps.bulletins.services.grouping``, ``BulletinGroupingQuerySet.degenerate``
+# below, and ``candidate_bulletins`` in ``backfill_bulletin_groupings`` all
+# read it, so writer, backfill and purge cannot drift apart.
+MIN_GROUPED_REGIONS = 2
+
+
 class BulletinGroupingQuerySet(models.QuerySet["BulletinGrouping"]):
     """Custom queryset for BulletinGrouping."""
 
@@ -885,19 +895,56 @@ class BulletinGroupingQuerySet(models.QuerySet["BulletinGrouping"]):
         """
         return self.filter(target_date=target_date)
 
+    def degenerate(self) -> "BulletinGroupingQuerySet":
+        """
+        Return groupings that draw nothing the micro-region layer does not.
+
+        Annotates each row with the number of BOUNDARIED micro-regions linked
+        to its bulletin — the same population
+        ``compute_bulletin_grouping_boundary`` dissolves — and keeps those
+        below ``MIN_GROUPED_REGIONS``. A bulletin carrying three regions of
+        which one has a boundary dissolves to that one polygon and is just as
+        degenerate as a single-region bulletin, which is why the count is
+        filtered rather than taken over every link.
+
+        Rows selected here were written before the ingest-time guard landed;
+        ``purge_degenerate_bulletin_groupings`` deletes them. The exact
+        complement of ``candidate_bulletins`` in
+        ``backfill_bulletin_groupings``, which
+        ``tests/bulletins/test_bulletin_grouping_model.py`` pins.
+
+        Returns:
+            A filtered queryset of degenerate BulletinGrouping rows.
+
+        """
+        return self.annotate(
+            boundaried_region_count=Count(
+                "bulletin__regions",
+                filter=Q(bulletin__regions__boundary__isnull=False),
+            )
+        ).filter(boundaried_region_count__lt=MIN_GROUPED_REGIONS)
+
 
 class BulletinGrouping(BaseModel):
     """
     Dissolved outer boundary of the micro-regions sharing a bulletin.
 
-    One row per bulletin. Computed at ingest time by
-    ``apps.bulletins.services.grouping.compute_bulletin_grouping_boundary``:
-    the micro-regions linked to the bulletin via ``RegionBulletin`` that
-    carry a ``boundary`` are dissolved into a single GeoJSON
+    At most one row per bulletin, and only where the provider aggregated:
+    a row exists when the bulletin links ``MIN_GROUPED_REGIONS`` or more
+    micro-regions carrying a ``boundary``. Computed at ingest time by
+    ``apps.bulletins.services.grouping.compute_bulletin_grouping_boundary``,
+    which dissolves those boundaries into a single GeoJSON
     Polygon/MultiPolygon using Shapely's ``unary_union``. The result is
     stored here so the ``/api/bulletin-groupings.geojson`` endpoint can
     serve a date-keyed FeatureCollection without touching Shapely at
     request time.
+
+    A bulletin covering one boundaried region gets no row (SNOW-1001): the
+    dissolve would be a union of one polygon, so the layer would draw a
+    line directly on top of ``regions-line`` and claim an aggregation that
+    did not happen. Météo-France is 1:1 across its whole archive and writes
+    none at all; SLF will join it once SNOW-998 lands. Full rationale:
+    docs/decisions/a-grouping-outline-asserts-an-aggregation.md.
 
     ``countries`` is a sorted JSON list of ISO-2 country codes (e.g.
     ``["AT", "IT"]``) derived from the linked regions' parent
@@ -906,8 +953,9 @@ class BulletinGrouping(BaseModel):
     list.
 
     The relationship is ``OneToOne`` because each bulletin dissolves to
-    exactly one polygon (or is absent when no boundaried regions are
-    linked). Re-ingest is idempotent via ``update_or_create``.
+    exactly one polygon (or is absent when it links fewer than
+    ``MIN_GROUPED_REGIONS`` boundaried regions). Re-ingest is idempotent
+    via ``update_or_create``.
     """
 
     bulletin = models.OneToOneField(

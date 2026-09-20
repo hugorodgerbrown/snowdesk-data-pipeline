@@ -232,12 +232,22 @@ _DYNAMIC_CACHE_MAX_AGE = 300
 # Cache lifetime for settled (past the fetcher's earliest-mutable-date
 # threshold) bulletin-groupings responses (SNOW-526). Settled geometry is
 # immutable on the normal ingest path, but a manual
-# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` can
+# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` /
+# ``purge_degenerate_bulletin_groupings --commit`` can
 # still rewrite history, so this is bounded well below the year-long
 # max-age used for historic bulletin pages — see
 # docs/decisions/date-aware-cache-policy.md. Offline availability comes
 # from the service worker's Cache Storage entry, which ignores max-age
 # entirely, so nothing is lost by keeping this short.
+#
+# The purge (SNOW-1001) is the one of the three that only ever REMOVES
+# features, so a client holding a settled entry from before it keeps
+# drawing an outline the server no longer sends. That outline duplicates
+# ``regions-line`` by definition — it is the degenerate shape the purge
+# exists to stop drawing — so the stale artefact is visually what the
+# client saw anyway, and the bound above is the whole mitigation. Nothing
+# here invalidates Cache Storage: entries rotate on the worker's own
+# version bump or an LRU trim.
 _SETTLED_CACHE_MAX_AGE = 604800  # 7 days
 
 # Memoisation window for ``apps.bulletins.services.settled.earliest_mutable_date()``
@@ -1357,6 +1367,15 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     the requested forecast day. Powered by ``BulletinGrouping`` rows
     computed at ingest time.
 
+    **An empty ``features`` list is a valid answer, not an error.** Since
+    SNOW-1001 a row exists only for a bulletin covering two or more
+    boundaried micro-regions, so a day on which every provider in view
+    issued one bulletin per region legitimately returns zero features — and
+    Météo-France, 1:1 across its whole archive, never contributes one. The
+    map draws nothing and that is the correct reading: no provider grouped
+    anything that day (see
+    ``docs/decisions/a-grouping-outline-asserts-an-aggregation.md``).
+
     The endpoint is deliberately **single-date** (``?d=`` is required). An
     earlier version returned the whole season keyed by date in one payload;
     once the historical backfill landed, serialising every day's dissolved
@@ -1505,8 +1524,10 @@ def _build_groupings_payload(
     #
     # Two bulletins routinely target the same day: the morning-of-X issue and
     # the previous evening's, which both satisfy ``target_date == X``. Both
-    # get a BulletinGrouping row, so without this filter the endpoint returns
-    # two near-identical overlapping outlines for most days — invisible while
+    # get a BulletinGrouping row where they aggregate at all (a single-region
+    # bulletin gets none — SNOW-1001), so without this filter the endpoint
+    # returns two near-identical overlapping outlines for most days —
+    # invisible while
     # the layer was an opt-in dashed overlay, obvious now it is drawn
     # alongside every micro-region view. ``recompute_region_day`` already
     # arbitrates between them per region; reusing its verdict here keeps the

@@ -6,7 +6,9 @@ line) and ``countdown`` (decreasing-remaining-count driver for derived,
 non-row units of work) — the two shared helpers every SNOW-602 management
 command call site routes through instead of a hand-rolled loop — plus
 ``non_negative_float``, the ``--delay`` argparse ``type=`` helper shared by
-every fetch/link command with a pacing flag.
+every fetch/link command with a pacing flag, and ``positive_int``, the
+``--batch-size`` helper that keeps a zero or negative chunk size from
+reaching a ``range()`` call inside a command.
 """
 
 from __future__ import annotations
@@ -16,7 +18,12 @@ from typing import Any
 
 import pytest
 
-from apps.core.command_iteration import countdown, iterate_rows, non_negative_float
+from apps.core.command_iteration import (
+    countdown,
+    iterate_rows,
+    non_negative_float,
+    positive_int,
+)
 
 
 class _FakeStdout:
@@ -225,3 +232,30 @@ class TestNonNegativeFloat:
         """A negative value raises ArgumentTypeError."""
         with pytest.raises(ArgumentTypeError, match="must be non-negative"):
             non_negative_float("-1")
+
+
+class TestPositiveInt:
+    """Unit tests for the shared ``--batch-size`` argparse type helper."""
+
+    def test_parses_valid_int(self) -> None:
+        """A strictly positive string parses to an int."""
+        assert positive_int("500") == 500
+
+    def test_accepts_one(self) -> None:
+        """One is the smallest legitimate batch."""
+        assert positive_int("1") == 1
+
+    def test_rejects_unparseable_value(self) -> None:
+        """A non-numeric string raises ArgumentTypeError."""
+        with pytest.raises(ArgumentTypeError, match="invalid int value"):
+            positive_int("not-a-number")
+
+    def test_rejects_zero(self) -> None:
+        """Zero would make range() raise from inside the command."""
+        with pytest.raises(ArgumentTypeError, match="must be a positive integer"):
+            positive_int("0")
+
+    def test_rejects_negative_value(self) -> None:
+        """A negative step makes range() empty, so a --commit run would no-op."""
+        with pytest.raises(ArgumentTypeError, match="must be a positive integer"):
+            positive_int("-1")

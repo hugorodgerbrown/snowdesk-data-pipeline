@@ -21,10 +21,11 @@ with a primary key. ``countdown`` covers the minority case where the unit of
 work is a derived value with no id of its own (e.g. a ``(region, date)``
 pair) — there, the countdown counts down a known total instead of an id.
 
-``non_negative_float`` is unrelated to iteration, but lives here for the
-same reason: it is an argparse ``type=`` helper that half a dozen fetch/link
-commands each need for a ``--delay`` argument, and this is where cross-app
-command call sites already look for a shared helper rather than copying one.
+``non_negative_float`` and ``positive_int`` are unrelated to iteration, but
+live here for the same reason: they are argparse ``type=`` helpers that half
+a dozen fetch/link commands each need for a ``--delay`` or ``--batch-size``
+argument, and this is where cross-app command call sites already look for a
+shared helper rather than copying one.
 
 Lives in ``apps/core/`` alongside the other flat cross-app helpers
 (``freshness.py``, ``coordinates.py``, ``http.py``) since every app with
@@ -63,6 +64,35 @@ def non_negative_float(raw: str) -> float:
         raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
     if value < 0:
         raise ArgumentTypeError(f"delay must be non-negative (got {value})")
+    return value
+
+
+def positive_int(raw: str) -> int:
+    """
+    Argparse ``type=`` helper for strictly positive integer arguments.
+
+    A ``--batch-size`` of ``0`` or less is not a smaller batch, it is a
+    silent no-op or a crash: ``range(0, n, 0)`` raises ``ValueError`` from
+    inside the command, and ``range(0, n, -1)`` is empty, so a ``--commit``
+    run reports success having done nothing. Rejecting the value at parse
+    time turns both into argparse's own usage error.
+
+    Args:
+        raw: The raw command-line string.
+
+    Returns:
+        The parsed, strictly positive integer.
+
+    Raises:
+        ArgumentTypeError: if the value is unparseable or below 1.
+
+    """
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ArgumentTypeError(f"invalid int value: {raw!r}") from exc
+    if value < 1:
+        raise ArgumentTypeError(f"must be a positive integer (got {value})")
     return value
 
 

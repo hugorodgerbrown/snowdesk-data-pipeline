@@ -6,9 +6,21 @@ A grouping is normally computed at ingest time by ``upsert_bulletin``; this
 command is used once after the SNOW-323 migration to populate historical rows
 that were ingested before the ingest hook existed.
 
-Read-only by default — the command iterates ``Bulletin.objects.filter(
-grouping__isnull=True)`` and reports what *would* be created without writing
-anything to the database.  Pass ``--commit`` to persist.
+Read-only by default — the command iterates the bulletins that lack a
+grouping *and could have one*, and reports what would be created without
+writing anything to the database.  Pass ``--commit`` to persist.
+
+That second condition is load-bearing since SNOW-1001: a bulletin covering
+fewer than ``MIN_GROUPED_REGIONS`` boundaried micro-regions is never given a
+grouping (why:
+docs/decisions/a-grouping-outline-asserts-an-aggregation.md), so it matches
+``grouping__isnull=True`` for ever. Selecting on the null alone meant every
+such bulletin — the whole Météo-France archive today, and SLF's too once
+SNOW-998 lands — was re-attempted on every run and then reported as
+"skipped", which made the summary line describe a backlog that does not
+exist. ``candidate_bulletins`` below carries the same boundaried-region count
+the writer and ``purge_degenerate_bulletin_groupings`` use, so a second run
+selects only what a first run genuinely failed to write.
 
 Usage::
 
@@ -30,12 +42,44 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Count, Q, QuerySet
 
-from apps.bulletins.models import Bulletin
+from apps.bulletins.models import MIN_GROUPED_REGIONS, Bulletin
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
+
+
+def candidate_bulletins() -> QuerySet[Bulletin]:
+    """
+    Return the bulletins that lack a grouping and could be given one.
+
+    The exact complement, over the same boundaried-region count, of
+    ``BulletinGroupingQuerySet.degenerate()``: that selects the rows the
+    writer would now refuse to write, this selects the bulletins it would
+    write for. The two share ``MIN_GROUPED_REGIONS`` but not the
+    ``Count(..., filter=...)`` expression, so
+    ``tests/bulletins/test_bulletin_grouping_model.py`` pins them as a
+    partition rather than trusting the shared constant alone.
+
+    A module-level function rather than a method on the command so that test
+    is asserting against the query the command actually runs.
+
+    Returns:
+        Bulletins with no ``BulletinGrouping`` row linking at least
+        ``MIN_GROUPED_REGIONS`` boundaried micro-regions.
+
+    """
+    return (
+        Bulletin.objects.filter(grouping__isnull=True)
+        .alias(
+            boundaried_region_count=Count(
+                "regions", filter=Q(regions__boundary__isnull=False)
+            )
+        )
+        .filter(boundaried_region_count__gte=MIN_GROUPED_REGIONS)
+    )
 
 
 class Command(BaseCommand):
@@ -74,7 +118,8 @@ class Command(BaseCommand):
 
         Returns:
             ``"created"`` when a grouping row was written, ``"skipped"`` when
-            the bulletin has no boundaried regions (compute returns None), or
+            the service declined to write one (compute returns None — its
+            region links changed between the walk and the call), or
             ``"failed"`` on exception.
 
         """
@@ -90,7 +135,7 @@ class Command(BaseCommand):
         if result is None:
             if verbosity >= 2:
                 logger.debug(
-                    "Skipped bulletin %s — no boundaried regions",
+                    "Skipped bulletin %s — too few boundaried regions",
                     bulletin.bulletin_id,
                 )
             return "skipped"
@@ -106,8 +151,11 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the backfill command.
 
-        Queries all bulletins whose ``grouping`` reverse accessor is null,
-        then delegates per-bulletin work to ``_process_one``.  Failures are
+        Queries the bulletins whose ``grouping`` reverse accessor is null and
+        which link at least ``MIN_GROUPED_REGIONS`` boundaried micro-regions
+        — a bulletin below that threshold is never given a grouping, so
+        including it would re-attempt it on every future run (SNOW-1001).
+        Delegates per-bulletin work to ``_process_one``.  Failures are
         collected and reported; if any fail a ``CommandError`` is raised at
         the end so cron/CI receives a non-zero exit code.
 
@@ -124,10 +172,10 @@ class Command(BaseCommand):
             )
         )
 
-        qs = Bulletin.objects.filter(grouping__isnull=True)
+        qs = candidate_bulletins()
         total = qs.count()
 
-        self.stdout.write(f"Bulletins missing a grouping: {total}")
+        self.stdout.write(f"Bulletins missing a grouping they could have: {total}")
 
         if total == 0:
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
@@ -156,7 +204,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Done — created {processed}, skipped {skipped} "
-                f"(no boundaried regions), {failed} failed."
+                f"(region links changed since the walk), {failed} failed."
             )
         )
 

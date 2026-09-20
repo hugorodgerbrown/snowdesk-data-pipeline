@@ -1080,8 +1080,10 @@ incident that invalidates derived state:
   at ingest time (via `compute_bulletin_grouping_boundary`); this command
   backfills historical rows that pre-date the ingest hook. Read-only by
   default; pass `--commit` to persist. Idempotent — bulletins that already
-  have a grouping are skipped. Bulletins with no boundaried regions produce
-  no row (not counted as failures). Raises `CommandError` and exits non-zero
+  have a grouping are skipped, and so are bulletins that can never have one:
+  since SNOW-1001 a grouping needs at least two boundaried micro-regions, and
+  the candidate queryset carries that count so a single-region bulletin is
+  not re-attempted on every run. Raises `CommandError` and exits non-zero
   if any bulletin fails so cron/CI can detect partial failures.
 
   ```bash
@@ -1093,6 +1095,46 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`.
+
+- `purge_degenerate_bulletin_groupings --commit` — one-off post-deploy step
+  after SNOW-1001: deletes `BulletinGrouping` rows whose bulletin links fewer
+  than `MIN_GROUPED_REGIONS` (two) boundaried micro-regions. Dissolving one
+  polygon returns that polygon, so such a row caches a duplicate of the
+  region's own `MicroRegion.boundary` and `/api/bulletin-groupings.geojson`
+  serves an outline that lands exactly on `regions-line`, asserting an
+  aggregation the provider never made. `compute_bulletin_grouping_boundary`
+  refuses to write these rows and clears any it meets on re-ingest, so this
+  command is for the rows in a database that will not be re-ingested — that
+  is Météo-France in bulk, 1:1 across its whole archive, with SLF joining it
+  once SNOW-998 lands. Selection is `BulletinGrouping.objects.degenerate()`, the same
+  predicate the writer reads, so the two cannot drift. Read-only by default;
+  pass `--commit` to delete. Idempotent — a second run selects nothing.
+  Deliberately not a data migration: a bulk delete there locks the table for
+  the length of a Render deploy. Raises `CommandError` and exits non-zero if
+  any `DELETE` fails. Why a degenerate row is worse than no row:
+  [`decisions/a-grouping-outline-asserts-an-aggregation.md`](decisions/a-grouping-outline-asserts-an-aggregation.md).
+
+  ```bash
+  # Dry-run — counts the degenerate rows.
+  uv run python manage.py purge_degenerate_bulletin_groupings
+
+  # Persist (run on Render after deploying SNOW-1001).
+  uv run python manage.py purge_degenerate_bulletin_groupings --commit
+  ```
+
+  Flags: `--commit`, `--batch-size N` (default 500 — rows per DELETE
+  statement; must be a positive integer, rejected at parse time by
+  `apps.core.command_iteration.positive_int`).
+
+  **What returning clients see.** A settled groupings response is served
+  `public, max-age=604800, immutable` and persisted by the service worker,
+  so a client that cached a day before the purge keeps drawing an outline
+  the server no longer sends — a duplicate of `regions-line`, which is the
+  shape the purge removes, so it is visually what that client already had.
+  The purge bumps no `CACHE_VERSION` and invalidates no Cache Storage
+  entry; the 7-day shared-cache bound is the mitigation, sized for exactly
+  this kind of deliberate rewrite
+  ([`docs/decisions/date-aware-cache-policy.md`](decisions/date-aware-cache-policy.md)).
 
 - `backfill_bulletin_target_dates --commit` — one-off post-deploy step
   after SNOW-560: populates `Bulletin.target_date` for rows that predate
