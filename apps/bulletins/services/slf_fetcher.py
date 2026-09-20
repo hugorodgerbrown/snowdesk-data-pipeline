@@ -104,6 +104,54 @@ def _slf_pdf_url(raw: dict[str, Any]) -> str:
     )
 
 
+def _resolve_base_url(base_url: str | None) -> str:
+    """Pick the base URL one fetch should use.
+
+    Three paths, in descending precedence:
+
+    1. An explicit ``base_url`` argument, which is how
+       ``fetch_bulletins --local-mirror`` points a run at the dev mirror.
+       A caller that named a URL gets the URL it named.
+    2. ``settings.SLF_API_LEGACY_URL``, when non-empty (SNOW-900) — the
+       environment-variable pin back to the pre-2026/27 export.
+    3. ``settings.SLF_API_BASE_URL``, the live API.
+
+    The pin lives HERE rather than in the ``fetch_bulletins`` command so
+    that it holds for every caller. It first shipped in the command, which
+    left ``BulletinAdmin.backfill_view`` — which calls
+    ``run_slf_pipeline`` with no ``base_url`` — fetching the live URL and
+    ingesting the new schema straight past a configured rollback. A pin
+    that one entry point ignores is worse than no pin, because it reads
+    as applied.
+
+    Args:
+        base_url: The caller's explicit override, or ``None``.
+
+    Returns:
+        The base URL to build this request from.
+
+    """
+    if base_url is not None:
+        return base_url
+
+    legacy_url: str = getattr(settings, "SLF_API_LEGACY_URL", "") or ""
+    if legacy_url:
+        # WARNING, every fetch, for as long as it is set: this is an
+        # emergency lever pointed at an endpoint SLF intend to retire, not
+        # a configuration to settle into. A pin left on by accident should
+        # be impossible to miss in the log.
+        logger.warning(
+            "SLF is pinned to settings.SLF_API_LEGACY_URL (%s) instead of "
+            "SLF_API_BASE_URL (%s)",
+            legacy_url,
+            settings.SLF_API_BASE_URL,
+        )
+        return legacy_url
+
+    resolved: str = settings.SLF_API_BASE_URL
+    return resolved
+
+
 def fetch_bulletin_page(
     lang: str,
     limit: int,
@@ -117,10 +165,9 @@ def fetch_bulletin_page(
         lang: Language code ("en", "de", "fr", "it").
         limit: Maximum number of bulletins to return.
         offset: Number of bulletins to skip (for pagination).
-        base_url: Override for the API base URL. Falls back to
-            ``settings.SLF_API_BASE_URL`` when ``None`` so the
-            ``fetch_bulletins`` command can flip between the live API
-            and a local mirror without environment-variable gymnastics.
+        base_url: Override for the API base URL. Resolved by
+            ``_resolve_base_url``, so ``None`` picks up the legacy pin
+            when one is set and the live API otherwise.
 
     Returns:
         A list of raw bulletin dicts as returned by the API.
@@ -135,7 +182,7 @@ def fetch_bulletin_page(
     is returned whatever shape it is.
 
     """
-    resolved_base = base_url if base_url is not None else settings.SLF_API_BASE_URL
+    resolved_base = _resolve_base_url(base_url)
     url = f"{resolved_base}/{lang}/json"
     logger.debug(
         "Fetching SLF bulletins: lang=%s limit=%d offset=%d base=%s",
@@ -1022,13 +1069,6 @@ class BulletinSource:
             that holds the dev-mirror URL (e.g.
             ``"SLF_API_LOCAL_MIRROR_URL"``). Expected to be absent or
             falsy in production.
-        legacy_url_setting: Attribute name on ``django.conf.settings``
-            holding a pin-back URL that overrides ``live_url_setting``
-            whenever it is non-empty, or ``""`` for a provider with no
-            such path. Only SLF has one (SNOW-900): the 2026/27 CAAML
-            export takes over its unversioned endpoint, and the setting
-            is the environment-variable lever back to the old format
-            without a deploy. ``--local-mirror`` still wins over it.
         archive_path_setting: Attribute name on ``django.conf.settings``
             that holds the ``Path`` to the on-disk NDJSON archive (e.g.
             ``"SLF_ARCHIVE_PATH"``). Used when ``--stash`` is passed.
@@ -1044,7 +1084,6 @@ class BulletinSource:
     latest_date_fn: Callable[[], date | None]
     live_url_setting: str
     mirror_url_setting: str
-    legacy_url_setting: str
     archive_path_setting: str
     stash_writer: Callable[[list[dict[str, Any]], Path], int]
 
@@ -1084,7 +1123,6 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_slf_date,
             live_url_setting="SLF_API_BASE_URL",
             mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
-            legacy_url_setting="SLF_API_LEGACY_URL",
             archive_path_setting="SLF_ARCHIVE_PATH",
             stash_writer=slf_stash_writer,
         ),
@@ -1094,7 +1132,6 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_albina_date,
             live_url_setting="ALBINA_API_BASE_URL",
             mirror_url_setting="ALBINA_API_LOCAL_MIRROR_URL",
-            legacy_url_setting="",
             archive_path_setting="ALBINA_ARCHIVE_PATH",
             stash_writer=albina_stash_writer,
         ),
@@ -1104,7 +1141,6 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_meteofrance_date,
             live_url_setting="METEOFRANCE_API_BASE_URL",
             mirror_url_setting="METEOFRANCE_API_LOCAL_MIRROR_URL",
-            legacy_url_setting="",
             archive_path_setting="METEOFRANCE_ARCHIVE_PATH",
             stash_writer=meteofrance_stash_writer,
         ),

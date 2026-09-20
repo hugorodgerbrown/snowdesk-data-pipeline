@@ -45,6 +45,7 @@ from apps.bulletins.services.slf_fetcher import (
     _log_caaml_shape,
     _normalise_response,
     _parse_dt,
+    _resolve_base_url,
     _resolve_issued_at,
     _slf_pdf_url,
     detect_caaml_shape,
@@ -1514,4 +1515,74 @@ class TestFetchBulletinPageClassifiesTheShape:
         assert result[0]["bulletinID"] == "v5-000"
         assert any(
             "shape=per-region" in record.getMessage() for record in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# _resolve_base_url — SNOW-900
+# ---------------------------------------------------------------------------
+
+
+class TestResolveBaseUrl:
+    """Which endpoint one SLF fetch reads.
+
+    These sit at the fetcher rather than at ``fetch_bulletins`` on
+    purpose. The pin first shipped in the command, which left
+    ``BulletinAdmin.backfill_view`` — the other caller of
+    ``run_slf_pipeline``, and one that passes no ``base_url`` — reading
+    the live URL straight past a configured rollback.
+    """
+
+    def test_no_pin_uses_the_live_api(self) -> None:
+        """The default is an empty pin, so nothing changes until it is set."""
+        assert _resolve_base_url(None) == "https://aws.slf.ch/api/bulletin-list/caaml"
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_a_set_pin_replaces_the_live_api(self) -> None:
+        """A non-empty setting is the whole switch — no flag to remember."""
+        assert _resolve_base_url(None) == "https://aws.slf.ch/api/bulletin/caaml/v3"
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_an_explicit_url_still_wins(self) -> None:
+        """``--local-mirror`` passes one, and must outrank an ambient pin.
+
+        Otherwise a pin left set in a dev ``.env`` would silently send
+        mirror runs at the live SLF API.
+        """
+        assert _resolve_base_url("http://localhost:8000/dev/slf-mirror") == (
+            "http://localhost:8000/dev/slf-mirror"
+        )
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_the_pin_is_logged_every_time(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An emergency lever pointed at a doomed endpoint stays loud."""
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            _resolve_base_url(None)
+
+        record = caplog.records[-1]
+        assert record.levelno == logging.WARNING
+        assert "SLF_API_LEGACY_URL" in record.getMessage()
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
+    def test_the_pin_reaches_a_caller_that_passes_no_url(
+        self, mock_get: MagicMock
+    ) -> None:
+        """The admin backfill's shape: ``run_slf_pipeline`` with no base_url.
+
+        Asserted through ``fetch_bulletin_page`` rather than the resolver
+        alone, because the defect this guards was a caller reaching the
+        request URL without passing through the pin at all.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        fetch_bulletin_page("en", 50, 0)
+
+        assert mock_get.call_args[0][0] == (
+            "https://aws.slf.ch/api/bulletin/caaml/v3/en/json"
         )

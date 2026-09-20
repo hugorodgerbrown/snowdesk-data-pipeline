@@ -69,8 +69,20 @@ than a blank one, because a URL sitting in `base.py` reads as confirmed.
 
 Empty, it is an environment variable: set it on the dyno, restart, and every
 SLF fetch reads it instead — no deploy, no cron edit, on the day SLF flip
-the endpoint before we are ready. `--local-mirror` still outranks it, so a
-pin left in a dev `.env` cannot silently send mirror runs at the live API.
+the endpoint before we are ready.
+
+**The pin is applied in `slf_fetcher._resolve_base_url`, not in the
+`fetch_bulletins` command.** It shipped in the command first, and that was
+wrong: `BulletinAdmin.backfill_view` is the other caller of
+`run_slf_pipeline` and passes no `base_url`, so an admin backfill during the
+changeover would have fetched the live URL and ingested the new schema
+straight past a configured rollback. A pin that one entry point ignores is
+worse than no pin, because it reads as applied. In the resolver it holds for
+every caller that exists now and every one added later.
+
+`--local-mirror` still outranks it, because it passes an explicit `base_url`
+and an explicit argument wins — so a pin left in a dev `.env` cannot silently
+send mirror runs at the live API.
 
 ## Consequences
 
