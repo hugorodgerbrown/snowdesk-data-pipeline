@@ -1163,7 +1163,8 @@ class TestUpsertBulletinGroupingHook:
 
     The hook calls compute_bulletin_grouping_boundary after apply_bulletin_day_ratings.
     It must:
-    - Create a BulletinGrouping when the bulletin has boundaried regions.
+    - Create a BulletinGrouping when the bulletin has two or more boundaried
+      regions, and none when it has fewer (SNOW-1001).
     - Swallow exceptions from compute_bulletin_grouping_boundary without
       aborting ingest (so a geometry error never kills the pipeline).
     """
@@ -1182,9 +1183,19 @@ class TestUpsertBulletinGroupingHook:
                 ],
             },
         )
-        # The second region (CH-7111) is seeded without a boundary so we
-        # confirm that the missing-boundary case is handled gracefully.
-        MicroRegionFactory.create(region_id="CH-7111", subregion=sub, boundary=None)
+        # The second region carries a boundary too: since SNOW-1001 a bulletin
+        # needs two boundaried regions to earn a grouping at all, so seeding
+        # this one without geometry would test the guard rather than the hook.
+        MicroRegionFactory.create(
+            region_id="CH-7111",
+            subregion=sub,
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[7.0, 46.4], [7.1, 46.4], [7.1, 46.5], [7.0, 46.5], [7.0, 46.4]]
+                ],
+            },
+        )
         run = PipelineRunFactory.create()
         raw = _make_raw_bulletin()
 
@@ -1193,6 +1204,29 @@ class TestUpsertBulletinGroupingHook:
         assert BulletinGrouping.objects.count() == 1
         grouping = BulletinGrouping.objects.get()
         assert "CH" in grouping.countries
+
+    def test_upsert_writes_no_grouping_for_one_boundaried_region(self) -> None:
+        """A bulletin with one boundaried region gets no row — the guard reaches ingest."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        MicroRegionFactory.create(
+            region_id="CH-4115",
+            subregion=sub,
+            boundary={
+                "type": "Polygon",
+                "coordinates": [
+                    [[6.9, 46.4], [7.0, 46.4], [7.0, 46.5], [6.9, 46.5], [6.9, 46.4]]
+                ],
+            },
+        )
+        MicroRegionFactory.create(region_id="CH-7111", subregion=sub, boundary=None)
+        run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin()
+
+        upsert_bulletin(raw, run)
+
+        assert Bulletin.objects.count() == 1
+        assert BulletinGrouping.objects.count() == 0
 
     def test_upsert_swallows_grouping_exception_and_still_creates_bulletin(
         self,

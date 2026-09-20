@@ -18,8 +18,10 @@ Bulletin-layer coverage:
     own RegionBulletin + RegionDayRating; only the bulletin count drops, so the
     L3 bulletin-boundary layer has real groupings to dissolve rather than one
     outline per region,
-  - a BulletinGrouping per bulletin, computed by the same service the ingest
-    path uses, so the boundary layer draws in a freshly-seeded DB,
+  - a BulletinGrouping per MULTI-REGION bulletin, computed by the same service
+    the ingest path uses, so the boundary layer draws in a freshly-seeded DB.
+    The single-region detail bulletins below get none — their outline would
+    duplicate the region's own boundary (SNOW-1001),
   - CH-4115 (Martigny-Verbier) additionally gets a single-region bulletin per
     day across April 2026 (2026-04-08 excluded, as the map layer already
     covers it),
@@ -1224,8 +1226,10 @@ class Command(BaseCommand):
         nothing until someone runs ``backfill_bulletin_groupings`` by hand
         (SNOW-534).
 
-        A bulletin whose regions carry no boundary geometry yields ``None`` and
-        is counted as skipped, matching the service's own contract.
+        A bulletin the service declines to write a row for yields ``None`` and
+        is counted as skipped, matching the service's own contract: that is
+        every bulletin covering fewer than two boundaried regions, so the
+        single-region CH-4115 detail days are all skipped here (SNOW-1001).
 
         Args:
             bulletins: The seeded Bulletin instances.

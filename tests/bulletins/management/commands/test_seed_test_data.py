@@ -84,7 +84,9 @@ _EXPECTED_TOTAL = 178
 # Bulletin rows. Far lower than _EXPECTED_TOTAL since SNOW-534: the map date is
 # covered by contiguous GROUPS of up to _GROUP_TARGET_SIZE micro-regions
 # (10 groups across the 149 CH regions), plus the 29 single-region CH-4115
-# detail-day bulletins. One BulletinGrouping is computed per bulletin.
+# detail-day bulletins. A BulletinGrouping is computed only for the grouped
+# ones — a single-region bulletin gets none (SNOW-1001), so the seeded
+# grouping count is _EXPECTED_MAP_DATE_GROUPS, not _EXPECTED_BULLETINS.
 _EXPECTED_BULLETINS = 39
 _EXPECTED_MAP_DATE_GROUPS = 10
 
@@ -247,10 +249,15 @@ class TestCommit:
         links = RegionBulletin.objects.filter(bulletin=detail.get())
         assert [link.region.region_id for link in links] == ["CH-4115"]
 
-    def test_bulletin_groupings_are_seeded_for_every_bulletin(self) -> None:
-        """Each bulletin gets a dissolved BulletinGrouping with real geometry."""
+    def test_bulletin_groupings_are_seeded_for_the_grouped_bulletins(self) -> None:
+        """Each multi-region bulletin gets a dissolved BulletinGrouping with real geometry.
+
+        The 29 single-region CH-4115 detail bulletins get none: their outline
+        would duplicate that region's own boundary (SNOW-1001).
+        """
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert BulletinGrouping.objects.count() == _EXPECTED_BULLETINS
+        assert BulletinGrouping.objects.count() == _EXPECTED_MAP_DATE_GROUPS
+        assert not BulletinGrouping.objects.exclude(target_date=MAP_DATE).exists()
         for grouping in BulletinGrouping.objects.filter(target_date=MAP_DATE):
             assert grouping.boundary["type"] in {"Polygon", "MultiPolygon"}
             assert grouping.countries == ["CH"]
