@@ -6,16 +6,16 @@ Management command.
 Deletes ``BulletinGrouping`` rows that draw nothing the micro-region layer
 does not already draw — those whose bulletin links fewer than
 ``apps.bulletins.models.MIN_GROUPED_REGIONS`` boundaried micro-regions
-(SNOW-1001). Dissolving one polygon returns that polygon, so such a row
-caches a duplicate of the region's own ``MicroRegion.boundary`` and
-``/api/bulletin-groupings.geojson`` serves an outline that lands exactly on
-``regions-line``, asserting an aggregation the provider never made.
+(SNOW-1001). Why such a row is worse than no row at all:
+docs/decisions/a-grouping-outline-asserts-an-aggregation.md.
 
 ``compute_bulletin_grouping_boundary`` now refuses to write these rows and
 deletes any it finds on re-ingest, so this command exists for the rows
-already in a database that will not be re-ingested — Météo-France is 1:1
-across its whole archive and SLF became 1:1 under SNOW-998, so both
-providers' historical groupings are degenerate in bulk.
+already in a database that will not be re-ingested. That is Météo-France in
+bulk: it is 1:1 across its whole archive — 4,671 of 4,671 bulletins cover one
+massif — so every grouping it has ever written is degenerate. SLF is
+aggregated today and will join that population once SNOW-998 lands; ALBINA
+stays 99% multi-region and is largely untouched.
 
 Selection is ``BulletinGrouping.objects.degenerate()``, the same predicate
 the ingest-time guard reads via ``MIN_GROUPED_REGIONS``, so the writer and
@@ -52,7 +52,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import BulletinGrouping
-from apps.core.command_iteration import iterate_rows
+from apps.core.command_iteration import iterate_rows, positive_int
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--batch-size",
-            type=int,
+            type=positive_int,
             default=_DEFAULT_BATCH_SIZE,
             metavar="N",
             help=(
@@ -139,7 +139,11 @@ class Command(BaseCommand):
         for start in range(0, len(pks), batch_size):
             chunk = pks[start : start + batch_size]
             try:
-                count, _ = BulletinGrouping.objects.filter(pk__in=chunk).delete()
+                # The first element of delete()'s return counts CASCADED rows
+                # too. Nothing references BulletinGrouping today, so the two
+                # agree — but the per-label map stays right the day something
+                # does.
+                _, per_label = BulletinGrouping.objects.filter(pk__in=chunk).delete()
             except Exception:
                 logger.exception(
                     "Failed to delete %d degenerate BulletinGrouping row(s)",
@@ -147,7 +151,7 @@ class Command(BaseCommand):
                 )
                 failed += len(chunk)
                 continue
-            deleted += count
+            deleted += per_label.get("bulletins.BulletinGrouping", 0)
         return deleted, failed
 
     def _announce(self, *, commit: bool, verbosity: int) -> None:

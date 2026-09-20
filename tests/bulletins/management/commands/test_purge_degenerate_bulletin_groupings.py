@@ -8,6 +8,8 @@ Covers the purge_degenerate_bulletin_groupings management command (SNOW-1001):
   - A bulletin whose extra regions carry no boundary is still degenerate.
   - An empty database exits 0 with "Nothing to purge".
   - At -v 0 the command prints nothing and still honours --commit.
+  - A zero or negative --batch-size is rejected at parse time rather than
+    crashing inside range() or silently deleting nothing.
   - A failing DELETE raises CommandError (non-zero exit).
 """
 
@@ -135,6 +137,25 @@ class TestPurgeDegenerateBulletinGroupingsCommand:
         call_command("purge_degenerate_bulletin_groupings", commit=True, batch_size=2)
 
         assert BulletinGrouping.objects.count() == 0
+
+    @pytest.mark.parametrize("bad_value", ["0", "-1"])
+    def test_non_positive_batch_size_is_rejected(self, bad_value: str) -> None:
+        """A batch size below one never reaches the delete loop.
+
+        Zero would raise ValueError from range() and -1 would make the loop
+        empty, so a --commit run would report success having deleted nothing.
+        """
+        _make_grouping(bulletin_id="single", boundaried=1)
+
+        with pytest.raises(CommandError, match="must be a positive integer"):
+            call_command(
+                "purge_degenerate_bulletin_groupings",
+                "--commit",
+                "--batch-size",
+                bad_value,
+            )
+
+        assert BulletinGrouping.objects.count() == 1
 
     # ------------------------------------------------------------------
     # Nothing to do
