@@ -1,6 +1,6 @@
 # Page audits
 
-Most recent audit: [2026-09-13](2026-09-13.html)
+Most recent audit: [2026-09-20](2026-09-20.html)
 
 ## Purpose
 
@@ -83,6 +83,7 @@ Sections in order, omitting any that would be empty:
 
 | Date | Baseline | Headline |
 |------|----------|----------|
+| [2026-09-20](2026-09-20.html) | `49eec709` → `a7d3f99` | Terrain-aware routes shipped whole — coloured, honest about what it doesn't know, reachable — while SNOW-937's alerting rebuild, scoped into twelve child tickets a week earlier, had zero commits or comments all week; `/compare/`'s missing link turned out to be a permanent, test-enforced policy with no ticket anywhere |
 | [2026-09-13](2026-09-13.html) | `8dfafb96` → `49eec709` | The four-audit-running unsent-email lie is fixed on all 22 surfaces it turned out to occupy — but two other tracked findings (SNOW-674, SNOW-678) were silently cancelled with no comment while their pages are unchanged |
 | [2026-09-07](2026-09-07.html) | `52c57eae` → `8dfafb96` | A single PR deleted five pages the map already covered and shipped a new Trips app whole — but the unsent-email claim survived into two more surfaces than it had last week. Merged retroactively on 2026-09-14, a week late |
 | [2026-08-31](2026-08-31.html) | `4fdb414e` → `52c57eae` | Eight findings closed, including both top recommendations — but the Resend email claim survives a legal-pages rewrite built to fix lines around it |
