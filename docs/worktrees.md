@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, sync_waffle_flags step, dev credentials, seed_test_data coverage, reseed procedure, shell-cache bypass toggle
+description: init-worktree seed recipe, the migrate + sync_waffle_flags rerun every session, dev credentials, seed_test_data coverage, reseed
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-09-20
 ---
 
 # Worktrees and DB seeding
@@ -15,7 +15,7 @@ worktree is a no-op.
 
 ## Seed recipe
 
-When `db.sqlite3` is absent the script runs four commands in order:
+When `db.sqlite3` is absent the script runs five commands in order:
 
 ```bash
 uv run python manage.py migrate --noinput
@@ -52,6 +52,36 @@ query-count baseline (home=8/map=7 under CI fixtures, lower off a copied
 dev DB), causing churn on SNOW-341 and SNOW-342. Seeding deterministically
 from the factories guarantees every worktree is identical to CI's data
 environment.
+
+## On every session after the first
+
+The first two commands above run again at every session start; the last
+three never do (SNOW-997).
+
+`migrate --noinput` and `sync_waffle_flags --commit` are idempotent and
+authoritative, so they are safe to run unconditionally and they are what
+keeps a worktree's database in step with its checkout. `loaddata`,
+`import_resorts` and `seed_test_data` **insert** rows rather than
+reconcile them, so re-running those would duplicate the seeded dataset
+rather than refresh it — which is why the split exists at all.
+
+Until SNOW-997 the whole recipe was gated on `db.sqlite3` being absent, so
+it ran exactly once in a worktree's life. That is fine for a worktree left
+alone: `showmigrations` compares the database against the migration files
+in *that* worktree's tree, and both stay equally old. It breaks the moment
+the checkout moves — a pull, a rebase, or a new branch off current main —
+because migration files then arrive that the database has never seen and
+nothing ever applies them. The symptom was either a `no such column` from
+an unrelated-looking command, or no symptom at all and a
+`monitor_query_counts` failure against a perfectly correct baseline.
+
+The cost is two `manage.py` startups, roughly two to four seconds, at
+every session start. A session where nothing had to change prints
+nothing: both commands' output is captured, including the logging they
+write to stderr, and only a run that actually applied a migration or
+changed a flag says so. Output that matches neither command's "nothing to
+do" sentence is reported rather than swallowed, so a reworded message
+upstream makes this noisy instead of making it silent again.
 
 ## Compiled CSS
 
@@ -128,7 +158,9 @@ the command above.
 
 Worktrees seeded before the `sync_waffle_flags` step was added have a DB
 whose flag rows predate the manifest, which fails `monitor_query_counts`
-with a spurious *reduction*. Reconcile one without a full reseed:
+with a spurious *reduction*. Since SNOW-997 the next session start
+reconciles that by itself, so this is only needed to fix one without
+restarting the session:
 
 ```bash
 uv run python manage.py sync_waffle_flags --commit

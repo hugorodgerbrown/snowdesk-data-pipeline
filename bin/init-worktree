@@ -11,7 +11,8 @@
 #                    across worktrees; one source of truth).
 #   - db.sqlite3   → seeded from committed fixtures + dev users (guarantees
 #                    every worktree has the same data as CI; avoids drift that
-#                    breaks the SNOW-13 query-count baseline). Recipe:
+#                    breaks the SNOW-13 query-count baseline). Recipe, on the
+#                    session that finds no database:
 #                      1. migrate --noinput
 #                      2. sync_waffle_flags --commit
 #                      3. loaddata eaws_CH
@@ -24,6 +25,13 @@
 #                    monitored page measure cheaper than any deployed one
 #                    and monitor_query_counts fails against a correct
 #                    baseline. See docs/query-counts.md.
+#                    On EVERY OTHER session, steps 1 and 2 run again and
+#                    steps 3-5 do not (SNOW-997). Both are idempotent, and
+#                    they are what keeps a worktree current once its
+#                    checkout moves past the database — which is what a
+#                    pull, a rebase or a new branch off main does. Steps 3-5
+#                    insert rows rather than reconcile them, so re-running
+#                    them would duplicate the seeded dataset.
 #                    See docs/worktrees.md for credentials and reseed steps.
 #   - output.css   → compiled from src/css/main.css with the Tailwind CLI
 #                    (gitignored build artifact, not shared across worktrees).
@@ -82,10 +90,7 @@ link_if_missing() {
     actions=$((actions + 1))
 }
 
-seed_db_if_missing() {
-    if [ -e "db.sqlite3" ]; then
-        return
-    fi
+seed_db() {
     echo "init-worktree: seeding db.sqlite3 (migrate + waffle flags + region fixtures + resorts + seed_test_data)"
     uv run python manage.py migrate --noinput
     uv run python manage.py sync_waffle_flags --commit
@@ -94,6 +99,76 @@ seed_db_if_missing() {
     uv run python manage.py seed_test_data --all --commit
     echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))
+}
+
+# Run a manage.py command, and report whether it changed anything.
+#
+# Returns 0 when the output carries the command's own "nothing to do"
+# sentence and 1 otherwise, so the caller announces a change and stays
+# quiet on a no-op. UNRECOGNISED OUTPUT COUNTS AS A CHANGE, deliberately:
+# if either sentence is reworded upstream, this degrades to announcing
+# every session rather than to silence. A check that goes quiet when it
+# stops understanding its input is the failure this whole ticket is about.
+#
+# stderr is folded into the capture because both commands log to it on
+# every run — the prose-parser registration, the flag-sync summary — and a
+# SessionStart hook that printed three lines of logging before the user has
+# typed anything is noise. It is captured rather than discarded so a real
+# failure still arrives with its message.
+#
+# A failure exits here rather than returning non-zero, because the caller
+# reads a non-zero return as "this changed something": letting a crash take
+# that branch would announce success over a database that never migrated.
+#
+# $1: the no-op sentence to look for. $2...: the manage.py arguments.
+quiet_when_unchanged() {
+    local no_op_sentence=$1
+    shift
+    local output status
+    set +e
+    output=$(uv run python manage.py "$@" 2>&1)
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        printf '%s\n' "$output" >&2
+        echo "init-worktree: manage.py $* failed (exit $status)" >&2
+        exit "$status"
+    fi
+    if printf '%s\n' "$output" | grep -qF "$no_op_sentence"; then
+        return 0
+    fi
+    printf '%s\n' "$output"
+    return 1
+}
+
+update_db() {
+    # ALWAYS, on every session — not once, when the database was created.
+    #
+    # SNOW-997: this used to return early the moment db.sqlite3 existed, so
+    # the recipe ran exactly once in a worktree's life. That is fine until
+    # the worktree's CHECKOUT moves — a pull, a rebase, a new branch off
+    # current main — at which point migration files arrive in the tree that
+    # the database has never seen and nothing ever applies them. The
+    # symptom is a "no such column" from an unrelated-looking command, or,
+    # worse, no symptom at all: a migration that only adds a waffle flag
+    # row leaves the schema usable and the query counts wrong, so
+    # monitor_query_counts fails against a perfectly correct baseline.
+    #
+    # Both commands are idempotent and both are authoritative, so the cost
+    # of running them unconditionally is two manage.py startups per
+    # session and the benefit is that the database is never quietly behind
+    # the code about to run against it. See docs/worktrees.md.
+    if ! quiet_when_unchanged "No migrations to apply." migrate --noinput; then
+        echo "init-worktree: brought db.sqlite3 up to date"
+        actions=$((actions + 1))
+    fi
+    # sync_waffle_flags mirrors bin/build.sh and lighthouse.yml; see the
+    # header comment for why a missing manifest flag breaks the baseline.
+    if ! quiet_when_unchanged "Created 0 flag(s), deleted 0 flag(s)." \
+        sync_waffle_flags --commit; then
+        echo "init-worktree: reconciled the waffle flag manifest"
+        actions=$((actions + 1))
+    fi
 }
 
 build_css_if_missing() {
@@ -112,7 +187,23 @@ build_css_if_missing() {
 
 link_if_missing .env
 link_if_missing .venv
-seed_db_if_missing
+
+# Branch on the database's existence HERE rather than inside either
+# function, because ``migrate`` creates db.sqlite3 as a side effect: a test
+# made after ``update_db`` had run would see a database that did not exist
+# a moment earlier and skip the data seed a fresh worktree needs.
+#
+# The data half of the recipe — loaddata, import_resorts, seed_test_data —
+# only ever runs on the seeding path, and has to stay that way. Those
+# commands INSERT rows rather than reconcile them, so re-running them on a
+# populated database duplicates the seeded dataset instead of refreshing
+# it. Only the idempotent half is safe to run every session.
+if [ -e "db.sqlite3" ]; then
+    update_db
+else
+    seed_db
+fi
+
 build_css_if_missing
 
 # Silent on a fully-set-up worktree; only announces when the worktree
