@@ -238,6 +238,42 @@ route row contains:
 - **No relative-time refresh**: a route row carries no
   `<time datetime>` to re-age.
 
+### And for one route's reading of one day's bulletin (SNOW-973)
+
+The map's route detail panel — the docked sheet that replaced the
+anchored popup — fetches `routes:bulletin`, which `sw.js` classifies
+network-only, so off signal it opened onto a failure line for a route the
+map was already drawing beside it. The relaxation above applies, with the
+horizon back ON:
+
+- `static/js/routes_bulletin_offline.js` writes each fetched reading into
+  its own store, `data:route_bulletins` (schema v7), keyed
+  `'<route uuid>:<YYYY-MM-DD>'` and stamped with the same principal rule
+  as the two panels above — a row whose principal does not match reads
+  back as `null`.
+- The row carries the response's own `X-Data-Generated-At` /
+  `X-Data-Unsafe-After` pair, read straight off the `Response` rather than
+  off a server-rendered sidecar. That is the reason this surface fetches
+  instead of swapping over htmx.
+- Offline, the held reading repaints behind an explicit "Showing a saved
+  reading — as of HH:MM" line.
+- **There IS a staleness horizon here** — the observations section above
+  says there is none for a field report, and a bulletin reading is on the
+  other side of that line. Past `unsafe_after_seconds` (48h) the rows are
+  dropped and the panel says the saved reading has expired, the rule
+  `favourites_offline.js` applies to a cached danger rating. The server
+  omits the header when the answer carried no bulletin, and such a row
+  never expires: "this route crosses no forecast region" does not go
+  stale.
+- The DAY is in the key, so a reading can never be repainted under a date
+  it does not belong to — the panel asks for the day the scrubber is
+  showing and gets that day's row or nothing.
+- **Nothing is warmed.** There is no `onWarmed` hook and no eager pass
+  over the user's routes: a reading is a real per-region join on the
+  server, and warming all 25 on every map load would pay for routes that
+  are never opened. What a device holds is what it has already been
+  shown.
+
 ## Idempotency (SNOW-371)
 
 `apps.core.idempotency.IdempotencyMiddleware` (mounted immediately after

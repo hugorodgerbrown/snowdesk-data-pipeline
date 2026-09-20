@@ -1,12 +1,22 @@
 {% load i18n components %}
 {% comment %}
-trips/partials/_trip_bulletin.html — where this day's line meets this day's
-bulletin (SNOW-839).
+includes/_bulletin_readings.html — where this day's line meets this day's
+bulletin (SNOW-839, shared by SNOW-973).
 
 The one thing on a trip page that changes twice a day. Everything else is
 the snapshot the organiser shared; this is read fresh on every view and
-stored nowhere, because a cached intersection would be held offline by the
-service worker under a date it no longer belongs to.
+stored nowhere on the SERVER, because a cached intersection would be held
+under a date it no longer belongs to.
+
+TWO SURFACES SINCE SNOW-973. It began as trips/partials/_trip_bulletin.html
+and never dereferenced ``trip`` — only ``bulletin_readings`` — so the move
+here was a rename plus the two parameters below. The map's route detail
+panel renders the same rows for a saved route on the day the scrubber is
+showing; a route's reading is fetched per open rather than rendered into a
+page, and what the CLIENT then holds of it is bounded by
+static/js/routes_bulletin_offline.js, which stamps every cached row with
+the freshness envelope the response carried and renders an expired one as
+expired rather than as a current reading.
 
 WHAT THIS IS NOT. It is not a score, not a verdict and not a
 recommendation, and the copy is written so it cannot be read as one. A
@@ -26,16 +36,29 @@ names each. A region with no bulletin for the day is still listed: a
 reader whose route leaves the forecast needs to know it did.
 
 Context:
-    trip             : Trip — for its date, which is the day asked about.
     bulletin_readings: list[dict] — one entry per region, each carrying
-                       ``region``, ``bulletin``, ``overlaps`` (already
-                       display-shaped) and ``length_km``, the region total.
+                       ``region``, ``bulletin``, ``bulletin_url``,
+                       ``overlaps`` (already display-shaped) and
+                       ``length_km``, the region total. Built by
+                       ``apps.routes.services.route_bulletin.display_readings``.
+
+Optional context:
+    testid_prefix    : str — prefix for the two test hooks below; defaults
+                       to ``trip-bulletin``, which is what the trip page's
+                       own tests have always looked for. The route panel
+                       passes ``route-bulletin`` so a test can say WHICH
+                       surface it found the rows on.
+    card_extra       : str — extra utilities for the card chrome. The trip
+                       page passes ``mt-3``, the gap every other card there
+                       carries — the notes, the details, the map. Without
+                       it this card butted straight onto the map card's
+                       footer and the two read as one surface. The map
+                       panel passes nothing: it is not in a column of
+                       cards, it is the last thing in a sheet.
 {% endcomment %}
+{% firstof testid_prefix "trip-bulletin" as testid %}
 {% if bulletin_readings %}
-    {# ``mt-3`` is the gap every other card on the trip page carries — the #}
-    {# notes, the details, the map. Without it this card butted straight   #}
-    {# onto the map card's footer and the two read as one surface.          #}
-    {% card extra="mt-3" %}
+    {% card extra=card_extra %}
     <h2 class="text-summary font-semibold text-text-1">{% trans "This day's bulletin, along your line" %}</h2>
     {# The caveat sits ABOVE the rows, not under them. A reader who scans #}
     {# the figures and stops has still read the sentence that says what   #}
@@ -48,7 +71,7 @@ Context:
     </p>
 
     {% for reading in bulletin_readings %}
-        <div class="mt-4 border-t border-border pt-3 first:mt-3" data-testid="trip-bulletin-region">
+        <div class="mt-4 border-t border-border pt-3 first:mt-3" data-testid="{{ testid }}-region">
             <div class="flex items-baseline justify-between gap-2">
                 <span class="text-body font-medium text-text-1">{{ reading.region.name }}</span>
                 {% if reading.bulletin_url %}
@@ -78,7 +101,7 @@ Context:
             {% else %}
                 <ul class="mt-1 space-y-1">
                     {% for overlap in reading.overlaps %}
-                        <li class="text-meta text-text-2" data-testid="trip-bulletin-overlap">
+                        <li class="text-meta text-text-2" data-testid="{{ testid }}-overlap">
                             {% if overlap.lowest_m and overlap.lowest_m == overlap.highest_m and not overlap.elevation_undecided %}
                                 {# One height, not a range. "Between 2500 #}
                                 {# and 2500 m" is what a range template   #}

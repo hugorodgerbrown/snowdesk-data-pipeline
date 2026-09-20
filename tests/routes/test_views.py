@@ -25,6 +25,16 @@ Covers:
                  (and a zero staying a zero); owner scoping; freshness
                  headers WITHOUT X-Data-Unsafe-After; and a query count that
                  does not grow with the number of routes.
+  route_bulletin_fragment — SNOW-973: what each region's bulletin says
+                 about one saved route on the day the map is showing —
+                 the rows, their longest-first order, the two empty cases
+                 (never sampled vs. placed in no region, which are
+                 different claims), the ``?d=`` parse and its default,
+                 owner-only access (404 not 403), anonymous → 403, served
+                 without an HX-Request header, private/no-store, the
+                 freshness envelope including X-Data-Unsafe-After (unlike
+                 routes.geojson) and its absence when no bulletin was
+                 read, and a pinned query count.
   SNOW-764's widening of the last two — route_list and routes_geojson
                  answering for an anonymous session that holds a pending
                  share; the pending rows sorting above the owned ones; a
@@ -54,7 +64,13 @@ from django.utils import timezone
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.models import Route
-from tests.factories import RouteFactory, RouteShareFactory, UserFactory
+from tests.factories import (
+    BulletinFactory,
+    MicroRegionFactory,
+    RouteFactory,
+    RouteShareFactory,
+    UserFactory,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -2059,3 +2075,338 @@ class TestRoutesGeojsonPendingShares:
 
         assert "private" in response["Cache-Control"]
         assert "no-store" in response["Cache-Control"]
+
+
+# ---------------------------------------------------------------------------
+# route_bulletin_fragment — GET /routes/<uuid>/bulletin/  (SNOW-973)
+# ---------------------------------------------------------------------------
+
+
+def _bulletin_url(uuid: object, day: str | None = None) -> str:
+    """Build the bulletin-fragment URL for a route's uuid."""
+    base = f"/routes/{uuid}/bulletin/"
+    return f"{base}?d={day}" if day else base
+
+
+_BULLETIN_DAY = "2026-03-01"
+
+# A square region the fixture track sits well inside. Synthetic on
+# purpose, exactly as tests/routes/test_route_bulletin.py's own boundary
+# is: which region a segment lands in should be arithmetic, not a lookup.
+_BULLETIN_BOUNDARY: dict[str, Any] = {
+    "type": "Polygon",
+    "coordinates": [[[7.0, 46.0], [7.1, 46.0], [7.1, 46.1], [7.0, 46.1], [7.0, 46.0]]],
+}
+
+_EAST_BOUNDARY: dict[str, Any] = {
+    "type": "Polygon",
+    "coordinates": [[[7.1, 46.0], [7.2, 46.0], [7.2, 46.1], [7.1, 46.1], [7.1, 46.0]]],
+}
+
+_BULLETIN_COORDINATES = [(7.02, 46.02), (7.03, 46.03)]
+
+# Three segments in the western square, one in the eastern — so the east
+# is crossed for a quarter of the line and must sort below it.
+_TWO_REGION_COORDINATES = [
+    (7.02, 46.02),
+    (7.04, 46.02),
+    (7.06, 46.02),
+    (7.09, 46.02),
+    (7.15, 46.02),
+]
+
+
+def _two_region_route(user: Any) -> Route:
+    """Return one of ``user``'s routes, crossing both squares above."""
+    return RouteFactory.create(
+        user=user,
+        points=[[lon, lat, 2500.0] for lon, lat in _TWO_REGION_COORDINATES],
+        point_count=len(_TWO_REGION_COORDINATES),
+        slope_samples={
+            "window_m": 10.0,
+            "stride_m": 25.0,
+            "grid": "snowdesk-terrain-5m-3035",
+            "points": [[lon, lat] for lon, lat in _TWO_REGION_COORDINATES],
+            "segments": [{"angle_deg": 34.0, "aspect_deg": 0.0}] * 4,
+            "cruxes": [],
+        },
+    )
+
+
+def _sampled_route(user: Any, aspect_deg: float | None = 0.0) -> Route:
+    """Return one of ``user``'s routes, sampled at a single aspect."""
+    return RouteFactory.create(
+        user=user,
+        points=[[lon, lat, 2500.0] for lon, lat in _BULLETIN_COORDINATES],
+        point_count=2,
+        bounds=[7.02, 46.02, 7.03, 46.03],
+        slope_samples={
+            "window_m": 10.0,
+            "stride_m": 25.0,
+            "grid": "snowdesk-terrain-5m-3035",
+            "points": [[lon, lat] for lon, lat in _BULLETIN_COORDINATES],
+            "segments": (
+                [{"angle_deg": 34.0, "aspect_deg": aspect_deg}]
+                if aspect_deg is not None
+                else [{"unknown": "outside_coverage"}]
+            ),
+            "cruxes": [],
+        },
+    )
+
+
+def _region_with_bulletin(
+    region_id: str = "CH-B01",
+    aspects: list[str] | None = None,
+    issued_at: datetime | None = None,
+    boundary: dict[str, Any] | None = None,
+) -> Any:
+    """Create a forecast region publishing one problem for ``_BULLETIN_DAY``."""
+    region = MicroRegionFactory.create(
+        region_id=region_id, boundary=boundary or _BULLETIN_BOUNDARY
+    )
+    bulletin = BulletinFactory.create(
+        issued_at=issued_at or datetime(2026, 2, 28, 17, 0, tzinfo=UTC),
+        valid_from=datetime(2026, 3, 1, 6, tzinfo=UTC),
+        valid_to=datetime(2026, 3, 1, 23, tzinfo=UTC),
+        render_model_version=1,
+        render_model={
+            "version": 1,
+            "traits": [
+                {
+                    "problems": [
+                        {
+                            "problem_type": "persistent_weak_layers",
+                            "danger_rating_value": "considerable",
+                            "aspects": aspects or ["N"],
+                            "elevation": None,
+                        }
+                    ]
+                }
+            ],
+        },
+    )
+    bulletin.regions.add(region)
+    return region
+
+
+@pytest.mark.django_db
+class TestRouteBulletinFragment:
+    """What the map's route panel is told about one route's day (SNOW-973)."""
+
+    def test_the_reading_names_the_problem_the_line_enters(
+        self, client: Client
+    ) -> None:
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        region = _region_with_bulletin()
+        client.force_login(user)
+
+        payload = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()
+
+        assert payload["day"] == _BULLETIN_DAY
+        assert 'data-testid="route-bulletin-overlap"' in payload["html"]
+        assert "Persistent weak layers" in payload["html"]
+        assert region.name in payload["html"]
+
+    def test_the_rows_are_this_surface_not_the_trip_page(self, client: Client) -> None:
+        """The shared partial is parameterised, so the hooks say which one."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        _region_with_bulletin()
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert 'data-testid="route-bulletin-region"' in html
+        assert "trip-bulletin-region" not in html
+
+    def test_regions_are_listed_longest_stretch_first(self, client: Client) -> None:
+        """The region a reader is mostly in is the one to read first."""
+        user = UserFactory.create()
+        route = _two_region_route(user)
+        west = _region_with_bulletin("CH-W01")
+        east = MicroRegionFactory.create(region_id="CH-E01", boundary=_EAST_BOUNDARY)
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert html.index(west.name) < html.index(east.name)
+
+    def test_a_line_inside_no_problem_says_so_rather_than_nothing(
+        self, client: Client
+    ) -> None:
+        """A reader shown silence would read it as "clear"."""
+        user = UserFactory.create()
+        route = _sampled_route(user, aspect_deg=180.0)
+        _region_with_bulletin(aspects=["N"])
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert 'data-testid="route-bulletin-region"' in html
+        assert "does not enter the ground" in html
+
+    def test_a_region_with_no_bulletin_is_still_listed(self, client: Client) -> None:
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        MicroRegionFactory.create(region_id="CH-B09", boundary=_BULLETIN_BOUNDARY)
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert "No bulletin was published for this region" in html
+
+    def test_an_unsampled_route_says_it_has_not_been_measured(
+        self, client: Client
+    ) -> None:
+        """NOT "your line meets nothing" — nothing has looked at it yet."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert 'data-testid="route-bulletin-unsampled"' in html
+        assert "route-bulletin-unplaced" not in html
+
+    def test_a_sampled_route_outside_every_boundary_says_that_instead(
+        self, client: Client
+    ) -> None:
+        """The other empty case, and a different claim about the ground."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert 'data-testid="route-bulletin-unplaced"' in html
+        assert "route-bulletin-unsampled" not in html
+
+    def test_the_panel_names_the_day_it_is_showing(self, client: Client) -> None:
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        _region_with_bulletin()
+        client.force_login(user)
+
+        html = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY)).json()["html"]
+
+        assert "Sunday 1 March 2026" in html
+
+    def test_the_day_defaults_to_today(self, client: Client) -> None:
+        """A map showing no chosen day is showing today, and so is this."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        payload = client.get(_bulletin_url(route.uuid)).json()
+
+        assert payload["day"] == timezone.localdate().isoformat()
+
+    def test_a_malformed_day_is_rejected(self, client: Client) -> None:
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        response = client.get(_bulletin_url(route.uuid, "not-a-date"))
+
+        assert response.status_code == 400
+
+    def test_another_users_route_is_404_never_403(self, client: Client) -> None:
+        """No existence oracle — "not yours" must not be distinguishable."""
+        route = _sampled_route(UserFactory.create())
+        client.force_login(UserFactory.create())
+
+        assert client.get(_bulletin_url(route.uuid)).status_code == 404
+
+    def test_an_unknown_uuid_is_404(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+
+        assert client.get(_bulletin_url(uuid4())).status_code == 404
+
+    def test_anonymous_is_403(self, client: Client) -> None:
+        route = _sampled_route(UserFactory.create())
+
+        assert client.get(_bulletin_url(route.uuid)).status_code == 403
+
+    def test_it_is_served_without_an_hx_request_header(self, client: Client) -> None:
+        """A ``fetch()``, not a swap — so not ``@require_htmx``."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        assert client.get(_bulletin_url(route.uuid)).status_code == 200
+
+    def test_the_payload_is_private_and_not_stored(self, client: Client) -> None:
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        response = client.get(_bulletin_url(route.uuid))
+
+        assert "private" in response["Cache-Control"]
+        assert "no-store" in response["Cache-Control"]
+
+    def test_a_reading_carries_the_unsafe_horizon(self, client: Client) -> None:
+        """Unlike routes.geojson: this is the forecast, not the user's track."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        issued = datetime(2026, 2, 28, 17, 0, tzinfo=UTC)
+        _region_with_bulletin(issued_at=issued)
+        client.force_login(user)
+
+        response = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY))
+
+        assert response["X-Data-Generated-At"] == issued.isoformat(timespec="seconds")
+        assert response["X-Data-Max-Age"] == str(DEFAULT_MAX_AGE_SECONDS)
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    def test_the_stalest_bulletin_sets_the_generated_time(self, client: Client) -> None:
+        """Two regions are read together, so the panel is as fresh as the
+        older of them — ``_card_freshness``'s rule, for the same reason.
+        """
+        user = UserFactory.create()
+        route = _two_region_route(user)
+        oldest = datetime(2026, 2, 27, 17, 0, tzinfo=UTC)
+        _region_with_bulletin("CH-W01", issued_at=oldest)
+        _region_with_bulletin(
+            "CH-E01",
+            issued_at=datetime(2026, 2, 28, 17, 0, tzinfo=UTC),
+            boundary=_EAST_BOUNDARY,
+        )
+        client.force_login(user)
+
+        response = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY))
+
+        assert response["X-Data-Generated-At"] == oldest.isoformat(timespec="seconds")
+
+    def test_no_bulletin_means_no_unsafe_horizon(self, client: Client) -> None:
+        """Nothing safety-critical was shown, so nothing expires."""
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        client.force_login(user)
+
+        response = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY))
+
+        assert "X-Data-Unsafe-After" not in response
+
+    def test_the_query_count_is_pinned(self, client: Client) -> None:
+        """One ``select_bulletin_for_date`` per crossed region is the shape;
+        this is what stops it growing quietly into something worse.
+        """
+        user = UserFactory.create()
+        route = _sampled_route(user)
+        _region_with_bulletin()
+        client.force_login(user)
+
+        with CaptureQueriesContext(connection) as ctx:
+            client.get(_bulletin_url(route.uuid, _BULLETIN_DAY))
+
+        # Six today: the session/user pair, the owner-scoped route, the
+        # region lookup, the day's bulletin for the one region crossed,
+        # and its render-model read. The bound is the SHAPE — one
+        # ``select_bulletin_for_date`` per crossed region — and a long
+        # tour crossing six regions pays six of them, which is acceptable
+        # for a user-initiated fetch and is exactly what must not grow
+        # into something per-SEGMENT unnoticed.
+        assert len(ctx.captured_queries) <= 8

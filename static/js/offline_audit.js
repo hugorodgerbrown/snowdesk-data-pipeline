@@ -94,7 +94,15 @@
   // The stores whose depth the report states. Not every store in db.js:
   // `queue:events` is the telemetry buffer and `log:*` are diagnostics,
   // neither of which is content the user would miss offline.
-  var DATA_STORES = ['data:favourites', 'data:map_overlays', 'data:panel_rows'];
+  var DATA_STORES = [
+    'data:favourites',
+    'data:map_overlays',
+    'data:panel_rows',
+    // SNOW-973. A store absent from this list is a store the report
+    // cannot see, which is how a user would be told they hold nothing
+    // for a surface that repaints perfectly well.
+    'data:route_bulletins',
+  ];
 
   // How long to wait for the worker to name its own cache version before
   // falling back to reading every shell cache present. Short because the

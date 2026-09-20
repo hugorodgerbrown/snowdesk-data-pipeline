@@ -108,8 +108,21 @@ const ROUTES_FC = {
   ],
 };
 
-/** Every DOM node handed to a popup, newest last. */
-const popupNodes = [];
+/**
+ * The figures map.js has seated in the route detail sheet, if it is open.
+ *
+ * SNOW-973: the detail left the anchored popup for the docked sheet, so
+ * what used to be read off a `setDOMContent` stub is read off the sheet
+ * itself. `window.pwaRouteDetail.close()` between taps is what makes
+ * "the newest one" meaningful — MapSheet's teardown empties the body.
+ *
+ * @returns {HTMLElement|null}
+ */
+function detailBody() {
+  const sheetEl = document.getElementById('route-detail-sheet');
+  if (!sheetEl || sheetEl.hasAttribute('hidden')) return null;
+  return sheetEl.querySelector('[data-route-detail]');
+}
 
 /** Layer definitions as map.js added them, by id. */
 const layers = new Map();
@@ -199,10 +212,7 @@ function stubMapLibre() {
     Popup: function () {
       const popup = {
         setHTML: () => popup,
-        setDOMContent: (node) => {
-          popupNodes.push(node);
-          return popup;
-        },
+        setDOMContent: () => popup,
         setLngLat: () => popup,
         addTo: () => popup,
         getElement: () => document.createElement('div'),
@@ -250,6 +260,13 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
+    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
+    <template id="route-detail-template">
+      <div>
+        <div data-route-detail-figures></div>
+        <div data-route-detail-bulletin></div>
+      </div>
+    </template>
     <section id="map-route-slope-section" hidden></section>`;
 }
 
@@ -282,10 +299,14 @@ beforeAll(async () => {
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/route_markers_core.js');
   await import('../../static/js/route_slope_core.js');
-  // SNOW-960: the popup's chart. Without it `appendElevationProfile`
-  // returns early and the two profile assertions below would pass
-  // vacuously against a popup carrying no <svg> at all.
+  // SNOW-960: the detail panel's chart. Without it
+  // `appendElevationProfile` returns early and the two profile assertions
+  // below would pass vacuously against a body carrying no <svg> at all.
   await import('../../static/js/elevation_profile_core.js');
+  // SNOW-973: the sheet the tap opens, and the controller it attaches
+  // through. Both before the bundle, as the page loads them.
+  await import('../../static/js/map_sheet.js');
+  await import('../../static/js/map_route_detail.js');
   core = globalThis.pwaRouteSlopeCore;
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -685,20 +706,20 @@ describe('tapping a coloured route', () => {
     // with the steepness figures, not on a line of their own — and the
     // direction is a WORD, because the fall line is measured from one
     // 25 m chord of a recorded track.
-    popupNodes.length = 0;
+    window.pwaRouteDetail.close();
     tapSlopeSegment('routes-slope-line');
 
-    const text = popupNodes.at(-1).textContent;
+    const text = detailBody().textContent;
 
     expect(text).toContain('1 no-fall passage');
     expect(text).toContain('down the fall line');
   });
 
   it('colours the profile of the route it opens', () => {
-    popupNodes.length = 0;
+    window.pwaRouteDetail.close();
     tapSlopeSegment('routes-slope-line');
 
-    const strokes = [...popupNodes.at(-1).querySelectorAll('path')]
+    const strokes = [...detailBody().querySelectorAll('path')]
       .map((path) => path.getAttribute('stroke'));
 
     expect(strokes.some((stroke) => /--color-slope-/.test(stroke))).toBe(true);
@@ -717,7 +738,7 @@ describe('tapping a sampled route somebody shared', () => {
     // palette with nothing on screen to say what it means, on the one
     // path where the reader is newest to the feature. A pending share is
     // not coloured, anywhere.
-    popupNodes.length = 0;
+    window.pwaRouteDetail.close();
     queryAnswer = (options) => (
       (options.layers || []).includes('routes-line-pending')
         ? [{
@@ -736,7 +757,7 @@ describe('tapping a sampled route somebody shared', () => {
     }
     queryAnswer = () => [];
 
-    const strokes = [...popupNodes.at(-1).querySelectorAll('path')]
+    const strokes = [...detailBody().querySelectorAll('path')]
       .map((path) => path.getAttribute('stroke'));
 
     // A chart was drawn — the share carries elevation — and none of it
