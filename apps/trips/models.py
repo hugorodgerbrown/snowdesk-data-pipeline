@@ -28,6 +28,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.core.durations import split_hours_minutes
 from apps.core.models import BaseModel
 
 if TYPE_CHECKING:
@@ -132,12 +133,12 @@ class Trip(BaseModel):
     """A planned outing: one route, one day, one meeting point, one roster.
 
     **The snapshot is the trip.** ``points``, ``bounds``, ``distance_m``,
-    ``ascent_m``, ``descent_m``, ``point_count``, ``route_name`` and
-    ``slope_samples`` are copied from the source ``Route`` when the trip is
-    created and are never re-read from it. Everything a trip page draws
-    comes from these fields, so a trip stays exactly what its organiser
-    shared even after they
-    rename, re-upload or delete the route it came from — and a participant
+    ``ascent_m``, ``descent_m``, ``duration``, ``point_count``,
+    ``route_name`` and ``slope_samples`` are copied from the source
+    ``Route`` when the trip is created and are never re-read from it.
+    Everything a trip page draws comes from these fields, so a trip stays
+    exactly what its organiser shared even after they rename, re-upload
+    or delete the route it came from — and a participant
     who saved the route (SNOW-824) got the geometry they were shown rather
     than whatever the organiser's row happens to hold today.
 
@@ -145,6 +146,15 @@ class Trip(BaseModel):
     NULL, never as zero. ``Route``'s own docstring is explicit that "we
     don't know" and "flat" are different facts, and flattening one into the
     other is a safety-relevant lie about terrain somebody is about to ski.
+
+    ``duration`` (SNOW-995) is the same rule applied to the length of the
+    day, and it is the ONE thing a trip takes from the source route's
+    timing. The ``started_at``/``finished_at`` pair stays off the snapshot
+    because those are timestamps and the recording happened on some other
+    day; a duration is a length, and a six-hour track describes a six-hour
+    day whenever it is skied. That the recorder may have been faster than
+    this group, or stopped an hour for lunch, does not change a long day
+    into a short one — and the organiser has ``description`` to say so.
 
     ``date`` and ``start_time`` are **wall-clock at the meeting point**,
     stored as a plain ``DateField`` and ``TimeField`` and never combined
@@ -269,6 +279,22 @@ class Trip(BaseModel):
             "magnitude. Null on the same condition as ascent_m."
         ),
     )
+    duration = models.DurationField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Snapshot of how long the source route's recording took — the "
+            "length of the day, not a time of day. A LENGTH rather than a "
+            "pair of timestamps, which is why a trip may carry it while "
+            "started_at/finished_at stay off the snapshot: the route was "
+            "recorded on some other day, but a six-hour track describes a "
+            "six-hour day whenever it is skied. Elapsed, so it counts every "
+            "stop the recording sat through. Null — not zero — when the "
+            "source route was untimed, which is the common case: only an "
+            "activity or workout export carries per-point times, and a "
+            "route or course export carries none."
+        ),
+    )
     point_count = models.PositiveIntegerField(
         help_text="Number of coordinates stored in points.",
     )
@@ -364,6 +390,26 @@ class Trip(BaseModel):
         the maths produces, kilometres is what a route is read in.
         """
         return self.distance_m / 1000
+
+    @property
+    def duration_hm(self) -> dict[str, str] | None:
+        """Return the day's length split for display, or ``None`` if unknown.
+
+        A display helper matching ``Route.duration_hm``, and deliberately
+        the SAME helper underneath
+        (``apps.core.durations.split_hours_minutes``): a reader meeting
+        "4h05m" on a route and on the trip planned from it is meeting one
+        measurement, and two spellings would read as two.
+
+        Returns:
+            ``{"hours": "4", "minutes": "05"}``, ``{"hours": "",
+            "minutes": "41"}``, or ``None`` when the source route was
+            untimed — in which case the caller omits the figure entirely
+            rather than dashing it, the same contract ``ascent_m``'s null
+            carries in ``_trip_stats.html``.
+
+        """
+        return split_hours_minutes(self.duration)
 
     @property
     def display_name(self) -> str:

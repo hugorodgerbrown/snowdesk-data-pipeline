@@ -63,6 +63,7 @@ class TestCreateTripSnapshot:
         assert trip.ascent_m == route.ascent_m
         assert trip.descent_m == route.descent_m
         assert trip.point_count == route.point_count
+        assert trip.duration == route.duration
         assert trip.route_name == "Rosablanche"
 
     def test_a_null_ascent_is_copied_as_null_never_zero(self) -> None:
@@ -78,6 +79,37 @@ class TestCreateTripSnapshot:
         )
         assert trip.ascent_m is None
         assert trip.descent_m is None
+
+    def test_a_null_duration_is_copied_as_null_never_zero(self) -> None:
+        """An untimed route is the common case, not a zero-length day.
+
+        Only an activity or workout export carries per-point times; a
+        route or course export carries none, and ``Route.duration`` is
+        None for it. The trip must show nothing rather than "0m".
+        """
+        route = RouteFactory.create(started_at=None, finished_at=None)
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+        assert trip.duration is None
+
+    def test_the_duration_is_a_length_not_the_route_s_timestamps(self) -> None:
+        """The reason a trip may carry this while the two ends stay off.
+
+        The recording happened on some other day, so its timestamps mean
+        nothing for a trip planned for next Saturday. Its LENGTH does.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=datetime.UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 15, 0, tzinfo=datetime.UTC),
+        )
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+
+        assert trip.duration == datetime.timedelta(hours=6)
+        assert not hasattr(trip, "started_at")
+        assert not hasattr(trip, "finished_at")
 
     def test_the_snapshot_survives_the_route_being_renamed(self) -> None:
         """A trip stays what its organiser shared."""

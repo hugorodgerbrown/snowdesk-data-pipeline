@@ -9,6 +9,15 @@ and should not be edited by staff except to delete test data. Mirrors
 ``points`` and ``bounds`` are absent from ``list_display``: a JSON blob in a
 changelist column identifies nothing a staff member could act on. The date,
 the time and the organiser are what name a row.
+
+EVERY FIELD IN ``_SNAPSHOT_FIELDS`` BELONGS IN ``readonly_fields``. The
+snapshot is copied from the source route at creation and never re-read, so
+an editable one could be saved to a value no track ever held — silently,
+because nothing goes back to the route to notice. ``readonly_fields`` is an
+explicit list and does not grow on its own; ``duration`` and
+``slope_samples`` were each added to the snapshot without it.
+``tests/trips/test_admin.py`` asserts the pairing against the tuple itself,
+so the next one fails a test rather than shipping editable.
 """
 
 import logging
@@ -55,8 +64,10 @@ class TripAdmin(admin.ModelAdmin):
         "distance_m",
         "ascent_m",
         "descent_m",
+        "duration",
         "point_count",
         "route_name",
+        "slope_samples",
         "uuid",
         "created_at",
         "updated_at",

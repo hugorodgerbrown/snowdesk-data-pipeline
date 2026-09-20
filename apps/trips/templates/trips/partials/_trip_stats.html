@@ -1,17 +1,28 @@
 {% load i18n %}
 {% comment %}
-trips/partials/_trip_stats.html — Distance / Ascent / Descent, as a trio of
-labelled figures (SNOW-848).
+trips/partials/_trip_stats.html — Distance / Ascent / Descent / Time, as a
+row of labelled figures (SNOW-848, SNOW-995).
 
 ONE PARTIAL, TWO SURFACES, and that is the reason it exists: the design
 draws the same three cells in the list card's body and again in the trip
 view's details footer, at the same label and value treatment. Two copies
 would drift on the first change to either.
 
-THE TRIO IS NOT ALWAYS THREE. ``ascent_m`` and ``descent_m`` are nullable —
-a GPX track with no elevation carries neither — and a cell with nothing in
-it is omitted rather than dashed. Asymmetry is honest: a missing figure is
-a fact about the track, not a hole in the layout.
+THE ROW IS NOT ALWAYS FOUR. ``ascent_m`` and ``descent_m`` are nullable —
+a GPX track with no elevation carries neither — and so is ``duration``,
+which only an activity or workout export can supply; a route or course
+export carries no per-point times at all, and that is the common case. A
+cell with nothing in it is omitted rather than dashed. Asymmetry is
+honest: a missing figure is a fact about the track, not a hole in the
+layout.
+
+TIME IS ELAPSED AND IS NOT A PROMISE. It is how long the source route's
+recording took — including every stop it sat through, and recorded by
+someone who may be quicker than this group. It is here because it answers
+the one question the other three cannot: is this a big day or a short one.
+The spelling is ``Route.duration_hm``'s, via the shared
+``apps.core.durations.split_hours_minutes``, so "4h05m" means the same
+thing here as on the route it was planned from.
 
 The label is includes/_meta_cell.html, the site's existing tiny-uppercase
 metadata label. The design specifies 10px for it; the site has no 10px
@@ -62,6 +73,23 @@ Context:
                 {% blocktrans trimmed with metres=trip.descent_m|floatformat:0 %}
                     {{ metres }}m
                 {% endblocktrans %}
+            </p>
+        </div>
+    {% endif %}
+    {% if trip.duration_hm %}
+        <div>
+            {% trans "Time" as duration_label %}
+            {% include "includes/_meta_cell.html" with text=duration_label %}
+            <p class="text-sm font-medium" data-testid="trip-stat-duration">
+                {% if trip.duration_hm.hours %}
+                    {% blocktrans trimmed with hours=trip.duration_hm.hours minutes=trip.duration_hm.minutes %}
+                        {{ hours }}h{{ minutes }}m
+                    {% endblocktrans %}
+                {% else %}
+                    {% blocktrans trimmed with minutes=trip.duration_hm.minutes %}
+                        {{ minutes }}m
+                    {% endblocktrans %}
+                {% endif %}
             </p>
         </div>
     {% endif %}
