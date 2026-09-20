@@ -6,9 +6,19 @@ A grouping is normally computed at ingest time by ``upsert_bulletin``; this
 command is used once after the SNOW-323 migration to populate historical rows
 that were ingested before the ingest hook existed.
 
-Read-only by default — the command iterates ``Bulletin.objects.filter(
-grouping__isnull=True)`` and reports what *would* be created without writing
-anything to the database.  Pass ``--commit`` to persist.
+Read-only by default — the command iterates the bulletins that lack a
+grouping *and could have one*, and reports what would be created without
+writing anything to the database.  Pass ``--commit`` to persist.
+
+That second condition is load-bearing since SNOW-1001: a bulletin covering
+fewer than ``MIN_GROUPED_REGIONS`` boundaried micro-regions is never given a
+grouping, so it matches ``grouping__isnull=True`` for ever. Selecting on the
+null alone meant every such bulletin — the whole Météo-France archive, and
+SLF's since SNOW-998 — was re-attempted on every run and then reported as
+"skipped", which made the summary line describe a backlog that does not
+exist. The candidate queryset now carries the same boundaried-region count
+the writer and ``purge_degenerate_bulletin_groupings`` use, so a second run
+selects only what a first run genuinely failed to write.
 
 Usage::
 
@@ -30,8 +40,9 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Count, Q
 
-from apps.bulletins.models import Bulletin
+from apps.bulletins.models import MIN_GROUPED_REGIONS, Bulletin
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.core.command_iteration import iterate_rows
 
@@ -74,7 +85,8 @@ class Command(BaseCommand):
 
         Returns:
             ``"created"`` when a grouping row was written, ``"skipped"`` when
-            the bulletin has no boundaried regions (compute returns None), or
+            the service declined to write one (compute returns None — its
+            region links changed between the walk and the call), or
             ``"failed"`` on exception.
 
         """
@@ -90,7 +102,7 @@ class Command(BaseCommand):
         if result is None:
             if verbosity >= 2:
                 logger.debug(
-                    "Skipped bulletin %s — no boundaried regions",
+                    "Skipped bulletin %s — too few boundaried regions",
                     bulletin.bulletin_id,
                 )
             return "skipped"
@@ -106,8 +118,11 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the backfill command.
 
-        Queries all bulletins whose ``grouping`` reverse accessor is null,
-        then delegates per-bulletin work to ``_process_one``.  Failures are
+        Queries the bulletins whose ``grouping`` reverse accessor is null and
+        which link at least ``MIN_GROUPED_REGIONS`` boundaried micro-regions
+        — a bulletin below that threshold is never given a grouping, so
+        including it would re-attempt it on every future run (SNOW-1001).
+        Delegates per-bulletin work to ``_process_one``.  Failures are
         collected and reported; if any fail a ``CommandError`` is raised at
         the end so cron/CI receives a non-zero exit code.
 
@@ -124,10 +139,21 @@ class Command(BaseCommand):
             )
         )
 
-        qs = Bulletin.objects.filter(grouping__isnull=True)
+        # The same boundaried-region count the ingest-time guard applies and
+        # BulletinGroupingQuerySet.degenerate() selects on, read off the
+        # bulletin rather than its (absent) grouping.
+        qs = (
+            Bulletin.objects.filter(grouping__isnull=True)
+            .alias(
+                boundaried_region_count=Count(
+                    "regions", filter=Q(regions__boundary__isnull=False)
+                )
+            )
+            .filter(boundaried_region_count__gte=MIN_GROUPED_REGIONS)
+        )
         total = qs.count()
 
-        self.stdout.write(f"Bulletins missing a grouping: {total}")
+        self.stdout.write(f"Bulletins missing a grouping they could have: {total}")
 
         if total == 0:
             self.stdout.write(self.style.SUCCESS("Nothing to do."))
@@ -156,7 +182,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Done — created {processed}, skipped {skipped} "
-                f"(no boundaried regions), {failed} failed."
+                f"(region links changed since the walk), {failed} failed."
             )
         )
 
