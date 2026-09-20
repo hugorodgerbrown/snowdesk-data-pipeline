@@ -232,12 +232,22 @@ _DYNAMIC_CACHE_MAX_AGE = 300
 # Cache lifetime for settled (past the fetcher's earliest-mutable-date
 # threshold) bulletin-groupings responses (SNOW-526). Settled geometry is
 # immutable on the normal ingest path, but a manual
-# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` can
+# ``backfill_bulletin_groupings --commit`` / ``fetch_bulletins --force`` /
+# ``purge_degenerate_bulletin_groupings --commit`` can
 # still rewrite history, so this is bounded well below the year-long
 # max-age used for historic bulletin pages — see
 # docs/decisions/date-aware-cache-policy.md. Offline availability comes
 # from the service worker's Cache Storage entry, which ignores max-age
 # entirely, so nothing is lost by keeping this short.
+#
+# The purge (SNOW-1001) is the one of the three that only ever REMOVES
+# features, so a client holding a settled entry from before it keeps
+# drawing an outline the server no longer sends. That outline duplicates
+# ``regions-line`` by definition — it is the degenerate shape the purge
+# exists to stop drawing — so the stale artefact is visually what the
+# client saw anyway, and the bound above is the whole mitigation. Nothing
+# here invalidates Cache Storage: entries rotate on the worker's own
+# version bump or an LRU trim.
 _SETTLED_CACHE_MAX_AGE = 604800  # 7 days
 
 # Memoisation window for ``apps.bulletins.services.settled.earliest_mutable_date()``

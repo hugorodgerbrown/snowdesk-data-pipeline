@@ -51,13 +51,27 @@ server decided is exactly what gets persisted, by construction.
 
 **Why 7 days, not the year-long `max-age` historic bulletin pages use.**
 Settled bulletin-groupings geometry is immutable on the *normal* ingest
-path, but `backfill_bulletin_groupings --commit` and `fetch_bulletins
---force` can still rewrite history deliberately. A year-long `max-age`
+path, but `backfill_bulletin_groupings --commit`, `fetch_bulletins
+--force` and `purge_degenerate_bulletin_groupings --commit` can still
+rewrite history deliberately. A year-long `max-age`
 would leave a stale HTTP/CDN-cached copy for far too long after such a
 manual rewrite. Offline availability doesn't depend on `max-age` at all —
 Cache Storage entries persist until the SW's own version bump or LRU trim
 evicts them — so shortening this window costs nothing on the offline path
 and only bounds the shared-cache staleness window.
+
+The purge (SNOW-1001) is the one of the three that only ever *removes*
+features, so it is worth stating what a client holding a pre-purge entry
+sees: an outline the server no longer sends. By definition that outline
+duplicates `regions-line` — it is the degenerate single-region shape the
+purge exists to stop drawing — so the stale artefact is visually what
+that client was already looking at, and the 7-day bound above is the
+whole mitigation. The purge does not bump `CACHE_VERSION` and nothing
+invalidates Cache Storage for it; an offline client keeps the old
+outline until its entry rotates on a worker version bump or an LRU trim.
+That is accepted rather than overlooked: inventing a payload-invalidation
+mechanism for a one-off post-deploy command would cost more than the
+redundant line it erases.
 
 **Known limitations — the two cases where `is_settled()` can be wrong.**
 

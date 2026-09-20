@@ -28,6 +28,17 @@ Read-only by default — pass ``--commit`` to delete (per the project-wide
 management command convention; see
 docs/decisions/dry-run-default-commands.md).
 
+What a client sees afterwards. A settled ``/api/bulletin-groupings.geojson``
+response is served ``public, max-age=604800, immutable`` and persisted by
+the service worker, so a client that cached a day before the purge keeps
+drawing an outline the server no longer sends. That outline is by
+definition a duplicate of ``regions-line`` — the degenerate shape this
+command exists to remove — so what persists is visually what that client
+was already looking at. Nothing here invalidates Cache Storage or bumps
+``CACHE_VERSION``; the 7-day shared-cache bound is the mitigation, chosen
+for exactly this class of deliberate history rewrite. See
+docs/decisions/date-aware-cache-policy.md.
+
 Typical use::
 
     # Read-only walk — how many degenerate rows are there?

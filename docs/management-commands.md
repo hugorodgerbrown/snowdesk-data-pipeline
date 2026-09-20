@@ -1126,6 +1126,16 @@ incident that invalidates derived state:
   statement; must be a positive integer, rejected at parse time by
   `apps.core.command_iteration.positive_int`).
 
+  **What returning clients see.** A settled groupings response is served
+  `public, max-age=604800, immutable` and persisted by the service worker,
+  so a client that cached a day before the purge keeps drawing an outline
+  the server no longer sends — a duplicate of `regions-line`, which is the
+  shape the purge removes, so it is visually what that client already had.
+  The purge bumps no `CACHE_VERSION` and invalidates no Cache Storage
+  entry; the 7-day shared-cache bound is the mitigation, sized for exactly
+  this kind of deliberate rewrite
+  ([`docs/decisions/date-aware-cache-policy.md`](decisions/date-aware-cache-policy.md)).
+
 - `backfill_bulletin_target_dates --commit` — one-off post-deploy step
   after SNOW-560: populates `Bulletin.target_date` for rows that predate
   the field. `target_date` is normally set inline by `upsert_bulletin` at
