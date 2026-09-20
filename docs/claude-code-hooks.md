@@ -19,7 +19,7 @@ the committed `Bash(bin/:*)` permission grant covers the path.
 | Event | Matcher | Script | What it does |
 |---|---|---|---|
 | `SessionStart` | — | [`bin/setup-remote-env`](../bin/setup-remote-env) | Provisions Python 3.14, `.venv`, `.env`, the dev database and `output.css` in a **cloud** session |
-| `SessionStart` | — | [`bin/init-worktree`](../bin/init-worktree) | Seeds a fresh git worktree: symlinks `.env`/`.venv`, builds `db.sqlite3`, compiles the stylesheet |
+| `SessionStart` | — | [`bin/init-worktree`](../bin/init-worktree) | Seeds a fresh git worktree: symlinks `.env`/`.venv`, builds `db.sqlite3`, compiles the stylesheet. On later sessions, keeps the database migrated |
 | `SessionEnd` | — | [`bin/mark-worktree-cleanable`](../bin/mark-worktree-cleanable) | Tombstones the worktree if — and only if — it is clean and fully merged |
 | `PreToolUse` | `Bash` | [`bin/claude-hook-deny-command`](../bin/claude-hook-deny-command) | Refuses three prohibited commands before they run |
 
@@ -66,6 +66,12 @@ Refuses to run in the main worktree. In a worktree it symlinks `.env` and
 `.venv` back to the main repo and, when `db.sqlite3` is absent, runs the seed
 recipe (migrate → `sync_waffle_flags` → region fixtures → resorts →
 `seed_test_data`, which includes the dev users).
+
+When the database already exists it runs `migrate` and `sync_waffle_flags`
+and nothing else (SNOW-997) — those two are idempotent and are what keeps
+the schema in step with a checkout that has moved, while the three data
+commands insert rows and so must never run twice. A session with nothing
+to do prints nothing.
 Full recipe, dev credentials and the force-reseed procedure:
 [`docs/worktrees.md`](worktrees.md).
 
