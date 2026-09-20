@@ -12,6 +12,7 @@ Covers:
 """
 
 import json
+import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -35,13 +36,19 @@ from apps.bulletins.services.render_model import (
     RenderModelBuildError,
 )
 from apps.bulletins.services.slf_fetcher import (
+    CAAML_SHAPE_AGGREGATED,
+    CAAML_SHAPE_PER_REGION,
+    CAAML_SHAPE_UNKNOWN,
     NoResolvableRegionsError,
     UnknownRegionError,
     _get_region,
+    _log_caaml_shape,
     _normalise_response,
     _parse_dt,
+    _resolve_base_url,
     _resolve_issued_at,
     _slf_pdf_url,
+    detect_caaml_shape,
     fetch_bulletin_page,
     run_slf_pipeline,
     upsert_bulletin,
@@ -53,6 +60,10 @@ from tests.factories import (
     PipelineRunFactory,
     SubRegionFactory,
 )
+
+# The ``slf_fetcher`` logger, named once rather than spelled out at each
+# ``caplog.at_level`` call site.
+_LOGGER_NAME = "apps.bulletins.services.slf_fetcher"
 
 
 def _make_raw_bulletin(
@@ -1289,3 +1300,289 @@ class TestUpsertBulletinTargetDate:
         assert evening_bulletin.target_date == date(2025, 3, 15)
         assert morning_bulletin.target_date == date(2025, 3, 15)
         assert evening_bulletin.target_date == morning_bulletin.target_date
+
+
+# ---------------------------------------------------------------------------
+# detect_caaml_shape — SNOW-900
+# ---------------------------------------------------------------------------
+# Unit tests against fixture dicts, never the network. The one exception is
+# ``test_the_committed_sentinels_are_aggregated``, which reads the three real
+# SLF sentinels off disk: a synthetic "many regions" fixture proves only that
+# the arithmetic works, whereas the sentinels prove the classifier answers
+# correctly for the payloads we actually ingest today.
+
+
+def _per_region_bulletin(
+    index: int,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """
+    Build a raw bulletin in SLF's 2026/27 one-region-per-bulletin shape.
+
+    Args:
+        index: Distinguishes bulletins within a page; used for both the
+            bulletin ID and the region ID.
+        **overrides: Additional keys merged into the bulletin dict.
+
+    Returns:
+        A raw bulletin dict carrying exactly one region.
+
+    """
+    return _make_raw_bulletin(
+        bulletin_id=f"v5-{index:03d}",
+        regions=[{"regionID": f"CH-{4000 + index}", "name": f"Region {index}"}],
+        **overrides,
+    )
+
+
+class TestDetectCaamlShape:
+    """Which CAAML export a page of bulletins actually is."""
+
+    def test_an_empty_page_is_unknown(self) -> None:
+        """No bulletins is no evidence, not a vote for today's shape."""
+        detected = detect_caaml_shape([])
+
+        assert detected.shape == CAAML_SHAPE_UNKNOWN
+        assert detected.bulletin_count == 0
+        assert detected.region_count == 0
+
+    def test_a_multi_region_bulletin_is_aggregated(self) -> None:
+        """One bulletin covering two regions is proof of aggregation."""
+        detected = detect_caaml_shape([_make_raw_bulletin()])
+
+        assert detected.shape == CAAML_SHAPE_AGGREGATED
+        assert detected.max_regions_per_bulletin == 2
+
+    def test_the_committed_sentinels_are_aggregated(self) -> None:
+        """The real payloads we ingest today classify as aggregated.
+
+        The three SLF sentinels carry 93, 65 and 13 regions, so each one
+        on its own is enough — which is the margin the page-size
+        threshold below is calibrated against.
+        """
+        sentinel_dir = Path(__file__).resolve().parents[2] / "sentinels" / "slf"
+        sources = sorted(sentinel_dir.glob("*/source.json"))
+        assert len(sources) == 3, "expected three committed SLF sentinels"
+
+        for source in sources:
+            bulletin = json.loads(source.read_text())
+            detected = detect_caaml_shape([bulletin])
+
+            assert detected.shape == CAAML_SHAPE_AGGREGATED, source.parent.name
+            assert detected.max_regions_per_bulletin > 1
+
+    def test_a_full_de_aggregated_page_is_per_region(self) -> None:
+        """A page of single-region bulletins is the new export.
+
+        Sized as SLF's sample is — 133 bulletins of one region each —
+        rather than at the threshold, so the test says what the real
+        payload does and not merely where the boundary sits.
+        """
+        page = [_per_region_bulletin(i) for i in range(133)]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_PER_REGION
+        assert detected.bulletin_count == 133
+        assert detected.region_count == 133
+        assert detected.max_regions_per_bulletin == 1
+
+    def test_a_short_page_without_a_marker_is_unknown(self) -> None:
+        """Three single-region bulletins could be either shape.
+
+        A legacy page CAN hold a narrow bulletin, so below the threshold
+        and with no marker field there is genuinely nothing to go on.
+        Reporting ``unknown`` says so; guessing ``aggregated`` would be
+        the silent 25× this detection exists to prevent.
+        """
+        page = [_per_region_bulletin(i) for i in range(3)]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_UNKNOWN
+        assert detected.markers == ()
+
+    def test_the_weather_marker_settles_a_short_page(self) -> None:
+        """``customData.CH.weather`` is new-export-only, at any page size."""
+        page = [_per_region_bulletin(i) for i in range(3)]
+        page[1]["customData"] = {"CH": {"weather": [{"validTimePeriod": "all_day"}]}}
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_PER_REGION
+        assert detected.markers == ("customData.CH.weather",)
+
+    def test_the_evolution_marker_settles_a_short_page(self) -> None:
+        """``dangerRatingEvolution`` likewise, for the day SLF ship it."""
+        page = [_per_region_bulletin(i) for i in range(3)]
+        page[0]["dangerRatingEvolution"] = [{"date": "2026-09-10T00:00:00Z"}]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_PER_REGION
+        assert detected.markers == ("dangerRatingEvolution",)
+
+    def test_aggregation_outranks_a_marker(self) -> None:
+        """Region count wins, because region count is what multiplies.
+
+        A payload that is both aggregated and carries a new field is a
+        shape nobody has described. The markers are still reported, so
+        the log line says both things happened.
+        """
+        page = [_make_raw_bulletin(dangerRatingEvolution=[{"date": "2026-09-10"}])]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.shape == CAAML_SHAPE_AGGREGATED
+        assert detected.markers == ("dangerRatingEvolution",)
+
+    def test_a_malformed_entry_does_not_raise(self) -> None:
+        """Classification must never be what fails a fetch.
+
+        It runs only to describe the page; a bad entry is the real
+        ingest's to reject, with its own error naming the bulletin.
+        """
+        page: list[Any] = [_per_region_bulletin(0), "not a bulletin", {"regions": None}]
+
+        detected = detect_caaml_shape(page)
+
+        assert detected.bulletin_count == 3
+        assert detected.region_count == 1
+
+
+class TestLogCaamlShape:
+    """The changeover has to announce itself in the log."""
+
+    def test_the_new_export_logs_a_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A per-region page is the event an operator must not miss."""
+        page = [_per_region_bulletin(i) for i in range(133)]
+
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            _log_caaml_shape(page, "https://aws.slf.ch/api/bulletin-list/caaml")
+
+        record = caplog.records[-1]
+        assert record.levelno == logging.WARNING
+        assert "shape=per-region" in record.getMessage()
+        assert "bulletins=133" in record.getMessage()
+
+    def test_todays_export_logs_at_info(self, caplog: pytest.LogCaptureFixture) -> None:
+        """An aggregated page is business as usual, and stays quiet."""
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            _log_caaml_shape(
+                [_make_raw_bulletin()], "https://aws.slf.ch/api/bulletin-list/caaml"
+            )
+
+        record = caplog.records[-1]
+        assert record.levelno == logging.INFO
+        assert "shape=aggregated" in record.getMessage()
+
+    def test_the_base_url_is_in_the_message(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Shape and URL together, because the shape is not a property of it.
+
+        Seeing both is what tells an operator whether pinning
+        ``SLF_API_LEGACY_URL`` actually changed what arrived — SLF
+        confirmed the legacy path preserves the format but not
+        necessarily the aggregation.
+        """
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            _log_caaml_shape([_make_raw_bulletin()], "https://legacy.example/caaml")
+
+        assert "https://legacy.example/caaml" in caplog.records[-1].getMessage()
+
+
+class TestFetchBulletinPageClassifiesTheShape:
+    """The fetch path classifies without changing what it returns."""
+
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
+    def test_a_new_shape_page_is_returned_unchanged(
+        self, mock_get: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Detection is observation only — it never filters or rejects."""
+        page = [_per_region_bulletin(i) for i in range(133)]
+        mock_response = MagicMock()
+        mock_response.json.return_value = page
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            result = fetch_bulletin_page("en", 50, 0)
+
+        assert len(result) == 133
+        assert result[0]["bulletinID"] == "v5-000"
+        assert any(
+            "shape=per-region" in record.getMessage() for record in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# _resolve_base_url — SNOW-900
+# ---------------------------------------------------------------------------
+
+
+class TestResolveBaseUrl:
+    """Which endpoint one SLF fetch reads.
+
+    These sit at the fetcher rather than at ``fetch_bulletins`` on
+    purpose. The pin first shipped in the command, which left
+    ``BulletinAdmin.backfill_view`` — the other caller of
+    ``run_slf_pipeline``, and one that passes no ``base_url`` — reading
+    the live URL straight past a configured rollback.
+    """
+
+    def test_no_pin_uses_the_live_api(self) -> None:
+        """The default is an empty pin, so nothing changes until it is set."""
+        assert _resolve_base_url(None) == "https://aws.slf.ch/api/bulletin-list/caaml"
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_a_set_pin_replaces_the_live_api(self) -> None:
+        """A non-empty setting is the whole switch — no flag to remember."""
+        assert _resolve_base_url(None) == "https://aws.slf.ch/api/bulletin/caaml/v3"
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_an_explicit_url_still_wins(self) -> None:
+        """``--local-mirror`` passes one, and must outrank an ambient pin.
+
+        Otherwise a pin left set in a dev ``.env`` would silently send
+        mirror runs at the live SLF API.
+        """
+        assert _resolve_base_url("http://localhost:8000/dev/slf-mirror") == (
+            "http://localhost:8000/dev/slf-mirror"
+        )
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    def test_the_pin_is_logged_every_time(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An emergency lever pointed at a doomed endpoint stays loud."""
+        with caplog.at_level(logging.INFO, logger=_LOGGER_NAME):
+            _resolve_base_url(None)
+
+        record = caplog.records[-1]
+        assert record.levelno == logging.WARNING
+        assert "SLF_API_LEGACY_URL" in record.getMessage()
+
+    @override_settings(SLF_API_LEGACY_URL="https://aws.slf.ch/api/bulletin/caaml/v3")
+    @patch("apps.bulletins.services.slf_fetcher.requests.get")
+    def test_the_pin_reaches_a_caller_that_passes_no_url(
+        self, mock_get: MagicMock
+    ) -> None:
+        """The admin backfill's shape: ``run_slf_pipeline`` with no base_url.
+
+        Asserted through ``fetch_bulletin_page`` rather than the resolver
+        alone, because the defect this guards was a caller reaching the
+        request URL without passing through the pin at all.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        fetch_bulletin_page("en", 50, 0)
+
+        assert mock_get.call_args[0][0] == (
+            "https://aws.slf.ch/api/bulletin/caaml/v3/en/json"
+        )

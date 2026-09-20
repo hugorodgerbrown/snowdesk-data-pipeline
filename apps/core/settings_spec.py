@@ -254,6 +254,11 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         validator=local_mirror_url,
         note="Dev mirror; empty disables",
     ),
+    SettingSpec(
+        "SLF_API_LEGACY_URL",
+        validator=absolute_url,
+        note="Pin back to the pre-2026/27 SLF export; empty uses the live URL",
+    ),
     SettingSpec("ALBINA_API_BASE_URL", validator=absolute_url, note="ALBINA CDN base"),
     SettingSpec(
         "ALBINA_API_LOCAL_MIRROR_URL",

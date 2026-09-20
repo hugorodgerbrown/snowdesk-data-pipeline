@@ -669,6 +669,7 @@ Read these when working in the relevant area:
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |
 | Météo-France live ingest operations | [`docs/meteofrance-live-ingest.md`](docs/meteofrance-live-ingest.md) |
 | SLF API historical-depth probe (2026-05-01) | [`docs/slf-api-history.md`](docs/slf-api-history.md) |
+| Why the SLF CAAML shape is detected per response, not assumed from the URL (detect_caaml_shape, CAAML_SHAPE_PER_REGION, customData.CH.weather, SLF_API_LEGACY_URL) | [`docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md`](docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md) |
 | Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Why UI icons are `_icon_*.html` stroke partials (24×24, stroke-2, currentColor; the three Font Awesome filled glyphs are the named exception) | [`docs/decisions/ui-icons-are-house-stroke-partials.md`](docs/decisions/ui-icons-are-house-stroke-partials.md) |

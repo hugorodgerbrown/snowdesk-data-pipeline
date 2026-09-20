@@ -412,9 +412,14 @@ class Command(BaseCommand):
         Resolve the base URL to pass to the pipeline function.
 
         Returns ``None`` for the live path so the pipeline falls back to
-        the provider's ``live_url_setting``. Returns the mirror URL when
-        ``--local-mirror`` is set, raising ``CommandError`` if the mirror
-        URL setting is missing.
+        the provider's ``live_url_setting`` — or, for SLF, to whatever
+        ``slf_fetcher._resolve_base_url`` makes of that ``None``, which is
+        where the ``SLF_API_LEGACY_URL`` pin is applied (SNOW-900). The pin
+        deliberately does NOT live here: this command is one of two entry
+        points into ``run_slf_pipeline`` and a pin only it honoured would
+        be silently bypassed by the admin backfill. ``--local-mirror``
+        still outranks it, because an explicit URL passed from here wins
+        in that resolver.
 
         Args:
             source: The provider whose URL settings to read.

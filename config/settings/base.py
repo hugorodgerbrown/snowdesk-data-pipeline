@@ -600,6 +600,26 @@ SLF_API_BASE_URL = config(
     default="https://aws.slf.ch/api/bulletin-list/caaml",
 )
 
+# SNOW-900: the 2026/27 CAAML export is served at the URL above; the format
+# we ingest today moves to a legacy path. Setting this to a non-empty value
+# makes every SLF fetch read it INSTEAD of SLF_API_BASE_URL — applied in
+# ``slf_fetcher._resolve_base_url`` rather than in the fetch_bulletins
+# command, so the admin backfill (the other caller of run_slf_pipeline, and
+# one that passes no base_url) cannot fetch straight past it — an
+# environment-variable lever, pullable on a live dyno without a deploy, for
+# the day SLF flip the unversioned endpoint before we are ready for the new
+# shape. Empty by default and deliberately NOT guessed: SLF named
+# ``/api/bulletin/caaml/v3/{lang}/{type}`` for the single-bulletin endpoint,
+# but whether the paginated ``bulletin-list`` endpoint this pipeline reads
+# gets the same v3/v5 split is a question they have not answered. A wrong
+# URL shipped as a default would be worse than a blank one, because it would
+# read as confirmed. Note it defers the SCHEMA change only — SLF confirmed on
+# 2026-09-10 that the legacy path preserves the response format but not
+# necessarily the old aggregation, so the ~150-entries-per-issue volume
+# arrives either way. That is what the shape detection in
+# ``slf_fetcher.detect_caaml_shape`` is for.
+SLF_API_LEGACY_URL = config("SLF_API_LEGACY_URL", default="")
+
 # On-disk archive of every bulletin captured by ``fetch_bulletins
 # --stash`` runs. NDJSON: one un-wrapped CAAML record per line, sorted
 # ascending by ``validTime.startTime``, deduped by ``bulletinID``. Both
