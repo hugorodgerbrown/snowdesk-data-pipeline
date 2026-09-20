@@ -1080,8 +1080,10 @@ incident that invalidates derived state:
   at ingest time (via `compute_bulletin_grouping_boundary`); this command
   backfills historical rows that pre-date the ingest hook. Read-only by
   default; pass `--commit` to persist. Idempotent — bulletins that already
-  have a grouping are skipped. Bulletins with no boundaried regions produce
-  no row (not counted as failures). Raises `CommandError` and exits non-zero
+  have a grouping are skipped, and so are bulletins that can never have one:
+  since SNOW-1001 a grouping needs at least two boundaried micro-regions, and
+  the candidate queryset carries that count so a single-region bulletin is
+  not re-attempted on every run. Raises `CommandError` and exits non-zero
   if any bulletin fails so cron/CI can detect partial failures.
 
   ```bash
@@ -1093,6 +1095,34 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`.
+
+- `purge_degenerate_bulletin_groupings --commit` — one-off post-deploy step
+  after SNOW-1001: deletes `BulletinGrouping` rows whose bulletin links fewer
+  than `MIN_GROUPED_REGIONS` (two) boundaried micro-regions. Dissolving one
+  polygon returns that polygon, so such a row caches a duplicate of the
+  region's own `MicroRegion.boundary` and `/api/bulletin-groupings.geojson`
+  serves an outline that lands exactly on `regions-line`, asserting an
+  aggregation the provider never made. `compute_bulletin_grouping_boundary`
+  refuses to write these rows and clears any it meets on re-ingest, so this
+  command is for the rows in a database that will not be re-ingested —
+  Météo-France is 1:1 across its whole archive and SLF became 1:1 under
+  SNOW-998. Selection is `BulletinGrouping.objects.degenerate()`, the same
+  predicate the writer reads, so the two cannot drift. Read-only by default;
+  pass `--commit` to delete. Idempotent — a second run selects nothing.
+  Deliberately not a data migration: a bulk delete there locks the table for
+  the length of a Render deploy. Raises `CommandError` and exits non-zero if
+  any `DELETE` fails.
+
+  ```bash
+  # Dry-run — counts the degenerate rows.
+  uv run python manage.py purge_degenerate_bulletin_groupings
+
+  # Persist (run on Render after deploying SNOW-1001).
+  uv run python manage.py purge_degenerate_bulletin_groupings --commit
+  ```
+
+  Flags: `--commit`, `--batch-size N` (default 500 — rows per DELETE
+  statement).
 
 - `backfill_bulletin_target_dates --commit` — one-off post-deploy step
   after SNOW-560: populates `Bulletin.target_date` for rows that predate

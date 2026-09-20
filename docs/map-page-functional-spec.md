@@ -92,7 +92,7 @@ layer menu; each remembers its state per-device in `localStorage`.
 | Layer | EAWS tier | What it is | Default |
 |-------|-----------|------------|---------|
 | **Micro regions** | L4 | The warning region — the smallest unit a bulletin, rating, and subscription attach to (e.g. `CH-4115`). Its boundary and its label. | **On** |
-| **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. Not a layers-menu row: it has its own five-step strength control on the map (below). | **50%** |
+| **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. An outline appears only where a provider aggregates — a bulletin covering ONE region gets none, since dissolving one polygon would just redraw its own border (SNOW-1001). Météo-France is 1:1 across its whole archive and SLF became 1:1 under SNOW-998, so in practice this is an ALBINA outline. Not a layers-menu row: it has its own five-step strength control on the map (below). | **50%** |
 | **Minor regions** | L2 | Sub-region grouping of micro-regions (e.g. `CH-41`, Lower Valais). Outline only. | Off |
 | **Major regions** | L1 | Top-level area (e.g. `CH-4`, Valais). Outline only. | Off |
 
@@ -135,7 +135,11 @@ larger area a micro-region belongs to without leaving the map. The
 **bulletin groupings** boundary inside the Bulletins row is the one derived
 tier — it is not a fixed administrative boundary but a per-day artefact
 showing which micro-regions the forecaster treated as one unit, and so it
-changes as you scrub through the season.
+changes as you scrub through the season. It is also the one tier that can be
+absent: a bulletin covering a single region is not drawn, because that
+outline would land exactly on the micro-region border beneath it and claim a
+grouping the provider never made. A day with no outline anywhere means every
+provider on screen issued one bulletin per region.
 
 (EAWS defines an L3 tier as well; Snowdesk deliberately skips it. The
 "bulletin groupings" layer occupies the `l3` overlay key in code for
