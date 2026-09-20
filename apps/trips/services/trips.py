@@ -75,6 +75,16 @@ _SNAPSHOT_FIELDS = (
     # against a rebuilt grid. Null when the source has never been sampled,
     # which ``create_trip`` answers by sampling the trip itself.
     "slope_samples",
+    # SNOW-995. The ONE thing taken from the route's timing, and the
+    # reason the ``started_at``/``finished_at`` refusal above still holds:
+    # those are timestamps from some other day, this is a LENGTH, and a
+    # six-hour track describes a six-hour day whenever it is skied.
+    #
+    # A PROPERTY on Route and a field on Trip — ``getattr`` below does not
+    # care which, and ``Route.duration`` is derived from the two
+    # timestamps rather than stored. Null when the source route was
+    # untimed, which is the common case.
+    "duration",
 )
 
 

@@ -5,6 +5,8 @@ apps.trips.models.Trip:
   to_string() names the trip, falling back to the source route's label;
   display_name prefers the trip's own name;
   distance_km converts;
+  duration_hm spells the day's length exactly as Route.duration_hm does,
+    and is None for an untimed source route;
   Meta.ordering is by the day the trip happens, not when it was planned;
   for_user() returns trips the user is ON, not trips they created —
     a joined trip is present and an unrelated one is absent;
@@ -30,6 +32,7 @@ from freezegun import freeze_time
 
 from apps.trips.models import Trip, TripParticipant
 from tests.factories import (
+    RouteFactory,
     TripFactory,
     TripParticipantFactory,
     UserFactory,
@@ -219,3 +222,60 @@ class TestTripParticipant:
             joined_at=datetime.datetime(2026, 3, 1, 9, 0, tzinfo=datetime.UTC),
         )
         assert list(TripParticipant.objects.for_trip(trip)) == [first, second]
+
+
+@pytest.mark.django_db
+class TestTripDuration:
+    """duration_hm — the length of the day, spelled as the route spells it.
+
+    The point of these is not the arithmetic, which
+    apps.core.durations.split_hours_minutes owns and tests/routes covers.
+    It is that a trip and the route it was planned from produce the SAME
+    string for the same span: a reader meeting "4h05m" on both is meeting
+    one measurement, and two spellings would read as two.
+    """
+
+    def test_matches_the_source_route_for_the_same_span(self) -> None:
+        """One measurement, one spelling, across two models."""
+        started = datetime.datetime(2026, 3, 13, 9, 0, tzinfo=datetime.UTC)
+        finished = datetime.datetime(2026, 3, 13, 13, 5, 40, tzinfo=datetime.UTC)
+        route = RouteFactory.create(started_at=started, finished_at=finished)
+        trip = TripFactory.create(duration=finished - started)
+
+        assert trip.duration_hm == route.duration_hm
+        assert trip.duration_hm == {"hours": "4", "minutes": "06"}
+
+    def test_breaks_a_half_minute_tie_upwards(self) -> None:
+        """The one input class the builtin ``round`` would get wrong.
+
+        4h30m30s is 270.5 minutes. Banker's rounding gives 270, JavaScript's
+        Math.round gives 271, and the trip card and the map popup would
+        disagree by a minute about the same day.
+        """
+        trip = TripFactory.create(
+            duration=datetime.timedelta(hours=4, minutes=30, seconds=30)
+        )
+
+        assert trip.duration_hm == {"hours": "4", "minutes": "31"}
+
+    def test_states_no_hours_figure_under_an_hour(self) -> None:
+        """Under an hour there is no hours figure: 0h41m claims one."""
+        trip = TripFactory.create(duration=datetime.timedelta(minutes=41))
+
+        assert trip.duration_hm == {"hours": "", "minutes": "41"}
+
+    def test_is_none_when_the_source_route_was_untimed(self) -> None:
+        """The common case: a route or course export carries no times.
+
+        Null, never a zero — the template omits the cell rather than
+        drawing an empty one, on the same rule ascent_m already follows.
+        """
+        trip = TripFactory.create(duration=None)
+
+        assert trip.duration_hm is None
+
+    def test_is_none_for_a_non_positive_span(self) -> None:
+        """Two identical stamps are a recording artefact, not a day."""
+        trip = TripFactory.create(duration=datetime.timedelta(0))
+
+        assert trip.duration_hm is None

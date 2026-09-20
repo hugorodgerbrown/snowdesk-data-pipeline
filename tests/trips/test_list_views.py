@@ -424,6 +424,7 @@ class TestTripCardContents:
         assert 'data-testid="trip-stat-distance"' in html
         assert 'data-testid="trip-stat-ascent"' in html
         assert 'data-testid="trip-stat-descent"' in html
+        assert 'data-testid="trip-stat-duration"' in html
 
     def test_a_track_with_no_elevation_drops_those_two_cells(
         self, client: Client
@@ -443,6 +444,30 @@ class TestTripCardContents:
         assert 'data-testid="trip-stat-distance"' in html
         assert 'data-testid="trip-stat-ascent"' not in html
         assert 'data-testid="trip-stat-descent"' not in html
+
+    def test_an_untimed_source_route_drops_the_time_cell(self, client: Client) -> None:
+        """The common case: a route or course export carries no times.
+
+        Same rule as the two above — the cell goes rather than showing a
+        zero or an empty label. A reader should not be told the day takes
+        no time because the file did not say how long it took.
+        """
+        trip = TripFactory.create(duration=None)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert 'data-testid="trip-stat-distance"' in html
+        assert 'data-testid="trip-stat-duration"' not in html
+
+    def test_the_time_cell_carries_the_house_spelling(self, client: Client) -> None:
+        """The house spelling, 4h05m — as on the route it was planned from."""
+        trip = TripFactory.create(duration=datetime.timedelta(hours=4, minutes=5))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert "4h05m" in html
 
     def test_the_note_is_shown_when_there_is_one_and_omitted_when_not(
         self, client: Client

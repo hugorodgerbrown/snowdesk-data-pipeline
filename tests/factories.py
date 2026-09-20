@@ -744,6 +744,12 @@ class TripFactory(factory.django.DjangoModelFactory[Trip]):
     ascent_m = 100.0
     descent_m = 0.0
     point_count = 3
+    # 4h05m exactly — the canonical span in duration_hm's own docstring,
+    # so a rendered figure reads as the documented example. A test that
+    # needs the untimed case passes ``duration=None``, which is what the
+    # majority of real uploads produce: only an activity or workout export
+    # carries per-point times.
+    duration = datetime.timedelta(hours=4, minutes=5)
     route_name = "Route"
 
     @factory.post_generation
