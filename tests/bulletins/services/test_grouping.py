@@ -8,6 +8,8 @@ Covers:
     ``countries`` list on the resulting grouping.
   - A bulletin with no boundaried regions returns None and creates no row
     (any stale row is deleted).
+  - A bulletin with exactly one boundaried region is degenerate — it returns
+    None, writes no row, and deletes any stale row (SNOW-1001).
   - Calling compute_bulletin_grouping_boundary twice is idempotent — updates in
     place and produces exactly one BulletinGrouping row.
 """
@@ -156,8 +158,8 @@ class TestComputeBulletinGroupingBoundary:
         assert result is None
         assert BulletinGrouping.objects.count() == 0
 
-    def test_idempotent_update_in_place(self) -> None:
-        """Calling the function twice produces exactly one BulletinGrouping row."""
+    def test_one_boundaried_region_writes_no_row(self) -> None:
+        """A single-region bulletin is degenerate — no row, since the outline would duplicate regions-line."""
         _, sub = _make_ch_hierarchy()
         r = MicroRegionFactory.create(
             region_id="CH-4115", subregion=sub, boundary=_LEFT_BOUNDARY
@@ -167,6 +169,96 @@ class TestComputeBulletinGroupingBoundary:
             valid_from=_VALID_FROM, valid_to=_VALID_FROM, pipeline_run=run
         )
         RegionBulletinFactory.create(bulletin=bulletin, region=r)
+
+        result = compute_bulletin_grouping_boundary(bulletin)
+
+        assert result is None
+        assert BulletinGrouping.objects.count() == 0
+
+    def test_one_boundaried_region_deletes_stale_row(self) -> None:
+        """A row written before the guard landed is removed on the next ingest."""
+        _, sub = _make_ch_hierarchy()
+        r = MicroRegionFactory.create(
+            region_id="CH-4115", subregion=sub, boundary=_LEFT_BOUNDARY
+        )
+        run = PipelineRunFactory.create()
+        bulletin = BulletinFactory.create(
+            valid_from=_VALID_FROM, valid_to=_VALID_FROM, pipeline_run=run
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=r)
+        BulletinGroupingFactory.create(
+            bulletin=bulletin,
+            target_date=datetime.date(2026, 1, 15),
+            boundary=_LEFT_BOUNDARY,
+            countries=["CH"],
+        )
+        assert BulletinGrouping.objects.count() == 1
+
+        result = compute_bulletin_grouping_boundary(bulletin)
+
+        assert result is None
+        assert BulletinGrouping.objects.count() == 0
+
+    def test_unboundaried_siblings_do_not_rescue_a_single_region(self) -> None:
+        """Regions without geometry are not counted — one boundary among three is still degenerate."""
+        _, sub = _make_ch_hierarchy()
+        boundaried = MicroRegionFactory.create(
+            region_id="CH-4115", subregion=sub, boundary=_LEFT_BOUNDARY
+        )
+        bare_one = MicroRegionFactory.create(
+            region_id="CH-4116", subregion=sub, boundary=None
+        )
+        bare_two = MicroRegionFactory.create(
+            region_id="CH-4117", subregion=sub, boundary=None
+        )
+        run = PipelineRunFactory.create()
+        bulletin = BulletinFactory.create(
+            valid_from=_VALID_FROM, valid_to=_VALID_FROM, pipeline_run=run
+        )
+        for region in (boundaried, bare_one, bare_two):
+            RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
+        result = compute_bulletin_grouping_boundary(bulletin)
+
+        assert result is None
+        assert BulletinGrouping.objects.count() == 0
+
+    def test_two_boundaried_regions_still_write_a_row(self) -> None:
+        """The guard stops at one — a genuinely aggregated bulletin still gets its row."""
+        _, sub = _make_ch_hierarchy()
+        r1 = MicroRegionFactory.create(
+            region_id="CH-4115", subregion=sub, boundary=_LEFT_BOUNDARY
+        )
+        r2 = MicroRegionFactory.create(
+            region_id="CH-4116", subregion=sub, boundary=_FAR_BOUNDARY
+        )
+        run = PipelineRunFactory.create()
+        bulletin = BulletinFactory.create(
+            valid_from=_VALID_FROM, valid_to=_VALID_FROM, pipeline_run=run
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=r1)
+        RegionBulletinFactory.create(bulletin=bulletin, region=r2)
+
+        result = compute_bulletin_grouping_boundary(bulletin)
+
+        assert result is not None
+        assert BulletinGrouping.objects.count() == 1
+
+    def test_idempotent_update_in_place(self) -> None:
+        """Calling the function twice produces exactly one BulletinGrouping row."""
+        _, sub = _make_ch_hierarchy()
+        r1 = MicroRegionFactory.create(
+            region_id="CH-4115", subregion=sub, boundary=_LEFT_BOUNDARY
+        )
+        r2 = MicroRegionFactory.create(
+            region_id="CH-4116", subregion=sub, boundary=_RIGHT_BOUNDARY
+        )
+        run = PipelineRunFactory.create()
+        bulletin = BulletinFactory.create(
+            valid_from=_VALID_FROM, valid_to=_VALID_FROM, pipeline_run=run
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=r1)
+        RegionBulletinFactory.create(bulletin=bulletin, region=r2)
 
         result1 = compute_bulletin_grouping_boundary(bulletin)
         result2 = compute_bulletin_grouping_boundary(bulletin)
