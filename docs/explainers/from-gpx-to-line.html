@@ -1,4 +1,6 @@
 <title>From GPX to Line</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="What an uploaded GPX file contains, which parts Snowdesk reads, what it works out, what it throws away, and what finally gets drawn on the map.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -262,7 +264,7 @@ footer p + p { margin-top: 6px; }
   <div>
     <span class="k">RULE ONE</span>
     <h3>Measure first, thin afterwards</h3>
-    <p>The distance, the climb and the drop are worked out over <em>every</em> point the file contained. Only then is the track thinned down to the version we store and draw.</p>
+    <p>The distance, the climb and the drop are worked out over <em>every</em> point of the track we took — all of them, before any are discarded. Only then is it thinned down to the version we store and draw.</p>
     <p>Do it the other way round and every route quietly shrinks: a thinned line cuts the corners off, so it is shorter, and it flattens every bump it removes.</p>
   </div>
   <div>
@@ -345,7 +347,7 @@ footer p + p { margin-top: 6px; }
           <p><b>Distance</b> is the sum of the gaps between consecutive places, each measured across the curve of the earth rather than on a flat drawing. It follows the track as recorded, wiggles included.</p>
           <p><b>Climb and drop</b> are read off the heights, in one walk. Every step up is added to one total and every step down to the other, and both come out positive. They are never subtracted from one another: a loop that goes up 800 m and comes back down carries 800 m of each, not nothing. That pairing is the whole point — a there-and-back and a one-way traverse can have the same length and the same climb, and only the drop tells them apart.</p>
           <p>Where the heights break off, the walk <b>steps over the gap</b> rather than measuring across it. Two points either side of a missing stretch are not a cliff. And if no point in the file has a height at all, both figures come back unknown.</p>
-          <p><b>Duration</b> is the last time minus the first. That is <em>elapsed</em> time, and it counts lunch, the transition and the hour spent digging a pit. Both ends must be present and in order; a file timed at one end only, or one whose clock runs backwards, yields no duration rather than half a fact. A file with no times — a planned course, which is the common case — gets no duration at all.</p>
+          <p><b>Duration</b> is the last time minus the first. That is <em>elapsed</em> time, and it counts lunch, the transition and the hour spent digging a pit. Both ends must be present, and the finish must not precede the start; a file timed at one end only, or one whose two ends run backwards, yields no duration rather than half a fact. Only those two stamps are read, so a clock glitch in the middle of a recording passes unnoticed. A file with no times — a planned course, which is the common case — gets no duration at all.</p>
           <div class="next">
             <span class="tag">Landing next</span>
             <b>Moving time.</b> Elapsed is all the app can offer while only the two ends are stored. The next change keeps the whole series: each stored point gains a fourth number, its offset in whole seconds from the start, and a <em>moving</em> duration is summed at upload from the full-resolution track. A stretch counts as stopped when the pace drops below <b>0.5 m/s</b> and stays there for at least <b>60 seconds</b> — both conditions, because the 1–5 m of wander a receiver shows at a real stop looks like slow movement on its own, and a genuinely slow climb looks like a stop on the other. An untimed file is unaffected: three numbers per point and no moving time, exactly as now.
@@ -488,14 +490,15 @@ footer p + p { margin-top: 6px; }
     <div class="body">
       <div class="cols">
         <div>
-          <p>Nothing. The uploaded bytes are read into memory, parsed, and dropped. There is no copy on disk, in a bucket, or anywhere else — the route you see drawn <em>is</em> the row, not the upload.</p>
+          <p>Nothing that we keep. The uploaded bytes are read, parsed, and dropped: no copy is stored, in a database, a bucket or a folder, and there is nowhere in the app you could go to download the file you sent. The route you see drawn <em>is</em> the row, not the upload.</p>
+          <p>One honest qualification, because “never touches disk” would be too strong a claim to make. A small upload is handled entirely in memory, but a larger one — above about 2.5 MB — is spooled to a temporary file by the web framework while the request is in flight, and deleted when the request ends. That is a few seconds of a file we never asked for and never read twice. What the paragraph above rules out is a <em>retained</em> copy, and that part is absolute.</p>
           <p>That is a deliberate choice rather than an oversight. This project stores no files at all: everything it serves is either a fixed asset or a database row. Keeping the originals would mean adding file storage, credentials, a retention policy and a deletion path that stays in step with deleting a route — worth doing when something needs it, and nothing does. A GPX track is also location history, and the less of it kept, in the fewer places, the smaller the exposure.</p>
           <p>The cost is real and worth stating: a route already imported can never be re-read under better rules. A parsing improvement applies to new uploads only, and re-uploading the file is the only remedy. It is also why a column added late can sometimes be backfilled and sometimes not — anything recoverable from the stored points can be, and anything that was only ever in the file cannot.</p>
         </div>
         <div class="side">
           <h3>Gone at upload</h3>
           <ul class="rules">
-            <li><span class="label">The file</span><span>Never written anywhere.</span></li>
+            <li><span class="label">The file</span><span>Never kept. No copy you could ask us for.</span></li>
             <li><span class="label">Per-point times</span><span>Only the two ends survive — for now.</span></li>
             <li><span class="label">Heart rate &amp;c.</span><span>Never read in the first place.</span></li>
             <li><span class="label">Other tracks</span><span>Everything after the first.</span></li>
@@ -509,8 +512,8 @@ footer p + p { margin-top: 6px; }
           <thead><tr><th>What is kept</th><th>What it is</th><th>Where it came from</th></tr></thead>
           <tbody>
             <tr><td>The track</td><td>The thinned line: longitude, latitude and height, one set per point</td><td>Every <code>&lt;trkpt&gt;</code>, after thinning</td></tr>
-            <tr><td>Distance</td><td>Length in metres</td><td>Measured on the full track</td></tr>
-            <tr><td>Climb and drop</td><td>Both positive, or both unknown — never one without the other</td><td>Measured on the full track's heights</td></tr>
+            <tr><td>Distance</td><td>Length in metres</td><td>Measured on the chosen track, at full resolution</td></tr>
+            <tr><td>Climb and drop</td><td>Both positive, or both unknown — never one without the other</td><td>Measured on the chosen track's heights, at full resolution</td></tr>
             <tr><td>Start and finish times</td><td>The two ends of the recording, or both unknown</td><td>First and last <code>&lt;time&gt;</code></td></tr>
             <tr><td>The bounding rectangle</td><td>What the map frames itself to when you tap the route</td><td>Worked out from the stored track</td></tr>
             <tr><td>Points stored</td><td>How many coordinates the line is drawn from</td><td>Counted after thinning</td></tr>
@@ -551,7 +554,7 @@ footer p + p { margin-top: 6px; }
           <p>From zoom 10 the ends are marked — a filled dot where the track starts, a chequered flag where it finishes. A line says where you went but nothing about which way round; these say it without a legend.</p>
           <p>A route somebody <b>shared</b> with you is drawn dashed, in a different colour, and on top. Both differences are deliberate: the dash carries the meaning for a colour-blind reader, the colour carries it at a zoom where a dash is too small to see. A route you own and a route you have been sent support different actions, and the map has to say which is which before it is tapped.</p>
           <p>Tapping flies the map to the route's stored rectangle and opens the <b>detail sheet</b> docked below it — the same sheet the rest of the map uses. It was an anchored popup until recently, and a 320-pixel card had stopped being enough for what there is to say about a line.</p>
-          <p>The sheet holds the name, then the length, climb and drop — each omitted entirely if it isn't known — then the height profile, then the low-to-high range and the elapsed time. Below that sits the one thing the popup had no room for: what the day's bulletin says about this particular line, fetched for whatever date the map is showing and re-fetched when you move the scrubber. That half belongs to the terrain story rather than this one.</p>
+          <p>The sheet holds the name, then the length, climb and drop — each omitted entirely if it isn't known — then the height profile, then the low-to-high range and the elapsed time. For a route of your own, below that sits the one thing the popup had no room for: what the day's bulletin says about this particular line, fetched for whatever date the map is showing and re-fetched when you move the scrubber. A route somebody has shared with you does not carry it until you save it — an unclaimed share is identified by its link rather than by a route of yours, and the reading is looked up per route. That half belongs to the terrain story rather than this one.</p>
         </div>
         <div class="side">
           <h3>The profile</h3>
@@ -563,7 +566,7 @@ footer p + p { margin-top: 6px; }
 
       <div class="figbox">
         <figure>
-          <svg class="fig" viewBox="0 0 960 290" role="img" aria-label="The pipeline from left to right: uploaded bytes, parsed into every point the file had, thinned to at most two thousand points, stored as a route row, served to the map and drawn. The distance, climb, drop and times branch off before the thinning step and rejoin at the stored row. The uploaded bytes branch downwards and are discarded.">
+          <svg class="fig" viewBox="0 0 960 290" role="img" aria-label="The pipeline from left to right: uploaded bytes, parsed into every point of the chosen track, thinned to at most two thousand points, stored as a route row, served to the map and drawn. The distance, climb, drop and times branch off before the thinning step and rejoin at the stored row. The uploaded bytes branch downwards and are discarded without being kept.">
             <defs>
               <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -582,7 +585,7 @@ footer p + p { margin-top: 6px; }
             <!-- measured figures, above -->
             <rect x="196" y="24" width="470" height="46" rx="4" fill="none" stroke="var(--keep)" stroke-width="1.6"/>
             <text x="431" y="45" text-anchor="middle" font-family="Archivo, sans-serif" font-size="13" font-weight="700" fill="var(--keep)">distance · climb · drop · start and finish times</text>
-            <text x="431" y="61" text-anchor="middle" font-family="Archivo, sans-serif" font-size="11.5" fill="var(--keep)">measured on every point the file had</text>
+            <text x="431" y="61" text-anchor="middle" font-family="Archivo, sans-serif" font-size="11.5" fill="var(--keep)">measured on every point of the track we took</text>
 
             <!-- main row -->
             <g font-family="Archivo, sans-serif">
@@ -591,8 +594,8 @@ footer p + p { margin-top: 6px; }
               <text x="69" y="166" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">bytes</text>
 
               <rect x="196" y="126" width="140" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/>
-              <text x="266" y="150" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">every point</text>
-              <text x="266" y="166" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">the file had</text>
+              <text x="266" y="150" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">every point of</text>
+              <text x="266" y="166" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">the chosen track</text>
 
               <rect x="404" y="126" width="132" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/>
               <text x="470" y="150" text-anchor="middle" font-size="12.5" font-weight="650" fill="currentColor">thinned to</text>
@@ -633,7 +636,7 @@ footer p + p { margin-top: 6px; }
               <path d="M69,178 L69,226" marker-end="url(#ar-dim)"/>
             </g>
             <text x="69" y="248" text-anchor="middle" font-family="Archivo, sans-serif" font-size="12" font-weight="650" fill="currentColor" fill-opacity=".6">discarded</text>
-            <text x="69" y="264" text-anchor="middle" font-family="Archivo, sans-serif" font-size="11" fill="currentColor" fill-opacity=".6">nothing written to disk</text>
+            <text x="69" y="264" text-anchor="middle" font-family="Archivo, sans-serif" font-size="11" fill="currentColor" fill-opacity=".6">no copy is kept</text>
           </svg>
           <figcaption>The order is the argument. The figures leave the pipeline before the thinning and rejoin it at the stored row, so they describe the track that was walked; the line on the map is the thinned copy. The uploaded file leaves it altogether.</figcaption>
         </figure>
@@ -661,7 +664,7 @@ footer p + p { margin-top: 6px; }
         <tr><td>Over 5 MB</td><td><span class="pill no">refused</span></td><td>Rejected on its reported size, before the parser sees a byte.</td></tr>
         <tr><td>One unreadable <code>&lt;ele&gt;</code> among thousands</td><td><span class="pill ok">accepted</span></td><td>A gap in the heights, not a broken file. The point keeps its place.</td></tr>
         <tr><td>No <code>&lt;ele&gt;</code> anywhere</td><td><span class="pill ok">accepted</span></td><td>Stored with no climb or drop figure — not with zero.</td></tr>
-        <tr><td>No <code>&lt;time&gt;</code>, or times out of order</td><td><span class="pill ok">accepted</span></td><td>Stored with no duration. A planned route has none by nature.</td></tr>
+        <tr><td>No <code>&lt;time&gt;</code>, or a finish earlier than the start</td><td><span class="pill ok">accepted</span></td><td>Stored with no duration. Only the two ends are checked, so a stamp out of order in the middle is not noticed. A planned route has no times by nature.</td></tr>
         <tr><td>Several tracks</td><td><span class="pill part">first one</span></td><td>The rest are dropped, and nothing on screen says so yet.</td></tr>
         <tr><td>A track cut into many segments</td><td><span class="pill ok">accepted</span></td><td>Joined in order — a signal gap is not a new journey.</td></tr>
         <tr><td>A planned <code>&lt;rte&gt;</code> rather than a recording</td><td><span class="pill ok">accepted</span></td><td>An ordered list of places either way.</td></tr>
@@ -715,7 +718,7 @@ footer p + p { margin-top: 6px; }
     <table>
       <thead><tr><th>Step</th><th>Where</th><th>What that means for you</th></tr></thead>
       <tbody>
-        <tr><td>Checking and reading the file</td><td>Server</td><td>The bytes are never written to disk, not even briefly</td></tr>
+        <tr><td>Checking and reading the file</td><td>Server</td><td>No copy is ever kept — see the note below on the one place bytes touch disk</td></tr>
         <tr><td>Distance, climb, drop, times</td><td>Server, once at upload</td><td>The figures never drift and never disagree between two screens</td></tr>
         <tr><td>Thinning the line</td><td>Server, once at upload</td><td>What your device receives is already what it will draw</td></tr>
         <tr><td>Drawing the line and its ends</td><td>Your device</td><td>Redrawn at every zoom from the coordinates it holds</td></tr>
