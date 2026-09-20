@@ -870,12 +870,12 @@ class BulletinShareClick(BaseModel):
 
 
 # A grouping only says something the micro-region layer does not when it
-# dissolves two or more boundaried regions: with one, the dissolve is a union
-# of one polygon and the outline lands exactly on ``regions-line``. This is
-# the single definition of "worth a row" — the ingest-time guard in
-# ``apps.bulletins.services.grouping`` and ``BulletinGroupingQuerySet
-# .degenerate`` below both read it, so the writer and the purge can never
-# drift apart (SNOW-1001).
+# dissolves two or more boundaried regions (SNOW-1001; see
+# docs/decisions/a-grouping-outline-asserts-an-aggregation.md). This is the
+# single definition of "worth a row" — the ingest-time guard in
+# ``apps.bulletins.services.grouping``, ``BulletinGroupingQuerySet.degenerate``
+# below, and ``candidate_bulletins`` in ``backfill_bulletin_groupings`` all
+# read it, so writer, backfill and purge cannot drift apart.
 MIN_GROUPED_REGIONS = 2
 
 
@@ -908,7 +908,10 @@ class BulletinGroupingQuerySet(models.QuerySet["BulletinGrouping"]):
         filtered rather than taken over every link.
 
         Rows selected here were written before the ingest-time guard landed;
-        ``purge_degenerate_bulletin_groupings`` deletes them.
+        ``purge_degenerate_bulletin_groupings`` deletes them. The exact
+        complement of ``candidate_bulletins`` in
+        ``backfill_bulletin_groupings``, which
+        ``tests/bulletins/test_bulletin_grouping_model.py`` pins.
 
         Returns:
             A filtered queryset of degenerate BulletinGrouping rows.
@@ -939,8 +942,9 @@ class BulletinGrouping(BaseModel):
     A bulletin covering one boundaried region gets no row (SNOW-1001): the
     dissolve would be a union of one polygon, so the layer would draw a
     line directly on top of ``regions-line`` and claim an aggregation that
-    did not happen. Météo-France is 1:1 across its whole archive, and SLF
-    became 1:1 under SNOW-998, so most providers now write no rows at all.
+    did not happen. Météo-France is 1:1 across its whole archive and writes
+    none at all; SLF will join it once SNOW-998 lands. Full rationale:
+    docs/decisions/a-grouping-outline-asserts-an-aggregation.md.
 
     ``countries`` is a sorted JSON list of ISO-2 country codes (e.g.
     ``["AT", "IT"]``) derived from the linked regions' parent

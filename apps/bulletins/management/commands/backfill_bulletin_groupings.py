@@ -12,11 +12,13 @@ writing anything to the database.  Pass ``--commit`` to persist.
 
 That second condition is load-bearing since SNOW-1001: a bulletin covering
 fewer than ``MIN_GROUPED_REGIONS`` boundaried micro-regions is never given a
-grouping, so it matches ``grouping__isnull=True`` for ever. Selecting on the
-null alone meant every such bulletin — the whole Météo-France archive, and
-SLF's since SNOW-998 — was re-attempted on every run and then reported as
+grouping (why:
+docs/decisions/a-grouping-outline-asserts-an-aggregation.md), so it matches
+``grouping__isnull=True`` for ever. Selecting on the null alone meant every
+such bulletin — the whole Météo-France archive today, and SLF's too once
+SNOW-998 lands — was re-attempted on every run and then reported as
 "skipped", which made the summary line describe a backlog that does not
-exist. The candidate queryset now carries the same boundaried-region count
+exist. ``candidate_bulletins`` below carries the same boundaried-region count
 the writer and ``purge_degenerate_bulletin_groupings`` use, so a second run
 selects only what a first run genuinely failed to write.
 
@@ -40,13 +42,44 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Count, Q
+from django.db.models import Count, Q, QuerySet
 
 from apps.bulletins.models import MIN_GROUPED_REGIONS, Bulletin
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.core.command_iteration import iterate_rows
 
 logger = logging.getLogger(__name__)
+
+
+def candidate_bulletins() -> QuerySet[Bulletin]:
+    """
+    Return the bulletins that lack a grouping and could be given one.
+
+    The exact complement, over the same boundaried-region count, of
+    ``BulletinGroupingQuerySet.degenerate()``: that selects the rows the
+    writer would now refuse to write, this selects the bulletins it would
+    write for. The two share ``MIN_GROUPED_REGIONS`` but not the
+    ``Count(..., filter=...)`` expression, so
+    ``tests/bulletins/test_bulletin_grouping_model.py`` pins them as a
+    partition rather than trusting the shared constant alone.
+
+    A module-level function rather than a method on the command so that test
+    is asserting against the query the command actually runs.
+
+    Returns:
+        Bulletins with no ``BulletinGrouping`` row linking at least
+        ``MIN_GROUPED_REGIONS`` boundaried micro-regions.
+
+    """
+    return (
+        Bulletin.objects.filter(grouping__isnull=True)
+        .alias(
+            boundaried_region_count=Count(
+                "regions", filter=Q(regions__boundary__isnull=False)
+            )
+        )
+        .filter(boundaried_region_count__gte=MIN_GROUPED_REGIONS)
+    )
 
 
 class Command(BaseCommand):
@@ -139,18 +172,7 @@ class Command(BaseCommand):
             )
         )
 
-        # The same boundaried-region count the ingest-time guard applies and
-        # BulletinGroupingQuerySet.degenerate() selects on, read off the
-        # bulletin rather than its (absent) grouping.
-        qs = (
-            Bulletin.objects.filter(grouping__isnull=True)
-            .alias(
-                boundaried_region_count=Count(
-                    "regions", filter=Q(regions__boundary__isnull=False)
-                )
-            )
-            .filter(boundaried_region_count__gte=MIN_GROUPED_REGIONS)
-        )
+        qs = candidate_bulletins()
         total = qs.count()
 
         self.stdout.write(f"Bulletins missing a grouping they could have: {total}")
