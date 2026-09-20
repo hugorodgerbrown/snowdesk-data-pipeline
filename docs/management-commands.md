@@ -1104,14 +1104,15 @@ incident that invalidates derived state:
   serves an outline that lands exactly on `regions-line`, asserting an
   aggregation the provider never made. `compute_bulletin_grouping_boundary`
   refuses to write these rows and clears any it meets on re-ingest, so this
-  command is for the rows in a database that will not be re-ingested —
-  Météo-France is 1:1 across its whole archive and SLF became 1:1 under
-  SNOW-998. Selection is `BulletinGrouping.objects.degenerate()`, the same
+  command is for the rows in a database that will not be re-ingested — that
+  is Météo-France in bulk, 1:1 across its whole archive, with SLF joining it
+  once SNOW-998 lands. Selection is `BulletinGrouping.objects.degenerate()`, the same
   predicate the writer reads, so the two cannot drift. Read-only by default;
   pass `--commit` to delete. Idempotent — a second run selects nothing.
   Deliberately not a data migration: a bulk delete there locks the table for
   the length of a Render deploy. Raises `CommandError` and exits non-zero if
-  any `DELETE` fails.
+  any `DELETE` fails. Why a degenerate row is worse than no row:
+  [`decisions/a-grouping-outline-asserts-an-aggregation.md`](decisions/a-grouping-outline-asserts-an-aggregation.md).
 
   ```bash
   # Dry-run — counts the degenerate rows.
@@ -1122,7 +1123,8 @@ incident that invalidates derived state:
   ```
 
   Flags: `--commit`, `--batch-size N` (default 500 — rows per DELETE
-  statement).
+  statement; must be a positive integer, rejected at parse time by
+  `apps.core.command_iteration.positive_int`).
 
 - `backfill_bulletin_target_dates --commit` — one-off post-deploy step
   after SNOW-560: populates `Bulletin.target_date` for rows that predate

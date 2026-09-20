@@ -7,11 +7,9 @@ Polygon/MultiPolygon and persists the result as a ``BulletinGrouping`` row.
 
 A row is written only where the provider actually aggregated — the bulletin
 must link at least ``apps.bulletins.models.MIN_GROUPED_REGIONS`` micro-regions
-carrying a boundary. Dissolving one polygon returns that polygon, so the
-layer would draw an outline directly on top of ``regions-line`` and assert a
-grouping that never happened (SNOW-1001). Météo-France is 1:1 across its whole
-archive and SLF became 1:1 under SNOW-998, so the layer is now an ALBINA
-surface in practice.
+carrying a boundary (SNOW-1001). The argument for that threshold, and what an
+absent outline means, is in
+docs/decisions/a-grouping-outline-asserts-an-aggregation.md.
 
 This service is called from ``upsert_bulletin`` immediately after
 ``apply_bulletin_day_ratings``, wrapped in a try/except so geometry errors
@@ -54,11 +52,10 @@ def compute_bulletin_grouping_boundary(
     Fewer than ``MIN_GROUPED_REGIONS`` boundaried regions is degenerate —
     either none are linked (the bulletin is very old, or its regions have
     no geometry) or exactly one is, in which case the dissolve returns that
-    region's own boundary and the drawn outline duplicates ``regions-line``.
-    In both cases the function returns ``None`` and ensures no stale row
-    remains by deleting any existing grouping for this bulletin, which also
-    covers a re-ingest that drops region links from a previously
-    multi-region bulletin.
+    region's own boundary. In both cases the function returns ``None`` and
+    ensures no stale row remains by deleting any existing grouping for this
+    bulletin, which also covers a re-ingest that drops region links from a
+    previously multi-region bulletin.
 
     Args:
         bulletin: The Bulletin instance to compute a grouping for.

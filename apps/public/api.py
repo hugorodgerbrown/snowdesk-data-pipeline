@@ -1357,6 +1357,15 @@ def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     the requested forecast day. Powered by ``BulletinGrouping`` rows
     computed at ingest time.
 
+    **An empty ``features`` list is a valid answer, not an error.** Since
+    SNOW-1001 a row exists only for a bulletin covering two or more
+    boundaried micro-regions, so a day on which every provider in view
+    issued one bulletin per region legitimately returns zero features — and
+    Météo-France, 1:1 across its whole archive, never contributes one. The
+    map draws nothing and that is the correct reading: no provider grouped
+    anything that day (see
+    ``docs/decisions/a-grouping-outline-asserts-an-aggregation.md``).
+
     The endpoint is deliberately **single-date** (``?d=`` is required). An
     earlier version returned the whole season keyed by date in one payload;
     once the historical backfill landed, serialising every day's dissolved
@@ -1505,8 +1514,10 @@ def _build_groupings_payload(
     #
     # Two bulletins routinely target the same day: the morning-of-X issue and
     # the previous evening's, which both satisfy ``target_date == X``. Both
-    # get a BulletinGrouping row, so without this filter the endpoint returns
-    # two near-identical overlapping outlines for most days — invisible while
+    # get a BulletinGrouping row where they aggregate at all (a single-region
+    # bulletin gets none — SNOW-1001), so without this filter the endpoint
+    # returns two near-identical overlapping outlines for most days —
+    # invisible while
     # the layer was an opt-in dashed overlay, obvious now it is drawn
     # alongside every micro-region view. ``recompute_region_day`` already
     # arbitrates between them per region; reusing its verdict here keeps the
