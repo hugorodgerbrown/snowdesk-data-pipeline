@@ -2264,6 +2264,7 @@ def _stub_get_sources(
                 latest_date_fn=lambda: latest,
                 live_url_setting="SLF_API_BASE_URL",
                 mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
+                legacy_url_setting="",
                 archive_path_setting="SLF_ARCHIVE_PATH",
                 stash_writer=lambda records, path: 0,
             )

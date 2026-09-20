@@ -40,6 +40,7 @@ def _stub_source(name: str, latest: date | None) -> BulletinSource:
         latest_date_fn=lambda: latest,
         live_url_setting=f"{name}_API_BASE_URL",
         mirror_url_setting=f"{name}_API_LOCAL_MIRROR_URL",
+        legacy_url_setting="",
         archive_path_setting=f"{name}_ARCHIVE_PATH",
         stash_writer=_stash_writer,
     )

@@ -411,32 +411,50 @@ class Command(BaseCommand):
         """
         Resolve the base URL to pass to the pipeline function.
 
-        Returns ``None`` for the live path so the pipeline falls back to
-        the provider's ``live_url_setting``. Returns the mirror URL when
-        ``--local-mirror`` is set, raising ``CommandError`` if the mirror
-        URL setting is missing.
+        Three paths, in descending precedence:
+
+        1. ``--local-mirror`` — an explicit flag, so it wins outright.
+           Raises ``CommandError`` if the mirror URL setting is missing.
+        2. The provider's ``legacy_url_setting``, when it names a setting
+           that is currently non-empty (SNOW-900 — only SLF has one). An
+           environment variable, pullable on a live dyno, so the pin-back
+           needs no deploy and no cron edit.
+        3. ``None``, so the pipeline falls back to ``live_url_setting``.
 
         Args:
             source: The provider whose URL settings to read.
             local_mirror: Whether the user requested the dev mirror.
 
         Returns:
-            The mirror URL string, or ``None`` for the live path.
+            The mirror or legacy URL string, or ``None`` for the live path.
 
         Raises:
             CommandError: ``--local-mirror`` was requested but the mirror
                 URL setting is absent or falsy.
 
         """
-        if not local_mirror:
-            return None
-        mirror_url: str | None = getattr(settings, source.mirror_url_setting, None)
-        if not mirror_url:
-            raise CommandError(
-                f"--local-mirror requires settings.{source.mirror_url_setting} "
-                f"to be configured (only available in development)."
-            )
-        return mirror_url
+        if local_mirror:
+            mirror_url: str | None = getattr(settings, source.mirror_url_setting, None)
+            if not mirror_url:
+                raise CommandError(
+                    f"--local-mirror requires settings.{source.mirror_url_setting} "
+                    f"to be configured (only available in development)."
+                )
+            return mirror_url
+
+        if source.legacy_url_setting:
+            legacy_url: str | None = getattr(settings, source.legacy_url_setting, None)
+            if legacy_url:
+                logger.warning(
+                    "%s is pinned to settings.%s (%s) instead of %s",
+                    source.name,
+                    source.legacy_url_setting,
+                    legacy_url,
+                    source.live_url_setting,
+                )
+                return legacy_url
+
+        return None
 
     def _flush_stash(
         self,

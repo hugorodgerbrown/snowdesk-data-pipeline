@@ -5,6 +5,8 @@ Contains pure-ish functions that:
   1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
   2. Persist a single bulletin into the database (upsert_bulletin).
   3. Orchestrate a full pipeline run across a date range (run_slf_pipeline).
+  4. Classify which CAAML export a response actually IS, independent of the
+     URL it came from (detect_caaml_shape) — see the block comment above it.
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
@@ -127,6 +129,11 @@ def fetch_bulletin_page(
         requests.HTTPError: If the API returns a non-2xx status.
         ValueError: If the response body cannot be parsed as JSON.
 
+    Every page is classified by ``detect_caaml_shape`` and logged on the
+    way out — at WARNING when the 2026/27 per-region export is what
+    arrived (SNOW-900). Classification never blocks the fetch: the page
+    is returned whatever shape it is.
+
     """
     resolved_base = base_url if base_url is not None else settings.SLF_API_BASE_URL
     url = f"{resolved_base}/{lang}/json"
@@ -146,7 +153,9 @@ def fetch_bulletin_page(
     response.raise_for_status()
 
     data: Any = response.json()
-    return _normalise_response(data)
+    bulletins = _normalise_response(data)
+    _log_caaml_shape(bulletins, resolved_base)
+    return bulletins
 
 
 def _normalise_response(data: Any) -> list[dict[str, Any]]:
@@ -169,6 +178,188 @@ def _normalise_response(data: Any) -> list[dict[str, Any]]:
 
     """
     return normalise_bulletin_response(data, "SLF")
+
+
+# ---------------------------------------------------------------------------
+# CAAML payload shape detection (SNOW-900)
+# ---------------------------------------------------------------------------
+# SLF's 2026/27 export stops aggregating micro-regions into five or six
+# bulletins and publishes one bulletin per region instead — ~150 entries per
+# issue where we see 5–6 today. SLF confirmed on 2026-09-10 that the legacy
+# endpoint preserves the response FORMAT but not necessarily the old
+# aggregation, so the pipeline cannot infer which shape it is handling from
+# which URL it fetched. It has to look at what arrived.
+#
+# Without this, the first de-aggregated payload lands as a silent 25× — the
+# ingest succeeds (measured: all 133 sample bulletins upsert cleanly), the row
+# count and the stored JSON multiply, and nothing in the log says which format
+# was served.
+
+CAAML_SHAPE_AGGREGATED = "aggregated"
+CAAML_SHAPE_PER_REGION = "per-region"
+CAAML_SHAPE_UNKNOWN = "unknown"
+
+# A single bulletin carrying more than one region is proof of aggregation, so
+# it settles the question outright. The converse does not: a page of
+# one-region bulletins could in principle be a legacy page that happens to
+# hold only narrow bulletins. Measured, the two shapes are nowhere near each
+# other — the three committed SLF sentinels carry 93, 65 and 13 regions, and
+# SLF's v5 sample is 133 bulletins of one region each — so a page of ten or
+# more single-region bulletins is the new shape.
+_PER_REGION_MIN_BULLETINS = 10
+
+# Fields the new export carries that no legacy bulletin does. Either one
+# settles the question on its own, however few bulletins the page holds, which
+# is what makes a short page (the tail of a paged range) classifiable at all.
+# ``customData.CH.weather`` is the structured per-region weather block, present
+# in the sample and 80% of its payload by size; ``dangerRatingEvolution`` is
+# specified but not yet populated, so it is here for the day it appears.
+_NEW_FORMAT_MARKERS = ("customData.CH.weather", "dangerRatingEvolution")
+
+
+@dataclass(frozen=True)
+class CaamlPayloadShape:
+    """What a page of SLF bulletins turned out to be.
+
+    Attributes:
+        shape: One of ``CAAML_SHAPE_AGGREGATED``,
+            ``CAAML_SHAPE_PER_REGION`` or ``CAAML_SHAPE_UNKNOWN``.
+        bulletin_count: Number of bulletins on the page.
+        region_count: Total regions across all of them.
+        max_regions_per_bulletin: The largest single bulletin's region
+            count — the signal that settles aggregation outright.
+        markers: New-format marker paths actually found, in the order
+            they are declared. Carried separately from ``shape`` so a
+            payload that is aggregated AND carries a new field logs both
+            rather than one of them.
+
+    """
+
+    shape: str
+    bulletin_count: int
+    region_count: int
+    max_regions_per_bulletin: int
+    markers: tuple[str, ...]
+
+
+def _region_count(bulletin: Any) -> int:
+    """Count a raw bulletin's regions without trusting its shape.
+
+    Deliberately total rather than strict: this runs on the fetch path
+    purely to describe what arrived, so a malformed entry must return a
+    number and let the real ingest raise on it. A ``KeyError`` from a
+    logging helper would fail the whole fetch over an entry that
+    ``upsert_bulletin`` might well handle.
+
+    Args:
+        bulletin: A raw entry from the normalised response list.
+
+    Returns:
+        The number of entries in ``regions``, or 0 if it is missing or
+        not a list.
+
+    """
+    if not isinstance(bulletin, dict):
+        return 0
+    regions = bulletin.get("regions")
+    return len(regions) if isinstance(regions, list) else 0
+
+
+def _has_dotted_path(bulletin: Any, path: str) -> bool:
+    """Report whether a dotted key path resolves to anything in a bulletin.
+
+    Args:
+        bulletin: A raw entry from the normalised response list.
+        path: A dotted path such as ``"customData.CH.weather"``.
+
+    Returns:
+        True if every segment resolves and the final value is not None.
+
+    """
+    node: Any = bulletin
+    for segment in path.split("."):
+        if not isinstance(node, dict) or segment not in node:
+            return False
+        node = node[segment]
+    return node is not None
+
+
+def detect_caaml_shape(bulletins: list[dict[str, Any]]) -> CaamlPayloadShape:
+    """Classify a page of raw SLF bulletins as aggregated or per-region.
+
+    Pure, and unit-tested against fixture dicts rather than the network.
+
+    The order of the checks is the order of confidence. A multi-region
+    bulletin is proof of aggregation and outranks everything, including a
+    new-format marker — if SLF ever ship both, the region count is what
+    drives the volume and so the volume is what we report. Failing that, a
+    marker field is proof of the new export at any page size. Failing
+    that, page size decides. An empty page is no evidence either way and
+    is reported as such rather than defaulted to today's shape.
+
+    Args:
+        bulletins: The normalised bulletin list from one page fetch.
+
+    Returns:
+        A ``CaamlPayloadShape`` describing the page.
+
+    """
+    if not bulletins:
+        return CaamlPayloadShape(CAAML_SHAPE_UNKNOWN, 0, 0, 0, ())
+
+    counts = [_region_count(bulletin) for bulletin in bulletins]
+    markers = tuple(
+        path
+        for path in _NEW_FORMAT_MARKERS
+        if any(_has_dotted_path(bulletin, path) for bulletin in bulletins)
+    )
+    max_regions = max(counts)
+
+    if max_regions > 1:
+        shape = CAAML_SHAPE_AGGREGATED
+    elif markers or len(bulletins) >= _PER_REGION_MIN_BULLETINS:
+        shape = CAAML_SHAPE_PER_REGION
+    else:
+        shape = CAAML_SHAPE_UNKNOWN
+
+    return CaamlPayloadShape(
+        shape=shape,
+        bulletin_count=len(bulletins),
+        region_count=sum(counts),
+        max_regions_per_bulletin=max_regions,
+        markers=markers,
+    )
+
+
+def _log_caaml_shape(bulletins: list[dict[str, Any]], base_url: str) -> None:
+    """Log what shape a fetched page turned out to be.
+
+    WARNING for the new per-region export, INFO otherwise: the whole point
+    is that the changeover announces itself the first time it happens
+    rather than being inferred later from a row count. The base URL is in
+    the message because the shape is explicitly NOT a property of it —
+    seeing the two together is what tells an operator whether pinning
+    ``SLF_API_LEGACY_URL`` did anything.
+
+    Args:
+        bulletins: The normalised bulletin list from one page fetch.
+        base_url: The base URL the page was fetched from.
+
+    """
+    detected = detect_caaml_shape(bulletins)
+    level = (
+        logging.WARNING if detected.shape == CAAML_SHAPE_PER_REGION else logging.INFO
+    )
+    logger.log(
+        level,
+        "SLF page shape=%s bulletins=%d regions=%d max_regions=%d markers=%s base=%s",
+        detected.shape,
+        detected.bulletin_count,
+        detected.region_count,
+        detected.max_regions_per_bulletin,
+        ",".join(detected.markers) or "none",
+        base_url,
+    )
 
 
 def _parse_dt(value: str) -> datetime:
@@ -831,6 +1022,13 @@ class BulletinSource:
             that holds the dev-mirror URL (e.g.
             ``"SLF_API_LOCAL_MIRROR_URL"``). Expected to be absent or
             falsy in production.
+        legacy_url_setting: Attribute name on ``django.conf.settings``
+            holding a pin-back URL that overrides ``live_url_setting``
+            whenever it is non-empty, or ``""`` for a provider with no
+            such path. Only SLF has one (SNOW-900): the 2026/27 CAAML
+            export takes over its unversioned endpoint, and the setting
+            is the environment-variable lever back to the old format
+            without a deploy. ``--local-mirror`` still wins over it.
         archive_path_setting: Attribute name on ``django.conf.settings``
             that holds the ``Path`` to the on-disk NDJSON archive (e.g.
             ``"SLF_ARCHIVE_PATH"``). Used when ``--stash`` is passed.
@@ -846,6 +1044,7 @@ class BulletinSource:
     latest_date_fn: Callable[[], date | None]
     live_url_setting: str
     mirror_url_setting: str
+    legacy_url_setting: str
     archive_path_setting: str
     stash_writer: Callable[[list[dict[str, Any]], Path], int]
 
@@ -885,6 +1084,7 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_slf_date,
             live_url_setting="SLF_API_BASE_URL",
             mirror_url_setting="SLF_API_LOCAL_MIRROR_URL",
+            legacy_url_setting="SLF_API_LEGACY_URL",
             archive_path_setting="SLF_ARCHIVE_PATH",
             stash_writer=slf_stash_writer,
         ),
@@ -894,6 +1094,7 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_albina_date,
             live_url_setting="ALBINA_API_BASE_URL",
             mirror_url_setting="ALBINA_API_LOCAL_MIRROR_URL",
+            legacy_url_setting="",
             archive_path_setting="ALBINA_ARCHIVE_PATH",
             stash_writer=albina_stash_writer,
         ),
@@ -903,6 +1104,7 @@ def get_sources() -> dict[str, BulletinSource]:
             latest_date_fn=latest_meteofrance_date,
             live_url_setting="METEOFRANCE_API_BASE_URL",
             mirror_url_setting="METEOFRANCE_API_LOCAL_MIRROR_URL",
+            legacy_url_setting="",
             archive_path_setting="METEOFRANCE_ARCHIVE_PATH",
             stash_writer=meteofrance_stash_writer,
         ),

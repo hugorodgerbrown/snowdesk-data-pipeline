@@ -7,13 +7,18 @@ last-reviewed: 2026-09-20
 
 # Environment network allow-list
 
-Two different blocks are recorded here, and they are **not the same
+Three different blocks are recorded here, and they are **not the same
 mechanism** — read the section that matches your symptom rather than
-assuming one fix serves both:
+assuming one fix serves all three:
 
-- **Claude Code on the web** — `WebFetch` returns `EGRESS_BLOCKED`. Fixed
-  by the environment's network policy on claude.ai/code. This is the
-  original subject of this doc, below.
+- **Claude Code on the web** — `WebFetch` returns `EGRESS_BLOCKED`, or a
+  shell fetch gets `CONNECT tunnel failed, response 403`. Fixed by the
+  environment's network policy on claude.ai/code. This is the original
+  subject of this doc, below.
+- **Claude Code's own permission classifier** — a `Bash` call is refused
+  with a reason in brackets (`Exfil Scouting`, `Auto-Mode Bypass`) before
+  it ever reaches the network. Fixed by a `Bash` permission rule in the
+  user's settings, not by any allowlist. Added 2026-09-20 (SNOW-900).
 - **The desktop app's Browser pane** — a page loaded in the pane gets HTTP
   403 on requests to third-party hosts. A different path with a different
   (and, as of 2026-09-05, unidentified) control. See the section at the
@@ -210,6 +215,37 @@ egress.
 | `semgrep.dev` | Where `tox -e sast` fetches its rule packs (`p/django`, `p/python`, `p/security-audit`). Blocked, so semgrep exits 2 locally on a proxy error and a session cannot reproduce a CI SAST failure — the finding has to be read out of the GitHub job log instead |
 | `snowdesk.info` | Our own production site. A route share link (`/routes/s/<token>/` then `/routes/routes.geojson`) is the one path a session has to a real track's points, and `routes_geojson` already answers an anonymous request holding a pending share token (SNOW-764) |
 
+## Actioned — 2026-09-20 (SNOW-900, SLF v5 samples)
+
+`uploads.linear.app` returned `CONNECT tunnel failed, response 403` — a
+policy denial at the proxy — when fetching the three sample payloads SLF
+sent on 2026-09-10, which are attached to SNOW-900 rather than committed.
+**Allowed the same day**, on request, and the block cleared.
+
+| Domain | Why it matters |
+|---|---|
+| `uploads.linear.app` | Where Linear serves attachment *bodies*, on five-minute signed URLs. The Linear MCP tools return the URLs and the metadata fine; only the bytes come from this host. Any ticket whose evidence is an attachment — a provider's sample payload, a spec fragment, a screenshot — is unreadable without it |
+
+**A second, different control still bites, and it is not the egress policy.**
+With the domain allowed, `curl` against it was refused by Claude Code's own
+auto-mode permission classifier (`Exfil Scouting`, then `Auto-Mode Bypass`) —
+a per-command permission decision, not a network one, and so not fixable from
+this doc. Note the three mechanisms now recorded here: the environment's
+network policy, the desktop Browser pane's 403s (below), and the permission
+classifier. They fail differently and are fixed in different places; read the
+error text before assuming which one you have.
+
+**The way round it, for small files:** `mcp__Linear__get_attachment` with
+`format=content` returns the file base64-encoded through the MCP server
+rather than the shell, and is the natural tool for the job. It puts the whole
+file in context, so it is fine for a schema fragment (SNOW-900's
+`dangerRatingEvolution.json` is 460 bytes and came through this way) and
+useless for the two multi-megabyte samples beside it, which is why
+[`tests/sentinels/slf/new-format-preview/`](../tests/sentinels/slf/new-format-preview/README.md)
+holds one of the three and a written note about the other two. A large
+attachment needs either a `Bash(curl:*)` permission rule or a human to
+download it.
+
 ## How to add these
 
 1. Open the environment's settings on claude.ai/code (the environment this
@@ -265,4 +301,9 @@ them. Say so explicitly when handing one over.
 
 ## Actioned
 
-*(none yet — 2026-08-30 and 2026-09-05 requests both outstanding)*
+- **2026-09-20 — `uploads.linear.app`** (SNOW-900). Allowed on the day it
+  was requested; see the section of the same date above for what still
+  blocks a large attachment even with the domain open.
+
+The 2026-08-30, 2026-09-05, 2026-09-06, 2026-09-09, 2026-09-13, 2026-09-19
+and 2026-09-20 competitor-scan requests are all still outstanding.
