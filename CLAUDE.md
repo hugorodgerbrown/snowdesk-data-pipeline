@@ -617,6 +617,7 @@ Read these when working in the relevant area:
 | Site structure (routes, AI-generated summary fields) | [`docs/site-structure.md`](docs/site-structure.md) |
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
+| Public explainers — self-contained HTML pages written for readers WITHOUT repo access, so no ticket ids, file paths or decision-doc references. "From GPX to Line" covers the upload pipeline (what a GPX holds, the figures, Douglas-Peucker thinning, what is stored and drawn) | [`docs/explainers/`](docs/explainers/) |
 | Competitor list (WhiteRisk, SnowSafe, Whympr, OpenSnow) and the feature ideas they suggest | [`docs/competitors.md`](docs/competitors.md) |
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
