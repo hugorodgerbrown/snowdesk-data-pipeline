@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-19
+last-reviewed: 2026-09-20
 ---
 
 # Environment network allow-list
@@ -156,6 +156,23 @@ content. As with `avalancheclarity.com`'s 2026-09-06 clearance, nothing in
 this session changed the egress policy, so either a human updated the
 allowlist between passes or the blocks were intermittent — this doc still
 can't tell which.
+
+## Requested — 2026-09-20 (competitor-scan routine)
+
+New domain that returned `EGRESS_BLOCKED` on direct `WebFetch` during the
+[2026-09-20 competitor scan](competitors.md), not already covered by the
+2026-08-30/2026-09-06/2026-09-13 tables above.
+
+| Domain | Why it matters |
+|---|---|
+| `granitealpinelab.com` | Independent gear-review site whose "Best Backcountry Skiing Apps of 2026" piece tests Granite (new entrant this pass, see [`competitors.md`](competitors.md)) alongside ten other backcountry apps, one of them tested in the Bernese Oberland — the fullest single source found for what else is worth profiling next |
+
+**Clearances this pass.** `peakvisor.com` (both `/en/news.html` and the
+avalanche-bulletin-layer announcement page) was reachable by direct
+`WebFetch` for the first time after two passes of `EGRESS_BLOCKED`
+(2026-09-06, 2026-09-13) — see [`competitors.md`](competitors.md) for what
+that did (and didn't) resolve. `skida.app` and `www.skida.app` remain
+blocked on a fourth consecutive pass.
 
 ## Requested — 2026-09-19 (SNOW-909 route breakdown design)
 
