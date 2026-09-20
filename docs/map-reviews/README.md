@@ -1,6 +1,6 @@
 # Map reviews
 
-Most recent cycle: [2026-09-13](2026-09-13.html) — parent ticket `SNOW-956`.
+Most recent cycle: [2026-09-20](2026-09-20.html) — tracked by `SNOW-1005`, no findings ticket.
 
 ## Purpose
 
@@ -170,5 +170,6 @@ re-verification note), and **New**.
 
 | Date | Baseline | Ticket | Headline |
 |------|----------|--------|----------|
+| [2026-09-20](2026-09-20.html) ([artifact](https://claude.ai/artifact/U9McxiwnA2p6zJzmmKs4AV)) | `ace484e` → `a7d3f99` | `SNOW-1005` | Third cycle, no findings ticket. Eighteen of the cycle's 38 commits were one "terrain-aware routes" series (slope colouring, crux/no-fall-passage markers, a fall-line arrow, a redesigned docked route panel) plus an offline-downloads hardening series — reviewed against the architecture and found to follow every existing pattern (idempotent layer installs, the surface registry, pure tested core modules). SNOW-957 (the boot-fetches-every-country-ratings cost from cycle 02) is re-verified unchanged, still open. Two minor observations — a duplicated, already-justified fetch-budget constant, and a redesign with no decision doc — both dispositioned watching rather than ticketed. The comment-to-code ratio moved from a flat 58.8% to 62.3%, the first real change in that metric across three cycles. |
 | [2026-09-13](2026-09-13.html) ([artifact](https://claude.ai/code/artifact/98928bf7-9fb4-4368-95d0-17fce233e557)) | `6824c52d` → `ace484e` | `SNOW-956` | Second cycle. All seven cycle-01 findings closed in code, matching Linear (six tickets Done; the comment-ratio watch item re-measured flat at 58.8%). One new finding: SNOW-891's basemap-scoped Boundary layers fixed a real blank-outline bug but left its own boot loop fetching season ratings for every basemap-covered country regardless of whether a visitor's providers want it — the decision doc that shipped it names this exact cost as an open question. Child `SNOW-957` stays at Todo on a named open question rather than being force-promoted. |
 | [2026-09-10](2026-09-10.html) ([artifact](https://claude.ai/code/artifact/c6a9af11-14d4-43ae-accd-134e9541ab2d)) | — → `6824c52d` | `SNOW-892` | First cycle. Seven findings: a WebGL failure blanks the map silently and nothing reports it; 210 lines of unreachable popup code with nine live call sites into it; no type checking on 44k lines of JS. The payload turned out to be a non-finding — the deploy already minifies. **Known error, uncorrected in the file:** finding 02 reports `repaintAfterStyleSwap` at 215 lines; it is 14, and the decision it names was already extracted and tested. See "Measuring" above. The artefact is left as published — rewriting a dated record to be right after the fact is how a series stops being evidence. |
