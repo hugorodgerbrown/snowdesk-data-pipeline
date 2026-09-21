@@ -26,13 +26,18 @@ sub-rating, problem set and each problem's elevation band and aspect sector.
 "Detail moved" means a problem was added or removed, or a problem that
 persisted moved its band, its aspects, or its own sub-rating.
 
+The season carries **one coverage gap** — no bulletin was issued between 6 and
+15 November — so the 189 days yield **187** transitions, not 188: the pair
+either side of the gap is eleven days apart and is not a day-to-day
+comparison.
+
 ## What it found
 
-- **The rating moves on 13.8% of days** — 26 of 188 transitions. Every move
-  was a single step, 13 up and 13 down, with no two-level jump all season.
-- **On 56.9% the rating held and something else moved**, so a notification
-  keyed to the rating is silent on 86% of days and wrong on two-thirds of
-  those. Only 29.3% of days are genuinely unchanged.
+- **The rating moves on 13.4% of days** — 25 of 187 transitions. Every move
+  was a single step, 13 up and 12 down, with no two-level jump all season.
+- **On 57.2% the rating held and something else moved**, so a notification
+  keyed to the rating is silent on 87% of days and wrong on two-thirds of
+  those. Only 29.4% of days are genuinely unchanged.
 - **Geometry is the commonest event**: 56 elevation-band moves and 48 aspect
   changes on the 107 rating-held days — the kind of change that decides
   whether a planned route is affected, and one the danger scale cannot say.
@@ -44,7 +49,8 @@ persisted moved its band, its aspects, or its own sub-rating.
   fixed twice-daily send is noise 87% of the time it fires.
 - **There is no quiet season.** The rating-move rate stays between 10% and 22%
   in every month, the 55 no-change days fall into 35 separate runs, and the
-  longest quiet run all season is four days.
+  longest quiet run all season is four days — the one real silence being the
+  November coverage gap, when there was no bulletin to send.
 
 ## Format
 
