@@ -1,0 +1,583 @@
+<title>Anatomy of a Route</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="How a saved Snowdesk route is built up layer by layer — track, ground, key passages, no-fall passages, fall line and the day's bulletin.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root {
+  /* Series tokens — shared with "From GPX to Line" so the two read as one set. */
+  --ground: #eef1f3;
+  --surface: #fbfcfc;
+  --ink: #16202a;
+  --ink-2: #4c5866;
+  --ink-3: #7a8592;
+  --rule: #d5dce2;
+  --route: #b421c8;
+  --route-soft: #f3e3f6;
+  --plate-shadow: 0 1px 0 rgba(22,32,42,.06), 0 18px 40px -24px rgba(22,32,42,.45);
+  /* the slope scale, as the app draws it */
+  --s-gentle: #38bdf8; --s-30: #f2e50a; --s-35: #f46f24; --s-40: #de055b;
+  --s-45: #c889bb; --s-50: #4b4b4b; --s-unknown: #94a3b8;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+    --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33; --s-50: #8a8a8a;
+    --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+  --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33; --s-50: #8a8a8a;
+  --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground); color: var(--ink);
+  font-family: var(--body); font-size: 17px; line-height: 1.6;
+  padding-inline: 20px; padding-block: 0 96px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3, .eyebrow, .label { font-family: var(--display); }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: inherit; text-decoration-color: var(--route); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--route); outline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: .8em; }
+code { background: color-mix(in srgb, var(--rule) 55%, transparent); padding: .08em .35em; border-radius: 3px; }
+.eyebrow {
+  font-size: 12px; font-weight: 650; font-stretch: 112%; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+
+/* ---------- hero ---------- */
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 40px; align-items: center; padding-block: 56px 24px;
+}
+.hero h1 {
+  font-size: clamp(44px, 6.4vw, 84px); line-height: .92; font-weight: 800;
+  font-stretch: 78%; letter-spacing: -.01em; margin-top: 14px;
+}
+.hero h1 em { font-style: normal; color: var(--route); }
+.hero .lede { margin-top: 22px; font-size: 19px; color: var(--ink-2); max-width: 34em; }
+.facts {
+  margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* exploded axonometric stack */
+.stack {
+  --w: min(520px, 76vw);
+  --step: calc(var(--w) * .17);
+  position: relative; height: calc(var(--step) * 4 + var(--w) * .66);
+}
+.plane {
+  position: absolute; left: 44%; top: calc(var(--i) * var(--step));
+  width: var(--w); aspect-ratio: 1600 / 945;
+  transform: translateX(-50%) rotateX(58deg) rotateZ(-34deg);
+  transform-origin: center center;
+  z-index: calc(10 - var(--i));
+  border-radius: 4px; overflow: hidden;
+  box-shadow: var(--plate-shadow);
+  outline: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  transition: transform .35s ease;
+}
+.plane img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.plane:not(:last-of-type) img { opacity: .97; }
+.tag {
+  position: absolute; right: 0; top: calc(var(--i) * var(--step) + var(--w) * .2);
+  z-index: 20; display: flex; align-items: center; gap: 8px;
+  font-family: var(--display); font-stretch: 90%; font-size: 13px; font-weight: 600;
+  background: var(--surface); padding: 3px 9px 3px 4px; border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);
+}
+.tag .n {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; color: #fff; background: var(--ink);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .stack:hover .plane { transform: translateX(-50%) rotateX(58deg) rotateZ(-34deg) translateZ(0); }
+  .plane:hover { transform: translateX(-50%) rotateX(52deg) rotateZ(-34deg) scale(1.03); }
+}
+
+/* ---------- section scaffolding ---------- */
+.principle {
+  margin-block: 36px 12px; padding: 22px 26px; background: var(--surface);
+  border-radius: 6px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 26px;
+  box-shadow: 0 1px 0 var(--rule);
+}
+.principle h3 { font-size: 20px; font-stretch: 88%; font-weight: 700; margin-bottom: 6px; }
+.principle p { color: var(--ink-2); font-size: 16px; }
+.principle .k { font-family: var(--mono); font-size: 12px; color: var(--route); letter-spacing: .04em; display:block; margin-bottom: 6px; }
+
+.layer {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 0 28px;
+  padding-block: 64px 8px; border-top: 1px solid var(--rule); margin-top: 56px;
+}
+.layer > .num {
+  font-family: var(--display); font-weight: 800; font-stretch: 75%;
+  font-size: 72px; line-height: .8; color: var(--route);
+  font-variant-numeric: tabular-nums;
+}
+.layer header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.layer h2 { font-size: clamp(30px, 3.6vw, 44px); line-height: 1; font-weight: 750; font-stretch: 82%; }
+.layer .tickets { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.layer .q { margin-top: 10px; font-style: italic; font-size: 20px; color: var(--ink-2); max-width: 36em; }
+
+.figs { margin-top: 26px; align-items: start; display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; }
+.figs.single { grid-template-columns: 1fr; }
+figure { margin: 0; }
+figure img {
+  display: block; width: 100%; height: auto; border-radius: 5px;
+  box-shadow: var(--plate-shadow);
+}
+figure.detail img { aspect-ratio: 1 / 1; object-fit: cover; object-position: 22% 68%; }
+figcaption { margin-top: 8px; font-family: var(--display); font-stretch: 92%; font-size: 13px; color: var(--ink-3); }
+.popup-fig img { max-width: 320px; box-shadow: var(--plate-shadow); border-radius: 10px; }
+
+.cols { margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 36px; }
+.cols p + p { margin-top: 12px; }
+.cols h3 { font-size: 13px; font-weight: 650; font-stretch: 110%; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 15.5px; }
+.rules li { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed var(--rule); }
+.rules li:last-child { border-bottom: 0; }
+.rules .label { font-size: 12px; font-weight: 600; font-stretch: 95%; color: var(--ink-3); padding-top: 3px; }
+.caveat {
+  margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--s-35);
+  background: color-mix(in srgb, var(--s-35) 9%, var(--surface)); font-size: 15.5px; border-radius: 0 4px 4px 0;
+}
+.caveat b { font-family: var(--display); font-stretch: 92%; }
+
+/* legend chips + scale bar */
+.bands { margin-top: 20px; }
+.bar { display: flex; height: 26px; border-radius: 3px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.bar span { display: block; height: 100%; }
+.bar-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+.keys { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 16px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.keys div { display: flex; align-items: center; gap: 8px; }
+.sw { width: 22px; height: 8px; border-radius: 2px; flex: none; }
+.sw.dash { background: repeating-linear-gradient(90deg, var(--s-unknown) 0 5px, transparent 5px 8px); }
+.keys .m { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+
+/* glyphs drawn for the legend */
+.glyph { display: inline-block; vertical-align: -3px; margin-right: 4px; }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; margin-top: 18px; }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 12px 10px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--display); font-weight: 650; font-stretch: 105%; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+td code { white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--display); font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.pill.stored { background: color-mix(in srgb, var(--s-gentle) 22%, transparent); }
+.pill.derived { background: var(--route-soft); color: var(--route); }
+.pill.never { background: color-mix(in srgb, var(--s-40) 16%, transparent); }
+
+/* timeline */
+.timeline { margin-top: 22px; position: relative; padding-top: 8px; }
+.tl-track { position: relative; height: 170px; border-bottom: 1px solid var(--ink-3); }
+.tl-ev { position: absolute; bottom: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.tl-ev .stem { width: 1px; background: var(--ink-3); }
+.tl-ev .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--route); margin-bottom: -5px; }
+.tl-ev .t { font-family: var(--display); font-stretch: 85%; font-size: 12px; font-weight: 600; white-space: nowrap; margin-bottom: 4px; }
+.tl-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+.tl-burst { position: absolute; bottom: 0; height: 100%; background: color-mix(in srgb, var(--route) 8%, transparent); border-left: 1px dashed var(--route); }
+.tl-burst-list { position: absolute; top: 0; right: 0; width: 44%; font-family: var(--display); font-stretch: 88%; font-size: 12.5px; line-height: 1.45; padding-left: 12px; }
+.tl-burst-list b { color: var(--route); }
+
+.section-h { margin-top: 88px; padding-top: 40px; border-top: 1px solid var(--rule); }
+.section-h h2 { font-size: clamp(30px, 3.6vw, 44px); font-weight: 750; font-stretch: 82%; line-height: 1; }
+.section-h > p { margin-top: 12px; color: var(--ink-2); max-width: 40em; }
+
+.together { margin-top: 26px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
+.readme { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 8px; font-size: 15px; }
+.readme li { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: start; }
+
+footer { margin-top: 80px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13.5px; color: var(--ink-3); font-family: var(--display); font-stretch: 92%; }
+footer p + p { margin-top: 10px; }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; padding-block: 36px 12px; }
+  .principle, .cols, .figs, .together { grid-template-columns: 1fr; }
+  figure.detail img { aspect-ratio: 16 / 10; }
+  .layer { grid-template-columns: 1fr; }
+  .layer > .num { font-size: 48px; margin-bottom: 8px; }
+  .tag { font-size: 11.5px; }
+  .tl-burst-list { position: static; width: auto; padding: 10px 0 0; }
+  .tl-track { height: 120px; }
+  .tl-ev .t { display: none; }
+}
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .rules li { grid-template-columns: 1fr; gap: 2px; }
+  .stack { --w: 84vw; }
+  .plane { left: 50%; }
+  .tag { right: -4px; }
+}
+@media (prefers-reduced-motion: reduce) { .plane { transition: none; } }
+</style>
+
+<div class="wrap">
+
+<section class="hero">
+  <div>
+    <div class="eyebrow">Snowdesk · saved routes · field guide</div>
+    <h1>Anatomy of a <em>route</em></h1>
+    <p class="lede">A saved route started as a purple line on the map. It now carries six kinds of information about the ground it crosses, packed into a line a few pixels wide and a small popup. This page takes it apart, one layer at a time.</p>
+    <div class="facts" aria-label="The route used throughout">
+      <span><b>Mont Gelé west face</b></span>
+      <span>6.0 km</span><span>1236 m ↑</span><span>1239 m ↓</span>
+      <span>2415–2963 m</span><span>steepest 69°</span>
+    </div>
+  </div>
+  <div class="stack" role="img" aria-label="The same stretch of map shown as five stacked layers: the terrain, the slope-coloured line, key passage rings, no-fall passages and fall-line arrows">
+    <div class="plane" style="--i:0"><img src="img/anatomy-of-a-route/07-fall-lines-detail.jpg" alt=""></div>
+    <div class="plane" style="--i:1"><img src="img/anatomy-of-a-route/06-passages-detail.jpg" alt=""></div>
+    <div class="plane" style="--i:2"><img src="img/anatomy-of-a-route/05-cruxes-detail.jpg" alt=""></div>
+    <div class="plane" style="--i:3"><img src="img/anatomy-of-a-route/04-slope-line-detail.jpg" alt=""></div>
+    <div class="plane" style="--i:4"><img src="img/anatomy-of-a-route/03-slope-raster-detail.jpg" alt=""></div>
+    <span class="tag" style="--i:0"><span class="n">5</span>Fall line</span>
+    <span class="tag" style="--i:1"><span class="n">4</span>No-fall</span>
+    <span class="tag" style="--i:2"><span class="n">3</span>Key passages</span>
+    <span class="tag" style="--i:3"><span class="n">2</span>Slope of the ground</span>
+    <span class="tag" style="--i:4"><span class="n">1</span>The terrain</span>
+  </div>
+</section>
+
+<p style="color:var(--ink-2); max-width: 44em; font-size: 15.5px;">Every picture below is a real screenshot of the running app, using the swisstopo winter basemap. The route is a demonstration loop drawn through real steep ground above Verbier, and its terrain was sampled from the same 5 m grid the app uses for everyone. For each picture, every map layer was hidden except the ones named, so it shows what a single layer adds.</p>
+
+<div class="principle">
+  <div>
+    <span class="k">RULE ONE</span>
+    <h3>Steepness comes from the ground, never from the track</h3>
+    <p>A skin track zigzagging up a 38° face rises about 15° along its own length, and a traverse across it rises almost nothing. Colour either by the track's own gradient and a serious slope looks easy. So the angle is always read from the terrain under the line, and the heights recorded in the file are never used for it.</p>
+  </div>
+  <div>
+    <span class="k">RULE TWO</span>
+    <h3>Height comes from the track, never from the ground</h3>
+    <p>Where the skier <em>is</em> is exactly what the uploaded file records. When a route is compared with a bulletin's elevation band, the height is the track's own recorded height. The two rules look contradictory, but they share one principle: take each figure from the thing that actually measures it.</p>
+  </div>
+</div>
+
+<!-- ============ 0 ============ -->
+<article class="layer" id="track">
+  <div class="num">0</div>
+  <div>
+    <header><h2>The track, as recorded</h2><span class="tickets">August 2026</span></header>
+    <p class="q">Where did I go, how far, and how much up and down?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/02-endpoints.jpg" alt="The route drawn as a flat purple line on the map, with a start dot and a chequered finish flag" loading="lazy"><figcaption>An unsampled route: one flat colour, a dot where it starts and a chequered flag where it finishes.</figcaption></figure>
+      <figure class="popup-fig"><img src="img/anatomy-of-a-route/02-popup-plain.png" alt="Route popup showing name, 6.0 km, 1236 m up, 1239 m down, and a plain purple height profile from 2415 to 2963 m" loading="lazy"><figcaption>The popup: the route's own figures and a height profile in one colour.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>An uploaded GPX is stored as a list of points — longitude, latitude and height — thinned to at most 2,000 of them. Distance, ascent and descent are measured once, at upload, on the <em>full-resolution</em> track. The map only receives the thinned geometry, so it never recalculates those totals; if it did, the popup would show a second, slightly smaller set of numbers for the same route. How a file becomes that list is a page of its own: <em>From GPX to Line</em>.</p>
+        <p>The height profile is drawn from the third number of each point the map already holds, so it needs no extra request and works offline.</p>
+      </div>
+      <div>
+        <h3>What to read</h3>
+        <ul class="rules">
+          <li><span class="label">Purple line</span><span>A route of yours. A route shared with you but not yet saved is dashed and a different colour.</span></li>
+          <li><span class="label">Dot / flag</span><span>Start and finish. They appear from zoom 10.</span></li>
+          <li><span class="label">Profile gap</span><span>The file had no height at that point. The line breaks there instead of being joined across the gap.</span></li>
+          <li><span class="label">No ascent shown</span><span>The file had no heights at all. This is shown as "we don't know", never as 0 m.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 1 ============ -->
+<article class="layer" id="ground">
+  <div class="num">1</div>
+  <div>
+    <header><h2>The terrain the line is measured against</h2><span class="tickets">20 August 2026</span></header>
+    <p class="q">How steep is the mountain here, whatever line I take?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/03-slope-raster.jpg" alt="The whole route area shaded by slope angle in yellow, orange, red, pink and grey" loading="lazy"><figcaption>The <b>Slope angle</b> overlay across the whole loop.</figcaption></figure>
+      <figure class="detail"><img src="img/anatomy-of-a-route/03-slope-raster-detail.jpg" alt="Close-up of the slope shading, showing individual 10 m squares" loading="lazy"><figcaption>Close up, you can see the 10 m squares the shading is built from.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>This isn't strictly part of the route. It's the map overlay the route's colours are matched to. It uses the bands the SLF recommends: 30–35°, 35–40°, 40–45°, 45–50° and over 50°. Ground under 30° is left clear. Most slab avalanches release between 30° and 45°, so the first three bands matter most.</p>
+        <p>Everything a route says about terrain in layers 2–5 comes from the same kind of source: a terrain model measured against the mountain, never the heights in the uploaded file.</p>
+      </div>
+      <div>
+        <h3>The scale</h3>
+        <div class="keys" style="grid-template-columns:1fr 1fr; margin-top:0">
+          <div><span class="sw" style="background:var(--s-30)"></span>30–35°</div>
+          <div><span class="sw" style="background:var(--s-35)"></span>35–40°</div>
+          <div><span class="sw" style="background:var(--s-40)"></span>40–45°</div>
+          <div><span class="sw" style="background:var(--s-45)"></span>45–50°</div>
+          <div><span class="sw" style="background:var(--s-50)"></span>over 50°</div>
+          <div><span class="sw" style="background:transparent; box-shadow: inset 0 0 0 1px var(--rule)"></span>under 30°, clear</div>
+        </div>
+        <p class="caveat"><b>Resolution.</b> Each square is the average steepness over 10 m. A short steep roll on a gentle face won't show at any zoom, and nor will a small bench on a steep one.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 2 ============ -->
+<article class="layer" id="slope">
+  <div class="num">2</div>
+  <div>
+    <header><h2>The steepness of the ground under the line</h2><span class="tickets">14 September 2026</span></header>
+    <p class="q">Along my line, where is the steep ground, and how much of it is there?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/04-slope-line.jpg" alt="The route line coloured segment by segment: blue on gentle ground, yellow, orange, red, pink and dark grey on steeper ground" loading="lazy"><figcaption>The purple line is replaced by one colour per 25 m of track.</figcaption></figure>
+      <figure class="detail"><img src="img/anatomy-of-a-route/04-slope-line-detail.jpg" alt="Close-up of the coloured line crossing steep ground" loading="lazy"><figcaption>The same close-up as layer 1. The line takes the colour of the shading under it.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>When a route is saved, a background job walks the track in <b>25 m steps</b>. For each step it asks the terrain model how steep the ground is at the <em>middle</em> of that step, averaged over a 10 m window. The answers are stored with the route, one per step, together with the direction each slope faces (its aspect). The map draws nothing with the aspect yet, but layers 3–6 all depend on it.</p>
+        <p>The colours are the overlay's colours, value for value, plus one more. The terrain overlay can leave gentle ground clear, but a line can't go transparent without looking broken, so ground under 30° is drawn <b>sky blue</b>.</p>
+        <p>The popup's height profile uses the same colours, and a second line of figures summarises the ground. Those figures are calculated once, when the route is sampled, so the popup, the routes list and the trip page always agree.</p>
+        <figure class="popup-fig" style="margin-top:18px"><img src="img/anatomy-of-a-route/08-popup-full.png" alt="Route popup: Steepest 69°, 2.8 km over 30°, 12 no-fall passages, down the fall line, across the fall line, 17 key passages, and a height profile coloured by slope" loading="lazy"><figcaption>The full popup. Line two covers layers 2, 3 and 4.</figcaption></figure>
+      </div>
+      <div>
+        <h3>This route, to scale</h3>
+        <div class="bands">
+          <div class="bar" role="img" aria-label="Of 5954 m sampled: 3175 m under 30°, 650 m 30–35°, 575 m 35–40°, 475 m 40–45°, 479 m 45–50°, 600 m over 50°">
+            <span style="width:53.33%;background:var(--s-gentle)"></span>
+            <span style="width:10.92%;background:var(--s-30)"></span>
+            <span style="width:9.66%;background:var(--s-35)"></span>
+            <span style="width:7.98%;background:var(--s-40)"></span>
+            <span style="width:8.04%;background:var(--s-45)"></span>
+            <span style="width:10.08%;background:var(--s-50)"></span>
+          </div>
+          <div class="bar-axis"><span>0 m</span><span>5954 m sampled · 2.8 km over 30°</span></div>
+          <div class="keys">
+            <div><span class="sw" style="background:var(--s-gentle)"></span>under 30°<span class="m">3175 m</span></div>
+            <div><span class="sw" style="background:var(--s-30)"></span>30–35°<span class="m">650 m</span></div>
+            <div><span class="sw" style="background:var(--s-35)"></span>35–40°<span class="m">575 m</span></div>
+            <div><span class="sw" style="background:var(--s-40)"></span>40–45°<span class="m">475 m</span></div>
+            <div><span class="sw" style="background:var(--s-45)"></span>45–50°<span class="m">479 m</span></div>
+            <div><span class="sw" style="background:var(--s-50)"></span>over 50°<span class="m">600 m</span></div>
+            <div><span class="sw dash"></span>no data<span class="m">0 m</span></div>
+          </div>
+        </div>
+        <h3 style="margin-top:26px">Three states that must stay distinct</h3>
+        <ul class="rules">
+          <li><span class="label">Flat purple</span><span>Never sampled. Nothing has checked the terrain, so nothing is claimed.</span></li>
+          <li><span class="label">Grey dashes</span><span>Sampled, but the terrain model had no answer (outside coverage, for example). This never means gentle ground.</span></li>
+          <li><span class="label">A colour</span><span>An angle was measured. A reading of exactly 35° counts in the 35–40° band, so boundary readings never land in the gentler band.</span></li>
+        </ul>
+        <p class="caveat"><b>A flat traverse can be drawn steep.</b> A path cut across a face is level underfoot, but the terrain model describes the hillside around it. So a level stretch of a tour can be coloured 40° or 50°, which is the steepness above and below you.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 3 ============ -->
+<article class="layer" id="cruxes">
+  <div class="num">3</div>
+  <div>
+    <header><h2>Key passages: the ground above you</h2><span class="tickets">14 September 2026</span></header>
+    <p class="q">Where could the slope above me release onto me?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/05-cruxes.jpg" alt="The coloured route with small hollow rings at intervals along it" loading="lazy"><figcaption>Rings appear from zoom 11. This route has <b>17</b>.</figcaption></figure>
+      <figure class="detail"><img src="img/anatomy-of-a-route/05-cruxes-detail.jpg" alt="Close-up of rings on the coloured line" loading="lazy"><figcaption>A ring can sit on a blue (gentle) stretch. That's the case they exist for.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>The line's colour answers "how steep is the ground I'm standing on?". A ring answers a different question: <b>could the terrain around me release a slab I could trigger?</b> A rising traverse along the foot of a 40° face is gentle underfoot, and it's exactly the kind of passage a ring is for.</p>
+        <p>For each sample point, the sampler looks <em>uphill</em> (the opposite of the stored aspect) at 40 m and 80 m, along three directions 45° apart. A step is flagged if its own ground <em>or</em> the steepest ground found uphill is 35° or more. The uphill check is what adds the cases the line's colour misses. Each unbroken run of flagged steps gets <b>one</b> ring, at its midpoint. Where the ground is too flat to have a direction, it checks all four compass directions at 80 m.</p>
+        <p>Rings depend only on the terrain, never on the bulletin. A regional forecast can be a danger level out for one particular slope, so a ring based on the ground alone stays useful even when the forecast is wrong. Skitourenguru grey out their equivalent markers for the same reason.</p>
+      </div>
+      <div>
+        <h3>What to read</h3>
+        <ul class="rules">
+          <li><span class="label"><svg class="glyph" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Ring</span><span>Look harder here. It isn't a severity rating: the map receives only the location, not the angle, so two rings can't be compared.</span></li>
+          <li><span class="label">Popup</span><span>"17 key passages".</span></li>
+          <li><span class="label">Key missing</span><span>If an outage stopped the uphill checks, the route stores no ring list at all rather than an empty one, so it gets retried. "Nothing flagged" and "couldn't check" stay separate.</span></li>
+        </ul>
+        <p class="caveat"><b>Not a complete list.</b> A route with no rings is not a safe route. This check only covers slope angle. Slope size, shape, what lies below and forest cover are all missing, so compare the rings with the slope shading.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 4 ============ -->
+<article class="layer" id="passages">
+  <div class="num">4</div>
+  <div>
+    <header><h2>No-fall passages: the ground underfoot</h2><span class="tickets">15 September 2026</span></header>
+    <p class="q">Where would a slip not stop, and what is the track doing there?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/06-passages.jpg" alt="The coloured route where some stretches are widened with a pale core running down the middle" loading="lazy"><figcaption>Over 50°, the line gets wider and a pale core runs down its middle. This route has <b>12</b> such passages.</figcaption></figure>
+      <figure class="detail"><img src="img/anatomy-of-a-route/06-passages-detail.jpg" alt="Close-up of split no-fall segments on the traverse" loading="lazy"><figcaption>The split marks the ground under your skis. The ring nearby marks the slope around you.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>A no-fall passage is a run of steps on ground of <b>50° or more</b>. Once a passage has started, it continues over steps of 45° or more, and a passage must be at least 25 m long. Rings and splits usually appear together: ground over 50° has already been flagged by the 35° ring check. They answer different questions, though. The ring says the slope above you can release; the split says you are standing on it.</p>
+        <p>Each passage gets a word describing what the track does there. The direction of travel along each step is compared with the direction the slope faces. Within 30° of downhill is <b>descending</b>, within 30° of uphill is <b>climbing</b>, and anything else is <b>crossing</b>. This route has both "down the fall line" and "across the fall line".</p>
+        <p>The word is only a description and never hides a passage. A rising traverse of 50° ground is marked like any other, because you can't afford to fall there either.</p>
+      </div>
+      <div>
+        <h3>How it's built</h3>
+        <ul class="rules">
+          <li><span class="label">Calculated</span><span>When the route is requested, from the angles and aspects already stored. Nothing new is stored.</span></li>
+          <li><span class="label">Why</span><span>Storing the result would make every threshold change require re-sampling every route against the terrain model. Calculating it on request means thresholds can change for free.</span></li>
+          <li><span class="label">Never partial</span><span>It needs no extra terrain lookups, so an empty list always means "nothing qualified", never "couldn't check".</span></li>
+          <li><span class="label">Lengths</span><span>Measured from the 25 m step size, not from straight lines between step boundaries. On a switchback the straight line is shorter and would drop real single-step passages.</span></li>
+        </ul>
+        <p class="caveat"><b>An unmarked route can still have no-fall ground.</b> Each sample averages 10 m of hillside every 25 m, so a narrow steep step between two gentler samples is smoothed away. The reverse also happens: a marked passage may be a few metres of rock in an easy slope.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 5 ============ -->
+<article class="layer" id="fall-line">
+  <div class="num">5</div>
+  <div>
+    <header><h2>The fall line: which way the ground falls</h2><span class="tickets">15 September 2026</span></header>
+    <p class="q">Am I cutting across this face, or pointed straight down it?</p>
+    <div class="figs">
+      <figure><img src="img/anatomy-of-a-route/07-fall-lines.jpg" alt="The fully layered route with small black arrows along steep stretches pointing downhill" loading="lazy"><figcaption>Arrows appear from zoom 12. This route has <b>27</b>.</figcaption></figure>
+      <figure class="detail"><img src="img/anatomy-of-a-route/07-fall-lines-detail.jpg" alt="Close-up of arrows next to the line; some point across it, some along it" loading="lazy"><figcaption>An arrow perpendicular to the line means a traverse; one pointing along it means you're skiing the fall line.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>Layers 2–4 describe how steep the ground is. This layer shows a <b>direction</b>: the way water would run and a slab would slide. A 40° traverse and a 40° descent are the same colour, but they are very different days out. An arrow shows which one you're looking at.</p>
+        <p>Each arrow's direction is the stored aspect of that step, sent to the map as a step number and a compass bearing. The server decides where arrows go and how many there are. The map just draws them and never second-guesses which way a face runs.</p>
+      </div>
+      <div>
+        <h3>Placement</h3>
+        <ul class="rules">
+          <li><span class="label">Only ≥ 30°</span><span>On near-level ground, a 5 m grid can pick up a false direction from a stream bank or road cutting. An arrow there would be confident about nothing.</span></li>
+          <li><span class="label">Spacing</span><span>One arrow at the start of each steep run, then one every 250 m, restarting after each gentle gap. One arrow per step would mean 600 on a long tour: unreadable, and a large offline payload.</span></li>
+          <li><span class="label">Calculated</span><span>When the route is requested, like the no-fall passages, and for the same reason.</span></li>
+        </ul>
+        <p class="caveat"><b>No arrow is not a claim of flat ground.</b> Where there's no arrow, go by the line's colour. An arrow is also one direction averaged over about 10 m of hillside. On a rolling face or in a gully, the real fall line swings within a ski length.</p>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ 6 ============ -->
+<article class="layer" id="bulletin">
+  <div class="num">6</div>
+  <div>
+    <header><h2>Against the day's bulletin</h2><span class="tickets">14 September 2026 · trip page and route panel</span></header>
+    <p class="q">On the day I'm going, where does my line cross the terrain the bulletin warns about?</p>
+    <div class="figs single">
+      <figure><img src="img/anatomy-of-a-route/09-trip-bulletin.png" alt="Trip page card: This day's bulletin, along your line. Martigny-Verbier: 4.9 km on N, NE, E, SE, SW, W, NW, between 2415 and 2958 m, persistent weak layers" loading="lazy" style="max-width:640px"><figcaption>The same route as a trip on 28 Apr 2026, checked against that day's SLF bulletin for Martigny-Verbier.</figcaption></figure>
+    </div>
+    <div class="cols">
+      <div>
+        <p>This is the only layer that changes during the day, and the only one that needs a date before it can say anything. It appears on two surfaces, and each gets its date from a different place: a <b>trip</b> has a day of its own, and the map's <b>route panel</b> uses whichever day the scrubber is showing. Tap a saved route on a March morning while looking at February, and you are reading February's bulletin against your line.</p>
+        <p>For each region the track passes through, the app finds that day's bulletin. For each avalanche problem, it adds up the stretches of track whose <b>aspect</b> (from the terrain) is one the problem lists and whose <b>height</b> (from the track) is inside the problem's band.</p>
+        <p>A track over a ridge can be in two regions, and on a border it can be covered by two different providers. Each region's stretch is reported under its own bulletin, and neither is chosen over the other.</p>
+      </div>
+      <div>
+        <h3>Deliberately not</h3>
+        <ul class="rules">
+          <li><span class="label">A score</span><span>No number comes out. A score quietly leaves out everything it didn't weigh, and the reader can't tell what that was. The app highlights and never suppresses.</span></li>
+          <li><span class="label">Kept as an answer</span><span>Nothing is worked out in advance or held on the server: a bulletin changes twice a day, and a stored result would outlive the bulletin it came from. Your device does keep a reading you have already opened, so it is there away from signal — filed under that route and that day, shown behind a line saying when it was saved, and reported as expired rather than redrawn once it is too old to trust.</span></li>
+          <li><span class="label">Treeline</span><span>A band described as "above the treeline" has no altitude, and the app has no treeline model. The bulletin's own wording is shown instead of an invented figure.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>
+
+<!-- ============ together ============ -->
+<section class="section-h" id="together">
+  <div class="eyebrow">All layers on</div>
+  <h2>How to read the full picture</h2>
+  <p>This is what the map shows by default. Read it in this order: colour first, then marks, then the popup.</p>
+  <div class="together">
+    <figure><img src="img/anatomy-of-a-route/07-fall-lines.jpg" alt="The fully layered route" loading="lazy"></figure>
+    <div>
+      <ol class="readme">
+        <li><span class="mono">1</span><span><b>Colour</b>: how steep the ground under you is. Grey dashes mean no data.</span></li>
+        <li><span class="mono">2</span><span><b>Ring</b>: the slope around you can release.</span></li>
+        <li><span class="mono">3</span><span><b>Split line</b>: you are on no-fall ground.</span></li>
+        <li><span class="mono">4</span><span><b>Arrow</b>: the way that ground falls, compared with your direction of travel.</span></li>
+        <li><span class="mono">5</span><span><b>Popup</b>: the same information as numbers and words, with the height profile in the same colours.</span></li>
+        <li><span class="mono">6</span><span><b>Trip or route panel</b>: where the line meets that day's avalanche problems.</span></li>
+      </ol>
+      <p class="caveat" style="margin-top:20px"><b>Every mark says "look here", never "you're fine".</b> The legend and the slope topic in the app's help explain what each absence means, because each layer is easy to read as more complete than it is.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ absence table ============ -->
+<section class="section-h" id="absence">
+  <div class="eyebrow">The honesty rules</div>
+  <h2>What a missing mark means</h2>
+  <p>Each layer has a gap that's easy to misread as reassurance. The app keeps these states apart.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>You see</th><th>It means</th><th>It never means</th></tr></thead>
+      <tbody>
+        <tr><td>One flat purple line</td><td>The route has never been sampled</td><td>"We checked the terrain"</td></tr>
+        <tr><td>Grey dashed stretch</td><td>Sampled, but the terrain model had no answer (the reason is stored)</td><td>Gentle ground</td></tr>
+        <tr><td>Blue stretch</td><td>Measured under 30° over a 10 m window</td><td>No steep ground within reach (check for rings)</td></tr>
+        <tr><td>No rings</td><td>Neither the ground underfoot nor anything checked uphill reached 35°, or rings weren't calculated yet</td><td>A safe route</td></tr>
+        <tr><td>No split</td><td>No sample reached 50° after 10 m averaging</td><td>No no-fall ground</td></tr>
+        <tr><td>No arrow</td><td>Under 30°, or between two arrows 250 m apart</td><td>Flat ground</td></tr>
+        <tr><td>No bulletin overlap</td><td>No stretch matched a problem's aspect and height band</td><td>A good day to go</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ where the work happens ============ -->
+<section class="section-h" id="plumbing">
+  <div class="eyebrow">Where the work happens</div>
+  <h2>Measured once, or worked out every time</h2>
+  <p>Only the slow work — asking the terrain model about 25 m of mountain at a time — is done once and kept. Everything derived from those answers is worked out again on request, so a threshold can change without re-measuring a single route. What your device already holds is what lets a saved route still draw when there is no signal.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Worked out from</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td>Track</td><td>The uploaded file</td><td><span class="pill stored">kept, at upload</span></td></tr>
+        <tr><td>Start / finish</td><td>The two ends of the track</td><td><span class="pill derived">on your device</span></td></tr>
+        <tr><td>Height profile</td><td>The heights in the track</td><td><span class="pill derived">on your device</span></td></tr>
+        <tr><td>Slope colours</td><td>The terrain model, every 25 m</td><td><span class="pill stored">kept, when saved</span></td></tr>
+        <tr><td>Summary figures</td><td>Those same measurements</td><td><span class="pill stored">kept, when saved</span></td></tr>
+        <tr><td>Key passages</td><td>Those measurements, plus extra uphill lookups</td><td><span class="pill stored">kept, when saved</span></td></tr>
+        <tr><td>No-fall passages</td><td>The kept angles</td><td><span class="pill derived">on request</span></td></tr>
+        <tr><td>Fall line</td><td>The kept aspects</td><td><span class="pill derived">on request</span></td></tr>
+        <tr><td>Bulletin overlap</td><td>The kept aspects, the track's heights, that day's bulletin</td><td><span class="pill derived">on request</span> <span class="pill never">saved on your device, expires</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="eyebrow" style="margin-top:44px">How it built up</h3>
+  <div class="timeline" role="img" aria-label="Timeline: track, profile, endpoints and slope overlay shipped 17 to 22 August; all four terrain layers on the route and the bulletin overlap shipped 14 and 15 September">
+    <div class="tl-track">
+      <!-- 17 Aug .. 16 Sep = 30 days -->
+      <div class="tl-ev" style="left:1.5%"><span class="t">GPX upload</span><span class="stem" style="height:110px"></span><span class="dot"></span></div>
+      <div class="tl-ev" style="left:8%"><span class="t">Line on map</span><span class="stem" style="height:80px"></span><span class="dot"></span></div>
+      <div class="tl-ev" style="left:11%"><span class="t">Slope overlay</span><span class="stem" style="height:50px"></span><span class="dot"></span></div>
+      <div class="tl-ev" style="left:17%"><span class="t">Profile · start/finish</span><span class="stem" style="height:20px"></span><span class="dot"></span></div>
+      <div class="tl-burst" style="left:90%; width:10%"></div>
+      <div class="tl-burst-list">
+        <b>14–15 Sep</b> — slope-coloured line · coloured profile · summary figures · key passages · bulletin overlap · trip slope · no-fall passages · fall-line angles · fall-line arrows
+      </div>
+    </div>
+    <div class="tl-axis"><span>17 Aug</span><span>1 Sep</span><span>16 Sep</span></div>
+  </div>
+</section>
+
+<footer>
+  <p>Screenshots: the running app on the swisstopo winter basemap, at 2× scale. Route: “Mont Gelé west face”, a demonstration loop measured against the live terrain model. What each mark means in the app itself is in the map legend and the slope topic in Help.</p>
+  <p>How an uploaded file becomes the line these layers are drawn on — what a GPX holds, what is measured before thinning, and what is kept — is taken apart in a companion page, <em>From GPX to Line</em>.</p>
+</footer>
+
+</div>
