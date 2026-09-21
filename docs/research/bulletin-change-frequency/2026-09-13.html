@@ -1,0 +1,504 @@
+<title>What Changes in a Bulletin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root{
+  --ground:#eaeef2; --surface:#fff; --surface-2:#f5f8fa; --sunken:#e2e8ee;
+  --ink:#0f151b; --ink-2:#48535f; --ink-3:#78848f; --border:#cfd8e0; --hair:#e3e9ef;
+  --cat-rating:#8c4fc4; --cat-other:#0f8a6e; --cat-none:#3f6fb5; --accent:#3f6fb5;
+  --eaws-low:#ccff66; --eaws-moderate:#ffff00; --eaws-considerable:#ff9900;
+  --eaws-high:#ff0000; --eaws-very-high:#820100; --eaws-ink:#1a1a1a;
+  --shadow:0 1px 2px rgba(15,21,27,.06),0 8px 24px -12px rgba(15,21,27,.18);
+}
+@media (prefers-color-scheme:dark){
+:root:not([data-theme="light"]){
+  --ground:#0a0f14; --surface:#121920; --surface-2:#18212a; --sunken:#0d141a;
+  --ink:#e7edf3; --ink-2:#9dabb8; --ink-3:#6b7885; --border:#25313c; --hair:#1d2832;
+  --cat-rating:#a878e0; --cat-other:#22997a; --cat-none:#5a8ed0; --accent:#5a8ed0;
+  --eaws-ink:#1a1a1a;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+}
+}
+:root[data-theme="dark"]{
+  --ground:#0a0f14; --surface:#121920; --surface-2:#18212a; --sunken:#0d141a;
+  --ink:#e7edf3; --ink-2:#9dabb8; --ink-3:#6b7885; --border:#25313c; --hair:#1d2832;
+  --cat-rating:#a878e0; --cat-other:#22997a; --cat-none:#5a8ed0; --accent:#5a8ed0;
+  --eaws-ink:#1a1a1a;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 120px}
+.prose{max-width:68ch}
+h1,h2,h3{font-family:"Bricolage Grotesque","IBM Plex Sans",system-ui,sans-serif;
+  text-wrap:balance;margin:0;letter-spacing:-.02em}
+h1{font-size:clamp(2.3rem,5.4vw,3.9rem);font-weight:700;line-height:1.02;
+  font-variation-settings:"wdth" 88}
+h2{font-size:clamp(1.3rem,2.4vw,1.72rem);font-weight:600;line-height:1.16;
+  font-variation-settings:"wdth" 92}
+h3{font-size:1.02rem;font-weight:600;line-height:1.3}
+p{margin:0}
+a{color:var(--accent)}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  font-size:.87em;font-variant-numeric:tabular-nums}
+code{background:var(--sunken);padding:.1em .38em;border-radius:3px;
+  border:1px solid var(--hair)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.69rem;font-weight:500;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--ink-3)}
+.lede{font-size:1.16rem;line-height:1.55;color:var(--ink-2)}
+
+/* ---- masthead ---- */
+header.mast{padding:76px 0 0;display:flex;flex-direction:column;gap:26px}
+.mast-meta{display:flex;flex-wrap:wrap;gap:8px 28px;align-items:baseline;
+  padding-bottom:20px;border-bottom:2px solid var(--ink)}
+.mast-meta .mono{color:var(--ink-2);font-size:.8rem}
+
+/* ---- sections ---- */
+section{margin-top:68px;display:flex;flex-direction:column;gap:22px}
+.sec-head{display:flex;flex-direction:column;gap:9px}
+.rule{height:1px;background:var(--border);border:0;margin:0}
+
+/* ---- the verdict block ---- */
+.verdict{background:var(--surface);border:1px solid var(--border);
+  border-left:3px solid var(--cat-rating);border-radius:2px;
+  padding:26px 30px;box-shadow:var(--shadow);display:flex;
+  flex-direction:column;gap:12px}
+.verdict .big{font-family:"Bricolage Grotesque",sans-serif;font-size:2.5rem;
+  font-weight:700;line-height:1;letter-spacing:-.03em;
+  font-variation-settings:"wdth" 85}
+
+/* ---- season strip ---- */
+.figure{background:var(--surface);border:1px solid var(--border);border-radius:2px;
+  padding:24px 26px 20px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:16px}
+.fig-cap{display:flex;flex-direction:column;gap:5px}
+.fig-cap h3{font-family:"IBM Plex Sans",sans-serif;font-size:.94rem;font-weight:600}
+.fig-cap p{font-size:.845rem;color:var(--ink-3);line-height:1.45;max-width:74ch}
+.scroller{overflow-x:auto;padding-bottom:4px}
+.strip{min-width:760px;display:flex;flex-direction:column;gap:3px}
+.strip-row{display:flex;gap:1px}
+.cell{flex:1 1 0;min-width:0;position:relative;cursor:default}
+.cell.rat{height:40px;border-radius:1px}
+.cell.chg{height:9px;border-radius:1px}
+.cell.rat::after{content:"";position:absolute;inset:0;border-radius:1px;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.09)}
+.cell:hover{outline:2px solid var(--ink);outline-offset:1px;z-index:5}
+.months{display:flex;gap:1px;margin-top:2px}
+.mo{flex-grow:0;flex-shrink:0;border-left:1px solid var(--border);
+  padding:5px 0 0 5px;font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  color:var(--ink-3);letter-spacing:.04em;white-space:nowrap;overflow:hidden}
+
+/* ---- legends ---- */
+.legend{display:flex;flex-wrap:wrap;gap:7px 20px;align-items:center}
+.lg{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;color:var(--ink-2)}
+.sw{width:13px;height:13px;border-radius:2px;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+.lg .mono{color:var(--ink-3);font-size:.74rem}
+
+/* ---- proportion bar ---- */
+.propbar{display:flex;gap:2px;height:60px}
+.propseg{border-radius:2px;display:flex;flex-direction:column;justify-content:center;
+  padding:0 13px;color:#fff;min-width:0;overflow:hidden}
+.propseg .n{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;
+  font-size:1.32rem;line-height:1.05;font-variation-settings:"wdth" 85}
+.propseg .l{font-size:.735rem;line-height:1.2;opacity:.93;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---- hbars ---- */
+.hbars{display:flex;flex-direction:column;gap:9px}
+.hbar{display:grid;grid-template-columns:minmax(140px,190px) 1fr 42px;
+  gap:14px;align-items:center}
+.hbar .nm{font-size:.855rem;color:var(--ink-2);text-align:right;line-height:1.25}
+.hbar .tr{background:var(--sunken);border-radius:2px;height:17px;overflow:hidden}
+.hbar .fl{height:100%;border-radius:0 2px 2px 0;min-width:2px}
+.hbar .vl{font-family:"IBM Plex Mono",monospace;font-size:.82rem;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* ---- month grid ---- */
+.mgrid{display:flex;flex-direction:column;gap:7px}
+.mrow{display:grid;grid-template-columns:74px 1fr;gap:14px;align-items:center}
+.mrow .ml{font-family:"IBM Plex Mono",monospace;font-size:.79rem;color:var(--ink-2)}
+.mstack{display:flex;gap:2px;height:24px}
+.mseg{border-radius:2px;display:flex;align-items:center;justify-content:center;
+  font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:#fff;
+  min-width:0;overflow:hidden}
+
+/* ---- consequences ---- */
+.cons{display:grid;gap:2px;background:var(--border);border:1px solid var(--border);
+  border-radius:2px;overflow:hidden}
+.con{background:var(--surface);padding:20px 22px;display:flex;
+  flex-direction:column;gap:8px}
+.con .tag{font-family:"IBM Plex Mono",monospace;font-size:.7rem;font-weight:600;
+  letter-spacing:.09em;color:var(--cat-rating)}
+.con p{font-size:.9rem;color:var(--ink-2);line-height:1.55}
+
+/* ---- table ---- */
+.tbl{width:100%;border-collapse:collapse;font-size:.855rem}
+.tbl th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:.7rem;
+  font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  padding:0 14px 9px 0;border-bottom:1px solid var(--border)}
+.tbl td{padding:9px 14px 9px 0;border-bottom:1px solid var(--hair);
+  color:var(--ink-2);vertical-align:top}
+.tbl td:first-child{color:var(--ink)}
+.tbl .num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;
+  text-align:right;color:var(--ink)}
+
+/* ---- tooltip ---- */
+#tip{position:fixed;z-index:99;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--ink);color:var(--ground);padding:9px 12px;border-radius:3px;
+  font-size:.78rem;line-height:1.45;box-shadow:0 6px 22px rgba(0,0,0,.35);
+  max-width:270px}
+#tip .t-d{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:.75rem;
+  letter-spacing:.03em;margin-bottom:3px;display:block}
+#tip .t-p{opacity:.8;font-size:.73rem}
+
+footer{margin-top:78px;padding-top:26px;border-top:1px solid var(--border);
+  display:flex;flex-direction:column;gap:10px}
+footer p{font-size:.82rem;color:var(--ink-3);line-height:1.6}
+@media (max-width:640px){
+  .hbar{grid-template-columns:minmax(104px,128px) 1fr 38px;gap:9px}
+  .hbar .nm{font-size:.78rem}
+  header.mast{padding-top:48px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<div class="wrap">
+
+<header class="mast">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <span class="eyebrow">Bulletin change analysis &middot; CH-4115 Martigny / Verbier</span>
+    <h1>What actually changes<br>in a bulletin</h1>
+  </div>
+  <p class="lede prose">Snowdesk is about to start sending people a notification when the
+    avalanche bulletin for a place they follow changes. Before writing that notification,
+    it is worth knowing what a bulletin change actually <em>is</em>. One region, one full
+    season, every issue: 296 bulletins across 189 days.</p>
+  <div class="mast-meta">
+    <span class="mono">2025-11-01 &rarr; 2026-05-18</span>
+    <span class="mono">296 bulletins &middot; 189 days &middot; 187 transitions</span>
+    <span class="mono">source: SLF</span>
+    <span class="mono">SNOW-937</span>
+  </div>
+</header>
+
+<section>
+  <div class="verdict">
+    <span class="eyebrow">The finding</span>
+    <p class="big">13.4%</p>
+    <p style="max-width:62ch;color:var(--ink-2)">The share of days on which the headline danger
+      rating moved at all. On the other 86%, a notification keyed to the danger rating has
+      nothing to say &mdash; and on <strong style="color:var(--ink)">two&nbsp;days in three of those</strong>
+      it would be wrong to say nothing, because something in the bulletin did change.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">01 &middot; The season, day by day</span>
+    <h2>A rating that rarely moves, over a bulletin that rarely sits still</h2>
+  </div>
+  <p class="prose" style="color:var(--ink-2)">The upper band is the danger rating SLF published
+    for each day, in the EAWS scale's own colours. The lower band is what changed between that
+    day's bulletin and the one before it. The two bands disagree constantly: long stretches of
+    unbroken orange sit above a lower band that keeps flickering.</p>
+  <div class="figure">
+    <div class="fig-cap">
+      <h3>CH-4115, winter 2025/26</h3>
+      <p>One column per day <em>that carried a bulletin</em>. Where a day carried more than one
+        issue, the latest-published is the one shown. Hover any column for that day's rating,
+        problems and issue count. The season has one coverage gap, 6&ndash;15 November: those ten
+        dates have no column, and the pair either side of them is not counted as a transition.</p>
+    </div>
+<div class="scroller"><div class="strip"><div class="strip-row"><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-01|moderate-|first day of season|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-02|moderate|rating held, detail moved|wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-03|moderate|rating held, detail moved|wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-04|moderate|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-05|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2025-11-16|low|rating fell|no distinct problem|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-17|moderate-|rating rose|wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-18|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-19|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-20|moderate|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-21|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-22|moderate+|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-23|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-24|considerable+|rating rose|new snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-25|considerable+|no change|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-26|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-27|considerable|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-28|considerable|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-11-29|considerable-|rating held, detail moved|gliding snow, new snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-11-30|moderate+|rating fell|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-01|moderate+|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-02|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-03|moderate|rating held, detail moved|gliding snow, persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-04|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-05|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-06|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-12-07|considerable-|rating rose|gliding snow, persistent weak layers, wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-12-08|considerable-|rating held, detail moved|gliding snow, new snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-12-09|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2025-12-10|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-11|moderate+|rating fell|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-12|moderate+|rating held, detail moved|gliding snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-13|moderate+|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-14|moderate|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-15|moderate|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-16|moderate|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-17|moderate|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-18|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-19|moderate-|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-20|moderate-|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-21|moderate-|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-22|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-23|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-24|moderate-|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-25|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-26|moderate|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-27|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2025-12-28|moderate-|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2025-12-29|low|rating fell|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2025-12-30|low|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2025-12-31|low|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2026-01-01|low|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-low)" data-t="2026-01-02|low|no change|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-01-03|moderate-|rating rose|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-01-04|moderate-|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-01-05|moderate-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-01-06|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-01-07|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-08|considerable-|rating rose|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-01-09|high-|rating rose|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-01-10|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-01-11|high-|no change|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-12|considerable+|rating fell|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-13|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-14|considerable|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-15|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-16|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-17|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-18|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-19|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-20|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-21|considerable|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-22|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-23|considerable-|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-24|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-25|considerable-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-26|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-27|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-28|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-29|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-30|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-01-31|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-01|considerable-|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-02|considerable-|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-03|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-04|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-05|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-06|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-07|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-08|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-09|considerable|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-10|considerable|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-11|high|rating rose|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-12|high|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-13|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-14|considerable+|rating fell|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-15|considerable+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-16|high|rating rose|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-17|high+|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-18|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-19|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-20|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-high)" data-t="2026-02-21|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-22|considerable+|rating fell|gliding snow, new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-23|considerable+|no change|gliding snow, new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-24|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-25|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-26|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-27|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-02-28|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-01|moderate+|rating fell|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-02|moderate+|no change|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-03|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-04|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-05|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-06|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-07|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-08|moderate|no change|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-09|moderate|no change|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-10|moderate|rating held, detail moved|gliding snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-11|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-12|moderate-|rating held, detail moved|gliding snow, persistent weak layers, wet snow, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-13|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-14|moderate|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-15|considerable|rating rose|new snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-16|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-17|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-18|moderate+|rating fell|persistent weak layers, wet snow, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-19|moderate+|rating held, detail moved|persistent weak layers, wet snow, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-20|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-21|moderate+|rating held, detail moved|persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-22|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-23|moderate+|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-24|moderate+|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-03-25|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-26|considerable+|rating rose|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-27|considerable+|rating held, detail moved|gliding snow, new snow, persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-28|considerable|rating held, detail moved|gliding snow, new snow, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-29|considerable-|rating held, detail moved|new snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-30|considerable-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-03-31|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-01|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-02|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-03|moderate+|rating fell|persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-04|moderate+|rating held, detail moved|gliding snow, persistent weak layers, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-05|moderate+|rating held, detail moved|persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-06|considerable|rating rose|persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-07|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-08|considerable|no change|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-09|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-10|considerable|rating held, detail moved|persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-11|considerable|no change|persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-12|considerable|no change|persistent weak layers, wet snow|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-13|considerable|rating held, detail moved|persistent weak layers, wet snow, wind slab|2"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-14|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-15|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-16|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-04-17|considerable|no change|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-18|moderate-|rating fell|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-19|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-20|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-21|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-22|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-23|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-24|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-25|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-26|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-27|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-28|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-29|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-04-30|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-01|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-02|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-05-03|considerable|rating rose|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-04|moderate|rating fell|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-05|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-06|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-07|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-08|moderate|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-09|moderate|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-10|moderate|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-11|moderate+|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-05-12|considerable-|rating rose|persistent weak layers, wet snow, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-05-13|considerable-|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-05-14|considerable-|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-considerable)" data-t="2026-05-15|considerable-|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-16|moderate+|rating fell|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-17|moderate+|no change|persistent weak layers, wind slab|1"></div><div class="cell rat" style="background:var(--eaws-moderate)" data-t="2026-05-18|moderate|rating held, detail moved|no distinct problem|1"></div></div><div class="strip-row"><div class="cell chg" style="background:var(--sunken)" data-t="2025-11-01|moderate-|first day of season|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-02|moderate|rating held, detail moved|wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-03|moderate|rating held, detail moved|wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-04|moderate|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-05|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-11-16|low|rating fell|no distinct problem|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-11-17|moderate-|rating rose|wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-18|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-19|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-20|moderate|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-21|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-11-22|moderate+|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-23|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-11-24|considerable+|rating rose|new snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-11-25|considerable+|no change|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-26|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-27|considerable|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-28|considerable|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-11-29|considerable-|rating held, detail moved|gliding snow, new snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-11-30|moderate+|rating fell|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-01|moderate+|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-02|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-03|moderate|rating held, detail moved|gliding snow, persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-04|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-05|moderate|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-06|moderate+|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-12-07|considerable-|rating rose|gliding snow, persistent weak layers, wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-08|considerable-|rating held, detail moved|gliding snow, new snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-09|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-10|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-12-11|moderate+|rating fell|gliding snow, persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-12|moderate+|rating held, detail moved|gliding snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-13|moderate+|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-14|moderate|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-15|moderate|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-16|moderate|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-17|moderate|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-18|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-19|moderate-|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-20|moderate-|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-21|moderate-|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-22|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-23|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-24|moderate-|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-25|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-26|moderate|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2025-12-27|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-28|moderate-|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2025-12-29|low|rating fell|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-30|low|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2025-12-31|low|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-01|low|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-02|low|no change|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-01-03|moderate-|rating rose|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-04|moderate-|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-05|moderate-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-06|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-07|moderate-|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-01-08|considerable-|rating rose|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-01-09|high-|rating rose|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-10|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-11|high-|no change|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-01-12|considerable+|rating fell|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-13|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-14|considerable|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-15|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-16|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-17|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-18|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-19|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-20|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-21|considerable|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-22|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-23|considerable-|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-24|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-25|considerable-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-26|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-27|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-01-28|considerable-|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-29|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-30|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-01-31|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-01|considerable-|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-02|considerable-|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-03|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-04|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-05|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-06|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-07|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-08|considerable|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-09|considerable|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-10|considerable|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-02-11|high|rating rose|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-12|high|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-13|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-02-14|considerable+|rating fell|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-15|considerable+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-02-16|high|rating rose|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-17|high+|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-18|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-19|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-20|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-21|high-|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-02-22|considerable+|rating fell|gliding snow, new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-02-23|considerable+|no change|gliding snow, new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-24|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-25|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-26|considerable|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-27|considerable-|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-02-28|considerable-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-03-01|moderate+|rating fell|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-03-02|moderate+|no change|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-03|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-04|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-05|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-06|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-07|moderate|rating held, detail moved|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-03-08|moderate|no change|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-03-09|moderate|no change|gliding snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-10|moderate|rating held, detail moved|gliding snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-11|moderate-|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-12|moderate-|rating held, detail moved|gliding snow, persistent weak layers, wet snow, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-13|moderate-|rating held, detail moved|persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-14|moderate|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-03-15|considerable|rating rose|new snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-16|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-17|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-03-18|moderate+|rating fell|persistent weak layers, wet snow, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-19|moderate+|rating held, detail moved|persistent weak layers, wet snow, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-20|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-21|moderate+|rating held, detail moved|persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-22|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-03-23|moderate+|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-03-24|moderate+|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-25|moderate+|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-03-26|considerable+|rating rose|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-27|considerable+|rating held, detail moved|gliding snow, new snow, persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-28|considerable|rating held, detail moved|gliding snow, new snow, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-29|considerable-|rating held, detail moved|new snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-30|considerable-|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-03-31|considerable|rating held, detail moved|new snow, persistent weak layers|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-01|considerable|rating held, detail moved|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-02|considerable|no change|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-04-03|moderate+|rating fell|persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-04|moderate+|rating held, detail moved|gliding snow, persistent weak layers, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-05|moderate+|rating held, detail moved|persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-04-06|considerable|rating rose|persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-07|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-08|considerable|no change|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-09|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-10|considerable|rating held, detail moved|persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-11|considerable|no change|persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-12|considerable|no change|persistent weak layers, wet snow|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-13|considerable|rating held, detail moved|persistent weak layers, wet snow, wind slab|2"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-14|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-15|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-16|considerable|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-17|considerable|no change|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-04-18|moderate-|rating fell|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-19|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-20|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-21|moderate-|no change|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-22|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-23|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-24|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-25|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-26|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-27|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-04-28|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-29|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-04-30|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-05-01|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-02|moderate|rating held, detail moved|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-05-03|considerable|rating rose|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-05-04|moderate|rating fell|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-05-05|moderate|no change|no distinct problem, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-06|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-07|moderate-|rating held, detail moved|wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-08|moderate|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-09|moderate|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-10|moderate|rating held, detail moved|persistent weak layers, wet snow|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-11|moderate+|rating held, detail moved|persistent weak layers, wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-05-12|considerable-|rating rose|persistent weak layers, wet snow, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-13|considerable-|rating held, detail moved|new snow, persistent weak layers|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-14|considerable-|rating held, detail moved|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-05-15|considerable-|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-rating)" data-t="2026-05-16|moderate+|rating fell|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-none)" data-t="2026-05-17|moderate+|no change|persistent weak layers, wind slab|1"></div><div class="cell chg" style="background:var(--cat-other)" data-t="2026-05-18|moderate|rating held, detail moved|no distinct problem|1"></div></div><div class="months"><div class="mo" style="flex-basis:10.582%">Nov</div><div class="mo" style="flex-basis:16.402%">Dec</div><div class="mo" style="flex-basis:16.402%">Jan</div><div class="mo" style="flex-basis:14.815%">Feb</div><div class="mo" style="flex-basis:16.402%">Mar</div><div class="mo" style="flex-basis:15.873%">Apr</div><div class="mo" style="flex-basis:9.524%">May</div></div></div></div>    <hr class="rule">
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--eaws-low)"></span>1 Low <span class="mono">6d</span></span>
+      <span class="lg"><span class="sw" style="background:var(--eaws-moderate)"></span>2 Moderate <span class="mono">93d</span></span>
+      <span class="lg"><span class="sw" style="background:var(--eaws-considerable)"></span>3 Considerable <span class="mono">78d</span></span>
+      <span class="lg"><span class="sw" style="background:var(--eaws-high)"></span>4 High <span class="mono">12d</span></span>
+    </div>
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--cat-rating)"></span>Rating moved <span class="mono">25d</span></span>
+      <span class="lg"><span class="sw" style="background:var(--cat-other)"></span>Rating held, detail moved <span class="mono">107d</span></span>
+      <span class="lg"><span class="sw" style="background:var(--cat-none)"></span>No change <span class="mono">55d</span></span>
+    </div>
+  </div>
+  <p class="prose" style="color:var(--ink-2);font-size:.93rem">Level 2 and level 3 account for
+    <strong style="color:var(--ink)">90.5%</strong> of the season between them. Level 1 appeared on six days,
+    level 5 never. A notification that leads with the rating is telling somebody
+    &ldquo;moderate&rdquo; or &ldquo;considerable&rdquo; nine days in ten.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">02 &middot; The three messages</span>
+    <h2>Every day falls into one of three buckets, and the smallest is the one we were going to build for</h2>
+  </div>
+  <div class="figure">
+    <div class="fig-cap">
+      <h3>187 day-to-day transitions, by what moved</h3>
+      <p>&ldquo;Detail&rdquo; means an avalanche problem was added or removed, or a problem that
+        persisted moved its elevation band, its aspect sector, or its own sub-rating.</p>
+    </div>
+    <div class="propbar">
+      <div class="propseg" style="background:var(--cat-other);flex:107">
+        <span class="n">107</span><span class="l">Rating held, detail moved &middot; 57.2%</span></div>
+      <div class="propseg" style="background:var(--cat-none);flex:55">
+        <span class="n">55</span><span class="l">No change &middot; 29.4%</span></div>
+      <div class="propseg" style="background:var(--cat-rating);flex:25">
+        <span class="n">25</span><span class="l">Rating moved &middot; 13.4%</span></div>
+    </div>
+    <hr class="rule">
+    <p style="font-size:.85rem;color:var(--ink-3);max-width:74ch">The 25 rating moves split almost
+      evenly: 13 up, 12 down. Every one of them was a single step &mdash;
+      moderate&harr;considerable (16), considerable&harr;high (6), low&harr;moderate (3). No jump of
+      two levels occurred all season.</p>
+  </div>
+</section>
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">03 &middot; Inside the 107</span>
+    <h2>What moves when the rating doesn't</h2>
+  </div>
+  <p class="prose" style="color:var(--ink-2)">Two things dominate, and neither is a number the
+    reader would see on a danger scale. A problem keeps its name and moves its <em>geometry</em> &mdash;
+    the height it starts at, the slopes it applies to. That is the single most common event in a
+    season, and it is exactly the kind of change that decides whether a planned route is affected.</p>
+  <div class="figure">
+    <div class="fig-cap">
+      <h3>Movements recorded on the 107 rating-held days</h3>
+      <p>A day can carry more than one movement, so these total higher than 107.</p>
+    </div>
+    <div class="hbars">
+      <div class="hbar"><span class="nm">Elevation band moved</span>
+        <span class="tr"><span class="fl" style="width:100%;background:var(--cat-other)"></span></span>
+        <span class="vl">56</span></div>
+      <div class="hbar"><span class="nm">Aspect sector changed</span>
+        <span class="tr"><span class="fl" style="width:85.7%;background:var(--cat-other)"></span></span>
+        <span class="vl">48</span></div>
+      <div class="hbar"><span class="nm">Wind slab appeared</span>
+        <span class="tr"><span class="fl" style="width:37.5%;background:var(--cat-rating)"></span></span>
+        <span class="vl">21</span></div>
+      <div class="hbar"><span class="nm">Wind slab cleared</span>
+        <span class="tr"><span class="fl" style="width:30.4%;background:var(--cat-rating)"></span></span>
+        <span class="vl">17</span></div>
+      <div class="hbar"><span class="nm">Wet snow cleared</span>
+        <span class="tr"><span class="fl" style="width:16.1%;background:var(--cat-rating)"></span></span>
+        <span class="vl">9</span></div>
+      <div class="hbar"><span class="nm">Problem's own sub-rating</span>
+        <span class="tr"><span class="fl" style="width:12.5%;background:var(--cat-other)"></span></span>
+        <span class="vl">7</span></div>
+      <div class="hbar"><span class="nm">Gliding snow cleared</span>
+        <span class="tr"><span class="fl" style="width:12.5%;background:var(--cat-rating)"></span></span>
+        <span class="vl">7</span></div>
+      <div class="hbar"><span class="nm">New snow cleared</span>
+        <span class="tr"><span class="fl" style="width:12.5%;background:var(--cat-rating)"></span></span>
+        <span class="vl">7</span></div>
+      <div class="hbar"><span class="nm">Wet snow appeared</span>
+        <span class="tr"><span class="fl" style="width:10.7%;background:var(--cat-rating)"></span></span>
+        <span class="vl">6</span></div>
+      <div class="hbar"><span class="nm">Gliding snow appeared</span>
+        <span class="tr"><span class="fl" style="width:10.7%;background:var(--cat-rating)"></span></span>
+        <span class="vl">6</span></div>
+    </div>
+    <hr class="rule">
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--cat-other)"></span>A problem that stayed, but moved</span>
+      <span class="lg"><span class="sw" style="background:var(--cat-rating)"></span>A problem that arrived or left</span>
+    </div>
+  </div>
+  <p class="prose" style="color:var(--ink-2);font-size:.93rem">Wind slab is the volatile one &mdash;
+    38 of the 68 arrivals and departures. Persistent weak layers, by contrast, were named on
+    <strong style="color:var(--ink)">166 of 189 days</strong>. A problem present 88% of the season
+    carries almost no notification value; its arrival is not news, and neither is its persistence.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">04 &middot; The second issue</span>
+    <h2>SLF publishes twice a day. The second one usually says nothing new</h2>
+  </div>
+  <p class="prose" style="color:var(--ink-2)">107 of the 189 days carried two issues &mdash; an
+    evening bulletin around 16:00&nbsp;UTC and a morning update around 07:00. The obvious design
+    is to send on both. The data says otherwise.</p>
+  <div class="figure">
+    <div class="fig-cap">
+      <h3>On two-issue days, does the morning update differ from the evening bulletin?</h3>
+      <p>Comparing the day's earliest and latest issue on rating, sub-rating, problem set and problem geometry.</p>
+    </div>
+    <div class="propbar">
+      <div class="propseg" style="background:var(--cat-none);flex:93">
+        <span class="n">93</span><span class="l">Identical &middot; 86.9%</span></div>
+      <div class="propseg" style="background:var(--cat-other);flex:14">
+        <span class="n">14</span><span class="l">Differs &middot; 13.1%</span></div>
+    </div>
+    <hr class="rule">
+    <table class="tbl">
+      <thead><tr><th>When the morning update did differ</th><th style="text-align:right">Days</th></tr></thead>
+      <tbody>
+        <tr><td>Problem geometry only</td><td class="num">6</td></tr>
+        <tr><td>Sub-rating only (e.g. 3&minus; to 3)</td><td class="num">4</td></tr>
+        <tr><td>Sub-rating and problem geometry</td><td class="num">3</td></tr>
+        <tr><td>Rating, sub-rating and problem geometry</td><td class="num">1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose" style="color:var(--ink-2);font-size:.93rem">A fixed twice-daily send would be
+    noise on 93 of 107 occasions. A send driven by <em>change</em> rather than by the clock fires on
+    those 14 days and stays quiet on the rest &mdash; and it picks up the one genuinely unscheduled
+    re-issue of the season for free, without that being a special case in the code.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">05 &middot; Rhythm</span>
+    <h2>There is no quiet season to wait out</h2>
+  </div>
+  <div class="figure">
+    <div class="fig-cap">
+      <h3>Transitions by month</h3>
+      <p>Bars are proportional within each month. Segment labels show the day count.</p>
+    </div>
+    <div class="mgrid">
+<div class="mrow"><span class="ml">Nov 2025</span><span class="mstack"><span class="mseg" style="flex:13;background:var(--cat-other)">13</span><span class="mseg" style="flex:2;background:var(--cat-none)">2</span><span class="mseg" style="flex:3;background:var(--cat-rating)">3</span></span></div>
+<div class="mrow"><span class="ml">Dec 2025</span><span class="mstack"><span class="mseg" style="flex:17;background:var(--cat-other)">17</span><span class="mseg" style="flex:11;background:var(--cat-none)">11</span><span class="mseg" style="flex:3;background:var(--cat-rating)">3</span></span></div>
+<div class="mrow"><span class="ml">Jan 2026</span><span class="mstack"><span class="mseg" style="flex:14;background:var(--cat-other)">14</span><span class="mseg" style="flex:13;background:var(--cat-none)">13</span><span class="mseg" style="flex:4;background:var(--cat-rating)">4</span></span></div>
+<div class="mrow"><span class="ml">Feb 2026</span><span class="mstack"><span class="mseg" style="flex:17;background:var(--cat-other)">17</span><span class="mseg" style="flex:7;background:var(--cat-none)">7</span><span class="mseg" style="flex:4;background:var(--cat-rating)">4</span></span></div>
+<div class="mrow"><span class="ml">Mar 2026</span><span class="mstack"><span class="mseg" style="flex:22;background:var(--cat-other)">22</span><span class="mseg" style="flex:5;background:var(--cat-none)">5</span><span class="mseg" style="flex:4;background:var(--cat-rating)">4</span></span></div>
+<div class="mrow"><span class="ml">Apr 2026</span><span class="mstack"><span class="mseg" style="flex:14;background:var(--cat-other)">14</span><span class="mseg" style="flex:13;background:var(--cat-none)">13</span><span class="mseg" style="flex:3;background:var(--cat-rating)">3</span></span></div>
+<div class="mrow"><span class="ml">May 2026</span><span class="mstack"><span class="mseg" style="flex:10;background:var(--cat-other)">10</span><span class="mseg" style="flex:4;background:var(--cat-none)">4</span><span class="mseg" style="flex:4;background:var(--cat-rating)">4</span></span></div>    </div>
+    <hr class="rule">
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--cat-other)"></span>Detail moved</span>
+      <span class="lg"><span class="sw" style="background:var(--cat-none)"></span>No change</span>
+      <span class="lg"><span class="sw" style="background:var(--cat-rating)"></span>Rating moved</span>
+    </div>
+  </div>
+  <p class="prose" style="color:var(--ink-2)">The rating-move rate holds between 10% and 22% in
+    every single month &mdash; there is no part of the season where the bulletin settles down and no
+    part where it goes wild. The highest is May (22%), a shoulder month, when the
+    fewest people are watching.</p>
+  <p class="prose" style="color:var(--ink-2)">Quiet stretches are short. The 55 no-change days fall
+    into 35 separate runs, and <strong style="color:var(--ink)">the longest run all season is four
+    days</strong> &mdash; so long as a bulletin was published at all. The one real silence of the
+    season is the coverage gap: no bulletin was issued between 6 and 15 November, eleven days on
+    which a change-driven notification would have had nothing to send.</p>
+</section>
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">06 &middot; Consequences</span>
+    <h2>Four things this changes about what gets built</h2>
+  </div>
+  <div class="cons">
+    <div class="con">
+      <span class="tag">SNOW-938 &middot; A1</span>
+      <h3>The diff has to read problems, not ratings</h3>
+      <p>A change service that compares danger ratings is silent on 86% of days and wrong on
+        57% of them. It has to compare the avalanche problem set and each problem's elevation
+        band and aspect sector. Those live in
+        <code>Bulletin.render_model["traits"][*]["problems"]</code> &mdash; not in
+        <code>RegionDayRating</code>, whose <code>bands</code> field is ALBINA-only and
+        <code>None</code> for every Swiss row.</p>
+    </div>
+    <div class="con">
+      <span class="tag">A3</span>
+      <h3>The payload needs a vocabulary for geometry</h3>
+      <p>&ldquo;Risk level increased&rdquo; covers 25 days of the season. The other 107 need
+        sentences about a problem arriving, a problem clearing, or a band moving &mdash;
+        <em>wind slab now north through east above 2400</em>. That is the same vocabulary
+        <code>docs/day-summary.md</code> already defines; it should not be reinvented.</p>
+    </div>
+    <div class="con">
+      <span class="tag">A4</span>
+      <h3>Fire on change, not on a clock</h3>
+      <p>A daily cron at a fixed hour misses the morning update; a twice-daily cron is noise
+        87% of the time it fires. Running on the existing hourly <code>fetch_bulletins</code>
+        cadence and sending only when the authoritative bulletin for the target day actually
+        differs gives roughly one send a day, catches the 14 meaningful morning updates, and
+        handles the season's single unscheduled re-issue without a special case.</p>
+    </div>
+    <div class="con">
+      <span class="tag">SNOW-939 &middot; A2</span>
+      <h3>&ldquo;Only on change&rdquo; is the safe default</h3>
+      <p>The longest silence a change-driven feed would have produced all season is four days.
+        The argument for a daily heartbeat was that people forget a channel that goes quiet &mdash;
+        four days is not long enough for that to bite, and Web Push permission, once revoked,
+        cannot be asked for again.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="eyebrow">07 &middot; Method</span>
+    <h2>How this was counted, and what it does not cover</h2>
+  </div>
+  <div class="prose" style="display:flex;flex-direction:column;gap:16px;color:var(--ink-2)">
+    <p>Every line of <code>apps/bulletins/local_mirrors/slf_archive.ndjson</code> whose
+      <code>regions</code> list contains CH-4115 &mdash; 296 records. Each was assigned to a target
+      day by the end of its <code>validTime</code>, giving 189 days with one gap in coverage.
+      Where a day carried several issues, the one with the latest <code>publicationTime</code> was
+      treated as authoritative, matching the rule <code>RegionDayRating</code> already uses.
+      Consecutive days were then compared on headline rating, Swiss sub-rating, problem set, each
+      problem's elevation bounds and aspect list, and the set of validity periods.</p>
+    <p>Three limits worth stating plainly. This is <strong style="color:var(--ink)">one region of
+      one provider</strong>: Météo-France and ALBINA archives are committed alongside it and have
+      not been checked, and their publication rhythms differ. CH-4115 is a high, glaciated region
+      whose season runs November to May &mdash; a lower region would show more no-rating days and a
+      shorter season. And a season is one sample: 2025/26 was a persistent-weak-layer winter, which
+      is why that problem sits on 88% of days, and a different winter would redistribute the problem
+      counts even if the shape of the finding held.</p>
+    <p>The danger-scale colours above are the EAWS specification values, used unchanged because the
+      standard mandates them. Every other colour on this page was validated for colour-vision
+      separation against both the light and dark surface.</p>
+  </div>
+</section>
+
+<footer>
+  <p class="mono" style="color:var(--ink-3)">Analysis run 2026-09-13 &middot; Snowdesk &middot; SNOW-937</p>
+  <p>Hover any column in the season strip for that day's rating, avalanche problems and issue count.
+    Figures recomputable from the committed archive; no production data was read.</p>
+</footer>
+
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  var tip=document.getElementById('tip');
+  // Built as nodes with textContent rather than an innerHTML string: the day
+  // cells' data-t values are page text, and assembling markup out of them is
+  // the pattern that lets any character in them be read as HTML.
+  function el(tag,cls,text){
+    var n=document.createElement(tag);
+    if(cls) n.className=cls;
+    if(text!=null) n.textContent=text;
+    return n;
+  }
+  function show(e){
+    var d=e.target.getAttribute('data-t'); if(!d) return;
+    var p=d.split('|');
+    tip.replaceChildren(
+      el('span','t-d',p[0]),
+      el('strong',null,p[1]),
+      document.createTextNode(' · '+p[2]),
+      document.createElement('br'),
+      el('span','t-p',p[3]),
+      document.createElement('br'),
+      el('span','t-p',p[4]+(p[4]==='1'?' issue':' issues')+' that day')
+    );
+    tip.style.opacity='1';
+    var r=e.target.getBoundingClientRect(), t=tip.getBoundingClientRect();
+    var x=r.left+r.width/2-t.width/2;
+    x=Math.max(8,Math.min(x,window.innerWidth-t.width-8));
+    var y=r.top-t.height-10; if(y<8) y=r.bottom+10;
+    tip.style.left=x+'px'; tip.style.top=y+'px';
+  }
+  function hide(){ tip.style.opacity='0'; }
+  document.querySelectorAll('.cell').forEach(function(c){
+    c.addEventListener('mouseenter',show);
+    c.addEventListener('mouseleave',hide);
+  });
+})();
+</script>
