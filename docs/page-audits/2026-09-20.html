@@ -1,0 +1,604 @@
+<title>Snowdesk page audit — 20 September 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · week of 14–20 September · 20 September 2026</p>
+    <h1>A whole feature shipped clean while the one it was supposed to unblock went completely silent</h1>
+    <p class="standfirst">
+      37 commits, 230 files since last week's audit (13 September). Almost all of it is one thing:
+      terrain-aware routes (SNOW-909 and about twenty children) went from a flat fuchsia line to a
+      slope-coloured, crux-marked, bulletin-scored surface across both the map and the Trips app —
+      and, unusually for this series, shipped with no orphaned link, no oversold claim and an "unknown"
+      state that survives all the way to the pixel. In the same seven days, SNOW-937 — last week's
+      answer to four audits of "decide the bulletin-alert feature" — did not move at all: twelve child
+      tickets scoped in one sitting on 13 September are all still exactly where they started, with zero
+      commits and zero comments since.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">49eec709</span> (13 Sep) → now <span class="mono">a7d3f99</span></p>
+      <p class="eyebrow">37 commits · 230 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>Terrain-aware routes is the cleanest big feature this series has audited. The three findings this series has tracked longest didn't move an inch, and the one meant to replace them stalled completely.</h2>
+    <div class="col">
+      <p>
+        SNOW-909's terrain work is real and it is careful: <code>sample_height</code>/<code>sample_slope</code>
+        (<code>apps/locations/services/terrain.py</code>) never return a bare <code>None</code> — a
+        route with unsurveyed ground under it draws dashed grey, never green, and the map, the route
+        panel and the Trip page all keep that distinction through to the rendered line
+        (<code>static/js/route_slope_core.js</code>'s <code>UNKNOWN_COLOUR</code> is deliberately not
+        one of the six slope bands). The bulletin-overlap work (SNOW-839) computes a per-problem
+        aspect/elevation match and then visibly throws the rating away before it reaches a template —
+        <code>ProblemOverlap.danger_rating_value</code> is captured and never read anywhere on the
+        display side — so "this route crosses ground the bulletin names" never becomes "this route is
+        rated." And the "what do these marks mean" link that <code>/compare/</code> and the examples
+        pages never got is a real, working anchor here: <code>/help/#help-topic-slope</code>, linked
+        from the map legend and, after SNOW-968, from the Trip page too.
+      </p>
+      <p>
+        Against that: this series' three oldest open findings are exactly as they were seven days ago.
+        <code>docs/bulletin-guide.md</code> is now 102 days past its last review with zero ALBINA or
+        Météo-France mentions. SNOW-674 and SNOW-678 remain Canceled with the single scoping comment
+        each carried since 11 August and nothing since. And a fuller trace of <code>/compare/</code>'s
+        footer link this week found it is not merely undocumented but <strong>deliberately
+        permanent</strong>: the removal commit renamed its own regression test from asserting the link
+        exists to asserting it doesn't, and it still carries no ticket.
+      </p>
+      <p>
+        The larger story is what didn't happen. SNOW-937 — the alerting rebuild this series has been
+        waiting on since 19 August, and which last week's audit called "the closest thing to a real
+        answer" — was scoped into twelve numbered child tickets (A1–A7, B1–B4) on 13 September and has
+        had no commit, no comment and no state change on any of them since. The season-data research
+        that justified the whole redesign is a week old and untouched. Every hour this repository's
+        single maintainer spent this week went into routes.
+      </p>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span class="figure">~20</span><span class="label">tickets shipped for one feature, terrain-aware routes</span></div>
+      <div class="metric"><span class="figure">12</span><span class="label">alerting child tickets scoped 13 Sep, zero moved since</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">tracked findings closed this window</span></div>
+      <div class="metric"><span class="figure">5</span><span class="label">unchanged findings re-verified</span></div>
+      <div class="metric"><span class="figure">79</span><span class="label">decision docs, up from 73</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+
+    <div class="col">
+      <p>
+        Two smaller items, noted briefly rather than given full findings: <strong>SNOW-1001</strong>
+        fixed a real map-honesty bug the same week it was found — a <code>BulletinGrouping</code>
+        covering a single boundaried region dissolved to that region's own outline, so the choropleth
+        drew an aggregation marker over ground that was never aggregated; the ingest guard now requires
+        at least two regions (<code>MIN_GROUPED_REGIONS</code>), matching the standing rule in
+        <code>docs/decisions/a-grouping-outline-asserts-an-aggregation.md</code>.
+        <strong>SNOW-900</strong> added shape detection to the SLF fetcher ahead of SLF's 2026/27
+        endpoint changeover, so a URL alone no longer tells the pipeline what aggregation it's holding
+        — operationally important, not user-facing, and worth remembering given SNOW-937's own stated
+        deadline: new-season bulletins begin the same November this protects against.
+      </p>
+    </div>
+
+    <div class="findings">
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N1</span>
+          <h3>Terrain-aware routes (SNOW-909) shipped whole — coloured, honest about what it doesn't know, and reachable</h3>
+          <span class="pill pill-new">SNOW-910, 911, 917, 951, 960–974, 988–990, 995, 839</span>
+        </div>
+        <p>
+          A saved route was one flat fuchsia line until this week. It now carries a 25 m-stride slope
+          reading of the terrain it crosses (<code>Route.slope_samples</code>, sampled from a 5 m
+          elevation grid — never the track's own recorded elevation, which
+          <a href="../decisions/a-slope-segment-is-the-shared-record.md">the decision doc</a> calls
+          "free, and a lie": a skin track zigzagging up a 38° face rises near-flat along its own length
+          and would paint green under that shortcut). Six slope-angle colours, crux rings, no-fall
+          passages and fall-line arrows render on the map overlay, the new docked route detail panel
+          (SNOW-973), and — since SNOW-962 gave <code>Trip</code> its own copy of the record — the Trip
+          page too, without re-reading the source route. Coverage gaps are a named reason
+          (<code>OUTSIDE_COVERAGE</code> / <code>NO_DATA</code> / <code>UNAVAILABLE</code>), never a
+          silent zero, and that distinction is kept by the <em>presence</em> of the GeoJSON
+          <code>slope</code> key rather than its value, all the way to a dashed-grey line on screen.
+          SNOW-839 scores a route against the day's bulletin by problem type, aspect and elevation band
+          and deliberately never turns that into a rating — the computed
+          <code>danger_rating_value</code> is stored and never displayed — and the shared template says
+          so outright: "It is not a rating of your day — read the bulletin itself." The one explainer
+          link this kind of feature needs (<code>/help/#help-topic-slope</code>) is real, resolves, and
+          is linked from three places, not zero.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">docs/decisions/terrain-unknown-is-a-reason-not-a-null.md</span> — <code>sample_height</code>/<code>sample_slope</code> never return <code>None</code></li>
+          <li><span class="k">static/js/route_slope_core.js</span> — <code>UNKNOWN_COLOUR</code>, "deliberately NOT one of the six [bands] — least of all the gentle one"</li>
+          <li><span class="k">apps/routes/services/bulletin_join.py:99,228</span> — <code>ProblemOverlap.danger_rating_value</code> captured, never read by the view or <code>_bulletin_readings.html</code></li>
+          <li><span class="k">apps/public/templates/public/help/_topic_slope.html</span>; linked from <code>_map_embed.html:1308</code> and <code>_trip_map.html:189</code> (gated on the route actually carrying a <code>slope</code> reading)</li>
+          <li>No dedicated Playwright coverage of the rendered map colours (consistent with the project's own e2e-cap philosophy — push to <code>tests/js/</code> — but a real rendering regression here would only be caught by eye); no waffle flag — live to 100% of traffic behind <code>SLOPE_TILE_URL</code>/<code>TERRAIN_TILE_BASE_URL</code>, the same unconditional-ship pattern <code>docs/feature-flags.md</code> already documents for <code>download_sync</code> and the first cut of <code>debug_log</code></li>
+        </ul>
+      </article>
+
+      <article class="finding orphan">
+        <div class="finding-head">
+          <span class="ref">N2</span>
+          <h3>The first "public explainer" shipped with no path from the live site to reach it</h3>
+          <span class="pill pill-orphan">new, unticketed</span>
+        </div>
+        <p>
+          <code>docs/explainers/from-gpx-to-line.html</code> ("From GPX to Line") establishes a new
+          series CLAUDE.md now routes to — self-contained HTML pages "written for readers WITHOUT repo
+          access," explicitly meaning Snowdesk users curious how the product works, not the internal
+          audience this page-audit series itself writes for. It is a well-built, carefully-hedged page —
+          one section is marked "Landing next" specifically so it doesn't claim unshipped behaviour as
+          current. But it has no Django route, no template reference and no link from
+          <code>/help/#help-topic-routes</code> or anywhere else a real visitor could click through to
+          it: <code>grep -rn "gpx" apps/public/templates/public/help/_topic_routes.html</code> finds
+          only the existing gpx.studio editor link. This is not necessarily a broken promise — the
+          series' own next entry is already mid-decision about exactly this question. SNOW-977, open
+          and in progress, drafts a companion "Anatomy of a Route" page at
+          <code>docs/route-anatomy/</code> (on an unmerged branch, not yet in <code>main</code>) and
+          lists as an explicit open question: "Should the page link from
+          <code>/help/#help-topic-slope</code> ... or stay developer-facing under <code>docs/</code>?"
+          Worth resolving once, for both pages together, rather than leaving each new entry to raise the
+          same question independently — see Consequences.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">CLAUDE.md</span> — "Public explainers ... written for readers WITHOUT repo access"</li>
+          <li><span class="k">grep -rn "from-gpx-to-line\|explainer" apps/public/templates</span> → no reference anywhere in the live templates</li>
+          <li><span class="k">SNOW-977</span> — In Progress, "Should the page link from ... or stay developer-facing under docs/?" still open</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>What the re-run found exactly as it was — including one that turned out worse on closer reading</h2>
+    <div class="col">
+      <p>
+        Every item below was re-verified against current <code>main</code> (<code>a7d3f99</code>), not
+        assumed from ticket state. Rows 4 and 5 moved from last week's New section into this one, now
+        that they have a week's re-verification behind them.
+      </p>
+    </div>
+
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead>
+          <tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>B3 · bulletin guide is SLF-only</td>
+            <td><code>docs/bulletin-guide.md</code> still <code>last-reviewed: 2026-06-10</code> — 102
+            days stale — still zero case-insensitive matches for ALBINA or Météo-France. Sixth audit
+            running.</td>
+            <td>SNOW-679 <span class="pill pill-ok">Ready for dev</span></td>
+          </tr>
+          <tr>
+            <td>C2 · <code>/examples/</code> orphaned</td>
+            <td>Unchanged in code: <code>examples_random</code>/<code>examples_category</code> remain
+            live, routed views with zero inbound reference in any template or static file. Unchanged in
+            tracking: still Canceled 2026-09-07, still exactly one comment (the original 11 August
+            scoping note), nothing added since.</td>
+            <td>SNOW-678 <span class="pill pill-broken">Canceled, uncommented</span></td>
+          </tr>
+          <tr>
+            <td>C3 · no regions index</td>
+            <td>Unchanged in code: <code>apps/regions/</code> still has no <code>views.py</code> or
+            <code>urls.py</code> — confirmed these files have never existed in the repository's history.
+            Unchanged in tracking: Canceled the same day as SNOW-678, still zero comments beyond the
+            original scope.</td>
+            <td>SNOW-674 <span class="pill pill-broken">Canceled, uncommented</span></td>
+          </tr>
+          <tr>
+            <td>N1 (13 Sep) · <code>/compare/</code> footer link</td>
+            <td>Still absent — confirmed no <code>public:compare</code> or <code>href="/compare"</code>
+            reference anywhere in templates. Traced further this pass: the removal
+            (<code>d7f7c499</code>, PR #893, 11 September, four days before last audited) renamed its
+            own pinning test from <code>TestComparePageIsLinked</code> to
+            <code>TestComparePageIsNotLinkedFromTheFooter</code> — this is not an oversight left
+            untested, it is a codified, permanent policy with a test actively guarding the page's
+            absence from the footer. It still carries no <code>SNOW-</code> reference anywhere.</td>
+            <td><span class="pill pill-broken">No ticket, ever</span></td>
+          </tr>
+          <tr>
+            <td>N2 (13 Sep) · alerting rebuild (SNOW-937)</td>
+            <td>Frozen. <code>docs/definition.md</code> and <code>docs/roadmap.md</code> still exist
+            only on the unmerged draft PR #917, unchanged since 13 September. The parent ticket carries
+            zero comments and its twelve children (A1–A7, B1–B4), all scoped the same day, are all still
+            Ready for dev or Todo — none started. No model, view, service or command for a bulletin-change
+            alert exists anywhere in <code>apps/</code>.</td>
+            <td>SNOW-937 <span class="pill pill-thin">In Progress, no movement 7 days</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>What this week's shape changes about the older tickets</h2>
+    <div class="col">
+      <p>
+        Connections between this cycle's decisions and tickets written before them — visible from
+        neither side alone.
+      </p>
+    </div>
+
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>"Watch SNOW-937 ship" was last week's recommendation; this week answers whether it's still moving, and it isn't</h3>
+        <p>
+          Every audit since 19 August has tracked the cost of the unsent alert. Last week reframed the
+          recommendation around SNOW-937 as a real, data-backed redesign rather than the two-line
+          SNOW-7 placeholder it replaced. This week that redesign didn't advance by one commit: twelve
+          child tickets exist, all unstarted, and the parent has no comment newer than the day it was
+          scoped. That is not necessarily a problem — a maintainer working alone chose to spend the week
+          on terrain-aware routes instead, and that work was substantial and well-executed — but it is
+          not visible anywhere in Linear as a choice. A ticket marked "In Progress, High priority" that
+          has had zero activity for a week reads identically whether it was deliberately paused or
+          simply forgotten, and only Hugo knows which.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3><code>/compare/</code>'s missing link is not an open question any more — the test suite already settled it</h3>
+        <p>
+          Last week's recommendation was to "decide <code>/compare/</code>'s footer link" as the cheapest
+          open item in the document. This week's deeper trace found the decision was already made, in
+          writing, in code: PR #893 didn't just remove the link, it renamed the regression test that used
+          to assert it existed into one that asserts it doesn't. That is a stronger signal of intent than
+          most tickets in this codebase get. The gap this audit should now track is narrower and cheaper
+          to close than "restore or decide" — it's simply that the decision has no home a future reader
+          of Linear or <code>docs/decisions/</code> would ever find, unlike every other deliberate policy
+          in this codebase.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>A second reader-facing explainer is arriving before the first one's reachability question is answered</h3>
+        <p>
+          <code>docs/explainers/from-gpx-to-line.html</code> shipped this week with the same shape of
+          gap this series flagged in <code>/compare/</code> and the examples pages: a real page, honestly
+          written, reachable by nobody clicking anything on the live site. The difference is that this
+          time the next ticket in the queue (SNOW-977, in progress) already names the same question
+          explicitly for its own companion page, rather than this audit having to surface it after the
+          fact. That is a genuine improvement in how this failure mode gets caught — but it also means
+          two documents in this new series are now live with two different unresolved homes
+          (<code>docs/explainers/</code>, publicly framed; <code>docs/route-anatomy/</code>, an open
+          question whether it's public at all), and answering the question once, for the series, would
+          be cheaper than answering it twice.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>Terrain-aware routes is the counter-example this series has been waiting for</h3>
+        <p>
+          Three audits running, this series has repeated a pattern: a new surface ships reachable and
+          honest, then loses its only link with no ticket (<code>/compare/</code>), or a tracked
+          reachability finding gets cancelled without being fixed (SNOW-674, SNOW-678). SNOW-909's
+          terrain work is the first big feature in this run of audits that got the hard parts right from
+          the start — the unknown-state handling, the no-rating discipline on the bulletin overlap, the
+          working help link — without a page audit having to catch and report the gap first. It is worth
+          naming as the standard the two long-cancelled tickets are still failing to meet, not because
+          the two are related in code, but because both are now live evidence of what this team can do
+          when reachability is treated as part of the ticket rather than an audit's job to notice.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p>
+        <strong>First, put a documented reason behind SNOW-674 and SNOW-678, or reopen them.</strong>
+        Two audits and two weeks running with a Canceled status and zero explanatory comment. The cost
+        of writing one sentence on each ticket is smaller every week it isn't paid.
+      </p>
+      <p>
+        <strong>Then write down <code>/compare/</code>'s policy, not its fix.</strong> This is no longer
+        "decide whether to relink it" — PR #893 already decided, and encoded the decision as a test. What's
+        missing is one comment on a ticket, or a line in <code>docs/decisions/</code>, saying a
+        sitemap-only page is the intended shape. That is minutes of work against three audits of this
+        series flagging the same page.
+      </p>
+      <p>
+        <strong>Then confirm whether SNOW-937 is paused on purpose.</strong> If routes were the right
+        call for the week, say so on the ticket so the next audit doesn't have to guess between
+        "deliberately reprioritised" and "quietly dropped" — they read identically from outside Linear.
+      </p>
+      <p>
+        <strong>Then B3</strong>, still the oldest open finding in this series — <code>docs/bulletin-
+        guide.md</code> has been SLF-only since before the first audit, six audits running now.
+      </p>
+      <p>
+        <strong>Cheapest of all: decide the public-explainer reachability question once.</strong>
+        <code>from-gpx-to-line.html</code> is live, and SNOW-977's companion piece asks the identical
+        question mid-ticket. One decision — link from <code>/help/</code>, or keep the series developer-
+        facing and say so in CLAUDE.md's own description — settles both rather than one at a time.
+      </p>
+    </div>
+
+    <p class="note">
+      Re-verified against <span class="mono">a7d3f99</span> on 20 September 2026. Nothing was changed
+      and no tickets were created or edited in this pass — the branch was fast-forwarded to
+      <span class="mono">main</span> to read current state, and that is all.
+    </p>
+  </section>
+
+</div>
