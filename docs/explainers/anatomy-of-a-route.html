@@ -471,21 +471,22 @@ footer p + p { margin-top: 10px; }
 <article class="layer" id="bulletin">
   <div class="num">6</div>
   <div>
-    <header><h2>Against the day's bulletin</h2><span class="tickets">14 September 2026 · trip page</span></header>
+    <header><h2>Against the day's bulletin</h2><span class="tickets">14 September 2026 · trip page and route panel</span></header>
     <p class="q">On the day I'm going, where does my line cross the terrain the bulletin warns about?</p>
     <div class="figs single">
       <figure><img src="img/anatomy-of-a-route/09-trip-bulletin.png" alt="Trip page card: This day's bulletin, along your line. Martigny-Verbier: 4.9 km on N, NE, E, SE, SW, W, NW, between 2415 and 2958 m, persistent weak layers" loading="lazy" style="max-width:640px"><figcaption>The same route as a trip on 28 Apr 2026, checked against that day's SLF bulletin for Martigny-Verbier.</figcaption></figure>
     </div>
     <div class="cols">
       <div>
-        <p>This is the only layer that changes during the day, and the only one that isn't on the map popup: it appears on a <b>trip</b>, which has a date. For each region the track passes through, the app finds that day's bulletin. For each avalanche problem, it adds up the stretches of track whose <b>aspect</b> (from the terrain) is one the problem lists and whose <b>height</b> (from the track) is inside the problem's band.</p>
+        <p>This is the only layer that changes during the day, and the only one that needs a date before it can say anything. It appears on two surfaces, and each gets its date from a different place: a <b>trip</b> has a day of its own, and the map's <b>route panel</b> uses whichever day the scrubber is showing. Tap a saved route on a March morning while looking at February, and you are reading February's bulletin against your line.</p>
+        <p>For each region the track passes through, the app finds that day's bulletin. For each avalanche problem, it adds up the stretches of track whose <b>aspect</b> (from the terrain) is one the problem lists and whose <b>height</b> (from the track) is inside the problem's band.</p>
         <p>A track over a ridge can be in two regions, and on a border it can be covered by two different providers. Each region's stretch is reported under its own bulletin, and neither is chosen over the other.</p>
       </div>
       <div>
         <h3>Deliberately not</h3>
         <ul class="rules">
           <li><span class="label">A score</span><span>No number comes out. A score quietly leaves out everything it didn't weigh, and the reader can't tell what that was. The app highlights and never suppresses.</span></li>
-          <li><span class="label">Stored</span><span>A bulletin can change twice a day. A cached result could outlive its bulletin, and offline it would show last night's answer under today's date.</span></li>
+          <li><span class="label">Kept as an answer</span><span>Nothing is worked out in advance or held on the server: a bulletin changes twice a day, and a stored result would outlive the bulletin it came from. Your device does keep a reading you have already opened, so it is there away from signal — filed under that route and that day, shown behind a line saying when it was saved, and reported as expired rather than redrawn once it is too old to trust.</span></li>
           <li><span class="label">Treeline</span><span>A band described as "above the treeline" has no altitude, and the app has no treeline model. The bulletin's own wording is shown instead of an invented figure.</span></li>
         </ul>
       </div>
@@ -507,7 +508,7 @@ footer p + p { margin-top: 10px; }
         <li><span class="mono">3</span><span><b>Split line</b>: you are on no-fall ground.</span></li>
         <li><span class="mono">4</span><span><b>Arrow</b>: the way that ground falls, compared with your direction of travel.</span></li>
         <li><span class="mono">5</span><span><b>Popup</b>: the same information as numbers and words, with the height profile in the same colours.</span></li>
-        <li><span class="mono">6</span><span><b>Trip</b>: where the line meets that day's avalanche problems.</span></li>
+        <li><span class="mono">6</span><span><b>Trip or route panel</b>: where the line meets that day's avalanche problems.</span></li>
       </ol>
       <p class="caveat" style="margin-top:20px"><b>Every mark says "look here", never "you're fine".</b> The legend and the slope topic in the app's help explain what each absence means, because each layer is easy to read as more complete than it is.</p>
     </div>
@@ -552,7 +553,7 @@ footer p + p { margin-top: 10px; }
         <tr><td>Key passages</td><td>Those measurements, plus extra uphill lookups</td><td><span class="pill stored">kept, when saved</span></td></tr>
         <tr><td>No-fall passages</td><td>The kept angles</td><td><span class="pill derived">on request</span></td></tr>
         <tr><td>Fall line</td><td>The kept aspects</td><td><span class="pill derived">on request</span></td></tr>
-        <tr><td>Bulletin overlap</td><td>The kept aspects, the track's heights, that day's bulletin</td><td><span class="pill never">never kept</span></td></tr>
+        <tr><td>Bulletin overlap</td><td>The kept aspects, the track's heights, that day's bulletin</td><td><span class="pill derived">on request</span> <span class="pill never">saved on your device, expires</span></td></tr>
       </tbody>
     </table>
   </div>
