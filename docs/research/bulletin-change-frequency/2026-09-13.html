@@ -462,13 +462,27 @@ footer p{font-size:.82rem;color:var(--ink-3);line-height:1.6}
 <script>
 (function(){
   var tip=document.getElementById('tip');
+  // Built as nodes with textContent rather than an innerHTML string: the day
+  // cells' data-t values are page text, and assembling markup out of them is
+  // the pattern that lets any character in them be read as HTML.
+  function el(tag,cls,text){
+    var n=document.createElement(tag);
+    if(cls) n.className=cls;
+    if(text!=null) n.textContent=text;
+    return n;
+  }
   function show(e){
     var d=e.target.getAttribute('data-t'); if(!d) return;
     var p=d.split('|');
-    tip.innerHTML='<span class="t-d">'+p[0]+'</span>'+
-      '<strong>'+p[1]+'</strong> &middot; '+p[2]+
-      '<br><span class="t-p">'+p[3]+'</span>'+
-      '<br><span class="t-p">'+p[4]+(p[4]==='1'?' issue':' issues')+' that day</span>';
+    tip.replaceChildren(
+      el('span','t-d',p[0]),
+      el('strong',null,p[1]),
+      document.createTextNode(' · '+p[2]),
+      document.createElement('br'),
+      el('span','t-p',p[3]),
+      document.createElement('br'),
+      el('span','t-p',p[4]+(p[4]==='1'?' issue':' issues')+' that day')
+    );
     tip.style.opacity='1';
     var r=e.target.getBoundingClientRect(), t=tip.getBoundingClientRect();
     var x=r.left+r.width/2-t.width/2;
