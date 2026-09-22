@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-20
+last-reviewed: 2026-09-22
 ---
 
 # Environment network allow-list
@@ -51,6 +51,32 @@ the target site's own bot protection (a 403/timeout *from the site itself*
 would come through differently — see `/root/.ccr/README.md` in-session for
 the full diagnostic playbook). Only the former is fixed by an allowlist
 change.
+
+## Requested — 2026-09-22 (SNOW-1008 route rail design)
+
+**Our own infrastructure is blocked, which is the costly one.** Every host
+this product draws a map or samples terrain from is denied at CONNECT, on
+port 443, by the web environment's network policy — so a web session can
+run the app but cannot render its map or measure a route's ground. The
+denial is the gateway's, not the origin's: `curl` reports
+`CONNECT tunnel failed, response 403`, and `__agentproxy/status` logs it as
+`connect_rejected` — "gateway answered 403 to CONNECT (policy denial)".
+
+| Domain | Why it matters |
+|---|---|
+| `tiles.snowdesk-data.info` | **Both tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at (`config/settings/base.py`), which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a crux, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
+| `vectortiles.geo.admin.ch` | The swisstopo basemap styles and the slope-angle raster overlay's WMTS tiles — the national style the Swiss ground is normally read on |
+| `tiles.openfreemap.org` | The default `OPENFREEMAP_STYLE_URL` before the self-hosted cutover, and the fallback every environment still carries |
+| `snowdesk.info` | Our own production site. Already recorded under 2026-09-19 (SNOW-909) for route shares; re-confirmed blocked |
+
+**What it cost this time.** The route-rail prototype (a cursor linking the
+line on the map to the same position on an unrolled strip) had to run on
+*synthetic* slope angles: real coordinates and real stored elevations from
+the committed corpus, with the angles rank-mapped onto a real tour's class
+mix. Every design decision about where steep ground sits on a rail is
+therefore being taken against a plausible distribution rather than a
+measured one — the same failure mode SNOW-909 recorded a fortnight ago,
+one layer further in.
 
 ## Requested — 2026-09-19 (Mapterhorn assessment)
 
