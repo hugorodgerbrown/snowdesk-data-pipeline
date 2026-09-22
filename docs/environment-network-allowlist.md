@@ -52,7 +52,7 @@ would come through differently — see `/root/.ccr/README.md` in-session for
 the full diagnostic playbook). Only the former is fixed by an allowlist
 change.
 
-## Requested — 2026-09-22 (SNOW-1008 route rail design)
+## Requested — 2026-09-22 (route rail design)
 
 **Our own infrastructure is blocked, which is the costly one.** Every host
 this product draws a map or samples terrain from is denied at CONNECT, on
@@ -62,12 +62,26 @@ denial is the gateway's, not the origin's: `curl` reports
 `CONNECT tunnel failed, response 403`, and `__agentproxy/status` logs it as
 `connect_rejected` — "gateway answered 403 to CONNECT (policy denial)".
 
+**The authoritative list is `csp_defaults` in `config/settings/base.py`** —
+its `connect-src` / `img-src` entries are every origin the map page is
+allowed to fetch from, so regenerate the rows below from that function
+rather than from a style URL, which names the style host and not the hosts
+the tiles actually come from.
+
 | Domain | Why it matters |
 |---|---|
-| `tiles.snowdesk-data.info` | **Both tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at (`config/settings/base.py`), which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a crux, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
-| `vectortiles.geo.admin.ch` | The swisstopo basemap styles and the slope-angle raster overlay's WMTS tiles — the national style the Swiss ground is normally read on |
+| `tiles.snowdesk-data.info` | **Both of our own tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at, which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a crux, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
+| `vectortiles.geo.admin.ch` | swisstopo winter/light: the style JSON, sprite, glyphs and both source TileJSONs — **the style document only** |
+| `vectortiles0.geo.admin.ch` … `vectortiles4.geo.admin.ch` | The five numbered shards the swisstopo TileJSONs point the **tiles themselves** at (`SWISSTOPO_TILE_SHARDS`). Allowlisting the unsharded host alone loads the style and no map — the same trap SNOW-833 hit with the CSP, which has no wildcard for a subdomain prefix either |
+| `wmts.geo.admin.ch` | The slope-angle raster overlay's WMTS tiles (`SLOPE_TILE_URL`) — a different host from the vector basemap, and the one SNOW-691 added |
 | `tiles.openfreemap.org` | The default `OPENFREEMAP_STYLE_URL` before the self-hosted cutover, and the fallback every environment still carries |
+| `data.geopf.fr` | IGN Plan IGN — the French national basemap (style JSON, vector tiles, sprites, glyphs) |
+| `mapsneu.wien.gv.at` | basemap.at — the Austrian national basemap, same four |
 | `snowdesk.info` | Our own production site. Already recorded under 2026-09-19 (SNOW-909) for route shares; re-confirmed blocked |
+
+All twelve hosts were probed directly this session — the five shards
+individually — and every one answered `CONNECT tunnel failed, response
+403`.
 
 **What it cost this time.** The route-rail prototype (a cursor linking the
 line on the map to the same position on an unrolled strip) had to run on
