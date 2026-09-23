@@ -169,7 +169,7 @@ class TestFallLineAlignment:
     def test_the_tolerance_is_inclusive(self) -> None:
         """Exactly at the tolerance is still a descent, a shade past is not.
 
-        The boundary is inclusive both ways, matching ``band_for_angle``'s
+        The boundary is inclusive both ways, matching ``class_for_angle``'s
         convention: a value that lands exactly on a threshold belongs to
         the class named for it.
         """
@@ -222,7 +222,7 @@ class TestSeeding:
     def test_the_gate_is_inclusive(self) -> None:
         """Exactly at the gate seeds; a tenth under does not.
 
-        Inclusive, matching ``band_for_angle`` — a sample of exactly 50.0
+        Inclusive, matching ``class_for_angle`` — a sample of exactly 50.0
         is painted ``slope-50``, so it must be exactly as much of a seed
         as the colour under it says it is.
         """

@@ -435,7 +435,7 @@ def _runs(
     runs that meet" a single pass rather than an interval merge: two
     seeds in one stretch of steep ground are already in one run.
 
-    Both comparisons are inclusive, matching ``band_for_angle`` — a
+    Both comparisons are inclusive, matching ``class_for_angle`` — a
     sample of exactly 50.0 is in ``slope-50``, so it must be exactly as
     much of a seed as the colour under it says it is.
 
