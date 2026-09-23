@@ -71,14 +71,21 @@ used. Fix a source only once the two measures are reconciled.
 - Seed a worktree DB if it has none: `bin/init-worktree` (the four canonical
   tracks plus the synthetic Verbier track, all with slope records).
 - Export exactly the arrays the figures need with
-  `uv run python manage.py shell -c "…"`, calling the same service the app
-  calls, and write compact JSON (`separators=(',', ':')`). Keep it small:
+  `uv run python manage.py shell -c "…"`, calling the service function
+  itself, and write compact JSON (`separators=(',', ':')`). Keep it small:
   one tour's per-segment rows, not all of them.
 - When the prose states a figure ("360 m in 5 m", "4 to 29 segments"), check
   it against that export before writing it, and again after the page is
   built (step 6). Better still, have the script write the sentence's
   numbers from the embedded data and bake them (step 5), so prose and
   figures cannot disagree.
+- **Say what the app does with it, and no more.** A service can exist before
+  anything in the app calls it (the leg-cutting code did, for a while).
+  Check with `grep -rn <function> apps/ templates/ static/` before writing
+  "the map shows" or "a route displays".
+- **When one quantity can be measured two ways**, name the measure on the
+  page and lead with the one nearest to what a reader sees — a distance on
+  the route as recorded rather than along a derived copy of it.
 - **A comparison against something the app no longer does** (a dropped
   design, an old constant) has no service to call. Reconstruct it by
   replacing only the part that differs — monkeypatch one function, pass
@@ -110,7 +117,9 @@ rest lives in each page's second block — copy what you use from there:
 
 **Figures.** Draw them with an inline script from the embedded JSON, into
 `<svg id="…" data-baked viewBox="…" role="img" aria-label="…">` slots. Every
-element the script fills gets an `id` and `data-baked`.
+element the script fills gets an `id` and `data-baked`. Baking writes the
+element's own start tag as well as its contents, so an `aria-label` or
+`viewBox` the script sets from the data survives too.
 
 - **Colours are `var(--token)` references**, never values read with
   `getComputedStyle`. Put them in a `style` attribute or as presentation
@@ -176,7 +185,8 @@ static snapshot with scripts disabled — useful for seeing the baked copy,
 but no page tools work on it.
 
 The pane has a tab limit. Open your own tab with `tabs_create`, and close it
-at the end.
+at the end. Writing an `.html` file can open a preview tab of its own, which
+counts against the limit — close it if `tabs_create` refuses.
 
 Check, with `javascript_tool` rather than screenshots where you can:
 

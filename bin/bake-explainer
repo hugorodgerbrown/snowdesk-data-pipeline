@@ -11,7 +11,9 @@
  *
  * Every element the script fills carries a `data-baked` attribute and an
  * id. This runs the page's own script under jsdom and writes each such
- * element's resulting content back into the file, between its tags. The
+ * element's resulting start tag and content back into the file — the start
+ * tag too, so an attribute the script sets on the element itself (an
+ * aria-label written from the data, a viewBox) survives without it. The
  * script stays: with JavaScript on it redraws over the baked copy (every
  * draw function clears its target first), so interaction still works.
  *
@@ -62,9 +64,17 @@ function bake(file) {
     .map((element) => {
       if (!element.id) throw new Error(`${file}: a [data-baked] element has no id`);
       const location = located.nodeLocation(element);
-      const content = drawn.getElementById(element.id).innerHTML;
-      if (!content.trim()) throw new Error(`${file}: #${element.id} drew nothing`);
-      return { start: location.startTag.endOffset, end: location.endTag.startOffset, content };
+      const after = drawn.getElementById(element.id);
+      if (!after.innerHTML.trim()) throw new Error(`${file}: #${element.id} drew nothing`);
+      // The element's own tag, as the script left it: a shallow clone
+      // serialises as `<tag …></tag>`, so everything before the closing tag.
+      const shell = after.cloneNode(false).outerHTML;
+      const startTag = shell.slice(0, shell.lastIndexOf('</'));
+      return {
+        start: location.startTag.startOffset,
+        end: location.endTag.startOffset,
+        content: startTag + after.innerHTML,
+      };
     })
     .sort((a, b) => b.start - a.start);
 
