@@ -60,6 +60,8 @@ interface Window {
   pwaRouteMarkersCore: any;
   /** static/js/route_slope_core.js — slope class buckets and segment split. */
   pwaRouteSlopeCore: any;
+  /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
+  pwaRouteCursorCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
