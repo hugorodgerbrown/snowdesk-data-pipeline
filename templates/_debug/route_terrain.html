@@ -14,7 +14,10 @@
             <h1 class="text-2xl font-semibold text-text-1">{{ route.name }}</h1>
             <p class="text-text-2">
                 One row per sampled segment: the ground's angle and aspect as stored, the track's bearing, and the
-                along-track gradient (signed, positive climbing, smoothed over five segments). Nothing here is stored.
+                along-track gradient (signed, positive climbing, smoothed over five segments). A segment whose raw
+                gradient is more than 5° steeper than its ground is rejected and left out of the smoothing. The
+                gradient comes from the stored points, not the original upload, which is not kept. Nothing here is
+                stored.
             </p>
             {% if rows %}
                 <p>

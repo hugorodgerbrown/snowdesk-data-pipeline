@@ -37,14 +37,46 @@ stored ones; when the count does not match — the points are not the ones
 the record was sampled from — the gradient is None throughout rather than
 a figure placed against the wrong ground.
 
-**IT IS SMOOTHED, BECAUSE RAW IT IS NOT A SLOPE ANYONE SKIED.** GPX
-elevations are noisy at 25 m spacing, and the reference track throws an
-85 degree spike off them. The gradient at segment i is the rise over the
-run across segments ``i - window`` to ``i + window``: summed height change
-over summed length, then the arctangent. That is a length-weighted mean
-of the slope RATIO, not a mean of angles, which is the physically honest
-average — ``atan`` is not linear. The window is a keyword argument, as
+## A segment steeper than its ground is rejected, then the rest smoothed
+
+**A TRACK ON THE GROUND CANNOT RISE FASTER THAN THE GROUND DOES.** So a
+segment whose own raw gradient exceeds its stored ground angle by more
+than ``GRADIENT_TOLERANCE_DEG`` is not a measurement of the track, and it
+is REJECTED: its gradient is None, ``track_gradient_rejected`` says why,
+and its rise is left out of every neighbour's window. Leaving it in is
+what made smoothing fail on the reference track (SNOW-1020): Mont Fort –
+Backside has two stored points 2.7 m apart horizontally and 244.8 m apart
+vertically — a break in the recording, not a slope — and a ±2 window
+spread it into five segments of about 72 degrees instead of removing it.
+
+The test needs a ground angle, so an unknown segment cannot be checked
+and is never rejected. Its raw gradient stands, and a recording break on
+unsurveyed ground passes through. That is the honest limit of a check
+against the ground: where there is no ground there is nothing to check.
+
+Then the gradient at segment i is the rise over the run across the
+ACCEPTED segments from ``i - window`` to ``i + window``: summed height
+change over summed length, then the arctangent. That is a length-weighted
+mean of the slope RATIO, not a mean of angles, which is the physically
+honest average — ``atan`` is not linear. Both are keyword arguments, as
 every gate in ``fall_line`` and ``passages`` is.
+
+## What the gradient can never be better than
+
+**THE ORIGINAL GPX IS NOT KEPT** (``docs/decisions/gpx-uploads-are-parsed-
+not-stored.md``), so this reads ``Route.points`` and nothing finer. Two
+ramifications, both recorded in that decision's consequences:
+
+* On an upload over ``gpx.MAX_POINTS`` the points are the Douglas–Peucker
+  remnant. Simplification keeps real elevations at the surviving vertices
+  but shortens the horizontal run across every cut corner, so the
+  gradient is OVERSTATED on a switchback — the one shape a skin track is
+  made of — and more of it is rejected by the check above. The four
+  canonical tracks are all under the bound and stored whole, so the
+  figures measured on them do not show this.
+* A recording break, like the Backside one, is in the stored points for
+  good. It can be rejected here; it cannot be repaired, and a rule that
+  would repair it applies to new uploads only.
 
 ## An unknown segment keeps its track figures
 
@@ -71,6 +103,18 @@ from apps.routes.services.slope_summary import segment_lengths_m
 # 100 m steep step visible.
 GRADIENT_WINDOW = 2
 
+# How far a segment's raw track gradient may exceed its ground angle, in
+# degrees, before it is rejected as not a measurement of the track.
+#
+# Five: a 2 m error in one boundary's elevation — ordinary for GPS, and
+# the stored ground angle is itself an average over a 10 m window — tilts
+# a 25 m segment by about 4.6 degrees. Measured on the four canonical
+# tracks and the seeded Verbier track, 5 degrees rejects 4 to 29 segments
+# a route (at most 5.6 %), including the Backside recording break; 2
+# degrees rejects nearly twice as many, which is noise being thrown away
+# as if it were a gap.
+GRADIENT_TOLERANCE_DEG = 5.0
+
 # Decimal places kept on a reported angle or bearing, matching the stored
 # record's own precision (``slope_segments._ANGLE_PRECISION``).
 _ANGLE_PRECISION = 1
@@ -88,6 +132,7 @@ COLUMNS: tuple[str, ...] = (
     "aspect_deg",
     "bearing_deg",
     "track_gradient_deg",
+    "track_gradient_rejected",
     "fall_line",
     "unknown",
 )
@@ -98,6 +143,7 @@ def terrain_detail(
     points: list[list[float | None]] | None,
     *,
     gradient_window: int = GRADIENT_WINDOW,
+    tolerance_deg: float = GRADIENT_TOLERANCE_DEG,
 ) -> list[dict[str, Any]] | None:
     """Return one row per segment of a stored slope record.
 
@@ -107,7 +153,9 @@ def terrain_detail(
         points: The track the record was sampled from, as
             ``[[lon, lat, ele], …]``. Read only for its elevations.
         gradient_window: Half-width of the track-gradient smoothing, in
-            segments. 0 gives the raw per-segment gradient.
+            segments. 0 gives each accepted segment's raw gradient.
+        tolerance_deg: How far a segment's raw gradient may exceed its
+            ground angle before it is rejected.
 
     Returns:
         One dict per segment, in track order, keyed by ``COLUMNS``. Every
@@ -125,11 +173,24 @@ def terrain_detail(
         return None
 
     lengths = segment_lengths_m(record)
-    gradients = _track_gradients(
-        _boundary_elevations(record, points or [], len(boundaries)),
-        lengths,
-        gradient_window,
-    )
+    elevations = _boundary_elevations(record, points or [], len(boundaries))
+    rises: list[float | None] = [
+        None if a is None or b is None else b - a
+        for a, b in zip(elevations, elevations[1:], strict=False)
+    ]
+    rejected = [
+        _steeper_than_ground(
+            rises[index],
+            lengths[index],
+            _number(segment.get("angle_deg")),
+            tolerance_deg,
+        )
+        for index, segment in enumerate(segments)
+    ]
+    accepted = [
+        None if bad else rise for rise, bad in zip(rises, rejected, strict=True)
+    ]
+    gradients = _track_gradients(accepted, lengths, gradient_window)
 
     rows: list[dict[str, Any]] = []
     from_m = 0.0
@@ -154,7 +215,10 @@ def terrain_detail(
                 "angle_deg": angle_deg,
                 "aspect_deg": aspect_deg,
                 "bearing_deg": _rounded(bearing_deg),
-                "track_gradient_deg": _rounded(gradients[index]),
+                "track_gradient_deg": (
+                    None if rejected[index] else _rounded(gradients[index])
+                ),
+                "track_gradient_rejected": rejected[index],
                 "fall_line": fall_line_alignment(bearing_deg, aspect_deg),
                 "unknown": segment.get("unknown"),
             }
@@ -233,27 +297,49 @@ def _interpolate_elevations(
     return result
 
 
+def _steeper_than_ground(
+    rise_m: float | None,
+    length_m: float,
+    angle_deg: float | None,
+    tolerance_deg: float,
+) -> bool:
+    """Return whether a segment's raw gradient is steeper than its ground.
+
+    Args:
+        rise_m: Height change across the segment, or None when unknown.
+        length_m: Its along-track length.
+        angle_deg: The stored ground angle, or None for an unknown segment.
+        tolerance_deg: The allowance above the ground angle.
+
+    Returns:
+        True only when both figures exist and the track outruns the
+        ground. An unknown segment, or one with no elevation, is never
+        rejected: there is nothing to check it against.
+
+    """
+    if rise_m is None or angle_deg is None or length_m <= 0:
+        return False
+    return math.degrees(math.atan(abs(rise_m) / length_m)) > angle_deg + tolerance_deg
+
+
 def _track_gradients(
-    elevations: list[float | None],
+    rises: list[float | None],
     lengths: list[float],
     window: int,
 ) -> list[float | None]:
     """Return the smoothed, signed along-track gradient of each segment.
 
     Args:
-        elevations: One elevation per boundary, None where unknown.
+        rises: One height change per segment, None where unknown or
+            rejected — either way it contributes nothing to any window.
         lengths: One along-track length per segment, in metres.
         window: Half-width of the smoothing, in segments.
 
     Returns:
         Degrees, positive climbing. None for a segment whose window holds
-        no segment with both boundary elevations known.
+        no segment with a usable rise.
 
     """
-    rises = [
-        None if a is None or b is None else b - a
-        for a, b in zip(elevations, elevations[1:], strict=False)
-    ]
     gradients: list[float | None] = []
     for index in range(len(lengths)):
         rise = 0.0

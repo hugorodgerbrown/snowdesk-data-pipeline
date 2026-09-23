@@ -220,7 +220,7 @@ class TestSmoothing:
     def test_a_window_of_zero_is_the_raw_gradient(self) -> None:
         """Each segment's own rise over its own run."""
         record, points = self._spiked()
-        rows = terrain_detail(record, points, gradient_window=0)
+        rows = terrain_detail(record, points, gradient_window=0, tolerance_deg=90.0)
         assert rows is not None
         steepest = max(abs(row["track_gradient_deg"]) for row in rows)
         # 20 m over the 10 m of track either side of the lifted point.
@@ -229,11 +229,78 @@ class TestSmoothing:
     def test_the_default_window_spreads_the_spike(self) -> None:
         """Five segments of run take most of the height out of it."""
         record, points = self._spiked()
-        raw = terrain_detail(record, points, gradient_window=0)
-        smoothed = terrain_detail(record, points)
+        raw = terrain_detail(record, points, gradient_window=0, tolerance_deg=90.0)
+        smoothed = terrain_detail(record, points, tolerance_deg=90.0)
         assert raw is not None and smoothed is not None
         assert max(abs(r["track_gradient_deg"]) for r in smoothed) < max(
             abs(r["track_gradient_deg"]) for r in raw
+        )
+
+
+class TestRejection:
+    """A segment steeper than its ground is not a measurement of the track."""
+
+    def _stepped(self) -> tuple[dict[str, Any], list[list[float | None]]]:
+        """A 30 degree fall-line descent with a 200 m step 150 m along.
+
+        The Backside shape (SNOW-1020): two stored points metres apart
+        horizontally and hundreds of metres apart vertically.
+        """
+        points = _plane_track(0.0, 30.0, 0.0)
+        for point in points[16:]:
+            point[2] = float(point[2] or 0.0) - 200.0
+        return _record(points, 30.0, 0.0), points
+
+    def test_the_step_is_rejected(self) -> None:
+        """Its gradient is None and the row says why."""
+        record, points = self._stepped()
+        rows = terrain_detail(record, points)
+        assert rows is not None
+        rejected = [row["i"] for row in rows if row["track_gradient_rejected"]]
+        assert rejected == [6]
+        assert rows[6]["track_gradient_deg"] is None
+
+    def test_the_step_does_not_reach_its_neighbours(self) -> None:
+        """Left out of every window, not smoothed into five segments."""
+        record, points = self._stepped()
+        rows = terrain_detail(record, points)
+        assert rows is not None
+        for row in rows:
+            if row["track_gradient_rejected"]:
+                continue
+            assert row["track_gradient_deg"] == pytest.approx(-30.0, abs=0.2)
+
+    def test_without_rejection_the_step_contaminates_the_window(self) -> None:
+        """The failure the rejection exists for, pinned so it stays visible."""
+        record, points = self._stepped()
+        rows = terrain_detail(record, points, tolerance_deg=90.0)
+        assert rows is not None
+        assert rows[5]["track_gradient_deg"] < -45.0
+
+    def test_an_unknown_segment_is_never_rejected(self) -> None:
+        """No ground angle, nothing to check the track against."""
+        points = _plane_track(0.0, 30.0, 0.0)
+        for point in points[16:]:
+            point[2] = float(point[2] or 0.0) - 200.0
+        rows = terrain_detail(_record(points, 30.0, 0.0, unknown_at=6), points)
+        assert rows is not None
+        assert rows[6]["track_gradient_rejected"] is False
+        assert rows[6]["track_gradient_deg"] is not None
+
+    def test_the_tolerance_is_a_keyword(self) -> None:
+        """The track runs 3 degrees steeper than the stored ground.
+
+        Inside the default 5 degree allowance; outside a 2 degree one.
+        """
+        points = _plane_track(0.0, 30.0, 0.0)
+        record = _record(points, 27.0, 0.0)
+        assert not any(
+            row["track_gradient_rejected"]
+            for row in terrain_detail(record, points) or []
+        )
+        assert all(
+            row["track_gradient_rejected"]
+            for row in terrain_detail(record, points, tolerance_deg=2.0) or []
         )
 
 
