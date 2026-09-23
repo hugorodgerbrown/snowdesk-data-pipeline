@@ -80,7 +80,7 @@ class SlopeClass:
 # THE PYTHON COPY OF ``static/js/route_slope_core.js``'s CLASSES, and the
 # copy is deliberate rather than lazy: a MapLibre paint expression cannot
 # call Python and this module cannot import JavaScript, so one of the two
-# has to be second. ``tests/routes/services/test_slope_summary.py`` parses
+# has to be second. ``tests/routes/test_slope_summary.py`` parses
 # that file and asserts the two agree, which is what stops them drifting —
 # a route coloured by one table and described by another would disagree
 # with itself on the same screen.

@@ -93,6 +93,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 | `/_sw-version/` | Deployed `CACHE_VERSION` / `APP_VERSION` vs the live service-worker version ([`docs/offline-map.md`](offline-map.md)). |
 | `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
 | `/_icon-sets/` | The candidate weather icon sets side by side, kept for comparison ([`docs/weather-surfaces.md`](weather-surfaces.md)). |
+| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing and signed along-track gradient per 25 m segment, with a CSV of the same rows (`?format=csv`). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
 
 ## HTMX partial routes
 

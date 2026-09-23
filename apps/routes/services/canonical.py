@@ -21,7 +21,7 @@ mont-fort-backside              694    18.6 m  4            two big descents
 ===========================  ======  ========  ===========  =============
 
 **THE SPACING SPREAD IS THE POINT, not the leg counts.** Those four tracks
-put a point every 3.8 m to every 18.6 m — a factor of 4.7 — and the leg
+put a point every 3.8 m to every 18.6 m — a factor of 4.9 — and the leg
 detector's smoothing window is specified in POINTS. Ten points is 76 m of
 ground on the Chamonix track and 372 m on the Backside one, so the same
 setting smooths away a roll on one track that it preserves on another. A

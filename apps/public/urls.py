@@ -179,6 +179,13 @@ urlpatterns = [
     # SW shell cache-version page — staff-only, surfaces live vs deployed
     # CACHE_VERSION (SNOW-517).
     path("_sw-version/", debug_views.sw_version, name="sw_version"),
+    # SNOW-1020: one route's angle, aspect, bearing and track gradient per
+    # segment, with a CSV of the same rows. Linked from the Route admin.
+    path(
+        "_route-terrain/<uuid:route_uuid>/",
+        debug_views.route_terrain,
+        name="route_terrain",
+    ),
     # Examples — sample bulletin links rendered inline using the canonical view.
     path("examples/random/", views.examples_random, name="examples_random"),
     path(

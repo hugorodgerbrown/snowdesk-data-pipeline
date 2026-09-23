@@ -2,7 +2,7 @@
 name: gpx-uploads-are-parsed-not-stored
 description: Uploaded .gpx files are parsed into Route.points and discarded — no FileField, no MEDIA_ROOT, no object storage
 status: current
-last-reviewed: 2026-08-17
+last-reviewed: 2026-09-23
 ---
 
 # GPX uploads are parsed, not stored (SNOW-685)
@@ -62,3 +62,26 @@ the smaller the exposure. Simplification (see `MAX_POINTS` in
   and that is the moment to add object storage.
 - Per-point timestamps, heart rate and other GPX extensions are gone at
   ingest. A feature that needs them needs this decision revisited first.
+- **The along-track gradient can be no better than `points`** (SNOW-1020,
+  `apps/routes/services/terrain_detail.py`). The slope record's boundaries
+  carry no elevation, so the gradient re-walks `points`; nothing finer
+  exists to walk. Three ramifications:
+  - On an upload over `MAX_POINTS` the points are the Douglas–Peucker
+    remnant. Real elevations survive at the kept vertices, but the
+    horizontal run across every cut corner is shortened, so the gradient
+    is overstated on switchbacks — the shape a skin track is made of.
+    The four canonical tracks are under the bound and stored whole, so
+    the figures in the next bullet do not include this effect.
+  - A recording break is in `points` for good. Mont Fort – Backside
+    falls 359.6 m across two consecutive stored gaps totalling 5.1 m
+    horizontally (244.8 m over 2.7 m, then 114.8 m over 2.4 m). `terrain_detail` rejects any segment whose raw gradient
+    exceeds its ground angle by more than `GRADIENT_TOLERANCE_DEG` (5°),
+    which catches that break; it cannot repair it. On the canonical tracks
+    the check rejects 4 to 29 segments a route (at most 5.6 %). A segment
+    with no ground angle cannot be checked, so a break over unsurveyed
+    ground passes through.
+  - Anything that reads the gradient as the skier's pitch inherits both.
+    SNOW-1021's bank angle does not: it is derived from the terrain
+    model's angle and aspect, not from `points`. A pitch that must be
+    trusted should be taken the same way, geometrically from the terrain,
+    until originals are retained.

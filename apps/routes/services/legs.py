@@ -15,44 +15,61 @@ freedom to re-tune them.
 
 ## THE WINDOW IS IN METRES, AND THAT IS THE WHOLE POINT
 
-The obvious implementation smooths elevation over a window of N POINTS.
-That is wrong in a way which is invisible until you hold two recordings
-side by side, because a point is not a distance — it is one position fix,
-at whatever interval the recording device chose. Across the four canonical
-tracks a point is every 3.8 m to every 18.6 m, so a ten-point window spans
-76 m of ground on one and 372 m on another. **The same setting smooths away
-a roll on one track that it preserves on another**, and the same terrain
-then yields different legs depending on what recorded it.
+The obvious implementation smooths elevation over a window of N POINTS. That
+is wrong in a way which is invisible until you hold two recordings side by
+side, because a point is not a distance — it is one position fix, at
+whatever interval the recording device chose. Across the four canonical
+tracks a point is every 3.8 m to every 18.6 m on average, so a ten-point
+window spans about 76 m of ground on one and 372 m on another (spacing is
+uneven within a track, so the medians are lower: 51 m and 347 m). **The same
+setting smooths away a roll on one track that it preserves on another**, and
+the same terrain then yields different legs depending on what recorded it.
 
 Measured on the corpus, thinning each track to 1/2, 1/3, 1/4 and 1/6 of its
-points — the same route as a coarser recording of itself:
+points — the same route as a coarser recording of itself. The points window
+compared against is ten points either side. A boundary's movement is its
+along-track distance on the thinned track against the full one, so it
+includes the distance thinning cuts off corners as well as any real shift:
 
 * a metres window held the leg COUNT on all four tracks at every level;
   a points window broke it, turning Col de la Chaux's seven legs into
   eleven at 1/6;
-* interior boundaries moved less under a metres window in **every one of
-  the fifteen** comparisons where a points window still found the same
-  legs to compare, typically by about half. The sixteenth is the Col de
-  la Chaux case above, where a points window found no comparable
-  boundaries because it had found four extra legs.
+* interior boundaries moved less under a metres window in **every one of the
+  fifteen** comparisons where a points window still found the same NUMBER of
+  legs, typically by half or more. The sixteenth is the Col de la Chaux case
+  above, where a points window found no comparable boundaries because it had
+  found four extra legs. (Hidden Valley at 1/6 is one of the fifteen on
+  count alone: its points window finds four legs, but the second no longer
+  gains height overall (+111 m on the full track, -44 m at 1/6), so the
+  legs' ``climbing`` flags no longer alternate. Requiring the order too
+  leaves fourteen, and metres still wins all of them.)
 
 **What it does NOT do is make boundaries invariant**, and the figures say
-so plainly: Hidden Valley's boundaries still move up to ~600 m at 1/6.
-Two reasons, both limits of the method rather than bugs. The hysteresis below
-measures an excursion between two SAMPLED points, so thinning changes
-which points those are; and a window cannot smooth over 100 m of ground
-when the points are 79 m apart, which is what 1/6 of Hidden Valley is.
+so plainly: Hidden Valley's boundaries still move up to ~600 m at 1/6
+on the measure above. Mapped back onto the full recording, which leaves
+out what thinning cut from the corners, the same boundaries move 74 m.
+Three reasons, all limits of the method rather than bugs. Thinning shortens
+the track across every corner it cuts, which the measure above counts as
+movement; the hysteresis below measures an excursion between two SAMPLED
+points, so thinning changes which points those are; and a window cannot
+smooth over 100 m of ground when the points are 79 m apart, which is what
+1/6 of Hidden Valley is.
 A metres window is the right unit, not a guarantee.
 
 ## The constants
 
 Both were swept across the corpus rather than chosen. ``SMOOTHING_WINDOW_M``
-sits in a plateau — every value from 75 m to 300 m gives the same leg count
-on all four tracks, and only at 50 m does Hidden Valley shed two extra
-legs. ``MIN_LEG_ASCENT_M`` is flat from 15 m upward, and at 10 m Hidden
-Valley again splits. 100 m and 15 m are the middle of both plateaus, which
-is where a constant should sit when the corpus is this small: far from
-either edge, so the next track added is unlikely to move the answer.
+sits in a plateau — every value from 75 m to 400 m gives the same leg count
+on all four tracks; at 50 m Hidden Valley gains two extra legs, and at
+500 m Col de la Chaux gains two. ``MIN_LEG_ASCENT_M`` is flat from 12 m to
+50 m; at 10 m Hidden Valley splits again, and at 75 m it loses a leg.
+
+Neither sits in the middle of its plateau, though an earlier version of
+this paragraph said both did. 100 m is 25 m above the window's lower edge
+and 15 m is 3 m above the threshold's, so both are the least smoothing that
+holds rather than the most central. A track added to the corpus is more
+likely to move the answer at the low edge than the high one. Re-measured
+2026-09-23 over the four canonical tracks.
 
 They are keyword arguments, which is the mechanical proof that re-tuning
 costs nothing.

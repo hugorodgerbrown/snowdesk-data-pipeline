@@ -1,0 +1,62 @@
+{% extends "public/base.html" %}
+
+{# SNOW-1020: sharing=False. Staff-only debug page, mounted unconditionally #}
+{# (staff-gated, not a DEBUG gate — see apps/public/debug_views.py's       #}
+{# module docstring). It shows one user's route and has no public URL.    #}
+{% block page_meta %}
+    {% include "includes/_page_meta.html" with title="Route terrain — debug" description="Staff-only per-segment terrain table for one route." sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+        <header class="space-y-2">
+            <p class="text-text-3 text-sm uppercase tracking-wide">debug</p>
+            <h1 class="text-2xl font-semibold text-text-1">{{ route.name }}</h1>
+            <p class="text-text-2">
+                One row per sampled segment: the ground's angle and aspect as stored, the track's bearing, and the
+                along-track gradient (signed, positive climbing, smoothed over five segments). A segment whose raw
+                gradient is more than 5° steeper than its ground is rejected and left out of the smoothing. The
+                gradient comes from the stored points, not the original upload, which is not kept. Nothing here is
+                stored.
+            </p>
+            {% if rows %}
+                <p>
+                    <a href="?format=csv" class="text-text-1 underline" data-testid="route-terrain-csv">Download CSV</a>
+                </p>
+            {% endif %}
+        </header>
+
+        {% if not sampled %}
+            <p class="text-text-2" data-testid="route-terrain-unsampled">This route has not been sampled.</p>
+        {% elif not rows %}
+            <p class="text-text-2" data-testid="route-terrain-unreadable">
+                The slope record could not be read: its boundaries and segments do not pair up.
+            </p>
+        {% else %}
+            <div class="bg-card border border-border rounded-card overflow-x-auto">
+                <table class="w-full text-sm font-mono" data-testid="route-terrain-table">
+                    <thead>
+                        <tr class="text-left text-text-3">
+                            {% for column in columns %}<th class="px-3 py-2 font-normal">{{ column }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                            <tr class="border-t border-border text-text-1">
+                                {% for value in row %}
+                                    <td class="px-3 py-1">
+                                        {% if value is None %}
+                                            <span class="text-text-3">—</span>
+                                        {% else %}
+                                            {{ value }}
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </main>
+{% endblock content %}

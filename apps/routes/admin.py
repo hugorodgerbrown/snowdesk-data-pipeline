@@ -14,6 +14,9 @@ actually needs to identify a row.
 SNOW-988 adds the one action on either model: downloading a route back out
 as a ``.gpx``. It is a READ, which is why it sits on an otherwise
 read-mostly admin without contradicting it — nothing about the row changes.
+
+SNOW-1020 adds a link from a route to its per-segment terrain table on the
+staff debug page, for the same reason: it reads the row and changes nothing.
 """
 
 import logging
@@ -21,6 +24,8 @@ import logging
 from django.contrib import admin, messages
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .models import Route, RouteShare
 from .services.gpx_export import build_gpx, gpx_filename
@@ -77,11 +82,29 @@ class RouteAdmin(admin.ModelAdmin):
         # answer, and an edited copy would claim a steepness no terrain
         # tile ever reported.
         "slope_samples",
+        "terrain_detail_link",
         "created_at",
         "updated_at",
     ]
     date_hierarchy = "created_at"
     actions = ["download_as_gpx"]
+
+    @admin.display(description="Terrain per segment")
+    def terrain_detail_link(self, obj: Route) -> str:
+        """Link to the route's per-segment terrain table (SNOW-1020).
+
+        Args:
+            obj: The route being viewed.
+
+        Returns:
+            An HTML link, or a dash for a route not yet sampled — the page
+            would only say so.
+
+        """
+        if obj.slope_samples is None:
+            return "—"
+        url = reverse("public:route_terrain", kwargs={"route_uuid": obj.uuid})
+        return format_html('<a href="{}">Angle, aspect, bearing, gradient</a>', url)
 
     @admin.action(description="Download as GPX")
     def download_as_gpx(

@@ -180,7 +180,7 @@ def build_slope_samples(
         )
         return None
 
-    cumulative = _cumulative_distances(points)
+    cumulative = cumulative_distances(points)
     if not cumulative or cumulative[-1] <= 0:
         return None
 
@@ -472,7 +472,7 @@ def stride_coordinates(
         the caller discards as holding no segment.
 
     """
-    cumulative = _cumulative_distances(points)
+    cumulative = cumulative_distances(points)
     if not cumulative:
         return []
 
@@ -512,8 +512,13 @@ def _segment_record(slope: TerrainSlope) -> dict[str, Any]:
     }
 
 
-def _cumulative_distances(points: list[list[float | None]]) -> list[float]:
+def cumulative_distances(points: list[list[float | None]]) -> list[float]:
     """Return the along-track distance of each stored point.
+
+    Public because ``apps.routes.services.terrain_detail`` (SNOW-1020) is
+    its second caller: it re-walks the same track to find each segment
+    boundary's elevation, and the boundaries only line up with the stored
+    ones if both walks measure the track with this one function.
 
     Args:
         points: The stored track as ``[[lon, lat, ele], …]``.
