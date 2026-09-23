@@ -254,6 +254,16 @@ footer p + p { margin-top: 6px; }
 
 .strip { margin-top: 22px; padding: 18px 20px 12px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
 .strip svg { display: block; width: 100%; height: auto; }
+/* On a phone the strips shrank their labels to 3.5 px and the hero figure
+   to 7 px. Below these widths they keep them and scroll inside their box;
+   the strips share one width so the leg still lines up across them. */
+.strip { overflow-x: auto; }
+.strip svg { min-width: 760px; }
+.hero figure { overflow-x: auto; }
+/* Grid items grow to their content by default; without this the scrolling
+   boxes above widen their column and the page scrolls instead. */
+.stage > div, .cols > *, .hero > * { min-width: 0; }
+#fig-hero { min-width: 420px; }
 .striplegend {
   display: flex; flex-wrap: wrap; gap: 5px 20px; margin-top: 12px;
   font-family: var(--display); font-stretch: 92%; font-size: 12.5px; color: var(--ink-2);

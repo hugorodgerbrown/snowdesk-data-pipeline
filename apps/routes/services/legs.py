@@ -25,23 +25,33 @@ a roll on one track that it preserves on another**, and the same terrain
 then yields different legs depending on what recorded it.
 
 Measured on the corpus, thinning each track to 1/2, 1/3, 1/4 and 1/6 of its
-points — the same route as a coarser recording of itself:
+points — the same route as a coarser recording of itself. The points window
+compared against is ten points either side. A boundary's movement is its
+along-track distance on the thinned track against the full one, so it
+includes the distance thinning cuts off corners as well as any real shift:
 
 * a metres window held the leg COUNT on all four tracks at every level;
   a points window broke it, turning Col de la Chaux's seven legs into
   eleven at 1/6;
 * interior boundaries moved less under a metres window in **every one of
   the fifteen** comparisons where a points window still found the same
-  legs to compare, typically by about half. The sixteenth is the Col de
+  NUMBER of legs, typically by about half. The sixteenth is the Col de
   la Chaux case above, where a points window found no comparable
-  boundaries because it had found four extra legs.
+  boundaries because it had found four extra legs. (Hidden Valley at 1/6
+  is one of the fifteen on count alone: its points window finds four legs
+  but no longer in the same climbing/descending order. Requiring the
+  order too leaves fourteen, and metres still wins all of them.)
 
 **What it does NOT do is make boundaries invariant**, and the figures say
-so plainly: Hidden Valley's boundaries still move up to ~600 m at 1/6.
-Two reasons, both limits of the method rather than bugs. The hysteresis below
-measures an excursion between two SAMPLED points, so thinning changes
-which points those are; and a window cannot smooth over 100 m of ground
-when the points are 79 m apart, which is what 1/6 of Hidden Valley is.
+so plainly: Hidden Valley's boundaries still move up to ~600 m at 1/6
+on the measure above. Mapped back onto the full recording, which leaves
+out what thinning cut from the corners, the same boundaries move 74 m.
+Three reasons, all limits of the method rather than bugs. Thinning shortens
+the track across every corner it cuts, which the measure above counts as
+movement; the hysteresis below measures an excursion between two SAMPLED
+points, so thinning changes which points those are; and a window cannot
+smooth over 100 m of ground when the points are 79 m apart, which is what
+1/6 of Hidden Valley is.
 A metres window is the right unit, not a guarantee.
 
 ## The constants

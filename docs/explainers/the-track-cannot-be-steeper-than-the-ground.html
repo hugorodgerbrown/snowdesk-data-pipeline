@@ -230,7 +230,11 @@ footer p + p { margin-top: 6px; }
 .maths .t { color: var(--track-line); }
 .maths .g { color: var(--ground-line); }
 .chartbox { margin-top: 22px; padding: 18px 20px 12px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
-.chartbox svg { display: block; width: 100%; height: auto; }
+.chartbox { overflow-x: auto; }
+/* A 1000-unit chart with 12-unit labels shrinks them to 3.5 px on a phone.
+   Below 760 px it keeps that width and scrolls inside its box instead,
+   which holds the smallest label at about 9 px. */
+.chartbox svg { display: block; width: 100%; min-width: 760px; height: auto; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-family: var(--display); font-stretch: 95%; font-size: 12.5px; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend i { display: block; width: 18px; height: 3px; border-radius: 2px; }
