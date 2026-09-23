@@ -212,6 +212,9 @@ footer p + p { margin-top: 6px; }
   .rules li { grid-template-columns: 1fr; gap: 2px; }
   .rules .label { padding-top: 0; }
 }
+/* A stage's content column must be allowed to shrink below a table's min-width;
+   the table scrolls inside .tbl-wrap instead of widening the page on a phone. */
+.stage > div { min-width: 0; }
 </style>
 
 <div class="wrap">
