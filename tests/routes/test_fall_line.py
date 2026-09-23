@@ -108,7 +108,7 @@ class TestTheGate:
     def test_is_inclusive(self) -> None:
         """Exactly 30 degrees is steep enough to carry an arrow.
 
-        ``band_for_angle``'s convention, and the one that matters: a
+        ``class_for_angle``'s convention, and the one that matters: a
         gate that excluded its own boundary would leave the gentlest
         painted band — the one the colour scale calls 30-35 — with no
         arrows at its foot.

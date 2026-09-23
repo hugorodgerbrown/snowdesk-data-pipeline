@@ -1,0 +1,751 @@
+<title>Four Ways to Draw the Fall Line</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A skier crossing a steep face and a skier pointing straight down it look identical on a map. Four attempts at telling them apart, drawn from one real tour.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root {
+  /* Series tokens — shared with "Anatomy of a Route" so the two read as one set. */
+  --ground: #eef1f3;
+  --surface: #fbfcfc;
+  --ink: #16202a;
+  --ink-2: #4c5866;
+  --ink-3: #7a8592;
+  --rule: #d5dce2;
+  --route: #b421c8;
+  --route-soft: #f3e3f6;
+  /* Four functional hues, one job each. */
+  --keep: #0f7d6b;        /* present · kept · climb */
+  --keep-soft: #dcf0eb;
+  --fall: #2f6fae;        /* descent */
+  --once: #9a6b12;        /* read once, then gone */
+  --once-soft: #f6ecd6;
+  --plate-shadow: 0 1px 0 rgba(22,32,42,.06), 0 18px 40px -24px rgba(22,32,42,.45);
+
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+    --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33;
+    --keep: #4fc3ab; --keep-soft: #14302b; --fall: #7db0e6; --once: #d3a63f; --once-soft: #2e2617;
+    --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+  --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33;
+  --keep: #4fc3ab; --keep-soft: #14302b; --fall: #7db0e6; --once: #d3a63f; --once-soft: #2e2617;
+  --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground); color: var(--ink);
+  font-family: var(--body); font-size: 17px; line-height: 1.6;
+  padding-inline: 20px; padding-block: 0 96px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3, .eyebrow, .label, .tag { font-family: var(--display); }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: inherit; text-decoration-color: var(--route); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--route); outline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: .82em; }
+code { background: color-mix(in srgb, var(--rule) 55%, transparent); padding: .08em .35em; border-radius: 3px; }
+.eyebrow {
+  font-size: 12px; font-weight: 650; font-stretch: 112%; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+figure { margin: 0; }
+figcaption { margin-top: 10px; font-family: var(--display); font-stretch: 92%; font-size: 13px; color: var(--ink-3); max-width: 46em; }
+svg.fig { display: block; width: 100%; height: auto; max-width: 100%; }
+.scroll { overflow-x: auto; }
+
+/* ---------- hero ---------- */
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 44px; align-items: center; padding-block: 56px 20px;
+}
+.hero h1 {
+  font-size: clamp(42px, 6.2vw, 80px); line-height: .92; font-weight: 800;
+  font-stretch: 78%; letter-spacing: -.01em; margin-top: 14px;
+}
+.hero h1 em { font-style: normal; color: var(--route); }
+.hero .lede { margin-top: 22px; font-size: 19px; color: var(--ink-2); max-width: 34em; }
+.facts {
+  margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* ---------- the annotated file ---------- */
+.file {
+  background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow);
+  padding: 18px 20px; font-size: 13px;
+}
+.file-h {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--rule);
+}
+.file-h .name { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
+.lines { display: grid; gap: 3px; }
+.ln {
+  display: grid; grid-template-columns: 3px minmax(0, 1fr) minmax(0, 15em);
+  gap: 0 14px; align-items: baseline;
+}
+.ln > .bar { border-radius: 2px; align-self: stretch; background: var(--rule); }
+.ln.keep  > .bar { background: var(--keep); }
+.ln.once  > .bar { background: var(--once); }
+.ln.drop  > .bar { background: repeating-linear-gradient(180deg, var(--ink-3) 0 3px, transparent 3px 7px); }
+.ln > .src {
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+  white-space: pre; overflow-x: auto; color: var(--ink);
+}
+.ln.drop > .src { color: var(--ink-3); }
+.ln > .note {
+  font-family: var(--display); font-stretch: 92%; font-size: 12px; line-height: 1.45;
+  color: var(--ink-2); padding-block: 2px;
+}
+.ln > .note b { color: var(--ink); font-weight: 650; }
+.key { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.key span { display: flex; align-items: center; gap: 7px; font-family: var(--display); font-size: 12px; font-stretch: 95%; color: var(--ink-2); }
+.key i { width: 3px; height: 14px; border-radius: 2px; display: block; }
+
+/* ---------- principles ---------- */
+.principle {
+  margin-block: 40px 12px; padding: 22px 26px; background: var(--surface);
+  border-radius: 6px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 26px;
+  box-shadow: 0 1px 0 var(--rule);
+}
+.principle h3 { font-size: 20px; font-stretch: 88%; font-weight: 700; margin-bottom: 6px; }
+.principle p { color: var(--ink-2); font-size: 16px; }
+.principle p + p { margin-top: 10px; }
+.principle .k { font-family: var(--mono); font-size: 12px; color: var(--route); letter-spacing: .04em; display: block; margin-bottom: 6px; }
+
+/* ---------- stages ---------- */
+.stage {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 0 28px;
+  padding-block: 60px 8px; border-top: 1px solid var(--rule); margin-top: 52px;
+}
+.stage > .num {
+  font-family: var(--display); font-weight: 800; font-stretch: 75%;
+  font-size: 72px; line-height: .8; color: var(--route);
+  font-variant-numeric: tabular-nums;
+}
+.stage header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.stage h2 { font-size: clamp(29px, 3.5vw, 43px); line-height: 1; font-weight: 750; font-stretch: 82%; }
+.stage .where { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.stage .q { margin-top: 10px; font-style: italic; font-size: 20px; color: var(--ink-2); max-width: 36em; }
+.stage .body { margin-top: 24px; }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.cols p + p { margin-top: 12px; }
+.cols h3, .side h3 {
+  font-size: 12px; font-weight: 650; font-stretch: 110%; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px;
+}
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 15.5px; }
+.rules li { display: grid; grid-template-columns: 118px 1fr; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed var(--rule); }
+.rules li:last-child { border-bottom: 0; padding-bottom: 0; }
+.rules .label { font-size: 12px; font-weight: 600; font-stretch: 95%; color: var(--ink-3); padding-top: 3px; }
+.caveat {
+  margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--once);
+  background: var(--once-soft); font-size: 15.5px; border-radius: 0 4px 4px 0;
+}
+.caveat b { font-family: var(--display); font-stretch: 92%; }
+.next {
+  margin-top: 18px; padding: 14px 16px; border-left: 3px solid var(--route);
+  background: var(--route-soft); font-size: 15.5px; border-radius: 0 4px 4px 0;
+}
+.next .tag {
+  display: block; font-size: 11px; font-weight: 650; font-stretch: 112%;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--route); margin-bottom: 5px;
+}
+.next b { font-family: var(--display); font-stretch: 92%; }
+.figbox { margin-top: 26px; padding: 22px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
+
+/* ---------- tables ---------- */
+.tbl-wrap { overflow-x: auto; margin-top: 18px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--display); font-weight: 650; font-stretch: 105%; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+td code { white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--display); font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--keep-soft); color: var(--keep); }
+.pill.no { background: color-mix(in srgb, var(--route) 14%, transparent); color: var(--route); }
+.pill.part { background: var(--once-soft); color: var(--once); }
+
+.section-h { margin-top: 84px; padding-top: 40px; border-top: 1px solid var(--rule); }
+.section-h h2 { font-size: clamp(29px, 3.5vw, 43px); font-weight: 750; font-stretch: 82%; line-height: 1; }
+.section-h > p { margin-top: 12px; color: var(--ink-2); max-width: 42em; }
+
+.later {
+  margin-top: 84px; padding: 28px 30px; border-radius: 6px;
+  background: var(--route-soft); color: var(--ink);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px;
+}
+.later h2 { font-size: 26px; font-weight: 750; font-stretch: 85%; }
+.later p { margin-top: 10px; font-size: 16px; color: var(--ink-2); }
+.later p + p { margin-top: 10px; }
+
+footer { margin-top: 76px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13.5px; color: var(--ink-3); font-family: var(--display); font-stretch: 92%; }
+footer p + p { margin-top: 6px; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; gap: 32px; padding-block: 36px 12px; }
+  .principle, .cols, .later { grid-template-columns: 1fr; }
+  .stage { grid-template-columns: 1fr; }
+  .stage > .num { font-size: 46px; margin-bottom: 10px; }
+  .ln { grid-template-columns: 3px minmax(0, 1fr); }
+  .ln > .note { grid-column: 2; padding-bottom: 4px; }
+}
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .rules li { grid-template-columns: 1fr; gap: 2px; }
+  .rules .label { padding-top: 0; }
+}
+</style>
+
+<style>
+/* Page-specific, on top of the series set above. ------------------------- */
+:root {
+  /* the slope scale, as the app draws it */
+  --s-gentle: #38bdf8; --s-30: #f2e50a; --s-35: #f46f24; --s-40: #de055b;
+  --s-45: #c889bb; --s-50: #4b4b4b; --s-unknown: #94a3b8;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --s-50: #8a8a8a; } }
+:root[data-theme="dark"] { --s-50: #8a8a8a; }
+
+/* The leg picker. Every drawing on the page redraws from it. */
+.legbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--rule);
+}
+.legbar .eyebrow { margin-right: 4px; }
+.legbtn {
+  font-family: var(--mono); font-size: 13px; background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.legbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+.legbtn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.legbtn:focus-visible { outline: 2px solid var(--route); outline-offset: 2px; }
+
+/* An option's left column carries its own mark rather than a number: these
+   are four alternatives, not four steps, and a counter would say otherwise. */
+.stage > .mark {
+  font-family: var(--mono); font-size: 26px; line-height: 1.1; font-weight: 600;
+  color: var(--route); letter-spacing: -.04em; padding-top: 6px;
+}
+.stage .verdict {
+  font-family: var(--display); font-size: 11px; font-weight: 650; font-stretch: 112%;
+  letter-spacing: .12em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--ink-3); color: var(--ink-3); white-space: nowrap;
+}
+.stage .verdict.picked { border-color: var(--keep); color: var(--keep); background: var(--keep-soft); }
+
+.strip { margin-top: 22px; padding: 18px 20px 12px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
+.strip svg { display: block; width: 100%; height: auto; }
+.striplegend {
+  display: flex; flex-wrap: wrap; gap: 5px 20px; margin-top: 12px;
+  font-family: var(--display); font-stretch: 92%; font-size: 12.5px; color: var(--ink-2);
+}
+.striplegend span { display: inline-flex; align-items: center; gap: 7px; }
+.striplegend i { width: 18px; height: 3px; border-radius: 2px; display: block; }
+.striplegend .muted { color: var(--ink-3); }
+
+.sample {
+  margin-top: 22px; padding: 16px 20px; background: var(--surface); border-radius: 6px;
+  box-shadow: var(--plate-shadow); font-family: var(--mono); font-size: 14px; color: var(--ink);
+}
+.sample .muted { color: var(--ink-3); }
+
+@media (max-width: 900px) { .stage > .mark { font-size: 20px; margin-bottom: 8px; padding-top: 0; } }
+</style>
+
+<div class="wrap">
+
+<section class="hero">
+  <div>
+    <div class="eyebrow">Snowdesk · how a route is drawn</div>
+    <h1>Four ways to draw the <em>fall line</em></h1>
+    <p class="lede">A skier cutting across a forty-degree face and a skier pointing straight down it are having two different days. On a map they look identical — same line, same colour, same steepness underfoot. This is four attempts at telling them apart: three that failed, and the one that works.</p>
+    <div class="facts">
+      <span><b>12.9 km</b> of one real tour</span>
+      <span><b>515</b> pieces of ground, 25 m each</span>
+      <span><b>4</b> legs</span>
+      <span>every drawing below is <b>live</b></span>
+    </div>
+  </div>
+  <figure>
+    <svg class="fig" id="fig-hero" viewBox="0 0 560 250" role="img" aria-label="The same forty-degree face crossed two ways: a traverse, whose track stays nearly level, and a fall-line descent, whose track is as steep as the face"></svg>
+    <figcaption>The same face, twice. The ground is forty degrees in both. What changes is where you point.</figcaption>
+  </figure>
+</section>
+
+<div class="principle">
+  <div>
+    <span class="k">the problem</span>
+    <h3>Colour says how steep the ground is, not what you are doing on it</h3>
+    <p>A saved route is painted by the steepness of the ground beneath it. That is a real and useful thing to know, and it is silent on the question that decides the day. Two tracks over identical ground get identical paint: the one that traverses the face, and the one that commits to it.</p>
+    <p>The difference is not a detail. A traverse spends a few seconds above the same slope a descent spends a minute on, with a fraction of the speed and a fraction of the load on the snow.</p>
+  </div>
+  <div>
+    <span class="k">what we already know</span>
+    <h3>The answer is already in the data, and nobody had drawn it</h3>
+    <p>For every 25 m of a route we know two things about the ground: how steep it is, and which way it faces — which is to say, which way is downhill. We also know which way the track is heading. The angle between “which way is downhill” and “which way am I going” is the entire question.</p>
+    <p>It has been computed for years, in one narrow place: the stretches over fifty degrees, where a slip does not stop. Below that — the thirty-five to forty-five band where most decisions are actually made — the question was never asked.</p>
+  </div>
+</div>
+
+<div class="legbar" id="legbar">
+  <span class="eyebrow">Pick a leg</span>
+</div>
+
+<div class="section-h">
+  <h2>Four ways to say it</h2>
+  <p>All four drawn from the same tour, on whichever leg you picked. A leg is a stretch that is consistently climbing or consistently descending — the run between two turning points.</p>
+</div>
+
+<article class="stage" id="three-words">
+  <div class="mark">▼▲—</div>
+  <div>
+    <header>
+      <h2>Three words</h2>
+      <span class="verdict">tried, rejected</span>
+    </header>
+    <p class="q">Down the fall line, up it, or across it — pick one per stretch.</p>
+    <div class="body">
+      <div class="strip">
+        <svg id="s-a" viewBox="0 0 1000 46" preserveAspectRatio="none" role="img" aria-label="A row of glyphs along the leg: a down chevron where the track descends the fall line, an up chevron where it climbs it, a dash where it crosses"></svg>
+        <div class="striplegend">
+          <span>▼ down the fall line</span><span>▲ up it</span><span>— across it</span>
+          <span class="muted">nothing at all below thirty degrees</span>
+        </div>
+      </div>
+      <div class="cols" style="margin-top:26px">
+        <div>
+          <h3>What it says</h3>
+          <p>One word per stretch, from the angle between where the track is heading and where the ground falls. It borrows the vocabulary already used on the steepest ground, and asks the same question lower down.</p>
+          <p>It is the cheapest of the four and the easiest to explain, which is why it was built first.</p>
+        </div>
+        <div class="side">
+          <h3>What it costs</h3>
+          <ul class="rules">
+            <li><span class="label">Two hidden numbers</span><span>Nothing is drawn below thirty degrees, and a second rule decides where “across” begins. Neither is visible to the reader.</span></li>
+            <li><span class="label">A cliff edge</span><span>A crossing and a descent two degrees apart look nothing alike. The ground does not change at that boundary; only the drawing does.</span></li>
+            <li><span class="label">It saturates</span><span>On a descent, nearly every stretch clears the gate, so the row fills edge to edge and stops discriminating. Pick leg 2 or 4 above and watch it happen.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage" id="quantity">
+  <div class="mark">▁▃▆█</div>
+  <div>
+    <header>
+      <h2>How closely, as a quantity</h2>
+      <span class="verdict">tried, rejected</span>
+    </header>
+    <p class="q">Not a word. A height.</p>
+    <div class="body">
+      <div class="strip">
+        <svg id="s-b" viewBox="0 0 1000 66" preserveAspectRatio="none" role="img" aria-label="A filled strip above and below a midline: its height is how closely the track follows the fall line, above the line for descending it and below for climbing"></svg>
+        <div class="striplegend">
+          <span><i style="background:var(--route)"></i>above · descending the fall line</span>
+          <span><i style="background:var(--fall)"></i>below · climbing it</span>
+          <span class="muted">at the midline · a pure traverse</span>
+        </div>
+      </div>
+      <div class="cols" style="margin-top:26px">
+        <div>
+          <h3>What it says</h3>
+          <p>How closely the track follows the fall line, drawn as a size rather than rounded to a word. Full height is straight down it, the midline is a pure traverse, and every value in between gets its own height. No boundary, no cliff edge, nothing hidden.</p>
+        </div>
+        <div class="side">
+          <h3>What it costs</h3>
+          <ul class="rules">
+            <li><span class="label">It is abstract</span><span>Nothing on the strip is a number anyone has used. “Six tenths of the way to the fall line” is not a thing said at the top of a pitch.</span></li>
+            <li><span class="label">It collapses</span><span>On a descent almost everything is near the fall line, so the strip is a solid block. Removing the boundary did not remove the problem the boundary was causing — it moved it.</span></li>
+          </ul>
+          <p class="caveat"><b>Worth seeing for yourself.</b> Pick leg 2. The strip goes solid. That is not a drawing fault: it is what this measurement looks like on a descent, and it is why “continuous” is not automatically better than “three words”.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage" id="two-steepnesses">
+  <div class="mark">⌃⌄</div>
+  <div>
+    <header>
+      <h2>Two steepnesses</h2>
+      <span class="verdict">built, then put down</span>
+    </header>
+    <p class="q">How steep is the ground — and how steep is it going to feel?</p>
+    <div class="body">
+      <div class="strip">
+        <svg id="s-c" viewBox="0 0 1000 96" preserveAspectRatio="none" role="img" aria-label="Two lines in degrees: the steepness of the ground, and the steepness along the track. Where they touch the track is following the fall line; the gap between them is the traverse"></svg>
+        <div class="striplegend">
+          <span><i style="background:var(--s-40)"></i>the ground’s angle</span>
+          <span><i style="background:var(--fall)"></i>the steepness along your track</span>
+          <span class="muted">the gap between them is the traverse</span>
+        </div>
+      </div>
+      <div class="cols" style="margin-top:26px">
+        <div>
+          <h3>What it says</h3>
+          <p>Both numbers, in degrees, on one scale. The upper line is the ground. The lower line is the slope you will actually stand on, which is gentler than the ground whenever you are not pointing straight down it.</p>
+          <p><b>Where the two lines touch, you are on the fall line. Where they separate, you are cutting across.</b> The size of the gap is how much you are cutting across by — so the thing that was a word, then a height, is now simply the distance between two lines you wanted to read anyway.</p>
+          <p>On this tour the ground under the steep stretches averages forty-three degrees; the track over that same ground averages sixteen. That gap is the whole tour’s character in one figure, and no other drawing here shows it.</p>
+        </div>
+        <div class="side">
+          <h3>What it costs</h3>
+          <ul class="rules">
+            <li><span class="label">Noise</span><span>The track’s own steepness is worked out from recorded heights every 25 m, and those wobble. Raw, this tour throws a spike at eighty-five degrees — a slope nobody skied, and nobody could.</span></li>
+            <li><span class="label">Smoothing</span><span>So it is averaged over a short window before being drawn. That is a chosen number again, which is exactly the thing the other options were criticised for.</span></li>
+          </ul>
+          <p class="caveat"><b>The difference is which number is chosen.</b> A boundary that decides whether a stretch is “across” or “down” changes the answer. A smoothing window changes how jagged a line looks. Both are choices; only one of them can tell you the wrong thing.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage" id="words-only">
+  <div class="mark">“ ”</div>
+  <div>
+    <header>
+      <h2>Words, only when you ask</h2>
+      <span class="verdict">tried, rejected</span>
+    </header>
+    <p class="q">Draw nothing. Say it in a sentence when the reader points at something.</p>
+    <div class="body">
+      <div class="sample" id="s-d"></div>
+      <div class="cols" style="margin-top:26px">
+        <div>
+          <h3>What it says</h3>
+          <p>Nothing, until asked. The route keeps the colour it already has, and the relationship gets named in the panel beside it — where there is room for a sentence instead of a glyph, and where nothing has to be compressed into eight pixels of height.</p>
+          <p>It is the honest minimum, and for a while it looked like the right answer.</p>
+        </div>
+        <div class="side">
+          <h3>What it costs</h3>
+          <ul class="rules">
+            <li><span class="label">No scanning</span><span>“Where on this descent am I committed to the fall line?” takes a swipe along the whole leg, one point at a time.</span></li>
+            <li><span class="label">Wrong job</span><span>That question — seeing the shape of a thing at a glance — is the one the strip exists to answer. A strip that answers it only on request is not doing the job.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>
+
+<div class="section-h">
+  <h2>Three things we drew on the map and threw away</h2>
+  <p>Before any of this reached a strip, it was tried on the map itself — an arrow beside the route, pointing the way the ground falls. It failed three times, and each failure was more interesting than the attempt.</p>
+</div>
+
+<div class="cols" style="margin-top:28px">
+  <div>
+    <p><b>An arrow offset to one side.</b> Legible, and meaningless. Placed beside the line it reads as a direction-of-travel marker — which is precisely the thing it is not. Every reader we imagined would take it for “go this way”.</p>
+    <p><b>An arrow anchored on the track, pointing true.</b> Exact, and invisible. Where the track runs straight down the fall line, the arrow lies along the track, underneath its own outline, and disappears into the line it was annotating. The clearer case is the one it cannot draw.</p>
+    <p><b>A row of glyphs under the track.</b> On a descent nearly every stretch qualifies, so the row fills up completely and becomes a texture. A reader of a textured line learns nothing and stops looking.</p>
+  </div>
+  <div class="side">
+    <h3>What the three have in common</h3>
+    <p>Each failure came from the same place: <b>on a fall-line descent there is no “beside” the track.</b> Below you is ahead of you. The side of the line an arrow sits on is only meaningful when you are traversing — which is the half of the problem it was supposed to explain.</p>
+    <p class="next"><span class="tag">the lesson</span><b>A mark that needs a side needs the case where there are two sides.</b> Steepness does not: it is a number everywhere, including the case that broke all three arrows.</p>
+  </div>
+</div>
+
+<div class="later">
+  <div>
+    <h2>What happened next</h2>
+    <p>It was built. The colour bar on the rail grew into exactly this chart — the class as a fill under a ground-angle curve, the track’s own steepness as a second line through it — and then it was taken out again.</p>
+    <p>The reasoning had held and the reading did not. Two more lines in a strip eight pixels tall cost more attention than the answer was worth, and a reader looking for a place on the route now had a graph to parse first. The strip went back to flat colour.</p>
+  </div>
+  <div>
+    <h2>Where the answer came from instead</h2>
+    <p>Not from drawing the question better, but from asking a different one. Borrow the frame a pilot uses: <strong>pitch</strong> is how far the nose is down, <strong>roll</strong> is how far you are banked over. A traverse is roll. A fall-line descent is pitch. And the two decompose the steepness of the ground exactly, which turns the whole problem into one quantity that nothing had ever drawn.</p>
+    <p>Better still, the profile already draws pitch — so only one new mark is needed, not two. That is taken apart in a companion page, <em>Pitch and Roll on a Ski Track</em>.</p>
+  </div>
+</div>
+
+<footer>
+  <p>Describes a decision taken in September 2026. The last of the four is the one being built; the other three were drawn, looked at, and put down.</p>
+  <p>Every drawing on this page is rendered live from one real 12.9 km tour — its track, its heights and the legs cut from them are the genuine article. The slope angles are illustrative, chosen to give a realistic spread of steepness rather than measured off that particular mountain.</p>
+  <p>How an uploaded file becomes the line all of this is drawn on is taken apart in <em>From GPX to Line</em>; what the app makes of the ground that line crosses is in <em>Anatomy of a Route</em>.</p>
+</footer>
+
+</div>
+
+<script>
+  var DATA = {"name":"Mont Fort - Backside","distance_m":12881,"ascent_m":478.80000000000155,"descent_m":2174.2000000000007,"stride_m":25.0,"points":[[7.3182,46.08001],[7.31818,46.07979],[7.31842,46.07977],[7.31875,46.0798],[7.31904,46.07978],[7.31935,46.07984],[7.31966,46.07985],[7.31985,46.07969],[7.32017,46.07964],[7.32043,46.07954],[7.32061,46.07941],[7.32082,46.07931],[7.32112,46.07924],[7.32129,46.07911],[7.32152,46.07898],[7.32155,46.07877],[7.32152,46.07858],[7.32122,46.0785],[7.3209,46.07847],[7.32062,46.07841],[7.32087,46.07827],[7.32113,46.07813],[7.32139,46.07801],[7.32161,46.07784],[7.32188,46.07773],[7.32199,46.07789],[7.32217,46.07808],[7.32241,46.07809],[7.32261,46.07806],[7.32266,46.07784],[7.32275,46.07763],[7.32281,46.07741],[7.32299,46.07723],[7.32323,46.07708],[7.32348,46.07694],[7.32374,46.0768],[7.32402,46.0767],[7.32433,46.07674],[7.32465,46.07677],[7.32497,46.0768],[7.32529,46.07685],[7.3256,46.07692],[7.3259,46.077],[7.32621,46.07707],[7.32651,46.07715],[7.32682,46.07722],[7.32712,46.0773],[7.32743,46.07737],[7.32773,46.07745],[7.32805,46.07751],[7.32836,46.07757],[7.32867,46.07764],[7.32896,46.07773],[7.32923,46.07785],[7.3295,46.07798],[7.32974,46.07812],[7.32987,46.07832],[7.33,46.07853],[7.33009,46.07874],[7.33021,46.07895],[7.33035,46.07916],[7.3305,46.07935],[7.33063,46.07956],[7.33073,46.07977],[7.33093,46.07993],[7.33102,46.08014],[7.33116,46.08035],[7.33132,46.08054],[7.33148,46.08073],[7.33167,46.08092],[7.33189,46.08108],[7.33212,46.08124],[7.33236,46.08139],[7.33262,46.08152],[7.33291,46.08162],[7.33321,46.08171],[7.33351,46.08171],[7.33379,46.0816],[7.33408,46.08149],[7.33437,46.0814],[7.33459,46.08129],[7.3345,46.08107],[7.33439,46.08086],[7.33442,46.08064],[7.33448,46.08042],[7.33458,46.08021],[7.33473,46.08001],[7.33489,46.07982],[7.3351,46.07965],[7.33531,46.07948],[7.33552,46.07931],[7.33572,46.07913],[7.33591,46.07895],[7.3361,46.07877],[7.33632,46.0786],[7.33658,46.07847],[7.33688,46.07838],[7.33718,46.07832],[7.33745,46.07831],[7.3377,46.07843],[7.33801,46.07849],[7.33833,46.07852],[7.33865,46.07855],[7.33897,46.07858],[7.33929,46.07861],[7.33961,46.07857],[7.3399,46.07848],[7.34019,46.07838],[7.34048,46.07827],[7.34075,46.07815],[7.34103,46.07803],[7.3413,46.07791],[7.34158,46.0778],[7.34187,46.0777],[7.34217,46.07761],[7.34248,46.07762],[7.34277,46.07771],[7.34309,46.07767],[7.34338,46.07758],[7.34366,46.07746],[7.34397,46.07742],[7.34425,46.07736],[7.3445,46.07724],[7.34482,46.07725],[7.34511,46.07734],[7.34538,46.07747],[7.34567,46.07749],[7.34598,46.07743],[7.34628,46.07745],[7.34645,46.07763],[7.34675,46.07769],[7.347,46.07784],[7.34725,46.07798],[7.3475,46.07813],[7.3477,46.0783],[7.34796,46.07843],[7.34823,46.07856],[7.34851,46.07867],[7.34877,46.0788],[7.34907,46.07888],[7.34937,46.07896],[7.34967,46.07904],[7.34996,46.07914],[7.35027,46.07917],[7.35059,46.07911],[7.35091,46.07911],[7.35122,46.07904],[7.35148,46.07893],[7.35178,46.07888],[7.35209,46.07891],[7.3524,46.07897],[7.35272,46.07896],[7.35301,46.07887],[7.35316,46.07868],[7.35329,46.07847],[7.35335,46.07826],[7.35341,46.07805],[7.35368,46.07799],[7.35395,46.07792],[7.35408,46.07773],[7.35408,46.07753],[7.35435,46.07749],[7.35466,46.07748],[7.35494,46.07757],[7.35507,46.07777],[7.35508,46.07799],[7.35514,46.07821],[7.35517,46.07843],[7.35525,46.07865],[7.3553,46.07887],[7.35538,46.07909],[7.35542,46.07931],[7.35538,46.07953],[7.35537,46.07976],[7.35542,46.07997],[7.35549,46.08019],[7.35564,46.08039],[7.35562,46.08057],[7.35543,46.08075],[7.35522,46.08092],[7.35499,46.08107],[7.35474,46.08122],[7.35448,46.08135],[7.35426,46.08152],[7.35413,46.08173],[7.35404,46.08194],[7.3539,46.08214],[7.3538,46.08236],[7.3538,46.08254],[7.35354,46.08243],[7.35336,46.08259],[7.35336,46.08276],[7.35337,46.08296],[7.35358,46.08312],[7.35384,46.08325],[7.3541,46.08339],[7.35435,46.08353],[7.35463,46.08363],[7.35481,46.0838],[7.35474,46.08401],[7.35468,46.08423],[7.35461,46.08445],[7.35454,46.08467],[7.35445,46.08488],[7.35439,46.0851],[7.35429,46.08531],[7.3542,46.08553],[7.35412,46.08575],[7.35401,46.08596],[7.35385,46.08615],[7.35364,46.08631],[7.35349,46.08651],[7.35327,46.08667],[7.35305,46.08683],[7.35284,46.08701],[7.35268,46.0872],[7.35245,46.08734],[7.35215,46.08741],[7.35188,46.08754],[7.35163,46.08768],[7.35145,46.08787],[7.35128,46.08806],[7.35122,46.08828],[7.35117,46.0885],[7.35107,46.08871],[7.35097,46.08893],[7.35081,46.08912],[7.35054,46.08924],[7.35026,46.08935],[7.35006,46.08952],[7.3498,46.08965],[7.34954,46.08978],[7.34939,46.08995],[7.34907,46.08999],[7.34875,46.09],[7.34856,46.09016],[7.34834,46.09033],[7.34815,46.09051],[7.34794,46.09068],[7.34775,46.09086],[7.34765,46.09107],[7.34743,46.09124],[7.3472,46.0914],[7.34698,46.09156],[7.34675,46.09172],[7.34648,46.09184],[7.3462,46.09193],[7.34599,46.0921],[7.34576,46.09226],[7.34557,46.09244],[7.34538,46.09263],[7.3452,46.09281],[7.345,46.09298],[7.34478,46.09315],[7.34459,46.09333],[7.34437,46.09349],[7.34411,46.09363],[7.34386,46.09377],[7.34356,46.09382],[7.34323,46.09382],[7.34291,46.0938],[7.34259,46.09381],[7.34231,46.09391],[7.34226,46.09411],[7.34212,46.09431],[7.34217,46.09453],[7.34217,46.09475],[7.34212,46.09497],[7.3421,46.09519],[7.34207,46.09541],[7.34207,46.09564],[7.34208,46.09586],[7.34203,46.09608],[7.34196,46.0963],[7.34183,46.09651],[7.34168,46.0967],[7.34151,46.0969],[7.34131,46.09707],[7.3411,46.09725],[7.34089,46.09742],[7.34069,46.09759],[7.34052,46.09778],[7.34039,46.09799],[7.34028,46.0982],[7.3402,46.09842],[7.34016,46.09864],[7.34011,46.09886],[7.34005,46.09908],[7.33998,46.0993],[7.3399,46.09952],[7.33984,46.09974],[7.33976,46.09996],[7.33967,46.10018],[7.33961,46.1004],[7.33957,46.10062],[7.33958,46.10084],[7.33956,46.10107],[7.33946,46.10128],[7.33927,46.10146],[7.33907,46.10164],[7.33884,46.1018],[7.33862,46.10196],[7.33835,46.10209],[7.33805,46.10217],[7.33775,46.10226],[7.33746,46.10236],[7.33718,46.10246],[7.33687,46.10254],[7.3366,46.10265],[7.33632,46.10272],[7.33611,46.10288],[7.33595,46.10308],[7.33575,46.10325],[7.33554,46.10342],[7.33523,46.10344],[7.33491,46.10343],[7.33459,46.10338],[7.33427,46.10337],[7.33395,46.10337],[7.33363,46.10339],[7.33331,46.10344],[7.333,46.1035],[7.3327,46.10359],[7.3324,46.10368],[7.3321,46.10375],[7.33179,46.10382],[7.33151,46.10393],[7.33122,46.10403],[7.33097,46.10417],[7.33071,46.10429],[7.33042,46.10439],[7.33012,46.10447],[7.32994,46.10465],[7.32971,46.10481],[7.32945,46.10494],[7.32915,46.10503],[7.32883,46.10504],[7.32851,46.10503],[7.32821,46.1051],[7.32791,46.1052],[7.32764,46.10532],[7.32735,46.10542],[7.32709,46.10555],[7.32693,46.10574],[7.32676,46.10593],[7.32654,46.1061],[7.3263,46.10626],[7.3261,46.10642],[7.32615,46.10664],[7.32619,46.10685],[7.32612,46.10707],[7.32599,46.10728],[7.32582,46.10747],[7.32565,46.10766],[7.32554,46.10786],[7.3257,46.10805],[7.32577,46.10826],[7.32582,46.10848],[7.32588,46.1087],[7.32588,46.10893],[7.32591,46.10914],[7.32582,46.10936],[7.32577,46.10958],[7.3257,46.1098],[7.32564,46.11002],[7.32557,46.11024],[7.32549,46.11046],[7.32543,46.11067],[7.32524,46.11085],[7.32514,46.11104],[7.32521,46.11125],[7.32551,46.11133],[7.32572,46.11149],[7.32586,46.11169],[7.32591,46.1119],[7.32579,46.11211],[7.32562,46.1123],[7.32544,46.11248],[7.32526,46.11266],[7.325,46.11279],[7.32468,46.11285],[7.32438,46.11292],[7.32414,46.11307],[7.32406,46.11313],[7.32377,46.11309],[7.32348,46.11304],[7.32318,46.11301],[7.32288,46.11296],[7.32258,46.11298],[7.32228,46.11299],[7.32198,46.11295],[7.32167,46.11289],[7.32141,46.11278],[7.32112,46.11271],[7.32081,46.11276],[7.3205,46.11276],[7.32023,46.11264],[7.31992,46.11258],[7.31961,46.11259],[7.31928,46.11261],[7.31897,46.11265],[7.31867,46.11274],[7.31838,46.11284],[7.31809,46.11294],[7.31782,46.11306],[7.31755,46.11319],[7.31727,46.11329],[7.31699,46.11341],[7.31673,46.11354],[7.31646,46.11367],[7.31616,46.11375],[7.31594,46.11391],[7.31574,46.11409],[7.31558,46.11428],[7.31543,46.11448],[7.31533,46.11469],[7.31522,46.1149],[7.31508,46.1151],[7.31494,46.11531],[7.3148,46.11551],[7.3146,46.11568],[7.31449,46.11589],[7.31435,46.11609],[7.31421,46.11629],[7.31411,46.11651],[7.31397,46.1167],[7.31387,46.11692],[7.31378,46.11713],[7.31368,46.11735],[7.31353,46.11754],[7.31344,46.11776],[7.31338,46.11798],[7.31329,46.11819],[7.31319,46.11841],[7.31305,46.11861],[7.31294,46.11882],[7.31295,46.11903],[7.31301,46.11925],[7.31296,46.11947],[7.31289,46.11969],[7.31287,46.11991],[7.31283,46.12014],[7.31275,46.12035],[7.31269,46.12057],[7.31262,46.12079],[7.31254,46.12101],[7.31241,46.12121],[7.31214,46.12133],[7.31182,46.12134],[7.31151,46.12136],[7.31133,46.12154],[7.31124,46.12175],[7.31116,46.12197],[7.31108,46.12219],[7.31109,46.12241],[7.31106,46.12263],[7.31103,46.12285],[7.31107,46.12307],[7.31117,46.12328],[7.31121,46.12351],[7.31129,46.12372],[7.31139,46.12393],[7.31145,46.12415],[7.31155,46.12435],[7.31162,46.12457],[7.31168,46.12479],[7.31177,46.125],[7.3119,46.12521],[7.31194,46.12543],[7.31211,46.12561],[7.31221,46.12583],[7.31237,46.12602],[7.31241,46.12624],[7.3125,46.12645],[7.31257,46.12666],[7.31266,46.12687],[7.31284,46.12705],[7.31289,46.12727],[7.31286,46.1275],[7.31286,46.12772],[7.31297,46.12793],[7.31307,46.12813],[7.31321,46.12833],[7.31341,46.12849],[7.31347,46.12871],[7.31357,46.12892],[7.31376,46.1291],[7.31402,46.12922],[7.31423,46.12938],[7.31441,46.12956],[7.31462,46.12972],[7.3148,46.1299],[7.31491,46.13011],[7.31507,46.13031],[7.31512,46.13053],[7.31516,46.13075],[7.31517,46.13097],[7.31518,46.1312],[7.31522,46.13142],[7.31521,46.13164],[7.31526,46.13186],[7.3153,46.13209],[7.31532,46.13231],[7.31534,46.13254],[7.31529,46.13276],[7.31532,46.13298],[7.31533,46.1332],[7.31531,46.13342],[7.31534,46.13364],[7.31544,46.13386],[7.31559,46.13405],[7.31567,46.13427],[7.31572,46.13449],[7.3158,46.1347],[7.31586,46.13492],[7.3159,46.13519]],"eles":[3437,3451,3503,3507,3513,3515,3523,3527,3532,3540,3542,3543,3544,3545,3546,3547,3561,3562,3563,3565,3566,3567,3569,3573,3589,3606,3610,3614,3616,3617,3618,3619,3620,3621,3622,3622,3622,3622,3624,3626,3627,3628,3630,3631,3632,3633,3634,3635,3636,3638,3639,3641,3642,3646,3654,3663,3662,3660,3653,3645,3636,3626,3617,3609,3594,3586,3579,3576,3573,3560,3541,3519,3496,3478,3459,3437,3428,3425,3422,3417,3411,3394,3390,3387,3385,3345,3285,3268,3260,3247,3231,3215,3209,3206,3200,3190,3185,3179,2877,2792,2793,2792,2792,2792,2791,2793,2795,2798,2800,2802,2804,2806,2807,2808,2809,2812,2817,2823,2827,2832,2837,2843,2849,2856,2860,2865,2871,2877,2885,2890,2896,2899,2902,2904,2908,2912,2917,2920,2922,2926,2930,2934,2939,2943,2948,2953,2960,2966,2971,2976,2978,2981,2987,2989,2994,2999,3004,3004,3002,3006,3014,3018,3021,3019,3016,3006,2997,2987,2978,2970,2962,2955,2948,2942,2931,2930,2927,2924,2919,2912,2903,2894,2886,2885,2885,2886,2887,2888,2889,2886,2877,2866,2850,2844,2839,2834,2828,2820,2819,2814,2805,2795,2783,2772,2760,2749,2737,2726,2714,2703,2693,2685,2678,2671,2665,2658,2649,2641,2638,2634,2628,2622,2618,2614,2610,2607,2605,2601,2596,2592,2584,2576,2572,2566,2559,2555,2551,2546,2540,2535,2531,2529,2526,2524,2522,2520,2517,2514,2509,2505,2500,2497,2494,2491,2488,2485,2482,2479,2476,2472,2468,2465,2462,2455,2448,2440,2431,2423,2416,2409,2404,2398,2395,2392,2391,2390,2389,2387,2385,2384,2382,2381,2379,2377,2377,2376,2374,2373,2371,2368,2367,2366,2365,2364,2362,2361,2359,2357,2355,2352,2351,2349,2347,2345,2343,2341,2339,2337,2334,2331,2321,2316,2311,2306,2299,2294,2290,2286,2282,2279,2276,2273,2271,2269,2267,2264,2261,2259,2255,2251,2247,2243,2241,2239,2234,2231,2230,2228,2225,2220,2217,2214,2211,2209,2208,2206,2205,2203,2202,2202,2202,2203,2204,2203,2204,2204,2204,2204,2204,2204,2204,2204,2204,2204,2204,2204,2205,2204,2204,2204,2204,2203,2204,2204,2205,2203,2202,2198,2199,2199,2198,2196,2196,2196,2193,2183,2169,2156,2148,2140,2137,2134,2130,2126,2125,2125,2124,2123,2121,2120,2120,2118,2116,2113,2111,2109,2106,2104,2100,2096,2094,2091,2089,2086,2083,2079,2074,2071,2068,2064,2061,2058,2054,2048,2043,2036,2031,2026,2021,2016,2010,2005,2002,1998,1993,1991,1988,1985,1982,1979,1976,1973,1971,1969,1966,1963,1961,1959,1957,1954,1951,1948,1945,1943,1942,1940,1937,1934,1931,1928,1925,1921,1917,1914,1910,1907,1903,1900,1898,1895,1892,1890,1888,1886,1884,1882,1880,1878,1875,1873,1872,1870,1867,1863,1858,1854,1851,1845,1838,1831,1825,1820,1814,1810,1808,1804,1801,1797,1794,1791,1789,1787,1785,1783,1781,1778,1775,1771,1767,1763,1759,1755,1752,1749,1745,1741],"bounds":[0,25,50,75,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,525,550,575,600,625,650,675,700,725,750,775,800,825,850,875,900,925,950,975,1000,1025,1050,1075,1100,1125,1150,1175,1200,1225,1250,1275,1300,1325,1350,1375,1400,1425,1450,1475,1500,1525,1550,1575,1600,1625,1650,1675,1700,1725,1750,1775,1800,1825,1850,1875,1900,1925,1950,1975,2000,2025,2050,2075,2100,2125,2150,2175,2200,2225,2250,2275,2300,2325,2350,2375,2400,2425,2450,2475,2500,2525,2550,2575,2600,2625,2650,2675,2700,2725,2750,2775,2800,2825,2850,2875,2900,2925,2950,2975,3000,3025,3050,3075,3100,3125,3150,3175,3200,3225,3250,3275,3300,3325,3350,3375,3400,3425,3450,3475,3500,3525,3550,3575,3600,3625,3650,3675,3700,3725,3750,3775,3800,3825,3850,3875,3900,3925,3950,3975,4000,4025,4050,4075,4100,4125,4150,4175,4200,4225,4250,4275,4300,4325,4350,4375,4400,4425,4450,4475,4500,4525,4550,4575,4600,4625,4650,4675,4700,4725,4750,4775,4800,4825,4850,4875,4900,4925,4950,4975,5000,5025,5050,5075,5100,5125,5150,5175,5200,5225,5250,5275,5300,5325,5350,5375,5400,5425,5450,5475,5500,5525,5550,5575,5600,5625,5650,5675,5700,5725,5750,5775,5800,5825,5850,5875,5900,5925,5950,5975,6000,6025,6050,6075,6100,6125,6150,6175,6200,6225,6250,6275,6300,6325,6350,6375,6400,6425,6450,6475,6500,6525,6550,6575,6600,6625,6650,6675,6700,6725,6750,6775,6800,6825,6850,6875,6900,6925,6950,6975,7000,7025,7050,7075,7100,7125,7150,7175,7200,7225,7250,7275,7300,7325,7350,7375,7400,7425,7450,7475,7500,7525,7550,7575,7600,7625,7650,7675,7700,7725,7750,7775,7800,7825,7850,7875,7900,7925,7950,7975,8000,8025,8050,8075,8100,8125,8150,8175,8200,8225,8250,8275,8300,8325,8350,8375,8400,8425,8450,8475,8500,8525,8550,8575,8600,8625,8650,8675,8700,8725,8750,8775,8800,8825,8850,8875,8900,8925,8950,8975,9000,9025,9050,9075,9100,9125,9150,9175,9200,9225,9250,9275,9300,9325,9350,9375,9400,9425,9450,9475,9500,9525,9550,9575,9600,9625,9650,9675,9700,9725,9750,9775,9800,9825,9850,9875,9900,9925,9950,9975,10000,10025,10050,10075,10100,10125,10150,10175,10200,10225,10250,10275,10300,10325,10350,10375,10400,10425,10450,10475,10500,10525,10550,10575,10600,10625,10650,10675,10700,10725,10750,10775,10800,10825,10850,10875,10900,10925,10950,10975,11000,11025,11050,11075,11100,11125,11150,11175,11200,11225,11250,11275,11300,11325,11350,11375,11400,11425,11450,11475,11500,11525,11550,11575,11600,11625,11650,11675,11700,11725,11750,11775,11800,11825,11850,11875,11900,11925,11950,11975,12000,12025,12050,12075,12100,12125,12150,12175,12200,12225,12250,12275,12300,12325,12350,12375,12400,12425,12450,12475,12500,12525,12550,12575,12600,12625,12650,12675,12700,12725,12750,12775,12800,12825,12850,12881],"segments":[{"a":56.9,"asp":287.0},{"a":59.5,"asp":290.2},{"a":32.7,"asp":291.7},{"a":45.5,"asp":291.4},{"a":19.9,"asp":293.6},{"a":47.8,"asp":294.9},{"a":30.5,"asp":298.7},{"a":42.0,"asp":302.6},{"a":48.0,"asp":306.2},{"a":15.9,"asp":305.5},{"a":15.2,"asp":312.7},{"a":12.0,"asp":316.5},{"a":11.7,"asp":319.2},{"a":14.3,"asp":322.4},{"a":12.1,"asp":326.1},{"a":56.5,"asp":324.4},{"a":13.9,"asp":323.3},{"a":13.1,"asp":320.0},{"a":24.1,"asp":315.2},{"a":12.7,"asp":312.9},{"a":12.4,"asp":319.7},{"a":20.0,"asp":322.6},{"a":29.9,"asp":327.2},{"a":57.3,"asp":323.9},{"a":58.6,"asp":318.3},{"a":34.7,"asp":312.2},{"a":34.5,"asp":308.2},{"a":21.6,"asp":304.5},{"a":16.0,"asp":309.0},{"a":13.9,"asp":303.7},{"a":11.4,"asp":298.6},{"a":14.9,"asp":290.8},{"a":12.7,"asp":284.4},{"a":9.4,"asp":287.4},{"a":9.4,"asp":290.0},{"a":8.2,"asp":288.2},{"a":9.0,"asp":284.7},{"a":18.5,"asp":274.6},{"a":18.3,"asp":266.3},{"a":15.4,"asp":259.0},{"a":14.0,"asp":253.7},{"a":13.2,"asp":249.4},{"a":13.3,"asp":245.5},{"a":13.4,"asp":249.3},{"a":13.5,"asp":251.4},{"a":13.5,"asp":250.9},{"a":13.6,"asp":250.2},{"a":14.7,"asp":249.4},{"a":16.4,"asp":248.8},{"a":16.5,"asp":248.6},{"a":16.6,"asp":248.6},{"a":14.4,"asp":248.2},{"a":35.5,"asp":248.2},{"a":47.5,"asp":247.7},{"a":51.5,"asp":18.9},{"a":18.6,"asp":21.6},{"a":19.2,"asp":21.0},{"a":46.0,"asp":21.4},{"a":48.2,"asp":22.2},{"a":50.4,"asp":22.9},{"a":51.9,"asp":23.8},{"a":50.0,"asp":25.2},{"a":49.6,"asp":26.5},{"a":57.1,"asp":29.1},{"a":47.9,"asp":30.8},{"a":44.9,"asp":33.2},{"a":29.6,"asp":36.1},{"a":29.7,"asp":39.8},{"a":56.0,"asp":44.5},{"a":59.1,"asp":49.3},{"a":59.7,"asp":54.7},{"a":59.9,"asp":61.1},{"a":58.8,"asp":66.0},{"a":59.3,"asp":73.6},{"a":60.1,"asp":83.3},{"a":52.4,"asp":93.6},{"a":24.5,"asp":104.0},{"a":28.0,"asp":113.2},{"a":38.5,"asp":121.2},{"a":45.2,"asp":127.4},{"a":58.2,"asp":132.8},{"a":33.9,"asp":137.4},{"a":21.7,"asp":141.6},{"a":23.7,"asp":145.4},{"a":60.4,"asp":148.3},{"a":60.6,"asp":149.5},{"a":58.4,"asp":149.9},{"a":48.1,"asp":149.8},{"a":56.3,"asp":148.8},{"a":57.5,"asp":143.0},{"a":57.8,"asp":136.0},{"a":42.1,"asp":137.1},{"a":32.2,"asp":131.4},{"a":40.6,"asp":126.0},{"a":53.0,"asp":121.1},{"a":40.8,"asp":116.3},{"a":40.9,"asp":115.8},{"a":60.8,"asp":113.5},{"a":61.0,"asp":109.9},{"a":14.1,"asp":105.4},{"a":10.1,"asp":99.5},{"a":10.2,"asp":92.0},{"a":10.2,"asp":83.3},{"a":10.3,"asp":73.7},{"a":17.2,"asp":62.8},{"a":24.1,"asp":48.2},{"a":21.1,"asp":28.9},{"a":24.2,"asp":290.3},{"a":19.5,"asp":289.3},{"a":19.6,"asp":289.7},{"a":19.6,"asp":290.8},{"a":9.7,"asp":289.9},{"a":13.0,"asp":289.7},{"a":14.2,"asp":290.8},{"a":28.4,"asp":289.3},{"a":40.4,"asp":286.8},{"a":41.9,"asp":283.3},{"a":35.8,"asp":280.9},{"a":37.3,"asp":279.9},{"a":40.0,"asp":277.5},{"a":43.2,"asp":272.8},{"a":44.0,"asp":270.1},{"a":44.2,"asp":266.2},{"a":35.1,"asp":264.0},{"a":39.2,"asp":263.0},{"a":43.8,"asp":259.2},{"a":45.1,"asp":255.4},{"a":46.8,"asp":251.4},{"a":42.9,"asp":248.9},{"a":43.0,"asp":245.7},{"a":24.9,"asp":242.8},{"a":25.0,"asp":241.8},{"a":25.1,"asp":241.9},{"a":31.6,"asp":242.5},{"a":37.4,"asp":242.3},{"a":36.1,"asp":242.3},{"a":26.3,"asp":242.6},{"a":21.2,"asp":246.9},{"a":36.8,"asp":249.4},{"a":31.1,"asp":252.8},{"a":37.2,"asp":254.7},{"a":37.6,"asp":256.3},{"a":35.6,"asp":259.4},{"a":39.3,"asp":263.0},{"a":39.7,"asp":268.2},{"a":46.4,"asp":273.5},{"a":41.5,"asp":279.8},{"a":41.0,"asp":285.7},{"a":35.4,"asp":288.3},{"a":26.6,"asp":291.5},{"a":26.9,"asp":299.1},{"a":42.2,"asp":307.2},{"a":20.0,"asp":306.9},{"a":36.9,"asp":307.1},{"a":39.8,"asp":314.6},{"a":38.4,"asp":316.2},{"a":9.8,"asp":320.4},{"a":16.3,"asp":327.4},{"a":30.0,"asp":335.6},{"a":49.0,"asp":343.7},{"a":36.7,"asp":351.3},{"a":25.3,"asp":355.3},{"a":20.3,"asp":0.0},{"a":30.6,"asp":8.8},{"a":52.2,"asp":7.8},{"a":50.9,"asp":7.9},{"a":53.2,"asp":8.3},{"a":50.2,"asp":9.8},{"a":48.8,"asp":8.7},{"a":47.1,"asp":6.0},{"a":47.0,"asp":3.2},{"a":45.8,"asp":0.5},{"a":44.1,"asp":356.2},{"a":53.7,"asp":353.0},{"a":12.6,"asp":349.7},{"a":24.3,"asp":347.8},{"a":33.1,"asp":346.2},{"a":38.7,"asp":345.4},{"a":44.4,"asp":342.8},{"a":51.1,"asp":337.5},{"a":50.0,"asp":326.9},{"a":48.9,"asp":321.9},{"a":10.4,"asp":320.9},{"a":8.0,"asp":319.9},{"a":8.8,"asp":320.4},{"a":14.5,"asp":324.4},{"a":11.5,"asp":335.6},{"a":14.6,"asp":351.1},{"a":22.7,"asp":11.6},{"a":51.3,"asp":26.4},{"a":53.9,"asp":29.9},{"a":58.0,"asp":32.7},{"a":43.4,"asp":33.8},{"a":37.8,"asp":22.7},{"a":38.0,"asp":14.2},{"a":44.6,"asp":9.3},{"a":47.4,"asp":6.5},{"a":15.3,"asp":8.1},{"a":39.6,"asp":9.5},{"a":50.6,"asp":8.2},{"a":52.6,"asp":6.1},{"a":55.2,"asp":0.8},{"a":54.7,"asp":355.8},{"a":55.6,"asp":350.2},{"a":55.4,"asp":344.9},{"a":54.3,"asp":340.0},{"a":54.1,"asp":336.5},{"a":54.5,"asp":334.4},{"a":55.0,"asp":331.0},{"a":53.5,"asp":328.4},{"a":48.4,"asp":326.1},{"a":46.5,"asp":325.1},{"a":44.5,"asp":323.8},{"a":45.4,"asp":324.2},{"a":46.2,"asp":324.6},{"a":49.1,"asp":324.4},{"a":49.8,"asp":324.5},{"a":27.8,"asp":324.5},{"a":32.5,"asp":323.7},{"a":43.9,"asp":321.7},{"a":43.5,"asp":321.9},{"a":36.2,"asp":321.3},{"a":35.0,"asp":320.4},{"a":33.5,"asp":320.3},{"a":27.0,"asp":318.5},{"a":24.6,"asp":317.7},{"a":30.0,"asp":318.7},{"a":42.4,"asp":319.3},{"a":28.8,"asp":319.1},{"a":49.4,"asp":318.6},{"a":49.2,"asp":317.1},{"a":35.2,"asp":316.6},{"a":43.6,"asp":315.2},{"a":46.6,"asp":313.5},{"a":34.5,"asp":312.7},{"a":32.8,"asp":313.5},{"a":38.8,"asp":313.7},{"a":42.6,"asp":312.1},{"a":40.1,"asp":312.9},{"a":34.8,"asp":313.5},{"a":23.2,"asp":313.2},{"a":21.2,"asp":315.8},{"a":21.3,"asp":318.7},{"a":21.4,"asp":318.8},{"a":23.3,"asp":318.8},{"a":22.3,"asp":318.8},{"a":27.4,"asp":318.6},{"a":37.9,"asp":317.6},{"a":38.1,"asp":315.7},{"a":38.2,"asp":313.7},{"a":29.0,"asp":311.3},{"a":25.8,"asp":308.4},{"a":25.2,"asp":305.9},{"a":29.1,"asp":305.5},{"a":27.8,"asp":308.7},{"a":27.5,"asp":309.6},{"a":28.5,"asp":312.5},{"a":29.2,"asp":314.6},{"a":34.9,"asp":316.2},{"a":31.8,"asp":318.1},{"a":25.4,"asp":320.3},{"a":33.3,"asp":323.1},{"a":45.9,"asp":325.6},{"a":44.8,"asp":328.1},{"a":48.6,"asp":330.9},{"a":49.9,"asp":332.8},{"a":48.5,"asp":335.8},{"a":46.9,"asp":338.9},{"a":45.0,"asp":341.3},{"a":41.6,"asp":343.3},{"a":41.8,"asp":344.4},{"a":33.4,"asp":342.7},{"a":23.7,"asp":342.3},{"a":15.5,"asp":340.4},{"a":13.1,"asp":339.2},{"a":14.3,"asp":338.9},{"a":16.7,"asp":338.7},{"a":16.8,"asp":338.5},{"a":16.8,"asp":337.9},{"a":16.9,"asp":337.1},{"a":17.2,"asp":336.8},{"a":18.0,"asp":336.9},{"a":16.1,"asp":337.4},{"a":11.6,"asp":338.2},{"a":12.8,"asp":339.4},{"a":14.7,"asp":341.2},{"a":18.7,"asp":343.6},{"a":18.9,"asp":345.8},{"a":20.1,"asp":347.0},{"a":15.0,"asp":346.8},{"a":11.9,"asp":345.9},{"a":13.7,"asp":344.5},{"a":17.5,"asp":342.8},{"a":18.0,"asp":340.0},{"a":12.9,"asp":336.7},{"a":19.2,"asp":333.4},{"a":16.4,"asp":330.3},{"a":24.4,"asp":327.3},{"a":22.9,"asp":323.7},{"a":17.6,"asp":320.8},{"a":17.6,"asp":317.4},{"a":17.0,"asp":315.5},{"a":20.8,"asp":314.3},{"a":22.4,"asp":312.1},{"a":18.1,"asp":310.1},{"a":18.2,"asp":306.2},{"a":20.4,"asp":303.0},{"a":27.1,"asp":299.2},{"a":28.6,"asp":296.3},{"a":51.7,"asp":293.5},{"a":39.9,"asp":291.7},{"a":39.4,"asp":291.2},{"a":39.5,"asp":290.7},{"a":45.0,"asp":290.5},{"unknown":true},{"unknown":true},{"unknown":true},{"unknown":true},{"unknown":true},{"unknown":true},{"unknown":true},{"a":20.2,"asp":285.3},{"a":19.8,"asp":286.2},{"a":22.5,"asp":289.6},{"a":22.9,"asp":292.9},{"a":27.6,"asp":295.2},{"a":25.5,"asp":296.6},{"a":34.0,"asp":296.4},{"a":34.1,"asp":295.6},{"a":36.5,"asp":295.7},{"a":30.8,"asp":295.9},{"a":22.1,"asp":296.4},{"a":21.8,"asp":296.9},{"a":37.0,"asp":298.0},{"a":26.4,"asp":299.7},{"a":17.7,"asp":301.6},{"a":18.8,"asp":302.2},{"a":26.7,"asp":302.8},{"a":36.6,"asp":304.2},{"a":32.3,"asp":308.3},{"a":28.1,"asp":310.4},{"a":28.2,"asp":312.4},{"a":16.2,"asp":311.1},{"a":15.5,"asp":311.2},{"a":17.3,"asp":315.8},{"a":15.9,"asp":317.8},{"a":15.1,"asp":326.6},{"a":14.8,"asp":334.2},{"a":9.0,"asp":340.9},{"a":8.1,"asp":348.0},{"a":11.9,"asp":353.1},{"a":9.9,"asp":356.7},{"a":8.6,"asp":358.1},{"a":8.6,"asp":1.0},{"a":11.2,"asp":3.7},{"a":9.1,"asp":6.1},{"a":11.3,"asp":4.2},{"a":10.6,"asp":5.8},{"a":11.1,"asp":6.0},{"a":11.0,"asp":359.7},{"a":10.7,"asp":355.7},{"a":9.2,"asp":359.2},{"a":8.2,"asp":1.7},{"a":8.9,"asp":356.3},{"a":9.3,"asp":357.3},{"a":11.1,"asp":355.0},{"a":9.8,"asp":351.9},{"a":10.8,"asp":348.8},{"a":8.7,"asp":344.9},{"a":8.3,"asp":347.3},{"a":12.3,"asp":342.1},{"a":10.0,"asp":335.0},{"a":11.5,"asp":327.4},{"a":9.5,"asp":322.6},{"a":15.6,"asp":324.5},{"a":15.1,"asp":316.0},{"a":31.9,"asp":309.2},{"a":8.4,"asp":300.6},{"a":8.5,"asp":290.0},{"a":12.3,"asp":285.2},{"a":17.1,"asp":288.6},{"a":10.5,"asp":281.7},{"a":10.9,"asp":284.0},{"a":29.8,"asp":277.5},{"a":52.8,"asp":272.5},{"a":56.7,"asp":270.0},{"a":55.8,"asp":273.0},{"a":49.5,"asp":268.9},{"a":47.2,"asp":267.0},{"a":31.5,"asp":266.0},{"a":23.0,"asp":264.0},{"a":34.2,"asp":262.2},{"a":35.9,"asp":264.2},{"a":15.7,"asp":266.6},{"a":9.6,"asp":268.7},{"a":10.6,"asp":271.4},{"a":13.8,"asp":273.1},{"a":17.9,"asp":274.7},{"a":11.8,"asp":277.3},{"a":12.2,"asp":280.4},{"a":19.0,"asp":284.3},{"a":20.4,"asp":286.7},{"a":20.6,"asp":288.7},{"a":20.8,"asp":291.9},{"a":21.9,"asp":296.9},{"a":23.8,"asp":301.3},{"a":26.1,"asp":305.3},{"a":32.0,"asp":309.1},{"a":32.9,"asp":312.3},{"a":26.5,"asp":314.8},{"a":24.5,"asp":317.1},{"a":22.1,"asp":318.5},{"a":27.2,"asp":320.8},{"a":26.8,"asp":322.6},{"a":33.0,"asp":324.8},{"a":37.7,"asp":327.2},{"a":30.1,"asp":328.8},{"a":30.2,"asp":331.0},{"a":30.9,"asp":333.9},{"a":29.3,"asp":335.5},{"a":32.1,"asp":336.0},{"a":35.7,"asp":336.8},{"a":40.5,"asp":337.8},{"a":38.6,"asp":337.9},{"a":46.1,"asp":338.1},{"a":42.5,"asp":338.1},{"a":38.9,"asp":338.4},{"a":37.1,"asp":340.0},{"a":41.2,"asp":342.8},{"a":39.1,"asp":343.5},{"a":41.1,"asp":344.3},{"a":30.3,"asp":345.6},{"a":29.4,"asp":346.3},{"a":40.0,"asp":347.0},{"a":22.8,"asp":347.4},{"a":25.3,"asp":347.6},{"a":30.4,"asp":347.8},{"a":28.6,"asp":348.1},{"a":26.9,"asp":345.9},{"a":25.6,"asp":342.2},{"a":24.8,"asp":338.6},{"a":22.5,"asp":337.5},{"a":23.4,"asp":338.1},{"a":23.5,"asp":338.5},{"a":24.9,"asp":337.5},{"a":23.9,"asp":337.0},{"a":18.4,"asp":337.2},{"a":22.0,"asp":337.7},{"a":25.7,"asp":338.3},{"a":29.4,"asp":339.8},{"a":27.7,"asp":341.1},{"a":26.5,"asp":342.7},{"a":17.8,"asp":344.7},{"a":12.5,"asp":346.3},{"a":20.9,"asp":349.2},{"a":27.9,"asp":353.6},{"a":25.7,"asp":358.3},{"a":26.0,"asp":2.9},{"a":32.5,"asp":6.2},{"a":29.8,"asp":7.6},{"a":33.6,"asp":10.3},{"a":33.2,"asp":12.2},{"a":31.2,"asp":13.9},{"a":30.5,"asp":14.6},{"a":31.3,"asp":15.9},{"a":32.6,"asp":16.2},{"a":28.9,"asp":16.1},{"a":23.1,"asp":17.7},{"a":28.2,"asp":17.4},{"a":24.0,"asp":16.0},{"a":21.5,"asp":15.4},{"a":20.7,"asp":15.5},{"a":19.3,"asp":15.9},{"a":18.8,"asp":16.8},{"a":17.4,"asp":18.2},{"a":22.2,"asp":17.4},{"a":21.0,"asp":18.1},{"a":24.7,"asp":18.3},{"a":22.6,"asp":20.5},{"a":15.8,"asp":21.2},{"a":18.4,"asp":22.8},{"a":26.2,"asp":24.4},{"a":36.0,"asp":25.7},{"a":38.3,"asp":25.9},{"a":34.3,"asp":25.6},{"a":31.7,"asp":25.6},{"a":39.0,"asp":26.3},{"a":47.6,"asp":26.4},{"a":45.6,"asp":25.3},{"a":43.1,"asp":24.6},{"a":40.2,"asp":22.9},{"a":42.8,"asp":21.0},{"a":31.5,"asp":20.8},{"a":26.1,"asp":19.9},{"a":28.3,"asp":17.9},{"a":33.5,"asp":14.1},{"a":30.7,"asp":11.9},{"a":27.3,"asp":10.0},{"a":31.0,"asp":7.4},{"a":19.1,"asp":5.7},{"a":19.7,"asp":5.5},{"a":19.4,"asp":5.5},{"a":20.5,"asp":5.8},{"a":21.6,"asp":5.9},{"a":23.6,"asp":6.7},{"a":32.4,"asp":7.2},{"a":29.5,"asp":7.1},{"a":36.3,"asp":7.7},{"a":36.4,"asp":7.6},{"a":35.0,"asp":7.7},{"a":34.4,"asp":8.0},{"a":29.0,"asp":8.4},{"a":27.4,"asp":10.0},{"a":33.8,"asp":10.4},{"a":28.7,"asp":11.4}]};
+  var LEGS = [{"i":1,"climbing":true,"from":0,"to":54,"d0":0,"d1":1345,"distance_m":1345,"ascent_m":215,"descent_m":0,"ele0":3437,"ele1":3651,"compass":"ESE","angle":9.1},{"i":2,"climbing":false,"from":54,"to":107,"d0":1345,"d1":2671,"distance_m":1326,"ascent_m":20,"descent_m":874,"ele0":3651,"ele1":2797,"compass":"E","angle":32.8},{"i":3,"climbing":true,"from":107,"to":163,"d0":2671,"d1":4069,"distance_m":1399,"ascent_m":228,"descent_m":6,"ele0":2797,"ele1":3019,"compass":"E","angle":9.0},{"i":4,"climbing":false,"from":163,"to":515,"d0":4069,"d1":12881,"distance_m":8812,"ascent_m":16,"descent_m":1294,"ele0":3019,"ele1":1741,"compass":"NNW","angle":8.3}];
+
+  var SEGMENTS = DATA.segments, ELES = DATA.eles, N = SEGMENTS.length;
+  var STRIDE = DATA.stride_m;
+  var NS = 'http://www.w3.org/2000/svg';
+
+  /* The two numbers every drawing on this page inherits.
+     STEEP_ENOUGH — below this the ground is gentle enough that which way it
+     faces is noise, so nothing is claimed at all.
+     NEARLY_ALIGNED — how close to the fall line still counts as "down it".
+     Only the three-words drawing uses the second one, which is the point. */
+  var STEEP_ENOUGH = 30;
+  var NEARLY_ALIGNED = 30;
+  var SMOOTHING = 2;   // +/- pieces of ground averaged over, ~125 m
+
+  function el(name, attrs) {
+    var node = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+  function label(parent, x, y, text, attrs) {
+    var t = el('text', Object.assign({
+      x: x, y: y, 'font-family': 'var(--display)', 'font-size': 11, fill: 'var(--ink-3)'
+    }, attrs || {}));
+    t.textContent = text;
+    parent.appendChild(t);
+  }
+
+  var meanLat = DATA.points.reduce(function (a, p) { return a + p[1]; }, 0) / DATA.points.length;
+  var squeeze = Math.cos(meanLat * Math.PI / 180);
+
+  /** Which way the track is heading, as a compass bearing. */
+  function headingAt(i) {
+    var a = DATA.points[i], b = DATA.points[Math.min(i + 1, N)];
+    var dx = (b[0] - a[0]) * squeeze, dy = b[1] - a[1];
+    if (dx === 0 && dy === 0) return null;
+    return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  }
+  function apart(a, b) {
+    var d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
+  /** The angle between where the track is heading and where the ground falls. */
+  function offFallLineAt(i) {
+    var piece = SEGMENTS[i], heading = headingAt(i);
+    if (!piece || piece.unknown || heading === null || piece.a < STEEP_ENOUGH) return null;
+    return apart(heading, piece.asp);
+  }
+
+  /**
+   * The steepness ALONG the track, which is not the steepness of the ground.
+   *
+   * Traverse a steep face and the slope underfoot is gentle; point straight
+   * down it and the two are the same number. Worked out from the recorded
+   * heights, which wobble enough to throw an 85 degree spike on this tour, so
+   * it is averaged over a short window first.
+   */
+  function trackSteepnessAt(i) {
+    var sum = 0, n = 0;
+    for (var k = i - SMOOTHING; k <= i + SMOOTHING; k += 1) {
+      if (k < 0 || k >= N) continue;
+      var rise = ELES[Math.min(k + 1, ELES.length - 1)] - ELES[k];
+      if (rise === null) continue;
+      sum += Math.atan2(Math.abs(rise), STRIDE) * 180 / Math.PI;
+      n += 1;
+    }
+    return n ? sum / n : null;
+  }
+
+  var open = LEGS[1];
+  function x(i) { return ((i - open.from) / (open.to - open.from)) * 1000; }
+
+  /* ---------- the hero: one face, two ways across it ---------- */
+  function drawHero() {
+    var svg = document.getElementById('fig-hero');
+    svg.innerHTML = '';
+    [[0, 'Cutting across it', 14, 'your track 12°'],
+     [300, 'Pointing down it', 76, 'your track 40°']].forEach(function (panel) {
+      var ox = panel[0], g = el('g', {});
+      // Contours: closer together is steeper, and both panels are the same face.
+      for (var c = 0; c < 7; c += 1) {
+        var cy = 44 + c * 24;
+        g.appendChild(el('path', {
+          d: 'M ' + (ox + 8) + ' ' + (cy + 6) + ' Q ' + (ox + 128) + ' ' + (cy - 8) + ' ' + (ox + 248) + ' ' + (cy + 6),
+          fill: 'none', stroke: 'var(--rule)', 'stroke-width': 1.4
+        }));
+      }
+      // Downhill, which is across the contours and the same in both panels.
+      g.appendChild(el('path', {
+        d: 'M ' + (ox + 24) + ' 40 L ' + (ox + 24) + ' 74 M ' + (ox + 20) + ' 68 L ' + (ox + 24) + ' 75 L ' + (ox + 28) + ' 68',
+        fill: 'none', stroke: 'var(--ink-3)', 'stroke-width': 1.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+      }));
+      label(g, ox + 32, 62, 'downhill');
+      // The track. The angle is the whole difference between the two panels.
+      var rad = panel[2] * Math.PI / 180;
+      var len = 150;
+      var cx = ox + 128, cyc = 130;
+      var x1 = cx - Math.sin(rad) * len / 2, y1 = cyc - Math.cos(rad) * len / 2;
+      var x2 = cx + Math.sin(rad) * len / 2, y2 = cyc + Math.cos(rad) * len / 2;
+      // drawn as a bearing off the fall line, so 14 deg is nearly a traverse
+      var tx1 = cx - Math.cos(rad) * len / 2, ty1 = cyc - Math.sin(rad) * len / 2;
+      var tx2 = cx + Math.cos(rad) * len / 2, ty2 = cyc + Math.sin(rad) * len / 2;
+      g.appendChild(el('path', {
+        d: 'M ' + tx1.toFixed(1) + ' ' + ty1.toFixed(1) + ' L ' + tx2.toFixed(1) + ' ' + ty2.toFixed(1),
+        fill: 'none', stroke: 'var(--surface)', 'stroke-width': 7, 'stroke-linecap': 'round'
+      }));
+      g.appendChild(el('path', {
+        d: 'M ' + tx1.toFixed(1) + ' ' + ty1.toFixed(1) + ' L ' + tx2.toFixed(1) + ' ' + ty2.toFixed(1),
+        fill: 'none', stroke: 'var(--route)', 'stroke-width': 3, 'stroke-linecap': 'round'
+      }));
+      label(g, ox + 8, 26, panel[1], { 'font-size': 13, 'font-weight': 650, fill: 'var(--ink)' });
+      label(g, ox + 8, 232, 'ground 40°  ·  ' + panel[3], { 'font-family': 'var(--mono)', 'font-size': 11.5, fill: 'var(--ink-2)' });
+      svg.appendChild(g);
+    });
+  }
+
+  /* ---------- three words ---------- */
+  function drawA() {
+    var svg = document.getElementById('s-a');
+    svg.innerHTML = '';
+    var cy = 23;
+    svg.appendChild(el('line', { x1: 0, y1: cy, x2: 1000, y2: cy, stroke: 'var(--rule)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+    for (var px = 6; px < 1000; px += 12) {
+      var i = open.from + Math.floor((px / 1000) * (open.to - open.from));
+      var off = offFallLineAt(i);
+      if (off === null) continue;
+      var d;
+      if (off <= NEARLY_ALIGNED) {
+        d = 'M ' + (px - 3.2) + ' ' + (cy - 2.6) + ' L ' + px + ' ' + (cy + 2.6) + ' L ' + (px + 3.2) + ' ' + (cy - 2.6);
+      } else if (off >= 180 - NEARLY_ALIGNED) {
+        d = 'M ' + (px - 3.2) + ' ' + (cy + 2.6) + ' L ' + px + ' ' + (cy - 2.6) + ' L ' + (px + 3.2) + ' ' + (cy + 2.6);
+      } else {
+        d = 'M ' + (px - 4) + ' ' + cy + ' L ' + (px + 4) + ' ' + cy;
+      }
+      svg.appendChild(el('path', {
+        d: d, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.4,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke'
+      }));
+    }
+  }
+
+  /* ---------- how closely, as a quantity ---------- */
+  function drawB() {
+    var svg = document.getElementById('s-b');
+    svg.innerHTML = '';
+    var mid = 33, amp = 27;
+    var down = [], up = [];
+    for (var i = open.from; i < open.to; i += 1) {
+      var off = offFallLineAt(i);
+      if (off === null) continue;
+      var v = Math.cos(off * Math.PI / 180);   // 1 straight down, 0 traverse, -1 up
+      (v >= 0 ? down : up).push([x(i), mid - v * amp]);
+    }
+    [[down, 'var(--route)'], [up, 'var(--fall)']].forEach(function (pair) {
+      var pts = pair[0];
+      if (pts.length < 2) return;
+      svg.appendChild(el('path', {
+        d: 'M ' + pts[0][0].toFixed(1) + ' ' + mid
+          + pts.map(function (p) { return ' L ' + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join('')
+          + ' L ' + pts[pts.length - 1][0].toFixed(1) + ' ' + mid + ' Z',
+        fill: pair[1], 'fill-opacity': 0.45, stroke: pair[1], 'stroke-width': 1,
+        'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke'
+      }));
+    });
+    svg.appendChild(el('line', { x1: 0, y1: mid, x2: 1000, y2: mid, stroke: 'var(--ink-3)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+  }
+
+  /* ---------- two steepnesses ---------- */
+  function drawC() {
+    var svg = document.getElementById('s-c');
+    svg.innerHTML = '';
+    var top = 16, floor = 82, biggest = 60;
+    function y(deg) { return floor - Math.min(deg, biggest) / biggest * (floor - top); }
+
+    [0, 30, 60].forEach(function (deg) {
+      svg.appendChild(el('line', {
+        x1: 0, y1: y(deg), x2: 1000, y2: y(deg),
+        stroke: 'var(--rule)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke'
+      }));
+      label(svg, 4, y(deg) - 4, deg + '°', { 'font-family': 'var(--mono)', 'font-size': 9 });
+    });
+
+    var ground = [], track = [];
+    for (var i = open.from; i < open.to; i += 1) {
+      var piece = SEGMENTS[i];
+      if (!piece || piece.unknown) { ground.push(null); track.push(null); continue; }
+      ground.push([x(i), y(piece.a)]);
+      var t = trackSteepnessAt(i);
+      track.push(t === null ? null : [x(i), y(t)]);
+    }
+    function stroke(rows) {
+      var d = '', pen = false;
+      rows.forEach(function (p) {
+        if (!p) { pen = false; return; }
+        d += (pen ? ' L ' : ' M ') + p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+        pen = true;
+      });
+      return d.trim();
+    }
+    // The gap IS the claim, so it is shaded rather than left to the eye to
+    // measure between two lines.
+    function ribbon(from, to) {
+      var out = ' M ' + ground[from][0].toFixed(1) + ' ' + ground[from][1].toFixed(1);
+      for (var m = from; m < to; m += 1) out += ' L ' + ground[m][0].toFixed(1) + ' ' + ground[m][1].toFixed(1);
+      for (var n = to - 1; n >= from; n -= 1) out += ' L ' + track[n][0].toFixed(1) + ' ' + track[n][1].toFixed(1);
+      return out + ' Z';
+    }
+    var band = '', runStart = null;
+    for (var k = 0; k < ground.length; k += 1) {
+      if (ground[k] && track[k]) { if (runStart === null) runStart = k; continue; }
+      if (runStart !== null) { band += ribbon(runStart, k); runStart = null; }
+    }
+    if (runStart !== null) band += ribbon(runStart, ground.length);
+    if (band) svg.appendChild(el('path', { d: band.trim(), fill: 'var(--s-40)', 'fill-opacity': 0.13, stroke: 'none' }));
+
+    svg.appendChild(el('path', { d: stroke(ground), fill: 'none', stroke: 'var(--s-40)', 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+    svg.appendChild(el('path', { d: stroke(track), fill: 'none', stroke: 'var(--fall)', 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+  }
+
+  /* ---------- words, only when you ask ---------- */
+  function drawD() {
+    var i = Math.round((open.from + open.to) / 2);
+    var piece = SEGMENTS[i], off = offFallLineAt(i);
+    var word = off === null ? null
+      : off <= NEARLY_ALIGNED ? 'straight down'
+        : off >= 180 - NEARLY_ALIGNED ? 'straight up' : 'across';
+    var body = piece && !piece.unknown
+      ? Math.round(piece.a) + '° &middot; ' + (word ? word + ' the fall line'
+        : '<span class="muted">too gentle to say</span>')
+      : '<span class="muted">no survey of this ground</span>';
+    document.getElementById('s-d').innerHTML =
+      '<span class="muted">leg ' + open.i + ', halfway along &mdash;</span> ' + body;
+  }
+
+  function redraw() { drawA(); drawB(); drawC(); drawD(); }
+
+  var bar = document.getElementById('legbar');
+  LEGS.forEach(function (leg) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'legbtn';
+    b.id = 'leg-' + leg.i;
+    b.textContent = leg.i + ' · ' + (leg.climbing ? '▲' : '▼') + ' ' + (leg.distance_m / 1000).toFixed(1) + ' km';
+    b.setAttribute('aria-pressed', String(leg.i === open.i));
+    b.addEventListener('click', function () {
+      open = leg;
+      bar.querySelectorAll('.legbtn').forEach(function (other) {
+        other.setAttribute('aria-pressed', String(other === b));
+      });
+      redraw();
+    });
+    bar.appendChild(b);
+  });
+
+  drawHero();
+  redraw();
+</script>

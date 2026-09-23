@@ -37,8 +37,8 @@ gpx.py``), while the sampler walks the simplified one, so the two are
 close but not equal. Mixing them would let a fully-surveyed route report
 a few metres unsurveyed. Nothing here reads the route at all.
 
-**A ZERO IS NOT REPORTED IN A BAND WE DID NOT MEASURE.** Where nothing
-was surveyed there are no bands, not six zeroes: a zero is a claim about
+**A ZERO IS NOT REPORTED IN A CLASS WE DID NOT MEASURE.** Where nothing
+was surveyed there are no classes, not six zeroes: a zero is a claim about
 the ground, and an all-unknown record supports none. The same rule as
 ``apps/locations/services/terrain.py``'s — an unknown is a reason, never a
 null, and never a zero either.
@@ -54,13 +54,19 @@ from apps.core.geo import haversine_m
 
 
 @dataclass(frozen=True)
-class SlopeBand:
+class SlopeClass:
     """One steepness class: an id, and the angles that fall in it.
+
+    Named CLASS rather than BAND to match
+    ``static/js/route_slope_core.js``'s ``CLASSES`` — which this table is
+    explicitly a copy of — and to leave "slope band" free for the
+    variable-length run of consecutive segments sharing one of these,
+    which is the object the route rail draws and a reader presses.
 
     ``lower_deg`` is inclusive and ``upper_deg`` exclusive, so a sample of
     exactly 35 degrees is in ``slope-35``. That is the raster's own
     convention — its classes are named for their lower bound — and the
-    other way round would put every boundary sample one band too gentle,
+    other way round would put every boundary sample one class too gentle,
     which is the direction that matters.
     """
 
@@ -78,13 +84,13 @@ class SlopeBand:
 # that file and asserts the two agree, which is what stops them drifting —
 # a route coloured by one table and described by another would disagree
 # with itself on the same screen.
-SLOPE_BANDS: tuple[SlopeBand, ...] = (
-    SlopeBand(id="slope-gentle", lower_deg=0.0, upper_deg=30.0),
-    SlopeBand(id="slope-30", lower_deg=30.0, upper_deg=35.0),
-    SlopeBand(id="slope-35", lower_deg=35.0, upper_deg=40.0),
-    SlopeBand(id="slope-40", lower_deg=40.0, upper_deg=45.0),
-    SlopeBand(id="slope-45", lower_deg=45.0, upper_deg=50.0),
-    SlopeBand(id="slope-50", lower_deg=50.0, upper_deg=None),
+SLOPE_CLASSES: tuple[SlopeClass, ...] = (
+    SlopeClass(id="slope-gentle", lower_deg=0.0, upper_deg=30.0),
+    SlopeClass(id="slope-30", lower_deg=30.0, upper_deg=35.0),
+    SlopeClass(id="slope-35", lower_deg=35.0, upper_deg=40.0),
+    SlopeClass(id="slope-40", lower_deg=40.0, upper_deg=45.0),
+    SlopeClass(id="slope-45", lower_deg=45.0, upper_deg=50.0),
+    SlopeClass(id="slope-50", lower_deg=50.0, upper_deg=None),
 )
 
 # The angle at and above which ground is reported as steep.
@@ -101,29 +107,29 @@ STEEP_THRESHOLD_DEG = 30.0
 _LENGTH_PRECISION = 1
 
 
-def band_for_angle(angle_deg: float) -> SlopeBand | None:
-    """Return the band an angle falls in.
+def class_for_angle(angle_deg: float) -> SlopeClass | None:
+    """Return the class an angle falls in.
 
     Args:
         angle_deg: Degrees from horizontal.
 
     Returns:
-        The matching ``SlopeBand``, or None when the value is not a real
+        The matching ``SlopeClass``, or None when the value is not a real
         angle. A non-finite number is not classified rather than being
-        forced into the gentle band, because "not a number" and "not
+        forced into the gentle class, because "not a number" and "not
         steep" must not become the same answer.
 
     """
     if not math.isfinite(angle_deg):
         return None
-    # Walked from the steepest end so the open-ended last band needs no
+    # Walked from the steepest end so the open-ended last class needs no
     # special case, and so a negative angle — which the sampler cannot
     # produce, but a hand-written record could — still lands in the
     # gentle bucket rather than falling off the end.
-    for band in reversed(SLOPE_BANDS[1:]):
-        if angle_deg >= band.lower_deg:
-            return band
-    return SLOPE_BANDS[0]
+    for slope_class in reversed(SLOPE_CLASSES[1:]):
+        if angle_deg >= slope_class.lower_deg:
+            return slope_class
+    return SLOPE_CLASSES[0]
 
 
 def segment_lengths_from_points(points: list[list[float]]) -> list[float]:
@@ -272,6 +278,12 @@ def summarise(
               "bands": {"slope-gentle": 10663.1, "slope-35": 900.0, …},
             }
 
+        THE STORED KEY IS STILL ``bands``, and stays that way: it is
+        written into every sampled ``Route.slope_samples`` record, and
+        renaming it to match the symbols would need a backfill over all
+        of them to buy nothing — no reader reads it yet. The SYMBOLS
+        moved; the data did not.
+
         ``bands`` carries only the classes with ground in them, so an
         all-unknown record has an empty one rather than six zeroes, and
         ``steepest_deg`` is absent rather than null for the same reason.
@@ -289,14 +301,14 @@ def summarise(
         angle_deg = segment.get("angle_deg")
         if not isinstance(angle_deg, int | float):
             # An unknown segment contributes its length to the walk and
-            # to nothing else — not to a band, and not to the steep
+            # to nothing else — not to a class, and not to the steep
             # figure. It is ground we did not see.
             continue
-        band = band_for_angle(float(angle_deg))
-        if band is None:
+        slope_class = class_for_angle(float(angle_deg))
+        if slope_class is None:
             continue
         surveyed_m += length_m
-        bands[band.id] = bands.get(band.id, 0.0) + length_m
+        bands[slope_class.id] = bands.get(slope_class.id, 0.0) + length_m
         if angle_deg >= STEEP_THRESHOLD_DEG:
             steep_m += length_m
         if steepest_deg is None or angle_deg > steepest_deg:

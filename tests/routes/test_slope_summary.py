@@ -3,7 +3,7 @@ tests/routes/test_slope_summary.py — a sampled route reduced to figures.
 
 Covers ``apps.routes.services.slope_summary``:
 
-  - ``band_for_angle``: every boundary lands in the band named for its
+  - ``class_for_angle``: every boundary lands in the class named for its
     lower bound, and a value that is not a real angle is not classified
     into the gentle one;
   - ``summarise``: the bands, the steep total, the steepest angle, an
@@ -13,7 +13,7 @@ Covers ``apps.routes.services.slope_summary``:
   - ``summarise_record``: a stored summary returned as-is, a legacy record
     summarised on the fly from its coordinates, and the two shapes that
     answer None;
-  - the band table itself agreeing, value for value, with
+  - the class table itself agreeing, value for value, with
     ``static/js/route_slope_core.js`` — the guard that stops a route being
     coloured by one table and described by another.
 
@@ -33,9 +33,9 @@ from typing import Any
 import pytest
 
 from apps.routes.services.slope_summary import (
-    SLOPE_BANDS,
+    SLOPE_CLASSES,
     STEEP_THRESHOLD_DEG,
-    band_for_angle,
+    class_for_angle,
     segment_lengths_from_points,
     summarise,
     summarise_record,
@@ -56,7 +56,7 @@ def _unknown(reason: str = "outside_coverage") -> dict[str, Any]:
     return {"unknown": reason}
 
 
-class TestBandForAngle:
+class TestClassForAngle:
     """The six classes, and what falls where."""
 
     @pytest.mark.parametrize(
@@ -64,9 +64,9 @@ class TestBandForAngle:
         [
             (0.0, "slope-gentle"),
             (29.9, "slope-gentle"),
-            # Each boundary belongs to the band NAMED for it, which is the
-            # direction that matters: the other way round would report
-            # every boundary sample one band too gentle.
+            # Each boundary belongs to the class NAMED for it, which is
+            # the direction that matters: the other way round would report
+            # every boundary sample one class too gentle.
             (30.0, "slope-30"),
             (34.9, "slope-30"),
             (35.0, "slope-35"),
@@ -76,33 +76,33 @@ class TestBandForAngle:
             (89.0, "slope-50"),
         ],
     )
-    def test_an_angle_lands_in_the_band_named_for_its_lower_bound(
+    def test_an_angle_lands_in_the_class_named_for_its_lower_bound(
         self, angle_deg: float, expected_id: str
     ) -> None:
-        band = band_for_angle(angle_deg)
-        assert band is not None
-        assert band.id == expected_id
+        slope_class = class_for_angle(angle_deg)
+        assert slope_class is not None
+        assert slope_class.id == expected_id
 
     def test_a_negative_angle_is_gentle_rather_than_unclassified(self) -> None:
         # The sampler cannot produce one, but a hand-written record could,
         # and falling off the end of the table would be worse than the
         # nearest honest answer.
-        band = band_for_angle(-1.0)
-        assert band is not None
-        assert band.id == "slope-gentle"
+        slope_class = class_for_angle(-1.0)
+        assert slope_class is not None
+        assert slope_class.id == "slope-gentle"
 
     @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
     def test_a_value_that_is_not_an_angle_is_not_classified_as_gentle(
         self, value: float
     ) -> None:
         # "Not a number" and "not steep" must not collapse into one answer.
-        assert band_for_angle(value) is None
+        assert class_for_angle(value) is None
 
 
 class TestSummarise:
     """The reduction: bands, the steep total, and the honest gaps."""
 
-    def test_it_totals_each_band_and_the_walk(self) -> None:
+    def test_it_totals_each_class_and_the_walk(self) -> None:
         summary = summarise(
             [_known(10.0), _known(32.0), _known(37.0), _known(55.0)],
             [100.0, 200.0, 300.0, 400.0],
@@ -143,7 +143,7 @@ class TestSummarise:
         assert summary is not None
         assert summary["sampled_m"] == 200.0
         assert summary["surveyed_m"] == 0.0
-        # Not six zeroes, and not a null steepest: a zero in a band is a
+        # Not six zeroes, and not a null steepest: a zero in a class is a
         # claim about ground nothing looked at.
         assert summary["bands"] == {}
         assert "steepest_deg" not in summary
@@ -233,9 +233,12 @@ class TestBandTableParity:
         )
 
         assert found, "no CLASSES table found in route_slope_core.js"
-        assert [(band.id, band.lower_deg, band.upper_deg) for band in SLOPE_BANDS] == [
-            (band_id, float(lower), None if upper == "null" else float(upper))
-            for band_id, lower, upper in found
+        assert [
+            (slope_class.id, slope_class.lower_deg, slope_class.upper_deg)
+            for slope_class in SLOPE_CLASSES
+        ] == [
+            (class_id, float(lower), None if upper == "null" else float(upper))
+            for class_id, lower, upper in found
         ]
 
     def test_the_steep_threshold_matches_route_slope_core(self) -> None:

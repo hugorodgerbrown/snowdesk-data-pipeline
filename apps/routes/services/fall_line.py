@@ -123,7 +123,7 @@ from apps.routes.services.slope_summary import segment_lengths_m
 #
 # What holds them together is a TEST rather than an import —
 # ``tests/routes/test_fall_line.py`` asserts the two are equal, the same
-# mechanism ``test_slope_summary.py`` uses to keep ``SLOPE_BANDS`` and
+# mechanism ``test_slope_summary.py`` uses to keep ``SLOPE_CLASSES`` and
 # the JavaScript CLASSES in step. So a deliberate divergence is one
 # edited assertion with a reason beside it, and an accidental one is a
 # red build.
