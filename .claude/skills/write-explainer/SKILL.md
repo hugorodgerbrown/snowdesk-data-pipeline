@@ -21,59 +21,69 @@ is, and what it cannot do. Read two of the existing pages before writing —
 `the-track-cannot-be-steeper-than-the-ground.html` (a measurement and a rule)
 and `pitch-and-roll-on-a-ski-track.html` (a drawing, with interaction) are
 the closest templates. Take structure and visual style from them, not
-length: they run long, and a new page should be shorter (step 2). This skill
-is the list of things that go wrong.
+their density: several run long on validation detail (step 2). This skill is
+the list of things that go wrong.
 
 ## 1. Settle the argument before the page
 
 Write, in chat or a scratch file, the one sentence the page exists to make a
-reader believe, and the three or four steps that get them there. Each step
-becomes a numbered `stage`. If you cannot state the sentence, the page is
-not ready — ask the user.
+reader believe, and the challenges that stand between the reader and that
+sentence. Each challenge becomes a numbered `stage`. Use as many as the
+subject has — a simple rule may need two, a pipeline six. Do not merge two
+challenges to hit a count, or pad one out to reach it. If you cannot state
+the sentence, the page is not ready — ask the user.
 
 Then write the question the reader arrived with — "what is a leg, and why
-does the app count distance in metres?" — and check each step answers part
-of it. A step that answers a question only the developer had is not a step.
+does the app count distance in metres?" — and check each stage answers part
+of it. A stage that answers a question only the developer had is not a stage.
 
-## 2. Explain the thing, not the proof
+## 2. Each stage: the challenge, a real example, the solution
 
-This is where explainers go wrong, and where two test rounds of this skill
-went wrong on both sides. The first paragraph of each section explained the
-mechanism well. Then the page turned into the engineer's validation work —
-every tour thinned four ways, "16 of 16 against 14 of 16", parameter sweeps
-from 75 m to 400 m, a boundary drift measured two ways — and the argument
-was lost under it. Making a process sound more complicated than it is is
-the failure; a good explainer leaves the reader thinking it is simpler than
-they feared.
+Every stage has the same three parts, in this order.
 
-- **Mechanism first, in words, and stop when it is clear.** If the plain
-  version is true enough for the reader to act on, it is the explanation.
-  The exceptions and edge cases belong in the code and its docstring.
-- **One worked example per claim.** One tour, one place on it, drawn. Not a
-  table across every tour and every setting. A reader believes a claim
-  because they can see it happen once, not because it happened sixteen
-  times.
-- **Few numbers, each one pictured.** Keep a number only if the reader can
-  picture it and the sentence needs it: "a point every 4 m on one watch and
-  every 19 m on another" earns its place; "between 38 and 117 runs,
-  reducing to 18 to 48" does not. No ranges across tours, no counts of
-  comparisons, no second measure of the same thing.
-- **Validation stays off the page.** Sweeps, thinning experiments, tolerance
-  tests and "we checked it against X" are how the design was chosen, and
-  they belong in the docstring or decision record. The page may say, in one
-  sentence, that a setting was tested rather than guessed. The exception is
-  a page whose claim IS robustness ("the same route recorded differently
-  gives the same legs"): then one such test, run once on one tour and
-  drawn, is the worked example — not the table of every tour and level.
+1. **The challenge.** What makes this part hard, in plain words — the thing
+   a reasonable person would get wrong. "A recorded height wobbles by a few
+   metres from one point to the next, so read raw, every wobble is a turn."
+2. **A real example.** One place on one real tour where the challenge
+   happens, with its numbers and a chart. Numbers and charts are both
+   encouraged: they are what makes the challenge believable. Pick the
+   example that shows it most plainly, and label the chart so the reader
+   can find the moment the text describes.
+3. **The solution.** What the app does about it, and what the same example
+   looks like afterwards. State it succinctly — one or two sentences a
+   reader could repeat.
+
+Close the page with a short summary of the answer: the solution from each
+stage in a line, so the page can be read backwards from its end.
+
+Where this went wrong in the skill's own test rounds: the challenge and
+solution were stated well, but the example grew into the engineer's
+validation — every tour thinned four ways, "16 of 16 against 14 of 16",
+parameter sweeps from 75 m to 400 m, a boundary drift measured two ways —
+and the solution was lost under it. So:
+
+- **The example illustrates; it does not prove.** One tour, one place,
+  drawn, with the numbers that describe that place. Not a table across every
+  tour and every setting. A reader believes a claim because they can see it
+  happen once, not because it happened sixteen times.
+- **Numbers describe the example.** "At 2.45 km the recording drops 360 m in
+  5 m" earns its place. "Between 38 and 117 runs, reducing to 18 to 48"
+  does not: it is a range across tours, not a thing the reader can see. No
+  counts of comparisons, and no second measure of the same thing.
+- **Validation stays off the page.** Sweeps, tolerance tests and "we checked
+  it against X" are how the design was chosen, and belong in the docstring
+  or decision record. The page may say in one sentence that a setting was
+  tested rather than guessed. When the challenge is itself robustness ("the
+  same route recorded differently gives the same legs"), one such test, run
+  on one tour and drawn, is the example.
 - **One caveat, if it changes what the reader believes.** Not a closing
   catalogue of limits.
-- **Budget:** three or four stages, about 150 words of prose each, so a page
-  of roughly 800 words plus figures — counted as everything except tables,
-  figures and the footer (captions and side lists count). The prose around a figure says what to
-  look at in it; it does not narrate the figure's numbers back.
+- **Say what to look at, not what the chart already says.** The prose around
+  a figure points at the moment that matters; it does not read the figure's
+  numbers back.
 
-Before building, read each stage's first paragraph with its figure and
-nothing else. If that makes the point, cut the rest of the stage.
+Before building, read each stage as challenge, example, solution. If a
+paragraph is none of the three, cut it.
 
 ## 3. Write for someone without the repo
 
@@ -142,10 +152,11 @@ used. Fix a source only once the two measures are reconciled.
 **Structure.** Start from the existing page closest in shape. The series
 pieces are: `.hero` (eyebrow, `h1` with one `<em>` word, `.lede`, `.facts`,
 and a small figure), numbered `article.stage` sections (`.num`, `h2`, an
-italic `.q` that states the section's point in one line, then `.body`,
+italic `.q` that states the stage's challenge in one line, then `.body`,
 often `.cols` with a `.side` of `.rules`), `.chartbox` for full-width
 figures with a `.legend`, `.tbl-wrap` tables, `.caveat` / `.next` callouts,
-and a `footer`.
+the closing summary (a `.later` block, as in "Pitch and Roll"), and a
+`footer`.
 
 **Styles.** Copy the whole first `<style>` block (the series tokens and
 components, light and dark) verbatim from an existing explainer, then add a
