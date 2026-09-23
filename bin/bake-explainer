@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+/*
+ * bin/bake-explainer — Write an explainer's script-drawn figures into its
+ * HTML, so the page reads with JavaScript off (SNOW-1020).
+ *
+ * The explainers under docs/explainers/ draw their charts with an inline
+ * script from data embedded in the page. Anything that shows a file
+ * without running its script — a static preview, a sanitising viewer, a
+ * reader with JavaScript disabled — showed empty boxes where every figure
+ * should be.
+ *
+ * Every element the script fills carries a `data-baked` attribute and an
+ * id. This runs the page's own script under jsdom and writes each such
+ * element's resulting content back into the file, between its tags. The
+ * script stays: with JavaScript on it redraws over the baked copy (every
+ * draw function clears its target first), so interaction still works.
+ *
+ * Idempotent. The splice is by source position, not by pattern, so running
+ * it on an already-baked file replaces the old figures rather than adding
+ * a second copy. Re-run it after editing a page's script or data.
+ *
+ * Colours must be `var(--token)` references, never values resolved with
+ * getComputedStyle: a baked literal would freeze the figure in whichever
+ * theme jsdom happened to report, and jsdom reports none.
+ *
+ * Usage:
+ *   bin/bake-explainer docs/explainers/<page>.html [...]
+ */
+
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { JSDOM, VirtualConsole } = require(
+  require.resolve('jsdom', { paths: [path.join(__dirname, '..')] }),
+);
+
+/**
+ * Bake one page in place.
+ *
+ * @param {string} file Path to the explainer's HTML.
+ * @returns {number} How many elements were baked.
+ */
+function bake(file) {
+  const source = fs.readFileSync(file, 'utf8');
+  const located = new JSDOM(source, { includeNodeLocations: true });
+  const targets = [...located.window.document.querySelectorAll('[data-baked]')];
+  if (!targets.length) throw new Error(`${file}: no [data-baked] elements`);
+
+  const errors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', (error) => errors.push(error.message));
+  const drawn = new JSDOM(source, {
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    virtualConsole,
+  }).window.document;
+  if (errors.length) throw new Error(`${file}: script failed under jsdom: ${errors[0]}`);
+
+  // Last first, so an earlier splice never moves a later offset.
+  const splices = targets
+    .map((element) => {
+      if (!element.id) throw new Error(`${file}: a [data-baked] element has no id`);
+      const location = located.nodeLocation(element);
+      const content = drawn.getElementById(element.id).innerHTML;
+      if (!content.trim()) throw new Error(`${file}: #${element.id} drew nothing`);
+      return { start: location.startTag.endOffset, end: location.endTag.startOffset, content };
+    })
+    .sort((a, b) => b.start - a.start);
+
+  let output = source;
+  for (const { start, end, content } of splices) {
+    output = output.slice(0, start) + content + output.slice(end);
+  }
+  fs.writeFileSync(file, output);
+  return splices.length;
+}
+
+const files = process.argv.slice(2);
+if (!files.length) {
+  console.error('usage: bin/bake-explainer docs/explainers/<page>.html [...]');
+  process.exit(2);
+}
+for (const file of files) {
+  console.log(`${file}: baked ${bake(file)} element(s)`);
+}
