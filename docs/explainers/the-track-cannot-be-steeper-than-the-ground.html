@@ -1,0 +1,544 @@
+<title>The Track Cannot Be Steeper Than the Ground</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A saved route knows two slopes: the ground's and the track's own. The track's can never be the larger, so where it is, the recording is wrong. How that one fact finds breaks in a recording, and what a gradient read from stored points can never be better than.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root {
+  /* Series tokens — shared with "Anatomy of a Route" so the two read as one set. */
+  --ground: #eef1f3;
+  --surface: #fbfcfc;
+  --ink: #16202a;
+  --ink-2: #4c5866;
+  --ink-3: #7a8592;
+  --rule: #d5dce2;
+  --route: #b421c8;
+  --route-soft: #f3e3f6;
+  /* Four functional hues, one job each. */
+  --keep: #0f7d6b;        /* present · kept · climb */
+  --keep-soft: #dcf0eb;
+  --fall: #2f6fae;        /* descent */
+  --once: #9a6b12;        /* read once, then gone */
+  --once-soft: #f6ecd6;
+  --plate-shadow: 0 1px 0 rgba(22,32,42,.06), 0 18px 40px -24px rgba(22,32,42,.45);
+
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+    --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33;
+    --keep: #4fc3ab; --keep-soft: #14302b; --fall: #7db0e6; --once: #d3a63f; --once-soft: #2e2617;
+    --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f151b; --surface: #17202a; --ink: #e7ecf0; --ink-2: #aab5c0; --ink-3: #7d8995;
+  --rule: #2a3642; --route: #d86ae6; --route-soft: #2c1d33;
+  --keep: #4fc3ab; --keep-soft: #14302b; --fall: #7db0e6; --once: #d3a63f; --once-soft: #2e2617;
+  --plate-shadow: 0 1px 0 rgba(0,0,0,.4), 0 18px 40px -20px rgba(0,0,0,.8);
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground); color: var(--ink);
+  font-family: var(--body); font-size: 17px; line-height: 1.6;
+  padding-inline: 20px; padding-block: 0 96px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3, .eyebrow, .label, .tag { font-family: var(--display); }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: inherit; text-decoration-color: var(--route); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--route); outline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: .82em; }
+code { background: color-mix(in srgb, var(--rule) 55%, transparent); padding: .08em .35em; border-radius: 3px; }
+.eyebrow {
+  font-size: 12px; font-weight: 650; font-stretch: 112%; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+figure { margin: 0; }
+figcaption { margin-top: 10px; font-family: var(--display); font-stretch: 92%; font-size: 13px; color: var(--ink-3); max-width: 46em; }
+svg.fig { display: block; width: 100%; height: auto; max-width: 100%; }
+.scroll { overflow-x: auto; }
+
+/* ---------- hero ---------- */
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 44px; align-items: center; padding-block: 56px 20px;
+}
+.hero h1 {
+  font-size: clamp(42px, 6.2vw, 80px); line-height: .92; font-weight: 800;
+  font-stretch: 78%; letter-spacing: -.01em; margin-top: 14px;
+}
+.hero h1 em { font-style: normal; color: var(--route); }
+.hero .lede { margin-top: 22px; font-size: 19px; color: var(--ink-2); max-width: 34em; }
+.facts {
+  margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* ---------- the annotated file ---------- */
+.file {
+  background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow);
+  padding: 18px 20px; font-size: 13px;
+}
+.file-h {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--rule);
+}
+.file-h .name { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
+.lines { display: grid; gap: 3px; }
+.ln {
+  display: grid; grid-template-columns: 3px minmax(0, 1fr) minmax(0, 15em);
+  gap: 0 14px; align-items: baseline;
+}
+.ln > .bar { border-radius: 2px; align-self: stretch; background: var(--rule); }
+.ln.keep  > .bar { background: var(--keep); }
+.ln.once  > .bar { background: var(--once); }
+.ln.drop  > .bar { background: repeating-linear-gradient(180deg, var(--ink-3) 0 3px, transparent 3px 7px); }
+.ln > .src {
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+  white-space: pre; overflow-x: auto; color: var(--ink);
+}
+.ln.drop > .src { color: var(--ink-3); }
+.ln > .note {
+  font-family: var(--display); font-stretch: 92%; font-size: 12px; line-height: 1.45;
+  color: var(--ink-2); padding-block: 2px;
+}
+.ln > .note b { color: var(--ink); font-weight: 650; }
+.key { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.key span { display: flex; align-items: center; gap: 7px; font-family: var(--display); font-size: 12px; font-stretch: 95%; color: var(--ink-2); }
+.key i { width: 3px; height: 14px; border-radius: 2px; display: block; }
+
+/* ---------- principles ---------- */
+.principle {
+  margin-block: 40px 12px; padding: 22px 26px; background: var(--surface);
+  border-radius: 6px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 26px;
+  box-shadow: 0 1px 0 var(--rule);
+}
+.principle h3 { font-size: 20px; font-stretch: 88%; font-weight: 700; margin-bottom: 6px; }
+.principle p { color: var(--ink-2); font-size: 16px; }
+.principle p + p { margin-top: 10px; }
+.principle .k { font-family: var(--mono); font-size: 12px; color: var(--route); letter-spacing: .04em; display: block; margin-bottom: 6px; }
+
+/* ---------- stages ---------- */
+.stage {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 0 28px;
+  padding-block: 60px 8px; border-top: 1px solid var(--rule); margin-top: 52px;
+}
+.stage > .num {
+  font-family: var(--display); font-weight: 800; font-stretch: 75%;
+  font-size: 72px; line-height: .8; color: var(--route);
+  font-variant-numeric: tabular-nums;
+}
+.stage header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.stage h2 { font-size: clamp(29px, 3.5vw, 43px); line-height: 1; font-weight: 750; font-stretch: 82%; }
+.stage .where { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.stage .q { margin-top: 10px; font-style: italic; font-size: 20px; color: var(--ink-2); max-width: 36em; }
+.stage .body { margin-top: 24px; }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.cols p + p { margin-top: 12px; }
+.cols h3, .side h3 {
+  font-size: 12px; font-weight: 650; font-stretch: 110%; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px;
+}
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 15.5px; }
+.rules li { display: grid; grid-template-columns: 118px 1fr; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed var(--rule); }
+.rules li:last-child { border-bottom: 0; padding-bottom: 0; }
+.rules .label { font-size: 12px; font-weight: 600; font-stretch: 95%; color: var(--ink-3); padding-top: 3px; }
+.caveat {
+  margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--once);
+  background: var(--once-soft); font-size: 15.5px; border-radius: 0 4px 4px 0;
+}
+.caveat b { font-family: var(--display); font-stretch: 92%; }
+.next {
+  margin-top: 18px; padding: 14px 16px; border-left: 3px solid var(--route);
+  background: var(--route-soft); font-size: 15.5px; border-radius: 0 4px 4px 0;
+}
+.next .tag {
+  display: block; font-size: 11px; font-weight: 650; font-stretch: 112%;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--route); margin-bottom: 5px;
+}
+.next b { font-family: var(--display); font-stretch: 92%; }
+.figbox { margin-top: 26px; padding: 22px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
+
+/* ---------- tables ---------- */
+.tbl-wrap { overflow-x: auto; margin-top: 18px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--display); font-weight: 650; font-stretch: 105%; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+td code { white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--display); font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--keep-soft); color: var(--keep); }
+.pill.no { background: color-mix(in srgb, var(--route) 14%, transparent); color: var(--route); }
+.pill.part { background: var(--once-soft); color: var(--once); }
+
+.section-h { margin-top: 84px; padding-top: 40px; border-top: 1px solid var(--rule); }
+.section-h h2 { font-size: clamp(29px, 3.5vw, 43px); font-weight: 750; font-stretch: 82%; line-height: 1; }
+.section-h > p { margin-top: 12px; color: var(--ink-2); max-width: 42em; }
+
+.later {
+  margin-top: 84px; padding: 28px 30px; border-radius: 6px;
+  background: var(--route-soft); color: var(--ink);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px;
+}
+.later h2 { font-size: 26px; font-weight: 750; font-stretch: 85%; }
+.later p { margin-top: 10px; font-size: 16px; color: var(--ink-2); }
+.later p + p { margin-top: 10px; }
+
+footer { margin-top: 76px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13.5px; color: var(--ink-3); font-family: var(--display); font-stretch: 92%; }
+footer p + p { margin-top: 6px; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; gap: 32px; padding-block: 36px 12px; }
+  .principle, .cols, .later { grid-template-columns: 1fr; }
+  .stage { grid-template-columns: 1fr; }
+  .stage > .num { font-size: 46px; margin-bottom: 10px; }
+  .ln { grid-template-columns: 3px minmax(0, 1fr); }
+  .ln > .note { grid-column: 2; padding-bottom: 4px; }
+}
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .rules li { grid-template-columns: 1fr; gap: 2px; }
+  .rules .label { padding-top: 0; }
+}
+</style>
+
+<style>
+/* Page-specific, over the series set above. ------------------------------ */
+:root {
+  --ground-line: #7a8592;   /* the terrain's angle */
+  --track-line: #b421c8;    /* the track's own gradient — the route colour */
+  --reject: #9a6b12;        /* rejected — the series' amber */
+  --earth: #a9805a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground-line: #9aa6b2; --track-line: #d86ae6; --reject: #d3a63f; --earth: #6b5138; }
+}
+:root[data-theme="dark"] { --ground-line: #9aa6b2; --track-line: #d86ae6; --reject: #d3a63f; --earth: #6b5138; }
+
+.maths { font-family: var(--mono); font-size: 18px; color: var(--ink); margin-bottom: 12px; }
+.maths .t { color: var(--track-line); }
+.maths .g { color: var(--ground-line); }
+.chartbox { margin-top: 22px; padding: 18px 20px 12px; background: var(--surface); border-radius: 6px; box-shadow: var(--plate-shadow); }
+.chartbox svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-family: var(--display); font-stretch: 95%; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: block; width: 18px; height: 3px; border-radius: 2px; }
+.legend i.dot { width: 9px; height: 9px; border-radius: 50%; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13.5px; }
+svg text { font-family: var(--display); font-stretch: 92%; }
+/* A stage's content column must be allowed to shrink below the table's min-width;
+   the table scrolls inside .tbl-wrap instead of widening the page on a phone. */
+.stage > div { min-width: 0; }
+</style>
+
+<div class="wrap">
+
+<section class="hero">
+  <div>
+    <div class="eyebrow">Snowdesk · how a route is measured</div>
+    <h1>The track cannot be steeper than <em>the ground</em></h1>
+    <p class="lede">A saved route knows two slopes at every point: how steep the <b>ground</b> is, from a terrain model, and how steeply the <b>track</b> climbs or falls along its own length, from the heights the recording device wrote down. The second can never be larger than the first. When it is, the recording is wrong — and that one fact is the whole of the check.</p>
+    <div class="facts">
+      <span><b>4</b> real tours, <b>1,602</b> pieces of ground</span>
+      <span>allowance <b>5°</b></span>
+      <span>every chart below is <b>live</b></span>
+    </div>
+  </div>
+  <figure>
+    <svg class="fig" id="fig-bound" viewBox="0 0 330 210" role="img" aria-label="On a forty-degree face the track's gradient depends on its heading: forty degrees straight down or up the fall line, zero across it, and never more than forty"></svg>
+    <figcaption>One 40° face. Head straight down it and the track falls at 40°; turn across it and the gradient shrinks to nothing. No heading gets past the ground's own angle.</figcaption>
+  </figure>
+</section>
+
+<article class="stage">
+  <div class="num">1</div>
+  <div>
+    <header><h2>Two slopes, one bound</h2></header>
+    <p class="q">A skin track zigzags up a steep face precisely so that it is not as steep as the face.</p>
+    <div class="body cols">
+      <div>
+        <p class="maths"><span class="t">tan(track)</span> = <span class="g">tan(ground)</span> × cos(heading off the fall line)</p>
+        <p>The ground's angle comes from a terrain model on a 5 m grid, measured at the middle of every 25 m piece of the route. The track's gradient is the change in the recorded height across that piece, over its length.</p>
+        <p>A cosine is never more than one, so the track's gradient is never more than the ground's. Straight down the fall line they are equal. Every other heading is gentler. That is not a rule anyone chose; it is what walking on a surface means.</p>
+      </div>
+      <div class="side">
+        <h3>Why the two differ at all</h3>
+        <ul class="rules">
+          <li><span class="label">Ground</span><span>How steep the slope is, whichever way you face on it. It decides whether it can avalanche.</span></li>
+          <li><span class="label">Track</span><span>How steep the line you took was. It decides how hard the day felt, and it is what a height profile draws.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage">
+  <div class="num">2</div>
+  <div>
+    <header><h2>Where the track's heights come from</h2></header>
+    <p class="q">From the stored route — and from nothing finer, because nothing finer is kept.</p>
+    <div class="body cols">
+      <div>
+        <p>When a GPX file is uploaded, it is read, turned into a list of points with a height on each, and thrown away. The file itself is not stored. That keeps less of anyone's location history in fewer places, and it means there is no file store to run.</p>
+        <p>It also sets a ceiling. The track's gradient is worked out by walking the stored points again, 25 m at a time, and reading the height at each step. Whatever is wrong in those points stays wrong, and nothing can go back to the original recording to check.</p>
+      </div>
+      <div class="side">
+        <h3>What the stored points are</h3>
+        <ul class="rules">
+          <li><span class="label">Up to 2,000 points</span><span>The recording exactly as the device wrote it. All four tours here are this size.</span></li>
+          <li><span class="label">Over 2,000</span><span>Thinned to fit, keeping the points that best preserve the line's shape. See section 5 for what that does to a gradient.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage">
+  <div class="num">3</div>
+  <div>
+    <header><h2>A break in the recording</h2></header>
+    <p class="q">On one tour, three consecutive points fall 360 m in height while moving 5 m across the map.</p>
+    <div class="body">
+      <p style="max-width:44em">Nobody descends 360 m in five metres. Somewhere around those points the device lost its height — a barometer re-calibrating or a satellite fix dropping out, for example — and when it came back it wrote down a number from a different altitude. The recording has no way to say so. It is simply the next point.</p>
+      <div class="chartbox">
+        <svg id="fig-profile" viewBox="0 0 1000 260" role="img" aria-label="The tour's height against distance between two and three kilometres, with a near-vertical drop of 360 metres at about 2.45 kilometres"></svg>
+        <div class="legend"><span><i style="background:var(--ink)"></i>stored height</span><span><i class="dot" style="background:var(--reject)"></i>the points either side of the break</span></div>
+      </div>
+      <p style="max-width:44em;margin-top:18px">The obvious fix is to smooth: average each piece's gradient with its neighbours so a single bad point is diluted. Averaged over five pieces — about 125 m — a 360 m drop is still a 71° slope. Smoothing does not remove the break. It spreads it.</p>
+      <div class="chartbox">
+        <svg id="fig-zoom" viewBox="0 0 1000 300" role="img" aria-label="Pieces either side of the break: the ground is under ten degrees, the raw track gradient spikes to eighty-five, smoothing spreads it across five pieces at over seventy, and rejecting the break leaves a line that stays under the ground"></svg>
+        <div class="legend">
+          <span><i style="background:var(--ground-line)"></i>ground angle</span>
+          <span><i style="background:var(--rule);height:9px"></i>track, raw</span>
+          <span><i style="background:var(--track-line);opacity:.45"></i>track, smoothed</span>
+          <span><i style="background:var(--track-line)"></i>track, smoothed after rejecting</span>
+          <span><i class="dot" style="background:var(--reject)"></i>rejected</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>
+
+<article class="stage">
+  <div class="num">4</div>
+  <div>
+    <header><h2>The rule</h2></header>
+    <p class="q">If a piece of track is more than 5° steeper than the ground under it, it is not a measurement of the track.</p>
+    <div class="body cols">
+      <div>
+        <p>Such a piece is <b>rejected</b>: it gets no gradient, it says why, and it is left out of its neighbours' averages so it cannot leak into them. Everything else is then smoothed as before.</p>
+        <p>The 5° is an allowance for honest error, not a tuning knob. A 2 m error in one height — ordinary for a watch or a phone — tilts a 25 m piece by about 4.6°. The ground's angle is itself an average over 10 m of terrain, so a short steep step reads a little gentler than it is. Below 5°, the rule would be throwing away noise as if it were a break; well above, it would let breaks through.</p>
+      </div>
+      <div class="side">
+        <h3>What rejection does not do</h3>
+        <ul class="rules">
+          <li><span class="label">Repair</span><span>The break is still in the stored route. The rule declines to report a gradient there; it does not invent one.</span></li>
+          <li><span class="label">Unknown ground</span><span>Where the terrain model has no answer, there is no angle to check against, so nothing there is rejected — a break over unsurveyed ground passes through.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="chartbox">
+      <svg id="fig-scatter" viewBox="0 0 1000 420" role="img" aria-label="Every piece of one tour plotted with the ground angle across and the raw track gradient up; the pieces above the line five degrees over equal are rejected"></svg>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--track-line)"></i>kept</span>
+        <span><i class="dot" style="background:var(--reject)"></i>rejected</span>
+        <span><i style="background:var(--ground-line)"></i>track = ground</span>
+        <span><i style="background:var(--reject)"></i>track = ground + 5°</span>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table id="tbl-summary">
+        <thead><tr><th>Tour</th><th class="num">km</th><th class="num">pieces</th><th class="num">rejected</th><th class="num">steepest, raw</th><th class="num">smoothed only</th><th class="num">rejected, then smoothed</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</article>
+
+<article class="stage">
+  <div class="num">5</div>
+  <div>
+    <header><h2>What it can never be better than</h2></header>
+    <p class="q">A gradient read from stored points inherits everything that happened to them on the way in.</p>
+    <div class="body cols">
+      <div>
+        <p><b>Thinned tracks run steep on switchbacks.</b> A long recording is thinned to 2,000 points by keeping the ones that best hold the line's shape. On a zigzag, the corners are what goes. The heights at the kept points are real, but the distance between them is now the straight cut across the corner rather than the zigzag that was walked. The same climb over a shorter run is a steeper gradient — overstated in exactly the shape a skin track is made of. The four tours measured here are all under the limit, so their figures do not include this.</p>
+        <p><b>Breaks are permanent.</b> Because the original file is not kept, a break in the recording is in the route for good. A better rule written later applies to new uploads only.</p>
+        <p><b>A trusted pitch should come from the ground.</b> The angle you descend along your skis can be worked out from the terrain alone — the ground's angle and which way you face on it — without reading a single recorded height. Where a figure has to be relied on, that is the one to use.</p>
+      </div>
+      <figure>
+        <svg class="fig" id="fig-thin" viewBox="0 0 330 230" role="img" aria-label="A zigzag skin track and the straight line that remains when its corners are thinned away: the same height gain over a shorter distance"></svg>
+        <figcaption>The walked zigzag and what thinning keeps. The same height gained over about a fifth of the distance, so the kept line's rise over run is about five times the walked one's.</figcaption>
+      </figure>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <p>Describes how Snowdesk measured the gradient along a saved route in September 2026. Figures are from four real tours, recorded at point spacings from 4 m to 19 m and stored whole.</p>
+</footer>
+
+</div>
+
+<script>
+  const DATA = {"profile":[[0,3436.6],[2,3438.2],[19,3448.6],[27,3452.4],[32,3500.6],[55,3503.6],[82,3507.6],[90,3510.6],[92,3511.8],[98,3513.0],[141,3516.6],[150,3523.2],[159,3525.0],[175,3526.6],[209,3534.2],[210,3535.6],[213,3536.8],[220,3538.2],[224,3540.2],[236,3541.0],[240,3541.0],[247,3541.4],[251,3541.8],[263,3542.2],[268,3542.6],[275,3543.0],[280,3543.0],[307,3544.2],[314,3544.2],[319,3544.6],[324,3544.6],[330,3545.0],[335,3545.4],[348,3545.8],[353,3546.0],[361,3546.4],[365,3546.4],[371,3546.8],[375,3546.8],[379,3549.0],[384,3557.6],[388,3558.0],[392,3560.0],[397,3560.4],[401,3560.6],[427,3561.8],[469,3563.6],[473,3565.2],[477,3565.4],[522,3567.2],[535,3567.6],[558,3570.4],[568,3570.8],[582,3574.6],[600,3588.4],[606,3590.6],[608,3591.4],[610,3593.6],[613,3600.8],[616,3602.0],[629,3607.6],[655,3610.2],[665,3612.4],[669,3613.2],[674,3613.4],[677,3614.4],[687,3615.4],[692,3615.6],[695,3615.6],[706,3616.2],[708,3617.0],[728,3617.4],[747,3618.4],[766,3618.8],[785,3619.6],[816,3621.4],[886,3622.0],[897,3622.0],[905,3622.0],[926,3622.2],[970,3625.6],[1007,3627.6],[1193,3635.8],[1282,3641.4],[1310,3642.6],[1345,3651.2],[1368,3664.0],[1424,3659.8],[1457,3651.0],[1488,3640.4],[1498,3636.6],[1506,3633.2],[1541,3620.4],[1558,3614.8],[1566,3612.0],[1574,3609.2],[1581,3606.6],[1595,3597.6],[1606,3589.4],[1611,3589.0],[1619,3588.2],[1637,3580.8],[1708,3571.6],[1742,3548.8],[1806,3490.8],[1840,3468.0],[1857,3452.4],[1884,3430.0],[1902,3427.4],[1929,3424.8],[1967,3419.8],[1993,3411.2],[2000,3410.6],[2011,3410.2],[2020,3398.0],[2027,3392.0],[2035,3390.8],[2043,3390.0],[2055,3389.4],[2105,3384.4],[2132,3330.6],[2144,3295.0],[2157,3272.2],[2179,3267.0],[2210,3256.6],[2279,3212.0],[2337,3203.8],[2357,3198.2],[2377,3189.2],[2414,3182.0],[2429,3178.4],[2447,3153.0],[2449,2908.2],[2452,2793.4],[2466,2791.8],[2473,2791.6],[2493,2793.0],[2605,2791.2],[2613,2791.6],[2643,2794.8],[2671,2797.2],[2700,2800.2],[2777,2806.4],[2802,2806.6],[2854,2809.0],[2867,2810.2],[2900,2817.2],[2916,2821.4],[2948,2826.8],[2979,2832.6],[2986,2833.8],[3010,2839.4],[3019,2841.4],[3023,2842.6],[3029,2844.0],[3044,2847.8],[3054,2850.4],[3073,2855.4],[3082,2856.8],[3114,2861.8],[3132,2866.6],[3136,2867.4],[3165,2874.6],[3185,2880.4],[3194,2883.0],[3199,2884.4],[3219,2888.4],[3230,2892.0],[3239,2894.2],[3247,2896.0],[3328,2904.6],[3339,2905.6],[3348,2907.4],[3392,2915.6],[3417,2918.8],[3459,2922.6],[3480,2927.4],[3497,2929.0],[3536,2936.2],[3553,2939.4],[3559,2940.8],[3576,2943.2],[3602,2948.6],[3624,2953.2],[3647,2959.8],[3661,2962.6],[3678,2966.6],[3682,2967.4],[3693,2969.4],[3706,2973.2],[3748,2978.4],[3761,2978.8],[3783,2983.0],[3792,2985.6],[3804,2987.8],[3818,2990.0],[3829,2988.6],[3838,2990.4],[3843,2991.8],[3852,2994.0],[3863,2997.0],[3872,2998.2],[3888,3001.2],[3902,3004.0],[3914,3004.2],[3931,3003.8],[3939,3003.4],[3948,3002.4],[3953,3002.4],[3967,3003.8],[3981,3007.2],[3986,3013.0],[4003,3014.2],[4029,3019.0],[4038,3021.8],[4062,3020.2],[4069,3019.0],[4074,3019.0],[4079,3018.6],[4091,3017.6],[4097,3016.4],[4103,3014.6],[4128,3004.8],[4143,2999.8],[4149,2997.2],[4172,2988.0],[4180,2985.2],[4203,2977.0],[4211,2974.2],[4235,2966.6],[4258,2959.8],[4281,2953.2],[4304,2947.0],[4340,2938.2],[4346,2931.0],[4350,2930.8],[4386,2929.4],[4409,2926.0],[4414,2923.8],[4420,2923.8],[4425,2923.6],[4431,2923.4],[4479,2911.2],[4509,2899.2],[4550,2885.8],[4573,2885.4],[4598,2885.4],[4626,2885.6],[4640,2885.8],[4656,2887.4],[4681,2887.6],[4693,2888.6],[4698,2889.0],[4714,2887.4],[4719,2887.2],[4726,2886.2],[4731,2884.2],[4743,2881.0],[4757,2873.2],[4764,2869.0],[4776,2865.8],[4782,2864.4],[4785,2864.2],[4788,2863.6],[4797,2850.6],[4810,2846.6],[4874,2834.6],[4892,2830.6],[4922,2820.4],[4945,2819.8],[4957,2818.0],[4962,2816.8],[4969,2815.8],[5020,2797.6],[5027,2794.0],[5041,2787.6],[5065,2776.8],[5080,2769.4],[5088,2765.6],[5097,2761.6],[5104,2758.2],[5129,2746.6],[5188,2719.8],[5221,2704.4],[5237,2697.4],[5245,2694.2],[5263,2688.4],[5284,2681.6],[5318,2673.0],[5351,2664.4],[5369,2659.8],[5384,2654.8],[5390,2653.0],[5422,2641.2],[5471,2635.2],[5520,2623.2],[5529,2621.2],[5575,2613.8],[5588,2611.8],[5592,2611.0],[5633,2606.2],[5645,2605.0],[5664,2603.4],[5685,2599.4],[5700,2595.6],[5705,2594.6],[5712,2594.0],[5725,2592.4],[5773,2576.2],[5779,2574.4],[5783,2573.6],[5789,2573.0],[5795,2572.6],[5814,2569.0],[5839,2561.2],[5854,2557.6],[5860,2556.6],[5867,2555.6],[5876,2554.6],[5887,2553.2],[5898,2551.6],[5918,2547.6],[5965,2536.8],[5973,2535.4],[5998,2531.4],[6004,2530.6],[6107,2521.4],[6123,2519.8],[6142,2518.0],[6162,2516.2],[6169,2515.4],[6198,2509.8],[6253,2499.4],[6285,2495.6],[6323,2491.6],[6355,2487.4],[6368,2485.8],[6399,2482.2],[6416,2479.2],[6426,2478.8],[6431,2478.6],[6470,2472.4],[6492,2469.0],[6522,2465.8],[6528,2465.0],[6542,2463.0],[6549,2462.0],[6555,2460.8],[6572,2455.8],[6584,2452.4],[6590,2450.6],[6597,2449.2],[6604,2447.6],[6617,2443.2],[6632,2437.8],[6639,2435.0],[6654,2430.2],[6662,2427.2],[6671,2424.6],[6679,2422.2],[6689,2419.4],[6708,2413.6],[6718,2411.0],[6783,2396.6],[6818,2392.6],[6841,2391.2],[6896,2388.8],[6998,2382.4],[7026,2380.6],[7065,2377.8],[7085,2377.0],[7102,2376.6],[7145,2374.8],[7197,2370.8],[7228,2368.2],[7262,2366.6],[7288,2366.0],[7318,2364.0],[7349,2361.8],[7383,2360.4],[7410,2357.8],[7426,2357.2],[7470,2352.6],[7526,2348.8],[7549,2347.4],[7567,2346.0],[7589,2343.6],[7656,2338.8],[7682,2336.4],[7711,2332.6],[7721,2331.4],[7726,2330.8],[7732,2329.4],[7741,2323.4],[7776,2316.0],[7827,2305.4],[7836,2303.4],[7847,2300.8],[7854,2297.0],[7875,2293.8],[7908,2289.2],[7969,2279.2],[7993,2276.4],[8026,2273.2],[8079,2268.8],[8129,2264.0],[8162,2259.8],[8180,2258.2],[8194,2255.6],[8209,2253.6],[8216,2252.4],[8237,2249.0],[8248,2247.0],[8271,2243.4],[8277,2243.2],[8290,2241.8],[8306,2240.4],[8322,2239.2],[8362,2232.0],[8386,2230.6],[8417,2228.2],[8430,2227.2],[8442,2226.0],[8482,2219.2],[8503,2216.4],[8537,2212.2],[8550,2210.6],[8555,2210.2],[8580,2208.8],[8599,2207.8],[8641,2205.0],[8661,2204.2],[8671,2203.6],[8681,2203.0],[8695,2202.2],[8706,2202.0],[8716,2202.2],[8734,2202.4],[8744,2202.2],[8766,2202.8],[8789,2203.8],[8813,2203.2],[8820,2203.4],[8842,2203.4],[8855,2203.6],[8866,2203.8],[8875,2204.2],[8885,2204.8],[8906,2204.2],[8916,2203.8],[8943,2203.6],[8949,2204.2],[8968,2204.0],[8979,2203.4],[8985,2203.4],[8988,2203.6],[8996,2204.2],[9029,2203.6],[9060,2204.0],[9077,2203.8],[9129,2204.2],[9143,2205.0],[9166,2204.2],[9181,2204.6],[9190,2204.6],[9210,2203.4],[9214,2203.4],[9223,2204.0],[9235,2204.8],[9243,2204.4],[9248,2204.4],[9255,2203.8],[9279,2203.2],[9291,2203.4],[9310,2204.0],[9333,2204.6],[9339,2204.8],[9352,2204.6],[9386,2202.6],[9393,2202.2],[9409,2201.6],[9422,2198.6],[9434,2198.0],[9443,2198.4],[9463,2198.8],[9476,2198.6],[9508,2197.4],[9527,2196.0],[9557,2195.6],[9559,2195.2],[9563,2195.2],[9568,2196.2],[9570,2196.2],[9573,2196.8],[9577,2195.6],[9581,2195.4],[9591,2194.8],[9598,2193.8],[9608,2189.8],[9614,2187.8],[9623,2183.8],[9635,2178.8],[9637,2177.8],[9646,2171.0],[9662,2162.6],[9672,2156.8],[9680,2155.0],[9686,2152.0],[9690,2150.0],[9697,2148.2],[9718,2144.0],[9729,2138.0],[9742,2137.2],[9764,2135.6],[9785,2133.0],[9807,2129.2],[9813,2127.6],[9832,2125.4],[9863,2124.4],[9880,2124.6],[9894,2124.4],[9903,2124.0],[9911,2123.8],[9941,2122.2],[9953,2121.0],[9987,2120.2],[10004,2119.4],[10061,2114.6],[10093,2111.8],[10142,2107.4],[10154,2106.0],[10178,2103.2],[10214,2098.0],[10225,2096.4],[10237,2095.2],[10258,2092.6],[10301,2088.6],[10346,2083.2],[10365,2081.2],[10382,2077.8],[10388,2076.0],[10473,2064.8],[10488,2062.4],[10493,2062.2],[10541,2055.4],[10552,2053.0],[10573,2048.6],[10615,2040.2],[10620,2037.4],[10629,2035.6],[10641,2032.6],[10666,2027.2],[10680,2024.6],[10705,2020.0],[10720,2016.6],[10739,2012.6],[10764,2007.4],[10771,2005.4],[10798,2001.8],[10825,1998.4],[10841,1994.0],[10866,1991.4],[10882,1990.2],[10889,1989.6],[10895,1988.8],[10915,1986.0],[10929,1984.2],[10943,1982.6],[10950,1981.6],[10972,1979.0],[10994,1976.6],[11032,1972.6],[11048,1971.2],[11107,1965.4],[11137,1962.2],[11145,1961.4],[11154,1960.6],[11172,1959.4],[11190,1957.8],[11211,1955.8],[11220,1954.6],[11230,1953.6],[11256,1950.0],[11306,1944.2],[11319,1943.4],[11324,1943.2],[11345,1942.6],[11361,1941.4],[11377,1939.8],[11386,1938.6],[11394,1937.6],[11423,1934.4],[11433,1933.4],[11443,1932.2],[11452,1931.2],[11461,1929.6],[11472,1928.2],[11492,1925.8],[11502,1924.2],[11513,1922.4],[11523,1921.2],[11544,1918.0],[11566,1915.0],[11588,1912.0],[11611,1909.0],[11634,1905.8],[11644,1904.2],[11665,1901.4],[11676,1900.2],[11695,1898.4],[11705,1897.4],[11714,1896.2],[11723,1895.0],[11740,1893.2],[11749,1892.4],[11765,1891.0],[11782,1889.4],[11790,1888.6],[11808,1887.4],[11817,1886.6],[11835,1885.2],[11843,1884.6],[11853,1883.8],[11863,1883.2],[11873,1882.6],[11893,1880.8],[11903,1879.8],[11913,1879.0],[11922,1878.2],[11949,1875.4],[11979,1872.6],[11987,1872.2],[11996,1871.8],[12004,1871.4],[12014,1870.8],[12024,1869.8],[12034,1869.0],[12054,1866.4],[12063,1864.8],[12071,1863.6],[12079,1861.8],[12087,1860.0],[12097,1858.4],[12114,1855.8],[12124,1854.2],[12134,1852.6],[12153,1850.2],[12162,1848.6],[12176,1845.2],[12193,1839.6],[12211,1834.4],[12218,1832.8],[12225,1831.0],[12231,1829.4],[12238,1828.0],[12251,1824.6],[12266,1821.4],[12282,1818.2],[12299,1814.0],[12308,1812.6],[12319,1811.0],[12329,1810.0],[12371,1805.0],[12392,1801.8],[12412,1799.0],[12433,1796.4],[12452,1794.2],[12472,1791.2],[12482,1790.6],[12510,1788.2],[12539,1786.0],[12565,1783.8],[12584,1782.2],[12603,1780.4],[12613,1779.6],[12622,1778.6],[12641,1776.2],[12651,1774.6],[12671,1772.4],[12680,1770.4],[12689,1769.0],[12699,1767.4],[12718,1764.0],[12727,1762.6],[12746,1759.6],[12766,1756.4],[12776,1755.0],[12796,1752.4],[12815,1750.2],[12842,1746.8],[12865,1742.2],[12877,1741.4],[12879,1741.4],[12881,1741.2]],"seg":[[0.0,33.2,30.5,43.0,20.1,0],[25.0,29.8,64.2,37.4,null,1],[50.0,38.8,8.2,32.2,15.1,0],[75.0,42.9,14.9,29.9,11.5,0],[100.0,48.2,4.8,10.7,10.7,0],[125.0,38.0,17.7,11.6,11.6,0],[150.0,31.9,7.6,12.2,12.2,0],[175.0,35.5,12.8,11.9,11.9,0],[200.0,39.9,17.8,9.0,9.0,0],[225.0,31.8,3.3,7.9,7.9,0],[250.0,28.2,3.0,5.7,5.7,0],[275.0,24.3,2.0,2.6,2.6,0],[300.0,20.4,1.8,2.3,2.3,0],[325.0,25.3,2.8,8.0,8.0,0],[350.0,24.7,2.1,8.1,8.1,0],[375.0,24.2,28.8,8.2,8.2,0],[400.0,28.5,2.7,8.8,8.8,0],[425.0,39.2,2.5,8.9,8.9,0],[450.0,33.2,5.7,3.1,3.1,0],[475.0,33.3,2.4,3.5,3.5,0],[500.0,41.2,2.2,4.5,4.5,0],[525.0,41.3,4.8,10.5,10.5,0],[550.0,54.1,7.6,17.5,17.5,0],[575.0,49.4,32.3,18.7,18.7,0],[600.0,31.9,34.7,19.5,19.5,0],[625.0,54.1,8.9,19.0,19.0,0],[650.0,41.4,8.8,13.0,13.0,0],[675.0,41.9,5.2,5.8,5.8,0],[700.0,46.6,3.3,4.3,4.3,0],[725.0,38.2,2.6,3.1,3.1,0],[750.0,40.8,1.6,2.6,2.6,0],[775.0,42.7,3.0,2.0,2.0,0],[800.0,48.6,2.3,1.6,1.6,0],[825.0,28.0,0.5,1.3,1.3,0],[850.0,27.4,0.5,0.8,0.8,0],[875.0,39.7,0.2,1.2,1.2,0],[900.0,34.0,0.4,1.9,1.9,0],[925.0,28.6,4.3,2.4,2.4,0],[950.0,22.8,4.2,2.9,2.9,0],[975.0,25.0,3.1,3.4,3.4,0],[1000.0,24.1,2.7,3.0,3.0,0],[1025.0,23.6,2.5,2.7,2.7,0],[1050.0,24.1,2.5,2.6,2.6,0],[1075.0,25.8,2.5,2.5,2.5,0],[1100.0,28.0,2.5,2.5,2.5,0],[1125.0,28.3,2.5,2.6,2.6,0],[1150.0,29.7,2.5,2.8,2.8,0],[1175.0,36.0,2.8,3.0,3.0,0],[1200.0,31.7,3.6,3.2,3.2,0],[1225.0,31.1,3.6,3.3,3.3,0],[1250.0,26.6,3.6,4.6,4.6,0],[1275.0,27.2,2.8,7.4,7.4,0],[1300.0,27.7,9.5,10.9,10.9,0],[1325.0,30.8,17.2,9.4,9.4,0],[1350.0,27.3,20.6,8.0,8.0,0],[1375.0,20.9,-4.3,3.0,3.0,0],[1400.0,21.0,-4.5,-4.3,-4.3,0],[1425.0,19.5,-15.2,-12.5,-12.5,0],[1450.0,17.7,-18.0,-15.8,-15.8,0],[1475.0,18.3,-19.8,-18.7,-18.7,0],[1500.0,17.7,-20.8,-19.4,-19.4,0],[1525.0,16.8,-19.6,-22.2,-19.8,0],[1550.0,16.7,-18.9,-21.8,-19.3,0],[1575.0,16.9,-31.1,-20.7,null,1],[1600.0,20.4,-17.7,-18.4,-14.8,0],[1625.0,27.5,-14.7,-16.1,-11.9,0],[1650.0,29.3,-7.5,-15.1,-15.1,0],[1675.0,33.3,-7.5,-19.6,-14.5,0],[1700.0,30.3,-26.9,-25.8,-14.4,0],[1725.0,30.8,-36.8,-32.5,null,1],[1750.0,34.9,-42.0,-37.1,null,1],[1775.0,25.8,-42.0,-39.0,null,1],[1800.0,14.7,-35.8,-39.7,null,1],[1825.0,10.1,-37.9,-36.0,null,1],[1850.0,14.0,-40.3,-29.6,null,1],[1875.0,20.3,-21.2,-24.2,-11.6,0],[1900.0,36.6,-5.9,-18.3,-11.4,0],[1925.0,35.9,-7.1,-12.1,-12.1,0],[1950.0,35.0,-10.9,-15.3,-15.3,0],[1975.0,28.3,-14.9,-15.9,-15.9,0],[2000.0,37.7,-34.3,-15.5,-15.5,0],[2025.0,39.7,-8.8,-14.5,-14.5,0],[2050.0,40.6,-5.1,-27.6,-14.4,0],[2075.0,40.5,-5.7,-40.9,-6.5,0],[2100.0,38.5,-57.8,-44.2,null,1],[2125.0,41.4,-67.4,-45.5,null,1],[2150.0,38.5,-34.4,-47.8,-27.0,0],[2175.0,36.4,-17.8,-42.4,-28.5,0],[2200.0,35.2,-27.5,-29.4,-29.4,0],[2225.0,30.9,-32.8,-25.3,-25.3,0],[2250.0,30.6,-32.8,-23.6,-23.6,0],[2275.0,24.4,-12.8,-20.5,-20.5,0],[2300.0,21.1,-8.1,-18.1,-17.1,0],[2325.0,23.9,-12.1,-13.5,-11.3,0],[2350.0,16.7,-21.9,-13.4,null,1],[2375.0,12.3,-12.2,-69.2,-12.2,0],[2400.0,6.8,-12.2,-73.0,null,1],[2425.0,4.4,-85.3,-72.5,null,1],[2450.0,5.5,-73.6,-72.3,null,1],[2475.0,3.9,2.6,-72.1,0.3,0],[2500.0,0.4,-0.9,-34.2,-0.0,0],[2525.0,1.8,-0.9,-0.2,-0.2,0],[2550.0,4.9,-0.9,-0.0,-0.0,0],[2575.0,10.2,-0.9,1.3,1.3,0],[2600.0,11.8,3.7,2.5,2.5,0],[2625.0,11.9,5.8,3.9,3.9,0],[2650.0,11.0,5.1,5.0,5.0,0],[2675.0,8.8,5.7,5.2,5.2,0],[2700.0,9.4,4.7,5.0,5.0,0],[2725.0,7.2,4.6,4.1,4.1,0],[2750.0,4.3,4.6,3.4,3.4,0],[2775.0,5.4,0.7,3.0,3.0,0],[2800.0,5.3,2.4,3.5,3.5,0],[2825.0,6.1,2.7,5.0,5.0,0],[2850.0,11.5,7.2,7.4,7.4,0],[2875.0,18.9,12.0,8.9,8.9,0],[2900.0,17.7,12.7,10.4,10.4,0],[2925.0,16.9,9.6,11.4,11.4,0],[2950.0,18.7,10.6,11.7,11.7,0],[2975.0,22.6,11.9,11.9,11.9,0],[3000.0,20.1,13.5,12.9,12.9,0],[3025.0,19.0,14.0,12.5,12.5,0],[3050.0,19.3,14.2,12.5,12.5,0],[3075.0,9.7,9.1,12.5,12.5,0],[3100.0,19.5,11.6,12.7,12.7,0],[3125.0,22.5,13.7,13.0,13.0,0],[3150.0,21.2,14.8,13.8,13.8,0],[3175.0,18.5,15.8,14.1,14.1,0],[3200.0,18.9,13.0,12.6,12.6,0],[3225.0,16.1,13.3,10.9,10.9,0],[3250.0,9.9,6.1,8.9,8.9,0],[3275.0,3.6,6.1,7.9,7.9,0],[3300.0,7.5,6.1,7.4,7.4,0],[3325.0,16.5,7.9,8.1,8.1,0],[3350.0,15.4,10.6,8.2,8.2,0],[3375.0,10.3,9.6,8.0,8.0,0],[3400.0,13.0,6.6,8.4,8.4,0],[3425.0,9.7,5.1,7.8,7.8,0],[3450.0,17.0,10.0,8.0,8.0,0],[3475.0,10.7,7.7,8.8,8.8,0],[3500.0,9.3,10.5,9.7,9.7,0],[3525.0,18.7,10.6,10.0,10.0,0],[3550.0,15.4,9.5,10.8,10.8,0],[3575.0,31.2,11.6,11.8,11.8,0],[3600.0,29.0,11.9,12.2,12.2,0],[3625.0,19.6,15.5,12.8,12.8,0],[3650.0,22.5,12.5,12.3,12.3,0],[3675.0,18.3,12.3,11.3,11.3,0],[3700.0,14.2,9.4,9.5,9.5,0],[3725.0,23.1,6.7,9.6,9.6,0],[3750.0,31.7,6.7,8.1,8.1,0],[3775.0,32.7,12.7,8.2,8.2,0],[3800.0,11.9,4.8,9.2,9.2,0],[3825.0,22.7,10.0,10.1,10.1,0],[3850.0,18.6,11.8,7.7,7.7,0],[3875.0,13.2,10.9,6.0,6.0,0],[3900.0,10.4,0.8,5.6,5.6,0],[3925.0,26.8,-3.5,6.9,6.9,0],[3950.0,14.5,7.5,6.7,6.7,0],[3975.0,27.8,18.3,7.8,7.8,0],[4000.0,26.5,9.9,7.5,7.5,0],[4025.0,31.0,6.1,4.5,4.5,0],[4050.0,27.3,-4.8,-3.6,-3.6,0],[4075.0,30.8,-7.6,-9.7,-9.7,0],[4100.0,27.2,-20.8,-15.3,-15.3,0],[4125.0,21.8,-20.1,-18.1,-18.1,0],[4150.0,19.1,-21.9,-20.1,-20.1,0],[4175.0,17.1,-19.7,-19.3,-19.3,0],[4200.0,16.0,-18.2,-18.6,-18.6,0],[4225.0,16.7,-16.7,-17.2,-17.2,0],[4250.0,14.6,-16.4,-16.1,-16.1,0],[4275.0,13.7,-15.1,-17.3,-15.6,0],[4300.0,12.3,-14.1,-14.5,-12.1,0],[4325.0,9.4,-23.8,-12.4,null,1],[4350.0,14.1,-2.3,-11.1,-7.7,0],[4375.0,21.8,-5.8,-10.6,-7.0,0],[4400.0,33.3,-8.4,-8.5,-8.5,0],[4425.0,28.6,-11.5,-12.2,-10.0,0],[4450.0,21.0,-14.3,-14.9,-11.4,0],[4475.0,7.9,-20.4,-16.8,null,1],[4500.0,4.5,-19.5,-14.8,null,1],[4525.0,4.1,-18.2,-12.1,null,1],[4550.0,4.4,-0.9,-7.9,-0.2,0],[4575.0,2.8,0.0,-3.3,0.6,0],[4600.0,1.5,0.4,0.8,0.8,0],[4625.0,5.5,2.7,1.5,1.5,0],[4650.0,16.0,1.7,0.4,0.4,0],[4675.0,10.4,2.8,-3.9,-3.9,0],[4700.0,9.6,-5.5,-9.4,-9.4,0],[4725.0,29.9,-20.4,-16.8,-16.8,0],[4750.0,32.8,-23.9,-19.8,-19.8,0],[4775.0,40.1,-33.0,-20.7,-20.7,0],[4800.0,45.1,-13.5,-18.9,-18.9,0],[4825.0,41.6,-10.7,-17.0,-17.0,0],[4850.0,31.0,-10.8,-13.3,-13.3,0],[4875.0,31.4,-14.5,-11.2,-11.2,0],[4900.0,31.8,-16.8,-11.5,-11.5,0],[4925.0,28.5,-3.0,-13.3,-13.3,0],[4950.0,28.4,-11.8,-14.7,-14.7,0],[4975.0,27.5,-19.9,-16.5,-16.5,0],[5000.0,27.2,-21.3,-20.6,-20.6,0],[5025.0,26.7,-24.9,-23.2,-23.2,0],[5050.0,26.0,-24.6,-24.2,-24.2,0],[5075.0,25.3,-25.4,-24.9,-24.9,0],[5100.0,23.2,-24.8,-24.8,-24.8,0],[5125.0,23.6,-24.5,-24.8,-24.8,0],[5150.0,23.3,-24.4,-24.6,-24.6,0],[5175.0,23.1,-24.6,-24.1,-24.1,0],[5200.0,22.3,-24.7,-22.8,-22.8,0],[5225.0,22.1,-22.1,-21.1,-21.1,0],[5250.0,17.7,-18.0,-19.0,-19.0,0],[5275.0,13.9,-15.5,-17.0,-17.5,0],[5300.0,9.6,-14.4,-15.6,-16.0,0],[5325.0,7.8,-14.9,-15.7,null,1],[5350.0,8.8,-15.4,-16.4,null,1],[5375.0,9.9,-18.4,-15.0,null,1],[5400.0,18.4,-18.9,-13.7,-11.5,0],[5425.0,20.4,-7.0,-13.3,-12.0,0],[5450.0,15.2,-8.1,-12.3,-12.0,0],[5475.0,13.4,-13.7,-10.4,-9.6,0],[5500.0,6.0,-13.5,-10.8,null,1],[5525.0,5.1,-9.6,-10.9,-10.2,0],[5550.0,5.6,-9.1,-9.5,-8.5,0],[5575.0,10.3,-8.5,-8.0,-8.0,0],[5600.0,13.2,-6.8,-7.5,-7.5,0],[5625.0,18.6,-5.8,-8.3,-8.3,0],[5650.0,23.4,-7.6,-8.0,-8.0,0],[5675.0,26.1,-12.8,-10.5,-10.5,0],[5700.0,28.1,-7.2,-13.0,-13.0,0],[5725.0,32.1,-18.5,-13.3,-13.3,0],[5750.0,26.4,-18.5,-13.5,-13.5,0],[5775.0,31.6,-9.1,-15.1,-15.1,0],[5800.0,30.2,-13.6,-13.2,-13.2,0],[5825.0,26.2,-15.7,-11.1,-11.1,0],[5850.0,25.1,-8.8,-11.6,-11.6,0],[5875.0,15.2,-8.2,-11.4,-10.9,0],[5900.0,6.4,-11.5,-10.7,null,1],[5925.0,3.5,-12.9,-10.7,null,1],[5950.0,1.9,-11.9,-10.2,null,1],[5975.0,3.2,-8.9,-8.9,null,1],[6000.0,7.0,-5.6,-7.3,-5.3,0],[6025.0,11.0,-5.1,-6.0,-5.2,0],[6050.0,14.6,-5.1,-5.3,-5.3,0],[6075.0,19.9,-5.1,-5.2,-5.2,0],[6100.0,15.4,-5.6,-5.6,-5.6,0],[6125.0,17.6,-5.4,-6.7,-6.7,0],[6150.0,14.6,-6.9,-7.9,-7.9,0],[6175.0,10.0,-10.7,-8.9,-8.9,0],[6200.0,7.7,-10.8,-9.3,-9.3,0],[6225.0,8.8,-10.8,-9.2,-9.2,0],[6250.0,8.8,-7.3,-8.3,-8.3,0],[6275.0,11.4,-6.3,-7.6,-7.6,0],[6300.0,17.9,-6.1,-6.8,-6.8,0],[6325.0,18.7,-7.4,-6.7,-6.7,0],[6350.0,17.7,-7.0,-6.9,-6.9,0],[6375.0,21.9,-6.9,-7.2,-7.2,0],[6400.0,22.0,-7.2,-7.5,-7.5,0],[6425.0,26.7,-7.4,-7.7,-7.7,0],[6450.0,21.6,-9.0,-7.5,-7.5,0],[6475.0,24.6,-8.0,-7.8,-7.8,0],[6500.0,25.4,-6.2,-9.4,-9.4,0],[6525.0,26.3,-8.5,-10.5,-10.5,0],[6550.0,18.2,-15.1,-12.6,-12.6,0],[6575.0,27.2,-14.7,-15.2,-15.2,0],[6600.0,24.8,-18.1,-17.1,-17.1,0],[6625.0,23.3,-19.4,-17.3,-17.3,0],[6650.0,19.8,-18.0,-17.3,-18.0,0],[6675.0,13.5,-16.3,-16.2,-17.9,0],[6700.0,5.2,-14.7,-14.8,null,1],[6725.0,4.8,-12.5,-12.9,null,1],[6750.0,6.1,-12.5,-10.8,null,1],[6775.0,10.1,-8.4,-8.5,-5.8,0],[6800.0,12.7,-5.7,-6.5,-4.9,0],[6825.0,18.8,-3.1,-4.5,-4.5,0],[6850.0,18.2,-2.5,-3.5,-3.5,0],[6875.0,15.4,-2.6,-3.1,-3.1,0],[6900.0,10.1,-3.6,-3.2,-3.2,0],[6925.0,8.5,-3.6,-3.4,-3.4,0],[6950.0,6.3,-3.6,-3.6,-3.6,0],[6975.0,6.3,-3.6,-3.7,-3.7,0],[7000.0,6.3,-3.7,-3.7,-3.7,0],[7025.0,8.2,-4.1,-3.3,-3.3,0],[7050.0,12.9,-3.4,-3.0,-3.0,0],[7075.0,19.6,-1.7,-2.9,-2.9,0],[7100.0,20.1,-2.3,-2.9,-2.9,0],[7125.0,21.5,-2.8,-3.1,-3.1,0],[7150.0,22.0,-4.4,-3.7,-3.7,0],[7175.0,23.1,-4.4,-3.9,-3.9,0],[7200.0,24.4,-4.8,-3.7,-3.7,0],[7225.0,26.4,-3.0,-3.4,-3.4,0],[7250.0,27.4,-2.0,-3.2,-3.2,0],[7275.0,27.4,-2.5,-3.1,-3.1,0],[7300.0,26.7,-3.8,-3.0,-3.0,0],[7325.0,27.0,-4.1,-3.4,-3.4,0],[7350.0,28.0,-2.3,-3.6,-3.6,0],[7375.0,29.1,-4.5,-4.0,-4.0,0],[7400.0,32.1,-3.5,-4.3,-4.3,0],[7425.0,28.9,-5.8,-4.6,-4.6,0],[7450.0,28.2,-5.5,-4.5,-4.5,0],[7475.0,24.6,-3.9,-4.5,-4.5,0],[7500.0,25.3,-3.9,-4.4,-4.4,0],[7525.0,24.5,-3.6,-4.3,-4.3,0],[7550.0,25.4,-5.0,-4.4,-4.4,0],[7575.0,26.9,-5.3,-4.4,-4.4,0],[7600.0,23.9,-4.1,-4.7,-4.7,0],[7625.0,20.2,-4.1,-5.0,-5.0,0],[7650.0,13.3,-4.9,-5.4,-5.4,0],[7675.0,11.2,-6.8,-8.9,-8.9,0],[7700.0,24.0,-7.2,-10.4,-10.4,0],[7725.0,33.0,-20.7,-11.8,-11.8,0],[7750.0,35.0,-11.8,-12.7,-12.7,0],[7775.0,35.0,-11.8,-14.2,-14.2,0],[7800.0,33.1,-11.8,-12.5,-12.5,0],[7825.0,22.8,-14.7,-11.7,-11.7,0],[7850.0,35.1,-12.4,-11.2,-11.2,0],[7875.0,35.9,-7.9,-10.7,-10.7,0],[7900.0,37.5,-8.8,-9.4,-9.4,0],[7925.0,37.8,-9.3,-8.2,-8.2,0],[7950.0,37.7,-8.7,-7.7,-7.7,0],[7975.0,35.4,-6.4,-6.9,-6.9,0],[8000.0,38.3,-5.5,-6.0,-6.0,0],[8025.0,36.7,-4.8,-5.4,-5.4,0],[8050.0,35.4,-4.7,-5.2,-5.2,0],[8075.0,37.4,-5.4,-5.5,-5.5,0],[8100.0,38.4,-5.5,-5.7,-5.7,0],[8125.0,35.8,-6.9,-6.6,-6.6,0],[8150.0,40.4,-6.2,-7.2,-7.2,0],[8175.0,40.7,-8.8,-8.1,-8.1,0],[8200.0,44.1,-8.8,-8.2,-8.2,0],[8225.0,48.3,-9.7,-8.0,-8.0,0],[8250.0,47.2,-7.7,-7.3,-7.3,0],[8275.0,37.0,-5.3,-7.6,-7.6,0],[8300.0,28.5,-5.2,-7.0,-7.0,0],[8325.0,29.8,-10.3,-6.3,-6.3,0],[8350.0,27.3,-6.7,-6.1,-6.1,0],[8375.0,35.6,-3.9,-6.4,-6.4,0],[8400.0,29.2,-4.4,-6.3,-6.3,0],[8425.0,27.0,-6.7,-6.6,-6.6,0],[8450.0,25.8,-9.8,-7.2,-7.2,0],[8475.0,33.0,-8.0,-7.8,-7.8,0],[8500.0,30.3,-7.1,-7.1,-7.1,0],[8525.0,28.5,-7.1,-5.8,-5.8,0],[8550.0,27.1,-3.4,-4.9,-4.9,0],[8575.0,10.2,-3.2,-4.1,-4.1,0],[8600.0,14.5,-3.8,-3.3,-3.3,0],[8625.0,14.4,-3.3,-3.2,-3.2,0],[8650.0,17.3,-3.0,-2.5,-2.5,0],[8675.0,29.8,-2.8,-1.7,-1.7,0],[8700.0,35.3,0.4,-0.7,-0.7,0],[8725.0,33.0,0.1,0.1,0.1,0],[8750.0,36.7,1.9,0.6,0.6,0],[8775.0,40.8,0.7,0.6,0.6,0],[8800.0,47.8,-0.3,0.8,0.8,0],[8825.0,45.5,0.3,0.5,0.5,0],[8850.0,47.8,1.5,0.1,0.1,0],[8875.0,60.0,0.4,0.4,0.4,0],[8900.0,35.9,-1.5,0.0,0.0,0],[8925.0,40.8,1.1,-0.0,-0.0,0],[8950.0,36.9,-1.3,-0.3,-0.3,0],[8975.0,35.4,1.2,0.1,0.1,0],[9000.0,34.0,-1.1,-0.2,-0.2,0],[9025.0,32.8,0.5,0.2,0.2,0],[9050.0,33.9,-0.1,0.0,0.0,0],[9075.0,34.0,0.4,0.5,0.5,0],[9100.0,33.8,0.4,0.3,0.3,0],[9125.0,32.5,1.4,0.1,0.1,0],[9150.0,30.8,-0.7,0.1,0.1,0],[9175.0,29.1,-1.0,0.0,0.0,0],[9200.0,38.4,0.3,-0.7,-0.7,0],[9225.0,45.6,0.2,-0.3,-0.3,0],[9250.0,43.3,-2.1,0.2,0.2,0],[9275.0,28.9,0.9,0.2,0.2,0],[9300.0,29.0,1.6,-0.4,-0.4,0],[9325.0,28.1,0.5,-0.6,-0.6,0],[9350.0,26.7,-3.2,-2.4,-2.4,0],[9375.0,26.7,-3.0,-2.7,-2.7,0],[9400.0,28.0,-8.0,-2.8,-2.8,0],[9425.0,26.2,0.2,-2.5,-2.5,0],[9450.0,24.1,0.2,-2.7,-2.7,0],[9475.0,20.6,-2.1,-1.3,-1.3,0],[9500.0,17.0,-3.6,-1.1,-1.1,0],[9525.0,5.6,-1.0,-2.6,-2.6,0],[9550.0,4.4,1.0,-6.8,-6.8,0],[9575.0,7.3,-7.5,-12.4,-12.4,0],[9600.0,26.6,-21.9,-17.6,-17.6,0],[9625.0,32.7,-29.4,-21.2,-21.2,0],[9650.0,32.3,-26.8,-22.9,-22.9,0],[9675.0,32.1,-18.8,-20.3,-20.3,0],[9700.0,12.1,-16.7,-15.4,-15.4,0],[9725.0,13.9,-7.9,-11.6,-11.6,0],[9750.0,18.8,-5.5,-9.7,-9.7,0],[9775.0,15.5,-8.8,-7.0,-7.0,0],[9800.0,16.8,-9.5,-5.5,-5.5,0],[9825.0,23.8,-3.1,-4.6,-4.6,0],[9850.0,16.4,-0.6,-3.4,-3.4,0],[9875.0,15.6,-0.9,-2.2,-2.2,0],[9900.0,39.0,-2.5,-2.0,-2.0,0],[9925.0,34.2,-4.0,-2.3,-2.3,0],[9950.0,36.3,-1.9,-3.0,-3.0,0],[9975.0,36.3,-2.0,-3.4,-3.4,0],[10000.0,36.2,-4.5,-3.6,-3.6,0],[10025.0,38.0,-4.8,-4.2,-4.2,0],[10050.0,34.1,-4.9,-4.9,-4.9,0],[10075.0,37.3,-5.0,-5.1,-5.1,0],[10100.0,36.9,-5.2,-5.5,-5.5,0],[10125.0,38.0,-5.7,-6.1,-6.1,0],[10150.0,36.1,-6.5,-6.7,-6.7,0],[10175.0,33.8,-8.0,-7.0,-7.0,0],[10200.0,26.5,-8.2,-7.0,-7.0,0],[10225.0,25.5,-6.7,-6.8,-6.8,0],[10250.0,25.7,-5.8,-6.5,-6.5,0],[10275.0,30.5,-5.3,-6.3,-6.3,0],[10300.0,28.3,-6.8,-6.6,-6.6,0],[10325.0,32.2,-6.7,-7.5,-7.5,0],[10350.0,31.7,-8.3,-8.0,-8.0,0],[10375.0,30.4,-10.7,-8.1,-8.1,0],[10400.0,28.1,-7.5,-8.3,-8.3,0],[10425.0,24.9,-7.5,-8.2,-8.2,0],[10450.0,18.6,-7.7,-7.6,-7.6,0],[10475.0,14.3,-7.3,-8.0,-8.0,0],[10500.0,17.2,-8.0,-8.9,-8.9,0],[10525.0,20.3,-9.5,-9.7,-9.7,0],[10550.0,25.4,-12.1,-11.3,-11.3,0],[10575.0,29.2,-11.3,-12.2,-12.2,0],[10600.0,24.3,-15.3,-12.6,-12.6,0],[10625.0,28.4,-12.8,-12.3,-12.3,0],[10650.0,22.8,-11.5,-12.5,-12.5,0],[10675.0,24.5,-10.4,-11.7,-11.7,0],[10700.0,25.7,-12.4,-11.6,-11.6,0],[10725.0,21.9,-11.6,-10.9,-10.9,0],[10750.0,16.0,-12.4,-10.3,-10.3,0],[10775.0,9.4,-7.5,-10.2,-10.2,0],[10800.0,13.8,-7.4,-8.9,-8.9,0],[10825.0,9.8,-11.9,-7.7,-7.7,0],[10850.0,13.0,-5.4,-7.7,-7.7,0],[10875.0,6.2,-6.1,-7.6,-7.6,0],[10900.0,9.0,-7.6,-6.6,-6.6,0],[10925.0,14.0,-7.1,-6.7,-6.7,0],[10950.0,16.2,-6.7,-6.7,-6.7,0],[10975.0,26.6,-6.2,-6.3,-6.3,0],[11000.0,29.5,-6.0,-6.0,-6.0,0],[11025.0,29.5,-5.4,-5.7,-5.7,0],[11050.0,31.0,-5.6,-5.7,-5.7,0],[11075.0,33.3,-5.6,-5.6,-5.6,0],[11100.0,25.8,-6.0,-5.4,-5.4,0],[11125.0,13.3,-5.7,-5.3,-5.3,0],[11150.0,5.4,-4.2,-5.5,-5.5,0],[11175.0,14.9,-5.2,-5.8,-5.8,0],[11200.0,12.4,-6.3,-6.0,-6.0,0],[11225.0,6.3,-7.4,-6.5,-6.5,0],[11250.0,5.0,-6.9,-6.2,-6.2,0],[11275.0,1.8,-6.7,-5.4,-5.4,0],[11300.0,10.7,-3.9,-5.0,-5.0,0],[11325.0,9.5,-2.2,-5.0,-5.0,0],[11350.0,8.2,-5.0,-4.9,-4.9,0],[11375.0,10.5,-7.0,-5.4,-5.4,0],[11400.0,8.4,-6.3,-6.6,-6.6,0],[11425.0,8.1,-6.4,-7.0,-7.0,0],[11450.0,9.2,-8.1,-7.3,-7.3,0],[11475.0,9.9,-7.5,-7.8,-7.8,0],[11500.0,9.7,-8.5,-8.0,-8.0,0],[11525.0,9.5,-8.4,-7.9,-7.9,0],[11550.0,8.7,-7.7,-8.0,-8.0,0],[11575.0,7.5,-7.6,-7.9,-7.9,0],[11600.0,6.7,-7.8,-7.7,-7.7,0],[11625.0,5.6,-8.1,-7.2,-7.2,0],[11650.0,5.4,-7.2,-7.1,-7.1,0],[11675.0,3.7,-5.5,-6.7,-6.7,0],[11700.0,5.8,-7.1,-6.1,-6.1,0],[11725.0,3.8,-5.7,-5.7,-5.7,0],[11750.0,5.6,-5.1,-5.5,-5.5,0],[11775.0,6.1,-4.9,-4.9,-4.9,0],[11800.0,6.2,-4.5,-4.5,-4.5,0],[11825.0,8.4,-4.4,-4.6,-4.6,0],[11850.0,6.6,-3.7,-4.6,-4.6,0],[11875.0,5.4,-5.3,-4.9,-4.9,0],[11900.0,8.0,-5.0,-5.0,-5.0,0],[11925.0,8.2,-5.9,-4.9,-4.9,0],[11950.0,6.8,-5.3,-4.7,-4.7,0],[11975.0,10.4,-3.2,-5.0,-5.0,0],[12000.0,11.4,-4.2,-5.8,-5.8,0],[12025.0,9.5,-6.6,-6.9,-6.9,0],[12050.0,11.2,-9.6,-8.0,-8.0,0],[12075.0,7.9,-10.8,-8.7,-8.7,0],[12100.0,14.1,-8.8,-9.7,-9.7,0],[12125.0,10.3,-8.0,-11.3,-11.3,0],[12150.0,13.7,-11.5,-12.2,-12.2,0],[12175.0,17.3,-17.6,-13.1,-13.1,0],[12200.0,16.0,-15.0,-13.9,-13.9,0],[12225.0,17.5,-13.4,-14.2,-14.2,0],[12250.0,15.8,-11.9,-12.3,-12.3,0],[12275.0,15.8,-13.0,-10.6,-10.6,0],[12300.0,15.0,-7.9,-9.3,-9.3,0],[12325.0,9.9,-6.5,-8.6,-8.6,0],[12350.0,13.6,-7.1,-7.5,-7.5,0],[12375.0,10.8,-8.5,-7.3,-7.3,0],[12400.0,8.4,-7.6,-7.5,-7.5,0],[12425.0,9.4,-6.8,-7.0,-7.0,0],[12450.0,10.1,-7.7,-6.2,-6.2,0],[12475.0,9.9,-4.4,-5.6,-5.6,0],[12500.0,6.1,-4.6,-5.2,-5.2,0],[12525.0,9.0,-4.6,-4.7,-4.7,0],[12550.0,12.0,-4.8,-5.0,-5.0,0],[12575.0,14.8,-5.1,-5.7,-5.7,0],[12600.0,15.1,-5.6,-6.2,-6.2,0],[12625.0,15.3,-8.1,-7.2,-7.2,0],[12650.0,12.8,-7.4,-8.1,-8.1,0],[12675.0,10.3,-9.6,-8.7,-8.7,0],[12700.0,10.8,-9.6,-8.9,-8.9,0],[12725.0,9.2,-9.0,-8.9,-8.9,0],[12750.0,8.1,-8.8,-8.3,-8.3,0],[12775.0,8.2,-7.3,-8.1,-8.1,0],[12800.0,6.1,-6.9,-7.7,-7.7,0],[12825.0,6.1,-8.7,-7.5,-7.5,0],[12850.0,3.0,-7.1,-7.5,-7.5,0]],"summary":[{"name":"Chamonix - Col de Balme","km":4.3,"n":173,"rej":4,"raw":25.5,"blur":20.8,"fix":20.8},{"name":"Hidden Valley","km":6.9,"n":276,"rej":9,"raw":40.5,"blur":29.6,"fix":29.6},{"name":"Mont Fort - Backside","km":12.9,"n":515,"rej":29,"raw":85.3,"blur":73.0,"fix":29.4},{"name":"Mont Fort - Col de la Chaux","km":16.0,"n":638,"rej":17,"raw":46.6,"blur":31.2,"fix":26.2}]};
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  function el(parent, tag, attrs, text) {
+    const node = document.createElementNS(NS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    if (text !== undefined) node.textContent = text;
+    parent.appendChild(node);
+    return node;
+  }
+  function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+  const deg = (r) => r * 180 / Math.PI;
+  const rad = (d) => d * Math.PI / 180;
+
+  /* Hero: gradient against heading on a 40° face. */
+  function drawBound() {
+    const svg = document.getElementById('fig-bound'); clear(svg);
+    const L = 44, R = 316, T = 18, B = 170, slope = 40;
+    const x = (h) => L + (R - L) * h / 180;
+    const y = (g) => T + (B - T) * (1 - (g + 45) / 90);
+    el(svg, 'line', { x1: L, x2: R, y1: y(0), y2: y(0), stroke: css('--rule') });
+    [slope, -slope].forEach((g) => el(svg, 'line', { x1: L, x2: R, y1: y(g), y2: y(g), stroke: css('--ground-line'), 'stroke-dasharray': '4 4' }));
+    let d = '';
+    for (let h = 0; h <= 180; h += 2) {
+      const g = -deg(Math.atan(Math.tan(rad(slope)) * Math.cos(rad(h))));
+      d += (h ? 'L' : 'M') + x(h).toFixed(1) + ' ' + y(g).toFixed(1);
+    }
+    el(svg, 'path', { d: d, fill: 'none', stroke: css('--track-line'), 'stroke-width': 3 });
+    const t = { fill: css('--ink-3'), 'font-size': 11 };
+    el(svg, 'text', Object.assign({ x: L - 6, y: y(slope) + 4, 'text-anchor': 'end' }, t), '+40°');
+    el(svg, 'text', Object.assign({ x: L - 6, y: y(0) + 4, 'text-anchor': 'end' }, t), '0°');
+    el(svg, 'text', Object.assign({ x: L - 6, y: y(-slope) + 4, 'text-anchor': 'end' }, t), '−40°');
+    [[0, 'down'], [90, 'across'], [180, 'up']].forEach(([h, s]) =>
+      el(svg, 'text', Object.assign({ x: x(h), y: B + 18, 'text-anchor': h === 0 ? 'start' : h === 180 ? 'end' : 'middle' }, t), s));
+    el(svg, 'text', { x: R, y: y(slope) - 6, 'text-anchor': 'end', fill: css('--ground-line'), 'font-size': 11 }, 'ground');
+    el(svg, 'text', { x: x(40), y: y(-30) + 14, fill: css('--track-line'), 'font-size': 11, 'font-weight': 650 }, 'track');
+  }
+
+  /* Section 3a: the height profile around the break. */
+  function drawProfile() {
+    const svg = document.getElementById('fig-profile'); clear(svg);
+    const pts = DATA.profile.filter((p) => p[0] >= 2000 && p[0] <= 3000);
+    const L = 56, R = 985, T = 14, B = 228;
+    const lo = Math.min(...pts.map((p) => p[1])) - 10, hi = Math.max(...pts.map((p) => p[1])) + 10;
+    const x = (m) => L + (R - L) * (m - 2000) / 1000;
+    const y = (e) => T + (B - T) * (1 - (e - lo) / (hi - lo));
+    for (let e = Math.ceil(lo / 100) * 100; e <= hi; e += 100) {
+      el(svg, 'line', { x1: L, x2: R, y1: y(e), y2: y(e), stroke: css('--rule') });
+      el(svg, 'text', { x: L - 8, y: y(e) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12 }, e + ' m');
+    }
+    [2000, 2250, 2500, 2750, 3000].forEach((m) =>
+      el(svg, 'text', { x: x(m), y: B + 22, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 12 }, (m / 1000).toFixed(2) + ' km'));
+    el(svg, 'path', { d: pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(''), fill: 'none', stroke: css('--ink'), 'stroke-width': 2 });
+    // The break: the biggest drop and any gaps beside it that fall ten
+    // metres or more per metre along — steeper than 84°, which no face is.
+    const steep = (i) => pts[i - 1][1] - pts[i][1] > 10 * Math.max(0.5, pts[i][0] - pts[i - 1][0]);
+    let k = 1;
+    for (let i = 1; i < pts.length; i++) if (pts[i - 1][1] - pts[i][1] > pts[k - 1][1] - pts[k][1]) k = i;
+    let a = k, b = k;
+    while (a > 1 && steep(a - 1)) a--;
+    while (b < pts.length - 1 && steep(b + 1)) b++;
+    const ends = [pts[a - 1], pts[b]];
+    for (let i = a - 1; i <= b; i++) el(svg, 'circle', { cx: x(pts[i][0]), cy: y(pts[i][1]), r: 5, fill: css('--reject') });
+    const drop = Math.round(ends[0][1] - ends[1][1]), run = Math.round(ends[1][0] - ends[0][0]);
+    el(svg, 'text', { x: x(ends[1][0]) + 12, y: (y(ends[0][1]) + y(ends[1][1])) / 2, fill: css('--ink'), 'font-size': 13, 'font-weight': 650 },
+      drop + ' m down in about ' + run + ' m');
+  }
+
+  /* Section 3b: the pieces around the break, three ways. */
+  function drawZoom() {
+    const svg = document.getElementById('fig-zoom'); clear(svg);
+    const seg = DATA.seg.filter((s) => s[0] >= 2150 && s[0] <= 2750);
+    const L = 56, R = 985, T = 14, B = 262, w = (R - L) / seg.length;
+    const y = (g) => T + (B - T) * (1 - g / 90);
+    [0, 30, 60, 90].forEach((g) => {
+      el(svg, 'line', { x1: L, x2: R, y1: y(g), y2: y(g), stroke: css('--rule') });
+      el(svg, 'text', { x: L - 8, y: y(g) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12 }, g + '°');
+    });
+    seg.forEach((s, i) => {
+      if (s[2] !== null) el(svg, 'rect', { x: L + i * w + 2, width: w - 4, y: y(Math.abs(s[2])), height: B - y(Math.abs(s[2])), fill: css('--rule') });
+      if (s[5]) el(svg, 'circle', { cx: L + (i + .5) * w, cy: y(Math.abs(s[2])) - 9, r: 4.5, fill: css('--reject') });
+    });
+    const line = (col, dash, width, alpha) => {
+      let d = '', pen = false;
+      seg.forEach((s, i) => {
+        const v = col === 'g' ? s[1] : s[col];
+        if (v === null) { pen = false; return; }
+        d += (pen ? 'L' : 'M') + (L + (i + .5) * w).toFixed(1) + ' ' + y(Math.abs(v)).toFixed(1); pen = true;
+      });
+      el(svg, 'path', { d: d, fill: 'none', stroke: col === 'g' ? css('--ground-line') : css('--track-line'), 'stroke-width': width, 'stroke-dasharray': dash, opacity: alpha });
+    };
+    line('g', '', 2, 1);
+    line(3, '', 3, .45);
+    line(4, '', 3, 1);
+    el(svg, 'text', { x: L, y: B + 24, fill: css('--ink-3'), 'font-size': 12 }, (seg[0][0] / 1000).toFixed(2) + ' km');
+    el(svg, 'text', { x: R, y: B + 24, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12 }, (seg[seg.length - 1][0] / 1000).toFixed(2) + ' km');
+    el(svg, 'text', { x: (L + R) / 2, y: B + 24, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 12 }, 'steepness, ignoring up or down · one bar per 25 m piece');
+  }
+
+  /* Section 4: every piece of one tour, ground across, raw track up. */
+  function drawScatter() {
+    const svg = document.getElementById('fig-scatter'); clear(svg);
+    const L = 60, R = 980, T = 14, B = 376, max = 60;
+    const x = (g) => L + (R - L) * Math.min(g, max) / max;
+    const y = (g) => T + (B - T) * (1 - Math.min(g, 90) / 90);
+    for (let g = 0; g <= max; g += 10) {
+      el(svg, 'line', { x1: x(g), x2: x(g), y1: T, y2: B, stroke: css('--rule') });
+      el(svg, 'text', { x: x(g), y: B + 20, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 12 }, g + '°');
+    }
+    for (let g = 0; g <= 90; g += 30) {
+      el(svg, 'line', { x1: L, x2: R, y1: y(g), y2: y(g), stroke: css('--rule') });
+      el(svg, 'text', { x: L - 8, y: y(g) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12 }, g + '°');
+    }
+    el(svg, 'line', { x1: x(0), y1: y(0), x2: x(max), y2: y(max), stroke: css('--ground-line'), 'stroke-width': 2 });
+    el(svg, 'line', { x1: x(0), y1: y(5), x2: x(max), y2: y(max + 5), stroke: css('--reject'), 'stroke-width': 2, 'stroke-dasharray': '6 4' });
+    DATA.seg.forEach((s) => {
+      if (s[1] === null || s[2] === null) return;
+      el(svg, 'circle', { cx: x(s[1]), cy: y(Math.abs(s[2])), r: s[5] ? 4 : 2.6, fill: s[5] ? css('--reject') : css('--track-line'), opacity: s[5] ? 1 : .55 });
+    });
+    el(svg, 'text', { x: (L + R) / 2, y: B + 40, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 12 }, 'ground angle → · track gradient ↑ (raw, up or down) · Mont Fort – Backside');
+  }
+
+  /* Section 5: a zigzag and what thinning keeps. */
+  function drawThin() {
+    const svg = document.getElementById('fig-thin'); clear(svg);
+    const zig = [[40, 200], [290, 170], [40, 140], [290, 110], [40, 80], [290, 50], [40, 20]];
+    el(svg, 'path', { d: zig.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join(''), fill: 'none', stroke: css('--track-line'), 'stroke-width': 3, 'stroke-linejoin': 'round' });
+    el(svg, 'path', { d: 'M40 200 L165 110 L40 20', fill: 'none', stroke: css('--reject'), 'stroke-width': 2.5, 'stroke-dasharray': '7 5' });
+    [[40, 200], [165, 110], [40, 20]].forEach((p) => el(svg, 'circle', { cx: p[0], cy: p[1], r: 5, fill: css('--reject') }));
+    el(svg, 'text', { x: 296, y: 115, fill: css('--track-line'), 'font-size': 12, 'font-weight': 650 }, 'walked');
+    el(svg, 'text', { x: 172, y: 106, fill: css('--reject'), 'font-size': 12, 'font-weight': 650 }, 'kept');
+  }
+
+  function fillTable() {
+    const body = document.querySelector('#tbl-summary tbody');
+    body.textContent = '';
+    DATA.summary.forEach((r) => {
+      const tr = document.createElement('tr');
+      [r.name.replace(' - ', ' – '), r.km.toFixed(1), r.n, r.rej, r.raw.toFixed(1) + '°', r.blur.toFixed(1) + '°', r.fix.toFixed(1) + '°']
+        .forEach((v, i) => { const td = document.createElement('td'); td.textContent = v; if (i) td.className = 'num'; tr.appendChild(td); });
+      body.appendChild(tr);
+    });
+  }
+
+  function drawAll() { drawBound(); drawProfile(); drawZoom(); drawScatter(); drawThin(); }
+  fillTable();
+  drawAll();
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+</script>

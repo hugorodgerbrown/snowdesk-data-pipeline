@@ -72,9 +72,9 @@ the smaller the exposure. Simplification (see `MAX_POINTS` in
     is overstated on switchbacks — the shape a skin track is made of.
     The four canonical tracks are under the bound and stored whole, so
     the figures in the next bullet do not include this effect.
-  - A recording break is in `points` for good. Mont Fort – Backside has
-    two stored points 2.7 m apart horizontally and 244.8 m apart
-    vertically. `terrain_detail` rejects any segment whose raw gradient
+  - A recording break is in `points` for good. Mont Fort – Backside
+    falls 359.6 m across two consecutive stored gaps totalling 5.1 m
+    horizontally (244.8 m over 2.7 m, then 114.8 m over 2.4 m). `terrain_detail` rejects any segment whose raw gradient
     exceeds its ground angle by more than `GRADIENT_TOLERANCE_DEG` (5°),
     which catches that break; it cannot repair it. On the canonical tracks
     the check rejects 4 to 29 segments a route (at most 5.6 %). A segment

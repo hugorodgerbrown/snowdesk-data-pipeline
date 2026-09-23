@@ -45,9 +45,10 @@ than ``GRADIENT_TOLERANCE_DEG`` is not a measurement of the track, and it
 is REJECTED: its gradient is None, ``track_gradient_rejected`` says why,
 and its rise is left out of every neighbour's window. Leaving it in is
 what made smoothing fail on the reference track (SNOW-1020): Mont Fort –
-Backside has two stored points 2.7 m apart horizontally and 244.8 m apart
-vertically — a break in the recording, not a slope — and a ±2 window
-spread it into five segments of about 72 degrees instead of removing it.
+Backside falls 359.6 m across two consecutive stored gaps totalling 5.1 m
+horizontally (244.8 m over 2.7 m, then 114.8 m over 2.4 m) — a break in
+the recording, not a slope — and a ±2 window spread it into five segments
+of about 72 degrees instead of removing it.
 
 The test needs a ground angle, so an unknown segment cannot be checked
 and is never rejected. Its raw gradient stands, and a recording break on
