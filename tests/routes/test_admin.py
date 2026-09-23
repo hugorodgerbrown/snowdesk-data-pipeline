@@ -158,3 +158,27 @@ class TestDownloadAsGpxAction:
         response = self._action().download_as_gpx(request, Route.objects.none())
 
         assert response is None
+
+
+@pytest.mark.django_db
+class TestTerrainDetailLink:
+    """SNOW-1020: a sampled route links to its per-segment terrain page."""
+
+    def _admin(self) -> RouteAdmin:
+        """Return the registered RouteAdmin."""
+        return cast(RouteAdmin, admin.site._registry[Route])
+
+    def test_is_a_read_only_field(self) -> None:
+        """It is a link, not an input."""
+        assert "terrain_detail_link" in self._admin().readonly_fields
+
+    def test_links_a_sampled_route_to_its_page(self) -> None:
+        """The href is the route's own terrain page."""
+        route = RouteFactory.create(slope_samples={"points": [], "segments": []})
+        html = self._admin().terrain_detail_link(route)
+        assert f"/_route-terrain/{route.uuid}/" in html
+
+    def test_an_unsampled_route_has_no_link(self) -> None:
+        """Nothing to link to until the sampler has run."""
+        route = RouteFactory.create()
+        assert self._admin().terrain_detail_link(route) == "—"

@@ -17,6 +17,8 @@ Covers:
     can't slip through to the page as a broken-image square.
   - The SW shell-version page (/_sw-version/, SNOW-517) requires staff and
     server-renders the committed CACHE_VERSION and APP_VERSION.
+  - The route terrain page (/_route-terrain/<uuid>/, SNOW-1020) requires
+    staff, renders one row per segment, and its CSV carries the same rows.
 
 The earlier TestHeaderCombinationsView (the /debug/header/ matrix) was
 removed by SNOW-110 — that visual is now the Weather header components
@@ -25,6 +27,8 @@ entry inside the library.
 
 from __future__ import annotations
 
+import csv
+import io
 from typing import Any
 
 import pytest
@@ -42,7 +46,10 @@ from apps.public.design_tokens import (
     IconToken,
     Token,
 )
-from tests.factories import AccountFactory, UserFactory
+from apps.routes.models import Route
+from apps.routes.services.slope_segments import stride_coordinates
+from apps.routes.services.terrain_detail import COLUMNS
+from tests.factories import AccountFactory, RouteFactory, UserFactory
 
 
 def _all_categories() -> list[FoundationCategory]:
@@ -547,3 +554,97 @@ class TestSwVersionPage:
         body = response.content.decode()
         assert 'id="sw-dev-shell-cache-optin"' not in body
         assert "pwa_dev_shell_toggle.js" not in body
+
+
+def _sampled_route() -> Route:
+    """Return a route carrying a slope record built from its own points.
+
+    The factory's three points are about 2.7 km long, so the walk lands a
+    hundred-odd 25 m segments; every one is given the same angle, which
+    is all these tests need of the ground.
+    """
+    route = RouteFactory.create()
+    boundaries = [
+        [round(lon, 6), round(lat, 6)]
+        for lon, lat in stride_coordinates(route.points, 25.0)
+    ]
+    route.slope_samples = {
+        "stride_m": 25.0,
+        "points": boundaries,
+        "segments": [
+            {"angle_deg": 32.0, "aspect_deg": 200.0} for _ in range(len(boundaries) - 1)
+        ],
+    }
+    route.save()
+    return route
+
+
+def _segment_count(route: Route) -> int:
+    """Return how many segments a sampled route's record holds."""
+    assert route.slope_samples is not None
+    return len(route.slope_samples["segments"])
+
+
+def _route_terrain_url(route: Route) -> str:
+    """Resolve the SNOW-1020 terrain page for one route."""
+    return reverse("public:route_terrain", kwargs={"route_uuid": route.uuid})
+
+
+@pytest.mark.django_db
+class TestRouteTerrainPage:
+    """Tests for the staff-only /_route-terrain/<uuid>/ page (SNOW-1020)."""
+
+    def test_anonymous_user_redirected_to_admin_login(self) -> None:
+        """A logged-out user is bounced to the admin login page."""
+        response = Client().get(_route_terrain_url(_sampled_route()))
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_non_staff_user_redirected_to_admin_login(
+        self, regular_user: Account
+    ) -> None:
+        """A route's owner who is not staff is bounced too."""
+        route = _sampled_route()
+        client = Client()
+        client.force_login(regular_user.user)
+        response = client.get(_route_terrain_url(route))
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_staff_user_sees_one_row_per_segment(self, staff_client: Client) -> None:
+        """The table carries a row for every stored segment."""
+        route = _sampled_route()
+        response = staff_client.get(_route_terrain_url(route))
+        assert response.status_code == 200
+        segment_count = _segment_count(route)
+        assert len(response.context["rows"]) == segment_count
+        assert list(response.context["columns"]) == list(COLUMNS)
+        assert 'data-testid="route-terrain-table"' in response.content.decode()
+
+    def test_csv_carries_the_same_rows_as_the_table(self, staff_client: Client) -> None:
+        """One header line plus one line per segment, as an attachment."""
+        route = _sampled_route()
+        response = staff_client.get(_route_terrain_url(route), {"format": "csv"})
+        assert response.status_code == 200
+        assert response["Content-Type"] == "text/csv"
+        assert "attachment" in response["Content-Disposition"]
+        lines = list(csv.reader(io.StringIO(response.content.decode())))
+        assert lines[0] == list(COLUMNS)
+        assert len(lines) - 1 == _segment_count(route)
+
+    def test_unsampled_route_says_so(self, staff_client: Client) -> None:
+        """A route with no record renders the page, not a table."""
+        route = RouteFactory.create()
+        response = staff_client.get(_route_terrain_url(route))
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert 'data-testid="route-terrain-unsampled"' in body
+        assert 'data-testid="route-terrain-table"' not in body
+
+    def test_unknown_route_is_404(self, staff_client: Client) -> None:
+        """A uuid no route carries."""
+        url = reverse(
+            "public:route_terrain",
+            kwargs={"route_uuid": "00000000-0000-4000-8000-000000000000"},
+        )
+        assert staff_client.get(url).status_code == 404

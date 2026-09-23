@@ -5,8 +5,9 @@ Renders every design-system entry from ``apps/public/design_tokens.py`` under
 ``/_components/``. Sidebar grouped into Foundations (design tokens) and
 Components (rendered HTML partials); main column HTMX-swaps via the
 sidebar. Also hosts the Web Push demo (``/_push-demo/``), the SW
-shell-version page (``/_sw-version/``, SNOW-517), and the icon-set
-comparison grid (``/_icon-sets/``, SNOW-791).
+shell-version page (``/_sw-version/``, SNOW-517), the icon-set
+comparison grid (``/_icon-sets/``, SNOW-791), and one route's terrain
+per segment (``/_route-terrain/<uuid>/``, SNOW-1020).
 
 Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
@@ -18,15 +19,20 @@ now lives inside the component library as the **Weather header** entry
 under the Components group.
 """
 
+import csv
+import uuid
+
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
+from apps.routes.models import Route
+from apps.routes.services.terrain_detail import COLUMNS, terrain_detail
 from apps.weather.icon_sets import (
     ICON_SETS,
     LOCAL_SET_SOURCES,
@@ -207,5 +213,52 @@ def icon_set_comparison(request: HttpRequest) -> HttpResponse:
             ],
             "icon_root": "static/icons/weather",
             "missing_any": any(n not in sets for n in LOCAL_SET_SOURCES),
+        },
+    )
+
+
+@staff_member_required
+def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
+    """One route's slope angle, aspect, bearing and track gradient per segment.
+
+    SNOW-1020. The rows come from
+    ``apps.routes.services.terrain_detail.terrain_detail`` and nothing here
+    derives a figure of its own. ``?format=csv`` returns the same rows as
+    a download, so the table and the file cannot disagree.
+
+    Any route, not only the viewer's own: this is staff-only, and staff
+    already read ``slope_samples`` in the Route admin, which links here.
+    No row carries a coordinate — distances and bearings only.
+
+    Args:
+        request: The incoming request.
+        route_uuid: The route's public ``uuid``.
+
+    Returns:
+        The rendered table, or the CSV. 404 for an unknown route. A route
+        that has never been sampled renders an empty table and says so.
+
+    """
+    route = get_object_or_404(Route, uuid=route_uuid)
+    rows = terrain_detail(route.slope_samples, route.points) or []
+
+    if request.GET.get("format") == "csv":
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="route-{route.uuid}-terrain.csv"'
+        )
+        writer = csv.DictWriter(response, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
+
+    return render(
+        request,
+        "_debug/route_terrain.html",
+        {
+            "route": route,
+            "columns": COLUMNS,
+            "rows": [[row[column] for column in COLUMNS] for row in rows],
+            "sampled": route.slope_samples is not None,
         },
     )
