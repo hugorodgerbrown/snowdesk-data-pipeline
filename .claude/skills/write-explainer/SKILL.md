@@ -20,20 +20,62 @@ project can open and understand: what a thing is, why it is built the way it
 is, and what it cannot do. Read two of the existing pages before writing —
 `the-track-cannot-be-steeper-than-the-ground.html` (a measurement and a rule)
 and `pitch-and-roll-on-a-ski-track.html` (a drawing, with interaction) are
-the closest templates. The pages are the source of truth for the style; this
-skill is the list of things that go wrong.
+the closest templates. Take structure and visual style from them, not
+length: they run long, and a new page should be shorter (step 2). This skill
+is the list of things that go wrong.
 
 ## 1. Settle the argument before the page
 
 Write, in chat or a scratch file, the one sentence the page exists to make a
-reader believe, and the three to five steps that get them there. Each step
+reader believe, and the three or four steps that get them there. Each step
 becomes a numbered `stage`. If you cannot state the sentence, the page is
 not ready — ask the user.
 
-Then list every number the page will state. Each one needs a source you will
-query, not remember (step 3).
+Then write the question the reader arrived with — "what is a leg, and why
+does the app count distance in metres?" — and check each step answers part
+of it. A step that answers a question only the developer had is not a step.
 
-## 2. Write for someone without the repo
+## 2. Explain the thing, not the proof
+
+This is where explainers go wrong, and where two test rounds of this skill
+went wrong on both sides. The first paragraph of each section explained the
+mechanism well. Then the page turned into the engineer's validation work —
+every tour thinned four ways, "16 of 16 against 14 of 16", parameter sweeps
+from 75 m to 400 m, a boundary drift measured two ways — and the argument
+was lost under it. Making a process sound more complicated than it is is
+the failure; a good explainer leaves the reader thinking it is simpler than
+they feared.
+
+- **Mechanism first, in words, and stop when it is clear.** If the plain
+  version is true enough for the reader to act on, it is the explanation.
+  The exceptions and edge cases belong in the code and its docstring.
+- **One worked example per claim.** One tour, one place on it, drawn. Not a
+  table across every tour and every setting. A reader believes a claim
+  because they can see it happen once, not because it happened sixteen
+  times.
+- **Few numbers, each one pictured.** Keep a number only if the reader can
+  picture it and the sentence needs it: "a point every 4 m on one watch and
+  every 19 m on another" earns its place; "between 38 and 117 runs,
+  reducing to 18 to 48" does not. No ranges across tours, no counts of
+  comparisons, no second measure of the same thing.
+- **Validation stays off the page.** Sweeps, thinning experiments, tolerance
+  tests and "we checked it against X" are how the design was chosen, and
+  they belong in the docstring or decision record. The page may say, in one
+  sentence, that a setting was tested rather than guessed. The exception is
+  a page whose claim IS robustness ("the same route recorded differently
+  gives the same legs"): then one such test, run once on one tour and
+  drawn, is the worked example — not the table of every tour and level.
+- **One caveat, if it changes what the reader believes.** Not a closing
+  catalogue of limits.
+- **Budget:** three or four stages, about 150 words of prose each, so a page
+  of roughly 800 words plus figures — counted as everything except tables,
+  figures and the footer (captions and side lists count). The prose around a figure says what to
+  look at in it; it does not narrate the figure's numbers back.
+
+Before building, read each stage's first paragraph with its figure and
+nothing else. If that makes the point, cut the rest of the stage.
+
+## 3. Write for someone without the repo
 
 The reader cannot follow a link into the codebase, so the page contains:
 
@@ -54,7 +96,7 @@ The reader cannot follow a link into the codebase, so the page contains:
 The footer says when the design or measurement was made and what the
 figures are drawn from.
 
-## 3. Get the numbers from the running code
+## 4. Get the numbers from the running code
 
 Every figure and every number in the prose comes from the services run
 against the canonical tracks, never from arithmetic done by hand. Ticket
@@ -69,30 +111,33 @@ the thinned track; both are right, and the docstring now says which it
 used. Fix a source only once the two measures are reconciled.
 
 - Seed a worktree DB if it has none: `bin/init-worktree` (the four canonical
-  tracks plus the synthetic Verbier track, all with slope records).
-- Export exactly the arrays the figures need with
+  tracks plus the synthetic Verbier track, all with slope records). `uv run`
+  commands need the Bash sandbox off (`dangerouslyDisableSandbox: true`):
+  uv's cache lives outside it.
+- Export exactly the arrays the chosen example needs with
   `uv run python manage.py shell -c "…"`, calling the service function
-  itself, and write compact JSON (`separators=(',', ':')`). Keep it small:
-  one tour's per-segment rows, not all of them.
-- When the prose states a figure ("360 m in 5 m", "4 to 29 segments"), check
-  it against that export before writing it, and again after the page is
-  built (step 6). Better still, have the script write the sentence's
-  numbers from the embedded data and bake them (step 5), so prose and
+  itself, and write compact JSON (`separators=(',', ':')`). One tour's rows,
+  not all of them. Measuring more than the page shows is fine — it is how
+  you find the right example — but it stays in your notes.
+- When the prose states a figure ("360 m in 5 m"), check it against that
+  export before writing it, and again after the page is built (step 7).
+  Better still, have the script write the sentence's numbers from the
+  embedded data and bake them (step 6), so prose and
   figures cannot disagree.
 - **Say what the app does with it, and no more.** A service can exist before
   anything in the app calls it (the leg-cutting code did, for a while).
   Check with `grep -rn <function> apps/ templates/ static/` before writing
   "the map shows" or "a route displays".
-- **When one quantity can be measured two ways**, name the measure on the
-  page and lead with the one nearest to what a reader sees — a distance on
-  the route as recorded rather than along a derived copy of it.
+- **When one quantity can be measured two ways**, put one on the page — the
+  one nearest to what a reader sees, a distance on the route as recorded
+  rather than along a derived copy of it — and keep the other in your notes.
 - **A comparison against something the app no longer does** (a dropped
   design, an old constant) has no service to call. Reconstruct it by
   replacing only the part that differs — monkeypatch one function, pass
   one keyword argument — and run the rest of the real code. Say on the
   page that it is a reconstruction, and in what way.
 
-## 4. Build the page
+## 5. Build the page
 
 **Structure.** Start from the existing page closest in shape. The series
 pieces are: `.hero` (eyebrow, `h1` with one `<em>` word, `.lede`, `.facts`,
@@ -124,7 +169,7 @@ element's own start tag as well as its contents, so an `aria-label` or
 - **Colours are `var(--token)` references**, never values read with
   `getComputedStyle`. Put them in a `style` attribute or as presentation
   attributes; both follow the theme. A resolved literal freezes the figure
-  in one theme, and baking (step 5) would bake that theme in.
+  in one theme, and baking (step 6) would bake that theme in.
 - **Every draw function clears its target first** (`svg.innerHTML = ''`, or
   `host.textContent = ''` for an HTML container). Baked content is replaced
   by the live drawing, and a function that appends without clearing draws
@@ -160,7 +205,7 @@ its box scroll sideways rather than shrink:
 Labels a reader must be able to read also belong in the HTML legend or
 caption, which never shrink.
 
-## 5. Bake the figures
+## 6. Bake the figures
 
 ```bash
 bin/bake-explainer docs/explainers/<page>.html
@@ -175,7 +220,7 @@ loudly if the script throws under jsdom or a baked element draws nothing.
 It prints `failed to copy trust settings of system certificate` lines on
 every run; they are Node's, and harmless.
 
-## 6. Check it in a browser
+## 7. Check it in a browser
 
 Serve the directory (`python3 -m http.server <port> --bind 127.0.0.1` from
 `docs/explainers/`, on a free port) and open it in the Browser pane. Binding
@@ -206,7 +251,7 @@ Screenshots below the fold often come back blank. That is the pane, not the
 page: shift `.wrap` with a CSS `transform` to bring the figure to the top,
 screenshot, then reload.
 
-## 7. Register it
+## 8. Register it
 
 Add the page to the "Public explainers" row of the feature table in
 `CLAUDE.md`: one sentence on what it explains. `tox -e docs-lint` checks the
@@ -218,4 +263,4 @@ Each page's footer dates the decision or measurement it describes. When a
 revision changes what the page claims — a corrected figure, a decision that
 replaced the one it recorded — say so in the footer rather than rewriting
 the record silently. After any edit to a figure's script or data, re-run
-step 5 and step 6.
+step 6 and step 7.
