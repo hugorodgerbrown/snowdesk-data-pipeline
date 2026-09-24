@@ -53,9 +53,8 @@ const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01], [7.0, 46.015]],
   angles: [12.0, 52.0, null],
   passages: [{ from: 1, to: 1, m: 25.0, fall_line: 'descending' }],
-  // The same steep segment carries a fall-line mark: the ground there
-  // faces 205°, while the track runs due NORTH. Nothing in the stack may
-  // answer 0 for this arrow.
+  // The same steep segment carries a fall-line mark (the ground faces
+  // 205°). Since SNOW-1019 the map draws none; the record keeps it.
   fall_lines: [{ i: 1, deg: 205 }],
 };
 
@@ -516,10 +515,9 @@ describe('the transition markers', () => {
       .toEqual(['to-string', ['get', 'n']]);
   });
 
-  it('sit over the crux rings and under the endpoint markers', () => {
+  it('sit under the endpoint markers', () => {
     const ids = [...layers.keys()];
 
-    expect(ids.indexOf('routes-transitions')).toBeGreaterThan(ids.indexOf('routes-cruxes'));
     expect(ids.indexOf('routes-transition-labels'))
       .toBeGreaterThan(ids.indexOf('routes-transitions'));
     expect(ids.indexOf('routes-transition-labels'))
@@ -576,88 +574,17 @@ describe('the no-fall passage layers (SNOW-964)', () => {
   });
 });
 
-describe('the fall-line arrow layer', () => {
-  /** The ids in the order installRoutesLayer added them. */
-  const order = () => [...layers.keys()];
+describe('the marks SNOW-1019 took off the map', () => {
+  it('installs no crux ring or fall-line arrow, though the record carries both', () => {
+    // The crux is deferred to a later ticket and the bank ribbon on rail
+    // two replaced the arrows. SLOPE still carries `fall_lines`, so this
+    // holds the marks off rather than passing for want of data.
+    const ids = [...layers.keys(), ...sources.keys()];
 
-  it('draws from its own point source, placed at the segment midpoint', () => {
-    // A symbol cannot be placed on a line layer, so the arrows need a
-    // Point source — and the point is the middle of the marked segment,
-    // which is where the aspect was sampled.
-    const features = sources.get('route-fall-lines').data.features;
-
-    expect(features).toHaveLength(1);
-    expect(features[0].geometry.coordinates[1]).toBeCloseTo(46.0075, 9);
-  });
-
-  it('rotates the icon by the bearing, aligned to the map', () => {
-    // THE CLAIM THIS WHOLE LAYER MAKES. `icon-rotate` off the feature's
-    // own `deg`, and `icon-rotation-alignment: 'map'` so it stays a
-    // compass bearing when the reader rotates the map — a screen-aligned
-    // arrow would point somewhere else the moment they did.
-    const layout = layers.get('routes-fall-lines').layout;
-
-    expect(layout['icon-rotate']).toEqual(['get', 'deg']);
-    expect(layout['icon-rotation-alignment']).toBe('map');
-    expect(sources.get('route-fall-lines').data.features[0].properties.deg)
-      .toBe(205);
-  });
-
-  it('sits over the leg lines and under the rings and the markers', () => {
-    // An arrow is ambient; a ring is an instruction to look at one
-    // place, and a start dot is how a reader orients. The arrow yields.
-    const ids = order();
-
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeGreaterThan(ids.indexOf('routes-passage-core'));
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeLessThan(ids.indexOf('routes-cruxes'));
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeLessThan(ids.indexOf('routes-endpoints'));
-  });
-
-  it('lets the collision engine thin it, unlike every other route mark', () => {
-    // The one mark here that may be dropped: the survivors say the same
-    // thing about the same face. A dropped crux ring would understate
-    // the day, which is why those set the opposite.
-    expect(layers.get('routes-fall-lines').layout['icon-allow-overlap'])
-      .toBe(false);
-    expect(layers.get('routes-cruxes').layout['icon-allow-overlap']).toBe(true);
-  });
-
-  it('blocks nothing else from being placed', () => {
-    // A basemap label losing out to an ambient arrow is the wrong trade.
-    expect(layers.get('routes-fall-lines').layout['icon-ignore-placement'])
-      .toBe(true);
-  });
-
-  it('is held back a zoom step further than the rings', () => {
-    // At z11 a 250 m spacing is about 9 CSS pixels against a 20 px
-    // arrow, so the marks would read as texture on the track.
-    expect(layers.get('routes-fall-lines').minzoom)
-      .toBeGreaterThan(layers.get('routes-cruxes').minzoom);
-  });
-
-  it('is painted in its own ink, with the ring\'s halo', () => {
-    const paint = layers.get('routes-fall-lines').paint;
-
-    expect(paint['icon-color']).toBe(core.FALL_LINE_COLOUR);
-    // Over the dark leg casing the ink alone would vanish.
-    expect(paint['icon-halo-color']).toBe('#ffffff');
-  });
-
-  it('is reached by the routes overlay switch', () => {
-    expect(layers.get('routes-fall-lines').layout.visibility).toBe('visible');
-  });
-
-  it('marks nothing on the route nothing has sampled', () => {
-    // An unsampled route has no record, so it has no marks — the same
-    // silence the flat line keeps, rather than an arrow guessed from the
-    // track's own coordinates.
-    const uuids = sources.get('route-fall-lines').data.features
-      .map((f) => f.properties.uuid);
-
-    expect(uuids).toEqual(['sampled-route']);
+    expect(SLOPE.fall_lines).toHaveLength(1);
+    expect(ids.filter((id) => /crux|fall-line/.test(id))).toEqual([]);
+    expect(window.snowdeskMapState.overlayLayers.routes
+      .filter((id) => /crux|fall-line/.test(id))).toEqual([]);
   });
 });
 

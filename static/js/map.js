@@ -2158,20 +2158,10 @@
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
-  // SNOW-911. Registered `sdf: true`, unlike the two above, so the ring
-  // takes its colour from `icon-color` rather than from pixel data — see
-  // `cruxRingPixels`.
-  const ROUTE_CRUX_ICON = 'route-crux-ring';
-  // The fall-line arrow, registered `sdf: true` on the crux ring's terms
-  // and for its reason — see `fallLineArrowPixels`.
-  const ROUTE_FALL_LINE_ICON = 'route-fall-line-arrow';
-
-  // The crux ring's ink. A neutral slate, and deliberately NOT on the
-  // steepness scale: the ring marks WHERE to look, and the line under it
-  // is already saying how steep that ground is. Borrowing a scale colour
-  // would make the marker look like a sixth band. Mirrors
-  // `--color-crux-ring` in src/css/main.css.
-  const ROUTE_CRUX_COLOUR = '#1a1916';
+  // SNOW-1019 took the crux rings (SNOW-911) and the fall-line arrows off
+  // the map: the crux is deferred to a later ticket, and the bank ribbon
+  // on rail two replaced the arrows. The server still sends `cruxes` and
+  // `fall_lines` on the slope record; nothing here draws them.
 
   /**
    * Register the start dot and finish flag, unless the style already holds
@@ -2205,26 +2195,6 @@
         core.finishFlagPixels(...cssColourChannels(ROUTE_CASING_COLOUR)),
         ratio,
       );
-    }
-    if (!map.hasImage(ROUTE_CRUX_ICON) && core.cruxRingPixels) {
-      // `sdf: true`: the ring is an alpha mask and `icon-color` paints
-      // it. The guard on the function itself is for a cached older copy
-      // of the core, which the service worker can serve for a minute
-      // after a deploy — the ring is then simply absent, rather than the
-      // whole routes overlay throwing.
-      map.addImage(ROUTE_CRUX_ICON, core.cruxRingPixels(), {
-        pixelRatio: core.PIXEL_RATIO,
-        sdf: true,
-      });
-    }
-    if (!map.hasImage(ROUTE_FALL_LINE_ICON) && core.fallLineArrowPixels) {
-      // The crux ring's registration, verbatim: an alpha mask painted by
-      // `icon-color`, guarded on the function so a cached older core
-      // costs the arrows rather than the whole routes overlay.
-      map.addImage(ROUTE_FALL_LINE_ICON, core.fallLineArrowPixels(), {
-        pixelRatio: core.PIXEL_RATIO,
-        sdf: true,
-      });
     }
   };
 
@@ -2303,45 +2273,6 @@
     const core = self.pwaRouteLegsCore;
     if (!core) return { type: 'FeatureCollection', features: [] };
     return core.passageCollection(geojson);
-  };
-
-  /**
-   * The crux markers for a routes payload (SNOW-911).
-   *
-   * Guarded like the segments above, and for the same reason: a failed
-   * core load should cost the markers, not the routes overlay. An older
-   * cached copy of the core has no `cruxCollection` at all, which the
-   * service worker can serve for a minute after a deploy.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A Point
-   *   FeatureCollection, empty when there is nothing to mark.
-   */
-  const routeCruxesFor = (geojson) => {
-    const core = self.pwaRouteSlopeCore;
-    if (!core || !core.cruxCollection) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.cruxCollection(geojson);
-  };
-
-  /**
-   * The fall-line arrows for a routes payload.
-   *
-   * Guarded like the cruxes above, and for the same reason: a failed or
-   * stale core should cost the arrows, not the routes overlay. An older
-   * cached copy has no `fallLineCollection` at all.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A Point
-   *   FeatureCollection, empty when there is nothing to mark.
-   */
-  const routeFallLinesFor = (geojson) => {
-    const core = self.pwaRouteSlopeCore;
-    if (!core || !core.fallLineCollection) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.fallLineCollection(geojson);
   };
 
   /**
@@ -3019,135 +2950,17 @@
         'circle-stroke-width': 2,
       },
     });
-    // The fall-line arrows. Their own Point source over the same
-    // payload, because a symbol cannot be placed on a line layer — and
-    // one arrow per segment is not what is wanted anyway: the server
-    // spaced them (`apps/routes/services/fall_line.py`) and this draws
-    // what it was given.
-    //
-    // ABOVE the leg lines and their split, BELOW the crux rings and
-    // the endpoint markers. MapLibre paints later layers over earlier
-    // ones, so this is a statement about what gives way to what: an
-    // arrow is ambient, a ring is an instruction to look at one place,
-    // and a start dot is how the reader orients. The arrow yields to
-    // both.
-    map.addSource('route-fall-lines', {
-      type: 'geojson',
-      data: routeFallLinesFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-fall-lines',
-      type: 'symbol',
-      source: 'route-fall-lines',
-      // minzoom 12, one step in from the crux rings. At z11 a 250 m
-      // spacing is about 9 CSS pixels and a 20 px arrow, so the marks
-      // would overlap into a textured line that reads as decoration on
-      // the track rather than as a direction.
-      minzoom: 12,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': ROUTE_FALL_LINE_ICON,
-        // THE ONE MARK ON THIS MAP THAT LETS ITSELF BE DROPPED, and the
-        // difference from the rings beside it is the whole point:
-        // dropping a crux ring understates the day, while the arrows are
-        // a density — the ones that survive say the same thing about the
-        // same face as the one that did not. So the collision engine is
-        // allowed to thin them wherever the zoom has pushed them
-        // together, which is what keeps a steep face legible at z12 and
-        // detailed at z15 without a second spacing rule.
-        'icon-allow-overlap': false,
-        // It does not block anything else either: the rings and markers
-        // above set `icon-ignore-placement`, and a basemap label losing
-        // out to an ambient arrow would be the wrong trade.
-        'icon-ignore-placement': true,
-        'icon-anchor': 'center',
-        // The arrow is drawn pointing up (north) and this turns it
-        // clockwise onto the compass bearing the ground faces, which is
-        // downhill. `icon-rotation-alignment: 'map'` is what makes that
-        // a bearing rather than a screen angle — the arrow then keeps
-        // pointing at real downhill when the reader rotates the map,
-        // which is the only behaviour that is ever right for a fall
-        // line.
-        'icon-rotate': ['get', 'deg'],
-        'icon-rotation-alignment': 'map',
-      },
-      paint: {
-        // See FALL_LINE_COLOUR in route_slope_core.js — the crux ring's
-        // near-black under a token of its own, mirroring
-        // --color-fall-line-arrow, which a MapLibre paint property
-        // cannot read for itself.
-        'icon-color': (self.pwaRouteSlopeCore || {}).FALL_LINE_COLOUR || '#1a1916',
-        // The ring's halo, for the ring's reason: over the dark casing
-        // the ink alone would vanish, and the halo is what carries the
-        // shape there.
-        'icon-halo-color': '#ffffff',
-        'icon-halo-width': 1,
-      },
-    });
     syncRouteLegLegend();
-
-    // SNOW-687 follow-up: the start dot and finish flag. Their own point
-    // source, derived from the same payload — MapLibre cannot symbolise
-    // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
-    // symbol ALONG one, which is a different thing), so the endpoints are
-    // computed once here and kept beside the lines.
-    //
-    // minzoom 10 matches the resort labels, and for their reason: it keeps
-    // the markers off-screen until the map is genuinely zoomed in, rather
-    // than littering a country-scale view with flags on tracks a few
-    // pixels long. It is also the zoom at which a route's two ends are far
-    // enough apart to read as two markers.
-    // SNOW-911: the crux rings, over the leg lines and BEFORE the
-    // endpoint markers — MapLibre paints later layers above earlier
-    // ones, so installing after them would let a ring and its white halo
-    // cover a start dot. That is not hypothetical: ``crux_points``
-    // places a one-segment run's marker on the run's first boundary, so
-    // a route whose very first segment is flagged puts a ring exactly on
-    // its own start. A route's two ends are the landmarks a reader
-    // orients by, and the ring must give way to them.
-    //
-    // minzoom 11, one step in from the endpoints. A ring is an
-    // instruction to look at a 25-to-500 m passage, and at a country
-    // scale it would point at a stretch of track a few pixels long; the
-    // rings would also pile onto each other and read as a smear rather
-    // than as places.
-    map.addSource('route-cruxes', {
-      type: 'geojson',
-      data: routeCruxesFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-cruxes',
-      type: 'symbol',
-      source: 'route-cruxes',
-      minzoom: 11,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': ROUTE_CRUX_ICON,
-        // Two cruxes on one track can be close together at this zoom, and
-        // dropping one would understate the day.
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        'icon-anchor': 'center',
-      },
-      paint: {
-        // Readable over both leg colours the ring sits on — see
-        // ROUTE_CRUX_COLOUR.
-        'icon-color': ROUTE_CRUX_COLOUR,
-        'icon-halo-color': '#ffffff',
-        'icon-halo-width': 1,
-      },
-    });
 
     // SNOW-1017: the numbered transitions — a circle at each point where
     // one leg ends and the next begins, numbered 1 to legs − 1 along the
     // track, so "transition 2" on the map is the one between legs 2 and 3
-    // on the rail. Over the crux rings and under the endpoint markers: a
-    // transition is where the route changes activity, which the reader
-    // plans around more than a ring, and less than where it starts.
+    // on the rail. Under the endpoint markers: a transition is where the
+    // route changes activity, which the reader plans around less than
+    // where it starts.
     //
-    // minzoom 11, the crux rings' step and for their reason: at a country
-    // scale the markers would pile onto one another and onto the start
-    // dot. The fit on a tap has no cap (activateRoute), so the camera
+    // minzoom 11: at a country scale the markers would pile onto one
+    // another and onto the start dot. The fit on a tap has no cap (activateRoute), so the camera
     // always comes to rest far enough in for them.
     //
     // The circle carries the position on its own; the number is a symbol
@@ -3184,8 +2997,8 @@
         'text-field': ['to-string', ['get', 'n']],
         'text-font': overlayTextFont,
         'text-size': 10,
-        // Every transition keeps its number, on the crux rings' reasoning:
-        // dropping one would renumber the route in the reader's head.
+        // Every transition keeps its number: dropping one would renumber
+        // the route in the reader's head.
         'text-allow-overlap': true,
         'text-ignore-placement': true,
       },
@@ -3194,6 +3007,17 @@
       },
     });
 
+    // SNOW-687 follow-up: the start dot and finish flag. Their own point
+    // source, derived from the same payload — MapLibre cannot symbolise
+    // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
+    // symbol ALONG one, which is a different thing), so the endpoints are
+    // computed once here and kept beside the lines.
+    //
+    // minzoom 10 matches the resort labels, and for their reason: it keeps
+    // the markers off-screen until the map is genuinely zoomed in, rather
+    // than littering a country-scale view with flags on tracks a few
+    // pixels long. It is also the zoom at which a route's two ends are far
+    // enough apart to read as two markers.
     ensureRouteMarkerImages();
     map.addSource('route-endpoints', {
       type: 'geojson',
@@ -6246,9 +6070,9 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // SEVEN sources, not one: the lines, the derived start/finish
-          // points, the legs, the passages, the transitions, the crux
-          // rings and the fall-line arrows (see installRoutesLayer).
+          // FIVE sources, not one: the lines, the derived start/finish
+          // points, the legs, the passages and the transitions (see
+          // installRoutesLayer).
           // Refreshing only the first would leave a deleted route's flag
           // standing on the map, its legs drawn along a track that is no
           // longer there, and its marks on ground nothing is drawn across.
@@ -6257,8 +6081,6 @@
           map.getSource('route-legs')?.setData(routeLegsFor(data));
           map.getSource('route-passages')?.setData(routePassagesFor(data));
           map.getSource('route-transitions')?.setData(routeTransitionsFor(data));
-          map.getSource('route-cruxes')?.setData(routeCruxesFor(data));
-          map.getSource('route-fall-lines')?.setData(routeFallLinesFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
           // already drawn, and the route that just landed is the first
@@ -6289,8 +6111,8 @@
   //
   // SNOW-1017 took the colouring off the map — a route draws as its legs
   // whether or not it is sampled — but the refetch still carries the
-  // marks the record holds: the no-fall passages, the crux rings and the
-  // fall-line arrows.
+  // marks the record holds: the no-fall passages. (SNOW-1019 took the
+  // crux rings and fall-line arrows off the map.)
   //
   // Twenty seconds is a judgement about a queued task on a shared worker
   // for a track of a few hundred samples, not a measurement.
@@ -7852,15 +7674,6 @@
     // the endpoint markers' reasoning: each sits on a leg's own first
     // coordinate, well inside the 8px tolerance below.
     //
-    // 'routes-fall-lines' is ABSENT on the endpoint markers' reasoning
-    // rather than the passages': it IS new geometry — a point source of
-    // its own — but every arrow sits on the middle of a stretch a leg
-    // line still draws, which is well inside the 8px
-    // tolerance below. So a tap on an arrow already opens its route,
-    // and putting the layer in this set would maintain a second path to
-    // the same popup. An arrow is also the one mark here the collision
-    // engine may drop, so a tap path through it would be one that comes
-    // and goes with the zoom.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
@@ -8626,7 +8439,7 @@
         // could not answer.
         // The core is in home.html's DEFERRED group, so it is not
         // guaranteed to exist when this runs — the same reason
-        // ``routeCruxesFor`` and ``flatOwnedRouteFilter`` test for their
+        // ``routeLegsFor`` and ``flatOwnedRouteFilter`` test for their
         // cores rather than assuming them. Without the core the sheet loses its
         // terrain line and keeps the bulletin reading, which is the right
         // degradation: the figures are an addition to a sheet that stands
@@ -8730,8 +8543,9 @@
         // worth looking at.
         //
         // What made it a defect rather than a preference is that the
-        // marks drawn ON a route have minzooms of their own — the crux
-        // rings at 11, and every later mark at or above it — so the
+        // marks drawn ON a route have minzooms of their own — the
+        // transition markers at 11, and the crux rings did too until
+        // SNOW-1019 took them off — so the
         // camera came to rest BELOW the zoom at which the things the
         // panel was describing in words could render at all. The panel
         // said "3 key passages" over a map that had decided not to show
