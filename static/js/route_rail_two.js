@@ -9,12 +9,14 @@
  * hides when it has none, so a leg opened or closed from any surface opens
  * or closes it here without anyone telling it.
  *
- * WHAT IT DRAWS. Four rows on one x-axis (route_rail_two_core.js's module
- * comment has the axis): the leg's elevation profile, the strip of slope
- * bands, the track line drawn as the bank ribbon (bank_ribbon_core.js), and
- * one bar per no-fall passage; then the cursor line, the selection's
- * outline, edge fades where more leg lies beyond the window, and distance
- * ticks, labelled in HTML under the lane as on rail one.
+ * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
+ * comment has the axis): the strip of slope bands, the track line drawn as
+ * the bank ribbon (bank_ribbon_core.js), and one bar per no-fall passage;
+ * then the cursor line, the selection's outline, edge fades where more leg
+ * lies beyond the window, and distance ticks, labelled in HTML under the
+ * lane as on rail one. The leg's elevation profile was a fourth row above
+ * the bands until SNOW-1019 removed it: at a 2 km window it drew near-flat
+ * and added nothing rail one's highlighted leg does not show.
  *
  * REAL PIXELS. The svg's viewBox is the lane's measured width and never
  * stretched: the ribbon's tick lean IS the bank angle, and a lane squeezed
@@ -51,7 +53,7 @@
  *           onResize})  — follow one route's cursor
  *   detach()            — stop following it and hide
  *   centreOn(index)     — centre the window on a sample
- *   cursorPoint()       — where the cursor meets the profile, viewport px
+ *   cursorPoint()       — the cursor at the band strip's top, viewport px
  *   view()              — the window `{from, to}`, or null when hidden
  */
 
@@ -129,7 +131,8 @@
 
   /** The open leg, or null while rail two is hidden. */
   var leg = null;
-  /** The open leg's profile on the sample axis (`legProfile`). */
+  /** The open leg's profile on the sample axis (`legProfile`), which the
+   *  identity cell's figures line is summed from. */
   var legLine = null;
   /** The open leg's slope-band runs. */
   var bands = [];
@@ -440,26 +443,6 @@
     lane.appendChild(defs);
   }
 
-  /** The leg's profile: its filled area under one outline. */
-  function drawProfile() {
-    var paths = core().profilePaths(legLine, view, width, self.pwaRouteRailCore.clipRun);
-    if (!paths.line) return;
-    lane.appendChild(svgEl('path', {
-      d: paths.area,
-      fill: leg.climbing ? 'var(--color-route-rail-climb)' : 'var(--color-route-rail-descent)',
-      'fill-opacity': '0.22',
-      'pointer-events': 'none',
-    }));
-    lane.appendChild(svgEl('path', {
-      d: paths.line,
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': '1.5',
-      'stroke-linejoin': 'round',
-      'pointer-events': 'none',
-    }));
-  }
-
   /**
    * Whether a range is the one the cursor holds selected.
    *
@@ -733,7 +716,6 @@
     lane.setAttribute('viewBox', '0 0 ' + width + ' ' + c.ROWS.height);
     lane.replaceChildren();
     drawDefs();
-    drawProfile();
     drawBands();
     drawRibbon();
     drawPassages();
@@ -751,10 +733,11 @@
   }
 
   /**
-   * Where the cursor line meets the profile, in viewport px (SNOW-1019).
+   * Where the cursor line meets the top of the band strip, in viewport px
+   * (SNOW-1019) — the leader line's last stop.
    *
-   * The leader line's last stop. Null while rail two is hidden, with no
-   * index, or with the index outside the window.
+   * Null while rail two is hidden, with no index, or with the index
+   * outside the window.
    *
    * @returns {?{x: number, y: number}}
    */
@@ -764,12 +747,10 @@
     if (index === null || index + 1 <= view.from || index >= view.to) return null;
     var c = core();
     var rect = lane.getBoundingClientRect();
-    var s = index + 0.5;
-    var y = legLine ? c.profileYAt(legLine, s) : null;
     var scale = rect.height > 0 ? rect.height / c.ROWS.height : 1;
     return {
-      x: rect.left + (c.xOf(s, view, width) / width) * (rect.width || width),
-      y: rect.top + (y === null ? c.ROWS.profileBottom : y) * scale,
+      x: rect.left + (c.xOf(index + 0.5, view, width) / width) * (rect.width || width),
+      y: rect.top + c.ROWS.bandTop * scale,
     };
   }
 

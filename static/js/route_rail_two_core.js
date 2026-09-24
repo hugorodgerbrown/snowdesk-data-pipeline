@@ -3,10 +3,11 @@
  * with the ground under it (SNOW-1019).
  *
  * Rail two opens under rail one when a leg is pressed. It draws the open
- * leg on four rows sharing one x-axis — the leg's elevation profile, a
- * strip of slope bands, the track line drawn as the bank ribbon
- * (bank_ribbon_core.js), and one bar per no-fall passage — and it pans and
- * zooms within the leg. This module is the arithmetic of that drawing: no
+ * leg on three rows sharing one x-axis — a strip of slope bands, the track
+ * line drawn as the bank ribbon (bank_ribbon_core.js), and one bar per
+ * no-fall passage — and it pans and zooms within the leg. (It drew the
+ * leg's elevation profile above them until SNOW-1019 took the row out;
+ * the leg's profile is still read here, for the identity cell's figures.) This module is the arithmetic of that drawing: no
  * DOM, no globals read at parse time, so every rule below is covered in
  * tests/js/test_route_rail_two_core.js. static/js/route_rail_two.js is the
  * DOM half.
@@ -67,8 +68,6 @@
  *   tickPhase(view, width, pitch)             → px the ticks scroll by
  *   ribbonTicks(options)                      → bankTicks, laid on the view
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
- *   profilePaths(legProfile, view, width, clipRun)  → area + line, in px
- *   profileYAt(legProfile, s)                 → the curve's y at s, in px
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   distanceTicks(view, sampleCount, spanM, rail, units?) → [{x, major, label}]
  */
@@ -108,9 +107,9 @@
    *   from: number,
    *   to: number,
    * }} LegProfile
-   *   The open leg's profile in sample units. `from` / `to` are the leg's
-   *   ends on the axis; `minEle` / `maxEle` are the LEG's own range, so the
-   *   y scale does not move while the view pans and zooms.
+   *   The open leg's profile in sample units, which `legFigures` reads.
+   *   `from` / `to` are the leg's ends on the axis; `minEle` / `maxEle` are
+   *   the LEG's own range.
    */
 
   /**
@@ -131,17 +130,20 @@
 
   /**
    * The lane's vertical layout, in px. The svg is drawn at this height in
-   * real pixels, so these are screen units.
+   * real pixels (the partial's `h-14`, 56 px), so these are screen units.
+   *
+   * Three rows and the distance ticks: the band strip, the bank ribbon,
+   * the no-fall bars, the tick marks at the foot. SNOW-1019 took the leg's
+   * elevation profile off the top: at a 2 km window it drew near-flat and
+   * said nothing rail one's highlighted leg does not.
    */
   var ROWS = Object.freeze({
-    height: 112,
-    profileTop: 4,
-    profileBottom: 58,
-    bandTop: 62,
+    height: 56,
+    bandTop: 4,
     bandHeight: 10,
-    ribbonY: 86,
+    ribbonY: 28,
     ribbonHalf: 9,
-    passageTop: 100,
+    passageTop: 41,
     passageHeight: 6,
   });
 
@@ -529,85 +531,6 @@
   }
 
   /**
-   * The profile's area and outline in px, for the part inside the view.
-   *
-   * @param {LegProfile} lp A `legProfile` result.
-   * @param {View} view
-   * @param {number} width The lane's width in px.
-   * @param {ClipRun} clipRun route_rail_core.js's.
-   * @returns {{area: string, line: string}} Empty when nothing is drawable.
-   */
-  function profilePaths(lp, view, width, clipRun) {
-    if (!lp.runs.length || lp.minEle === null || lp.maxEle === null) {
-      return { area: '', line: '' };
-    }
-    var minEle = lp.minEle;
-    var range = lp.maxEle - minEle;
-    var top = ROWS.profileTop;
-    var floor = ROWS.profileBottom;
-    /** @param {number} s */
-    var x = function (s) { return xOf(s, view, width).toFixed(2); };
-    /** @param {number} e */
-    var y = function (e) {
-      return (range ? floor - ((e - minEle) / range) * (floor - top) : (top + floor) / 2)
-        .toFixed(2);
-    };
-    var pieces = lp.runs
-      .map(function (run) {
-        var asD = run.map(function (p) { return { d: p.s, e: p.e }; });
-        return clipRun(asD, view.from, view.to);
-      })
-      .filter(function (piece) { return piece.length >= 2; });
-    /** @param {Array<{d: number, e: number}>} points */
-    var line = function (points) {
-      return points
-        .map(function (p, i) { return (i === 0 ? 'M' : 'L') + x(p.d) + ' ' + y(p.e); })
-        .join(' ');
-    };
-    var base = floor.toFixed(2);
-    return {
-      line: pieces.map(line).join(' '),
-      area: pieces
-        .map(function (points) {
-          return line(points)
-            + ' L' + x(points[points.length - 1].d) + ' ' + base
-            + ' L' + x(points[0].d) + ' ' + base + ' Z';
-        })
-        .join(' '),
-    };
-  }
-
-  /**
-   * Where the profile curve sits at one axis coordinate, in lane px.
-   *
-   * The y `profilePaths` draws at `s`, interpolated between the two
-   * points either side of it — where a cursor line meets the curve, which
-   * is where the leader line (route_leader.js) attaches to this rail.
-   *
-   * @param {LegProfile} lp A `legProfile` result.
-   * @param {number} s An axis coordinate.
-   * @returns {?number} Null where the leg has no elevation at `s`.
-   */
-  function profileYAt(lp, s) {
-    if (!lp.runs.length || lp.minEle === null || lp.maxEle === null) return null;
-    const minEle = lp.minEle;
-    const range = lp.maxEle - minEle;
-    const top = ROWS.profileTop;
-    const floor = ROWS.profileBottom;
-    for (let r = 0; r < lp.runs.length; r += 1) {
-      const run = lp.runs[r];
-      for (let i = 1; i < run.length; i += 1) {
-        const a = run[i - 1];
-        const b = run[i];
-        if (s < a.s || s > b.s) continue;
-        const e = b.s === a.s ? a.e : a.e + ((b.e - a.e) * (s - a.s)) / (b.s - a.s);
-        return range ? floor - ((e - minEle) / range) * (floor - top) : (top + floor) / 2;
-      }
-    }
-    return null;
-  }
-
-  /**
    * The leg's figures, in the shape `formatFigures` takes.
    *
    * The distance is the leg's share of the route's length, so it agrees
@@ -727,8 +650,6 @@
     tickPhase: tickPhase,
     ribbonTicks: ribbonTicks,
     legProfile: legProfile,
-    profilePaths: profilePaths,
-    profileYAt: profileYAt,
     legFigures: legFigures,
     distanceTicks: distanceTicks,
   });

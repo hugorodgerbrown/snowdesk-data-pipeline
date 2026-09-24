@@ -15,11 +15,12 @@ the leg IS the whole route.
 
 RAIL TWO IS THE SECOND ROW (SNOW-1019), `[data-route-rail-two]`, hidden
 until a leg is open. It sits in rail one's three columns (`subgrid`): the
-leg's title, figures, zoom −/+ and its own × on the left; a lane of four
-rows on one x-axis in the middle — the leg's elevation profile, a strip of
-slope bands (one per run of segments sharing a class, unmerged), the track
-line drawn as the bank ribbon, and one bar per no-fall passage — with
-distance ticks under it; and a readout on the right. It opens on 2 km of
+leg's title, figures, zoom −/+ and its own × on the left; a lane of three
+rows on one x-axis in the middle — a strip of slope bands (one per run of
+segments sharing a class, unmerged), the track line drawn as the bank
+ribbon, and one bar per no-fall passage — with distance ticks under it
+(the leg's elevation profile was a fourth row until it was taken out: at a
+2 km window it drew near-flat and said nothing rail one does not); and a readout on the right. It opens on 2 km of
 ground (or the whole leg), pans and zooms within the leg, and its bands
 and passages are pressable selections. static/js/route_rail_two.js draws
 it in REAL PIXELS — the viewBox is the lane's measured width, never
@@ -206,7 +207,7 @@ Context:
                 role="slider"
                 tabindex="0"
                 aria-orientation="horizontal"
-                class="route-rail-two-lane block h-28 w-full text-route-line"
+                class="route-rail-two-lane block h-14 w-full text-route-line"
             >
             </svg>
             <div data-route-rail-two-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3">

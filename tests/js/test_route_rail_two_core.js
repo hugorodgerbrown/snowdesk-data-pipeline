@@ -298,27 +298,6 @@ describe('legProfile and legFigures', () => {
     expect(rail.formatFigures(figures)).toBe('0.3 km · ▲200 m · ▼0 m · 1500→1700 m');
   });
 
-  it('draws only the part inside the view', () => {
-    const lp = core.legProfile(profile, leg, 24, rail.clipRun);
-    const { line, area } = core.profilePaths(lp, { from: 3, to: 9 }, 600, rail.clipRun);
-    const xs = line.match(/[ML](-?[\d.]+)/g).map((m) => Number(m.slice(1)));
-    expect(Math.min(...xs)).toBeCloseTo(0);
-    expect(Math.max(...xs)).toBeCloseTo(600);
-    expect(area.endsWith('Z')).toBe(true);
-  });
-
-  it('finds the curve\'s y at a sample, top of the leg highest', () => {
-    const lp = core.legProfile(profile, leg, 24, rail.clipRun);
-    const low = core.profileYAt(lp, 0.5);
-    const high = core.profileYAt(lp, 11.5);
-
-    // A climb: the end sits higher on screen, which is a smaller y.
-    expect(high).toBeLessThan(low);
-    expect(low).toBeLessThanOrEqual(core.ROWS.profileBottom);
-    expect(core.profileYAt(core.legProfile(readProfile([]), leg, 24, rail.clipRun), 3))
-      .toBeNull();
-  });
-
   it('knows the distance alone for a leg with no elevation', () => {
     const lp = core.legProfile(readProfile([]), leg, 24, rail.clipRun);
     expect(core.legFigures(lp, leg, 24, 620)).toEqual({

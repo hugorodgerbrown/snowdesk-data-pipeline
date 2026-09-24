@@ -339,10 +339,10 @@ describe('keys', () => {
 });
 
 describe('the cursor point (SNOW-1019)', () => {
-  it('is where the cursor meets the profile, and null while hidden', () => {
+  it('is the cursor at the band strip\'s top, and null while hidden', () => {
     const { cursor } = attach();
     vi.spyOn(lane, 'getBoundingClientRect')
-      .mockReturnValue({ left: 20, top: 200, right: 620, bottom: 312, width: 600, height: 112 });
+      .mockReturnValue({ left: 20, top: 200, right: 620, bottom: 256, width: 600, height: 56 });
     expect(two.cursorPoint()).toBeNull();
 
     cursor.openLeg(LEGS[1]);
@@ -351,8 +351,8 @@ describe('the cursor point (SNOW-1019)', () => {
 
     // Sample 110 of the 100–140 window: its centre is 10.5/40 across.
     expect(point.x).toBeCloseTo(20 + (10.5 / 40) * 600);
-    expect(point.y).toBeGreaterThanOrEqual(200);
-    expect(point.y).toBeLessThanOrEqual(312);
+    // The lane is drawn at ROWS.height, so the band strip's top is 1:1.
+    expect(point.y).toBe(200 + self.pwaRouteRailTwoCore.ROWS.bandTop);
 
     cursor.closeLeg();
     expect(two.cursorPoint()).toBeNull();
@@ -368,6 +368,27 @@ describe('the cursor point (SNOW-1019)', () => {
 
     expect(heard).toHaveBeenCalled();
     document.removeEventListener('snowdesk:route-rail-two-drawn', heard);
+  });
+});
+
+describe('the rows (SNOW-1019)', () => {
+  it('draws no profile: bands, ribbon, passages and ticks only', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    expect(lane.querySelectorAll('path')).toHaveLength(0);
+    expect(lane.getAttribute('viewBox')).toBe(`0 0 600 ${self.pwaRouteRailTwoCore.ROWS.height}`);
+  });
+
+  it('stacks the rows with no gap for the profile that left', () => {
+    const rows = self.pwaRouteRailTwoCore.ROWS;
+
+    expect(rows).not.toHaveProperty('profileTop');
+    expect(rows.bandTop).toBeLessThan(8);
+    expect(rows.ribbonY - rows.ribbonHalf).toBeGreaterThan(rows.bandTop + rows.bandHeight);
+    expect(rows.passageTop).toBeGreaterThan(rows.ribbonY + rows.ribbonHalf);
+    expect(rows.passageTop + rows.passageHeight).toBeLessThan(rows.height - 6);
+    expect(rows.height).toBe(56);
   });
 });
 
