@@ -383,6 +383,21 @@ describe('lifetime', () => {
     expect(window.pwaRouteRail.cursor()).toBeNull();
   });
 
+  it('closes the open leg before it lets the cursor go', () => {
+    // SNOW-1017: the map follows the cursor to dim every leg but the open
+    // one, and never sees the rail's own ×, Escape or backdrop closes. So
+    // close() has to say `openLeg: null` to whoever is still listening.
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    const heard = [];
+    cursor.subscribe((state) => heard.push(state.openLeg));
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    window.pwaRouteRail.close();
+
+    expect(heard.map((leg) => (leg ? leg.i : null))).toEqual([1, null]);
+  });
+
   it('closes on Escape when nothing else is open', () => {
     window.pwaRouteRail.open(feature());
 
