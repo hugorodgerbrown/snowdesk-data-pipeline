@@ -1278,12 +1278,29 @@
    * is the OLD SW; this newly-installed one is the new shell). It is
    * queued to be applied silently (SNOW-1025).
    *
+   * When it lands on ``redundant`` instead, the install failed, and the
+   * two banner gates are asked directly. This is the stuck-worker path
+   * that needs no version drift. After a deploy, the first navigation
+   * fetches fresh HTML (navigations are network-first), so the page's
+   * ``pwa-app-version`` already matches every response header and
+   * ``pwa_version_check.js`` never offers the banner. A failed install
+   * seen here would otherwise go unreported. The remembered answer is
+   * dropped first, because it may predate the failure. A worker that
+   * reached ``installed`` and was later superseded by a newer install
+   * also ends ``redundant``, but that is not a failure, so it is excluded.
+   *
    * @param {ServiceWorker} sw
    */
   function watchForInstall(sw) {
+    let installed = false;
     sw.addEventListener('statechange', () => {
-      if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+      if (!navigator.serviceWorker.controller) return;
+      if (sw.state === 'installed') {
+        installed = true;
         queueSilentUpdate(sw);
+      } else if (sw.state === 'redundant' && !installed) {
+        bannerAnswer = null;
+        revealUpdateBannerIfStuck();
       }
     });
   }

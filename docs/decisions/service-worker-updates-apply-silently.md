@@ -15,9 +15,13 @@ last-reviewed: 2026-09-24
   `document.visibilityState` becomes `hidden` (`applyWaitingWorker`). It
   holds back while any `warmCache` run is queued or in flight. The
   `controllerchange` that follows does **not** reload the page.
-* **Stuck worker: the banner.** `window.pwaUpdateBanner.reveal()`, offered
-  by `pwa_version_check.js` after a confirmed version drift, shows the
-  banner only when both gates agree: `shellIsStale` (SNOW-952: the
+* **Stuck worker: the banner.** `window.pwaUpdateBanner.reveal()` shows
+  the banner only when both gates agree. Two things ask it: an installing
+  worker that goes `redundant` without ever reaching `installed`
+  (`watchForInstall`), and `pwa_version_check.js` after a confirmed version
+  drift. The first matters most. After a deploy, the first navigation
+  already carries the new build's meta, so a failed install produces no
+  drift. The gates are: `shellIsStale` (SNOW-952: the
   controller's `CACHE_VERSION` differs from `shell` on `/api/version`)
   and `workerIsStuck` (after `registration.update()`, nothing is waiting
   and the installing worker, if any, went `redundant` or timed out).

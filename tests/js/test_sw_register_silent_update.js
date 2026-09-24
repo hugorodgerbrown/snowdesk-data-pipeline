@@ -34,10 +34,15 @@ const waitingWorker = {
   postMessage: (msg) => posted.push(msg),
 };
 
+/** Registration listeners, so a test can fire `updatefound`. */
+const registrationListeners = {};
+
 const registration = {
   waiting: waitingWorker,
   installing: null,
-  addEventListener: () => {},
+  addEventListener: (type, fn) => {
+    (registrationListeners[type] = registrationListeners[type] || []).push(fn);
+  },
   update: vi.fn(() => Promise.resolve()),
 };
 
@@ -193,5 +198,93 @@ describe('the controllerchange a silent activation fires', () => {
     await settle();
 
     expect(emitted).toEqual([]);
+  });
+});
+
+describe('an install that fails while the page is open', () => {
+  /**
+   * A stand-in installing worker whose state the test drives.
+   *
+   * @returns {{state: string, addEventListener: Function, moveTo: Function}}
+   */
+  function installingWorker() {
+    const listeners = [];
+    const worker = {
+      state: 'installing',
+      postMessage: () => {},
+      addEventListener: (type, fn) => {
+        if (type === 'statechange') listeners.push(fn);
+      },
+      removeEventListener: () => {},
+      moveTo: (next) => {
+        worker.state = next;
+        listeners.forEach((fn) => fn());
+      },
+    };
+    return worker;
+  }
+
+  afterEach(() => {
+    delete window.pwaVersionInfo;
+    registration.waiting = waitingWorker;
+    registration.installing = null;
+    document.getElementById('sw-update-banner').classList.add('hidden');
+  });
+
+  it('reveals the banner with no version drift to prompt it', async () => {
+    // The Codex P1 on #977. After a deploy the first navigation already
+    // carries the new build's meta, so pwa_version_check.js sees no drift
+    // and never offers the banner. The failed install itself has to.
+    window.pwaVersionInfo = {
+      verified: () => Promise.resolve({ current: 'new', shell: 'shell-new' }),
+    };
+    registration.waiting = null;
+    const worker = installingWorker();
+    registration.installing = worker;
+    registrationListeners.updatefound.forEach((fn) => fn());
+
+    vi.useFakeTimers();
+    try {
+      worker.moveTo('redundant');
+      // The controller never answers shell-identity: stale after 2s. The
+      // retry update() installs nothing: stuck.
+      await vi.advanceTimersByTimeAsync(2100);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await vi.waitFor(() =>
+      expect(document.getElementById('sw-update-banner').classList.contains('hidden')).toBe(
+        false,
+      ),
+    );
+  });
+
+  it('does not treat a superseded worker as a failed install', async () => {
+    // A worker that installed and was then replaced by a newer one also
+    // ends redundant. That is not a failure.
+    window.pwaVersionInfo = {
+      verified: () => Promise.resolve({ current: 'new', shell: 'shell-superseded' }),
+    };
+    // Same registration state as the failure case above, so only the
+    // guard can keep the banner down.
+    registration.waiting = null;
+    const worker = installingWorker();
+    registration.installing = worker;
+    registrationListeners.updatefound.forEach((fn) => fn());
+
+    vi.useFakeTimers();
+    try {
+      worker.moveTo('installed');
+      worker.moveTo('redundant');
+      await vi.advanceTimersByTimeAsync(2100);
+    } finally {
+      vi.useRealTimers();
+    }
+    await settle();
+
+    expect(document.getElementById('sw-update-banner').classList.contains('hidden')).toBe(
+      true,
+    );
   });
 });

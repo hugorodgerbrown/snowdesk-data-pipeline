@@ -57,9 +57,13 @@ bypass".)
 
 The fixed bottom banner (`#sw-update-banner`, rendered by
 `templates/includes/_sw_update_banner.html` and included from `base.html`)
-is reserved for a worker that is **stuck**. `pwa_version_check.js`
-(SNOW-374) offers it on a confirmed `X-App-Version` drift, and
-`window.pwaUpdateBanner.reveal()` shows it only when two gates agree:
+is reserved for a worker that is **stuck**. Two things offer it: an
+installing worker that goes `redundant` without reaching `installed`
+(`watchForInstall`), and `pwa_version_check.js` (SNOW-374) on a confirmed
+`X-App-Version` drift. The first covers the common case: after a deploy,
+the first navigation already carries the new build's meta, so a failed
+install raises no drift. `window.pwaUpdateBanner.reveal()` shows it only
+when two gates agree:
 
 1. `shellIsStale` (SNOW-952): the shell cache name the controlling worker
    reports (its `shell-identity` reply) differs from the one the server
