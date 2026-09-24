@@ -168,6 +168,12 @@ class TestRailTwoShipsInsideRailOne:
         # Real pixels: a stretched lane would misdraw the bank ribbon's lean.
         assert "preserveAspectRatio" not in lane.group(0)
 
+    def test_its_eyebrow_names_the_terrain(self, client: Client) -> None:
+        """Rail two is headed "Terrain"; the leg's own name is its title."""
+        rail = _rail(_home(client))
+
+        assert re.search(r'id="route-rail-two-eyebrow"\s*>\s*Terrain\s*<', rail)
+
     def test_it_has_its_own_close_and_zoom_controls(self, client: Client) -> None:
         """×, − and + — each a bare icon button with a translated name."""
         rail = _rail(_home(client))
