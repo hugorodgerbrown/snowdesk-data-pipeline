@@ -2842,14 +2842,20 @@
         'line-join': 'round',
       },
       paint: {
-        // `match` rather than `case`, because a passage on a route drawn
-        // flat carries no `climbing` at all and must take the flat line's
-        // colour — reading a missing flag as a descent would paint it
-        // slate on a fuchsia line.
+        // Two explicit tests with a fallback, because a passage on a route
+        // drawn flat carries no `climbing` at all and must take the flat
+        // line's colour — reading a missing flag as a descent would paint
+        // it slate on a fuchsia line.
+        //
+        // NOT `match`: MapLibre's validator rejects a boolean branch label
+        // ("Branch labels must be numbers or strings"), and a rejected layer
+        // raises a map error during the style load, which the fallback
+        // handler above answers by swapping the whole basemap out for the
+        // offline style (SNOW-1019 found it).
         'line-color': [
-          'match', ['get', 'climbing'],
-          true, colours.climb,
-          false, colours.descent,
+          'case',
+          ['==', ['get', 'climbing'], true], colours.climb,
+          ['==', ['get', 'climbing'], false], colours.descent,
           ROUTE_LINE_COLOUR,
         ],
         'line-opacity': passageOpacity(legsCore),

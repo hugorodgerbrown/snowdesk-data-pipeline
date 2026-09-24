@@ -536,10 +536,13 @@ describe('the no-fall passage layers (SNOW-964)', () => {
   });
 
   it('paint the edge in its leg\'s colour', () => {
+    // `case` on explicit equality, never `match` on a boolean: MapLibre's
+    // validator rejects a boolean branch label, and the rejection swapped
+    // the whole basemap for the offline fallback style (SNOW-1019).
     expect(layers.get('routes-passage-edge').paint['line-color']).toEqual([
-      'match', ['get', 'climbing'],
-      true, legsCore.LEG_CLIMB_COLOUR,
-      false, legsCore.LEG_DESCENT_COLOUR,
+      'case',
+      ['==', ['get', 'climbing'], true], legsCore.LEG_CLIMB_COLOUR,
+      ['==', ['get', 'climbing'], false], legsCore.LEG_DESCENT_COLOUR,
       '#c026d3',
     ]);
     // The steep segment lies in leg 2, the descent.
