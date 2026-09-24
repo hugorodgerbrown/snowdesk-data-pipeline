@@ -2563,8 +2563,15 @@
         midpoints: core ? core.segmentMidpoints(slope) : [],
       };
       lastRouteCursorIndex = cursor.state().index;
+      let lastOpenLeg = cursor.state().openLeg;
       const follow = (state) => {
         const leg = state && state.openLeg;
+        // A leg opening brings rail two up over the map's foot, which can
+        // cover a dot that was in view a moment ago — including one the
+        // map itself wrote with a tap. A layout change is not a hover, so
+        // this check runs whoever wrote the index.
+        const legOpened = !!leg && leg !== lastOpenLeg;
+        lastOpenLeg = leg || null;
         openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
         applyLegDimming();
         paintRouteCursor(state);
@@ -2574,6 +2581,16 @@
           // An index a RAIL wrote may sit behind the rails; one the map
           // wrote is under the reader's own pointer already.
           if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
+        }
+        // Checked after the write in progress: a tap on the line opens the
+        // leg and THEN sets the index, and the check is for where the
+        // index ends up, against the rail rail two has just grown.
+        if (legOpened) {
+          Promise.resolve().then(() => {
+            if (routeCursorTarget && routeCursorTarget.cursor.state().index !== null) {
+              keepRouteCursorInView();
+            }
+          });
         }
       };
       unsubscribeRouteCursor = cursor.subscribe(follow);
@@ -2693,6 +2710,16 @@
     setTimeout(land, ROUTE_CURSOR_PAN_MS + 200);
     map.panBy([offset.x, offset.y], { duration: ROUTE_CURSOR_PAN_MS });
   };
+
+  // SNOW-1019: the rail changed height (rail two opening, its readout
+  // growing a line). The dot may now sit under it, whoever wrote the
+  // index — so the check runs regardless of the source, keeping only the
+  // one-pan-in-flight and no-pan-while-dragging guards.
+  document.addEventListener('snowdesk:route-rail-resized', () => {
+    if (!routeCursorTarget || routeCursorTarget.cursor.state().index === null) return;
+    if (!window.pwaRouteRail?.isOpen?.()) return;
+    keepRouteCursorInView();
+  });
 
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
   // screen point, and a way to hear the camera move it.

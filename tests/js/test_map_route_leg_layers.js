@@ -976,6 +976,47 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     tearDown();
   });
 
+  it('pans for a map-written index once the rail grows over it', () => {
+    // A tap or hover on the line wrote the index where the reader could
+    // see it; then rail two opened and the rail grew over that place. A
+    // layout change is not a hover, so this one pans.
+    setUp();
+    projectLngLat = ([lng, lat]) => ({
+      x: 200 + (lng - 7.0) * 10000,
+      y: 100 + (46.015 - lat) * 10000,
+    });
+    // Segment 1's middle projects to y = 175, inside 60–300.
+    for (const handler of mapStub.handlers.mousemove || []) {
+      handler({ point: { x: 200, y: 175 } });
+    }
+    expect(cursor.state().index).toBe(1);
+    expect(panCalls).toEqual([]);
+
+    railSpy.mockReturnValue({ ...RAIL, top: 120 });
+    document.dispatchEvent(new CustomEvent('snowdesk:route-rail-resized'));
+
+    expect(panCalls).toHaveLength(1);
+    // 175 → 120 − 24.
+    expect(panCalls[0][0][1]).toBeCloseTo(79);
+    tearDown();
+  });
+
+  it('pans after a tap on the line opens a leg over the tapped place', async () => {
+    // The tap wrote the index (no pan for that alone), but it also opened a
+    // leg, and rail two now covers the place: checked once the index lands.
+    setUp();
+
+    tapLayer('routes-leg-climb', { uuid: 'sampled-route', i: 1, climbing: true }, { x: 200, y: 425 });
+    expect(cursor.state().openLeg).toMatchObject({ i: 1 });
+    expect(cursor.state().index).toBe(0);
+    expect(panCalls).toEqual([]);
+
+    await Promise.resolve();
+
+    expect(panCalls).toHaveLength(1);
+    tearDown();
+  });
+
   it('gives the leader no map stop while the dot is behind the rail', () => {
     setUp();
     for (const handler of mapStub.handlers.dragstart || []) handler();
