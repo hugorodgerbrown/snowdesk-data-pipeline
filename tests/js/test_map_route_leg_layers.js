@@ -780,6 +780,32 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-climb')).toBe(1);
   });
 
+  it('installs the leg layers dimmed when a basemap swap rebuilds them', async () => {
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    tapLeg();
+    cursor.openLeg(LEGS[1]);
+
+    // What setStyle leaves behind: none of our layers or sources, which
+    // forces the styledata handler past its guard and through the
+    // re-install. The rail and its open leg survive the swap.
+    for (const id of [...layers.keys()]) layers.delete(id);
+    for (const id of [...sources.keys()]) sources.delete(id);
+    paintCalls.length = 0;
+    for (const handler of mapStub.handlers.styledata || []) await handler();
+
+    expect(layers.has('routes-leg-climb')).toBe(true);
+    const open = { uuid: 'sampled-route', i: 2 };
+    expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
+    expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
+    expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
+    // Painted at install, not patched afterwards.
+    expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
+
+    cursor.closeLeg();
+    rail.state.cursor = null;
+  });
+
   it('never dims for a pending share', () => {
     rail.state.cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
     tapLayer('routes-line-pending', {

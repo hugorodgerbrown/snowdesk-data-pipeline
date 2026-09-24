@@ -2537,6 +2537,11 @@
    * (route_rail.js), so a close from the rail's own ×, Escape or backdrop
    * reaches here as `openLeg: null` and restores the lines.
    *
+   * The subscription itself is dropped LAZILY, on the next open, not on
+   * the close. That costs nothing: the rail drops a closed cursor and
+   * never touches it again, so it emits nothing more, and the listener
+   * left on it is inert until this function replaces it.
+   *
    * @param {?string} uuid The opened route's uuid.
    * @returns {void}
    */
