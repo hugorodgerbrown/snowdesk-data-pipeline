@@ -1666,29 +1666,40 @@
 .map-legend-swatch--slope-45 { background: var(--color-slope-45); }
 .map-legend-swatch--slope-50 { background: var(--color-slope-50); }
 
-/* SNOW-910: the two the route LINE adds to the five above. The raster has
-   no counterpart for either — it paints nothing under 30°, and it has no
-   way at all to say "sampled, no answer". See their tokens in
-   src/css/main.css for why a line needs both. */
-.map-legend-swatch--slope-gentle { background: var(--color-slope-gentle); }
+/* SNOW-1017: the route's two kinds of leg, drawn as the lines they are —
+   a climb dashed, a descent solid, in the rail's two colours. A gradient
+   rather than a border-style, so each keeps the square footprint every
+   other swatch in this key has.
+   The dash is half the signal: a reader who cannot separate the two
+   colours still reads a broken line as a climb. */
+.map-legend-swatch--leg-climb {
+    background: repeating-linear-gradient(
+        90deg,
+        var(--color-route-rail-climb) 0,
+        var(--color-route-rail-climb) 3px,
+        transparent 3px,
+        transparent 5px
+    );
+}
+.map-legend-swatch--leg-descent { background: var(--color-route-rail-descent); }
 
 /* SNOW-964: the no-fall passage, drawn as the SPLIT it is — two rails of
-   band colour with the light core between them. A gradient sandwich rather
-   than a border, following --slope-unknown's precedent below of depicting a
-   line TREATMENT in a 10px square while keeping every swatch the same
+   leg colour with the light core between them. A gradient sandwich rather
+   than a border, the leg-climb swatch's way above of depicting a line
+   TREATMENT in a 10px square while keeping every swatch the same
    footprint.
 
-   The rails take --color-slope-50 because the gate is that band, even
-   though a grown-in segment can be in the one below: the key has to name
-   one colour, and the ground that earns the mark is the over-50 ground. */
+   On the map the rails take the colour of the leg the passage lies in
+   (SNOW-1017). The key has to name one colour, and takes the descent's:
+   a split in the climb's fuchsia would read as a third kind of leg. */
 .map-legend-swatch--passage {
     background: linear-gradient(
         180deg,
-        var(--color-slope-50) 0,
-        var(--color-slope-50) 3.5px,
+        var(--color-route-rail-descent) 0,
+        var(--color-route-rail-descent) 3.5px,
         var(--color-passage-core) 3.5px,
         var(--color-passage-core) 6.5px,
-        var(--color-slope-50) 6.5px
+        var(--color-route-rail-descent) 6.5px
     );
 }
 
@@ -1722,21 +1733,6 @@
     background: transparent;
     border: 2px solid var(--color-crux-ring);
     border-radius: 9999px;
-}
-
-/* Drawn as a dash rather than a solid block, because on the map the dash
-   is half the signal: a reader who cannot separate this grey from the
-   over-50° one still reads the broken line as "not surveyed". A gradient
-   rather than a border-style, so the swatch keeps the square footprint
-   every other one in this key has. */
-.map-legend-swatch--slope-unknown {
-    background: repeating-linear-gradient(
-        90deg,
-        var(--color-slope-unknown) 0,
-        var(--color-slope-unknown) 3px,
-        transparent 3px,
-        transparent 5px
-    );
 }
 
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral

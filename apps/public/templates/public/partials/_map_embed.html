@@ -1264,94 +1264,58 @@ Optional context:
                 </section>
             {% endif %}
             {% comment %}
-                SNOW-910: what a saved route's own colours mean. Hidden
-                until BOTH the routes overlay is drawn and at least one
-                route on it has been sampled — map.js syncs it off the
-                same `snowdesk:overlay-visibility-changed` announcement the
+                SNOW-1017: what a saved route's line means. Hidden until
+                BOTH the routes overlay is drawn and at least one route on
+                it has legs — map.js syncs it off the same
+                `snowdesk:overlay-visibility-changed` announcement the
                 switches raise. Most readers have no routes at all, and a
-                six-swatch key explaining a line they have never uploaded
-                is clutter on every visit.
+                key explaining a line they have never uploaded is clutter
+                on every visit.
+
+                SNOW-910 put a six-swatch steepness key here, when the line
+                was painted in 25 m slope classes. SNOW-1017 redrew it as
+                legs — dashed where it climbs, solid where it descends, in
+                the rail's two colours — so the key is two rows, and the
+                dash is named because it carries the direction for a reader
+                who cannot tell the colours apart. The slope classes come
+                back on the leg rail (SNOW-1019); the three marks below
+                them stay on the map and stay in this key.
 
                 NOT gated on `slope_layer_eligible` beside the raster key
-                above: these colours come from our own terrain sampling,
-                not from the swisstopo raster, and a route is coloured
-                whether or not that layer is configured. The five steep
-                bands ARE that raster's palette, deliberately, so a route
-                crossing shaded ground is the colour of the shading.
-
-                The two the raster has no counterpart for are the two
-                worth reading carefully, which is why they are last and
-                spelled out rather than left to the scale:
-
-                  Under 30° — the raster paints nothing there. A line that
-                    painted nothing would read as a break in the track.
-
-                  Not surveyed — sampled, no answer. Dashed AND off the
-                    scale entirely, because "we do not know" must never be
-                    readable as "not steep". This is the same coverage the
-                    slope-angle raster has (Switzerland and its immediate
-                    surrounds), so a route in the Dolomites is dashed for
-                    its whole length.
+                above: the legs come from the track's own geometry, and the
+                marks from our own terrain sampling, not from the
+                swisstopo raster.
             {% endcomment %}
             <section
-                id="map-route-slope-section"
+                id="map-route-legs-section"
                 class="map-legend-section"
-                data-testid="map-legend-route-slope"
+                data-testid="map-legend-route-legs"
                 hidden
             >
-                {# The heading is the way to the caveats, as the raster    #}
-                {# key's is: the 10 m grid, where the coverage stops, and  #}
-                {# that none of it is a verdict run to several paragraphs. #}
+                {# The heading is the way to the caveats: what the marks    #}
+                {# below cannot tell you runs to several paragraphs.        #}
                 <div class="map-legend-title">
                     <a
                         class="map-legend-attribution-link"
                         href="{% url 'public:help' %}#help-topic-slope"
-                    >{% trans "Route steepness" %}</a>
+                    >{% trans "Route legs" %}</a>
                 </div>
                 <div class="map-legend-row">
                     <span
-                        class="map-legend-swatch map-legend-swatch--slope-30"
+                        class="map-legend-swatch map-legend-swatch--leg-climb"
                         aria-hidden="true"
-                    ></span>{% trans "30–35°" %}
+                    ></span>{% trans "Climbing" %}
                 </div>
                 <div class="map-legend-row">
                     <span
-                        class="map-legend-swatch map-legend-swatch--slope-35"
+                        class="map-legend-swatch map-legend-swatch--leg-descent"
                         aria-hidden="true"
-                    ></span>{% trans "35–40°" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--slope-40"
-                        aria-hidden="true"
-                    ></span>{% trans "40–45°" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--slope-45"
-                        aria-hidden="true"
-                    ></span>{% trans "45–50°" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--slope-50"
-                        aria-hidden="true"
-                    ></span>{% trans "Over 50°" %}
-                </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--slope-gentle"
-                        aria-hidden="true"
-                    ></span>{% trans "Under 30°" %}
+                    ></span>{% trans "Descending" %}
                 </div>
                 {# SNOW-964: the no-fall passage. Inside this key and after  #}
-                {# the six bands, because it is not a seventh one — the mark  #}
-                {# keeps the colour of the ground under it and says something #}
+                {# the two legs, because it is not a third kind of leg — the  #}
+                {# mark keeps its leg's colour (SNOW-1017) and says something #}
                 {# about the TRACK: that it is on ground over 50°.            #}
-                {#                                                            #}
-                {# Distinct from the dashed row below, and the two are        #}
-                {# orthogonal: the dash interrupts the line ALONG its length, #}
-                {# the split divides it ACROSS its width.                     #}
                 {#                                                            #}
                 {# "not a full list" for the crux row's reason, and a sharper #}
                 {# one — a narrow steep passage between two gentler samples   #}
@@ -1364,9 +1328,9 @@ Optional context:
                     ></span>{% trans "No-fall passage — not a full list" %}
                 </div>
                 {# The fall-line arrow. Inside this key and after the split, #}
-                {# because it is the third mark on the same line and not a    #}
-                {# further band: it says which way the ground falls, and the  #}
-                {# colour under it still says how steep that ground is.       #}
+                {# because it is another mark on the same line and not a      #}
+                {# kind of leg: it says which way the ground falls, on ground #}
+                {# steep enough to be worth saying it.                        #}
                 {#                                                            #}
                 {# The wording has to carry what the mark cannot. "Steep      #}
                 {# ground only" is the whole caveat in three words — an arrow #}
@@ -1378,10 +1342,9 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Fall line — steep ground only" %}
                 </div>
-                {# SNOW-911: the crux ring. Inside the route-steepness key   #}
-                {# rather than a section of its own — it is the same         #}
-                {# reading of the same terrain, marked rather than shaded,   #}
-                {# and a second heading would suggest a second source.       #}
+                {# SNOW-911: the crux ring. Inside the route key rather than #}
+                {# a section of its own — it is a mark on the same line, and #}
+                {# a second heading would suggest a second source.           #}
                 {#                                                           #}
                 {# The wording carries the caveat the marker cannot: NOT     #}
                 {# EXHAUSTIVE. A reader who takes an unmarked route for a    #}
@@ -1393,19 +1356,12 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Key passage — not a full list" %}
                 </div>
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--slope-unknown"
-                        aria-hidden="true"
-                    ></span>{% trans "Not surveyed" %}
-                </div>
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
-                        The colour is the steepness of the ground the track crosses, not of the track itself. The arrows
-                        point the way that ground falls, so you can see whether the track cuts across a face or runs
-                        down it. Dashed means the terrain data does not cover that stretch — never that it is gentle.
-                        A narrow steep passage often reads gentler than it is, because each colour is an average over
-                        the ground around it: an unmarked route is not a route without no-fall ground.
+                        Each leg runs between two transitions, numbered along the track. The arrows point the way the
+                        ground falls, so you can see whether the track cuts across a face or runs down it. A narrow
+                        steep passage often reads gentler than it is, because the terrain is averaged over the ground
+                        around it: an unmarked route is not a route without no-fall ground.
                     {% endblocktrans %}
                 </p>
             </section>
