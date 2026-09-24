@@ -238,7 +238,20 @@ Context:
         <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
         <span data-string="share-copied">{% trans "Link copied." %}</span>
         <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-        {# Rail two's copy (static/js/route_rail_two.js).                    #}
+    </template>
+    {# Rail two's copy, for static/js/route_rail_two.js. Its own template #}
+    {# because each strings template has one reader                      #}
+    {# (tests/test_js_strings_are_translatable.py); the units, figures    #}
+    {# and leg names repeat rail one's msgids, so they translate once.    #}
+    <template id="route-rail-two-strings-template">
+        <span data-string="unit-m">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
+        <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
+        <span data-string="figure-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
+        <span data-string="figure-ascent">{% blocktrans %}▲%(m)s m{% endblocktrans %}</span>
+        <span data-string="figure-descent">{% blocktrans %}▼%(m)s m{% endblocktrans %}</span>
+        <span data-string="figure-range">{% blocktrans %}%(start)s→%(end)s m{% endblocktrans %}</span>
+        <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
+        <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
         <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
         <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
         <span data-string="two-hint">{% trans "Press a band or a passage to select it." %}</span>

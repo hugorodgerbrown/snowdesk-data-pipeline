@@ -73,7 +73,7 @@
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
-  var STRINGS = self.pwaStrings.read('route-rail-strings-template', {
+  var STRINGS = self.pwaStrings.read('route-rail-two-strings-template', {
     'unit-m': '%(value)s m',
     'unit-km': '%(value)s km',
     'figure-distance': '%(km)s km',

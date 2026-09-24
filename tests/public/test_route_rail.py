@@ -179,10 +179,16 @@ class TestRailTwoShipsInsideRailOne:
             assert button is not None
             assert f'aria-label="{label}"' in button.group(0)
 
-    def test_its_strings_ride_in_the_rails_template(self, client: Client) -> None:
+    def test_it_carries_its_own_strings_template(self, client: Client) -> None:
         """Every string route_rail_two.js writes, one per slope class."""
         rail = _rail(_home(client))
-        keys = set(re.findall(r'data-string="([^"]+)"', rail))
+        block = re.search(
+            r'<template id="route-rail-two-strings-template">(.*?)</template>',
+            rail,
+            re.S,
+        )
+        assert block is not None
+        keys = set(re.findall(r'data-string="([^"]+)"', block.group(1)))
 
         assert {
             "two-lane-label",
