@@ -13,6 +13,7 @@ do once open is tests/js/test_route_rail.js's and test_route_rail_two.js's.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from django.template.loader import render_to_string
@@ -306,6 +307,68 @@ class TestTheActionsAreAMenu:
     def test_no_htmx_attribute_ships_in_the_rail(self, client: Client) -> None:
         """Delete is a fetch, so the page's htmx pairing is unchanged."""
         assert " hx-" not in _rail(_home(client))
+
+
+# SNOW-1019: the floating map controls withdrawn while a route is open.
+_MAP_CSS = Path(__file__).resolve().parents[2] / "static" / "css" / "map.css"
+_WITHDRAWN = (
+    "season-ribbon",
+    "map-utility-cluster",
+    "map-legend",
+    "map-controls-br",
+    "home-intro",
+)
+
+
+def _withdrawn_selectors() -> set[str]:
+    """The ids the rail-open rule hides, read off the stylesheet.
+
+    Returns:
+        Every ``#id`` in a ``#map[data-route-rail-open] #id`` selector of a
+        rule that sets ``visibility: hidden``.
+
+    """
+    css = _MAP_CSS.read_text(encoding="utf-8")
+    ids: set[str] = set()
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if "visibility: hidden" not in body:
+            continue
+        ids.update(re.findall(r"#map\[data-route-rail-open\]\s+#([\w-]+)", selectors))
+    return ids
+
+
+class TestTheMapControlsWithdrawWhileARouteIsOpen:
+    """Following a route is the one thing the reader is doing."""
+
+    def test_every_floating_container_is_withdrawn(self) -> None:
+        """The stylesheet hides all five while the rail is open."""
+        assert set(_WITHDRAWN) <= _withdrawn_selectors()
+
+    def test_the_containers_exist_in_the_map_partials(self) -> None:
+        """A renamed container would leave its controls over the rail.
+
+        Read from the templates rather than a rendered page: the season
+        ribbon and the intro card are conditional, and the test database
+        has no season for the ribbon to render.
+        """
+        partials = Path(__file__).resolve().parents[2] / "apps" / "public" / "templates"
+        source = "".join(
+            (partials / "public" / "partials" / name).read_text(encoding="utf-8")
+            for name in ("_map_embed.html", "_season_ribbon.html")
+        )
+
+        for container in _WITHDRAWN:
+            assert re.search(rf'id="{container}"', source), container
+
+    def test_the_rail_its_leader_and_the_route_sheet_stay(self) -> None:
+        """What the reader is using now is never among the hidden."""
+        hidden = _withdrawn_selectors()
+
+        for kept in ("route-rail", "route-detail-sheet", "map"):
+            assert kept not in hidden, kept
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        assert "[data-route-rail-open] .route-leader" not in css
+        assert "[data-route-rail-open] .route-rail" not in css
 
 
 class TestTheComponentLibraryVariant:

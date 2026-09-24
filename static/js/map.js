@@ -2631,8 +2631,9 @@
    * (SNOW-1019).
    *
    * The canvas above the rail's measured top edge — `paddingClearingRail`'s
-   * measurement — and below the fit padding's top, where the search pill
-   * sits.
+   * measurement — and below the top inset: the map's edge inset while the
+   * rail is open (the controls are withdrawn), the fit padding's top,
+   * where the search pill sits, otherwise.
    *
    * @returns {?{left: number, top: number, right: number, bottom: number}}
    *   Null before the canvas is laid out.
@@ -2645,7 +2646,11 @@
     const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
       ? rail.element.getBoundingClientRect().top
       : null;
-    return core.visibleRect(container.getBoundingClientRect(), railTop, FIT_PADDING.top);
+    // While the rail is open the top chrome is withdrawn (static/css/
+    // map.css), so the visible map starts at the edge inset rather than
+    // under the search pill.
+    const topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
+    return core.visibleRect(container.getBoundingClientRect(), railTop, topInset);
   };
 
   /**
@@ -2670,6 +2675,9 @@
   // pan takes. Short, and the zoom is kept: the reader is scrubbing a
   // rail, and the map only needs to keep the place in view.
   const ROUTE_CURSOR_PAN_MARGIN_PX = 24;
+  // The visible map's top edge while the rail is open, px: the map's own
+  // edge inset, since the controls above it are withdrawn then.
+  const ROUTE_CURSOR_TOP_INSET_PX = 12;
   const ROUTE_CURSOR_PAN_MS = 250;
 
   /**

@@ -308,6 +308,16 @@ return on the leg rail (SNOW-1019). A route with no elevation has no legs
 and keeps the flat line
 ([why](decisions/legs-not-slope-classes-on-the-map.md)).
 
+**The map's controls withdraw while a route is open (SNOW-1019).**
+While a route's rails are open, following that route is the one thing
+the reader is doing, so every control floating over the map fades out
+and cannot be reached: the region readout with its star and download at
+the top left, search at the top right, the legend, help, date and
+scrubber stack at the bottom left, the control column at the bottom
+right, and the intro card. They come back when the rail closes. The map
+itself still pans and zooms by gesture, and the rails, the leader line
+and the route detail sheet stay.
+
 **The route cursor on the map (SNOW-1019).** While a route's rail is
 open, the map and both rails share one cursor. A band or passage
 selected on rail two is drawn on the map as a highlighted stretch of the

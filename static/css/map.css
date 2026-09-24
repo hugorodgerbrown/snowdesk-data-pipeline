@@ -169,6 +169,53 @@
     );
 }
 
+/* SNOW-1019: while a route's rails are open, following that route is the
+   one thing the reader is doing, so every control floating over the map
+   is WITHDRAWN until the rail closes — at every width. On a phone the
+   bottom-right column's chevron sat over rail one's ×; withdrawing all of
+   it, rather than moving each control clear, is the decision.
+
+   The five containers are the whole floating chrome of
+   public/partials/_map_embed.html:
+     #season-ribbon       — the top-left region readout, star and download;
+     #map-utility-cluster — the top-right search;
+     #map-legend          — the bottom-left stack: legend, help, zoom
+                            readout, date control and season scrubber;
+     #map-controls-br     — the bottom-right column: locate, basemap,
+                            layers, favourite, report, routes, the collapse
+                            chevron, and the menus they open;
+     #home-intro          — the intro card, if it is showing.
+   Kept: the canvas (gestures still pan and zoom), the rails, the leader
+   line, and the route detail sheet, which lives outside #map.
+
+   `visibility: hidden` also takes the controls out of the tab order and
+   the accessibility tree, which opacity alone would not. It changes after
+   the fade, so the fade is seen; the return is immediate. Nothing in
+   static/js sets these containers' visibility or opacity inline, so no
+   script can re-show one under this rule. The bottom-row offset above is
+   left as it was: harmless while the controls are withdrawn, and still
+   right the moment they return. */
+#map[data-route-rail-open] #season-ribbon,
+#map[data-route-rail-open] #map-utility-cluster,
+#map[data-route-rail-open] #map-legend,
+#map[data-route-rail-open] #map-controls-br,
+#map[data-route-rail-open] #home-intro {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 150ms ease-out, visibility 0s linear 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #map[data-route-rail-open] #season-ribbon,
+    #map[data-route-rail-open] #map-utility-cluster,
+    #map[data-route-rail-open] #map-legend,
+    #map[data-route-rail-open] #map-controls-br,
+    #map[data-route-rail-open] #home-intro {
+        transition: none;
+    }
+}
+
 .route-rail {
     position: absolute;
     left: var(--map-edge-inset-left);
