@@ -561,7 +561,7 @@ describe('createProfileSvg — the slope colouring', () => {
     // the dashed line is what says "we looked and could not tell", and a
     // grey ground would say it a second time about the whole chart.
     // In multiples of the stroke width, so it holds the proportions of
-    // routes-slope-unknown's own [2, 1.5] line-dasharray on the map.
+    // trip-route-slope-unknown's own [2, 1.5] line-dasharray on the map.
     expect(line.getAttribute('stroke-dasharray')).toBe('3.5 2.625');
   });
 
