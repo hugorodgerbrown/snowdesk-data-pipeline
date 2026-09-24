@@ -292,8 +292,9 @@ for something that is not a danger rating, and is distinct from the
 favourite pin and report flag colours.
 
 **What the line says (SNOW-1017).** An owned route is drawn as its
-legs: one line per stretch that climbs or descends, a climb dashed and a
-descent solid, in the two colours the rail below the map uses. From z11 a
+legs: one line per stretch that climbs or descends, a climb dashed in
+slate and a descent solid in fuchsia, the two colours the rail below the
+map uses. From z11 a
 numbered circle marks each transition, 1 to legs − 1 along the track, so
 a number on the map is the boundary between the same two legs on the
 rail. Opening a leg on the rail dims every other leg until it is closed.

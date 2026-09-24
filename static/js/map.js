@@ -2269,8 +2269,8 @@
   const legColours = () => {
     const core = self.pwaRouteLegsCore || {};
     return {
-      climb: core.LEG_CLIMB_COLOUR || '#c026d3',
-      descent: core.LEG_DESCENT_COLOUR || '#64748b',
+      climb: core.LEG_CLIMB_COLOUR || '#64748b',
+      descent: core.LEG_DESCENT_COLOUR || '#c026d3',
     };
   };
 
@@ -2831,7 +2831,7 @@
     // orients by.
     //
     // A PALE CASING UNDER A DARK CORE: the one pairing that reads over
-    // the climb's fuchsia, the descent's slate and every basemap.
+    // the climb's slate, the descent's fuchsia and every basemap.
     map.addSource('route-cursor-selection', {
       type: 'geojson',
       data: routeCursorSelectionData,

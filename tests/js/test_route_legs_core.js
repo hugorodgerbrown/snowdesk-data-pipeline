@@ -289,4 +289,11 @@ describe('the colours', () => {
     expect(css).toMatch(new RegExp(`--color-route-rail-climb:\\s*${core.LEG_CLIMB_COLOUR}`));
     expect(css).toMatch(new RegExp(`--color-route-rail-descent:\\s*${core.LEG_DESCENT_COLOUR}`));
   });
+
+  it('paint a climb slate and a descent in the route\'s fuchsia (SNOW-1019)', () => {
+    // Swapped to match the rail mockup. The climb stays dashed on the map,
+    // which is the cue for a reader who cannot tell the two apart.
+    expect(core.LEG_CLIMB_COLOUR).toBe('#64748b');
+    expect(core.LEG_DESCENT_COLOUR).toBe('#c026d3');
+  });
 });

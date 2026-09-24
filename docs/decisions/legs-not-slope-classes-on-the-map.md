@@ -11,7 +11,9 @@ last-reviewed: 2026-09-24
 
 SNOW-1017. On the home map an owned route is one line per leg
 (`detect_legs`): a climb dashed, a descent solid, in the rail's two
-colours (`--color-route-rail-climb`, `--color-route-rail-descent`). A
+colours (`--color-route-rail-climb`, `--color-route-rail-descent`) —
+since SNOW-1019 a slate climb and a fuchsia descent, swapped to match the
+rail mockup, with the dash still marking the climb. A
 numbered marker sits at each transition from z11, legs − 1 of them.
 Opening a leg on the rail dims every other leg on the map. The six
 slope-class colours SNOW-910 painted per 25 m segment left the map; the
