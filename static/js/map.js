@@ -2498,6 +2498,25 @@
   let unsubscribeLegDimming = null;
 
   /**
+   * The opacity a no-fall passage is painted with while a leg is open.
+   *
+   * The passage dims WITH the leg it lies in, by the leg's own `i`, so a
+   * dimmed leg carries no full-strength stretch across it. A passage on a
+   * route drawn flat carries no `i` (route_legs_core.js's
+   * passageCollection) and stays at full strength, as its flat line does:
+   * the flat line is never dimmed, and a mark on it should not be either.
+   *
+   * @param {?{dimOpacity: function(*, number, number): *}} core The legs
+   *   core, or null.
+   * @returns {number|Array<*>} A number or a `case` expression.
+   */
+  const passageOpacity = (core) => {
+    const dimmed = core ? core.dimOpacity(openLegOnMap, 1, 0.25) : 1;
+    if (typeof dimmed === 'number') return dimmed;
+    return ['case', ['has', 'i'], dimmed, 1];
+  };
+
+  /**
    * Paint the open leg at full strength and dim every other (SNOW-1017).
    *
    * DIMS THE OTHERS rather than darkening the chosen one: the chosen leg
@@ -2514,6 +2533,11 @@
     for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
       if (map.getLayer(id)) {
         map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
+      }
+    }
+    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', passageOpacity(core));
       }
     }
     if (map.getLayer('routes-leg-casing')) {
@@ -2691,7 +2715,17 @@
         'line-join': 'round',
       },
       paint: {
-        'line-color': ['case', ['get', 'climbing'], colours.climb, colours.descent],
+        // `match` rather than `case`, because a passage on a route drawn
+        // flat carries no `climbing` at all and must take the flat line's
+        // colour — reading a missing flag as a descent would paint it
+        // slate on a fuchsia line.
+        'line-color': [
+          'match', ['get', 'climbing'],
+          true, colours.climb,
+          false, colours.descent,
+          ROUTE_LINE_COLOUR,
+        ],
+        'line-opacity': passageOpacity(legsCore),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 5, 16, 8.5],
       },
     });
@@ -2751,6 +2785,7 @@
         // mirroring --color-passage-core, which a MapLibre paint
         // property cannot read for itself.
         'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
+        'line-opacity': passageOpacity(legsCore),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2, 16, 3.5],
       },
     });

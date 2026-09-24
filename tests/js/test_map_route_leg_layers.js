@@ -530,7 +530,10 @@ describe('the no-fall passage layers (SNOW-964)', () => {
 
   it('paint the edge in its leg\'s colour', () => {
     expect(layers.get('routes-passage-edge').paint['line-color']).toEqual([
-      'case', ['get', 'climbing'], legsCore.LEG_CLIMB_COLOUR, legsCore.LEG_DESCENT_COLOUR,
+      'match', ['get', 'climbing'],
+      true, legsCore.LEG_CLIMB_COLOUR,
+      false, legsCore.LEG_DESCENT_COLOUR,
+      '#c026d3',
     ]);
     // The steep segment lies in leg 2, the descent.
     expect(sources.get('route-passages').data.features[0].properties.climbing).toBe(false);
@@ -758,8 +761,14 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
+    // The passages dim with their leg; one on a flat route (no `i`) stays.
+    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
+      expect(opacityOf(id)).toEqual(['case', ['has', 'i'], dimmed, 1]);
+    }
 
     cursor.closeLeg();
+    expect(opacityOf('routes-passage-edge')).toBe(1);
+    expect(opacityOf('routes-passage-core')).toBe(1);
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
@@ -798,6 +807,8 @@ describe('opening a leg on the rail', () => {
     const open = { uuid: 'sampled-route', i: 2 };
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
+    expect(opacityOf('routes-passage-edge'))
+      .toEqual(['case', ['has', 'i'], legsCore.dimOpacity(open, 1, 0.25), 1]);
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
     expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);

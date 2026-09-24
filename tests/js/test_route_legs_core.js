@@ -169,7 +169,29 @@ describe('passageCollection', () => {
     expect(features).toHaveLength(2);
     expect(features.map((f) => f.properties.passage)).toEqual([true, true]);
     expect(features.map((f) => f.properties.climbing)).toEqual([true, false]);
+    expect(features.map((f) => f.properties.i)).toEqual([1, 2]);
     expect(features[1].geometry.coordinates).toEqual([[7.0, 46.005], [7.0, 46.006]]);
+  });
+
+  it('leaves a passage on a legless route untagged, not a descent', () => {
+    // A sampled route `detect_legs` found no leg in (missing elevations)
+    // is drawn flat, so its passages must not claim a leg's colour.
+    const features = core.passageCollection(routes({ slope: SLOPE, legs: undefined })).features;
+
+    expect(features).toHaveLength(2);
+    for (const feature of features) {
+      expect(feature.properties).not.toHaveProperty('climbing');
+      expect(feature.properties).not.toHaveProperty('i');
+    }
+  });
+
+  it('leaves a passage untagged when the legs cannot be sliced', () => {
+    // A pre-SNOW-1017 cached payload: legs without point indices, so the
+    // route is drawn flat and its passages go with it.
+    const stale = LEGS.map(({ point_from: _f, point_to: _t, ...rest }) => rest);
+    const features = core.passageCollection(routes({ slope: SLOPE, legs: stale })).features;
+
+    expect(features.every((f) => !('climbing' in f.properties))).toBe(true);
   });
 
   it('holds nothing for an unsampled route', () => {

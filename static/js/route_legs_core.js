@@ -273,7 +273,13 @@
 
   /**
    * The no-fall passage segments of every owned route, each tagged with
-   * the `climbing` flag of the leg it lies in.
+   * the number (`i`) and `climbing` flag of the leg it lies in.
+   *
+   * A route drawn FLAT — no legs, or legs `hasDrawableLegs` rejects —
+   * gets neither `climbing` nor `i` on its passages. Its line is the
+   * flat fuchsia one, so the edge must take that colour rather than
+   * guessing a leg, and it has no leg for a selection to dim it by. The
+   * paint expressions in `map.js` read the absent keys as exactly that.
    *
    * The segments are `route_slope_core.js`'s: `segmentFeatures` emits one
    * feature per entry of `slope.angles`, in order, so a segment's position
@@ -295,7 +301,9 @@
     for (let r = 0; r < features.length; r += 1) {
       const properties = (features[r] && features[r].properties) || {};
       /** @type {Array<WireLeg>} */
-      const legs = Array.isArray(properties.legs) ? properties.legs : [];
+      const legs = Array.isArray(properties.legs) && hasDrawableLegs(features[r])
+        ? properties.legs
+        : [];
       const segments = slopeCore.segmentFeatures(features[r]);
       for (let index = 0; index < segments.length; index += 1) {
         const segment = segments[index];
@@ -310,9 +318,11 @@
         out.features.push({
           type: 'Feature',
           geometry: segment.geometry,
-          properties: Object.assign({}, segment.properties, {
-            climbing: Boolean(leg && leg.climbing === true),
-          }),
+          properties: Object.assign(
+            {},
+            segment.properties,
+            leg ? { i: leg.i, climbing: leg.climbing === true } : {},
+          ),
         });
       }
     }
