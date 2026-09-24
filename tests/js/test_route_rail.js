@@ -76,6 +76,21 @@ document.body.innerHTML = `
   <div id="route-detail-sheet" data-overlay hidden></div>
 `;
 
+// jsdom has no ResizeObserver. A stub that records each observed element
+// and its callback, so a test can fire a size change by hand.
+const observed = [];
+window.ResizeObserver = class {
+  constructor(callback) {
+    this.callback = callback;
+  }
+
+  observe(target) {
+    observed.push({ target, callback: this.callback });
+  }
+
+  disconnect() {}
+};
+
 await import('../../static/js/route_rail_two.js');
 await import('../../static/js/route_rail.js');
 
@@ -521,6 +536,29 @@ describe('the cursor line (SNOW-1019)', () => {
     window.pwaRouteRail.close();
 
     expect(cursor.state()).toMatchObject({ index: null, selection: null, openLeg: null });
+  });
+});
+
+describe('the rail\'s measured height (SNOW-1019)', () => {
+  it('re-publishes the height when the rail\'s content resizes it, and announces it', () => {
+    window.pwaRouteRail.open(feature());
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:route-rail-resized', heard);
+    // Rail two's readout grew a line: the rail is taller than at open.
+    Object.defineProperty(rail, 'offsetHeight', { value: 411, configurable: true });
+
+    for (const { target, callback } of observed) {
+      if (target === rail) callback([]);
+    }
+
+    expect(mapEl.style.getPropertyValue('--route-rail-height')).toBe('411px');
+    expect(heard).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:route-rail-resized', heard);
+    delete rail.offsetHeight;
+  });
+
+  it('observes the rail itself', () => {
+    expect(observed.some(({ target }) => target === rail)).toBe(true);
   });
 });
 

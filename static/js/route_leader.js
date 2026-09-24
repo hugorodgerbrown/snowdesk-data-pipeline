@@ -30,7 +30,8 @@
  * WHEN IT REDRAWS. On a cursor change (its own subscription to the open
  * route's cursor), a camera move or map resize, a rail-two redraw (a pan
  * or a zoom moves rail two's cursor point without the cursor changing), a
- * window resize, and the rail opening or closing — at most once per
+ * window resize, a change in the rail's height, and the rail opening or
+ * closing — at most once per
  * animation frame. Every listener is bound once; a rail open only swaps
  * the cursor subscription.
  *
@@ -156,6 +157,7 @@
 
   document.addEventListener('snowdesk:route-rail-changed', follow);
   document.addEventListener('snowdesk:route-rail-two-drawn', schedule);
+  document.addEventListener('snowdesk:route-rail-resized', schedule);
   window.addEventListener('resize', schedule);
 
   window.pwaRouteLeader = Object.freeze({

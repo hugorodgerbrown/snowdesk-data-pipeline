@@ -71,7 +71,9 @@
  * (`[data-route-rail-claim]`), where the recipient lands.
  *
  * THE BOTTOM CHROME. While open, `#map` carries `data-route-rail-open` and
- * `--route-rail-height`, the rail's measured height; static/css/map.css
+ * `--route-rail-height`, the rail's measured height, re-measured by a
+ * ResizeObserver whenever the rail's content changes its height, which
+ * then announces `snowdesk:route-rail-resized` (SNOW-1019); static/css/map.css
  * raises `--map-bottom-row-offset` from the pair, which moves every
  * bottom-anchored control at once.
  *
@@ -810,7 +812,24 @@
     close();
   });
 
+  // The window resize is kept for a browser with no ResizeObserver; where
+  // there is one, the observer below sees that change too.
   window.addEventListener('resize', publishHeight);
+
+  // SNOW-1019: the rail's height changes with its CONTENT as well as with
+  // the window — rail two opening and closing, its readout growing from
+  // one line to two, the grid wrapping differently — and a stale
+  // --route-rail-height leaves the bottom-right controls over the rail's
+  // ×. So the rail is observed and the height published on every change.
+  // The change is also announced, for the leader line (which redraws) and
+  // map.js (which re-checks the cursor's dot is not now under the rail).
+  if (typeof window.ResizeObserver === 'function') {
+    new window.ResizeObserver(function () {
+      if (rail.hidden) return;
+      publishHeight();
+      document.dispatchEvent(new CustomEvent('snowdesk:route-rail-resized', { detail: null }));
+    }).observe(rail);
+  }
 
   window.pwaRouteRail = Object.freeze({
     open: open,
