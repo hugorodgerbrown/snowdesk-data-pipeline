@@ -1317,8 +1317,8 @@ Optional context:
                 {# mark keeps its leg's colour (SNOW-1017) and says something #}
                 {# about the TRACK: that it is on ground over 50°.            #}
                 {#                                                            #}
-                {# "not a full list" for the crux row's reason, and a sharper #}
-                {# one — a narrow steep passage between two gentler samples   #}
+                {# "not a full list" because a narrow steep passage between   #}
+                {# two gentler samples                                        #}
                 {# is averaged away before it is ever measured, so an         #}
                 {# unmarked route is not a route without no-fall ground.      #}
                 <div class="map-legend-row">
@@ -1327,41 +1327,14 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "No-fall passage — not a full list" %}
                 </div>
-                {# The fall-line arrow. Inside this key and after the split, #}
-                {# because it is another mark on the same line and not a      #}
-                {# kind of leg: it says which way the ground falls, on ground #}
-                {# steep enough to be worth saying it.                        #}
-                {#                                                            #}
-                {# The wording has to carry what the mark cannot. "Steep      #}
-                {# ground only" is the whole caveat in three words — an arrow #}
-                {# is absent on everything under 30°, and an absent arrow     #}
-                {# must not read as level ground.                             #}
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--fall-line"
-                        aria-hidden="true"
-                    ></span>{% trans "Fall line — steep ground only" %}
-                </div>
-                {# SNOW-911: the crux ring. Inside the route key rather than #}
-                {# a section of its own — it is a mark on the same line, and #}
-                {# a second heading would suggest a second source.           #}
-                {#                                                           #}
-                {# The wording carries the caveat the marker cannot: NOT     #}
-                {# EXHAUSTIVE. A reader who takes an unmarked route for a    #}
-                {# safe one has been misled by this key, which is why the    #}
-                {# heading above links to /help/#help-topic-slope.           #}
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--crux"
-                        aria-hidden="true"
-                    ></span>{% trans "Key passage — not a full list" %}
-                </div>
+                {# SNOW-1019 took the fall-line arrow and crux ring rows out #}
+                {# with the marks themselves: the bank ribbon on rail two    #}
+                {# replaced the arrows, and the crux is deferred.            #}
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
-                        Each leg runs between two transitions, numbered along the track. The arrows point the way the
-                        ground falls, so you can see whether the track cuts across a face or runs down it. A narrow
-                        steep passage often reads gentler than it is, because the terrain is averaged over the ground
-                        around it: an unmarked route is not a route without no-fall ground.
+                        Each leg runs between two transitions, numbered along the track. A narrow steep passage often
+                        reads gentler than it is, because the terrain is averaged over the ground around it: an unmarked
+                        route is not a route without no-fall ground.
                     {% endblocktrans %}
                 </p>
             </section>

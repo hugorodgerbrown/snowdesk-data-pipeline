@@ -1703,38 +1703,6 @@
     );
 }
 
-/* The fall-line arrow, drawn as the arrowhead it is — one triangle in the
-   10px square every other swatch in this key occupies, so the row reads as
-   a mark rather than as a colour.
-
-   A clip-path rather than the border trick a CSS triangle usually uses:
-   the border form cannot take a background, so it could not read the token
-   and would put the colour back in the stylesheet as a literal. The base
-   rule's hairline border and radius are cleared, because both describe a
-   square the shape no longer fills.
-
-   It points UP, which is the icon's own unrotated bearing (due north) and
-   not any particular slope. The row's words carry the meaning; a swatch
-   pointing south-east would invite the reader to look for that direction
-   on the map. */
-.map-legend-swatch--fall-line {
-    background: var(--color-fall-line-arrow);
-    border: 0;
-    border-radius: 0;
-    clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);
-}
-
-/* SNOW-911: the crux marker, drawn as the ring it is rather than as a
-   filled block. Hollow is the whole shape — on the map the middle is left
-   empty so the segment colour the reader is being sent to look at is not
-   hidden by the thing pointing at it, and a solid swatch here would
-   describe a different marker. */
-.map-legend-swatch--crux {
-    background: transparent;
-    border: 2px solid var(--color-crux-ring);
-    border-radius: 9999px;
-}
-
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral
  * dark fill with a thin white stroke so it reads against any basemap or
  * EAWS rating fill. Smaller than the rating swatches so the pin looks
