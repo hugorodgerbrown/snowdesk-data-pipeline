@@ -20,6 +20,10 @@
  *   - THE SELECTION. Opening a leg on the rail dims the others through the
  *     cursor; closing it has to restore them, or the map stays dimmed
  *     after the rail has gone.
+ *   - THE CURSOR (SNOW-1019). A selection and the cursor index are drawn
+ *     on the line from the same subscription, and a pointer on the open
+ *     route's line writes the index back — a tap there opening the leg it
+ *     lands in rather than re-running the first tap's framing.
  *
  * SNOW-972's FRAMING invariant lives here too, because the two facts it
  * relates — where the camera comes to rest on a route, and the minzoom of
@@ -198,6 +202,8 @@ const fitBoundsOptions = [];
 const paintCalls = [];
 /** What the next queryRenderedFeatures call should answer, by layer id. */
 let queryAnswer = () => [];
+/** How the stub projects a [lon, lat] to screen px; a test may replace it. */
+let projectLngLat = () => ({ x: 0, y: 0 });
 
 /**
  * MapLibre stub that records what installRoutesLayer builds.
@@ -269,7 +275,7 @@ function stubMapLibre() {
     getBounds: () => ({
       getWest: () => 5, getSouth: () => 45, getEast: () => 10, getNorth: () => 48,
     }),
-    project: () => ({ x: 0, y: 0 }),
+    project: (lngLat) => projectLngLat(lngLat),
     unproject: () => ({ lng: 7, lat: 46 }),
     queryRenderedFeatures: (point, options) => queryAnswer(options),
     resize: () => {},
@@ -370,6 +376,7 @@ beforeAll(async () => {
   await import('../../static/js/route_slope_core.js');
   await import('../../static/js/route_legs_core.js');
   await import('../../static/js/route_cursor_core.js');
+  await import('../../static/js/route_cursor_map_core.js');
   // SNOW-973: the sheet the tap opens, and the controller it attaches
   // through. Both before the bundle, as the page loads them.
   await import('../../static/js/map_sheet.js');
@@ -652,7 +659,7 @@ describe('the fall-line arrow layer', () => {
 });
 
 /** Fire the map-level click, with one layer answering the query. */
-function tapLayer(layerId, properties) {
+function tapLayer(layerId, properties, point = { x: 10, y: 10 }) {
   fitBoundsCalls.length = 0;
   queryAnswer = (options) => (
     (options.layers || []).includes(layerId)
@@ -660,7 +667,7 @@ function tapLayer(layerId, properties) {
       : []
   );
   for (const handler of mapStub.handlers.click || []) {
-    handler({ point: { x: 10, y: 10 }, lngLat: { lng: 7, lat: 46.01 } });
+    handler({ point, lngLat: { lng: 7, lat: 46.01 } });
   }
   queryAnswer = () => [];
 }
@@ -858,5 +865,122 @@ describe('a sampled route somebody shared', () => {
 describe('the legend key', () => {
   it('is revealed once a legged route is drawn', () => {
     expect(document.getElementById('map-route-legs-section').hidden).toBe(false);
+  });
+});
+
+describe('the route cursor on the map (SNOW-1019)', () => {
+  /**
+   * Project the sampled route onto a vertical screen line: x = 0, and y
+   * falling 10 px per 0.001° north, so the three segment middles
+   * (46.0025, 46.0075, 46.0125) sit at y = 125, 75 and 25.
+   */
+  const alongTheRoute = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
+
+  /** Open the sampled route on the rail with a fresh cursor. */
+  const openSampledRoute = () => {
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    tapLeg();
+    return cursor;
+  };
+
+  /** Hover the mouse over a screen point. */
+  const hover = (point) => {
+    for (const handler of mapStub.handlers.mousemove || []) handler({ point });
+  };
+
+  it('draws its layers over the lines, reached by the routes switch', () => {
+    const ids = [...layers.keys()];
+    const routeLayers = window.snowdeskMapState.overlayLayers.routes;
+
+    for (const id of [
+      'routes-cursor-selection-casing', 'routes-cursor-selection', 'routes-cursor-point',
+    ]) {
+      expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-line-pending'));
+      expect(routeLayers).toContain(id);
+      expect(layers.get(id).layout.visibility).toBe('visible');
+    }
+    expect(layers.get('routes-cursor-point').type).toBe('circle');
+  });
+
+  it('draws a selection as its stretch of line, and clears it', () => {
+    const cursor = openSampledRoute();
+
+    cursor.select({ kind: 'band', from: 1, to: 2 });
+    expect(sources.get('route-cursor-selection').data.features[0].geometry.coordinates)
+      .toEqual([[7.0, 46.005], [7.0, 46.01], [7.0, 46.015]]);
+
+    cursor.clearSelection();
+    expect(sources.get('route-cursor-selection').data.features).toEqual([]);
+    rail.state.cursor = null;
+  });
+
+  it('draws the cursor index as a dot on its segment, and hides it on null', () => {
+    const cursor = openSampledRoute();
+
+    cursor.setIndex(1);
+    const [dot] = sources.get('route-cursor-point').data.features;
+    expect(dot.geometry.coordinates[1]).toBeCloseTo(46.0075);
+
+    cursor.setIndex(null);
+    expect(sources.get('route-cursor-point').data.features).toEqual([]);
+    rail.state.cursor = null;
+  });
+
+  it('opens the leg under a tap on the open route and moves the cursor there', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    const opened = rail.state.calls.length;
+
+    // y = 70 is nearest the second segment's middle, in leg 2.
+    tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 2, y: 70 });
+
+    expect(cursor.state().openLeg).toMatchObject({ i: 2, from: 1, to: 2 });
+    expect(cursor.state().index).toBe(1);
+    // Not a second first tap: no re-framing, and the rail is not reopened.
+    expect(fitBoundsCalls).toEqual([]);
+    expect(rail.state.calls).toHaveLength(opened);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('moves the cursor on a mouse hover near the line, and not away from it', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+
+    hover({ x: 5, y: 120 });
+    expect(cursor.state().index).toBe(0);
+
+    hover({ x: 80, y: 25 });
+    expect(cursor.state().index).toBe(0);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('repaints the selection and dot when a basemap swap rebuilds the layers', async () => {
+    const cursor = openSampledRoute();
+    cursor.select({ kind: 'passage', from: 1, to: 1 });
+    cursor.setIndex(1);
+
+    for (const id of [...layers.keys()]) layers.delete(id);
+    for (const id of [...sources.keys()]) sources.delete(id);
+    for (const handler of mapStub.handlers.styledata || []) await handler();
+
+    expect(sources.get('route-cursor-selection').data.features).toHaveLength(1);
+    expect(sources.get('route-cursor-point').data.features).toHaveLength(1);
+    cursor.clearSelection();
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+  });
+
+  it('stops answering the pointer once the rail has let the cursor go', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    rail.state.cursor = null;
+
+    hover({ x: 0, y: 125 });
+
+    expect(cursor.state().index).toBeNull();
+    projectLngLat = () => ({ x: 0, y: 0 });
   });
 });

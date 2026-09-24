@@ -560,7 +560,14 @@
    * closes, none of which the map sees.
    */
   function close() {
-    if (cursor) cursor.closeLeg();
+    // Empty the cursor before letting it go, so every surface following
+    // it — rail two, and the map's leg dimming, selection and cursor dot
+    // (map.js's bindRouteCursor) — hears the route close and clears.
+    if (cursor) {
+      cursor.clearSelection();
+      cursor.setIndex(null);
+      cursor.closeLeg();
+    }
     if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
