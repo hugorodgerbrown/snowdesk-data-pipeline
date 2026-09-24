@@ -22,9 +22,10 @@
  *   - rail two: `window.pwaRouteRailTwo.cursorPoint()`, null while it is
  *     hidden.
  *
- * It is hidden when the cursor has no index, the rail is closed, or the
- * map has no point to give (the routes overlay off, a route with no
- * slope record).
+ * It is hidden when the cursor has no index or the rail is closed. With
+ * no map point — the routes overlay off, a route with no slope record, or
+ * a dot the rails cover — it drops the map stop and joins rail one to
+ * rail two, and is hidden only when rail two is closed as well.
  *
  * WHEN IT REDRAWS. On a cursor change (its own subscription to the open
  * route's cursor), a camera move or map resize, a rail-two redraw (a pan
@@ -90,21 +91,25 @@
     }
     var mapPoint = window.pwaRouteCursorMap ? window.pwaRouteCursorMap.point() : null;
     var railOne = rail.cursorPoint ? rail.cursorPoint() : null;
-    if (!mapPoint || !railOne) {
-      clear();
-      return;
-    }
     var railTwo = window.pwaRouteRailTwo && window.pwaRouteRailTwo.cursorPoint
       ? window.pwaRouteRailTwo.cursorPoint()
       : null;
+    // The map stop is optional: map.js answers null for a dot behind the
+    // rails or under the top chrome (the moment before or during the pan
+    // that brings it back), and the line then joins the two rails alone.
+    var railStops = [railOne, railTwo].filter(Boolean);
+    if (!railOne || (!mapPoint && railStops.length < 2)) {
+      clear();
+      return;
+    }
     var origin = mapEl.getBoundingClientRect();
     /** @param {{x: number, y: number}} p */
     var local = function (p) { return { x: p.x - origin.left, y: p.y - origin.top }; };
-    var stops = [mapPoint, railOne].concat(railTwo ? [railTwo] : []).map(local);
+    var stops = (mapPoint ? [mapPoint] : []).concat(railStops).map(local);
 
     path.setAttribute('d', core.leaderPath(stops));
     nodes.replaceChildren();
-    stops.slice(1).forEach(function (stop) {
+    railStops.map(local).forEach(function (stop) {
       var node = document.createElementNS(SVG_NS, 'circle');
       node.setAttribute('cx', String(stop.x));
       node.setAttribute('cy', String(stop.y));

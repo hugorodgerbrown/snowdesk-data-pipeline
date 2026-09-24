@@ -94,7 +94,21 @@ describe('the leader line', () => {
     expect(stops()).toHaveLength(2);
   });
 
-  it('is hidden when the map has no point to give', () => {
+  it('joins the two rails alone when the map\'s dot is covered', () => {
+    // map.js answers null for a dot behind the rails; the leader drops
+    // that stop rather than point at something nobody can see.
+    points.map = null;
+    points.railTwo = { x: 140, y: 420 };
+    openRail().setIndex(4);
+    window.pwaRouteLeader.redraw();
+
+    expect(svg.style.display).toBe('');
+    expect(leaderPath()).toBe('M120 300 C120 360, 140 360, 140 420');
+    expect(stops()).toHaveLength(2);
+    points.map = { x: 100, y: 50 };
+  });
+
+  it('is hidden with no map point and rail two closed', () => {
     points.map = null;
     openRail().setIndex(4);
     window.pwaRouteLeader.redraw();
