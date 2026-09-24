@@ -2,7 +2,7 @@
 name: a-slope-segment-is-the-shared-record
 description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
-last-reviewed: 2026-09-15
+last-reviewed: 2026-09-24
 ---
 
 # A slope segment is the shared record, and it samples the ground
@@ -31,8 +31,9 @@ Five rules go with it:
 - **The wire form is compact and different**: `properties.slope` is
   `{points, angles}` with a null angle for an unknown, and the key is
   **omitted entirely** for a route that has never been sampled. What
-  rides alongside is derived rather than reduced — `passages` (SNOW-964)
-  and `fall_lines` — and never the per-segment aspect itself.
+  rides alongside is derived rather than reduced — `passages` (SNOW-964),
+  `fall_lines` and `banks` (SNOW-1021) — and never the per-segment aspect
+  itself.
 - **A run in which every sample was `UNAVAILABLE` stores nothing.**
 
 ## Why
@@ -106,6 +107,17 @@ by `apps/routes/services/fall_line.py` on the `passages` terms. A flat
 section's reasons at once: it is the doubled payload, and 600 arrows is
 not a drawing anybody can read
 ([the-fall-line-arrow-is-a-bearing-per-place](the-fall-line-arrow-is-a-bearing-per-place.md)).
+
+**SNOW-1021 added one flat per-segment array, and it is not the aspect.**
+`banks` is the signed bank angle — the roll across the track, derived
+from the angle, the aspect and the chord bearing by
+`apps/routes/services/bank.py` — one whole degree per segment, aligned
+with `angles`, null for an unknown. It is sent flat rather than as thinned
+marks because the bank ribbon draws a tick about every other segment on a
+zoomed leg, where `{i, deg}` marks would cost five times the bytes for
+nearly the same count: about 2.4 kB on the 15 km tour. The aspect itself
+still does not travel
+([the-bank-angle-is-drawn-signed](the-bank-angle-is-drawn-signed.md)).
 
 ### The sample points have to travel
 
