@@ -1683,26 +1683,6 @@
 }
 .map-legend-swatch--leg-descent { background: var(--color-route-rail-descent); }
 
-/* SNOW-964: the no-fall passage, drawn as the SPLIT it is — two rails of
-   leg colour with the light core between them. A gradient sandwich rather
-   than a border, the leg-climb swatch's way above of depicting a line
-   TREATMENT in a 10px square while keeping every swatch the same
-   footprint.
-
-   On the map the rails take the colour of the leg the passage lies in
-   (SNOW-1017). The key has to name one colour, and takes the descent's:
-   a split in the climb's fuchsia would read as a third kind of leg. */
-.map-legend-swatch--passage {
-    background: linear-gradient(
-        180deg,
-        var(--color-route-rail-descent) 0,
-        var(--color-route-rail-descent) 3.5px,
-        var(--color-passage-core) 3.5px,
-        var(--color-passage-core) 6.5px,
-        var(--color-route-rail-descent) 6.5px
-    );
-}
-
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral
  * dark fill with a thin white stroke so it reads against any basemap or
  * EAWS rating fill. Smaller than the rating swatches so the pin looks

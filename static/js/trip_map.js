@@ -72,9 +72,11 @@
  *   readBasemaps(doc)             → the {key: url} catalogue, or null
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
- * SNOW-1019 took the crux rings and fall-line arrows off this map, as off
- * the map page: the crux is deferred to a later ticket and the bank ribbon
- * replaced the arrows. The snapshot still carries both records.
+ * SNOW-1019 took the crux rings, fall-line arrows and no-fall passage
+ * split line off this map, as off the map page: the crux is deferred to a
+ * later ticket, the bank ribbon replaced the arrows, and the passages are
+ * drawn as bars on the map page's rail two. The snapshot still carries
+ * all three records.
  *
  * Everything above is a pure function of the payload, so it is unit-tested
  * directly (tests/js/test_trip_map.js) with no browser and no WebGL.
@@ -434,31 +436,6 @@
         type: 'geojson',
         data: routeSlopeSourceData(payload),
       });
-      // SNOW-964: the no-fall passages, mirroring the map page's pair —
-      // this edge under the coloured line and the core over both, so a
-      // passage reads as a split in the line rather than a second line
-      // beside it. The trip page is what the GROUP sees, the people who
-      // did not plan the route, so the mark that says "you are on it"
-      // belongs here at least as much as on the planner's own map.
-      //
-      // `routeSlopeSourceData` feeds off `segmentFeatures`, so the
-      // `passage` flag arrives without anything here reading the record.
-      map.addLayer({
-        id: 'trip-route-passage-edge',
-        type: 'line',
-        source: 'trip-route-slopes',
-        filter: ['==', ['get', 'passage'], true],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          // The band colour, not a flat ink: a passage grows outward
-          // through the 45–50 band, and painting that near-black would
-          // report 47° ground as over 50.
-          'line-color': slopeColourExpression(),
-          // At or inside the casing's 3/7/11 at every stop, so the
-          // casing keeps framing the mark over a pale basemap.
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 6.5, 16, 11],
-        },
-      });
       map.addLayer({
         id: 'trip-route-slope-line',
         type: 'line',
@@ -492,20 +469,6 @@
           // In line-widths, so the dash keeps its proportions as the line
           // thickens with zoom.
           'line-dasharray': [2, 1.5],
-        },
-      });
-      map.addLayer({
-        id: 'trip-route-passage-core',
-        type: 'line',
-        source: 'trip-route-slopes',
-        filter: ['==', ['get', 'passage'], true],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
-          // off the steepness scale, so the split reads as a gap in the
-          // line and not as a seventh class of ground.
-          'line-color': (slopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2.4, 16, 4.2],
         },
       });
     }

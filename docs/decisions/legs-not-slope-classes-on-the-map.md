@@ -27,6 +27,13 @@ marks are deferred to a later ticket; the server's crux probe
 record are unchanged. The bank ribbon on rail two replaced the arrows.
 The no-fall passages remain the one terrain mark on the line.
 
+**2026-09-24, later (SNOW-1019).** The passage split line is off both
+maps too, with its legend row. The line on the map is now its legs, the
+numbered transitions and the start and end markers, and nothing else.
+The passages are shown on rail two only, as bars under the bank ribbon;
+`passages` still travels on the slope record and the detail sheet still
+names them.
+
 ## Why
 
 - **Density.** A track changes slope class every few segments, so a
@@ -68,9 +75,9 @@ The no-fall passages remain the one terrain mark on the line.
   (`withDrawableLegs`), so such a route falls back to the flat line. The
   cached payload itself is untouched, because the rail reads its legs
   from it.
-- The legend's route key has two leg rows plus the passage row. The
-  steepness bands and "Not surveyed" rows are gone, and SNOW-1019 took
-  out the fall-line and crux rows with the marks.
+- The legend's route key has the two leg rows. The steepness bands and
+  "Not surveyed" rows are gone, and SNOW-1019 took out the passage,
+  fall-line and crux rows with the marks.
 - The dimming follows `window.pwaRouteRail.cursor()`. The rail's
   `close()` closes the open leg before it drops the cursor, which is how
   the map hears the rail's ×, Escape and backdrop closes.

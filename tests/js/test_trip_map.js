@@ -353,7 +353,7 @@ describe('routeSlopeSourceData', () => {
   });
 });
 
-describe('the no-fall passages on a trip (SNOW-964)', () => {
+describe('the no-fall passage flag on a trip\'s segments (SNOW-964)', () => {
   /** A sampled payload whose record names the given passages. */
   function withPassages(angles, passages) {
     const p = sampled(angles);
@@ -362,10 +362,9 @@ describe('the no-fall passages on a trip (SNOW-964)', () => {
   }
 
   it('carries the mark through to the segments the page draws', () => {
-    // The trip page is what the GROUP sees — the people who did not plan
-    // the route — so the same track must mark the same passages on both
-    // surfaces. Nothing in trip_map.js reads the record for this: the
-    // flag arrives through `segmentFeatures`.
+    // The flag arrives through `segmentFeatures`; nothing in trip_map.js
+    // reads the record for it. Since SNOW-1019 no layer draws it — the
+    // test holds the data, which the snapshot still carries.
     const data = core.routeSlopeSourceData(
       withPassages([12, 52, 51, 12], [{ from: 1, to: 2, m: 50, fall_line: 'climbing' }]),
     );
@@ -439,20 +438,22 @@ describe('installLayers — the marks a trip map draws (SNOW-1019)', () => {
     };
   }
 
-  it('draws no crux ring or fall-line arrow, though the snapshot carries both', () => {
-    // Taken off both maps by SNOW-1019: the crux is deferred and the bank
-    // ribbon replaced the arrows. The record still travels, which is what
-    // makes this worth holding — the marks could come back unnoticed.
+  it('draws no crux ring, fall-line arrow or passage split, though the snapshot carries all three', () => {
+    // Taken off both maps by SNOW-1019: the crux is deferred, the bank
+    // ribbon replaced the arrows, and the passages are bars on the map
+    // page's rail two. The records still travel, which is what makes this
+    // worth holding — the marks could come back unnoticed.
     const p = sampled([40, 52]);
     p.route.properties.slope.cruxes = [[7.4, 46.1]];
     p.route.properties.slope.fall_lines = [{ i: 1, deg: 205 }];
+    p.route.properties.slope.passages = [{ from: 1, to: 1, m: 25, fall_line: 'climbing' }];
     const map = recordingMap();
 
     core.installLayers(map, p);
 
     const ids = [...map.sources, ...map.layers];
-    expect(ids).toContain('trip-route');
-    expect(ids.filter((id) => /crux|fall-line/.test(id))).toEqual([]);
+    expect(ids).toContain('trip-route-slope-line');
+    expect(ids.filter((id) => /crux|fall-line|passage/.test(id))).toEqual([]);
     expect(core).not.toHaveProperty('routeCruxSourceData');
     expect(core).not.toHaveProperty('routeFallLineSourceData');
   });

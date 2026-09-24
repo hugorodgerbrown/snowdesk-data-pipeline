@@ -297,11 +297,11 @@ descent solid, in the two colours the rail below the map uses. From z11 a
 numbered circle marks each transition, 1 to legs − 1 along the track, so
 a number on the map is the boundary between the same two legs on the
 rail. Opening a leg on the rail dims every other leg until it is closed.
-The no-fall passages are drawn over the legs; the passage's split takes
-its leg's colour. The crux rings and fall-line arrows that stood beside
-them were taken off this map and the trip map by SNOW-1019 — the crux is
-deferred, and the bank ribbon on rail two replaced the arrows. A route shared with the
-reader and not yet saved stays a teal dashed line with none of these. The
+The line carries no terrain marks. SNOW-1019 took the no-fall passage
+split line, the crux rings and the fall-line arrows off this map and the
+trip map: the passages are drawn as bars on rail two, the bank ribbon on
+rail two replaced the arrows, and the crux is deferred. A route shared
+with the reader and not yet saved stays a teal dashed line with no legs. The
 slope-class colours SNOW-910 painted along the line left the map; they
 return on the leg rail (SNOW-1019). A route with no elevation has no legs
 and keeps the flat line

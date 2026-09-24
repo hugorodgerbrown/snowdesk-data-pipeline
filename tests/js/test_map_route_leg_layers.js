@@ -45,9 +45,9 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /** Four sampled boundaries bounding three segments: gentle, steep, unknown.
  *
- * The steep one is over 50°, so SNOW-964 names it a no-fall passage. It
- * lies in the second leg, the descent, which is what the passage edge's
- * colour is checked against.
+ * The steep one is over 50°, so SNOW-964 names it a no-fall passage. Since
+ * SNOW-1019 the map draws no mark for it; the detail sheet's words still
+ * name it.
  */
 const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01], [7.0, 46.015]],
@@ -525,66 +525,20 @@ describe('the transition markers', () => {
   });
 });
 
-describe('the no-fall passage layers (SNOW-964)', () => {
-  it('draw off a source that holds only the passages', () => {
-    expect(layers.get('routes-passage-edge').source).toBe('route-passages');
-    expect(layers.get('routes-passage-core').source).toBe('route-passages');
-    expect(layers.get('routes-passage-edge').filter).toBeUndefined();
-    expect(sources.get('route-passages').data.features).toHaveLength(1);
-  });
-
-  it('paint the edge in its leg\'s colour', () => {
-    // `case` on explicit equality, never `match` on a boolean: MapLibre's
-    // validator rejects a boolean branch label, and the rejection swapped
-    // the whole basemap for the offline fallback style (SNOW-1019).
-    expect(layers.get('routes-passage-edge').paint['line-color']).toEqual([
-      'case',
-      ['==', ['get', 'climbing'], true], legsCore.LEG_CLIMB_COLOUR,
-      ['==', ['get', 'climbing'], false], legsCore.LEG_DESCENT_COLOUR,
-      '#c026d3',
-    ]);
-    // The steep segment lies in leg 2, the descent.
-    expect(sources.get('route-passages').data.features[0].properties.climbing).toBe(false);
-  });
-
-  it('sandwich the leg lines', () => {
-    // The edge UNDER the leg line and the core OVER it: that is what makes
-    // the mark read as a split in the line rather than a line beside it.
-    const ids = [...layers.keys()];
-
-    expect(ids.indexOf('routes-passage-edge')).toBeLessThan(ids.indexOf('routes-leg-climb'));
-    expect(ids.indexOf('routes-passage-core'))
-      .toBeGreaterThan(ids.indexOf('routes-leg-descent'));
-  });
-
-  it('keep the edge inside the leg casing and the core inside the edge', () => {
-    const edge = layers.get('routes-passage-edge').paint['line-width'];
-    const inner = layers.get('routes-passage-core').paint['line-width'];
-    const casing = layers.get('routes-leg-casing').paint['line-width'];
-
-    for (let i = 3; i < edge.length; i += 2) {
-      expect(edge[i + 1]).toBeLessThanOrEqual(casing[i + 1]);
-      expect(inner[i + 1]).toBeLessThan(edge[i + 1]);
-    }
-  });
-
-  it('paint the core in its own light colour', () => {
-    expect(layers.get('routes-passage-core').paint['line-color'])
-      .toBe(core.PASSAGE_CORE_COLOUR);
-  });
-});
-
 describe('the marks SNOW-1019 took off the map', () => {
-  it('installs no crux ring or fall-line arrow, though the record carries both', () => {
-    // The crux is deferred to a later ticket and the bank ribbon on rail
-    // two replaced the arrows. SLOPE still carries `fall_lines`, so this
-    // holds the marks off rather than passing for want of data.
+  it('installs no crux ring, fall-line arrow or passage split, though the record carries them', () => {
+    // The crux is deferred to a later ticket, the bank ribbon on rail two
+    // replaced the arrows, and the no-fall passages are bars on rail two.
+    // SLOPE still carries `fall_lines` and `passages`, so this holds the
+    // marks off rather than passing for want of data.
     const ids = [...layers.keys(), ...sources.keys()];
+    const marks = /crux|fall-line|passage/;
 
     expect(SLOPE.fall_lines).toHaveLength(1);
-    expect(ids.filter((id) => /crux|fall-line/.test(id))).toEqual([]);
+    expect(SLOPE.passages).toHaveLength(1);
+    expect(ids.filter((id) => marks.test(id))).toEqual([]);
     expect(window.snowdeskMapState.overlayLayers.routes
-      .filter((id) => /crux|fall-line/.test(id))).toEqual([]);
+      .filter((id) => marks.test(id))).toEqual([]);
   });
 });
 
@@ -646,7 +600,7 @@ describe('tapping a legged route', () => {
     expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
   });
 
-  it('does not query the passage or transition layers, which add no route', () => {
+  it('does not query the transition layers, which add no route', () => {
     const queried = [];
     queryAnswer = (options) => {
       queried.push(...(options.layers || []));
@@ -659,7 +613,6 @@ describe('tapping a legged route', () => {
 
     expect(queried).toContain('routes-leg-climb');
     expect(queried).toContain('routes-leg-descent');
-    expect(queried).not.toContain('routes-passage-edge');
     expect(queried).not.toContain('routes-transitions');
   });
 
@@ -698,14 +651,8 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
-    // The passages dim with their leg; one on a flat route (no `i`) stays.
-    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
-      expect(opacityOf(id)).toEqual(['case', ['has', 'i'], dimmed, 1]);
-    }
 
     cursor.closeLeg();
-    expect(opacityOf('routes-passage-edge')).toBe(1);
-    expect(opacityOf('routes-passage-core')).toBe(1);
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
@@ -744,8 +691,6 @@ describe('opening a leg on the rail', () => {
     const open = { uuid: 'sampled-route', i: 2 };
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
-    expect(opacityOf('routes-passage-edge'))
-      .toEqual(['case', ['has', 'i'], legsCore.dimOpacity(open, 1, 0.25), 1]);
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
     expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
@@ -770,8 +715,8 @@ describe('opening a leg on the rail', () => {
 });
 
 describe('a sampled route somebody shared', () => {
-  it('draws no legs, no markers and no passages', () => {
-    for (const id of ['route-legs', 'route-transitions', 'route-passages']) {
+  it('draws no legs and no markers', () => {
+    for (const id of ['route-legs', 'route-transitions']) {
       expect(sources.get(id).data.features.every((f) => f.properties.uuid === 'sampled-route'))
         .toBe(true);
     }

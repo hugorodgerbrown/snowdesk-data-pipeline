@@ -1312,29 +1312,14 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Descending" %}
                 </div>
-                {# SNOW-964: the no-fall passage. Inside this key and after  #}
-                {# the two legs, because it is not a third kind of leg — the  #}
-                {# mark keeps its leg's colour (SNOW-1017) and says something #}
-                {# about the TRACK: that it is on ground over 50°.            #}
-                {#                                                            #}
-                {# "not a full list" because a narrow steep passage between   #}
-                {# two gentler samples                                        #}
-                {# is averaged away before it is ever measured, so an         #}
-                {# unmarked route is not a route without no-fall ground.      #}
-                <div class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--passage"
-                        aria-hidden="true"
-                    ></span>{% trans "No-fall passage — not a full list" %}
-                </div>
-                {# SNOW-1019 took the fall-line arrow and crux ring rows out #}
-                {# with the marks themselves: the bank ribbon on rail two    #}
-                {# replaced the arrows, and the crux is deferred.            #}
+                {# SNOW-1019 took every terrain mark off the line — the      #}
+                {# fall-line arrows, the crux rings and the no-fall passage  #}
+                {# split — and their rows with them. The line is its legs;   #}
+                {# the ground under a leg is read on rail two.               #}
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
-                        Each leg runs between two transitions, numbered along the track. A narrow steep passage often
-                        reads gentler than it is, because the terrain is averaged over the ground around it: an unmarked
-                        route is not a route without no-fall ground.
+                        Each leg runs between two transitions, numbered along the track. Open a leg to read its slope
+                        bands, its bank and its no-fall passages on the rail below the map.
                     {% endblocktrans %}
                 </p>
             </section>
