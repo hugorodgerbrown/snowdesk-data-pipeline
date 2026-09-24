@@ -36,7 +36,7 @@
  *
  * `formatFigures` is the ONE formatter for `distance · ▲ascent · ▼descent ·
  * start→end`, taken by the route today and by a leg on rail two
- * (SNOW-1017), so the two lines cannot drift apart. A null figure is
+ * (SNOW-1019), so the two lines cannot drift apart. A null figure is
  * OMITTED, never shown as zero: a route whose GPX carried no elevation has
  * an unknown ascent, not a flat one (Route.ascent_m's docstring).
  *
