@@ -3,9 +3,11 @@
  * (static/js/route_rail.js, SNOW-1018).
  *
  * The assertion the ticket names: pressing a leg opens it on the route
- * cursor and pressing it again clears it, with `aria-pressed` following
- * the CURSOR rather than the click — so a leg closed from rail two's side
- * un-presses here too. Around it: one path per leg with its direction, an
+ * cursor, with `aria-pressed` following the CURSOR rather than the click —
+ * so a leg closed from rail two's side un-presses here too. Since
+ * SNOW-1019 pressing the open leg again moves rail two's window there
+ * instead of closing it, rail one brackets what rail two shows, and
+ * Escape closes the leg before the rail. Around it: one path per leg with its direction, an
  * unsampled route still cut into legs, a pending share without its
  * menu, the rail closing with the detail sheet, and Delete confirming
  * before it posts.
@@ -19,7 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/route_cursor_core.js';
 import '../../static/js/elevation_profile_core.js';
+import '../../static/js/route_slope_core.js';
 import '../../static/js/route_rail_core.js';
+import '../../static/js/bank_ribbon_core.js';
+import '../../static/js/route_rail_two_core.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -53,6 +58,16 @@ document.body.innerHTML = `
       <svg data-route-rail-lane></svg>
       <div data-route-rail-ticks></div>
       <div data-route-rail-readout></div>
+      <div data-route-rail-two hidden>
+        <p data-route-rail-two-title></p>
+        <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
+        <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
+        <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
+        <p data-route-rail-two-figures></p>
+        <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
+        <div data-route-rail-two-ticks></div>
+        <div data-route-rail-two-readout></div>
+      </div>
       <form data-route-rail-csrf hidden>
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
       </form>
@@ -61,11 +76,13 @@ document.body.innerHTML = `
   <div id="route-detail-sheet" data-overlay hidden></div>
 `;
 
+await import('../../static/js/route_rail_two.js');
 await import('../../static/js/route_rail.js');
 
 const rail = document.getElementById('route-rail');
 const mapEl = document.getElementById('map');
 const sheet = document.getElementById('route-detail-sheet');
+const railTwo = rail.querySelector('[data-route-rail-two]');
 
 /**
  * A 24-segment route: a climb over segments 0-11 and a descent over 12-23.
@@ -288,7 +305,7 @@ describe('open', () => {
 });
 
 describe('pressing a leg', () => {
-  it('opens it on the cursor, and pressing it again clears it', () => {
+  it('opens it on the cursor, and rail two with it', () => {
     window.pwaRouteRail.open(feature());
     const [first] = legPaths();
 
@@ -302,10 +319,29 @@ describe('pressing a leg', () => {
     expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe(
       'Leg 1 — climb',
     );
+    expect(railTwo.hidden).toBe(false);
+  });
 
+  it('moves rail two’s window when the open leg is pressed, without closing it', () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+    const railLane = rail.querySelector('[data-route-rail-lane]');
+    vi.spyOn(railLane, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80, x: 0, y: 0,
+    });
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(first.getAttribute('aria-pressed')).toBe('false');
+    // Zoom rail two in to its six-sample floor, so there is a window to move.
+    const zoomIn = railTwo.querySelector('[data-route-rail-two-zoom="in"]');
+    zoomIn.click();
+    zoomIn.click();
+    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 3, to: 9 });
+
+    // x = 100 of 1000 is sample 2 of 24.
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+    expect(window.pwaRouteRail.cursor().state().openLeg).not.toBeNull();
+    expect(first.getAttribute('aria-pressed')).toBe('true');
+    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 0, to: 6 });
   });
 
   it('moves the open leg when another is pressed', () => {
@@ -337,6 +373,51 @@ describe('pressing a leg', () => {
     window.pwaRouteRail.cursor().closeLeg();
 
     expect(first.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('rail two', () => {
+  it('is bracketed on rail one while it shows part of the leg', () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const bracket = () => rail.querySelector('[data-route-rail-window]');
+
+    // A 12-sample leg opens whole: nothing to bracket.
+    expect(bracket()).toBeNull();
+
+    railTwo.querySelector('[data-route-rail-two-zoom="in"]').click();
+    const view = window.pwaRouteRailTwo.view();
+    expect(Number(bracket().getAttribute('x'))).toBeCloseTo((view.from / 24) * 1000);
+    expect(Number(bracket().getAttribute('width'))).toBeCloseTo(
+      ((view.to - view.from) / 24) * 1000,
+    );
+
+    railTwo.querySelector('[data-route-rail-two-zoom="out"]').click();
+    expect(bracket()).toBeNull();
+  });
+
+  it('closes on Escape before the rail does', () => {
+    window.pwaRouteRail.open(feature());
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    pressEscape();
+    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
+    expect(railTwo.hidden).toBe(true);
+    expect(rail.hidden).toBe(false);
+
+    pressEscape();
+    expect(rail.hidden).toBe(true);
+  });
+
+  it('hides with the rail', () => {
+    window.pwaRouteRail.open(feature());
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    window.pwaRouteRail.close();
+
+    expect(railTwo.hidden).toBe(true);
+    expect(window.pwaRouteRailTwo.view()).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@
  * over it — it is not registered with window.pwaMapOverlays, which would
  * close it the moment the sheet it opened announced itself. It closes on
  * its own × (`[data-route-rail-close]`), on Escape when nothing else is
- * open to take that Escape, on a claim or a delete, and it is refilled in
+ * open to take that Escape and no leg is open, on a claim or a delete, and it is refilled in
  * place when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
@@ -31,11 +31,20 @@
  * route_rail_core.js's, and all the copy is the partial's strings template.
  *
  * PRESSING A LEG. Each leg's fill is a focusable `role="button"` path.
- * Pressing it publishes the leg to the cursor as the open leg; pressing
- * the open leg again closes it. The pressed state — `aria-pressed` and,
- * through it, the raised fill (src/css/main.css, `.route-rail-leg`) —
- * follows the CURSOR, not the click, so when rail two (SNOW-1017) closes a
- * leg from its own side this rail un-presses without being told.
+ * Pressing it publishes the leg to the cursor as the open leg, and rail
+ * two (route_rail_two.js, SNOW-1019) opens under this rail on it.
+ * Pressing another leg switches. Pressing INSIDE the open leg moves rail
+ * two's window to the place pressed rather than closing the leg; the leg
+ * closes on rail two's own ×, or on Escape — the first Escape closes the
+ * leg, the next the rail. The pressed state — `aria-pressed` and, through
+ * it, the raised fill (src/css/main.css, `.route-rail-leg`) — follows the
+ * CURSOR, not the click, so when rail two closes a leg from its own side
+ * this rail un-presses without being told.
+ *
+ * RAIL TWO'S WINDOW. Rail two reports what it shows through `onView`, and
+ * this rail draws a bracket (`[data-route-rail-window]`) over that part of
+ * the open leg — none while rail two shows the whole leg. Rail two's
+ * height joins the rail's, so `onResize` re-publishes it.
  *
  * The cursor is sized from `slope.angles` when the route has one, and
  * otherwise from the legs themselves (the last `to` plus one): legs are a
@@ -126,6 +135,8 @@
   var unsubscribe = null;
   /** The open route's legs, as they came off the wire. */
   var legs = [];
+  /** N, the segments the open route's legs index; 0 with no legs. */
+  var sampleCount = 0;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, name: '' };
   /** Opens the open route's detail sheet; null when there is none. */
@@ -315,23 +326,87 @@
   }
 
   /**
-   * Press a leg: open it, or close it when it is already the open one.
+   * The sample a press on the lane landed on, inside one leg.
+   *
+   * @param {?MouseEvent} event The press, or null for a key.
+   * @param {{from: number, to: number}} leg The leg pressed.
+   * @returns {number} The leg's middle when the press has no position.
+   */
+  function pressedIndex(event, leg) {
+    var middle = Math.floor((leg.from + leg.to) / 2);
+    if (!event || typeof event.clientX !== 'number') {
+      var index = cursor ? cursor.state().index : null;
+      return index === null ? middle : index;
+    }
+    var rect = lane.getBoundingClientRect();
+    if (!(rect.width > 0)) return middle;
+    var at = Math.floor(((event.clientX - rect.left) / rect.width) * sampleCount);
+    return Math.min(leg.to, Math.max(leg.from, at));
+  }
+
+  /**
+   * Press a leg: open it, or move rail two's window within it when it is
+   * already the open one.
    *
    * @param {Element} path A `.route-rail-leg` path.
+   * @param {?MouseEvent} event The click, or null for a key.
    */
-  function pressLeg(path) {
+  function pressLeg(path, event) {
     if (!cursor) return;
     var from = Number(path.getAttribute('data-leg-from'));
     var to = Number(path.getAttribute('data-leg-to'));
     var open = cursor.state().openLeg;
     if (open && open.from === from && open.to === to) {
-      cursor.closeLeg();
+      if (window.pwaRouteRailTwo) {
+        window.pwaRouteRailTwo.centreOn(pressedIndex(event, open));
+      } else {
+        cursor.closeLeg();
+      }
       return;
     }
     var leg = legs.find(function (candidate) {
       return candidate.from === from && candidate.to === to;
     });
     if (leg) cursor.openLeg(leg);
+  }
+
+  /**
+   * Draw the bracket over the part of the open leg rail two shows.
+   *
+   * @param {?{from: number, to: number}} view Rail two's window, in
+   *   continuous sample units; null when rail two is hidden.
+   * @param {?{from: number, to: number}} leg The open leg.
+   */
+  function drawWindow(view, leg) {
+    var bracket = lane.querySelector('[data-route-rail-window]');
+    var whole = !view || !leg || !(sampleCount > 0)
+      || view.to - view.from >= leg.to - leg.from + 1 - 1e-6;
+    if (whole) {
+      if (bracket) bracket.remove();
+      return;
+    }
+    var box = self.pwaRouteRailCore.BOX;
+    if (!bracket) {
+      bracket = svgEl('rect', {
+        'data-route-rail-window': '',
+        y: '1',
+        height: String(box.height - 2),
+        rx: '2',
+        fill: 'currentColor',
+        'fill-opacity': '0.08',
+        stroke: 'currentColor',
+        'stroke-width': '1.5',
+        'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
+        class: 'text-text-1',
+      });
+      lane.appendChild(bracket);
+    }
+    bracket.setAttribute('x', ((view.from / sampleCount) * box.width).toFixed(2));
+    bracket.setAttribute(
+      'width',
+      (((view.to - view.from) / sampleCount) * box.width).toFixed(2),
+    );
   }
 
   /** Write the rail's height onto #map, for the bottom-chrome offset. */
@@ -413,6 +488,7 @@
     if (!feature || !profileCore || !railCore) return false;
     var props = feature.properties || {};
 
+    if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     cursor = null;
@@ -426,12 +502,13 @@
     var slope = props.pending ? null : readJson(props.slope);
     var wireLegs = readJson(props.legs);
     legs = Array.isArray(wireLegs) ? wireLegs : [];
-    var sampleCount = sampleCountOf(slope, legs);
+    sampleCount = sampleCountOf(slope, legs);
     if (sampleCount > 0 && self.pwaRouteCursorCore) {
       cursor = self.pwaRouteCursorCore.createRouteCursor(sampleCount);
       unsubscribe = cursor.subscribe(paintState);
     } else {
       legs = [];
+      sampleCount = 0;
     }
 
     var coordinates = feature.geometry && feature.geometry.coordinates;
@@ -451,6 +528,18 @@
       STRINGS,
     );
     drawLane(profile, sampleCount, spanM);
+    if (cursor && window.pwaRouteRailTwo) {
+      window.pwaRouteRailTwo.attach({
+        cursor: cursor,
+        slope: slope,
+        profile: profile,
+        legs: legs,
+        sampleCount: sampleCount,
+        spanM: spanM,
+        onView: drawWindow,
+        onResize: publishHeight,
+      });
+    }
     fillMenu();
     fillClaim(props.pending ? opts.claim || null : null);
     paintState(cursor ? cursor.state() : null);
@@ -463,10 +552,12 @@
 
   /** Hide the rail and drop its cursor. */
   function close() {
+    if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     cursor = null;
     legs = [];
+    sampleCount = 0;
     openDetails = null;
     fillClaim(null);
     rail.hidden = true;
@@ -481,7 +572,7 @@
   lane.addEventListener('click', function (event) {
     var target = /** @type {Element} */ (event.target);
     var path = target && target.closest ? target.closest('.route-rail-leg') : null;
-    if (path) pressLeg(path);
+    if (path) pressLeg(path, /** @type {MouseEvent} */ (event));
   });
 
   lane.addEventListener('keydown', function (event) {
@@ -490,7 +581,7 @@
     var path = target && target.closest ? target.closest('.route-rail-leg') : null;
     if (!path) return;
     event.preventDefault();
-    pressLeg(path);
+    pressLeg(path, null);
   });
 
   // ---- actions ----------------------------------------------------------
@@ -578,8 +669,8 @@
 
   // ---- lifetime ---------------------------------------------------------
 
-  // Escape closes the rail — but only an Escape nothing else was open to
-  // take. The sheets close on Escape from their own document listeners
+  // Escape closes the open leg first, and the rail on the next one — but
+  // only an Escape nothing else was open to take. The sheets close on Escape from their own document listeners
   // (map_sheet.js), and overflow_menu.js takes one in the capture phase
   // for an open menu, so by the time this listener runs the surface that
   // Escape was meant for may already be shut. Whether anything was open
@@ -598,6 +689,10 @@
   }, true);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' || escapeWasTaken || rail.hidden) return;
+    if (cursor && cursor.state().openLeg) {
+      cursor.closeLeg();
+      return;
+    }
     close();
   });
 
