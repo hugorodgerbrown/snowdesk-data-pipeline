@@ -64,6 +64,8 @@ interface Window {
   pwaRouteCursorCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
+  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, ticks. */
+  pwaRouteRailTwoCore: any;
   /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
   pwaBankRibbonCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
@@ -92,6 +94,8 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
+  /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
+  pwaRouteRailTwo: any;
 }
 
 /**

@@ -48,6 +48,9 @@
  *   ticks(spanM, units?)                     → [{d, major, label}]
  *   formatFigures(figures, strings?)         → the figures line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
+ *   clipRun(run, start, end)                 → a run clipped to [start, end],
+ *                                              its ends interpolated (rail
+ *                                              two clips its leg with it)
  *   legPaths(profile, legs, sampleCount, box) → one fill per leg + outline
  *   legAt(fraction, legs, sampleCount)       → the leg under an x fraction
  *   BOX                                      → the lane's user-space box
@@ -407,6 +410,7 @@
     ticks: ticks,
     formatFigures: formatFigures,
     legSpan: legSpan,
+    clipRun: clipRun,
     legPaths: legPaths,
     legAt: legAt,
     BOX: BOX,
