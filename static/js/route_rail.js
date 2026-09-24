@@ -368,11 +368,10 @@
         && Number(path.getAttribute('data-leg-to')) === open.to;
       path.setAttribute('aria-pressed', pressed ? 'true' : 'false');
     });
-    if (open) {
-      readoutEl.textContent = legLabel(open);
-    } else {
-      readoutEl.textContent = legs.length && cursor ? STRINGS['readout-hint'] : '';
-    }
+    // With a leg open the readout is EMPTY: rail two's identity cell
+    // names the leg, and saying it twice is noise. The cell itself stays,
+    // because the grid's third column keeps the two rails' lanes aligned.
+    readoutEl.textContent = !open && legs.length && cursor ? STRINGS['readout-hint'] : '';
   }
 
   /**

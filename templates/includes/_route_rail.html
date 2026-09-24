@@ -7,8 +7,9 @@ A RAIL is the strip below the map while a route is open (docs/glossary.md).
 Rail one is the whole route. Three columns: the identity block (the
 eyebrow, the route's name, its figures and its actions), the LANE — the
 elevation profile drawn as one filled shape per leg under one outline,
-with distance ticks along its foot — and a readout column naming the open
-leg. Pressing a leg publishes it to the route cursor
+with distance ticks along its foot — and a readout column, which offers
+"Press a leg to open it." and falls silent once a leg is open (rail two's
+title names it; the empty cell keeps the lanes aligned). Pressing a leg publishes it to the route cursor
 (static/js/route_cursor_core.js) as the open leg, and rail two renders it.
 There is deliberately no "whole route" button and no breadcrumb: closing
 the leg IS the whole route.

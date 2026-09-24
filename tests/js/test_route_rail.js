@@ -316,9 +316,8 @@ describe('pressing a leg', () => {
       to: 11,
     });
     expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe(
-      'Leg 1 — climb',
-    );
+    // Rail two's identity cell names the leg; this readout goes quiet.
+    expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe('');
     expect(railTwo.hidden).toBe(false);
   });
 
@@ -342,6 +341,18 @@ describe('pressing a leg', () => {
     expect(window.pwaRouteRail.cursor().state().openLeg).not.toBeNull();
     expect(first.getAttribute('aria-pressed')).toBe('true');
     expect(window.pwaRouteRailTwo.view()).toEqual({ from: 0, to: 6 });
+  });
+
+  it('offers the hint while no leg is open, and again once it closes', () => {
+    window.pwaRouteRail.open(feature());
+    const readout = rail.querySelector('[data-route-rail-readout]');
+    expect(readout.textContent).toBe('Press a leg to open it.');
+
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(readout.textContent).toBe('');
+
+    window.pwaRouteRail.cursor().closeLeg();
+    expect(readout.textContent).toBe('Press a leg to open it.');
   });
 
   it('moves the open leg when another is pressed', () => {
