@@ -1,5 +1,5 @@
 """
-apps/routes/services/terrain_detail.py — one row per segment, four figures.
+apps/routes/services/terrain_detail.py — one row per segment, five figures.
 
 SNOW-1020. Four numbers describe what the ground is doing under a route at
 any point: the slope angle, the aspect, the track's bearing, and the
