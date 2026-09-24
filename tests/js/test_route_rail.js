@@ -178,7 +178,7 @@ describe('open', () => {
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲200 m · ▼200 m · 1500→1500 m',
+      '0.6 km · ▲ 200m · ▼ 200m · 1500→1500m',
     );
   });
 
@@ -288,7 +288,7 @@ describe('open', () => {
     window.pwaRouteRail.open(gappy);
 
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲200 m · ▼200 m',
+      '0.6 km · ▲ 200m · ▼ 200m',
     );
   });
 

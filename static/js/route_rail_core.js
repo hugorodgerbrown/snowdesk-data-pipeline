@@ -127,9 +127,9 @@
   /** The English figure templates, the fallback when no strings are passed. */
   var DEFAULT_FIGURES = Object.freeze({
     'figure-distance': '%(km)s km',
-    'figure-ascent': '▲%(m)s m',
-    'figure-descent': '▼%(m)s m',
-    'figure-range': '%(start)s→%(end)s m',
+    'figure-ascent': '▲ %(m)sm',
+    'figure-descent': '▼ %(m)sm',
+    'figure-range': '%(start)s→%(end)sm',
     'figure-separator': ' · ',
   });
 
