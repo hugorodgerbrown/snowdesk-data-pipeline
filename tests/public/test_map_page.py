@@ -687,9 +687,13 @@ def test_map_layer_menu_section_order() -> None:
     )
     assert "Options" not in content
     # "Terrain" and "Locations" were sections of their own; their rows moved
-    # into Basemap and Places respectively.
-    assert ">Terrain<" not in content
-    assert ">Locations<" not in content
+    # into Basemap and Places respectively. Rail two's eyebrow is "Terrain"
+    # (SNOW-1019), so the rail's own markup is left out of the check.
+    outside_rail = re.sub(
+        r'<section\s+id="route-rail".*?</section>', "", content, flags=re.S
+    )
+    assert ">Terrain<" not in outside_rail
+    assert ">Locations<" not in outside_rail
 
 
 @pytest.mark.django_db
