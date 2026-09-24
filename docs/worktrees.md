@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, the migrate + sync_waffle_flags rerun every session, dev credentials, seed_test_data coverage, reseed
+description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, dev credentials, reseed
 status: current
-last-reviewed: 2026-09-20
+last-reviewed: 2026-09-24
 ---
 
 # Worktrees and DB seeding
@@ -56,7 +56,13 @@ environment.
 ## On every session after the first
 
 The first two commands above run again at every session start; the last
-three never do (SNOW-997).
+three never do (SNOW-997). A third command runs after them (SNOW-1023):
+
+```bash
+uv run python manage.py migrate --noinput
+uv run python manage.py sync_waffle_flags --commit
+uv run python manage.py seed_canonical_routes --commit
+```
 
 `migrate --noinput` and `sync_waffle_flags --commit` are idempotent and
 authoritative, so they are safe to run unconditionally and they are what
@@ -64,6 +70,16 @@ keeps a worktree's database in step with its checkout. `loaddata`,
 `import_resorts` and `seed_test_data` **insert** rows rather than
 reconcile them, so re-running those would duplicate the seeded dataset
 rather than refresh it — which is why the split exists at all.
+
+`seed_canonical_routes --commit` is the reconciling version of the one
+part of `seed_test_data` every worktree must hold: the dev user's four
+canonical routes (`apps/routes/fixtures/canonical/`, SNOW-989). It creates
+any the user lacks, matched on `source_filename`, through `create_route`,
+and samples the terrain under any still unsampled. A worktree seeded before
+SNOW-989 gains the routes at its next session, and one whose sampling
+failed at seed time (no network) gets it retried. It is not run on the
+seeding path, where `seed_test_data` has just created the routes. With no
+dev user it reports that and changes nothing.
 
 Until SNOW-997 the whole recipe was gated on `db.sqlite3` being absent, so
 it ran exactly once in a worktree's life. That is fine for a worktree left
@@ -75,13 +91,17 @@ nothing ever applies them. The symptom was either a `no such column` from
 an unrelated-looking command, or no symptom at all and a
 `monitor_query_counts` failure against a perfectly correct baseline.
 
-The cost is two `manage.py` startups, roughly two to four seconds, at
+The cost is three `manage.py` startups, roughly three to six seconds, at
 every session start. A session where nothing had to change prints
-nothing: both commands' output is captured, including the logging they
-write to stderr, and only a run that actually applied a migration or
-changed a flag says so. Output that matches neither command's "nothing to
-do" sentence is reported rather than swallowed, so a reworded message
-upstream makes this noisy instead of making it silent again.
+nothing: each command's output is captured, including the logging it
+writes to stderr, and only a run that actually applied a migration,
+changed a flag or reconciled a route says so. Output that matches no
+command's "nothing to do" sentence is reported rather than swallowed, so a
+reworded message upstream makes this noisy instead of making it silent
+again. `seed_canonical_routes` prints `Canonical routes up to date.`
+(`UP_TO_DATE` in the command module) when it has nothing to do. A canonical
+route the terrain origin cannot answer for stays unsampled, so a worktree
+without network announces the retry at every session until it succeeds.
 
 ## Compiled CSS
 
@@ -164,6 +184,14 @@ restarting the session:
 
 ```bash
 uv run python manage.py sync_waffle_flags --commit
+```
+
+A reseed is not needed to get the canonical routes into a worktree seeded
+before SNOW-989: since SNOW-1023 the next session start creates them. To
+do it without restarting the session:
+
+```bash
+uv run python manage.py seed_canonical_routes --commit
 ```
 
 ## Seeded dataset coverage
