@@ -44,9 +44,10 @@
  *
  * THE READOUT. With a band or passage selected it gives the stretch's
  * length and class. Otherwise it reads the segment under the cursor as
- * what the TRACK is doing on the ground — down or up the fall line,
- * diagonal, traverse, flat (`trackAttitude` in route_rail_two_core.js,
- * from the slope angle and the signed bank) — and how steep the ground is
+ * what the TRACK is doing on the ground — fall line, downhill or uphill
+ * traverse (by the leg's direction), traverse, flat (`trackAttitude` in
+ * route_rail_two_core.js, from the slope angle and the signed bank) — and
+ * how steep the ground is
  * and which side it falls away to. It names no slope class there: the
  * band under the cursor already shows it, as the map does.
  *
@@ -108,9 +109,9 @@
     'class-slope-45': '45–50°',
     'class-slope-50': 'over 50°',
     'class-unknown': 'slope not known',
-    'attitude-fall-line-down': 'Down the fall line',
-    'attitude-fall-line-up': 'Up the fall line',
-    'attitude-diagonal': 'Diagonal',
+    'attitude-fall-line': 'Fall line',
+    'attitude-downhill-traverse': 'Downhill traverse',
+    'attitude-uphill-traverse': 'Uphill traverse',
     'attitude-traverse': 'Traverse',
     'attitude-flat': 'Flat',
     'readout-slope': '%(angle)s° slope',

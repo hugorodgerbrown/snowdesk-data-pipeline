@@ -443,18 +443,36 @@ describe('the ribbon', () => {
     );
   });
 
-  it('reads a line down the fall line, and up it on a climbing leg', () => {
+  it('reads the fall line on either leg', () => {
     const banks = BANKS.slice();
     banks[101] = 0;
     banks[5] = 0;
     const { cursor } = attach({ banks });
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(101);
-    expect(readoutLines()).toEqual(['Down the fall line', '20° slope']);
+    expect(readoutLines()).toEqual(['Fall line', '20° slope']);
 
     cursor.openLeg(LEGS[0]);
     cursor.setIndex(5);
-    expect(readoutLines()).toEqual(['Up the fall line', '32° slope']);
+    expect(readoutLines()).toEqual(['Fall line', '32° slope']);
+  });
+
+  it('names the traverse between by the leg\'s direction', () => {
+    // 20° ground banked 12° is 35.7° off the fall line.
+    const banks = BANKS.slice();
+    banks[101] = -12;
+    banks[1] = -12;
+    const angles = ANGLES.slice();
+    angles[1] = 20;
+    const { cursor } = attach({ banks, angles });
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(101);
+    expect(readoutLines()).toEqual(['Downhill traverse', '20° slope · falls away to the left']);
+    expect(lane.getAttribute('aria-valuetext')).toContain('Downhill traverse');
+
+    cursor.openLeg(LEGS[0]);
+    cursor.setIndex(1);
+    expect(readoutLines()).toEqual(['Uphill traverse', '20° slope · falls away to the left']);
   });
 
   it('reads flat ground as flat, with no side', () => {

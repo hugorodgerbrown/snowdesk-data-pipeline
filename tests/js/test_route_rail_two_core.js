@@ -329,20 +329,26 @@ describe('distanceTicks', () => {
 describe('trackAttitude', () => {
   // On 40° ground, a bank of 22° is 28.8° off the fall line, 23° is 30.4°,
   // 35° is 56.6° and 37° is 63.9°: either side of the 30° and 60° lines.
-  it('is on the fall line within the passages tolerance, down or up by the leg', () => {
+  it('is the fall line within the passages tolerance, on either leg', () => {
     expect(core.FALL_LINE_TOLERANCE_DEG).toBe(30);
-    expect(core.trackAttitude(40, 22, false).term).toBe('fall-line-down');
-    expect(core.trackAttitude(40, 22, true).term).toBe('fall-line-up');
-    expect(core.trackAttitude(40, 0, false)).toEqual({ term: 'fall-line-down', side: null });
+    expect(core.trackAttitude(40, 22, false).term).toBe('fall-line');
+    expect(core.trackAttitude(40, 22, true).term).toBe('fall-line');
+    expect(core.trackAttitude(40, 0, false)).toEqual({ term: 'fall-line', side: null });
   });
 
-  it('is diagonal between 30° and 60° off the fall line', () => {
-    expect(core.trackAttitude(40, 23, false).term).toBe('diagonal');
-    expect(core.trackAttitude(40, 35, true).term).toBe('diagonal');
+  it('is a downhill traverse between 30° and 60° on a descending leg', () => {
+    expect(core.trackAttitude(40, 23, false).term).toBe('downhill-traverse');
+    expect(core.trackAttitude(40, 35, false).term).toBe('downhill-traverse');
   });
 
-  it('is a traverse at 60° off the fall line and beyond', () => {
+  it('is an uphill traverse between 30° and 60° on a climbing leg', () => {
+    expect(core.trackAttitude(40, 23, true).term).toBe('uphill-traverse');
+    expect(core.trackAttitude(40, 35, true).term).toBe('uphill-traverse');
+  });
+
+  it('is a traverse at 60° off the fall line and beyond, on either leg', () => {
     expect(core.trackAttitude(40, 37, false).term).toBe('traverse');
+    expect(core.trackAttitude(40, 37, true).term).toBe('traverse');
     // A bank equal to the slope is straight across it.
     expect(core.trackAttitude(40, 40, true).term).toBe('traverse');
     // Rounding can push the bank past the slope; the ratio is clamped.

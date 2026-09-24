@@ -657,10 +657,11 @@
    * carries, clamped to [0, 1] before the `asin` because both are rounded
    * to whole degrees.
    *
-   *   a < 5°      → 'flat': no fall line to be on or off;
-   *   δ ≤ 30°     → 'fall-line-down', or 'fall-line-up' on a climbing leg;
-   *   δ ≥ 60°     → 'traverse';
-   *   otherwise   → 'diagonal'.
+   *   a < 5°          → 'flat': no fall line to be on or off;
+   *   δ ≤ 30°         → 'fall-line', either way along it;
+   *   30° < δ < 60°   → 'downhill-traverse' on a descending leg,
+   *                     'uphill-traverse' on a climbing one;
+   *   δ ≥ 60°         → 'traverse'.
    *
    * `side` is where the ground falls away: 'right' for a positive roll
    * (bank.py's sign), 'left' for a negative one, and null under 3° or on
@@ -681,11 +682,11 @@
     var delta = Math.asin(sinDelta) / rad;
     var term;
     if (delta <= FALL_LINE_TOLERANCE_DEG) {
-      term = climbing ? 'fall-line-up' : 'fall-line-down';
+      term = 'fall-line';
     } else if (delta >= TRAVERSE_DEG) {
       term = 'traverse';
     } else {
-      term = 'diagonal';
+      term = climbing ? 'uphill-traverse' : 'downhill-traverse';
     }
     var side = Math.abs(roll) < LEVEL_BANK_DEG ? null : roll > 0 ? 'right' : 'left';
     return { term: term, side: side };
