@@ -5,9 +5,9 @@ What the page carries before any route is open: the rail itself, hidden and
 inside ``#map``, its eyebrow, its strings template, its actions as ONE
 ``[data-overflow-menu]`` rather than loose icons (design-system rule 5) —
 Terrain and bulletin first, then the routes row's four in its order — its
-own × close, a pending share's claim slot, and the three scripts that fill
-it. What the rail
-does once open is tests/js/test_route_rail.js's.
+own × close, a pending share's claim slot, rail two's row (SNOW-1019) hidden
+with its strings, and the scripts that fill both, in order. What the rails
+do once open is tests/js/test_route_rail.js's and test_route_rail_two.js's.
 """
 
 from __future__ import annotations
@@ -119,17 +119,85 @@ class TestTheRailShipsWithTheMap:
             assert "__UUID__" in value.group(1)
         assert f'data-route-plan-trip-url="{reverse("trips:new")}"' in tag
 
-    def test_the_scripts_load_cursor_before_core_before_rail(
+    def test_the_scripts_load_cursor_then_cores_then_rail_two_then_rail(
         self, client: Client
     ) -> None:
-        """The rail reads both cores, so both come first."""
+        """Rail one attaches rail two, which reads the three cores before it."""
         page = _home(client)
         order = [
             page.index(f"js/{name}")
-            for name in ("route_cursor_core.js", "route_rail_core.js", "route_rail.js")
+            for name in (
+                "route_cursor_core.js",
+                "route_rail_core.js",
+                "bank_ribbon_core.js",
+                "route_rail_two_core.js",
+                "route_rail_two.js",
+                "route_rail.js",
+            )
         ]
 
         assert order == sorted(order)
+
+
+@pytest.mark.django_db
+class TestRailTwoShipsInsideRailOne:
+    """Rail two is a hidden row of rail one's grid until a leg opens."""
+
+    def test_the_row_is_hidden_and_laid_on_rail_ones_columns(
+        self, client: Client
+    ) -> None:
+        """Hidden, and a subgrid spanning every column rail one has."""
+        rail = _rail(_home(client))
+
+        row = re.search(r"<div\s+data-route-rail-two\b[^>]*>", rail)
+        assert row is not None
+        assert re.search(r"\shidden\s", row.group(0))
+        assert "col-span-full" in row.group(0)
+        assert "grid-cols-subgrid" in row.group(0)
+
+    def test_the_lane_is_one_focusable_slider(self, client: Client) -> None:
+        """Bands are not tab stops; the lane is, with the arrow keys."""
+        rail = _rail(_home(client))
+
+        lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
+        assert lane is not None
+        assert 'role="slider"' in lane.group(0)
+        assert 'tabindex="0"' in lane.group(0)
+        # Real pixels: a stretched lane would misdraw the bank ribbon's lean.
+        assert "preserveAspectRatio" not in lane.group(0)
+
+    def test_it_has_its_own_close_and_zoom_controls(self, client: Client) -> None:
+        """×, − and + — each a bare icon button with a translated name."""
+        rail = _rail(_home(client))
+
+        for hook, label in (
+            ("data-route-rail-two-close", "Close the leg"),
+            ('data-route-rail-two-zoom="out"', "Zoom out"),
+            ('data-route-rail-two-zoom="in"', "Zoom in"),
+        ):
+            button = re.search(rf"<button[^>]*{hook}[^>]*>", rail)
+            assert button is not None
+            assert f'aria-label="{label}"' in button.group(0)
+
+    def test_its_strings_ride_in_the_rails_template(self, client: Client) -> None:
+        """Every string route_rail_two.js writes, one per slope class."""
+        rail = _rail(_home(client))
+        keys = set(re.findall(r'data-string="([^"]+)"', rail))
+
+        assert {
+            "two-lane-label",
+            "two-hint",
+            "class-slope-gentle",
+            "class-slope-30",
+            "class-slope-35",
+            "class-slope-40",
+            "class-slope-45",
+            "class-slope-50",
+            "class-unknown",
+            "readout-angle",
+            "readout-band",
+            "readout-passage",
+        } <= keys
 
 
 @pytest.mark.django_db

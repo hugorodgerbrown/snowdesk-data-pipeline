@@ -378,6 +378,14 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_core.js' %}"></script>
+    {# SNOW-1019: rail two, the open leg. The bank ribbon's tick geometry    #}
+    {# (window.pwaBankRibbonCore, SNOW-1021), rail two's pure half           #}
+    {# (window.pwaRouteRailTwoCore) and its DOM half                         #}
+    {# (window.pwaRouteRailTwo), which route_rail.js attaches on open — so   #}
+    {# all three come before it.                                             #}
+    <script defer src="{% static 'js/bank_ribbon_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two.js' %}"></script>
     <script defer src="{% static 'js/route_rail.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}

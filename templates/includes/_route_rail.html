@@ -9,9 +9,26 @@ eyebrow, the route's name, its figures and its actions), the LANE — the
 elevation profile drawn as one filled shape per leg under one outline,
 with distance ticks along its foot — and a readout column naming the open
 leg. Pressing a leg publishes it to the route cursor
-(static/js/route_cursor_core.js) as the open leg; rail two (SNOW-1017)
-renders it. Pressing it again closes it. There is deliberately no "whole
-route" button and no breadcrumb: closing the leg IS the whole route.
+(static/js/route_cursor_core.js) as the open leg, and rail two renders it.
+There is deliberately no "whole route" button and no breadcrumb: closing
+the leg IS the whole route.
+
+RAIL TWO IS THE SECOND ROW (SNOW-1019), `[data-route-rail-two]`, hidden
+until a leg is open. It sits in rail one's three columns (`subgrid`): the
+leg's title, figures, zoom −/+ and its own × on the left; a lane of four
+rows on one x-axis in the middle — the leg's elevation profile, a strip of
+slope bands (one per run of segments sharing a class, unmerged), the track
+line drawn as the bank ribbon, and one bar per no-fall passage — with
+distance ticks under it; and a readout on the right. It opens on 2 km of
+ground (or the whole leg), pans and zooms within the leg, and its bands
+and passages are pressable selections. static/js/route_rail_two.js draws
+it in REAL PIXELS — the viewBox is the lane's measured width, never
+stretched — because the ribbon's tick lean IS the bank angle, and a
+stretched tick would lie about it. Rail one marks the part of the open leg
+rail two shows with a bracket; pressing inside the open leg on rail one
+moves rail two there rather than closing it. The leg closes on rail two's
+×, on Escape (the first closes the leg, the next the rail), or by
+pressing another leg.
 
 RENDERED ONCE, EMPTY, AND HIDDEN. static/js/route_rail.js fills it for the
 route map.js's `activateRoute` opens and hides it again when the route
@@ -69,6 +86,10 @@ Context:
 {% trans "Route profile" as route_rail_eyebrow %}
 {% trans "Route actions" as route_rail_menu_label %}
 {% trans "Close the route profile" as route_rail_close_label %}
+{% trans "Open leg" as route_rail_two_eyebrow %}
+{% trans "Close the leg" as route_rail_two_close_label %}
+{% trans "Zoom out" as route_rail_two_zoom_out_label %}
+{% trans "Zoom in" as route_rail_two_zoom_in_label %}
 <section
     id="route-rail"
     data-route-rail
@@ -130,6 +151,69 @@ Context:
         <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
     </div>
     <div data-route-rail-readout aria-live="polite" class="min-w-0 self-center text-sm text-text-2"></div>
+    {% comment %}
+    Rail two: the open leg (SNOW-1019). One grid row spanning rail one's
+    three columns and laid on them by `subgrid`, so its identity, lane and
+    readout cells line up under rail one's. Hidden until a leg is open;
+    static/js/route_rail_two.js fills and shows it.
+    {% endcomment %}
+    <div
+        data-route-rail-two
+        hidden
+        role="group"
+        aria-labelledby="route-rail-two-eyebrow"
+        class="col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
+    >
+        <div class="min-w-0">
+            <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                    {% include "includes/_eyebrow.html" with text=route_rail_two_eyebrow tag="h3" heading_id="route-rail-two-eyebrow" %}
+                    <p data-route-rail-two-title class="mt-1 truncate text-sm font-semibold text-text-1"></p>
+                </div>
+                <div class="-mr-3 -mt-3 flex flex-none items-start">
+                    <button
+                        type="button"
+                        data-route-rail-two-zoom="out"
+                        aria-label="{{ route_rail_two_zoom_out_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_minus.html" only %}
+                    </button>
+                    <button
+                        type="button"
+                        data-route-rail-two-zoom="in"
+                        aria-label="{{ route_rail_two_zoom_in_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_plus.html" only %}
+                    </button>
+                    <button
+                        type="button"
+                        data-route-rail-two-close
+                        aria-label="{{ route_rail_two_close_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_close.html" only %}
+                    </button>
+                </div>
+            </div>
+            <p data-route-rail-two-figures class="mt-1 font-mono text-meta text-text-2"></p>
+        </div>
+        {# The lane, drawn in real pixels by static/js/route_rail_two.js.   #}
+        <div class="min-w-0">
+            <svg
+                data-route-rail-two-lane
+                role="slider"
+                tabindex="0"
+                aria-orientation="horizontal"
+                class="route-rail-two-lane block h-28 w-full text-route-line"
+            >
+            </svg>
+            <div data-route-rail-two-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3">
+            </div>
+        </div>
+        <div data-route-rail-two-readout aria-live="polite" class="min-w-0 self-center text-sm text-text-2"></div>
+    </div>
     {# The CSRF token the rail's Share, Rename and Delete posts carry.   #}
     <form data-route-rail-csrf hidden>
         {% csrf_token %}
@@ -154,5 +238,22 @@ Context:
         <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
         <span data-string="share-copied">{% trans "Link copied." %}</span>
         <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+        {# Rail two's copy (static/js/route_rail_two.js).                    #}
+        <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
+        <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
+        <span data-string="two-hint">{% trans "Press a band or a passage to select it." %}</span>
+        <span data-string="class-slope-gentle">{% trans "under 30°" %}</span>
+        <span data-string="class-slope-30">{% trans "30–35°" %}</span>
+        <span data-string="class-slope-35">{% trans "35–40°" %}</span>
+        <span data-string="class-slope-40">{% trans "40–45°" %}</span>
+        <span data-string="class-slope-45">{% trans "45–50°" %}</span>
+        <span data-string="class-slope-50">{% trans "over 50°" %}</span>
+        <span data-string="class-unknown">{% trans "slope not known" %}</span>
+        <span data-string="readout-angle">{% blocktrans %}%(angle)s° — %(class)s{% endblocktrans %}</span>
+        <span data-string="readout-bank-right">{% blocktrans %}Banked %(deg)s° to the right{% endblocktrans %}</span>
+        <span data-string="readout-bank-left">{% blocktrans %}Banked %(deg)s° to the left{% endblocktrans %}</span>
+        <span data-string="readout-bank-level">{% trans "Level across the track" %}</span>
+        <span data-string="readout-band">{% blocktrans %}%(length)s m at %(class)s{% endblocktrans %}</span>
+        <span data-string="readout-passage">{% blocktrans %}No-fall passage — %(length)s m{% endblocktrans %}</span>
     </template>
 </section>

@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_icon_minus.html — the zoom-out glyph: a bare horizontal stroke (SNOW-1019).
+
+Drawn for rail two's zoom buttons (includes/_route_rail.html), which halve
+and double the span of ground the open leg shows. _icon_minus.html and
+_icon_plus.html are a pair: the same stroke, the + adding the upright.
+
+Stroke width 2, the house idiom for every glyph (see _icon_pencil.html).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18, the size
+       _icon_close.html draws beside it.
+{% endcomment %}
+<svg
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M5 12h14" />
+</svg>
