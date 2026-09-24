@@ -1385,6 +1385,27 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Route rail (SNOW-1018) -------------------------------------------------------
+# Rail one is rendered once, empty and hidden, and filled by
+# static/js/route_rail.js for whichever route is open — this page runs no
+# interaction JS, so the one variant shows the empty shell: the eyebrow,
+# the actions menu and the (blank) lane, rendered `static` — visible and in
+# normal flow rather than hidden and docked over a map that is not here.
+# The URL templates are placeholders; nothing here posts.
+
+ROUTE_RAIL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Empty shell — filled by route_rail.js when a route opens",
+        "context": {
+            "route_rename_url_template": "/routes/partials/__UUID__/rename/",
+            "route_share_url_template": "/routes/__UUID__/share/",
+            "route_delete_url_template": "/routes/partials/__UUID__/delete/",
+            "static": True,
+        },
+    },
+)
+
+
 # UGC panel + row (SNOW-658) ---------------------------------------------------
 # The skeleton and row shape shared by the three map panels that manage a
 # user's own data — downloads, favourites, field observations. Hugo's "Map

@@ -65,6 +65,7 @@ from apps.public._component_fixtures import (
     RESORT_FACTS_VARIANTS,
     RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -563,6 +564,11 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-route-line-pending", "Shared, not saved", "#0d9488", None),
             Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
             Token("--color-marker-observation", "Community report", "#e8711a", None),
+            # SNOW-1018: not drawn on the map but under the route's profile
+            # on rail one, and listed here beside the route line because
+            # the climb fill IS the route's colour.
+            Token("--color-route-rail-climb", "Rail leg — climb", "#c026d3", None),
+            Token("--color-route-rail-descent", "Rail leg — descent", "#64748b", None),
         ),
     ),
     FoundationCategory(
@@ -1538,6 +1544,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_overflow_menu.html",
         variants=OVERFLOW_MENU_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-rail",
+        label="Route rail",
+        description=(
+            "Rail one (SNOW-1018): the strip docked over the map's foot "
+            "while a route is open. Three columns — the identity block "
+            "(eyebrow, name, figures, the actions as a '…' menu in the "
+            "routes row's order), the lane (the elevation profile as one "
+            "filled shape per leg under one outline, with distance ticks), "
+            "and a readout naming the open leg. Pressing a leg opens it on "
+            "the route cursor; pressing it again closes it. Rendered once, "
+            "empty and hidden, and filled by static/js/route_rail.js, so "
+            "this page shows the shell alone."
+        ),
+        kind="components",
+        partial="includes/_route_rail.html",
+        variants=ROUTE_RAIL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

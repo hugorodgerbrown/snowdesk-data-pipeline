@@ -150,6 +150,35 @@
     --map-bottom-left-stack: calc(3 * var(--map-control-sm) + 16px);
 }
 
+/* —— Rail one (SNOW-1018) ————————————————————————————————————
+   The route's profile strip, docked over the map's foot while a route is
+   open (templates/includes/_route_rail.html). It DISPLACES the bottom
+   chrome by moving the one token every bottom-anchored control already
+   reads, rather than by giving each control a rule of its own: the
+   bottom-left stack, the bottom-right column and #home-intro all sit on
+   --map-bottom-row-offset, so raising it by the rail's height and a gap
+   moves all of them together and none can be forgotten.
+
+   --route-rail-height is MEASURED by static/js/route_rail.js on every
+   open and written onto #map beside the attribute; the rail's height
+   depends on how its grid wraps at the current width, and a constant
+   here would be a second source of truth for it. */
+#map[data-route-rail-open] {
+    --map-bottom-row-offset: calc(
+        var(--map-edge-inset-bottom) + var(--route-rail-height, 0px) + 8px
+    );
+}
+
+.route-rail {
+    position: absolute;
+    left: var(--map-edge-inset-left);
+    right: var(--map-edge-inset-right);
+    bottom: var(--map-edge-inset-bottom);
+    /* Over the canvas and the scrubber (2), under the control columns (4),
+       which the offset above lifts clear of it anyway. */
+    z-index: 3;
+}
+
 .map-utility-cluster {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 12px);

@@ -2143,6 +2143,10 @@ Optional context:
         <span data-string="roundel-locate">{% trans "Locate me" %}</span>
         <span data-string="roundel-drop">{% trans "Download the area around you" %}</span>
     </template>
+    {# SNOW-1018: rail one — the open route's profile, cut at its           #}
+    {# transitions. Inside #map rather than after it; the partial's header  #}
+    {# says why. Hidden until static/js/route_rail.js opens it.             #}
+    {% include "includes/_route_rail.html" %}
 </div>
 {# SNOW-492: per-overlay "unavailable offline" toasts. Hidden by default;   #}
 {# map.js reveals the matching id (remove `hidden`, add `flex` — see        #}

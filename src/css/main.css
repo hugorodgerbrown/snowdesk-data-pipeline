@@ -488,6 +488,20 @@
      ————————————————————————————————————————— */
   --color-fall-line-arrow: #1a1916;
 
+  /* —— rail one's leg fills (SNOW-1018) ——
+     One filled shape per leg under the route's profile
+     (templates/includes/_route_rail.html). The one fact
+     per leg on the wire is whether it climbs, so there
+     are two fills and not a hue per leg: a climb in the
+     route's own colour, a descent in a neutral slate
+     that sits apart from every slope class above — the
+     profile's fill must never read as a steepness.
+     Consumed by .route-rail-leg below, which also keeps
+     them out of Tailwind's tree-shaking.
+     ————————————————————————————————————————— */
+  --color-route-rail-climb:   #c026d3;   /* the route line's own fuchsia */
+  --color-route-rail-descent: #64748b;   /* slate-500                    */
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;
@@ -1543,6 +1557,23 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   flex-shrink: 0;
 }
 
+
+/* —— Rail one's leg fills (SNOW-1018) ————————————
+   static/js/route_rail.js draws one <path class="route-rail-leg"> per
+   leg and marks it `data-climbing` and, while it is the open leg,
+   `aria-pressed="true"`. Both are data-attribute selectors, which a
+   utility class cannot express. The open leg's fill is raised rather
+   than recoloured, so it still reads as the same climb or descent. */
+.route-rail-leg {
+    fill-opacity: 0.22;
+    cursor: pointer;
+    transition: fill-opacity 120ms ease-out;
+}
+.route-rail-leg[data-climbing="true"]  { fill: var(--color-route-rail-climb); }
+.route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
+.route-rail-leg:hover { fill-opacity: 0.36; }
+.route-rail-leg[aria-pressed="true"] { fill-opacity: 0.6; }
+.route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and

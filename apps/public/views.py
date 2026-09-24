@@ -1734,7 +1734,10 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     route row's Remove is a plain HTMX form rendered server-side into the
     row itself (routes/partials/_route_row_actions.html), so nothing
     client-side ever has to build that URL; only rename does, because its
-    commit is a fetch from an inline editor.
+    commit is a fetch from an inline editor. SNOW-1018's rail is the one
+    exception, and ``route_delete_url_template`` exists for it alone: the
+    rail is filled by JS for whichever route is open, so its Delete is a
+    fetch too.
 
     Args:
         request: The current HTTP request.
@@ -1749,7 +1752,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``route_bulletin_url_template``,
-        ``routes_geojson_url`` and ``routes_signin_url``.
+        ``route_delete_url_template``, ``routes_geojson_url`` and
+        ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1797,6 +1801,14 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # a route carrying a uuid, which a pending share never does.
         "route_bulletin_url_template": reverse(
             "routes:bulletin", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        # SNOW-1018: rail one's Delete. The routes ROW needs no delete
+        # template (its Remove is a server-rendered HTMX form, as the
+        # docstring says), but the rail below the map is filled by JS for
+        # whichever route is open, so its Delete is a fetch built from
+        # this — the rename template's own reasoning.
+        "route_delete_url_template": reverse(
+            "routes:delete", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
         # SNOW-687: the map layer's data. Emitted only for an eligible user
         # (see the template) — the endpoint 403s for anyone else, and there
