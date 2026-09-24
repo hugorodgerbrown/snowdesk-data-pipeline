@@ -142,6 +142,11 @@ def sandbox(tmp_path: Path) -> Sandbox:
     _git(main, "init", "-b", "main")
     _git(main, "config", "user.email", "test@example.com")
     _git(main, "config", "user.name", "Test User")
+    # The developer's global config signs every commit, and a gpg-agent
+    # asked for signatures by several parallel workers at once fails some
+    # of them — the intermittent exit 128 at the commit below. A throwaway
+    # repository has nothing to sign.
+    _git(main, "config", "commit.gpgsign", "false")
     (main / "README.md").write_text("placeholder\n")
     _git(main, "add", ".")
     _git(main, "commit", "-m", "initial")
