@@ -203,6 +203,10 @@ const paintCalls = [];
 let queryAnswer = () => [];
 /** How the stub projects a [lon, lat] to screen px; a test may replace it. */
 let projectLngLat = () => ({ x: 0, y: 0 });
+/** Every panBy call, as [offset, options]. */
+const panCalls = [];
+/** `once` handlers by event, which a test fires by hand. */
+const onceHandlers = {};
 
 /**
  * MapLibre stub that records what installRoutesLayer builds.
@@ -219,10 +223,11 @@ function stubMapLibre() {
         (handlers[`${event}:${layerOrHandler}`] ||= []).push(maybeHandler);
       }
     },
-    once: () => {},
+    once: (event, fn) => { (onceHandlers[event] ||= []).push(fn); },
     off: () => {},
     addControl: () => {},
     removeControl: () => {},
+    panBy: (offset, options) => { panCalls.push([offset, options]); },
     getLayer: (id) => (layers.has(id) ? { id } : null),
     getFilter: (id) => (layers.get(id) || {}).filter || null,
     getLayoutProperty: (id, prop) => ((layers.get(id) || {}).layout || {})[prop],
@@ -873,5 +878,112 @@ describe('the route cursor on the map (SNOW-1019)', () => {
 
     expect(cursor.state().index).toBeNull();
     projectLngLat = () => ({ x: 0, y: 0 });
+  });
+});
+
+describe('keeping the cursor dot in view (SNOW-1019)', () => {
+  // A 375 × 812 phone canvas with the rail's top at 300: the visible map
+  // is y 60 (under the top chrome) to 300.
+  const CANVAS = { left: 0, top: 0, right: 375, bottom: 812, width: 375, height: 812 };
+  const RAIL = { left: 0, top: 300, right: 375, bottom: 812, width: 375, height: 512 };
+  // The three segment middles project to y = 425, 375 and 325 — all
+  // behind the rail — at x = 200.
+  const behindTheRail = ([lng, lat]) => ({
+    x: 200 + (lng - 7.0) * 10000,
+    y: 300 + (46.015 - lat) * 10000,
+  });
+
+  /** Land the pan in flight, as MapLibre's moveend would. */
+  const landPan = () => {
+    const handlers = onceHandlers.moveend || [];
+    onceHandlers.moveend = [];
+    for (const handler of handlers) handler();
+  };
+
+  let mapSpy;
+  let railSpy;
+  let cursor;
+
+  const setUp = () => {
+    projectLngLat = behindTheRail;
+    mapSpy = vi.spyOn(document.getElementById('map'), 'getBoundingClientRect')
+      .mockReturnValue(CANVAS);
+    railSpy = vi.spyOn(rail.element, 'getBoundingClientRect').mockReturnValue(RAIL);
+    cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    tapLeg();
+    landPan();
+    panCalls.length = 0;
+  };
+
+  const tearDown = () => {
+    landPan();
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+    projectLngLat = () => ({ x: 0, y: 0 });
+    mapSpy.mockRestore();
+    railSpy.mockRestore();
+  };
+
+  it('pans a dot a rail moved behind the rail back into view, keeping the zoom', () => {
+    setUp();
+
+    cursor.setIndex(0);
+
+    expect(panCalls).toHaveLength(1);
+    const [[dx, dy], options] = panCalls[0];
+    // 425 → 300 − 24.
+    expect(dx).toBe(0);
+    expect(dy).toBeCloseTo(149);
+    expect(options).not.toHaveProperty('zoom');
+    tearDown();
+  });
+
+  it('makes one pan for a scrub, not a queue', () => {
+    setUp();
+
+    cursor.setIndex(0);
+    cursor.setIndex(1);
+    cursor.setIndex(2);
+
+    expect(panCalls).toHaveLength(1);
+    // The pan lands: the index that arrived mid-pan is checked once more.
+    landPan();
+    expect(panCalls).toHaveLength(2);
+    tearDown();
+  });
+
+  it('does not pan for an index the map wrote under the pointer', () => {
+    setUp();
+
+    for (const handler of mapStub.handlers.mousemove || []) {
+      handler({ point: { x: 200, y: 375 } });
+    }
+
+    expect(cursor.state().index).toBe(1);
+    expect(panCalls).toEqual([]);
+    tearDown();
+  });
+
+  it('does not pan while the reader drags the map', () => {
+    setUp();
+    for (const handler of mapStub.handlers.dragstart || []) handler();
+
+    cursor.setIndex(0);
+
+    expect(panCalls).toEqual([]);
+    for (const handler of mapStub.handlers.dragend || []) handler();
+    tearDown();
+  });
+
+  it('gives the leader no map stop while the dot is behind the rail', () => {
+    setUp();
+    for (const handler of mapStub.handlers.dragstart || []) handler();
+
+    cursor.setIndex(0);
+
+    expect(window.pwaRouteCursorMap.point()).toBeNull();
+    for (const handler of mapStub.handlers.dragend || []) handler();
+    tearDown();
   });
 });

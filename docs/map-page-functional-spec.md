@@ -322,6 +322,12 @@ A dashed leader line in the route colour runs from the dot on the map
 down to rail one's cursor, where it meets the profile, and on to rail
 two's while a leg is open, so one place can be followed across all three
 drawings. It is hidden while the cursor has no position.
+When a rail moves the cursor to a place the rails cover — on a phone they
+take the bottom two-thirds of the map — the map pans, keeping its zoom,
+until the dot is back in the visible part with a small margin. A place
+the reader picked on the map itself never pans the map. Until the pan
+lands, the leader line joins the two rails and leaves out the covered
+dot.
 
 **Tapping a route** opens the **route detail panel** — the docked sheet
 (`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once

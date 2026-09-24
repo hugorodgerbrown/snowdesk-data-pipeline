@@ -33,6 +33,19 @@
  *   segmentMidpoints(slope)              → [[lon, lat]] per segment
  *   nearestSample(midpointsPx, px, maxPx) → the nearest index, or null
  *   legAt(legs, index)                   → the leg holding an index, or null
+ *   visibleRect(canvas, railTop, topInset) → the map the rails leave visible
+ *   isInside(point, rect)                → whether a point is in a rect
+ *   panOffset(point, rect, margin)       → the pan that brings it in, or null
+ *
+ * ## The visible map (SNOW-1019)
+ *
+ * On a phone, with a leg open, the rails cover the bottom two-thirds of
+ * the map, and the cursor's dot can land behind them. The map that is
+ * actually visible is the canvas above the rail's top edge and below the
+ * top chrome. `panOffset` answers how far to pan so the dot is back
+ * inside it, `margin` px in from every edge — in `panBy`'s own sign: a
+ * dot below the rail's top gives a POSITIVE y, which moves the view down
+ * the map and the dot up the screen.
  */
 
 // @ts-check
@@ -187,7 +200,83 @@
     return legs.find((leg) => leg && index >= leg.from && index <= leg.to) || null;
   }
 
+  /**
+   * @typedef {{left: number, top: number, right: number, bottom: number}} Rect
+   */
+
+  /**
+   * The part of the map canvas the rail and the top chrome leave visible.
+   *
+   * @param {?Rect} canvas The map container's rect, viewport px.
+   * @param {?number} railTop The rail's top edge, viewport px; null when
+   *   no rail is open.
+   * @param {number} topInset The top chrome's height, px.
+   * @returns {?Rect} Null for a canvas with no size (not laid out yet).
+   */
+  function visibleRect(canvas, railTop, topInset) {
+    if (!canvas || !(canvas.right > canvas.left) || !(canvas.bottom > canvas.top)) return null;
+    const bottom = typeof railTop === 'number' && Number.isFinite(railTop)
+      ? Math.min(canvas.bottom, railTop)
+      : canvas.bottom;
+    return {
+      left: canvas.left,
+      top: Math.min(bottom, canvas.top + (topInset || 0)),
+      right: canvas.right,
+      bottom: bottom,
+    };
+  }
+
+  /**
+   * Whether a point lies inside a rect, edges included.
+   *
+   * @param {?{x: number, y: number}} point
+   * @param {?Rect} rect
+   * @returns {boolean}
+   */
+  function isInside(point, rect) {
+    if (!point || !rect) return false;
+    return point.x >= rect.left && point.x <= rect.right
+      && point.y >= rect.top && point.y <= rect.bottom;
+  }
+
+  /**
+   * One axis of `panOffset`.
+   *
+   * @param {number} value The point's coordinate.
+   * @param {number} low The rect's low edge.
+   * @param {number} high The rect's high edge.
+   * @param {number} margin
+   * @returns {number}
+   */
+  function axisOffset(value, low, high, margin) {
+    if (high - low <= margin * 2) return value - (low + high) / 2;
+    if (value < low + margin) return value - (low + margin);
+    if (value > high - margin) return value - (high - margin);
+    return 0;
+  }
+
+  /**
+   * The pan that brings a point `margin` px inside a rect.
+   *
+   * @param {?{x: number, y: number}} point The point, viewport px.
+   * @param {?Rect} rect The visible map, viewport px.
+   * @param {number} margin How far inside the edges to bring it.
+   * @returns {?{x: number, y: number}} `panBy`'s offset, or null when the
+   *   point is already inside (or either is unknown).
+   */
+  function panOffset(point, rect, margin) {
+    if (!point || !rect || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    const m = margin || 0;
+    const x = axisOffset(point.x, rect.left, rect.right, m);
+    const y = axisOffset(point.y, rect.top, rect.bottom, m);
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) return null;
+    return { x: x, y: y };
+  }
+
   self.pwaRouteCursorMapCore = Object.freeze({
+    visibleRect: visibleRect,
+    isInside: isInside,
+    panOffset: panOffset,
     sampleCount: sampleCount,
     selectionLine: selectionLine,
     cursorPoint: cursorPoint,

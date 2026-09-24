@@ -2429,6 +2429,18 @@
   const EMPTY_ROUTE_CURSOR_FC = Object.freeze({ type: 'FeatureCollection', features: [] });
   let routeCursorSelectionData = EMPTY_ROUTE_CURSOR_FC;
   let routeCursorPointData = EMPTY_ROUTE_CURSOR_FC;
+  // SNOW-1019: keeping the cursor's dot out from behind the rails. True
+  // while THIS module writes the index (a hover or a tap on the line), so
+  // follow() does not pan the map under the pointer that wrote it; true
+  // while a pan is in flight, so a scrub along rail two makes one pan and
+  // not a queue; true while the reader drags the map, which a pan would
+  // fight; and whether an index arrived during a pan, so the dot is
+  // checked once more when it lands.
+  let mapWritesRouteIndex = false;
+  let routeCursorPanInFlight = false;
+  let routeCursorPanPending = false;
+  let mapDragging = false;
+  let lastRouteCursorIndex = null;
 
   /**
    * Paint the open leg at full strength and dim every other (SNOW-1017).
@@ -2550,11 +2562,19 @@
         legs: Array.isArray(legs) ? legs : [],
         midpoints: core ? core.segmentMidpoints(slope) : [],
       };
+      lastRouteCursorIndex = cursor.state().index;
       const follow = (state) => {
         const leg = state && state.openLeg;
         openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
         applyLegDimming();
         paintRouteCursor(state);
+        const index = state ? state.index : null;
+        if (index !== lastRouteCursorIndex) {
+          lastRouteCursorIndex = index;
+          // An index a RAIL wrote may sit behind the rails; one the map
+          // wrote is under the reader's own pointer already.
+          if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
+        }
       };
       unsubscribeRouteCursor = cursor.subscribe(follow);
       follow(cursor.state());
@@ -2575,7 +2595,7 @@
    * @returns {?{x: number, y: number}} Viewport px, or null with no open
    *   route, no index, the routes overlay off or no slope record.
    */
-  const routeCursorScreenPoint = () => {
+  const routeCursorRawPoint = () => {
     const core = self.pwaRouteCursorMapCore;
     if (!core || !map || !routeCursorTarget || !overlayState.routes) return null;
     const index = routeCursorTarget.cursor.state().index;
@@ -2587,6 +2607,91 @@
       ? container.getBoundingClientRect()
       : { left: 0, top: 0 };
     return px ? { x: rect.left + px.x, y: rect.top + px.y } : null;
+  };
+
+  /**
+   * The map the rails and the top chrome leave visible, viewport px
+   * (SNOW-1019).
+   *
+   * The canvas above the rail's measured top edge — `paddingClearingRail`'s
+   * measurement — and below the fit padding's top, where the search pill
+   * sits.
+   *
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   *   Null before the canvas is laid out.
+   */
+  const visibleMapRect = () => {
+    const core = self.pwaRouteCursorMapCore;
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!core || !container || !container.getBoundingClientRect) return null;
+    const rail = window.pwaRouteRail;
+    const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
+      ? rail.element.getBoundingClientRect().top
+      : null;
+    return core.visibleRect(container.getBoundingClientRect(), railTop, FIT_PADDING.top);
+  };
+
+  /**
+   * The cursor dot's screen point, or null when it is not VISIBLE.
+   *
+   * Behind a rail or under the top chrome counts as absent, so the leader
+   * line drops its map stop rather than point at a dot nobody can see.
+   * A canvas not yet laid out has no visible rect to test against, and
+   * the point stands.
+   *
+   * @returns {?{x: number, y: number}}
+   */
+  const routeCursorScreenPoint = () => {
+    const point = routeCursorRawPoint();
+    if (!point) return null;
+    const rect = visibleMapRect();
+    if (!rect) return point;
+    return self.pwaRouteCursorMapCore.isInside(point, rect) ? point : null;
+  };
+
+  // How far inside the visible map a panned-to dot lands, and how long the
+  // pan takes. Short, and the zoom is kept: the reader is scrubbing a
+  // rail, and the map only needs to keep the place in view.
+  const ROUTE_CURSOR_PAN_MARGIN_PX = 24;
+  const ROUTE_CURSOR_PAN_MS = 250;
+
+  /**
+   * Pan the map, if it must, so the cursor's dot is not behind the rails.
+   *
+   * At most one pan in flight: an index arriving mid-pan is remembered
+   * and checked once when the pan lands, never queued. Skipped while the
+   * reader is dragging the map, which a pan would fight.
+   *
+   * @returns {void}
+   */
+  const keepRouteCursorInView = () => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !map || typeof map.panBy !== 'function') return;
+    if (mapDragging) return;
+    if (routeCursorPanInFlight) {
+      routeCursorPanPending = true;
+      return;
+    }
+    const offset = core.panOffset(
+      routeCursorRawPoint(), visibleMapRect(), ROUTE_CURSOR_PAN_MARGIN_PX,
+    );
+    if (!offset) return;
+    routeCursorPanInFlight = true;
+    let landed = false;
+    const land = () => {
+      if (landed) return;
+      landed = true;
+      routeCursorPanInFlight = false;
+      if (routeCursorPanPending) {
+        routeCursorPanPending = false;
+        keepRouteCursorInView();
+      }
+    };
+    map.once('moveend', land);
+    // moveend is not guaranteed (a pan interrupted by a gesture), so the
+    // flag is also cleared a little after the pan's own duration.
+    setTimeout(land, ROUTE_CURSOR_PAN_MS + 200);
+    map.panBy([offset.x, offset.y], { duration: ROUTE_CURSOR_PAN_MS });
   };
 
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
@@ -8522,10 +8627,15 @@
       const { cursor, legs } = routeCursorTarget;
       const leg = self.pwaRouteCursorMapCore.legAt(legs, index);
       const open = cursor.state().openLeg;
-      if (leg && !(open && open.from === leg.from && open.to === leg.to)) {
-        cursor.openLeg(leg);
+      mapWritesRouteIndex = true;
+      try {
+        if (leg && !(open && open.from === leg.from && open.to === leg.to)) {
+          cursor.openLeg(leg);
+        }
+        cursor.setIndex(index);
+      } finally {
+        mapWritesRouteIndex = false;
       }
-      cursor.setIndex(index);
       return true;
     };
 
@@ -8540,8 +8650,19 @@
     map.on('mousemove', (e) => {
       if (!routeCursorLive() || !e || !e.point) return;
       const index = routeSampleAt(e.point, ROUTE_HOVER_PX);
-      if (index !== null) routeCursorTarget.cursor.setIndex(index);
+      if (index === null) return;
+      mapWritesRouteIndex = true;
+      try {
+        routeCursorTarget.cursor.setIndex(index);
+      } finally {
+        mapWritesRouteIndex = false;
+      }
     });
+
+    // SNOW-1019: a reader dragging the map is not to be fought by a pan
+    // that keeps the cursor in view (keepRouteCursorInView).
+    map.on('dragstart', () => { mapDragging = true; });
+    map.on('dragend', () => { mapDragging = false; });
 
     // Dispatch a marker the exclusion zone claimed to its activation, by
     // layer. No tap coordinate: it was here for the route alone, whose

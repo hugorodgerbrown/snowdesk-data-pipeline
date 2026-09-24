@@ -118,3 +118,60 @@ describe('legAt', () => {
     expect(core.legAt(legs, null)).toBeNull();
   });
 });
+
+describe('visibleRect (SNOW-1019)', () => {
+  const canvas = { left: 0, top: 0, right: 375, bottom: 812 };
+
+  it('is the canvas below the top chrome and above the rail', () => {
+    expect(core.visibleRect(canvas, 300, 60)).toEqual({ left: 0, top: 60, right: 375, bottom: 300 });
+  });
+
+  it('is the canvas down to its foot with no rail open', () => {
+    expect(core.visibleRect(canvas, null, 60).bottom).toBe(812);
+  });
+
+  it('is unknown for a canvas with no size', () => {
+    expect(core.visibleRect({ left: 0, top: 0, right: 0, bottom: 0 }, 300, 60)).toBeNull();
+  });
+});
+
+describe('panOffset (SNOW-1019)', () => {
+  const rect = { left: 0, top: 60, right: 375, bottom: 300 };
+
+  it('answers null for a point already inside', () => {
+    expect(core.panOffset({ x: 100, y: 150 }, rect, 24)).toBeNull();
+  });
+
+  it('pans down the map for a point behind the rail', () => {
+    // 500 is below the rail's top at 300: bring it to 300 − 24.
+    expect(core.panOffset({ x: 100, y: 500 }, rect, 24)).toEqual({ x: 0, y: 224 });
+  });
+
+  it('pans the other way for a point above the top chrome', () => {
+    expect(core.panOffset({ x: 100, y: 10 }, rect, 24)).toEqual({ x: 0, y: -74 });
+  });
+
+  it('pans sideways off either edge', () => {
+    expect(core.panOffset({ x: -30, y: 150 }, rect, 24)).toEqual({ x: -54, y: 0 });
+    expect(core.panOffset({ x: 400, y: 150 }, rect, 24)).toEqual({ x: 49, y: 0 });
+  });
+
+  it('centres on an axis too short for two margins', () => {
+    expect(core.panOffset({ x: 100, y: 90 }, { left: 0, top: 60, right: 375, bottom: 100 }, 24))
+      .toEqual({ x: 0, y: 10 });
+  });
+
+  it('answers null with no point or no rect', () => {
+    expect(core.panOffset(null, rect, 24)).toBeNull();
+    expect(core.panOffset({ x: 0, y: 0 }, null, 24)).toBeNull();
+  });
+});
+
+describe('isInside', () => {
+  it('includes the edges', () => {
+    const rect = { left: 0, top: 0, right: 10, bottom: 10 };
+    expect(core.isInside({ x: 10, y: 0 }, rect)).toBe(true);
+    expect(core.isInside({ x: 11, y: 0 }, rect)).toBe(false);
+    expect(core.isInside(null, rect)).toBe(false);
+  });
+});
