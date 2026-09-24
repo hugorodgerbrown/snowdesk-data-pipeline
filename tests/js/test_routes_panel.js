@@ -1025,7 +1025,7 @@ describe('a claim the server refused', () => {
 });
 
 describe('a route claimed from the map popup', () => {
-  // The popup's Save (static/js/map.js's appendRouteClaimCta) claims with a
+  // The rail's Save (static/js/map.js's buildRouteClaimCta) claims with a
   // plain fetch, so none of the HTMX mark-pairs above ever see it. A panel
   // left open behind the popup went on listing the route as pending, with a
   // Save that would 404, until it was closed and reopened.

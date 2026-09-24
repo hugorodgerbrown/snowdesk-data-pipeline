@@ -11,12 +11,14 @@
  *   so `['==', ..., false]` would match nothing and every owned route
  *   would vanish.
  *
- *   THE DETAIL PANEL OFFERS SAVE. The deep link lands on the map, so the
- *   panel is where the recipient meets the action — the routes panel is a
+ *   THE TAP OFFERS SAVE. The deep link lands on the map, so what a tap
+ *   opens is where the recipient meets the action — the routes panel is a
  *   thing they would have to know to open. It was an anchored popup until
- *   SNOW-973 and is the docked `#route-detail-sheet` now; the control, its
- *   two states and its wording are unchanged, which is what these
- *   assertions are about.
+ *   SNOW-973, the docked `#route-detail-sheet` until SNOW-1018, and is
+ *   rail one's `claim` slot now: map.js builds the control and hands it to
+ *   the rail (a recording stub here, tests/js/_route_rail_stub.js). The
+ *   control, its two states and its wording are unchanged, which is what
+ *   these assertions are about.
  *
  *   THE DEEP LINK IS CONSUMED. `?route_share=<token>` is stripped from the
  *   address bar on arrival, for the same reason `?favourite=` is: the
@@ -38,6 +40,7 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
 import '../../static/js/share.js';
 import { loadMapBundle } from './_load_map_bundle.js';
+import { installRouteRailStub } from './_route_rail_stub.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -236,20 +239,20 @@ function buildFixture() {
 }
 
 let mapStub;
+let rail;
 
 /**
- * Tap the map at a screen position, and return the detail it opened.
+ * Tap the map at a screen position, and return what it handed the rail.
  *
- * The sheet is closed first, so what comes back belongs to THIS tap —
- * MapSheet's teardown empties the body, so a leftover node cannot be
- * found after a close.
+ * The rail's record is cleared first, so what comes back belongs to THIS
+ * tap.
  *
  * @param {number} y The tap's y in pixels.
- * @returns {HTMLElement|undefined} The figures map.js built, if the sheet
- *   opened.
+ * @returns {{feature: object, options: object}|undefined} The rail's
+ *   open call, if the tap opened it.
  */
 function tapAt(y) {
-  window.pwaRouteDetail.close();
+  rail.reset();
   for (const handler of mapStub.handlers.click || []) {
     handler({
       point: { x: 10, y },
@@ -257,9 +260,16 @@ function tapAt(y) {
       originalEvent: { target: document.body },
     });
   }
-  const sheetEl = document.getElementById('route-detail-sheet');
-  if (!sheetEl || sheetEl.hasAttribute('hidden')) return undefined;
-  return sheetEl.querySelector('[data-route-detail]') || undefined;
+  return rail.last() || undefined;
+}
+
+/**
+ * Tap the pending line and return the Save control handed to the rail.
+ *
+ * @returns {HTMLElement} The claim control.
+ */
+function claimControl() {
+  return tapAt(LINE_Y).options.claim;
 }
 
 beforeAll(async () => {
@@ -294,6 +304,7 @@ beforeAll(async () => {
   // through. Both before the bundle, as the page loads them.
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_route_detail.js');
+  rail = installRouteRailStub();
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
@@ -364,12 +375,17 @@ describe('the shared-route deep link', () => {
   });
 });
 
-describe('the pending route detail panel', () => {
-  it('opens on a tap and names the route', () => {
-    const node = tapAt(LINE_Y);
+describe('the pending route on the rail', () => {
+  it('opens the rail on a tap, with the whole cached route', () => {
+    const opened = tapAt(LINE_Y);
 
-    expect(node).toBeDefined();
-    expect(node.textContent).toContain('Col de Balme');
+    expect(opened).toBeDefined();
+    expect(opened.feature.properties.name).toBe('Col de Balme');
+    // A pending feature carries no uuid, so a lookup keyed on uuid alone
+    // would find nothing — and the tapped feature's own geometry is the
+    // tile's clipped copy, which is why the cache is the source in the
+    // first place. The cached track is the one with elevations.
+    expect(opened.feature.geometry.coordinates.length).toBeGreaterThan(2);
   });
 
   it('does not repeat the qualifier above the control', () => {
@@ -381,28 +397,29 @@ describe('the pending route detail panel', () => {
     // and has only its actions to tell them apart; this surface has no
     // such neighbour. Asserted as an absence so the line cannot creep
     // back.
-    expect(tapAt(LINE_Y).textContent).not.toContain('Shared with you');
+    expect(claimControl().textContent).not.toContain('Shared with you');
   });
 
   it('offers Save', () => {
-    const node = tapAt(LINE_Y);
-    const button = node.querySelector('button');
+    const button = claimControl();
 
-    expect(button).not.toBeNull();
+    expect(button.tagName).toBe('BUTTON');
     expect(button.textContent).toContain('Save route');
   });
 
-  it('draws the profile from the TOKEN-keyed cache entry', () => {
-    // A pending feature carries no uuid, so a lookup keyed on uuid alone
-    // would find nothing and silently draw no chart — and the tapped
-    // feature's own geometry is the tile's clipped copy, which is why the
-    // cache is the source in the first place. 1200–1900 is the full
-    // track's range; the tapped copy has two points and no elevations.
-    expect(tapAt(LINE_Y).textContent).toContain('1200–1900 m');
+  it('keeps the sheet one press away, with no reading asked for', () => {
+    const opened = tapAt(LINE_Y);
+
+    expect(typeof opened.options.details).toBe('function');
+    opened.options.details();
+    expect(document.getElementById('route-detail-sheet').hasAttribute('hidden')).toBe(
+      false,
+    );
+    window.pwaRouteDetail.close();
   });
 
   it('posts the claim to the token-templated endpoint', async () => {
-    const button = tapAt(LINE_Y).querySelector('button');
+    const button = claimControl();
 
     button.click();
     await vi.waitFor(() =>
@@ -413,14 +430,16 @@ describe('the pending route detail panel', () => {
     );
   });
 
-  it('announces the change so the layer repaints', async () => {
+  it('announces the change and closes the rail once claimed', async () => {
     const heard = vi.fn();
     document.addEventListener('snowdesk:routes-changed', heard);
-    const button = tapAt(LINE_Y).querySelector('button');
+    const button = claimControl();
+    expect(window.pwaRouteRail.isOpen()).toBe(true);
 
     button.click();
     await vi.waitFor(() => expect(heard).toHaveBeenCalled());
 
+    expect(window.pwaRouteRail.isOpen()).toBe(false);
     document.removeEventListener('snowdesk:routes-changed', heard);
   });
 
@@ -430,7 +449,7 @@ describe('the pending route detail panel', () => {
     globalThis.fetch.mockImplementationOnce(() =>
       Promise.resolve({ ok: false, status: 409 }),
     );
-    const button = tapAt(LINE_Y).querySelector('button');
+    const button = claimControl();
 
     button.click();
     await vi.waitFor(() => expect(button.textContent).toContain('limit'));
@@ -442,7 +461,7 @@ describe('the pending route detail panel', () => {
     globalThis.fetch.mockImplementationOnce(() =>
       Promise.resolve({ ok: false, status: 500 }),
     );
-    const button = tapAt(LINE_Y).querySelector('button');
+    const button = claimControl();
 
     button.click();
     await vi.waitFor(() => expect(button.textContent).toContain("couldn't be saved"));

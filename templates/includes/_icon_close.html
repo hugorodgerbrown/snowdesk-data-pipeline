@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_icon_close.html — the close glyph: an × (SNOW-1018).
+
+Extracted when rail one needed the × the shared sheet header
+(includes/_sheet_header.html) already drew inline, so the two close
+controls draw one mark. Other inline copies of the same two strokes
+predate it (the connection panel, the season sheet, the edit-mode bar)
+and can move here when next touched.
+
+Stroke width 2, the house idiom for every glyph (see _icon_pencil.html).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18, the sheet
+       header's.
+{% endcomment %}
+<svg
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+</svg>

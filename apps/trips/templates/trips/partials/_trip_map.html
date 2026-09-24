@@ -201,9 +201,8 @@ Context:
 <template id="trip-strings-template">
     <span data-string="meeting-point">{% trans "Meeting point" %}</span>
     <span data-string="elevation-profile">{% trans "Elevation profile of the route" %}</span>
-    {# The profile's scale, in the map popup's own spelling — see          #}
-    {# _map_embed.html's "route-elevation-range". One measurement, one     #}
-    {# wording, whichever surface a reader meets it on.                    #}
+    {# The profile's scale, in the spelling the map page's route popup     #}
+    {# used until SNOW-1018 moved its profile to rail one.                  #}
     <span data-string="elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
     {# The map is a progressive enhancement over the figures above it, so   #}
     {# a failure says what is still true rather than apologising: the plan  #}

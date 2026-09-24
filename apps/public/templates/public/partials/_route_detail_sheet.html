@@ -1,7 +1,15 @@
 {% load i18n static %}
 {% comment %}
-public/partials/_route_detail_sheet.html — the docked panel behind a tap on
-a saved route (SNOW-973).
+public/partials/_route_detail_sheet.html — the docked panel behind rail
+one's "Terrain and bulletin" menu item (SNOW-973; SNOW-1018).
+
+SNOW-1018: A TAP NO LONGER OPENS THIS. A tap on a saved route opens rail
+one (templates/includes/_route_rail.html), which took this sheet's top
+half — the name, the distance/ascent/descent figures and the elevation
+profile. The sheet opens from the rail's menu and keeps what the rail does
+not show: the terrain lines and the day's bulletin reading. The history
+below explains why the detail left the popup for a sheet; the sheet then
+lost its figures to the rail.
 
 Included from _routes_surface.html, beside the routes PANEL's own sheet.
 Two sheets, two surfaces: #route-sheet is the list of the user's routes,
@@ -56,9 +64,8 @@ Context expected:
     <div class="flex min-h-0 flex-1 flex-col">
         {% include "includes/_sheet_header.html" with title=route_detail_title close_action="dismiss" icon_template="includes/_icon_route.html" %}
         <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
-            {# map.js builds the figures, the terrain lines and the      #}
-            {# elevation profile and puts them here — the same DOM the   #}
-            {# popup carried, unchanged.                                 #}
+            {# map.js builds the terrain lines and puts them here. The   #}
+            {# figures and the profile moved to rail one (SNOW-1018).    #}
             <div data-route-detail-figures></div>
             {# routes:bulletin's rendered fragment, or the one line that #}
             {# says why there isn't one.                                 #}

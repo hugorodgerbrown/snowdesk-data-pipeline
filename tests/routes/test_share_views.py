@@ -526,7 +526,7 @@ class TestPendingRowClaimControl:
     swallowed and the press does nothing visible. An anonymous recipient
     therefore gets the way in instead of the control, which is the same
     pair the map popup already draws for the same visitor
-    (static/js/map.js's appendRouteClaimCta).
+    (static/js/map.js's buildRouteClaimCta).
     """
 
     def test_a_signed_in_recipient_gets_the_claim_form(self, client: Client) -> None:

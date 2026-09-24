@@ -394,8 +394,8 @@
   }
 
   // The panel LISTENS to that signal as well as raising it, because it is
-  // not the only thing that can change a route. The map popup's own Save
-  // (static/js/map.js's appendRouteClaimCta) claims through a plain fetch —
+  // not the only thing that can change a route. Rail one's own Save
+  // (static/js/map.js's buildRouteClaimCta) claims through a plain fetch —
   // no HTMX request, so none of the mark-pair watchers below ever see it —
   // and a panel left open behind the popup went on listing the route as
   // pending, with a Save that would 404, until it was closed and reopened.

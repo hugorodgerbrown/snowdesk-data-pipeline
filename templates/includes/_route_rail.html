@@ -1,0 +1,158 @@
+{% load i18n components %}
+{% comment %}
+includes/_route_rail.html — rail one: the whole route's profile, cut at
+its transitions (SNOW-1018).
+
+A RAIL is the strip below the map while a route is open (docs/glossary.md).
+Rail one is the whole route. Three columns: the identity block (the
+eyebrow, the route's name, its figures and its actions), the LANE — the
+elevation profile drawn as one filled shape per leg under one outline,
+with distance ticks along its foot — and a readout column naming the open
+leg. Pressing a leg publishes it to the route cursor
+(static/js/route_cursor_core.js) as the open leg; rail two (SNOW-1017)
+renders it. Pressing it again closes it. There is deliberately no "whole
+route" button and no breadcrumb: closing the leg IS the whole route.
+
+RENDERED ONCE, EMPTY, AND HIDDEN. static/js/route_rail.js fills it for the
+route map.js's `activateRoute` opens and hides it again when the route
+detail sheet closes. Nothing here depends on which route that is, so the
+partial carries no route context at all — only the URL templates the
+script addresses the open route's endpoints with.
+
+INSIDE #map, NOT AFTER IT. The page body is a flex column and #map is its
+growing child, so a sibling after it would take height from the map and
+resize the canvas on every open. Positioned over the map's foot instead,
+it moves the map's bottom chrome by one token: static/css/map.css raises
+`--map-bottom-row-offset` while `#map[data-route-rail-open]` is set, and
+every bottom-anchored control reads that offset already. Inside #map also
+keeps a press on the rail from counting as a click outside the route
+detail sheet (static/js/map_sheet.js excludes #map), which would close the
+sheet and, with it, the rail.
+
+THE ACTIONS ARE A MENU. Five actions in a restricted area collapse into
+the "…" menu (design-system rule 5): Terrain and bulletin, then the
+routes row's own four in its order — includes/_route_rail_menu_items.html.
+The first opens the route detail sheet, which a tap no longer opens: the
+rail took the sheet's top half (name, figures, profile), and the sheet
+keeps what the rail does not show — the terrain lines and the day's
+bulletin reading. A pending share has only that first item.
+
+ITS OWN CLOSE, BECAUSE ITS LIFETIME IS ITS OWN. The rail opens on a tap
+and stays open while the sheet opens and closes over it, so it cannot
+borrow the sheet's dismissal. The × beside the menu is the one control
+for it, the sheet header's × drawn the same way. It is not a second
+action competing for rule 5's threshold: it dismisses the surface rather
+than acting on the route, the same place every map sheet keeps its ×.
+
+A PENDING SHARE'S SAVE SITS HERE. `[data-route-rail-claim]` holds the
+"Save route" / "Sign in to save this route" control map.js builds, shown
+for a pending share only: a recipient lands on the rail, and a Save one
+menu press away is a Save most recipients would never find.
+
+TICK LABELS ARE HTML, NOT SVG TEXT. The lane is stretched to the rail's
+width with `preserveAspectRatio="none"`, and SVG text scales with its
+viewBox, so a label drawn inside it would be squashed or stretched with
+the strip. The labels sit in `[data-route-rail-ticks]` under it, placed by
+percentage.
+
+Context:
+    route_rename_url_template : str — routes:rename, ``__UUID__`` for the uuid.
+    route_share_url_template  : str — routes:share_create, likewise.
+    route_delete_url_template : str — routes:delete, likewise.
+    route_name_max_length     : int — Route.name's max_length, which
+                                routes:rename enforces; the rename input's
+                                maxlength.
+    static                    : bool, optional — render visible and in
+                                normal flow, for the component library,
+                                which runs no JS to reveal it.
+{% endcomment %}
+{% trans "Route profile" as route_rail_eyebrow %}
+{% trans "Route actions" as route_rail_menu_label %}
+{% trans "Close the route profile" as route_rail_close_label %}
+<section
+    id="route-rail"
+    data-route-rail
+    {% if not static %}hidden{% endif %}
+    aria-labelledby="route-rail-eyebrow"
+    data-route-rename-url-template="{{ route_rename_url_template }}"
+    data-route-share-url-template="{{ route_share_url_template }}"
+    data-route-delete-url-template="{{ route_delete_url_template }}"
+    data-route-plan-trip-url="{% url 'trips:new' %}"
+    class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,9rem)]"
+>
+    {# Identity. `data-row-renameable` makes this block the row          #}
+    {# static/js/inline_rename.js edits in place: the label, the hidden  #}
+    {# input beside it, and the Rename item inside the menu below.        #}
+    <div data-row-renameable class="min-w-0">
+        <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+                {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" %}
+                <p class="mt-1 truncate text-sm font-semibold text-text-1">
+                    <span data-row-label data-route-rail-name></span>
+                </p>
+                <input
+                    type="text"
+                    data-row-rename-input
+                    hidden
+                    maxlength="{{ route_name_max_length }}"
+                    aria-label="{% trans 'Route name' %}"
+                    class="mt-1 w-full rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1"
+                >
+            </div>
+            <div class="-mr-3 -mt-3 flex flex-none items-start">
+                <div data-route-rail-actions>
+                    {% include "includes/_overflow_menu.html" with trigger_id="route-rail-menu-trigger" menu_id="route-rail-menu" trigger_label=route_rail_menu_label items_template="includes/_route_rail_menu_items.html" %}
+                </div>
+                <button
+                    type="button"
+                    data-route-rail-close
+                    aria-label="{{ route_rail_close_label }}"
+                    class="{% icon_button_classes %}"
+                >
+                    {% include "includes/_icon_close.html" only %}
+                </button>
+            </div>
+        </div>
+        <p data-route-rail-figures class="mt-1 font-mono text-meta text-text-2"></p>
+        {# A pending share's Save — filled by static/js/route_rail.js with   #}
+        {# the control map.js builds, and hidden for an owned route.         #}
+        <div data-route-rail-claim hidden></div>
+    </div>
+    {# The lane. Filled per open by static/js/route_rail.js.             #}
+    <div class="min-w-0">
+        <svg
+            data-route-rail-lane
+            role="group"
+            preserveAspectRatio="none"
+            class="block h-20 w-full text-route-line"
+        >
+        </svg>
+        <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
+    </div>
+    <div data-route-rail-readout aria-live="polite" class="min-w-0 self-center text-sm text-text-2"></div>
+    {# The CSRF token the rail's Share, Rename and Delete posts carry.   #}
+    <form data-route-rail-csrf hidden>
+        {% csrf_token %}
+    </form>
+    {# Server-translated copy for static/js/route_rail.js — makemessages #}
+    {# never scans static/js (see static/js/i18n_strings.js).           #}
+    <template id="route-rail-strings-template">
+        <span data-string="unit-m">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
+        <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
+        <span data-string="figure-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
+        <span data-string="figure-ascent">{% blocktrans %}▲%(m)s m{% endblocktrans %}</span>
+        <span data-string="figure-descent">{% blocktrans %}▼%(m)s m{% endblocktrans %}</span>
+        <span data-string="figure-range">{% blocktrans %}%(start)s→%(end)s m{% endblocktrans %}</span>
+        <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
+        <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
+        <span data-string="lane-label">{% blocktrans %}Elevation profile of %(name)s{% endblocktrans %}</span>
+        <span data-string="readout-hint">{% trans "Press a leg to open it." %}</span>
+        <span data-string="untitled">{% trans "Untitled route" %}</span>
+        <span data-string="delete-confirm">{% blocktrans %}Delete %(name)s? You'll need the .gpx file again to put it
+                back.{% endblocktrans %}</span>
+        <span data-string="delete-failed">{% trans "That route couldn't be deleted. Try again." %}</span>
+        <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
+        <span data-string="share-copied">{% trans "Link copied." %}</span>
+        <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+    </template>
+</section>

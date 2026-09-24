@@ -105,6 +105,7 @@ from apps.core.freshness import DEFAULT_UNSAFE_AFTER_SECONDS, apply_freshness_he
 from apps.core.http import client_ip, is_top_level_navigation
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.gpx import GPXParseError
+from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.route_bulletin import display_readings
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
 from apps.routes.services.shares import (
@@ -294,6 +295,25 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
             # own colours. Unknown-per-segment is expressed inside the
             # value, by a null angle; see compact_slope.
             **({"slope": slope} if slope is not None else {}),
+            # SNOW-1018: the route cut at its transitions, for the rail
+            # below the map. ``from``/``to`` are segment indices — the
+            # index space of ``slope.angles`` — never coordinate indices.
+            # Sent for an unsampled route too, in the indices its record
+            # will have: legs are a fact about the geometry (see
+            # leg_wire). The record is passed only when ``slope`` is sent:
+            # a record compact_slope refused gives the client no
+            # ``angles``, so the legs must index the stride walk instead.
+            # Omitted rather than null when there are none.
+            **(
+                {"legs": legs}
+                if (
+                    legs := wire_legs(
+                        route.points,
+                        route.slope_samples if slope is not None else None,
+                    )
+                )
+                else {}
+            ),
             # SNOW-961: the same record in figures, and a SEPARATE key
             # from ``slope`` rather than a field inside it. That one's
             # presence answers "is this line already coloured"; this one

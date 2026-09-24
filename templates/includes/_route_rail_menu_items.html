@@ -1,0 +1,98 @@
+{% load i18n %}
+{% comment %}
+includes/_route_rail_menu_items.html — the open route's four actions on
+rail one, as menu items (SNOW-1018).
+
+includes/_overflow_menu.html's `items_template` slot, reached from
+includes/_route_rail.html.
+
+THE ROUTES ROW'S ORDER, AFTER ONE ITEM OF ITS OWN. Terrain and bulletin
+→ rule → Plan a trip → Share → rule → Rename → Delete. The last four are
+exactly routes/partials/_route_row_menu_items.html's: design-system rule
+4 puts an action where the user already learned it is, and the rail
+offers the same four things for the same route. The first is the rail's
+alone — it opens the route detail sheet, which a tap no longer opens —
+and it reads the route rather than acting on it, so it leads and a rule
+sets it apart. Destructive stays last.
+
+A PENDING SHARE KEEPS ONLY THE FIRST. Its reading needs no ownership;
+the other four are owner-only endpoints addressed by a uuid a recipient
+is never handed. static/js/route_rail.js hides each owner-only item
+(`data-route-rail-owner`) individually rather than the whole menu.
+
+WHAT DIFFERS FROM THE ROW, AND WHY. The row is rendered server-side for
+one known route, so its items carry that route's uuid and its Delete is
+an HTMX form. The rail is rendered ONCE, empty, and filled by
+static/js/route_rail.js for whichever route is open — so every item here
+carries a bare hook the script writes the uuid onto, and Delete is a
+button the script confirms and posts. No `hx-*` attribute is rendered
+here, which is what keeps home.html's htmx pairing
+(tests/public/test_htmx_is_loaded.py) unchanged.
+
+Rename keeps the row's two hooks: `data-row-rename`, which
+static/js/inline_rename.js recognises as a rename click, and
+`data-route-rename`, which carries the uuid for
+static/js/row_rename_commit.js. The rail's identity block is the
+`[data-row-renameable]` they resolve against.
+
+The visible label is the accessible name throughout: the row's items name
+their route in an aria-label because a list holds many, and the rail
+holds one, named in the heading beside the trigger.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-route-rail-details
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_route.html" with size=17 only %}
+        {% trans "Terrain and bulletin" %}
+    </button>
+</li>
+<li aria-hidden="true" data-route-rail-owner class="my-1 border-t border-border"></li>
+<li role="none" data-route-rail-owner>
+    <a
+        role="menuitem"
+        data-route-rail-plan-trip
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_trip.html" only %}
+        {% trans "Plan a trip" %}
+    </a>
+</li>
+<li role="none" data-route-rail-owner>
+    <button
+        type="button"
+        role="menuitem"
+        data-route-rail-share
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_share.html" only %}
+        {% trans "Share" %}
+    </button>
+</li>
+<li aria-hidden="true" data-route-rail-owner class="my-1 border-t border-border"></li>
+<li role="none" data-route-rail-owner>
+    <button
+        type="button"
+        role="menuitem"
+        data-row-rename
+        data-route-rename=""
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+        {% trans "Rename" %}
+    </button>
+</li>
+<li role="none" data-route-rail-owner>
+    <button
+        type="button"
+        role="menuitem"
+        data-route-rail-delete
+        class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+    >
+        {% include "includes/_icon_trash.html" only %}
+        {% trans "Delete" %}
+    </button>
+</li>

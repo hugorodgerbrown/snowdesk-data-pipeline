@@ -1,6 +1,11 @@
 /**
- * static/js/map_route_detail.js — the docked panel behind a tap on a saved
- * route (SNOW-973).
+ * static/js/map_route_detail.js — the docked panel behind rail one's
+ * "Terrain and bulletin" menu item (SNOW-973; SNOW-1018).
+ *
+ * SNOW-1018: a tap on a saved route opens rail one, not this sheet. The
+ * rail took the name, the figures and the profile; this sheet opens from
+ * the rail's menu, over the rail, and holds the terrain lines and the
+ * day's bulletin reading.
  *
  * A route's detail was an anchored MapLibre popup until this ticket, and
  * five tickets of terrain reading had been poured into a 320px card. It is
@@ -8,17 +13,16 @@
  * `public/partials/_route_detail_sheet.html` has the whole argument.
  *
  * WHERE THE BOUNDARY IS. map.js owns the map, binds the tap and BUILDS the
- * figures — the distance line, the terrain lines, the elevation profile and
- * the pending share's Save control are all its, unchanged from the popup,
- * because they read map state (the routes GeoJSON cache, the slope core,
- * MAP_STRINGS) that this module has no business knowing. This module owns
+ * body — the terrain lines are its, because they read map state (the
+ * slope core, MAP_STRINGS) that this module has no business knowing; it
+ * hands the rail a function that calls `open` here when the menu item is
+ * pressed. This module owns
  * the SHEET: it clones the body, seats what map.js built in it, and fetches
  * the one thing the popup never had room for — what each region's bulletin
  * says about this line, on the day the map is showing.
  *
- * They meet at `window.pwaRouteDetail.open({ node, uuid, day })` — plus
- * `.element`, which map.js measures and never reads into — and nowhere
- * else, which is `map_weather_detail.js`'s own boundary and is why this
+ * They meet at `window.pwaRouteDetail.open({ node, uuid, day })` and
+ * nowhere else, which is `map_weather_detail.js`'s own boundary and is why this
  * file has no reference to `map`, a layer id or a feature.
  *
  * REBUILT ON EVERY OPEN. `MapSheet.attach`'s teardown does
@@ -253,10 +257,9 @@
   /**
    * Open the sheet for one route.
    *
-   * Opens IMMEDIATELY, with the figures map.js already built and a loading
-   * line where the bulletin will be. A tap that shows nothing until the
-   * network answers reads as a tap that missed, and the second tap then
-   * closes what the first opened.
+   * Opens IMMEDIATELY, with the terrain lines map.js already built and a
+   * loading line where the bulletin will be. A press that shows nothing
+   * until the network answers reads as a press that missed.
    *
    * @param {{node: HTMLElement, uuid?: string|null, day?: string|null}} detail
    *   `node` is the figure/profile DOM map.js built; `uuid` is the route's,
@@ -310,11 +313,5 @@
     open: open,
     close: sheet.close,
     isOpen: sheet.isOpen,
-    // The sheet's own element, read by map.js to MEASURE how much of the
-    // map this sheet is about to cover (SNOW-973 finding 2). The boundary
-    // in this file's header still holds — map.js learns a rectangle, not
-    // what is drawn in it — and an id looked up in map.js would be the
-    // same coupling with none of it written down.
-    element: sheetEl,
   });
 }());

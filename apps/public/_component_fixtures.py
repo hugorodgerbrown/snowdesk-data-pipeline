@@ -30,6 +30,7 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
+from apps.routes.models import Route
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import weather_icon_filename
 
@@ -1380,6 +1381,29 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
                 {"label": "Remove"},
             ],
             "open": True,
+        },
+    },
+)
+
+
+# Route rail (SNOW-1018) -------------------------------------------------------
+# Rail one is rendered once, empty and hidden, and filled by
+# static/js/route_rail.js for whichever route is open — this page runs no
+# interaction JS, so the one variant shows the empty shell: the eyebrow,
+# the actions menu (every item, as an owned route has them), the × and the
+# (blank) lane, rendered `static` — visible and in
+# normal flow rather than hidden and docked over a map that is not here.
+# The URL templates are placeholders; nothing here posts.
+
+ROUTE_RAIL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Empty shell — filled by route_rail.js when a route opens",
+        "context": {
+            "route_rename_url_template": "/routes/partials/__UUID__/rename/",
+            "route_share_url_template": "/routes/__UUID__/share/",
+            "route_delete_url_template": "/routes/partials/__UUID__/delete/",
+            "route_name_max_length": Route._meta.get_field("name").max_length,
+            "static": True,
         },
     },
 )
