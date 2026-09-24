@@ -305,6 +305,17 @@ return on the leg rail (SNOW-1019). A route with no elevation has no legs
 and keeps the flat line
 ([why](decisions/legs-not-slope-classes-on-the-map.md)).
 
+**The route cursor on the map (SNOW-1019).** While a route's rail is
+open, the map and both rails share one cursor. A band or passage
+selected on rail two is drawn on the map as a highlighted stretch of the
+line — a dark core over a white casing — and the cursor's position is a
+fuchsia dot on the line. A mouse moving along the open route's line moves
+the cursor (within about 24 px of the line), and so do a mouse over rail
+one and presses on rail two. A tap on the open route's line moves the
+cursor to the tapped place and opens the leg there; the first tap on a
+route still opens the rail and frames the track. Closing the rail clears
+the dot and the highlight. All of it is hidden with the routes overlay.
+
 **Tapping a route** opens the **route detail panel** — the docked sheet
 (`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once
 five tickets of terrain reading had outgrown a 320px card — and then fits
