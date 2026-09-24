@@ -29,13 +29,18 @@ half that fits.
             particular aspect and elevation.
         {% endblocktrans %}
     </p>
+    {# SNOW-1019: a route's steepness is read on the rails, not on the  #}
+    {# map line, which is drawn as its legs (SNOW-1017). The trip page's #}
+    {# own map still colours its line by the bands.                     #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-route-colouring">
         {% blocktrans trimmed %}
-            A saved route is coloured by the same bands, so a track crossing shaded ground is the colour of the shading
-            under it. That colour is the steepness of the GROUND, never of the track: a skin track zigzagging up a steep
-            face climbs gently along its own length, and colouring it by its own gradient would make a serious slope
-            look easy. Where a stretch is drawn as a grey dashed line, the terrain data does not cover it &mdash; that
-            is the same coverage limit described below, and it never means the ground is gentle.
+            A saved route&rsquo;s steepness is read on the rail below the map. Open a leg and the second rail draws a
+            strip of slope bands in the same classes, one band for each stretch of the same class, under the leg&rsquo;s
+            height profile; on a trip&rsquo;s page the route line itself is coloured by them. Either way the colour is
+            the steepness of the GROUND, never of the track: a skin track zigzagging up a steep face climbs gently along
+            its own length, and colouring it by its own gradient would make a serious slope look easy. Where a band is
+            grey and dashed, the terrain data does not cover it &mdash; that is the same coverage limit described below,
+            and it never means the ground is gentle.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-flat-on-steep">
@@ -47,70 +52,25 @@ half that fits.
             traverse it is the number that matters.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-slope-profile-colouring">
+    {# SNOW-1019: the bank ribbon, which replaced the fall-line arrows,  #}
+    {# and the no-fall bars. The map line carries no terrain marks now — #}
+    {# no crux rings, arrows or split line — so these rail marks are     #}
+    {# where the reader meets them.                                      #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-bank-ribbon">
         {% blocktrans trimmed %}
-            The height profile in a route&rsquo;s pop-up carries the same colours, so you can see where the steep ground
-            falls along the tour as well as where it sits on the map &mdash; useful when the line itself is short on
-            screen or buried under your finger.
+            Under the bands the second rail draws the track as a row of short ticks, the bank ribbon. Each tick leans by
+            how far the ground tilts across the track, towards the side it falls away: upright where the track runs
+            straight up or down the slope, leaning hard where it cuts across a steep face. Switchbacks show as ticks
+            leaning one way and then the other. Where the tilt is not known there is no tick, and no tick is never a
+            claim that the ground is level.
         {% endblocktrans %}
     </p>
-    {# SNOW-911: the crux rings. Two paragraphs, and the second is the    #}
-    {# reason the first is allowed to exist — a marker that is not         #}
-    {# exhaustive has to say so where the reader will meet it, and the map #}
-    {# legend links here precisely because the caveat does not fit in a    #}
-    {# key. Skitourenguru tell their own users the same thing in as many   #}
-    {# words, and they have the fuller analysis.                            #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-cruxes">
-        {% blocktrans trimmed %}
-            A saved route also carries rings at its key passages: the stretches where the terrain AROUND you is steep
-            enough to release a slab you could set off. That is a different question from the colour under your skis,
-            and it is the one the colour cannot answer &mdash; a flat traverse along the foot of a 40 degree face is
-            drawn gently and is exactly the place a ring is for. The rings come from the ground alone and never move
-            with the forecast, which is why they stay put on a day the bulletin calls low.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-slope-cruxes-not-exhaustive">
-        {% blocktrans trimmed %}
-            <strong>The rings are not a full list, and a route without any is not a safe route.</strong> They come from
-            one measurement &mdash; the steepest ground within about 80 metres uphill &mdash; and real terrain judgement
-            takes in the size and shape of a slope, what is below it, and the forest on it. Read them as places to look
-            harder at, cross-check them against the slope shading, and keep asking what the rings missed.
-        {% endblocktrans %}
-    </p>
-    {# SNOW-964: the no-fall passages. After the ring paragraphs because   #}
-    {# the two marks land on nearly the same ground — anything over 50     #}
-    {# degrees was already ringed at 35 — so the copy's first job is to    #}
-    {# say what each one means that the other does not.                    #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-passages">
         {% blocktrans trimmed %}
-            Where a saved route crosses ground over 50 degrees, the line splits: the colour widens and a pale core runs
-            down the middle of it. That is a no-fall passage &mdash; not the terrain around you, but the ground you are
-            standing on, where a slip does not stop. The ring says the slope above you can release; the split says you
-            are on it, and the two usually appear together. The pop-up names how many there are and what the track does
-            with the slope: down the fall line, up it, or across it. A rising traverse of 50 degree ground is marked
-            like any other, because it is no place to fall either.
-        {% endblocktrans %}
-    </p>
-    {# The fall-line arrows. After the passage paragraph because they are #}
-    {# the general case of the reading it makes at 50 degrees only: the    #}
-    {# words "down the fall line" in a pop-up describe one passage, and    #}
-    {# the arrows put the same fact on every steep stretch of the map.     #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line">
-        {% blocktrans trimmed %}
-            Small arrows along a saved route point the way the ground under it falls &mdash; the fall line, the
-            direction water runs and a slab slides. Compare an arrow with the track beside it and you can see what the
-            colour alone cannot tell you: whether the line cuts across a face, climbs it, or runs straight down it. A
-            traverse across a 40 degree slope and a descent of the same slope are the same colour, and they are not the
-            same day out.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line-gate">
-        {% blocktrans trimmed %}
-            <strong>Arrows are drawn on steep ground only, and where there is no arrow there is no claim.</strong> Below
-            30 degrees they are left off: on nearly level ground the direction a 5 metre elevation grid calls downhill
-            comes off a stream bank or a road cutting as often as off the hillside, and drawing it would be confident
-            about nothing. So read the absence of an arrow as the colour of the line under it, never as flat ground
-            &mdash; and remember an arrow sits every few hundred metres, not on every step.
+            Below the ribbon, a bar marks each no-fall passage: a stretch where the ground you are standing on is over
+            50 degrees, where a slip does not stop. Press a bar to select it and read its length. The route&rsquo;s
+            detail names how many there are and what the track does with the slope: down the fall line, up it, or across
+            it. A rising traverse of 50 degree ground is marked like any other, because it is no place to fall either.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
@@ -123,7 +83,7 @@ half that fits.
             fault in the map.
         {% endblocktrans %}
     </p>
-    {# SNOW-964: and the caveat the split line cannot carry itself. About #}
+    {# SNOW-964: and the caveat the passage bars cannot carry. About      #}
     {# the ROUTE SAMPLING — a 10 m analysis window walked every 25 m —    #}
     {# and deliberately not a restatement of the raster paragraph above,  #}
     {# which is a different measurement of a different thing.             #}
@@ -136,16 +96,14 @@ half that fits.
             say where to look, and nothing more than that.
         {% endblocktrans %}
     </p>
-    {# And the caveat the arrow cannot carry. Its own paragraph rather    #}
-    {# than a clause on the smoothing one above, because it is a          #}
-    {# different measurement: that one is about the ANGLE being an        #}
-    {# average, this one about the DIRECTION being one.                   #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-fall-line-averaged">
+    {# And the caveat the ribbon cannot carry: the tilt is read from one #}
+    {# direction per ten metres of hillside, which is a different         #}
+    {# averaging from the ANGLE's in the paragraph above.                 #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-bank-averaged">
         {% blocktrans trimmed %}
-            An arrow is one direction for about ten metres of hillside, so it describes the shape of the slope rather
-            than the ground at your feet. On a rolling face, a gully, or a ridge the real fall line swings either side
-            of it within a ski length, and on convex ground it changes as you cross. It is a reading of which way the
-            slope runs, not a line to follow.
+            A tick&rsquo;s lean comes from one downhill direction for about ten metres of hillside, so it describes the
+            shape of the slope rather than the ground at your feet. On a rolling face, a gully, or a ridge the real fall
+            line swings either side of it within a ski length, and on convex ground it changes as you cross.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">

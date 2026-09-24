@@ -61,15 +61,17 @@
   /**
    * A climbing leg's colour. Mirrors `--color-route-rail-climb` in
    * `src/css/main.css`, so a leg on the map is the colour of the same leg
-   * on the rail below it.
+   * on the rail below it. Slate since SNOW-1019, which swapped the two to
+   * match the rail mockup; the climb stays DASHED, which is the cue for a
+   * reader who cannot tell the colours apart.
    */
-  const LEG_CLIMB_COLOUR = '#c026d3';
+  const LEG_CLIMB_COLOUR = '#64748b';
 
   /**
    * A descending leg's colour. Mirrors `--color-route-rail-descent` in
    * `src/css/main.css`.
    */
-  const LEG_DESCENT_COLOUR = '#64748b';
+  const LEG_DESCENT_COLOUR = '#c026d3';
 
   /**
    * One leg as it arrives on the wire. Every field is optional because it

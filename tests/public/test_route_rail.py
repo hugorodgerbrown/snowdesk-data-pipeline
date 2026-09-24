@@ -5,14 +5,15 @@ What the page carries before any route is open: the rail itself, hidden and
 inside ``#map``, its eyebrow, its strings template, its actions as ONE
 ``[data-overflow-menu]`` rather than loose icons (design-system rule 5) —
 Terrain and bulletin first, then the routes row's four in its order — its
-own × close, a pending share's claim slot, and the three scripts that fill
-it. What the rail
-does once open is tests/js/test_route_rail.js's.
+own × close, a pending share's claim slot, rail two's row (SNOW-1019) hidden
+with its strings, and the scripts that fill both, in order. What the rails
+do once open is tests/js/test_route_rail.js's and test_route_rail_two.js's.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from django.template.loader import render_to_string
@@ -119,17 +120,105 @@ class TestTheRailShipsWithTheMap:
             assert "__UUID__" in value.group(1)
         assert f'data-route-plan-trip-url="{reverse("trips:new")}"' in tag
 
-    def test_the_scripts_load_cursor_before_core_before_rail(
+    def test_the_scripts_load_cursor_then_cores_then_rail_two_then_rail(
         self, client: Client
     ) -> None:
-        """The rail reads both cores, so both come first."""
+        """Rail one attaches rail two, which reads the three cores before it."""
         page = _home(client)
         order = [
             page.index(f"js/{name}")
-            for name in ("route_cursor_core.js", "route_rail_core.js", "route_rail.js")
+            for name in (
+                "route_cursor_core.js",
+                "route_rail_core.js",
+                "bank_ribbon_core.js",
+                "route_rail_two_core.js",
+                "route_rail_two.js",
+                "route_rail.js",
+                "route_leader_core.js",
+                "route_leader.js",
+            )
         ]
 
         assert order == sorted(order)
+
+
+@pytest.mark.django_db
+class TestRailTwoShipsInsideRailOne:
+    """Rail two is a hidden row of rail one's grid until a leg opens."""
+
+    def test_the_row_is_hidden_and_laid_on_rail_ones_columns(
+        self, client: Client
+    ) -> None:
+        """Hidden, and a subgrid spanning every column rail one has."""
+        rail = _rail(_home(client))
+
+        row = re.search(r"<div\s+data-route-rail-two\b[^>]*>", rail)
+        assert row is not None
+        assert re.search(r"\shidden\s", row.group(0))
+        assert "col-span-full" in row.group(0)
+        assert "grid-cols-subgrid" in row.group(0)
+
+    def test_the_lane_is_one_focusable_slider(self, client: Client) -> None:
+        """Bands are not tab stops; the lane is, with the arrow keys."""
+        rail = _rail(_home(client))
+
+        lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
+        assert lane is not None
+        assert 'role="slider"' in lane.group(0)
+        assert 'tabindex="0"' in lane.group(0)
+        # Real pixels: a stretched lane would misdraw the bank ribbon's lean.
+        assert "preserveAspectRatio" not in lane.group(0)
+
+    def test_its_eyebrow_names_the_terrain(self, client: Client) -> None:
+        """Rail two is headed "Terrain"; the leg's own name is its title."""
+        rail = _rail(_home(client))
+
+        assert re.search(r'id="route-rail-two-eyebrow"\s*>\s*Terrain\s*<', rail)
+
+    def test_it_has_its_own_close_and_zoom_controls(self, client: Client) -> None:
+        """×, − and + — each a bare icon button with a translated name."""
+        rail = _rail(_home(client))
+
+        for hook, label in (
+            ("data-route-rail-two-close", "Close the leg"),
+            ('data-route-rail-two-zoom="out"', "Zoom out"),
+            ('data-route-rail-two-zoom="in"', "Zoom in"),
+        ):
+            button = re.search(rf"<button[^>]*{hook}[^>]*>", rail)
+            assert button is not None
+            assert f'aria-label="{label}"' in button.group(0)
+
+    def test_it_carries_its_own_strings_template(self, client: Client) -> None:
+        """Every string route_rail_two.js writes, one per slope class."""
+        rail = _rail(_home(client))
+        block = re.search(
+            r'<template id="route-rail-two-strings-template">(.*?)</template>',
+            rail,
+            re.S,
+        )
+        assert block is not None
+        keys = set(re.findall(r'data-string="([^"]+)"', block.group(1)))
+
+        assert {
+            "two-lane-label",
+            "two-hint",
+            "class-slope-gentle",
+            "class-slope-30",
+            "class-slope-35",
+            "class-slope-40",
+            "class-slope-45",
+            "class-slope-50",
+            "class-unknown",
+            "attitude-traverse",
+            "attitude-fall-line",
+            "attitude-downhill-traverse",
+            "attitude-uphill-traverse",
+            "readout-slope",
+            "readout-slope-left",
+            "readout-slope-right",
+            "readout-band",
+            "readout-passage",
+        } <= keys
 
 
 @pytest.mark.django_db
@@ -220,6 +309,68 @@ class TestTheActionsAreAMenu:
     def test_no_htmx_attribute_ships_in_the_rail(self, client: Client) -> None:
         """Delete is a fetch, so the page's htmx pairing is unchanged."""
         assert " hx-" not in _rail(_home(client))
+
+
+# SNOW-1019: the floating map controls withdrawn while a route is open.
+_MAP_CSS = Path(__file__).resolve().parents[2] / "static" / "css" / "map.css"
+_WITHDRAWN = (
+    "season-ribbon",
+    "map-utility-cluster",
+    "map-legend",
+    "map-controls-br",
+    "home-intro",
+)
+
+
+def _withdrawn_selectors() -> set[str]:
+    """The ids the rail-open rule hides, read off the stylesheet.
+
+    Returns:
+        Every ``#id`` in a ``#map[data-route-rail-open] #id`` selector of a
+        rule that sets ``visibility: hidden``.
+
+    """
+    css = _MAP_CSS.read_text(encoding="utf-8")
+    ids: set[str] = set()
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if "visibility: hidden" not in body:
+            continue
+        ids.update(re.findall(r"#map\[data-route-rail-open\]\s+#([\w-]+)", selectors))
+    return ids
+
+
+class TestTheMapControlsWithdrawWhileARouteIsOpen:
+    """Following a route is the one thing the reader is doing."""
+
+    def test_every_floating_container_is_withdrawn(self) -> None:
+        """The stylesheet hides all five while the rail is open."""
+        assert set(_WITHDRAWN) <= _withdrawn_selectors()
+
+    def test_the_containers_exist_in_the_map_partials(self) -> None:
+        """A renamed container would leave its controls over the rail.
+
+        Read from the templates rather than a rendered page: the season
+        ribbon and the intro card are conditional, and the test database
+        has no season for the ribbon to render.
+        """
+        partials = Path(__file__).resolve().parents[2] / "apps" / "public" / "templates"
+        source = "".join(
+            (partials / "public" / "partials" / name).read_text(encoding="utf-8")
+            for name in ("_map_embed.html", "_season_ribbon.html")
+        )
+
+        for container in _WITHDRAWN:
+            assert re.search(rf'id="{container}"', source), container
+
+    def test_the_rail_its_leader_and_the_route_sheet_stay(self) -> None:
+        """What the reader is using now is never among the hidden."""
+        hidden = _withdrawn_selectors()
+
+        for kept in ("route-rail", "route-detail-sheet", "map"):
+            assert kept not in hidden, kept
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        assert "[data-route-rail-open] .route-leader" not in css
+        assert "[data-route-rail-open] .route-rail" not in css
 
 
 class TestTheComponentLibraryVariant:

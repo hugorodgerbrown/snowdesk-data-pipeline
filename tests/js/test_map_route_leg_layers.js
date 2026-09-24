@@ -20,6 +20,10 @@
  *   - THE SELECTION. Opening a leg on the rail dims the others through the
  *     cursor; closing it has to restore them, or the map stays dimmed
  *     after the rail has gone.
+ *   - THE CURSOR (SNOW-1019). A selection and the cursor index are drawn
+ *     on the line from the same subscription, and a pointer on the open
+ *     route's line writes the index back — a tap there opening the leg it
+ *     lands in rather than re-running the first tap's framing.
  *
  * SNOW-972's FRAMING invariant lives here too, because the two facts it
  * relates — where the camera comes to rest on a route, and the minzoom of
@@ -41,17 +45,16 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /** Four sampled boundaries bounding three segments: gentle, steep, unknown.
  *
- * The steep one is over 50°, so SNOW-964 names it a no-fall passage. It
- * lies in the second leg, the descent, which is what the passage edge's
- * colour is checked against.
+ * The steep one is over 50°, so SNOW-964 names it a no-fall passage. Since
+ * SNOW-1019 the map draws no mark for it; the detail sheet's words still
+ * name it.
  */
 const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01], [7.0, 46.015]],
   angles: [12.0, 52.0, null],
   passages: [{ from: 1, to: 1, m: 25.0, fall_line: 'descending' }],
-  // The same steep segment carries a fall-line mark: the ground there
-  // faces 205°, while the track runs due NORTH. Nothing in the stack may
-  // answer 0 for this arrow.
+  // The same steep segment carries a fall-line mark (the ground faces
+  // 205°). Since SNOW-1019 the map draws none; the record keeps it.
   fall_lines: [{ i: 1, deg: 205 }],
 };
 
@@ -198,6 +201,12 @@ const fitBoundsOptions = [];
 const paintCalls = [];
 /** What the next queryRenderedFeatures call should answer, by layer id. */
 let queryAnswer = () => [];
+/** How the stub projects a [lon, lat] to screen px; a test may replace it. */
+let projectLngLat = () => ({ x: 0, y: 0 });
+/** Every panBy call, as [offset, options]. */
+const panCalls = [];
+/** `once` handlers by event, which a test fires by hand. */
+const onceHandlers = {};
 
 /**
  * MapLibre stub that records what installRoutesLayer builds.
@@ -214,10 +223,11 @@ function stubMapLibre() {
         (handlers[`${event}:${layerOrHandler}`] ||= []).push(maybeHandler);
       }
     },
-    once: () => {},
+    once: (event, fn) => { (onceHandlers[event] ||= []).push(fn); },
     off: () => {},
     addControl: () => {},
     removeControl: () => {},
+    panBy: (offset, options) => { panCalls.push([offset, options]); },
     getLayer: (id) => (layers.has(id) ? { id } : null),
     getFilter: (id) => (layers.get(id) || {}).filter || null,
     getLayoutProperty: (id, prop) => ((layers.get(id) || {}).layout || {})[prop],
@@ -269,7 +279,7 @@ function stubMapLibre() {
     getBounds: () => ({
       getWest: () => 5, getSouth: () => 45, getEast: () => 10, getNorth: () => 48,
     }),
-    project: () => ({ x: 0, y: 0 }),
+    project: (lngLat) => projectLngLat(lngLat),
     unproject: () => ({ lng: 7, lat: 46 }),
     queryRenderedFeatures: (point, options) => queryAnswer(options),
     resize: () => {},
@@ -370,6 +380,7 @@ beforeAll(async () => {
   await import('../../static/js/route_slope_core.js');
   await import('../../static/js/route_legs_core.js');
   await import('../../static/js/route_cursor_core.js');
+  await import('../../static/js/route_cursor_map_core.js');
   // SNOW-973: the sheet the tap opens, and the controller it attaches
   // through. Both before the bundle, as the page loads them.
   await import('../../static/js/map_sheet.js');
@@ -509,10 +520,9 @@ describe('the transition markers', () => {
       .toEqual(['to-string', ['get', 'n']]);
   });
 
-  it('sit over the crux rings and under the endpoint markers', () => {
+  it('sit under the endpoint markers', () => {
     const ids = [...layers.keys()];
 
-    expect(ids.indexOf('routes-transitions')).toBeGreaterThan(ids.indexOf('routes-cruxes'));
     expect(ids.indexOf('routes-transition-labels'))
       .toBeGreaterThan(ids.indexOf('routes-transitions'));
     expect(ids.indexOf('routes-transition-labels'))
@@ -520,139 +530,25 @@ describe('the transition markers', () => {
   });
 });
 
-describe('the no-fall passage layers (SNOW-964)', () => {
-  it('draw off a source that holds only the passages', () => {
-    expect(layers.get('routes-passage-edge').source).toBe('route-passages');
-    expect(layers.get('routes-passage-core').source).toBe('route-passages');
-    expect(layers.get('routes-passage-edge').filter).toBeUndefined();
-    expect(sources.get('route-passages').data.features).toHaveLength(1);
-  });
+describe('the marks SNOW-1019 took off the map', () => {
+  it('installs no crux ring, fall-line arrow or passage split, though the record carries them', () => {
+    // The crux is deferred to a later ticket, the bank ribbon on rail two
+    // replaced the arrows, and the no-fall passages are bars on rail two.
+    // SLOPE still carries `fall_lines` and `passages`, so this holds the
+    // marks off rather than passing for want of data.
+    const ids = [...layers.keys(), ...sources.keys()];
+    const marks = /crux|fall-line|passage/;
 
-  it('paint the edge in its leg\'s colour', () => {
-    expect(layers.get('routes-passage-edge').paint['line-color']).toEqual([
-      'match', ['get', 'climbing'],
-      true, legsCore.LEG_CLIMB_COLOUR,
-      false, legsCore.LEG_DESCENT_COLOUR,
-      '#c026d3',
-    ]);
-    // The steep segment lies in leg 2, the descent.
-    expect(sources.get('route-passages').data.features[0].properties.climbing).toBe(false);
-  });
-
-  it('sandwich the leg lines', () => {
-    // The edge UNDER the leg line and the core OVER it: that is what makes
-    // the mark read as a split in the line rather than a line beside it.
-    const ids = [...layers.keys()];
-
-    expect(ids.indexOf('routes-passage-edge')).toBeLessThan(ids.indexOf('routes-leg-climb'));
-    expect(ids.indexOf('routes-passage-core'))
-      .toBeGreaterThan(ids.indexOf('routes-leg-descent'));
-  });
-
-  it('keep the edge inside the leg casing and the core inside the edge', () => {
-    const edge = layers.get('routes-passage-edge').paint['line-width'];
-    const inner = layers.get('routes-passage-core').paint['line-width'];
-    const casing = layers.get('routes-leg-casing').paint['line-width'];
-
-    for (let i = 3; i < edge.length; i += 2) {
-      expect(edge[i + 1]).toBeLessThanOrEqual(casing[i + 1]);
-      expect(inner[i + 1]).toBeLessThan(edge[i + 1]);
-    }
-  });
-
-  it('paint the core in its own light colour', () => {
-    expect(layers.get('routes-passage-core').paint['line-color'])
-      .toBe(core.PASSAGE_CORE_COLOUR);
-  });
-});
-
-describe('the fall-line arrow layer', () => {
-  /** The ids in the order installRoutesLayer added them. */
-  const order = () => [...layers.keys()];
-
-  it('draws from its own point source, placed at the segment midpoint', () => {
-    // A symbol cannot be placed on a line layer, so the arrows need a
-    // Point source — and the point is the middle of the marked segment,
-    // which is where the aspect was sampled.
-    const features = sources.get('route-fall-lines').data.features;
-
-    expect(features).toHaveLength(1);
-    expect(features[0].geometry.coordinates[1]).toBeCloseTo(46.0075, 9);
-  });
-
-  it('rotates the icon by the bearing, aligned to the map', () => {
-    // THE CLAIM THIS WHOLE LAYER MAKES. `icon-rotate` off the feature's
-    // own `deg`, and `icon-rotation-alignment: 'map'` so it stays a
-    // compass bearing when the reader rotates the map — a screen-aligned
-    // arrow would point somewhere else the moment they did.
-    const layout = layers.get('routes-fall-lines').layout;
-
-    expect(layout['icon-rotate']).toEqual(['get', 'deg']);
-    expect(layout['icon-rotation-alignment']).toBe('map');
-    expect(sources.get('route-fall-lines').data.features[0].properties.deg)
-      .toBe(205);
-  });
-
-  it('sits over the leg lines and under the rings and the markers', () => {
-    // An arrow is ambient; a ring is an instruction to look at one
-    // place, and a start dot is how a reader orients. The arrow yields.
-    const ids = order();
-
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeGreaterThan(ids.indexOf('routes-passage-core'));
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeLessThan(ids.indexOf('routes-cruxes'));
-    expect(ids.indexOf('routes-fall-lines'))
-      .toBeLessThan(ids.indexOf('routes-endpoints'));
-  });
-
-  it('lets the collision engine thin it, unlike every other route mark', () => {
-    // The one mark here that may be dropped: the survivors say the same
-    // thing about the same face. A dropped crux ring would understate
-    // the day, which is why those set the opposite.
-    expect(layers.get('routes-fall-lines').layout['icon-allow-overlap'])
-      .toBe(false);
-    expect(layers.get('routes-cruxes').layout['icon-allow-overlap']).toBe(true);
-  });
-
-  it('blocks nothing else from being placed', () => {
-    // A basemap label losing out to an ambient arrow is the wrong trade.
-    expect(layers.get('routes-fall-lines').layout['icon-ignore-placement'])
-      .toBe(true);
-  });
-
-  it('is held back a zoom step further than the rings', () => {
-    // At z11 a 250 m spacing is about 9 CSS pixels against a 20 px
-    // arrow, so the marks would read as texture on the track.
-    expect(layers.get('routes-fall-lines').minzoom)
-      .toBeGreaterThan(layers.get('routes-cruxes').minzoom);
-  });
-
-  it('is painted in its own ink, with the ring\'s halo', () => {
-    const paint = layers.get('routes-fall-lines').paint;
-
-    expect(paint['icon-color']).toBe(core.FALL_LINE_COLOUR);
-    // Over the dark leg casing the ink alone would vanish.
-    expect(paint['icon-halo-color']).toBe('#ffffff');
-  });
-
-  it('is reached by the routes overlay switch', () => {
-    expect(layers.get('routes-fall-lines').layout.visibility).toBe('visible');
-  });
-
-  it('marks nothing on the route nothing has sampled', () => {
-    // An unsampled route has no record, so it has no marks — the same
-    // silence the flat line keeps, rather than an arrow guessed from the
-    // track's own coordinates.
-    const uuids = sources.get('route-fall-lines').data.features
-      .map((f) => f.properties.uuid);
-
-    expect(uuids).toEqual(['sampled-route']);
+    expect(SLOPE.fall_lines).toHaveLength(1);
+    expect(SLOPE.passages).toHaveLength(1);
+    expect(ids.filter((id) => marks.test(id))).toEqual([]);
+    expect(window.snowdeskMapState.overlayLayers.routes
+      .filter((id) => marks.test(id))).toEqual([]);
   });
 });
 
 /** Fire the map-level click, with one layer answering the query. */
-function tapLayer(layerId, properties) {
+function tapLayer(layerId, properties, point = { x: 10, y: 10 }) {
   fitBoundsCalls.length = 0;
   queryAnswer = (options) => (
     (options.layers || []).includes(layerId)
@@ -660,7 +556,7 @@ function tapLayer(layerId, properties) {
       : []
   );
   for (const handler of mapStub.handlers.click || []) {
-    handler({ point: { x: 10, y: 10 }, lngLat: { lng: 7, lat: 46.01 } });
+    handler({ point, lngLat: { lng: 7, lat: 46.01 } });
   }
   queryAnswer = () => [];
 }
@@ -709,7 +605,7 @@ describe('tapping a legged route', () => {
     expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
   });
 
-  it('does not query the passage or transition layers, which add no route', () => {
+  it('does not query the transition layers, which add no route', () => {
     const queried = [];
     queryAnswer = (options) => {
       queried.push(...(options.layers || []));
@@ -722,7 +618,6 @@ describe('tapping a legged route', () => {
 
     expect(queried).toContain('routes-leg-climb');
     expect(queried).toContain('routes-leg-descent');
-    expect(queried).not.toContain('routes-passage-edge');
     expect(queried).not.toContain('routes-transitions');
   });
 
@@ -761,14 +656,8 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
-    // The passages dim with their leg; one on a flat route (no `i`) stays.
-    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
-      expect(opacityOf(id)).toEqual(['case', ['has', 'i'], dimmed, 1]);
-    }
 
     cursor.closeLeg();
-    expect(opacityOf('routes-passage-edge')).toBe(1);
-    expect(opacityOf('routes-passage-core')).toBe(1);
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
@@ -807,8 +696,6 @@ describe('opening a leg on the rail', () => {
     const open = { uuid: 'sampled-route', i: 2 };
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
-    expect(opacityOf('routes-passage-edge'))
-      .toEqual(['case', ['has', 'i'], legsCore.dimOpacity(open, 1, 0.25), 1]);
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
     expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
@@ -833,8 +720,8 @@ describe('opening a leg on the rail', () => {
 });
 
 describe('a sampled route somebody shared', () => {
-  it('draws no legs, no markers and no passages', () => {
-    for (const id of ['route-legs', 'route-transitions', 'route-passages']) {
+  it('draws no legs and no markers', () => {
+    for (const id of ['route-legs', 'route-transitions']) {
       expect(sources.get(id).data.features.every((f) => f.properties.uuid === 'sampled-route'))
         .toBe(true);
     }
@@ -858,5 +745,286 @@ describe('a sampled route somebody shared', () => {
 describe('the legend key', () => {
   it('is revealed once a legged route is drawn', () => {
     expect(document.getElementById('map-route-legs-section').hidden).toBe(false);
+  });
+});
+
+describe('the route cursor on the map (SNOW-1019)', () => {
+  /**
+   * Project the sampled route onto a vertical screen line: x = 0, and y
+   * falling 10 px per 0.001° north, so the three segment middles
+   * (46.0025, 46.0075, 46.0125) sit at y = 125, 75 and 25.
+   */
+  const alongTheRoute = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
+
+  /** Open the sampled route on the rail with a fresh cursor. */
+  const openSampledRoute = () => {
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    tapLeg();
+    return cursor;
+  };
+
+  /** Hover the mouse over a screen point. */
+  const hover = (point) => {
+    for (const handler of mapStub.handlers.mousemove || []) handler({ point });
+  };
+
+  it('draws its layers over the lines, reached by the routes switch', () => {
+    const ids = [...layers.keys()];
+    const routeLayers = window.snowdeskMapState.overlayLayers.routes;
+
+    for (const id of [
+      'routes-cursor-selection-casing', 'routes-cursor-selection', 'routes-cursor-point',
+    ]) {
+      expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-line-pending'));
+      expect(routeLayers).toContain(id);
+      expect(layers.get(id).layout.visibility).toBe('visible');
+    }
+    expect(layers.get('routes-cursor-point').type).toBe('circle');
+  });
+
+  it('draws a selection as its stretch of line, and clears it', () => {
+    const cursor = openSampledRoute();
+
+    cursor.select({ kind: 'band', from: 1, to: 2 });
+    expect(sources.get('route-cursor-selection').data.features[0].geometry.coordinates)
+      .toEqual([[7.0, 46.005], [7.0, 46.01], [7.0, 46.015]]);
+
+    cursor.clearSelection();
+    expect(sources.get('route-cursor-selection').data.features).toEqual([]);
+    rail.state.cursor = null;
+  });
+
+  it('draws the cursor index as a dot on its segment, and hides it on null', () => {
+    const cursor = openSampledRoute();
+
+    cursor.setIndex(1);
+    const [dot] = sources.get('route-cursor-point').data.features;
+    expect(dot.geometry.coordinates[1]).toBeCloseTo(46.0075);
+
+    cursor.setIndex(null);
+    expect(sources.get('route-cursor-point').data.features).toEqual([]);
+    rail.state.cursor = null;
+  });
+
+  it('opens the leg under a tap on the open route and moves the cursor there', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    const opened = rail.state.calls.length;
+
+    // y = 70 is nearest the second segment's middle, in leg 2.
+    tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 2, y: 70 });
+
+    expect(cursor.state().openLeg).toMatchObject({ i: 2, from: 1, to: 2 });
+    expect(cursor.state().index).toBe(1);
+    // Not a second first tap: no re-framing, and the rail is not reopened.
+    expect(fitBoundsCalls).toEqual([]);
+    expect(rail.state.calls).toHaveLength(opened);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('moves the cursor on a mouse hover near the line, and not away from it', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+
+    hover({ x: 5, y: 120 });
+    expect(cursor.state().index).toBe(0);
+
+    hover({ x: 80, y: 25 });
+    expect(cursor.state().index).toBe(0);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('repaints the selection and dot when a basemap swap rebuilds the layers', async () => {
+    const cursor = openSampledRoute();
+    cursor.select({ kind: 'passage', from: 1, to: 1 });
+    cursor.setIndex(1);
+
+    for (const id of [...layers.keys()]) layers.delete(id);
+    for (const id of [...sources.keys()]) sources.delete(id);
+    for (const handler of mapStub.handlers.styledata || []) await handler();
+
+    expect(sources.get('route-cursor-selection').data.features).toHaveLength(1);
+    expect(sources.get('route-cursor-point').data.features).toHaveLength(1);
+    cursor.clearSelection();
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+  });
+
+  it('gives the leader line the cursor dot\'s screen point', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    expect(window.pwaRouteCursorMap.point()).toBeNull();
+
+    cursor.setIndex(1);
+    const point = window.pwaRouteCursorMap.point();
+
+    // The second segment's middle, 46.0075, projects to y = 75.
+    expect(point.x).toBeCloseTo(0);
+    expect(point.y).toBeCloseTo(75);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+  });
+
+  it('stops answering the pointer once the rail has let the cursor go', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    rail.state.cursor = null;
+
+    hover({ x: 0, y: 125 });
+
+    expect(cursor.state().index).toBeNull();
+    projectLngLat = () => ({ x: 0, y: 0 });
+  });
+});
+
+describe('keeping the cursor dot in view (SNOW-1019)', () => {
+  // A 375 × 812 phone canvas with the rail's top at 300: the visible map
+  // is y 60 (under the top chrome) to 300.
+  const CANVAS = { left: 0, top: 0, right: 375, bottom: 812, width: 375, height: 812 };
+  const RAIL = { left: 0, top: 300, right: 375, bottom: 812, width: 375, height: 512 };
+  // The three segment middles project to y = 425, 375 and 325 — all
+  // behind the rail — at x = 200.
+  const behindTheRail = ([lng, lat]) => ({
+    x: 200 + (lng - 7.0) * 10000,
+    y: 300 + (46.015 - lat) * 10000,
+  });
+
+  /** Land the pan in flight, as MapLibre's moveend would. */
+  const landPan = () => {
+    const handlers = onceHandlers.moveend || [];
+    onceHandlers.moveend = [];
+    for (const handler of handlers) handler();
+  };
+
+  let mapSpy;
+  let railSpy;
+  let cursor;
+
+  const setUp = () => {
+    projectLngLat = behindTheRail;
+    mapSpy = vi.spyOn(document.getElementById('map'), 'getBoundingClientRect')
+      .mockReturnValue(CANVAS);
+    railSpy = vi.spyOn(rail.element, 'getBoundingClientRect').mockReturnValue(RAIL);
+    cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    tapLeg();
+    landPan();
+    panCalls.length = 0;
+  };
+
+  const tearDown = () => {
+    landPan();
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+    projectLngLat = () => ({ x: 0, y: 0 });
+    mapSpy.mockRestore();
+    railSpy.mockRestore();
+  };
+
+  it('pans a dot a rail moved behind the rail back into view, keeping the zoom', () => {
+    setUp();
+
+    cursor.setIndex(0);
+
+    expect(panCalls).toHaveLength(1);
+    const [[dx, dy], options] = panCalls[0];
+    // 425 → 300 − 24.
+    expect(dx).toBe(0);
+    expect(dy).toBeCloseTo(149);
+    expect(options).not.toHaveProperty('zoom');
+    tearDown();
+  });
+
+  it('makes one pan for a scrub, not a queue', () => {
+    setUp();
+
+    cursor.setIndex(0);
+    cursor.setIndex(1);
+    cursor.setIndex(2);
+
+    expect(panCalls).toHaveLength(1);
+    // The pan lands: the index that arrived mid-pan is checked once more.
+    landPan();
+    expect(panCalls).toHaveLength(2);
+    tearDown();
+  });
+
+  it('does not pan for an index the map wrote under the pointer', () => {
+    setUp();
+
+    for (const handler of mapStub.handlers.mousemove || []) {
+      handler({ point: { x: 200, y: 375 } });
+    }
+
+    expect(cursor.state().index).toBe(1);
+    expect(panCalls).toEqual([]);
+    tearDown();
+  });
+
+  it('does not pan while the reader drags the map', () => {
+    setUp();
+    for (const handler of mapStub.handlers.dragstart || []) handler();
+
+    cursor.setIndex(0);
+
+    expect(panCalls).toEqual([]);
+    for (const handler of mapStub.handlers.dragend || []) handler();
+    tearDown();
+  });
+
+  it('pans for a map-written index once the rail grows over it', () => {
+    // A tap or hover on the line wrote the index where the reader could
+    // see it; then rail two opened and the rail grew over that place. A
+    // layout change is not a hover, so this one pans.
+    setUp();
+    projectLngLat = ([lng, lat]) => ({
+      x: 200 + (lng - 7.0) * 10000,
+      y: 100 + (46.015 - lat) * 10000,
+    });
+    // Segment 1's middle projects to y = 175, inside 60–300.
+    for (const handler of mapStub.handlers.mousemove || []) {
+      handler({ point: { x: 200, y: 175 } });
+    }
+    expect(cursor.state().index).toBe(1);
+    expect(panCalls).toEqual([]);
+
+    railSpy.mockReturnValue({ ...RAIL, top: 120 });
+    document.dispatchEvent(new CustomEvent('snowdesk:route-rail-resized'));
+
+    expect(panCalls).toHaveLength(1);
+    // 175 → 120 − 24.
+    expect(panCalls[0][0][1]).toBeCloseTo(79);
+    tearDown();
+  });
+
+  it('pans after a tap on the line opens a leg over the tapped place', async () => {
+    // The tap wrote the index (no pan for that alone), but it also opened a
+    // leg, and rail two now covers the place: checked once the index lands.
+    setUp();
+
+    tapLayer('routes-leg-climb', { uuid: 'sampled-route', i: 1, climbing: true }, { x: 200, y: 425 });
+    expect(cursor.state().openLeg).toMatchObject({ i: 1 });
+    expect(cursor.state().index).toBe(0);
+    expect(panCalls).toEqual([]);
+
+    await Promise.resolve();
+
+    expect(panCalls).toHaveLength(1);
+    tearDown();
+  });
+
+  it('gives the leader no map stop while the dot is behind the rail', () => {
+    setUp();
+    for (const handler of mapStub.handlers.dragstart || []) handler();
+
+    cursor.setIndex(0);
+
+    expect(window.pwaRouteCursorMap.point()).toBeNull();
+    for (const handler of mapStub.handlers.dragend || []) handler();
+    tearDown();
   });
 });

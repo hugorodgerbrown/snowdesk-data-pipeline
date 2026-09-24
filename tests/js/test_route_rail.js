@@ -3,9 +3,11 @@
  * (static/js/route_rail.js, SNOW-1018).
  *
  * The assertion the ticket names: pressing a leg opens it on the route
- * cursor and pressing it again clears it, with `aria-pressed` following
- * the CURSOR rather than the click — so a leg closed from rail two's side
- * un-presses here too. Around it: one path per leg with its direction, an
+ * cursor, with `aria-pressed` following the CURSOR rather than the click —
+ * so a leg closed from rail two's side un-presses here too. Since
+ * SNOW-1019 pressing the open leg again moves rail two's window there
+ * instead of closing it, rail one brackets what rail two shows, and
+ * Escape closes the leg before the rail. Around it: one path per leg with its direction, an
  * unsampled route still cut into legs, a pending share without its
  * menu, the rail closing with the detail sheet, and Delete confirming
  * before it posts.
@@ -19,7 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/route_cursor_core.js';
 import '../../static/js/elevation_profile_core.js';
+import '../../static/js/route_slope_core.js';
 import '../../static/js/route_rail_core.js';
+import '../../static/js/bank_ribbon_core.js';
+import '../../static/js/route_rail_two_core.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -53,6 +58,16 @@ document.body.innerHTML = `
       <svg data-route-rail-lane></svg>
       <div data-route-rail-ticks></div>
       <div data-route-rail-readout></div>
+      <div data-route-rail-two hidden>
+        <p data-route-rail-two-title></p>
+        <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
+        <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
+        <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
+        <p data-route-rail-two-figures></p>
+        <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
+        <div data-route-rail-two-ticks></div>
+        <div data-route-rail-two-readout></div>
+      </div>
       <form data-route-rail-csrf hidden>
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
       </form>
@@ -61,11 +76,28 @@ document.body.innerHTML = `
   <div id="route-detail-sheet" data-overlay hidden></div>
 `;
 
+// jsdom has no ResizeObserver. A stub that records each observed element
+// and its callback, so a test can fire a size change by hand.
+const observed = [];
+window.ResizeObserver = class {
+  constructor(callback) {
+    this.callback = callback;
+  }
+
+  observe(target) {
+    observed.push({ target, callback: this.callback });
+  }
+
+  disconnect() {}
+};
+
+await import('../../static/js/route_rail_two.js');
 await import('../../static/js/route_rail.js');
 
 const rail = document.getElementById('route-rail');
 const mapEl = document.getElementById('map');
 const sheet = document.getElementById('route-detail-sheet');
+const railTwo = rail.querySelector('[data-route-rail-two]');
 
 /**
  * A 24-segment route: a climb over segments 0-11 and a descent over 12-23.
@@ -161,7 +193,7 @@ describe('open', () => {
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲200 m · ▼200 m · 1500→1500 m',
+      '0.6 km · ▲ 200m · ▼ 200m · 1500→1500m',
     );
   });
 
@@ -197,10 +229,20 @@ describe('open', () => {
     expect(cursor.state().index).toBe(23);
   });
 
-  it('cuts a pending share into legs, though its slope is not drawn', () => {
+  it('cuts a pending share into legs', () => {
     window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
 
     expect(legPaths()).toHaveLength(2);
+  });
+
+  it('hands a pending share’s slope record to rail two', () => {
+    // A share carries the same slope record as an owned route; nulling it
+    // opened rail two with no bands, no ribbon and no passages.
+    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(railTwo.hidden).toBe(false);
+    expect(railTwo.querySelectorAll('.route-rail-two-band').length).toBeGreaterThan(0);
   });
 
   it('draws the outline alone for a route with no legs', () => {
@@ -271,7 +313,7 @@ describe('open', () => {
     window.pwaRouteRail.open(gappy);
 
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲200 m · ▼200 m',
+      '0.6 km · ▲ 200m · ▼ 200m',
     );
   });
 
@@ -288,7 +330,7 @@ describe('open', () => {
 });
 
 describe('pressing a leg', () => {
-  it('opens it on the cursor, and pressing it again clears it', () => {
+  it('opens it on the cursor, and rail two with it', () => {
     window.pwaRouteRail.open(feature());
     const [first] = legPaths();
 
@@ -299,13 +341,43 @@ describe('pressing a leg', () => {
       to: 11,
     });
     expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe(
-      'Leg 1 — climb',
-    );
+    // Rail two's identity cell names the leg; this readout goes quiet.
+    expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe('');
+    expect(railTwo.hidden).toBe(false);
+  });
 
+  it('moves rail two’s window when the open leg is pressed, without closing it', () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+    const railLane = rail.querySelector('[data-route-rail-lane]');
+    vi.spyOn(railLane, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80, x: 0, y: 0,
+    });
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(first.getAttribute('aria-pressed')).toBe('false');
+    // Zoom rail two in to its six-sample floor, so there is a window to move.
+    const zoomIn = railTwo.querySelector('[data-route-rail-two-zoom="in"]');
+    zoomIn.click();
+    zoomIn.click();
+    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 3, to: 9 });
+
+    // x = 100 of 1000 is sample 2 of 24.
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+    expect(window.pwaRouteRail.cursor().state().openLeg).not.toBeNull();
+    expect(first.getAttribute('aria-pressed')).toBe('true');
+    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 0, to: 6 });
+  });
+
+  it('offers the hint while no leg is open, and again once it closes', () => {
+    window.pwaRouteRail.open(feature());
+    const readout = rail.querySelector('[data-route-rail-readout]');
+    expect(readout.textContent).toBe('Press a leg to open it.');
+
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(readout.textContent).toBe('');
+
+    window.pwaRouteRail.cursor().closeLeg();
+    expect(readout.textContent).toBe('Press a leg to open it.');
   });
 
   it('moves the open leg when another is pressed', () => {
@@ -337,6 +409,166 @@ describe('pressing a leg', () => {
     window.pwaRouteRail.cursor().closeLeg();
 
     expect(first.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('rail two', () => {
+  it('is bracketed on rail one while it shows part of the leg', () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const bracket = () => rail.querySelector('[data-route-rail-window]');
+
+    // A 12-sample leg opens whole: nothing to bracket.
+    expect(bracket()).toBeNull();
+
+    railTwo.querySelector('[data-route-rail-two-zoom="in"]').click();
+    const view = window.pwaRouteRailTwo.view();
+    expect(Number(bracket().getAttribute('x'))).toBeCloseTo((view.from / 24) * 1000);
+    expect(Number(bracket().getAttribute('width'))).toBeCloseTo(
+      ((view.to - view.from) / 24) * 1000,
+    );
+
+    railTwo.querySelector('[data-route-rail-two-zoom="out"]').click();
+    expect(bracket()).toBeNull();
+  });
+
+  it('closes on Escape before the rail does', () => {
+    window.pwaRouteRail.open(feature());
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    pressEscape();
+    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
+    expect(railTwo.hidden).toBe(true);
+    expect(rail.hidden).toBe(false);
+
+    pressEscape();
+    expect(rail.hidden).toBe(true);
+  });
+
+  it('hides with the rail', () => {
+    window.pwaRouteRail.open(feature());
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    window.pwaRouteRail.close();
+
+    expect(railTwo.hidden).toBe(true);
+    expect(window.pwaRouteRailTwo.view()).toBeNull();
+  });
+});
+
+describe('the cursor line (SNOW-1019)', () => {
+  /** @returns {?Element} The cursor line, if drawn. */
+  const cursorLine = () => rail.querySelector('[data-route-rail-cursor]');
+
+  /**
+   * Move a pointer over rail one's lane.
+   *
+   * @param {string} pointerType 'mouse' or 'touch'.
+   * @param {number} clientX The pointer's x.
+   */
+  const moveOverLane = (pointerType, clientX) => {
+    const event = new MouseEvent('pointermove', { bubbles: true, clientX });
+    Object.defineProperty(event, 'pointerType', { value: pointerType });
+    rail.querySelector('[data-route-rail-lane]').dispatchEvent(event);
+  };
+
+  it('draws the cursor index by share, and hides on null', () => {
+    window.pwaRouteRail.open(feature());
+    expect(cursorLine()).toBeNull();
+
+    window.pwaRouteRail.cursor().setIndex(5);
+    // Sample 5 of 24: the middle of the sixth share of 1000.
+    expect(Number(cursorLine().getAttribute('x1'))).toBeCloseTo((5.5 / 24) * 1000);
+    expect(cursorLine().getAttribute('pointer-events')).toBe('none');
+    expect(cursorLine().getAttribute('vector-effect')).toBe('non-scaling-stroke');
+
+    window.pwaRouteRail.cursor().setIndex(null);
+    expect(cursorLine()).toBeNull();
+  });
+
+  it('moves the cursor on a mouse hover, and not on a touch', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+
+    moveOverLane('touch', 500);
+    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
+
+    // 500 of 1000 is sample 12 of 24.
+    moveOverLane('mouse', 500);
+    expect(window.pwaRouteRail.cursor().state().index).toBe(12);
+  });
+
+  it('holds a hover to the open leg', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+    moveOverLane('mouse', 900);
+
+    expect(window.pwaRouteRail.cursor().state().index).toBe(11);
+  });
+
+  it('reports where its cursor meets the profile, for the leader line', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 10, top: 100, right: 1010, bottom: 196, width: 1000, height: 96 });
+    expect(window.pwaRouteRail.cursorPoint()).toBeNull();
+
+    window.pwaRouteRail.cursor().setIndex(5);
+    const point = window.pwaRouteRail.cursorPoint();
+
+    expect(point.x).toBeCloseTo(10 + (5.5 / 24) * 1000);
+    // On the climb, so above the lane's floor and below its top.
+    expect(point.y).toBeGreaterThan(100);
+    expect(point.y).toBeLessThan(196);
+  });
+
+  it('announces opening and closing, which the leader line follows', () => {
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:route-rail-changed', heard);
+
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.close();
+
+    expect(heard).toHaveBeenCalledTimes(2);
+    document.removeEventListener('snowdesk:route-rail-changed', heard);
+  });
+
+  it('clears the cursor when the rail closes', () => {
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    cursor.setIndex(3);
+    cursor.select({ kind: 'band', from: 2, to: 4 });
+
+    window.pwaRouteRail.close();
+
+    expect(cursor.state()).toMatchObject({ index: null, selection: null, openLeg: null });
+  });
+});
+
+describe('the rail\'s measured height (SNOW-1019)', () => {
+  it('re-publishes the height when the rail\'s content resizes it, and announces it', () => {
+    window.pwaRouteRail.open(feature());
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:route-rail-resized', heard);
+    // Rail two's readout grew a line: the rail is taller than at open.
+    Object.defineProperty(rail, 'offsetHeight', { value: 411, configurable: true });
+
+    for (const { target, callback } of observed) {
+      if (target === rail) callback([]);
+    }
+
+    expect(mapEl.style.getPropertyValue('--route-rail-height')).toBe('411px');
+    expect(heard).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:route-rail-resized', heard);
+    delete rail.offsetHeight;
+  });
+
+  it('observes the rail itself', () => {
+    expect(observed.some(({ target }) => target === rail)).toBe(true);
   });
 });
 

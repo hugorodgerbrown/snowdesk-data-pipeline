@@ -2146,24 +2146,22 @@
   // EAWS danger palette, so a pending route can never be mistaken for a
   // rating.
   const ROUTE_PENDING_COLOUR = '#0d9488';
+  // SNOW-1019: the route cursor's two inks on the map. A selection is a
+  // near-black core (mirroring --color-text-1, the ink the rails outline a
+  // selection with) over a white casing (mirroring --color-card, the
+  // surface the rails are drawn on), so the stretch reads over both leg
+  // colours and over any basemap. The cursor dot takes the route line's
+  // own fuchsia with the same card-white ring.
+  const ROUTE_CURSOR_INK = '#1a1916';
+  const ROUTE_CURSOR_HALO = '#ffffff';
 
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
-  // SNOW-911. Registered `sdf: true`, unlike the two above, so the ring
-  // takes its colour from `icon-color` rather than from pixel data — see
-  // `cruxRingPixels`.
-  const ROUTE_CRUX_ICON = 'route-crux-ring';
-  // The fall-line arrow, registered `sdf: true` on the crux ring's terms
-  // and for its reason — see `fallLineArrowPixels`.
-  const ROUTE_FALL_LINE_ICON = 'route-fall-line-arrow';
-
-  // The crux ring's ink. A neutral slate, and deliberately NOT on the
-  // steepness scale: the ring marks WHERE to look, and the line under it
-  // is already saying how steep that ground is. Borrowing a scale colour
-  // would make the marker look like a sixth band. Mirrors
-  // `--color-crux-ring` in src/css/main.css.
-  const ROUTE_CRUX_COLOUR = '#1a1916';
+  // SNOW-1019 took the crux rings (SNOW-911) and the fall-line arrows off
+  // the map: the crux is deferred to a later ticket, and the bank ribbon
+  // on rail two replaced the arrows. The server still sends `cruxes` and
+  // `fall_lines` on the slope record; nothing here draws them.
 
   /**
    * Register the start dot and finish flag, unless the style already holds
@@ -2197,26 +2195,6 @@
         core.finishFlagPixels(...cssColourChannels(ROUTE_CASING_COLOUR)),
         ratio,
       );
-    }
-    if (!map.hasImage(ROUTE_CRUX_ICON) && core.cruxRingPixels) {
-      // `sdf: true`: the ring is an alpha mask and `icon-color` paints
-      // it. The guard on the function itself is for a cached older copy
-      // of the core, which the service worker can serve for a minute
-      // after a deploy — the ring is then simply absent, rather than the
-      // whole routes overlay throwing.
-      map.addImage(ROUTE_CRUX_ICON, core.cruxRingPixels(), {
-        pixelRatio: core.PIXEL_RATIO,
-        sdf: true,
-      });
-    }
-    if (!map.hasImage(ROUTE_FALL_LINE_ICON) && core.fallLineArrowPixels) {
-      // The crux ring's registration, verbatim: an alpha mask painted by
-      // `icon-color`, guarded on the function so a cached older core
-      // costs the arrows rather than the whole routes overlay.
-      map.addImage(ROUTE_FALL_LINE_ICON, core.fallLineArrowPixels(), {
-        pixelRatio: core.PIXEL_RATIO,
-        sdf: true,
-      });
     }
   };
 
@@ -2279,78 +2257,20 @@
   };
 
   /**
-   * The no-fall passage segments for a routes payload (SNOW-964,
-   * redrawn by SNOW-1017).
-   *
-   * Only the passages, each tagged with its leg's `climbing` so the edge
-   * can take the leg's colour. Guarded like the legs above; the core
-   * itself answers empty when `route_slope_core.js` is missing, since
-   * the segments come from there.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A line
-   *   FeatureCollection, empty when there is nothing to mark.
-   */
-  const routePassagesFor = (geojson) => {
-    const core = self.pwaRouteLegsCore;
-    if (!core) return { type: 'FeatureCollection', features: [] };
-    return core.passageCollection(geojson);
-  };
-
-  /**
-   * The crux markers for a routes payload (SNOW-911).
-   *
-   * Guarded like the segments above, and for the same reason: a failed
-   * core load should cost the markers, not the routes overlay. An older
-   * cached copy of the core has no `cruxCollection` at all, which the
-   * service worker can serve for a minute after a deploy.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A Point
-   *   FeatureCollection, empty when there is nothing to mark.
-   */
-  const routeCruxesFor = (geojson) => {
-    const core = self.pwaRouteSlopeCore;
-    if (!core || !core.cruxCollection) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.cruxCollection(geojson);
-  };
-
-  /**
-   * The fall-line arrows for a routes payload.
-   *
-   * Guarded like the cruxes above, and for the same reason: a failed or
-   * stale core should cost the arrows, not the routes overlay. An older
-   * cached copy has no `fallLineCollection` at all.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A Point
-   *   FeatureCollection, empty when there is nothing to mark.
-   */
-  const routeFallLinesFor = (geojson) => {
-    const core = self.pwaRouteSlopeCore;
-    if (!core || !core.fallLineCollection) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.fallLineCollection(geojson);
-  };
-
-  /**
    * The two leg colours, read off the core with a literal fallback.
    *
    * The literals mirror `--color-route-rail-climb` and
    * `--color-route-rail-descent` in src/css/main.css, as the core's own
    * constants do; the fallback is only for a page where the core has not
-   * loaded, where no leg is drawn and only the passage edge reads them.
+   * loaded, where no leg is drawn and nothing reads them.
    *
    * @returns {{climb: string, descent: string}}
    */
   const legColours = () => {
     const core = self.pwaRouteLegsCore || {};
     return {
-      climb: core.LEG_CLIMB_COLOUR || '#c026d3',
-      descent: core.LEG_DESCENT_COLOUR || '#64748b',
+      climb: core.LEG_CLIMB_COLOUR || '#64748b',
+      descent: core.LEG_DESCENT_COLOUR || '#c026d3',
     };
   };
 
@@ -2429,7 +2349,7 @@
   // and `routes-leg-descent` over the whole of its length, so it leaves
   // BOTH flat layers. The line, because it would otherwise show through at
   // every seam; the casing, because the legs carry a casing of their own
-  // that a selection dims (bindLegDimming), and a per-route casing left
+  // that a selection dims (bindRouteCursor), and a per-route casing left
   // underneath would keep a dimmed leg framed at full strength.
   //
   // ``['!', ['has', 'legs']]`` and not a test on the value: the server
@@ -2495,26 +2415,32 @@
   // when the layers are rebuilt from scratch under an open rail.
   let openLegOnMap = null;
   // Removes the map's subscription to the open route's cursor.
-  let unsubscribeLegDimming = null;
-
-  /**
-   * The opacity a no-fall passage is painted with while a leg is open.
-   *
-   * The passage dims WITH the leg it lies in, by the leg's own `i`, so a
-   * dimmed leg carries no full-strength stretch across it. A passage on a
-   * route drawn flat carries no `i` (route_legs_core.js's
-   * passageCollection) and stays at full strength, as its flat line does:
-   * the flat line is never dimmed, and a mark on it should not be either.
-   *
-   * @param {?{dimOpacity: function(*, number, number): *}} core The legs
-   *   core, or null.
-   * @returns {number|Array<*>} A number or a `case` expression.
-   */
-  const passageOpacity = (core) => {
-    const dimmed = core ? core.dimOpacity(openLegOnMap, 1, 0.25) : 1;
-    if (typeof dimmed === 'number') return dimmed;
-    return ['case', ['has', 'i'], dimmed, 1];
-  };
+  let unsubscribeRouteCursor = null;
+  // SNOW-1019: the open route the map follows the cursor of — its uuid,
+  // the cursor, its parsed slope record and legs, and each segment's
+  // middle in [lon, lat] — or null. Read by the hover and the tap, which
+  // convert a pointer on the line into a sample index.
+  let routeCursorTarget = null;
+  // SNOW-1019: what the cursor's two sources hold — the selection's
+  // stretch of line and the cursor dot — as FeatureCollections. Module
+  // state for the reason `openLegOnMap` is: a basemap re-install rebuilds
+  // the sources from scratch and has to repaint the current index and
+  // selection under an open rail.
+  const EMPTY_ROUTE_CURSOR_FC = Object.freeze({ type: 'FeatureCollection', features: [] });
+  let routeCursorSelectionData = EMPTY_ROUTE_CURSOR_FC;
+  let routeCursorPointData = EMPTY_ROUTE_CURSOR_FC;
+  // SNOW-1019: keeping the cursor's dot out from behind the rails. True
+  // while THIS module writes the index (a hover or a tap on the line), so
+  // follow() does not pan the map under the pointer that wrote it; true
+  // while a pan is in flight, so a scrub along rail two makes one pan and
+  // not a queue; true while the reader drags the map, which a pan would
+  // fight; and whether an index arrived during a pan, so the dot is
+  // checked once more when it lands.
+  let mapWritesRouteIndex = false;
+  let routeCursorPanInFlight = false;
+  let routeCursorPanPending = false;
+  let mapDragging = false;
+  let lastRouteCursorIndex = null;
 
   /**
    * Paint the open leg at full strength and dim every other (SNOW-1017).
@@ -2535,11 +2461,6 @@
         map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
       }
     }
-    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
-      if (map.getLayer(id)) {
-        map.setPaintProperty(id, 'line-opacity', passageOpacity(core));
-      }
-    }
     if (map.getLayer('routes-leg-casing')) {
       map.setPaintProperty(
         'routes-leg-casing', 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15),
@@ -2548,18 +2469,69 @@
   };
 
   /**
-   * Follow the open route's cursor, so a leg opened on the rail dims the
-   * rest of the map (SNOW-1017).
+   * Parse a feature property the routes cache may hold JSON-encoded.
+   *
+   * @param {*} value A raw property value.
+   * @returns {*} The parsed value, or null if it could not be read.
+   */
+  const parseRouteProperty = (value) => {
+    if (typeof value !== 'string') return value == null ? null : value;
+    try {
+      return JSON.parse(value);
+    } catch (_err) {
+      return null;
+    }
+  };
+
+  /**
+   * Put the cursor's selection and index on the map (SNOW-1019).
+   *
+   * Writes both into module state first, so a source installed later — a
+   * basemap re-install — starts from them, then into the sources if they
+   * are there.
+   *
+   * @param {?{index: ?number, selection: ?object}} state The cursor's
+   *   state, or null to clear both.
+   * @returns {void}
+   */
+  const paintRouteCursor = (state) => {
+    const core = self.pwaRouteCursorMapCore;
+    const slope = routeCursorTarget ? routeCursorTarget.slope : null;
+    const line = core && state ? core.selectionLine(slope, state.selection) : null;
+    const point = core && state ? core.cursorPoint(slope, state.index) : null;
+    routeCursorSelectionData = line
+      ? { type: 'FeatureCollection', features: [line] }
+      : EMPTY_ROUTE_CURSOR_FC;
+    routeCursorPointData = point
+      ? { type: 'FeatureCollection', features: [point] }
+      : EMPTY_ROUTE_CURSOR_FC;
+    const selectionSource = map.getSource('route-cursor-selection');
+    if (selectionSource) selectionSource.setData(routeCursorSelectionData);
+    const pointSource = map.getSource('route-cursor-point');
+    if (pointSource) pointSource.setData(routeCursorPointData);
+  };
+
+  /**
+   * Follow the open route's cursor (SNOW-1017, widened by SNOW-1019).
+   *
+   * The ONE subscription the map holds to the route cursor. A leg opened
+   * on a rail dims the rest of the map's legs; a selection is drawn as a
+   * highlighted stretch of the line; the cursor index is drawn as a dot on
+   * it. The map writes back too — the hover and the tap below convert a
+   * pointer on the open route's line into an index — through the
+   * `routeCursorTarget` this sets.
    *
    * Called after every `pwaRouteRail.open`. Drops the previous route's
    * subscription first — the rail made a new cursor for this route and the
    * old one will never speak again. With no cursor (a pending share, or a
    * route too short to hold a segment) or no uuid, there is nothing to
-   * follow and every leg is restored to full strength.
+   * follow: every leg is restored to full strength and the cursor marks
+   * are cleared.
    *
-   * The rail's `close()` closes the open leg before it lets the cursor go
-   * (route_rail.js), so a close from the rail's own ×, Escape or backdrop
-   * reaches here as `openLeg: null` and restores the lines.
+   * The rail's `close()` clears the selection, the index and the open leg
+   * before it lets the cursor go (route_rail.js), so a close from the
+   * rail's own ×, Escape or backdrop reaches here as an empty state and
+   * restores the lines.
    *
    * The subscription itself is dropped LAZILY, on the next open, not on
    * the close. That costs nothing: the rail drops a closed cursor and
@@ -2569,22 +2541,251 @@
    * @param {?string} uuid The opened route's uuid.
    * @returns {void}
    */
-  const bindLegDimming = (uuid) => {
-    if (unsubscribeLegDimming) unsubscribeLegDimming();
-    unsubscribeLegDimming = null;
+  const bindRouteCursor = (uuid) => {
+    if (unsubscribeRouteCursor) unsubscribeRouteCursor();
+    unsubscribeRouteCursor = null;
     openLegOnMap = null;
+    routeCursorTarget = null;
     const cursor = window.pwaRouteRail?.cursor ? window.pwaRouteRail.cursor() : null;
     if (cursor && uuid) {
+      const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
+        (f) => f && f.properties && f.properties.uuid === uuid,
+      );
+      const props = (feature && feature.properties) || {};
+      const slope = parseRouteProperty(props.slope);
+      const legs = parseRouteProperty(props.legs);
+      const core = self.pwaRouteCursorMapCore;
+      routeCursorTarget = {
+        uuid: uuid,
+        cursor: cursor,
+        slope: slope,
+        legs: Array.isArray(legs) ? legs : [],
+        midpoints: core ? core.segmentMidpoints(slope) : [],
+      };
+      lastRouteCursorIndex = cursor.state().index;
+      let lastOpenLeg = cursor.state().openLeg;
       const follow = (state) => {
         const leg = state && state.openLeg;
+        // A leg opening brings rail two up over the map's foot, which can
+        // cover a dot that was in view a moment ago — including one the
+        // map itself wrote with a tap. A layout change is not a hover, so
+        // this check runs whoever wrote the index.
+        const legOpened = !!leg && leg !== lastOpenLeg;
+        lastOpenLeg = leg || null;
         openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
         applyLegDimming();
+        paintRouteCursor(state);
+        const index = state ? state.index : null;
+        if (index !== lastRouteCursorIndex) {
+          lastRouteCursorIndex = index;
+          // An index a RAIL wrote may sit behind the rails; one the map
+          // wrote is under the reader's own pointer already.
+          if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
+        }
+        // Checked after the write in progress: a tap on the line opens the
+        // leg and THEN sets the index, and the check is for where the
+        // index ends up, against the rail rail two has just grown.
+        if (legOpened) {
+          Promise.resolve().then(() => {
+            if (routeCursorTarget && routeCursorTarget.cursor.state().index !== null) {
+              keepRouteCursorInView();
+            }
+          });
+        }
       };
-      unsubscribeLegDimming = cursor.subscribe(follow);
+      unsubscribeRouteCursor = cursor.subscribe(follow);
       follow(cursor.state());
       return;
     }
     applyLegDimming();
+    paintRouteCursor(null);
+  };
+
+  /**
+   * The route cursor's screen point on the map, for the leader line
+   * (route_leader.js, SNOW-1019).
+   *
+   * Computed from the cursor's state rather than read back off the dot's
+   * source, so a subscriber that runs before this module's own cursor
+   * subscription still gets the new place.
+   *
+   * @returns {?{x: number, y: number}} Viewport px, or null with no open
+   *   route, no index, the routes overlay off or no slope record.
+   */
+  const routeCursorRawPoint = () => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !map || !routeCursorTarget || !overlayState.routes) return null;
+    const index = routeCursorTarget.cursor.state().index;
+    const point = core.cursorPoint(routeCursorTarget.slope, index);
+    if (!point) return null;
+    const px = map.project(point.geometry.coordinates);
+    const container = map.getContainer();
+    const rect = container && container.getBoundingClientRect
+      ? container.getBoundingClientRect()
+      : { left: 0, top: 0 };
+    return px ? { x: rect.left + px.x, y: rect.top + px.y } : null;
+  };
+
+  /**
+   * The map the rails and the top chrome leave visible, viewport px
+   * (SNOW-1019).
+   *
+   * The canvas above the rail's measured top edge — `paddingClearingRail`'s
+   * measurement — and below the top inset: the map's edge inset while the
+   * rail is open (the controls are withdrawn), the fit padding's top,
+   * where the search pill sits, otherwise.
+   *
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   *   Null before the canvas is laid out.
+   */
+  const visibleMapRect = () => {
+    const core = self.pwaRouteCursorMapCore;
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!core || !container || !container.getBoundingClientRect) return null;
+    const rail = window.pwaRouteRail;
+    const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
+      ? rail.element.getBoundingClientRect().top
+      : null;
+    // While the rail is open the top chrome is withdrawn (static/css/
+    // map.css), so the visible map starts at the edge inset rather than
+    // under the search pill.
+    const topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
+    return core.visibleRect(container.getBoundingClientRect(), railTop, topInset);
+  };
+
+  /**
+   * The cursor dot's screen point, or null when it is not VISIBLE.
+   *
+   * Behind a rail or under the top chrome counts as absent, so the leader
+   * line drops its map stop rather than point at a dot nobody can see.
+   * A canvas not yet laid out has no visible rect to test against, and
+   * the point stands.
+   *
+   * @returns {?{x: number, y: number}}
+   */
+  const routeCursorScreenPoint = () => {
+    const point = routeCursorRawPoint();
+    if (!point) return null;
+    const rect = visibleMapRect();
+    if (!rect) return point;
+    return self.pwaRouteCursorMapCore.isInside(point, rect) ? point : null;
+  };
+
+  // How far inside the visible map a panned-to dot lands, and how long the
+  // pan takes. Short, and the zoom is kept: the reader is scrubbing a
+  // rail, and the map only needs to keep the place in view.
+  const ROUTE_CURSOR_PAN_MARGIN_PX = 24;
+  // The visible map's top edge while the rail is open, px: the map's own
+  // edge inset, since the controls above it are withdrawn then.
+  const ROUTE_CURSOR_TOP_INSET_PX = 12;
+  const ROUTE_CURSOR_PAN_MS = 250;
+
+  /**
+   * Pan the map, if it must, so the cursor's dot is not behind the rails.
+   *
+   * At most one pan in flight: an index arriving mid-pan is remembered
+   * and checked once when the pan lands, never queued. Skipped while the
+   * reader is dragging the map, which a pan would fight.
+   *
+   * @returns {void}
+   */
+  const keepRouteCursorInView = () => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !map || typeof map.panBy !== 'function') return;
+    if (mapDragging) return;
+    if (routeCursorPanInFlight) {
+      routeCursorPanPending = true;
+      return;
+    }
+    const offset = core.panOffset(
+      routeCursorRawPoint(), visibleMapRect(), ROUTE_CURSOR_PAN_MARGIN_PX,
+    );
+    if (!offset) return;
+    routeCursorPanInFlight = true;
+    let landed = false;
+    const land = () => {
+      if (landed) return;
+      landed = true;
+      routeCursorPanInFlight = false;
+      if (routeCursorPanPending) {
+        routeCursorPanPending = false;
+        keepRouteCursorInView();
+      }
+    };
+    map.once('moveend', land);
+    // moveend is not guaranteed (a pan interrupted by a gesture), so the
+    // flag is also cleared a little after the pan's own duration.
+    setTimeout(land, ROUTE_CURSOR_PAN_MS + 200);
+    map.panBy([offset.x, offset.y], { duration: ROUTE_CURSOR_PAN_MS });
+  };
+
+  // SNOW-1019: the rail changed height (rail two opening, its readout
+  // growing a line). The dot may now sit under it, whoever wrote the
+  // index — so the check runs regardless of the source, keeping only the
+  // one-pan-in-flight and no-pan-while-dragging guards.
+  document.addEventListener('snowdesk:route-rail-resized', () => {
+    if (!routeCursorTarget || routeCursorTarget.cursor.state().index === null) return;
+    if (!window.pwaRouteRail?.isOpen?.()) return;
+    keepRouteCursorInView();
+  });
+
+  // SNOW-1019: the leader line's bridge to the map — the cursor dot's
+  // screen point, and a way to hear the camera move it.
+  window.pwaRouteCursorMap = Object.freeze({
+    point: routeCursorScreenPoint,
+    /**
+     * Call `fn` whenever the camera moves or the map resizes.
+     *
+     * @param {function(): void} fn
+     * @returns {function(): void} Removes the listeners.
+     */
+    onChange: (fn) => {
+      if (!map) return () => {};
+      map.on('move', fn);
+      map.on('resize', fn);
+      return () => {
+        map.off('move', fn);
+        map.off('resize', fn);
+      };
+    },
+  });
+
+  /**
+   * Whether a pointer on the map may speak to the open route's cursor.
+   *
+   * Only while the rail is open on that route, and only while the routes
+   * overlay is drawn — a pointer over a route the reader switched off is
+   * over nothing.
+   *
+   * @returns {boolean}
+   */
+  const routeCursorLive = () => !!(
+    routeCursorTarget
+    && overlayState.routes
+    && window.pwaRouteRail?.isOpen?.()
+    && window.pwaRouteRail.cursor?.() === routeCursorTarget.cursor
+  );
+
+  /**
+   * The open route's sample nearest a screen point (SNOW-1019).
+   *
+   * Every segment's middle is projected to the screen and the nearest
+   * taken, so the answer is "which bit of line is under the pointer" in
+   * the pixels the reader sees.
+   *
+   * @param {{x: number, y: number}} point The pointer, in screen px.
+   * @param {number} [maxPx] Beyond this distance nothing is near.
+   * @returns {?number} A sample index, or null.
+   */
+  const routeSampleAt = (point, maxPx) => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !routeCursorTarget || !routeCursorTarget.midpoints.length) return null;
+    const projected = routeCursorTarget.midpoints.map((m) => {
+      if (!m) return null;
+      const px = map.project(m);
+      return px ? { x: px.x, y: px.y } : null;
+    });
+    return core.nearestSample(projected, point, maxPx);
   };
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
@@ -2688,47 +2889,6 @@
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5.5, 16, 9],
       },
     });
-    // SNOW-964: the no-fall passages, drawn as a SPLIT LINE — this wider
-    // under-stroke, with `routes-passage-core`'s light run down its
-    // centre over the leg lines below. Their own source (route_legs_core's
-    // passageCollection), which holds nothing but passages, so neither
-    // layer needs a filter.
-    //
-    // THE EDGE TAKES ITS LEG'S COLOUR, so the split reads as part of the
-    // line it splits. Under SNOW-910 it took the slope band's colour; the
-    // bands left the map with SNOW-1017 and the edge followed the line.
-    //
-    // The widths stay at or inside `routes-leg-casing` at every stop, so
-    // the casing keeps framing the mark over a pale basemap.
-    map.addSource('route-passages', {
-      type: 'geojson',
-      data: routePassagesFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-passage-edge',
-      type: 'line',
-      source: 'route-passages',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        // Butt caps: a round cap on a 25 m segment overlaps its neighbour.
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        // `match` rather than `case`, because a passage on a route drawn
-        // flat carries no `climbing` at all and must take the flat line's
-        // colour — reading a missing flag as a descent would paint it
-        // slate on a fuchsia line.
-        'line-color': [
-          'match', ['get', 'climbing'],
-          true, colours.climb,
-          false, colours.descent,
-          ROUTE_LINE_COLOUR,
-        ],
-        'line-opacity': passageOpacity(legsCore),
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 5, 16, 8.5],
-      },
-    });
     map.addLayer({
       id: 'routes-leg-climb',
       type: 'line',
@@ -2766,29 +2926,6 @@
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
       },
     });
-    // SNOW-964: the other half of the split — the light core, over both
-    // leg layers so it reads as a gap opening in the line itself.
-    //
-    // Off every colour on the line (see PASSAGE_CORE_COLOUR): a hue of its
-    // own would make a mark about the TRACK read as a kind of leg.
-    map.addLayer({
-      id: 'routes-passage-core',
-      type: 'line',
-      source: 'route-passages',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
-        // mirroring --color-passage-core, which a MapLibre paint
-        // property cannot read for itself.
-        'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
-        'line-opacity': passageOpacity(legsCore),
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2, 16, 3.5],
-      },
-    });
     // SNOW-764: the shared-with-you line. A THIRD layer rather than a
     // data-driven `line-color` on the one above, because the difference is
     // not only colour: this line is DASHED, and `line-dasharray` is not a
@@ -2824,135 +2961,79 @@
         'line-dasharray': [2, 1.5],
       },
     });
-    // The fall-line arrows. Their own Point source over the same
-    // payload, because a symbol cannot be placed on a line layer — and
-    // one arrow per segment is not what is wanted anyway: the server
-    // spaced them (`apps/routes/services/fall_line.py`) and this draws
-    // what it was given.
+    // SNOW-1019: the route cursor on the map — a selection made on a rail
+    // as a highlighted stretch of the open route's line, and the cursor
+    // index as a dot on it. Their own two sources, filled from module
+    // state by paintRouteCursor, so a basemap re-install repaints the
+    // current selection and index. Over every line layer, the pending one
+    // included, since a selection is what the reader is looking at now;
+    // under the point marks installed after this, which the reader
+    // orients by.
     //
-    // ABOVE the leg lines and their split, BELOW the crux rings and
-    // the endpoint markers. MapLibre paints later layers over earlier
-    // ones, so this is a statement about what gives way to what: an
-    // arrow is ambient, a ring is an instruction to look at one place,
-    // and a start dot is how the reader orients. The arrow yields to
-    // both.
-    map.addSource('route-fall-lines', {
+    // A PALE CASING UNDER A DARK CORE: the one pairing that reads over
+    // the climb's slate, the descent's fuchsia and every basemap.
+    map.addSource('route-cursor-selection', {
       type: 'geojson',
-      data: routeFallLinesFor(geojson),
+      data: routeCursorSelectionData,
     });
     map.addLayer({
-      id: 'routes-fall-lines',
-      type: 'symbol',
-      source: 'route-fall-lines',
-      // minzoom 12, one step in from the crux rings. At z11 a 250 m
-      // spacing is about 9 CSS pixels and a 20 px arrow, so the marks
-      // would overlap into a textured line that reads as decoration on
-      // the track rather than as a direction.
-      minzoom: 12,
+      id: 'routes-cursor-selection-casing',
+      type: 'line',
+      source: 'route-cursor-selection',
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': ROUTE_FALL_LINE_ICON,
-        // THE ONE MARK ON THIS MAP THAT LETS ITSELF BE DROPPED, and the
-        // difference from the rings beside it is the whole point:
-        // dropping a crux ring understates the day, while the arrows are
-        // a density — the ones that survive say the same thing about the
-        // same face as the one that did not. So the collision engine is
-        // allowed to thin them wherever the zoom has pushed them
-        // together, which is what keeps a steep face legible at z12 and
-        // detailed at z15 without a second spacing rule.
-        'icon-allow-overlap': false,
-        // It does not block anything else either: the rings and markers
-        // above set `icon-ignore-placement`, and a basemap label losing
-        // out to an ambient arrow would be the wrong trade.
-        'icon-ignore-placement': true,
-        'icon-anchor': 'center',
-        // The arrow is drawn pointing up (north) and this turns it
-        // clockwise onto the compass bearing the ground faces, which is
-        // downhill. `icon-rotation-alignment: 'map'` is what makes that
-        // a bearing rather than a screen angle — the arrow then keeps
-        // pointing at real downhill when the reader rotates the map,
-        // which is the only behaviour that is ever right for a fall
-        // line.
-        'icon-rotate': ['get', 'deg'],
-        'icon-rotation-alignment': 'map',
+        'line-cap': 'round',
+        'line-join': 'round',
       },
       paint: {
-        // See FALL_LINE_COLOUR in route_slope_core.js — the crux ring's
-        // near-black under a token of its own, mirroring
-        // --color-fall-line-arrow, which a MapLibre paint property
-        // cannot read for itself.
-        'icon-color': (self.pwaRouteSlopeCore || {}).FALL_LINE_COLOUR || '#1a1916',
-        // The ring's halo, for the ring's reason: over the dark casing
-        // the ink alone would vanish, and the halo is what carries the
-        // shape there.
-        'icon-halo-color': '#ffffff',
-        'icon-halo-width': 1,
+        'line-color': ROUTE_CURSOR_HALO,
+        'line-opacity': 0.9,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 12, 9, 16, 14],
+      },
+    });
+    map.addLayer({
+      id: 'routes-cursor-selection',
+      type: 'line',
+      source: 'route-cursor-selection',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ROUTE_CURSOR_INK,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 4.5, 16, 7],
+      },
+    });
+    map.addSource('route-cursor-point', {
+      type: 'geojson',
+      data: routeCursorPointData,
+    });
+    map.addLayer({
+      id: 'routes-cursor-point',
+      type: 'circle',
+      source: 'route-cursor-point',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+      },
+      paint: {
+        'circle-color': ROUTE_LINE_COLOUR,
+        'circle-radius': 6,
+        'circle-stroke-color': ROUTE_CURSOR_HALO,
+        'circle-stroke-width': 2,
       },
     });
     syncRouteLegLegend();
 
-    // SNOW-687 follow-up: the start dot and finish flag. Their own point
-    // source, derived from the same payload — MapLibre cannot symbolise
-    // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
-    // symbol ALONG one, which is a different thing), so the endpoints are
-    // computed once here and kept beside the lines.
-    //
-    // minzoom 10 matches the resort labels, and for their reason: it keeps
-    // the markers off-screen until the map is genuinely zoomed in, rather
-    // than littering a country-scale view with flags on tracks a few
-    // pixels long. It is also the zoom at which a route's two ends are far
-    // enough apart to read as two markers.
-    // SNOW-911: the crux rings, over the leg lines and BEFORE the
-    // endpoint markers — MapLibre paints later layers above earlier
-    // ones, so installing after them would let a ring and its white halo
-    // cover a start dot. That is not hypothetical: ``crux_points``
-    // places a one-segment run's marker on the run's first boundary, so
-    // a route whose very first segment is flagged puts a ring exactly on
-    // its own start. A route's two ends are the landmarks a reader
-    // orients by, and the ring must give way to them.
-    //
-    // minzoom 11, one step in from the endpoints. A ring is an
-    // instruction to look at a 25-to-500 m passage, and at a country
-    // scale it would point at a stretch of track a few pixels long; the
-    // rings would also pile onto each other and read as a smear rather
-    // than as places.
-    map.addSource('route-cruxes', {
-      type: 'geojson',
-      data: routeCruxesFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-cruxes',
-      type: 'symbol',
-      source: 'route-cruxes',
-      minzoom: 11,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': ROUTE_CRUX_ICON,
-        // Two cruxes on one track can be close together at this zoom, and
-        // dropping one would understate the day.
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        'icon-anchor': 'center',
-      },
-      paint: {
-        // Readable over both leg colours the ring sits on — see
-        // ROUTE_CRUX_COLOUR.
-        'icon-color': ROUTE_CRUX_COLOUR,
-        'icon-halo-color': '#ffffff',
-        'icon-halo-width': 1,
-      },
-    });
-
     // SNOW-1017: the numbered transitions — a circle at each point where
     // one leg ends and the next begins, numbered 1 to legs − 1 along the
     // track, so "transition 2" on the map is the one between legs 2 and 3
-    // on the rail. Over the crux rings and under the endpoint markers: a
-    // transition is where the route changes activity, which the reader
-    // plans around more than a ring, and less than where it starts.
+    // on the rail. Under the endpoint markers: a transition is where the
+    // route changes activity, which the reader plans around less than
+    // where it starts.
     //
-    // minzoom 11, the crux rings' step and for their reason: at a country
-    // scale the markers would pile onto one another and onto the start
-    // dot. The fit on a tap has no cap (activateRoute), so the camera
+    // minzoom 11: at a country scale the markers would pile onto one
+    // another and onto the start dot. The fit on a tap has no cap (activateRoute), so the camera
     // always comes to rest far enough in for them.
     //
     // The circle carries the position on its own; the number is a symbol
@@ -2989,8 +3070,8 @@
         'text-field': ['to-string', ['get', 'n']],
         'text-font': overlayTextFont,
         'text-size': 10,
-        // Every transition keeps its number, on the crux rings' reasoning:
-        // dropping one would renumber the route in the reader's head.
+        // Every transition keeps its number: dropping one would renumber
+        // the route in the reader's head.
         'text-allow-overlap': true,
         'text-ignore-placement': true,
       },
@@ -2999,6 +3080,17 @@
       },
     });
 
+    // SNOW-687 follow-up: the start dot and finish flag. Their own point
+    // source, derived from the same payload — MapLibre cannot symbolise
+    // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
+    // symbol ALONG one, which is a different thing), so the endpoints are
+    // computed once here and kept beside the lines.
+    //
+    // minzoom 10 matches the resort labels, and for their reason: it keeps
+    // the markers off-screen until the map is genuinely zoomed in, rather
+    // than littering a country-scale view with flags on tracks a few
+    // pixels long. It is also the zoom at which a route's two ends are far
+    // enough apart to read as two markers.
     ensureRouteMarkerImages();
     map.addSource('route-endpoints', {
       type: 'geojson',
@@ -6051,19 +6143,15 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // SEVEN sources, not one: the lines, the derived start/finish
-          // points, the legs, the passages, the transitions, the crux
-          // rings and the fall-line arrows (see installRoutesLayer).
+          // FOUR sources, not one: the lines, the derived start/finish
+          // points, the legs and the transitions (see installRoutesLayer).
           // Refreshing only the first would leave a deleted route's flag
           // standing on the map, its legs drawn along a track that is no
           // longer there, and its marks on ground nothing is drawn across.
           map.getSource('routes')?.setData(routesSourceData(data));
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-legs')?.setData(routeLegsFor(data));
-          map.getSource('route-passages')?.setData(routePassagesFor(data));
           map.getSource('route-transitions')?.setData(routeTransitionsFor(data));
-          map.getSource('route-cruxes')?.setData(routeCruxesFor(data));
-          map.getSource('route-fall-lines')?.setData(routeFallLinesFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
           // already drawn, and the route that just landed is the first
@@ -6093,9 +6181,10 @@
   // broken.
   //
   // SNOW-1017 took the colouring off the map — a route draws as its legs
-  // whether or not it is sampled — but the refetch still carries the
-  // marks the record holds: the no-fall passages, the crux rings and the
-  // fall-line arrows.
+  // whether or not it is sampled — and SNOW-1019 took the record's last
+  // marks (passages, crux rings, fall-line arrows) off it too. The refetch
+  // still matters: the rail's slope bands, bank ribbon and passage bars,
+  // and the map's cursor, all read the record it brings.
   //
   // Twenty seconds is a judgement about a queued task on a shared worker
   // for a track of a few hundred samples, not a measurement.
@@ -7649,23 +7738,10 @@
     // the tap through to the region underneath. Their features carry the
     // route's uuid for exactly this (see route_legs_core.js).
     //
-    // SNOW-964's two passage layers are DELIBERATELY ABSENT, and so is
-    // their entry in ROUTE_LINE_LAYERS below. They add no geometry: a leg
-    // line still runs under every passage, with the same uuid. Adding
-    // them would return the same route two more times from one tap for
-    // no behavioural change at all. The transition markers are absent on
+    // The transition markers are absent on
     // the endpoint markers' reasoning: each sits on a leg's own first
     // coordinate, well inside the 8px tolerance below.
     //
-    // 'routes-fall-lines' is ABSENT on the endpoint markers' reasoning
-    // rather than the passages': it IS new geometry — a point source of
-    // its own — but every arrow sits on the middle of a stretch a leg
-    // line still draws, which is well inside the 8px
-    // tolerance below. So a tap on an arrow already opens its route,
-    // and putting the layer in this set would maintain a second path to
-    // the same popup. An arrow is also the one mark here the collision
-    // engine may drop, so a tap path through it would be one that comes
-    // and goes with the zoom.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
@@ -8431,7 +8507,7 @@
         // could not answer.
         // The core is in home.html's DEFERRED group, so it is not
         // guaranteed to exist when this runs — the same reason
-        // ``routeCruxesFor`` and ``flatOwnedRouteFilter`` test for their
+        // ``routeLegsFor`` and ``flatOwnedRouteFilter`` test for their
         // cores rather than assuming them. Without the core the sheet loses its
         // terrain line and keeps the bulletin reading, which is the right
         // degradation: the figures are an addition to a sheet that stands
@@ -8511,9 +8587,11 @@
         claim: props.pending ? buildRouteClaimCta(props.token) : null,
       });
       // SNOW-1017: follow the new cursor, so a leg opened on the rail dims
-      // the rest of the map. A pending share has no uuid and is never
-      // dimmed — it draws no legs to dim.
-      bindLegDimming(props.pending ? null : props.uuid || null);
+      // the rest of the map — and, since SNOW-1019, so the cursor's index
+      // and selection are drawn on the line and a pointer on the line
+      // moves them. A pending share has no uuid and is never followed: it
+      // draws no legs and its slope is not shown.
+      bindRouteCursor(props.pending ? null : props.uuid || null);
 
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
@@ -8533,8 +8611,9 @@
         // worth looking at.
         //
         // What made it a defect rather than a preference is that the
-        // marks drawn ON a route have minzooms of their own — the crux
-        // rings at 11, and every later mark at or above it — so the
+        // marks drawn ON a route have minzooms of their own — the
+        // transition markers at 11, and the crux rings did too until
+        // SNOW-1019 took them off — so the
         // camera came to rest BELOW the zoom at which the things the
         // panel was describing in words could render at all. The panel
         // said "3 key passages" over a map that had decided not to show
@@ -8552,11 +8631,79 @@
       }
     };
 
+    /**
+     * A tap on the route the rail is already open on (SNOW-1019).
+     *
+     * The FIRST tap on a route opens the rail and frames the track
+     * (activateRoute). A tap on that same route while its rail is open
+     * means "here", not "open it again": it moves the cursor to the sample
+     * nearest the tap and opens the leg holding it, if that leg is not
+     * the one already open — and rail two scrolls there, since it follows
+     * the cursor. No re-framing: the reader is pointing at a place on a
+     * track already in view.
+     *
+     * The leg is opened BEFORE the index is set, because the cursor clamps
+     * an index into the open leg: set first, an index on another leg would
+     * be pulled back to the old leg's end.
+     *
+     * @param {object} feature The tapped line feature.
+     * @param {?{x: number, y: number}} point The tap, in screen px.
+     * @returns {boolean} True when the tap was taken here.
+     */
+    const tapOpenRoute = (feature, point) => {
+      const uuid = feature.properties?.uuid;
+      if (!uuid || !point || !routeCursorLive() || routeCursorTarget.uuid !== uuid) {
+        return false;
+      }
+      // The line was hit within the tap slop, so the nearest sample is on
+      // it however long the segments are at this zoom: no distance cap.
+      const index = routeSampleAt(point);
+      if (index === null) return true;
+      const { cursor, legs } = routeCursorTarget;
+      const leg = self.pwaRouteCursorMapCore.legAt(legs, index);
+      const open = cursor.state().openLeg;
+      mapWritesRouteIndex = true;
+      try {
+        if (leg && !(open && open.from === leg.from && open.to === leg.to)) {
+          cursor.openLeg(leg);
+        }
+        cursor.setIndex(index);
+      } finally {
+        mapWritesRouteIndex = false;
+      }
+      return true;
+    };
+
+    // SNOW-1019: a mouse moving along the open route's line moves the
+    // cursor, so rail one's line, rail two's window and the map's dot all
+    // follow the pointer. Mouse only — MapLibre fires `mousemove` for a
+    // mouse, and a finger has the tap above. Nothing within
+    // ROUTE_HOVER_PX of a segment middle leaves the cursor where it was:
+    // a pointer drifting off the line to the map around it is not a
+    // reading of the route.
+    const ROUTE_HOVER_PX = 24;
+    map.on('mousemove', (e) => {
+      if (!routeCursorLive() || !e || !e.point) return;
+      const index = routeSampleAt(e.point, ROUTE_HOVER_PX);
+      if (index === null) return;
+      mapWritesRouteIndex = true;
+      try {
+        routeCursorTarget.cursor.setIndex(index);
+      } finally {
+        mapWritesRouteIndex = false;
+      }
+    });
+
+    // SNOW-1019: a reader dragging the map is not to be fought by a pan
+    // that keeps the cursor in view (keepRouteCursorInView).
+    map.on('dragstart', () => { mapDragging = true; });
+    map.on('dragend', () => { mapDragging = false; });
+
     // Dispatch a marker the exclusion zone claimed to its activation, by
     // layer. No tap coordinate: it was here for the route alone, whose
     // popup had to be anchored somewhere the user had actually touched,
     // and SNOW-973 replaced that popup with a docked sheet.
-    const activateMarker = (feature) => {
+    const activateMarker = (feature, point) => {
       switch (feature.layer.id) {
         case 'community-reports-clusters':
           activateCommunityCluster(feature);
@@ -8569,6 +8716,7 @@
           break;
         case 'routes-line':
         case 'routes-line-pending':
+          if (tapOpenRoute(feature, point)) break;
           activateRoute(feature);
           break;
         // SNOW-1017: a tap on a leg opens the route it belongs to (SNOW-910
@@ -8579,6 +8727,7 @@
         // the wrong route.
         case 'routes-leg-climb':
         case 'routes-leg-descent': {
+          if (tapOpenRoute(feature, point)) break;
           const route = routeFeatureByUuid(feature.properties?.uuid);
           if (route) activateRoute(route);
           break;
@@ -8642,7 +8791,7 @@
       // playback, matching the pre-consolidation behaviour.
       const marker = markerUnderPoint(e.point);
       if (marker) {
-        activateMarker(marker);
+        activateMarker(marker, e.point);
         return;
       }
 

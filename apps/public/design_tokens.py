@@ -566,9 +566,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-marker-observation", "Community report", "#e8711a", None),
             # SNOW-1018: not drawn on the map but under the route's profile
             # on rail one, and listed here beside the route line because
-            # the climb fill IS the route's colour.
-            Token("--color-route-rail-climb", "Rail leg — climb", "#c026d3", None),
-            Token("--color-route-rail-descent", "Rail leg — descent", "#64748b", None),
+            # the descent fill IS the route's colour (SNOW-1019 swapped
+            # the pair: a slate climb, a fuchsia descent).
+            Token("--color-route-rail-climb", "Rail leg — climb", "#64748b", None),
+            Token("--color-route-rail-descent", "Rail leg — descent", "#c026d3", None),
         ),
     ),
     FoundationCategory(

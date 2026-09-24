@@ -11,7 +11,9 @@ last-reviewed: 2026-09-24
 
 SNOW-1017. On the home map an owned route is one line per leg
 (`detect_legs`): a climb dashed, a descent solid, in the rail's two
-colours (`--color-route-rail-climb`, `--color-route-rail-descent`). A
+colours (`--color-route-rail-climb`, `--color-route-rail-descent`) —
+since SNOW-1019 a slate climb and a fuchsia descent, swapped to match the
+rail mockup, with the dash still marking the climb. A
 numbered marker sits at each transition from z11, legs − 1 of them.
 Opening a leg on the rail dims every other leg on the map. The six
 slope-class colours SNOW-910 painted per 25 m segment left the map; the
@@ -19,6 +21,20 @@ no-fall passages, crux rings and fall-line arrows stayed, with the
 passage edge now in its leg's colour. A pending share is unchanged: the
 teal dashed line, with no legs and no markers. The trip page
 (`trip_map.js`) still draws the slope-coloured line.
+
+**2026-09-24 (SNOW-1019).** The crux rings and fall-line arrows are off
+the map now, and off the trip map too, with their legend rows. The crux
+marks are deferred to a later ticket; the server's crux probe
+(`apps/routes/services/cruxes.py`) and the `cruxes` key on the slope
+record are unchanged. The bank ribbon on rail two replaced the arrows.
+The no-fall passages remain the one terrain mark on the line.
+
+**2026-09-24, later (SNOW-1019).** The passage split line is off both
+maps too, with its legend row. The line on the map is now its legs, the
+numbered transitions and the start and end markers, and nothing else.
+The passages are shown on rail two only, as bars under the bank ribbon;
+`passages` still travels on the slope record and the detail sheet still
+names them.
 
 ## Why
 
@@ -61,8 +77,9 @@ teal dashed line, with no legs and no markers. The trip page
   (`withDrawableLegs`), so such a route falls back to the flat line. The
   cached payload itself is untouched, because the rail reads its legs
   from it.
-- The legend's route key has two leg rows plus the passage, fall-line and
-  crux rows. The steepness bands and "Not surveyed" rows are gone.
+- The legend's route key has the two leg rows. The steepness bands and
+  "Not surveyed" rows are gone, and SNOW-1019 took out the passage,
+  fall-line and crux rows with the marks.
 - The dimming follows `window.pwaRouteRail.cursor()`. The rail's
   `close()` closes the open leg before it drops the cursor, which is how
   the map hears the rail's ×, Escape and backdrop closes.

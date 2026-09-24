@@ -64,8 +64,14 @@ interface Window {
   pwaRouteLegsCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
+  /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */
+  pwaRouteCursorMapCore: any;
+  /** static/js/route_leader_core.js — the leader line's path. */
+  pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
+  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, ticks. */
+  pwaRouteRailTwoCore: any;
   /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
   pwaBankRibbonCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
@@ -94,6 +100,12 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
+  /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
+  pwaRouteRailTwo: any;
+  /** static/js/route_leader.js — the leader line from the map to the rails. */
+  pwaRouteLeader: any;
+  /** static/js/map.js — the route cursor's screen point on the map. */
+  pwaRouteCursorMap: any;
 }
 
 /**

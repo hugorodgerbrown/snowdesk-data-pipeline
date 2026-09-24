@@ -360,9 +360,9 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/route_markers_core.js' %}"></script>
     {# SNOW-910: a route's slope record, read (window.pwaRouteSlopeCore).    #}
     {# SNOW-1017 took the slope-coloured line off the map; map.js still      #}
-    {# reads this core for the no-fall passages, the crux rings, the         #}
-    {# fall-line arrows and the terrain lines, and the elevation profile     #}
-    {# for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
+    {# reads this core for the no-fall passages and the terrain lines (the   #}
+    {# crux rings and fall-line arrows left the map with SNOW-1019), and the #}
+    {# elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
     {# never at parse time, so like the other call-site cores it sits here   #}
     {# and not inside the map bundle's contiguous run.                       #}
     <script defer src="{% static 'js/route_slope_core.js' %}"></script>
@@ -372,6 +372,11 @@ in addition to the shared map assets.
     {# dims the rest with. After the slope core, whose segments its          #}
     {# passages are built from. Read at install time, never at parse time.   #}
     <script defer src="{% static 'js/route_legs_core.js' %}"></script>
+    {# SNOW-1019: the route cursor on the map (window.pwaRouteCursorMapCore)  #}
+    {# — a selection as a stretch of line, the cursor index as a dot, and a  #}
+    {# pointer on the line back to the nearest sample. Read by map.js when a #}
+    {# route opens and on a pointer, never at parse time.                    #}
+    <script defer src="{% static 'js/route_cursor_map_core.js' %}"></script>
     {# SNOW-1018: rail one. The route cursor (window.pwaRouteCursorCore,     #}
     {# SNOW-1016) had no caller until this rail, which is its first; the     #}
     {# rail's pure half (window.pwaRouteRailCore) — tick step, figures line, #}
@@ -381,7 +386,21 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_core.js' %}"></script>
+    {# SNOW-1019: rail two, the open leg. The bank ribbon's tick geometry    #}
+    {# (window.pwaBankRibbonCore, SNOW-1021), rail two's pure half           #}
+    {# (window.pwaRouteRailTwoCore) and its DOM half                         #}
+    {# (window.pwaRouteRailTwo), which route_rail.js attaches on open — so   #}
+    {# all three come before it.                                             #}
+    <script defer src="{% static 'js/bank_ribbon_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two.js' %}"></script>
     <script defer src="{% static 'js/route_rail.js' %}"></script>
+    {# SNOW-1019: the leader line — a dashed line from the route cursor's    #}
+    {# dot on the map to rail one's cursor and on to rail two's. Its pure    #}
+    {# half (window.pwaRouteLeaderCore) and its DOM half                     #}
+    {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
+    <script defer src="{% static 'js/route_leader_core.js' %}"></script>
+    <script defer src="{% static 'js/route_leader.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
     {# geometry is fetched from, and what the address bar should say once   #}

@@ -292,18 +292,52 @@ for something that is not a danger rating, and is distinct from the
 favourite pin and report flag colours.
 
 **What the line says (SNOW-1017).** An owned route is drawn as its
-legs: one line per stretch that climbs or descends, a climb dashed and a
-descent solid, in the two colours the rail below the map uses. From z11 a
+legs: one line per stretch that climbs or descends, a climb dashed in
+slate and a descent solid in fuchsia, the two colours the rail below the
+map uses. From z11 a
 numbered circle marks each transition, 1 to legs − 1 along the track, so
 a number on the map is the boundary between the same two legs on the
 rail. Opening a leg on the rail dims every other leg until it is closed.
-The no-fall passages, crux rings and fall-line arrows are drawn over the
-legs; the passage's split takes its leg's colour. A route shared with the
-reader and not yet saved stays a teal dashed line with none of these. The
+The line carries no terrain marks. SNOW-1019 took the no-fall passage
+split line, the crux rings and the fall-line arrows off this map and the
+trip map: the passages are drawn as bars on rail two, the bank ribbon on
+rail two replaced the arrows, and the crux is deferred. A route shared
+with the reader and not yet saved stays a teal dashed line with no legs. The
 slope-class colours SNOW-910 painted along the line left the map; they
 return on the leg rail (SNOW-1019). A route with no elevation has no legs
 and keeps the flat line
 ([why](decisions/legs-not-slope-classes-on-the-map.md)).
+
+**The map's controls withdraw while a route is open (SNOW-1019).**
+While a route's rails are open, following that route is the one thing
+the reader is doing, so every control floating over the map fades out
+and cannot be reached: the region readout with its star and download at
+the top left, search at the top right, the legend, help, date and
+scrubber stack at the bottom left, the control column at the bottom
+right, and the intro card. They come back when the rail closes. The map
+itself still pans and zooms by gesture, and the rails, the leader line
+and the route detail sheet stay.
+
+**The route cursor on the map (SNOW-1019).** While a route's rail is
+open, the map and both rails share one cursor. A band or passage
+selected on rail two is drawn on the map as a highlighted stretch of the
+line — a dark core over a white casing — and the cursor's position is a
+fuchsia dot on the line. A mouse moving along the open route's line moves
+the cursor (within about 24 px of the line), and so do a mouse over rail
+one and presses on rail two. A tap on the open route's line moves the
+cursor to the tapped place and opens the leg there; the first tap on a
+route still opens the rail and frames the track. Closing the rail clears
+the dot and the highlight. All of it is hidden with the routes overlay.
+A dashed leader line in the route colour runs from the dot on the map
+down to rail one's cursor, where it meets the profile, and on to rail
+two's while a leg is open, so one place can be followed across all three
+drawings. It is hidden while the cursor has no position.
+When a rail moves the cursor to a place the rails cover — on a phone they
+take the bottom two-thirds of the map — the map pans, keeping its zoom,
+until the dot is back in the visible part with a small margin. A place
+the reader picked on the map itself never pans the map. Until the pan
+lands, the leader line joins the two rails and leaves out the covered
+dot.
 
 **Tapping a route** opens the **route detail panel** — the docked sheet
 (`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once

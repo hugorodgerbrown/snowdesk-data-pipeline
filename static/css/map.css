@@ -169,6 +169,53 @@
     );
 }
 
+/* SNOW-1019: while a route's rails are open, following that route is the
+   one thing the reader is doing, so every control floating over the map
+   is WITHDRAWN until the rail closes — at every width. On a phone the
+   bottom-right column's chevron sat over rail one's ×; withdrawing all of
+   it, rather than moving each control clear, is the decision.
+
+   The five containers are the whole floating chrome of
+   public/partials/_map_embed.html:
+     #season-ribbon       — the top-left region readout, star and download;
+     #map-utility-cluster — the top-right search;
+     #map-legend          — the bottom-left stack: legend, help, zoom
+                            readout, date control and season scrubber;
+     #map-controls-br     — the bottom-right column: locate, basemap,
+                            layers, favourite, report, routes, the collapse
+                            chevron, and the menus they open;
+     #home-intro          — the intro card, if it is showing.
+   Kept: the canvas (gestures still pan and zoom), the rails, the leader
+   line, and the route detail sheet, which lives outside #map.
+
+   `visibility: hidden` also takes the controls out of the tab order and
+   the accessibility tree, which opacity alone would not. It changes after
+   the fade, so the fade is seen; the return is immediate. Nothing in
+   static/js sets these containers' visibility or opacity inline, so no
+   script can re-show one under this rule. The bottom-row offset above is
+   left as it was: harmless while the controls are withdrawn, and still
+   right the moment they return. */
+#map[data-route-rail-open] #season-ribbon,
+#map[data-route-rail-open] #map-utility-cluster,
+#map[data-route-rail-open] #map-legend,
+#map[data-route-rail-open] #map-controls-br,
+#map[data-route-rail-open] #home-intro {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 150ms ease-out, visibility 0s linear 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #map[data-route-rail-open] #season-ribbon,
+    #map[data-route-rail-open] #map-utility-cluster,
+    #map[data-route-rail-open] #map-legend,
+    #map[data-route-rail-open] #map-controls-br,
+    #map[data-route-rail-open] #home-intro {
+        transition: none;
+    }
+}
+
 .route-rail {
     position: absolute;
     left: var(--map-edge-inset-left);
@@ -177,6 +224,22 @@
     /* Over the canvas and the scrubber (2), under the control columns (4),
        which the offset above lifts clear of it anyway. */
     z-index: 3;
+}
+
+/* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over
+   the whole of #map, so it can run from the cursor's dot on the map down
+   into the docked rails. The rail's own z-index (3), and appended to #map
+   after it, so it paints over the rail's card and reaches its stops
+   there; under the control columns (4) and the utility cluster (6). It
+   takes no pointer events: nothing under it may stop answering a press. */
+.route-leader {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3;
+    pointer-events: none;
+    overflow: visible;
 }
 
 .map-utility-cluster {
@@ -1682,58 +1745,6 @@
     );
 }
 .map-legend-swatch--leg-descent { background: var(--color-route-rail-descent); }
-
-/* SNOW-964: the no-fall passage, drawn as the SPLIT it is — two rails of
-   leg colour with the light core between them. A gradient sandwich rather
-   than a border, the leg-climb swatch's way above of depicting a line
-   TREATMENT in a 10px square while keeping every swatch the same
-   footprint.
-
-   On the map the rails take the colour of the leg the passage lies in
-   (SNOW-1017). The key has to name one colour, and takes the descent's:
-   a split in the climb's fuchsia would read as a third kind of leg. */
-.map-legend-swatch--passage {
-    background: linear-gradient(
-        180deg,
-        var(--color-route-rail-descent) 0,
-        var(--color-route-rail-descent) 3.5px,
-        var(--color-passage-core) 3.5px,
-        var(--color-passage-core) 6.5px,
-        var(--color-route-rail-descent) 6.5px
-    );
-}
-
-/* The fall-line arrow, drawn as the arrowhead it is — one triangle in the
-   10px square every other swatch in this key occupies, so the row reads as
-   a mark rather than as a colour.
-
-   A clip-path rather than the border trick a CSS triangle usually uses:
-   the border form cannot take a background, so it could not read the token
-   and would put the colour back in the stylesheet as a literal. The base
-   rule's hairline border and radius are cleared, because both describe a
-   square the shape no longer fills.
-
-   It points UP, which is the icon's own unrotated bearing (due north) and
-   not any particular slope. The row's words carry the meaning; a swatch
-   pointing south-east would invite the reader to look for that direction
-   on the map. */
-.map-legend-swatch--fall-line {
-    background: var(--color-fall-line-arrow);
-    border: 0;
-    border-radius: 0;
-    clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);
-}
-
-/* SNOW-911: the crux marker, drawn as the ring it is rather than as a
-   filled block. Hollow is the whole shape — on the map the middle is left
-   empty so the segment colour the reader is being sent to look at is not
-   hidden by the thing pointing at it, and a solid swatch here would
-   describe a different marker. */
-.map-legend-swatch--crux {
-    background: transparent;
-    border: 2px solid var(--color-crux-ring);
-    border-radius: 9999px;
-}
 
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral
  * dark fill with a thin white stroke so it reads against any basemap or

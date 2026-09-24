@@ -687,9 +687,13 @@ def test_map_layer_menu_section_order() -> None:
     )
     assert "Options" not in content
     # "Terrain" and "Locations" were sections of their own; their rows moved
-    # into Basemap and Places respectively.
-    assert ">Terrain<" not in content
-    assert ">Locations<" not in content
+    # into Basemap and Places respectively. Rail two's eyebrow is "Terrain"
+    # (SNOW-1019), so the rail's own markup is left out of the check.
+    outside_rail = re.sub(
+        r'<section\s+id="route-rail".*?</section>', "", content, flags=re.S
+    )
+    assert ">Terrain<" not in outside_rail
+    assert ">Locations<" not in outside_rail
 
 
 @pytest.mark.django_db
@@ -1791,46 +1795,24 @@ def test_the_route_key_names_the_two_kinds_of_leg() -> None:
 
 
 @pytest.mark.django_db
-def test_the_route_key_explains_the_no_fall_passage() -> None:
-    """The split line has a row, and the key carries its caveat.
+def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
+    """No fall-line, crux or passage row: SNOW-1019 took all three marks off.
 
-    A mark nobody can look up is a mark that gets guessed at, and the
-    guess here is the dangerous one: that an unmarked route has no
-    no-fall ground on it. The section heading links to
-    ``/help/#help-topic-slope`` for the long version; this is the short
-    one, on the surface the mark appears on.
+    A key row for a mark that is not on the map sends the reader looking
+    for something that is not there.
     """
     content = Client().get(reverse("public:home")).content.decode()
     section = content.split('id="map-route-legs-section"', 1)[1]
     key = section.split("</section>", 1)[0]
 
-    assert "map-legend-swatch--passage" in key
-    assert "No-fall passage" in key
-    # The two marks are different claims and the key has to hold both.
-    assert "Key passage" in key
-    assert "reads gentler than it is" in key
-
-
-@pytest.mark.django_db
-def test_the_route_key_explains_the_fall_line_arrow() -> None:
-    """The arrow has a row, and the row carries what the mark cannot.
-
-    The dangerous reading is the ABSENCE of an arrow: nothing is drawn
-    under 30 degrees, and a reader who takes a bare stretch for flat
-    ground has been misled by this key. "Steep ground only" is the whole
-    caveat in three words, and the section heading links to
-    ``/help/#help-topic-slope`` for the long version.
-    """
-    content = Client().get(reverse("public:home")).content.decode()
-    section = content.split('id="map-route-legs-section"', 1)[1]
-    key = section.split("</section>", 1)[0]
-
-    assert "map-legend-swatch--fall-line" in key
-    assert "Fall line" in key
-    assert "steep ground only" in key
-    # And the key's closing paragraph says what the arrows are FOR,
-    # which the three-word row cannot.
-    assert "point the way the ground falls" in key
+    assert "map-legend-swatch--fall-line" not in key
+    assert "map-legend-swatch--crux" not in key
+    assert "map-legend-swatch--passage" not in key
+    assert "Key passage" not in key
+    assert "No-fall passage" not in key
+    assert "point the way the ground falls" not in key
+    # What the key sends the reader to instead: the rail.
+    assert "on the rail below the map" in key
 
 
 @pytest.mark.django_db

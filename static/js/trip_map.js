@@ -64,14 +64,19 @@
  *   fitBoundsFor(bounds)          → [[w, s], [e, n]], or null
  *   routeSourceData(payload)      → the LineString FeatureCollection
  *   routeSlopeSourceData(payload) → its per-segment slope collection
- *   routeCruxSourceData(payload)  → its crux markers as Points
- *   routeFallLineSourceData(p)    → its fall-line arrows as Points
  *   isSlopeColoured(payload)      → whether the flat line is suppressed
  *   meetingSourceData(payload)    → the Point FeatureCollection
+ *   installLayers(map, payload)   → adds the sources and layers (its test)
  *   profileFor(payload)           → the profile data, or null
  *   drawProfileRange(profile, doc) → writes the profile's scale caption
  *   readBasemaps(doc)             → the {key: url} catalogue, or null
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
+ *
+ * SNOW-1019 took the crux rings, fall-line arrows and no-fall passage
+ * split line off this map, as off the map page: the crux is deferred to a
+ * later ticket, the bank ribbon replaced the arrows, and the passages are
+ * drawn as bars on the map page's rail two. The snapshot still carries
+ * all three records.
  *
  * Everything above is a pure function of the payload, so it is unit-tested
  * directly (tests/js/test_trip_map.js) with no browser and no WebGL.
@@ -92,23 +97,6 @@
 
   /** The image ids the meeting marker is registered under. */
   var MEETING_ICON = 'trip-meeting-point';
-
-  /** And the crux ring's (SNOW-911). */
-  var CRUX_ICON = 'trip-crux-ring';
-
-  /** And the fall-line arrow's. */
-  var FALL_LINE_ICON = 'trip-fall-line-arrow';
-
-  /** Its ink. Mirrors `--color-crux-ring`, as ROUTE_CRUX_COLOUR does on
-   *  the map page — a MapLibre paint property cannot read a custom
-   *  property, so the value is a literal in both places. */
-  var CRUX_COLOUR = '#1a1916';
-
-  /** The fall-line arrow's ink. Mirrors `--color-fall-line-arrow`, which
-   *  is the crux ring's value under a token of its own — see
-   *  FALL_LINE_COLOUR in route_slope_core.js for why the two marks share
-   *  a value but not a name. A literal here for CRUX_COLOUR's reason. */
-  var FALL_LINE_COLOUR = '#1a1916';
 
   // The English fallbacks are the only copy of these strings a reader of
   // this file can see, so they double as documentation of what each key
@@ -236,56 +224,6 @@
     var feature = payload && payload.route;
     if (!core || !feature) return { type: 'FeatureCollection', features: [] };
     return { type: 'FeatureCollection', features: core.segmentFeatures(feature) };
-  }
-
-  /**
-   * The trip's crux markers, as a Point FeatureCollection (SNOW-911).
-   *
-   * The snapshot carries them (`Trip.slope_samples`), the payload sends
-   * them, and this is what draws them — so the same track marks the same
-   * passages here as on the map page. A trip that showed rings on one
-   * surface and not the other would be two answers to one question about
-   * one day.
-   *
-   * Empty when there is nothing to mark or no core loaded; never null,
-   * because `setData` throws on one.
-   *
-   * @param {?Object} payload
-   * @returns {Object} A FeatureCollection, possibly empty.
-   */
-  function routeCruxSourceData(payload) {
-    var core = self.pwaRouteSlopeCore;
-    var feature = payload && payload.route;
-    if (!core || !core.cruxCollection || !feature) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.cruxCollection({ type: 'FeatureCollection', features: [feature] });
-  }
-
-  /**
-   * The trip's fall-line arrows, as a Point FeatureCollection.
-   *
-   * The `routeCruxSourceData` rule, for its reason: the snapshot carries
-   * the record, the payload sends it, and the same track has to say the
-   * same thing about the same ground on both surfaces. The trip page is
-   * what the GROUP sees — the people who did not plan the route and have
-   * never looked at the ground — so "which way does this face fall" is
-   * the question it is least safe to answer only on the map page.
-   *
-   * Empty when there is nothing to mark or no core loaded; never null,
-   * because `setData` throws on one. A snapshot taken before the marks
-   * existed simply carries no `fall_lines` key and draws none.
-   *
-   * @param {?Object} payload
-   * @returns {Object} A FeatureCollection, possibly empty.
-   */
-  function routeFallLineSourceData(payload) {
-    var core = self.pwaRouteSlopeCore;
-    var feature = payload && payload.route;
-    if (!core || !core.fallLineCollection || !feature) {
-      return { type: 'FeatureCollection', features: [] };
-    }
-    return core.fallLineCollection({ type: 'FeatureCollection', features: [feature] });
   }
 
   /**
@@ -498,31 +436,6 @@
         type: 'geojson',
         data: routeSlopeSourceData(payload),
       });
-      // SNOW-964: the no-fall passages, mirroring the map page's pair —
-      // this edge under the coloured line and the core over both, so a
-      // passage reads as a split in the line rather than a second line
-      // beside it. The trip page is what the GROUP sees, the people who
-      // did not plan the route, so the mark that says "you are on it"
-      // belongs here at least as much as on the planner's own map.
-      //
-      // `routeSlopeSourceData` feeds off `segmentFeatures`, so the
-      // `passage` flag arrives without anything here reading the record.
-      map.addLayer({
-        id: 'trip-route-passage-edge',
-        type: 'line',
-        source: 'trip-route-slopes',
-        filter: ['==', ['get', 'passage'], true],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          // The band colour, not a flat ink: a passage grows outward
-          // through the 45–50 band, and painting that near-black would
-          // report 47° ground as over 50.
-          'line-color': slopeColourExpression(),
-          // At or inside the casing's 3/7/11 at every stop, so the
-          // casing keeps framing the mark over a pale basemap.
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 6.5, 16, 11],
-        },
-      });
       map.addLayer({
         id: 'trip-route-slope-line',
         type: 'line',
@@ -558,107 +471,6 @@
           'line-dasharray': [2, 1.5],
         },
       });
-      map.addLayer({
-        id: 'trip-route-passage-core',
-        type: 'line',
-        source: 'trip-route-slopes',
-        filter: ['==', ['get', 'passage'], true],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
-          // off the steepness scale, so the split reads as a gap in the
-          // line and not as a seventh class of ground.
-          'line-color': (slopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2.4, 16, 4.2],
-        },
-      });
-    }
-
-    // The fall-line arrows, below the rings and the meeting marker for
-    // the map page's reason: an arrow is ambient and gives way to a mark
-    // that says "look here" and to the one thing on this page a reader
-    // has to be able to find.
-    var fallLines = routeFallLineSourceData(payload);
-    if (fallLines.features.length) {
-      var arrowCore = self.pwaRouteMarkersCore;
-      if (
-        arrowCore
-        && arrowCore.fallLineArrowPixels
-        && !map.hasImage(FALL_LINE_ICON)
-      ) {
-        map.addImage(FALL_LINE_ICON, arrowCore.fallLineArrowPixels(), {
-          pixelRatio: arrowCore.PIXEL_RATIO,
-          sdf: true,
-        });
-      }
-      if (map.hasImage(FALL_LINE_ICON)) {
-        map.addSource('trip-route-fall-lines', {
-          type: 'geojson',
-          data: fallLines,
-        });
-        map.addLayer({
-          id: 'trip-route-fall-lines',
-          type: 'symbol',
-          source: 'trip-route-fall-lines',
-          minzoom: 12,
-          layout: {
-            'icon-image': FALL_LINE_ICON,
-            // Thinned by collision rather than allowed to overlap — the
-            // map page's note on `routes-fall-lines` argues why this one
-            // mark may be dropped where the rings may not.
-            'icon-allow-overlap': false,
-            'icon-ignore-placement': true,
-            'icon-anchor': 'center',
-            // Clockwise from north onto the bearing the ground faces,
-            // which is downhill; aligned to the MAP so it keeps pointing
-            // there when the reader rotates it.
-            'icon-rotate': ['get', 'deg'],
-            'icon-rotation-alignment': 'map',
-          },
-          paint: {
-            'icon-color': FALL_LINE_COLOUR,
-            'icon-halo-color': '#ffffff',
-            'icon-halo-width': 1,
-          },
-        });
-      }
-    }
-
-    // SNOW-911: the crux rings, BEFORE the meeting marker — MapLibre
-    // paints later layers above earlier ones, and the meeting point is
-    // the one thing on this page a reader has to be able to find. Same
-    // ordering rule as the map page's own rings against its endpoints.
-    var cruxes = routeCruxSourceData(payload);
-    if (cruxes.features.length) {
-      var markersCore = self.pwaRouteMarkersCore;
-      if (markersCore && markersCore.cruxRingPixels && !map.hasImage(CRUX_ICON)) {
-        // `sdf: true`, so `icon-color` paints the ring — see
-        // route_markers_core.js's cruxRingPixels.
-        map.addImage(CRUX_ICON, markersCore.cruxRingPixels(), {
-          pixelRatio: markersCore.PIXEL_RATIO,
-          sdf: true,
-        });
-      }
-      if (map.hasImage(CRUX_ICON)) {
-        map.addSource('trip-route-cruxes', { type: 'geojson', data: cruxes });
-        map.addLayer({
-          id: 'trip-route-cruxes',
-          type: 'symbol',
-          source: 'trip-route-cruxes',
-          minzoom: 11,
-          layout: {
-            'icon-image': CRUX_ICON,
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
-            'icon-anchor': 'center',
-          },
-          paint: {
-            'icon-color': CRUX_COLOUR,
-            'icon-halo-color': '#ffffff',
-            'icon-halo-width': 1,
-          },
-        });
-      }
     }
 
     ensureMeetingIcon(map);
@@ -697,8 +509,7 @@
    * a SAMPLED trip, which is the subset that would have lost the notice.
    */
   var OUR_SOURCE_IDS = [
-    'trip-route', 'trip-route-slopes', 'trip-route-cruxes',
-    'trip-route-fall-lines', 'trip-meeting',
+    'trip-route', 'trip-route-slopes', 'trip-meeting',
   ];
 
   /**
@@ -907,8 +718,6 @@
     // either a track painted twice or no track at all, neither of which
     // any server-side assertion can see.
     routeSlopeSourceData: routeSlopeSourceData,
-    routeCruxSourceData: routeCruxSourceData,
-    routeFallLineSourceData: routeFallLineSourceData,
     isSlopeColoured: isSlopeColoured,
     meetingSourceData: meetingSourceData,
     profileFor: profileFor,
@@ -923,6 +732,9 @@
     // and took the meeting marker out with it — a failure no assertion
     // about the payload arithmetic could ever have seen.
     ensureMeetingIcon: ensureMeetingIcon,
+    // SNOW-1019. Exported for its test: the one place that can show the
+    // crux rings and fall-line arrows stay off this map.
+    installLayers: installLayers,
     // SNOW-829. The catalogue read and the resolution built on it. The
     // arithmetic itself lives in `basemap_style_core.js` and is tested
     // there; these two are exported because they are what decides which

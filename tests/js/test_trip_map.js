@@ -353,7 +353,7 @@ describe('routeSlopeSourceData', () => {
   });
 });
 
-describe('the no-fall passages on a trip (SNOW-964)', () => {
+describe('the no-fall passage flag on a trip\'s segments (SNOW-964)', () => {
   /** A sampled payload whose record names the given passages. */
   function withPassages(angles, passages) {
     const p = sampled(angles);
@@ -362,10 +362,9 @@ describe('the no-fall passages on a trip (SNOW-964)', () => {
   }
 
   it('carries the mark through to the segments the page draws', () => {
-    // The trip page is what the GROUP sees — the people who did not plan
-    // the route — so the same track must mark the same passages on both
-    // surfaces. Nothing in trip_map.js reads the record for this: the
-    // flag arrives through `segmentFeatures`.
+    // The flag arrives through `segmentFeatures`; nothing in trip_map.js
+    // reads the record for it. Since SNOW-1019 no layer draws it — the
+    // test holds the data, which the snapshot still carries.
     const data = core.routeSlopeSourceData(
       withPassages([12, 52, 51, 12], [{ from: 1, to: 2, m: 50, fall_line: 'climbing' }]),
     );
@@ -419,74 +418,43 @@ describe('isSlopeColoured', () => {
   });
 });
 
-describe('routeFallLineSourceData', () => {
-  /** A payload whose route carries the given fall-line marks. */
-  function withMarks(marks) {
-    const p = payload();
-    p.route.properties.slope = {
-      points: [[7.4, 46.1], [7.42, 46.12]],
-      angles: [40],
-      fall_lines: marks,
+describe('installLayers — the marks a trip map draws (SNOW-1019)', () => {
+  /**
+   * A MapLibre stand-in that records the sources and layers it is given.
+   *
+   * @returns {{sources: Array<string>, layers: Array<string>}}
+   */
+  function recordingMap() {
+    const sources = [];
+    const layers = [];
+    return {
+      sources,
+      layers,
+      getSource: (id) => (sources.includes(id) ? {} : null),
+      addSource: (id) => sources.push(id),
+      addLayer: (def) => layers.push(def.id),
+      hasImage: () => false,
+      addImage: () => {},
     };
-    return p;
   }
 
-  it('draws the arrows the snapshot carries', () => {
-    // The trip page is what the GROUP sees — the people who did not
-    // plan the route and have never looked at the ground — so "which
-    // way does this face fall" is the question it is least safe to
-    // answer only on the map page.
-    const data = core.routeFallLineSourceData(withMarks([{ i: 0, deg: 205 }]));
+  it('draws no crux ring, fall-line arrow or passage split, though the snapshot carries all three', () => {
+    // Taken off both maps by SNOW-1019: the crux is deferred, the bank
+    // ribbon replaced the arrows, and the passages are bars on the map
+    // page's rail two. The records still travel, which is what makes this
+    // worth holding — the marks could come back unnoticed.
+    const p = sampled([40, 52]);
+    p.route.properties.slope.cruxes = [[7.4, 46.1]];
+    p.route.properties.slope.fall_lines = [{ i: 1, deg: 205 }];
+    p.route.properties.slope.passages = [{ from: 1, to: 1, m: 25, fall_line: 'climbing' }];
+    const map = recordingMap();
 
-    expect(data.features).toHaveLength(1);
-    expect(data.features[0].properties.deg).toBe(205);
-    // The segment's midpoint, where the aspect was sampled.
-    expect(data.features[0].geometry.coordinates[0]).toBeCloseTo(7.41, 9);
-  });
+    core.installLayers(map, p);
 
-  it('is a valid empty collection when there is nothing to mark', () => {
-    // A snapshot taken before the marks existed carries no key at all
-    // and draws none, rather than failing the page.
-    expect(core.routeFallLineSourceData(withMarks([]))).toEqual({
-      type: 'FeatureCollection',
-      features: [],
-    });
-    expect(core.routeFallLineSourceData(payload()).features).toEqual([]);
-    expect(core.routeFallLineSourceData(null).features).toEqual([]);
-  });
-});
-
-describe('routeCruxSourceData', () => {
-  /** A payload whose route carries the given crux coordinates. */
-  function withCruxes(cruxes) {
-    const p = payload();
-    p.route.properties.slope = {
-      points: [[7.4, 46.1], [7.41, 46.11]],
-      angles: [40],
-      cruxes,
-    };
-    return p;
-  }
-
-  it('draws the markers the snapshot carries', () => {
-    // The same track must mark the same passages here as on the map
-    // page — a trip that showed rings on one surface and not the other
-    // would be two answers to one question about one day.
-    const data = core.routeCruxSourceData(withCruxes([[7.4, 46.1]]));
-
-    expect(data.features).toHaveLength(1);
-    expect(data.features[0].geometry).toEqual({
-      type: 'Point',
-      coordinates: [7.4, 46.1],
-    });
-  });
-
-  it('is a valid empty collection when there is nothing to mark', () => {
-    expect(core.routeCruxSourceData(withCruxes([]))).toEqual({
-      type: 'FeatureCollection',
-      features: [],
-    });
-    expect(core.routeCruxSourceData(payload()).features).toEqual([]);
-    expect(core.routeCruxSourceData(null).features).toEqual([]);
+    const ids = [...map.sources, ...map.layers];
+    expect(ids).toContain('trip-route-slope-line');
+    expect(ids.filter((id) => /crux|fall-line|passage/.test(id))).toEqual([]);
+    expect(core).not.toHaveProperty('routeCruxSourceData');
+    expect(core).not.toHaveProperty('routeFallLineSourceData');
   });
 });

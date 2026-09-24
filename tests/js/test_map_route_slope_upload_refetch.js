@@ -2,7 +2,8 @@
  * tests/js/test_map_route_slope_upload_refetch.js — the one delayed re-read
  * that lets an uploaded route pick up its slope record without a page
  * reload (SNOW-910). Since SNOW-1017 the record no longer colours the
- * line; it carries the passages, crux rings and fall-line arrows.
+ * line; it carries the passages (SNOW-1019 took the crux rings and
+ * fall-line arrows off the map).
  *
  * Scenario: none — a timer scheduled off an event payload, asserted by
  * counting fetches. No browser is needed to prove it, and no manual test

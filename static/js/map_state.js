@@ -215,24 +215,24 @@ const OVERLAY_LAYERS = Object.freeze({
   // line: they are the same overlay, so the switch has to reach them, but
   // the roundel ring is still painted from the flat line's colour because
   // a sampled route has no single colour to take one from.
-  // SNOW-911's 'routes-cruxes' joins on the same terms again: the rings
-  // belong to the routes a user switched on, and a switch that left them
-  // painted over an empty map would be markers pointing at nothing.
-  // SNOW-964's two passage layers join on the same terms once more, and
-  // are APPENDED rather than prepended for the reason the whole group is
-  // ordered this way: ``panelOverlayPainted`` answers from element [0],
-  // and the roundel's colour comes from the flat line deliberately.
-  // 'routes-fall-lines' appends on those terms too — an arrow on a route
-  // the reader has switched off is a direction with nothing to be the
-  // direction of.
+  // Later layers are APPENDED rather than prepended for the reason the
+  // whole group is ordered this way: ``panelOverlayPainted`` answers from
+  // element [0], and the roundel's colour comes from the flat line
+  // deliberately.
   // SNOW-1017 swapped SNOW-910's two slope layers for the three leg
   // layers and the two transition-marker layers, appended on the same
   // terms, so element [0] is still the flat line.
+  // SNOW-1019's three route-cursor layers (the selection's stretch and the
+  // cursor dot) append on those terms once more: a highlight on a route
+  // the reader has switched off would be a mark on nothing.
+  // SNOW-1019 also took SNOW-911's 'routes-cruxes', the fall-line
+  // arrows' 'routes-fall-lines' and SNOW-964's two passage layers off the
+  // map, and out of this list: the line carries no terrain marks.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
-    'routes-cruxes', 'routes-passage-edge', 'routes-passage-core', 'routes-fall-lines',
     'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
     'routes-transitions', 'routes-transition-labels',
+    'routes-cursor-selection-casing', 'routes-cursor-selection', 'routes-cursor-point',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.
