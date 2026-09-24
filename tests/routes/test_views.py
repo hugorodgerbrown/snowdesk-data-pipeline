@@ -1427,6 +1427,56 @@ class TestRoutesGeojsonSlope:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonLegs:
+    """The route cut at its transitions, for the rail (SNOW-1018).
+
+    ``from``/``to`` index ``slope.angles``, so the key rides beside
+    ``slope`` and nowhere else.
+    """
+
+    def test_a_sampled_route_carries_legs_over_its_samples(
+        self, client: Client
+    ) -> None:
+        """The factory's steady climb is one leg across every segment."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 20.0, "aspect_deg": 90.0},
+                {"angle_deg": 22.0, "aspect_deg": 90.0},
+                {"angle_deg": 24.0, "aspect_deg": 90.0},
+            ),
+        )
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["legs"] == [{"i": 1, "from": 0, "to": 2, "climbing": True}]
+
+    def test_an_unsampled_route_carries_no_legs_key(self, client: Client) -> None:
+        """No slope, no legs — absent rather than null."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "legs" not in properties
+
+    def test_a_malformed_slope_record_carries_no_legs(self, client: Client) -> None:
+        """A record ``compact_slope`` refuses sends no slope, so no legs."""
+        user = UserFactory.create()
+        client.force_login(user)
+        malformed = _slope_record({"angle_deg": 34.2, "aspect_deg": 105.3})
+        malformed["points"] = [[7.4, 46.1]]
+        RouteFactory.create(user=user, slope_samples=malformed)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "legs" not in properties
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonPassages:
     """The no-fall passages on a route feature (SNOW-964).
 
