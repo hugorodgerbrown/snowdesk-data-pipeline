@@ -325,3 +325,45 @@ describe('distanceTicks', () => {
     expect(ticks[0].d).toBeGreaterThanOrEqual(5050);
   });
 });
+
+describe('trackAttitude', () => {
+  // On 40° ground, a bank of 22° is 28.8° off the fall line, 23° is 30.4°,
+  // 35° is 56.6° and 37° is 63.9°: either side of the 30° and 60° lines.
+  it('is on the fall line within the passages tolerance, down or up by the leg', () => {
+    expect(core.FALL_LINE_TOLERANCE_DEG).toBe(30);
+    expect(core.trackAttitude(40, 22, false).term).toBe('fall-line-down');
+    expect(core.trackAttitude(40, 22, true).term).toBe('fall-line-up');
+    expect(core.trackAttitude(40, 0, false)).toEqual({ term: 'fall-line-down', side: null });
+  });
+
+  it('is diagonal between 30° and 60° off the fall line', () => {
+    expect(core.trackAttitude(40, 23, false).term).toBe('diagonal');
+    expect(core.trackAttitude(40, 35, true).term).toBe('diagonal');
+  });
+
+  it('is a traverse at 60° off the fall line and beyond', () => {
+    expect(core.trackAttitude(40, 37, false).term).toBe('traverse');
+    // A bank equal to the slope is straight across it.
+    expect(core.trackAttitude(40, 40, true).term).toBe('traverse');
+    // Rounding can push the bank past the slope; the ratio is clamped.
+    expect(core.trackAttitude(40, 41, false).term).toBe('traverse');
+  });
+
+  it('names the side the ground falls away to by the roll\'s sign', () => {
+    expect(core.trackAttitude(40, 37, false).side).toBe('right');
+    expect(core.trackAttitude(40, -37, false).side).toBe('left');
+    expect(core.trackAttitude(40, 2.5, false).side).toBeNull();
+    expect(core.trackAttitude(40, -3, false).side).toBe('left');
+  });
+
+  it('is flat under 5°, with no side', () => {
+    expect(core.trackAttitude(4, 4, false)).toEqual({ term: 'flat', side: null });
+    expect(core.trackAttitude(5, 4, false).term).not.toBe('flat');
+  });
+
+  it('is unknown with no angle or no bank', () => {
+    expect(core.trackAttitude(null, 10, false)).toBeNull();
+    expect(core.trackAttitude(30, null, false)).toBeNull();
+    expect(core.trackAttitude(undefined, undefined, true)).toBeNull();
+  });
+});

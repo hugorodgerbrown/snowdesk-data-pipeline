@@ -70,6 +70,7 @@
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   distanceTicks(view, sampleCount, spanM, rail, units?) → [{x, major, label}]
+ *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
  */
 
 // @ts-check
@@ -146,6 +147,23 @@
     passageTop: 41,
     passageHeight: 6,
   });
+
+  /**
+   * How far off the fall line a track may run and still be ON it, in
+   * degrees — `FALL_LINE_TOLERANCE_DEG` in apps/routes/services/passages.py,
+   * the tolerance its fall-line vote uses, restated so the readout and the
+   * passage labels agree on what "down the fall line" means.
+   */
+  var FALL_LINE_TOLERANCE_DEG = 30;
+
+  /** At or past this far off the fall line, a track is traversing. */
+  var TRAVERSE_DEG = 60;
+
+  /** Under this slope angle the ground is flat and has no fall line. */
+  var FLAT_DEG = 5;
+
+  /** Under this bank the ground falls away to neither side. */
+  var LEVEL_BANK_DEG = 3;
 
   /** The English units, the fallback when no strings are passed. */
   var DEFAULT_UNITS = Object.freeze({ m: '%(value)s m', km: '%(value)s km' });
@@ -629,7 +647,53 @@
     return out;
   }
 
+  /**
+   * What the track is doing on the ground at one segment.
+   *
+   * The slope angle `a` is the ground's steepness and the bank `roll` is
+   * how far it tilts ACROSS the track (apps/routes/services/bank.py), so
+   * tan|roll| = tan(a) · |sin δ|, where δ is the angle between the track
+   * and the fall line. That gives δ from the two numbers the wire already
+   * carries, clamped to [0, 1] before the `asin` because both are rounded
+   * to whole degrees.
+   *
+   *   a < 5°      → 'flat': no fall line to be on or off;
+   *   δ ≤ 30°     → 'fall-line-down', or 'fall-line-up' on a climbing leg;
+   *   δ ≥ 60°     → 'traverse';
+   *   otherwise   → 'diagonal'.
+   *
+   * `side` is where the ground falls away: 'right' for a positive roll
+   * (bank.py's sign), 'left' for a negative one, and null under 3° or on
+   * flat ground.
+   *
+   * @param {?number} angle The segment's slope angle, degrees.
+   * @param {?number} roll The segment's signed bank, degrees.
+   * @param {boolean} climbing Whether the open leg climbs.
+   * @returns {?{term: string, side: ?string}} Null when either number is
+   *   unknown.
+   */
+  function trackAttitude(angle, roll, climbing) {
+    if (typeof angle !== 'number' || !Number.isFinite(angle)) return null;
+    if (typeof roll !== 'number' || !Number.isFinite(roll)) return null;
+    if (angle < FLAT_DEG) return { term: 'flat', side: null };
+    var rad = Math.PI / 180;
+    var sinDelta = clamp(Math.tan(Math.abs(roll) * rad) / Math.tan(angle * rad), 0, 1);
+    var delta = Math.asin(sinDelta) / rad;
+    var term;
+    if (delta <= FALL_LINE_TOLERANCE_DEG) {
+      term = climbing ? 'fall-line-up' : 'fall-line-down';
+    } else if (delta >= TRAVERSE_DEG) {
+      term = 'traverse';
+    } else {
+      term = 'diagonal';
+    }
+    var side = Math.abs(roll) < LEVEL_BANK_DEG ? null : roll > 0 ? 'right' : 'left';
+    return { term: term, side: side };
+  }
+
   self.pwaRouteRailTwoCore = Object.freeze({
+    FALL_LINE_TOLERANCE_DEG: FALL_LINE_TOLERANCE_DEG,
+    trackAttitude: trackAttitude,
     MIN_SPAN: MIN_SPAN,
     WINDOW_M: WINDOW_M,
     ROWS: ROWS,

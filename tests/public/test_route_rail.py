@@ -208,7 +208,11 @@ class TestRailTwoShipsInsideRailOne:
             "class-slope-45",
             "class-slope-50",
             "class-unknown",
-            "readout-angle",
+            "attitude-traverse",
+            "attitude-fall-line-down",
+            "readout-slope",
+            "readout-slope-left",
+            "readout-slope-right",
             "readout-band",
             "readout-passage",
         } <= keys

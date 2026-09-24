@@ -424,14 +424,69 @@ describe('the ribbon', () => {
     expect(stroke(104)).toBe('var(--color-text-3)');
   });
 
-  it('reads the slope and bank under the cursor', () => {
+  /** @returns {Array<string>} The readout's lines. */
+  const readoutLines = () => Array.from(
+    row.querySelector('[data-route-rail-two-readout]').children,
+  ).map((line) => line.textContent);
+
+  it('reads what the track does on the ground, and how steep it is', () => {
+    // Sample 101: 20° ground banked 20° to the right, so the track runs
+    // straight across it.
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     cursor.setIndex(101);
 
-    expect(row.querySelector('[data-route-rail-two-readout]').textContent).toBe(
-      '20° — under 30°Banked 20° to the right',
+    expect(readoutLines()).toEqual(['Traverse', '20° slope · falls away to the right']);
+    expect(lane.getAttribute('aria-valuetext')).toContain(
+      'Traverse. 20° slope · falls away to the right',
     );
+  });
+
+  it('reads a line down the fall line, and up it on a climbing leg', () => {
+    const banks = BANKS.slice();
+    banks[101] = 0;
+    banks[5] = 0;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(101);
+    expect(readoutLines()).toEqual(['Down the fall line', '20° slope']);
+
+    cursor.openLeg(LEGS[0]);
+    cursor.setIndex(5);
+    expect(readoutLines()).toEqual(['Up the fall line', '32° slope']);
+  });
+
+  it('reads flat ground as flat, with no side', () => {
+    const angles = ANGLES.slice();
+    angles[101] = 3;
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['Flat', '3° slope']);
+  });
+
+  it('says the slope is not known where the angle is unknown', () => {
+    const angles = ANGLES.slice();
+    angles[101] = null;
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['slope not known']);
+  });
+
+  it('keeps the slope but not the attitude where only the bank is unknown', () => {
+    const banks = BANKS.slice();
+    banks[101] = null;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['20° slope']);
   });
 });

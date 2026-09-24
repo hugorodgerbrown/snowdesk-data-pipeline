@@ -42,6 +42,14 @@
  * A second pointer starts a pinch and cancels the press in progress, so a
  * pinch never pans, scrubs or selects.
  *
+ * THE READOUT. With a band or passage selected it gives the stretch's
+ * length and class. Otherwise it reads the segment under the cursor as
+ * what the TRACK is doing on the ground — down or up the fall line,
+ * diagonal, traverse, flat (`trackAttitude` in route_rail_two_core.js,
+ * from the slope angle and the signed bank) — and how steep the ground is
+ * and which side it falls away to. It names no slope class there: the
+ * band under the cursor already shows it, as the map does.
+ *
  * KEYS. The lane is one `role="slider"` tab stop — leg 4 of the seed tour
  * alone has 59 bands, which would be 59 tab stops. ←/→ move the cursor
  * (Shift: ten samples), Home/End go to the leg's ends, Enter/Space
@@ -100,10 +108,14 @@
     'class-slope-45': '45–50°',
     'class-slope-50': 'over 50°',
     'class-unknown': 'slope not known',
-    'readout-angle': '%(angle)s° — %(class)s',
-    'readout-bank-right': 'Banked %(deg)s° to the right',
-    'readout-bank-left': 'Banked %(deg)s° to the left',
-    'readout-bank-level': 'Level across the track',
+    'attitude-fall-line-down': 'Down the fall line',
+    'attitude-fall-line-up': 'Up the fall line',
+    'attitude-diagonal': 'Diagonal',
+    'attitude-traverse': 'Traverse',
+    'attitude-flat': 'Flat',
+    'readout-slope': '%(angle)s° slope',
+    'readout-slope-left': '%(angle)s° slope · falls away to the left',
+    'readout-slope-right': '%(angle)s° slope · falls away to the right',
     'readout-band': '%(length)s m at %(class)s',
     'readout-passage': 'No-fall passage — %(length)s m',
   });
@@ -658,8 +670,9 @@
   }
 
   /**
-   * The readout: the selection's length and class, or the slope and bank
-   * under the cursor, or a hint.
+   * The readout: the selection's length and class; or what the track
+   * does on the ground under the cursor and how steep that ground is; or
+   * a hint. `aria-valuetext` carries the same lines.
    */
   function paintReadout() {
     var state = ctx.cursor.state();
@@ -680,19 +693,22 @@
         }));
       }
     } else if (state.index !== null) {
+      // What the track is doing on the ground, and how steep the ground
+      // is. No class name: the band under the cursor already shows it.
       var angle = angles()[state.index];
-      var known = typeof angle === 'number' && isFinite(angle);
-      lines.push(known
-        ? interpolate(STRINGS['readout-angle'], {
-          angle: String(Math.round(angle)),
-          class: classLabel(classify(angle)),
-        })
-        : classLabel(null));
-      var bank = banks()[state.index];
-      if (typeof bank === 'number' && isFinite(bank)) {
-        var deg = String(Math.abs(Math.round(bank)));
-        var key = bank > 0 ? 'readout-bank-right' : bank < 0 ? 'readout-bank-left' : 'readout-bank-level';
-        lines.push(interpolate(STRINGS[key], { deg: deg }));
+      var attitude = core().trackAttitude(angle, banks()[state.index], !!leg.climbing);
+      if (typeof angle !== 'number' || !isFinite(angle)) {
+        lines.push(classLabel(null));
+      } else {
+        var params = { angle: String(Math.round(angle)) };
+        // A known angle with an unknown bank still says how steep the
+        // ground is; only the track's attitude is left unsaid.
+        if (attitude) lines.push(STRINGS['attitude-' + attitude.term]);
+        var side = attitude && attitude.term !== 'flat' ? attitude.side : null;
+        lines.push(interpolate(
+          STRINGS[side ? 'readout-slope-' + side : 'readout-slope'],
+          params,
+        ));
       }
     } else {
       lines.push(STRINGS['two-hint']);
