@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-24
 ---
 
 # Map page — functional specification
@@ -290,6 +290,20 @@ basemap. The route colour itself sits deliberately outside the EAWS 1–5
 danger ramp, which is mandated by the standard and must never be borrowed
 for something that is not a danger rating, and is distinct from the
 favourite pin and report flag colours.
+
+**What the line says (SNOW-1017).** An owned route is drawn as its
+legs: one line per stretch that climbs or descends, a climb dashed and a
+descent solid, in the two colours the rail below the map uses. From z11 a
+numbered circle marks each transition, 1 to legs − 1 along the track, so
+a number on the map is the boundary between the same two legs on the
+rail. Opening a leg on the rail dims every other leg until it is closed.
+The no-fall passages, crux rings and fall-line arrows are drawn over the
+legs; the passage's split takes its leg's colour. A route shared with the
+reader and not yet saved stays a teal dashed line with none of these. The
+slope-class colours SNOW-910 painted along the line left the map; they
+return on the leg rail (SNOW-1019). A route with no elevation has no legs
+and keeps the flat line
+([why](decisions/legs-not-slope-classes-on-the-map.md)).
 
 **Tapping a route** opens the **route detail panel** — the docked sheet
 (`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once
