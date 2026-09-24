@@ -311,63 +311,46 @@ class TestHelpPageFlagGating:
         ):
             assert testid in content, testid
 
-    def test_slope_panel_explains_both_surfaces_the_colouring_reaches(
-        self, client: Client
-    ) -> None:
-        """SNOW-910/SNOW-960: the line and the popup's height profile.
+    def test_slope_panel_explains_what_the_rails_draw(self, client: Client) -> None:
+        """SNOW-1019: the slope bands, the bank ribbon and the no-fall bars.
 
-        Both are asserted, because the panel is where the rule that the
-        colour is the GROUND's steepness and not the track's is written
-        down, and a reader who meets the colours first on the profile
-        needs to be sent to the same explanation as one who meets them on
-        the line.
+        A route's steepness is read on rail two, not on the map line, so
+        the panel sends the reader there: the bands and the rule that their
+        colour is the GROUND's steepness, the ribbon and its caveat that no
+        tick is no claim, and the bars with the caveat that an unmarked
+        route is not a route without no-fall ground.
         """
         content = client.get(reverse("public:help")).content
         for testid in (
             b"help-slope-route-colouring",
-            b"help-slope-profile-colouring",
-        ):
-            assert testid in content, testid
-
-    def test_slope_panel_separates_the_ring_from_the_split(
-        self, client: Client
-    ) -> None:
-        """SNOW-964: two marks, nearly the same ground, different claims.
-
-        Anything over 50 degrees was already ringed at 35, so the two
-        appear together on nearly every passage — and a reader who takes
-        them for one mark has learned nothing from the second. The panel
-        is where the difference is written down, and the caveat paragraph
-        is what earns the mark the right to exist: an unmarked route is
-        not a route without no-fall ground.
-        """
-        content = client.get(reverse("public:help")).content
-        for testid in (
+            b"help-slope-bank-ribbon",
+            b"help-slope-bank-averaged",
             b"help-slope-passages",
             b"help-slope-passages-smoothed",
         ):
             assert testid in content, testid
+        assert b"read on the rail below the map" in content
+        assert b"no tick is never a" in content
         assert b"An unmarked route is not a route without no-fall ground." in content
 
-    def test_slope_panel_explains_the_fall_line_arrows(self, client: Client) -> None:
-        """What the arrows say, and the two things they cannot.
+    def test_slope_panel_describes_no_mark_the_map_no_longer_draws(
+        self, client: Client
+    ) -> None:
+        """SNOW-1019 took the crux rings, fall-line arrows and split line off.
 
-        The gate paragraph is the one that earns the mark: arrows are
-        drawn on steep ground only, so an absent arrow is no claim at
-        all — and a reader who takes a bare stretch for flat ground has
-        drawn the one wrong conclusion this feature could produce. The
-        averaging paragraph is a different caveat from the passages'
-        one: that is about the ANGLE being an average, this about the
-        DIRECTION being one.
+        Copy describing a mark the map does not draw sends the reader
+        looking for it — and the map legend links here.
         """
         content = client.get(reverse("public:help")).content
         for testid in (
+            b"help-slope-cruxes",
+            b"help-slope-cruxes-not-exhaustive",
             b"help-slope-fall-line",
-            b"help-slope-fall-line-gate",
-            b"help-slope-fall-line-averaged",
+            b"help-slope-profile-colouring",
         ):
-            assert testid in content, testid
-        assert b"where there is no arrow there is no claim" in content
+            assert b'data-testid="' + testid + b'"' not in content, testid
+        assert b"the line splits" not in content
+        assert b"Small arrows along a saved route" not in content
 
     def test_slope_panel_explains_a_flat_traverse_drawn_steep(
         self, client: Client
