@@ -229,10 +229,20 @@ describe('open', () => {
     expect(cursor.state().index).toBe(23);
   });
 
-  it('cuts a pending share into legs, though its slope is not drawn', () => {
+  it('cuts a pending share into legs', () => {
     window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
 
     expect(legPaths()).toHaveLength(2);
+  });
+
+  it('hands a pending share’s slope record to rail two', () => {
+    // A share carries the same slope record as an owned route; nulling it
+    // opened rail two with no bands, no ribbon and no passages.
+    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(railTwo.hidden).toBe(false);
+    expect(railTwo.querySelectorAll('.route-rail-two-band').length).toBeGreaterThan(0);
   });
 
   it('draws the outline alone for a route with no legs', () => {

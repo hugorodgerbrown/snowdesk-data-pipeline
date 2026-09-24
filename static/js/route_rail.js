@@ -550,7 +550,11 @@
       name: props.name || STRINGS.untitled,
     };
     openDetails = typeof opts.details === 'function' ? opts.details : null;
-    var slope = props.pending ? null : readJson(props.slope);
+    // A pending share carries the same slope record as an owned route
+    // (the server builds both with one function), and rail two draws its
+    // bands, ribbon and passages from it — so it is read for both. The
+    // map's rule that a pending line draws no slope is the map's alone.
+    var slope = readJson(props.slope);
     var wireLegs = readJson(props.legs);
     legs = Array.isArray(wireLegs) ? wireLegs : [];
     sampleCount = sampleCountOf(slope, legs);
