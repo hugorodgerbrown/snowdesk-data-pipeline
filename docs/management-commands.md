@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, fill_location_elevations, import_resorts, backfill_*
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, import_resorts, seed_canonical_routes, backfill_*
 status: current
-last-reviewed: 2026-09-15
+last-reviewed: 2026-09-24
 ---
 
 # Management commands
@@ -212,6 +212,34 @@ lists the available models. FK prerequisites of a selected model are pulled in
 automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
 from the factories.
+
+### `seed_canonical_routes` — give the dev user the canonical routes
+
+SNOW-1023. Reconciles the seeded dev user's (`NORMAL_USER_EMAIL`) copy of
+the four canonical tracks in `apps/routes/fixtures/canonical/`:
+`seed_test_data` creates them, but it inserts rather than reconciles, so
+`bin/init-worktree` runs it only when `db.sqlite3` is first created. This
+command runs on every worktree session instead.
+
+For each canonical file the user does not hold (matched on
+`source_filename`) it calls `create_route`, the upload path. For each of
+the user's canonical routes whose `slope_samples` is null it calls
+`build_slope_samples`, as `backfill_route_slope_samples` does; a route the
+origin cannot answer for stays null and is not a failure. A route created
+in the same run is not sampled a second time. Only canonical routes are
+touched.
+
+Read-only by default: the preview lists what would be created and sampled,
+and makes no request. When nothing needs doing it prints exactly
+`Canonical routes up to date.` (`UP_TO_DATE`), which `bin/init-worktree`
+matches to stay quiet. With no dev user it says so and exits 0. Exits
+non-zero if a route could not be created or sampling raised. Exempt from
+rule 5: the unit of work is the fixed four-file corpus.
+
+```bash
+uv run python manage.py seed_canonical_routes            # preview
+uv run python manage.py seed_canonical_routes --commit   # apply
+```
 
 ### `seed_test_week` — load the "golden week" of real bulletins
 

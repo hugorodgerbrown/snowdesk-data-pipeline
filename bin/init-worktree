@@ -31,7 +31,13 @@
 #                    checkout moves past the database — which is what a
 #                    pull, a rebase or a new branch off main does. Steps 3-5
 #                    insert rows rather than reconcile them, so re-running
-#                    them would duplicate the seeded dataset.
+#                    them would duplicate the seeded dataset. A third
+#                    command follows them on those sessions:
+#                      6. seed_canonical_routes --commit
+#                    which reconciles the one part of step 5 a worktree
+#                    must never be without — the dev user's four canonical
+#                    routes, created if absent and sampled if unsampled
+#                    (SNOW-1023).
 #                    See docs/worktrees.md for credentials and reseed steps.
 #   - output.css   → compiled from src/css/main.css with the Tailwind CLI
 #                    (gitignored build artifact, not shared across worktrees).
@@ -97,6 +103,10 @@ seed_db() {
     uv run python manage.py loaddata eaws_CH
     uv run python manage.py import_resorts --commit
     uv run python manage.py seed_test_data --all --commit
+    # No seed_canonical_routes here: seed_test_data has just created the
+    # canonical routes through the same create_route, so it would only
+    # print its no-op sentence. A route whose sampling failed on this run
+    # is picked up by update_db on the next session.
     echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))
 }
@@ -154,8 +164,8 @@ update_db() {
     # row leaves the schema usable and the query counts wrong, so
     # monitor_query_counts fails against a perfectly correct baseline.
     #
-    # Both commands are idempotent and both are authoritative, so the cost
-    # of running them unconditionally is two manage.py startups per
+    # All three commands are idempotent and authoritative, so the cost
+    # of running them unconditionally is three manage.py startups per
     # session and the benefit is that the database is never quietly behind
     # the code about to run against it. See docs/worktrees.md.
     if ! quiet_when_unchanged "No migrations to apply." migrate --noinput; then
@@ -167,6 +177,18 @@ update_db() {
     if ! quiet_when_unchanged "Created 0 flag(s), deleted 0 flag(s)." \
         sync_waffle_flags --commit; then
         echo "init-worktree: reconciled the waffle flag manifest"
+        actions=$((actions + 1))
+    fi
+    # SNOW-1023: the canonical routes, on every session. Asked for on
+    # 2026-09-24 — every worktree should hold them — and seed_test_data,
+    # which is what creates them, cannot be re-run (it inserts). A worktree
+    # seeded before SNOW-989 never got them, and one whose terrain sampling
+    # failed at seed time kept a flat route; this command reconciles both
+    # and says nothing once they are current. The sentence is
+    # UP_TO_DATE in apps/routes/management/commands/seed_canonical_routes.py.
+    if ! quiet_when_unchanged "Canonical routes up to date." \
+        seed_canonical_routes --commit; then
+        echo "init-worktree: reconciled the canonical routes"
         actions=$((actions + 1))
     fi
 }

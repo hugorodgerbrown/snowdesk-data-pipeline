@@ -34,17 +34,19 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "bin" / "init-worktree"
 
-# The two sentences the script greps for to decide "nothing changed". They
+# The sentences the script greps for to decide "nothing changed". They
 # are duplicated here deliberately rather than imported — there is nothing
 # to import from a bash script, and a test that derived them from the
 # script could not notice the script getting them wrong.
 NO_MIGRATIONS = "No migrations to apply."
 NO_FLAG_CHANGES = "Created 0 flag(s), deleted 0 flag(s)."
+NO_ROUTE_CHANGES = "Canonical routes up to date."
 
 # What a run that DID change something looks like, in each command's own
 # output vocabulary.
 MIGRATIONS_APPLIED = "Running migrations:\n  Applying routes.0007_thing... OK"
 FLAGS_CHANGED = "Created 3 flag(s), deleted 0 flag(s)."
+ROUTES_CHANGED = "Created mont-fort-backside.gpx (sampled)"
 
 # The data half of the seed recipe: the three commands that must never run
 # against a database that already exists.
@@ -68,8 +70,11 @@ case "$4" in
     sync_waffle_flags)
         printf '%s\\n' "$STUB_WAFFLE_OUTPUT"
         ;;
+    seed_canonical_routes)
+        printf '%s\\n' "$STUB_ROUTES_OUTPUT"
+        ;;
 esac
-# Both commands log to stderr on every real run. Emitted here so the tests
+# The real commands log to stderr on every run. Emitted here so the tests
 # exercise the capture that keeps it off a quiet session's console.
 echo "DEBUG apps.bulletins.services.prose prose parser registered" >&2
 exit 0
@@ -137,6 +142,11 @@ def sandbox(tmp_path: Path) -> Sandbox:
     _git(main, "init", "-b", "main")
     _git(main, "config", "user.email", "test@example.com")
     _git(main, "config", "user.name", "Test User")
+    # The developer's global config signs every commit, and a gpg-agent
+    # asked for signatures by several parallel workers at once fails some
+    # of them — the intermittent exit 128 at the commit below. A throwaway
+    # repository has nothing to sign.
+    _git(main, "config", "commit.gpgsign", "false")
     (main / "README.md").write_text("placeholder\n")
     _git(main, "add", ".")
     _git(main, "commit", "-m", "initial")
@@ -174,6 +184,7 @@ def sandbox(tmp_path: Path) -> Sandbox:
             "STUB_LOG": str(log),
             "STUB_MIGRATE_OUTPUT": NO_MIGRATIONS,
             "STUB_WAFFLE_OUTPUT": NO_FLAG_CHANGES,
+            "STUB_ROUTES_OUTPUT": NO_ROUTE_CHANGES,
             "HOME": str(tmp_path),
         },
     )
@@ -271,7 +282,11 @@ class TestAnExistingDatabase:
         result = _run(sandbox, sandbox.worktree)
 
         assert result.returncode == 0, result.stderr
-        assert sandbox.manage_commands() == ["migrate", "sync_waffle_flags"]
+        assert sandbox.manage_commands() == [
+            "migrate",
+            "sync_waffle_flags",
+            "seed_canonical_routes",
+        ]
 
     @pytest.mark.parametrize("command", DATA_SEED_COMMANDS)
     def test_the_data_seed_never_runs_a_second_time(
@@ -314,6 +329,13 @@ class TestAnExistingDatabase:
         result = _run(sandbox, sandbox.worktree, STUB_WAFFLE_OUTPUT=FLAGS_CHANGED)
 
         assert "reconciled the waffle flag manifest" in result.stdout
+
+    def test_it_announces_reconciled_canonical_routes(self, sandbox: Sandbox) -> None:
+        """SNOW-1023: a worktree seeded before SNOW-989 gains the routes."""
+        result = _run(sandbox, sandbox.worktree, STUB_ROUTES_OUTPUT=ROUTES_CHANGED)
+
+        assert "reconciled the canonical routes" in result.stdout
+        assert "mont-fort-backside.gpx" in result.stdout
 
     def test_unrecognised_output_is_reported_rather_than_swallowed(
         self, sandbox: Sandbox
