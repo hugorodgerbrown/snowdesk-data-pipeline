@@ -92,7 +92,8 @@ asymmetry is what lets the server keep one spacing rule for every zoom.
   derived from `aspect_deg`, which every record has carried since
   SNOW-910.
 - **The mark is not in the tap path.** Every arrow sits on the middle of
-  a segment `routes-slope-line` still draws, well inside the 8 px
+  a stretch the route's line still draws (a slope segment when this was
+  written; a leg line since SNOW-1017), well inside the 8 px
   tolerance, so a tap on an arrow already opens its route. Adding the
   layer to `MARKER_EXCLUSION_LAYERS` would maintain a second path to the
   same popup — and one that comes and goes with the zoom, since this is
