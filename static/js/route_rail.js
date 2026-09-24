@@ -2,19 +2,31 @@
  * static/js/route_rail.js — rail one's DOM half: fills
  * templates/includes/_route_rail.html for the open route (SNOW-1018).
  *
- * map.js's `activateRoute` calls `window.pwaRouteRail.open(feature)` with
+ * A tap on a saved route opens THIS, and only this: map.js's
+ * `activateRoute` calls `window.pwaRouteRail.open(feature, options)` with
  * the route's feature from the routes GeoJSON cache — the cached copy, not
  * the rendered one, because a feature read back from the map's tiles has
- * lost the third ordinate the profile is drawn from. The rail closes when
- * the route detail sheet does, whichever of its five dismissal routes
- * closed it (Escape, click-outside, the overlay registry, overlays.js's
- * dismiss, a programmatic close): watching the sheet's `hidden` attribute
- * is the one place all five meet, where a call from each would be five
- * places to forget one.
+ * lost the third ordinate the profile is drawn from.
+ *
+ * THE SHEET IS BEHIND THE MENU. The route detail sheet (SNOW-973) used to
+ * open on the same tap. The rail took its top half — name, figures,
+ * profile — and the sheet keeps the terrain lines and the day's bulletin
+ * reading, one press away on the menu's "Terrain and bulletin" item. The
+ * sheet's body is built by map.js, which owns the map state it reads, and
+ * handed over as `options.details`: a function this module calls on that
+ * press, never at open, so the reading asks for the day the map is showing
+ * when the reader asks for it.
+ *
+ * ITS OWN LIFETIME. The rail stays open while the sheet opens and closes
+ * over it — it is not registered with window.pwaMapOverlays, which would
+ * close it the moment the sheet it opened announced itself. It closes on
+ * its own × (`[data-route-rail-close]`), on Escape when nothing else is
+ * open to take that Escape, on a claim or a delete, and it is refilled in
+ * place when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,
- * whose first caller this is); and the rail's four actions. All the
+ * whose first caller this is); and the rail's menu. All the
  * arithmetic — tick step, figures line, where each leg's fill sits — is
  * route_rail_core.js's, and all the copy is the partial's strings template.
  *
@@ -32,12 +44,16 @@
  * Only a route with no legs at all — no elevation, or too short — gets the
  * outline alone, with nothing to press.
  *
- * THE ACTIONS. Plan a trip is a link; Share and Rename reuse
- * window.pwaShare and window.pwaRowRenameCommit exactly as the routes
- * panel does; Delete confirms and posts to routes:delete. Each change
- * announces `snowdesk:routes-changed`, which is what makes the map and an
- * open routes panel re-read the list. A pending share has no uuid and
- * none of these endpoints would answer for it, so its menu is hidden.
+ * THE ACTIONS. Terrain and bulletin calls `options.details`; Plan a trip
+ * is a link; Share and Rename reuse window.pwaShare and
+ * window.pwaRowRenameCommit exactly as the routes panel does; Delete
+ * confirms and posts to routes:delete. Each change announces
+ * `snowdesk:routes-changed`, which is what makes the map and an open
+ * routes panel re-read the list. A pending share has no uuid and none of
+ * the owner endpoints would answer for it, so its menu keeps the details
+ * item alone (`[data-route-rail-owner]` marks the rest), and its Save —
+ * `options.claim`, the control map.js builds — sits in the identity block
+ * (`[data-route-rail-claim]`), where the recipient lands.
  *
  * THE BOTTOM CHROME. While open, `#map` carries `data-route-rail-open` and
  * `--route-rail-height`, the rail's measured height; static/css/map.css
@@ -46,7 +62,10 @@
  *
  * Publishes (frozen `window.pwaRouteRail`):
  *
- *   open(feature)  — fill and show the rail for one route feature
+ *   open(feature, {details?, claim?})
+ *                  — fill and show the rail for one route feature;
+ *                    `details` opens the route detail sheet, `claim` is
+ *                    a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
  *   cursor()       — the open route's cursor, or null (for SNOW-1017)
@@ -98,6 +117,8 @@
   var planTripEl = rail.querySelector('[data-route-rail-plan-trip]');
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
+  var detailsEl = rail.querySelector('[data-route-rail-details]');
+  var claimEl = rail.querySelector('[data-route-rail-claim]');
 
   /** The open route's cursor, or null. */
   var cursor = null;
@@ -107,6 +128,8 @@
   var legs = [];
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, name: '' };
+  /** Opens the open route's detail sheet; null when there is none. */
+  var openDetails = null;
 
   /**
    * Read a feature property that may arrive JSON-encoded.
@@ -170,16 +193,27 @@
   }
 
   /**
-   * First and last elevation of the profile, for the figures' range.
+   * The route's start and end elevation, for the figures' range.
+   *
+   * Only a reading taken AT the end is that end. When the GPX's first or
+   * last point carries no `<ele>`, readProfile's first run begins inside
+   * the route, or its last run stops short of the finish, and the nearest
+   * reading is somewhere along the track — a height the route passes, not
+   * the one it starts or finishes at. That end is then null, and
+   * formatFigures leaves the range out rather than state half of it.
    *
    * @param {object} profile A readProfile result.
    * @returns {{start: ?number, end: ?number}}
    */
   function profileEnds(profile) {
     if (!profile || !profile.hasElevation) return { start: null, end: null };
-    var first = profile.runs[0];
-    var last = profile.runs[profile.runs.length - 1];
-    return { start: first[0].e, end: last[last.length - 1].e };
+    var first = profile.runs[0][0];
+    var lastRun = profile.runs[profile.runs.length - 1];
+    var last = lastRun[lastRun.length - 1];
+    return {
+      start: first.d === 0 ? first.e : null,
+      end: last.d >= profile.distanceM ? last.e : null,
+    };
   }
 
   /**
@@ -307,11 +341,21 @@
   }
 
   /**
-   * Point the menu at the open route, or hide it for a pending share.
+   * Fit the menu to the open route.
+   *
+   * The details item shows whenever there is a sheet to open; the owner
+   * items only for a route this visitor owns, each hidden individually so
+   * a pending share keeps the details item. The whole menu hides only when
+   * nothing in it would do anything.
    */
   function fillMenu() {
-    if (actionsEl) actionsEl.hidden = !current.uuid;
-    if (!current.uuid) return;
+    var owned = !!current.uuid;
+    if (detailsEl) detailsEl.closest('li').hidden = !openDetails;
+    rail.querySelectorAll('[data-route-rail-owner]').forEach(function (item) {
+      item.hidden = !owned;
+    });
+    if (actionsEl) actionsEl.hidden = !owned && !openDetails;
+    if (!owned) return;
     if (planTripEl && PLAN_TRIP_URL) {
       planTripEl.setAttribute(
         'href',
@@ -341,13 +385,29 @@
   }
 
   /**
+   * Seat a pending share's Save control, or empty the slot.
+   *
+   * @param {?Node} node The control map.js built, or null.
+   */
+  function fillClaim(node) {
+    if (!claimEl) return;
+    claimEl.replaceChildren();
+    claimEl.hidden = !node;
+    if (node) claimEl.appendChild(node);
+  }
+
+  /**
    * Fill and show the rail for one route.
    *
    * @param {{geometry?: {coordinates?: Array}, properties?: object}} feature
    *   The route feature from the routes GeoJSON cache.
+   * @param {{details?: function(): *, claim?: ?Node}} [options]
+   *   `details` opens the route detail sheet, called on the menu's
+   *   Terrain and bulletin item; `claim` is a pending share's Save
+   *   control, seated in the identity block.
    * @returns {boolean} Whether the rail opened.
    */
-  function open(feature) {
+  function open(feature, options) {
     var profileCore = self.pwaElevationProfileCore;
     var railCore = self.pwaRouteRailCore;
     if (!feature || !profileCore || !railCore) return false;
@@ -357,10 +417,12 @@
     unsubscribe = null;
     cursor = null;
 
+    var opts = options || {};
     current = {
       uuid: props.uuid ? String(props.uuid) : null,
       name: props.name || STRINGS.untitled,
     };
+    openDetails = typeof opts.details === 'function' ? opts.details : null;
     var slope = props.pending ? null : readJson(props.slope);
     var wireLegs = readJson(props.legs);
     legs = Array.isArray(wireLegs) ? wireLegs : [];
@@ -390,6 +452,7 @@
     );
     drawLane(profile, sampleCount, spanM);
     fillMenu();
+    fillClaim(props.pending ? opts.claim || null : null);
     paintState(cursor ? cursor.state() : null);
 
     rail.hidden = false;
@@ -404,6 +467,8 @@
     unsubscribe = null;
     cursor = null;
     legs = [];
+    openDetails = null;
+    fillClaim(null);
     rail.hidden = true;
     if (mapEl) {
       mapEl.removeAttribute('data-route-rail-open');
@@ -473,6 +538,14 @@
   rail.addEventListener('click', function (event) {
     var target = /** @type {Element} */ (event.target);
     if (!target || !target.closest) return;
+    if (target.closest('[data-route-rail-close]')) {
+      close();
+      return;
+    }
+    if (target.closest('[data-route-rail-details]')) {
+      if (openDetails) openDetails();
+      return;
+    }
     if (target.closest('[data-route-rail-share]')) {
       share();
       return;
@@ -505,14 +578,28 @@
 
   // ---- lifetime ---------------------------------------------------------
 
-  // The rail lives exactly as long as the route detail sheet: see the
-  // header for why this watches the attribute rather than each close path.
-  var detailSheet = document.getElementById('route-detail-sheet');
-  if (detailSheet && typeof MutationObserver === 'function') {
-    new MutationObserver(function () {
-      if (detailSheet.hasAttribute('hidden') && !rail.hidden) close();
-    }).observe(detailSheet, { attributes: true, attributeFilter: ['hidden'] });
-  }
+  // Escape closes the rail — but only an Escape nothing else was open to
+  // take. The sheets close on Escape from their own document listeners
+  // (map_sheet.js), and overflow_menu.js takes one in the capture phase
+  // for an open menu, so by the time this listener runs the surface that
+  // Escape was meant for may already be shut. Whether anything was open
+  // is therefore read BEFORE any of them run, on the window's capture
+  // phase, and acted on after, on the document's bubble phase. An Escape
+  // typed into a field (the rail's own rename) belongs to the field.
+  var escapeWasTaken = false;
+  window.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    var target = /** @type {Element} */ (event.target);
+    escapeWasTaken = !!(
+      (target && target.closest && target.closest('input, textarea, select'))
+      || document.querySelector('[data-overlay]:not([hidden])')
+      || document.querySelector('[data-overflow-open]')
+    );
+  }, true);
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape' || escapeWasTaken || rail.hidden) return;
+    close();
+  });
 
   window.addEventListener('resize', publishHeight);
 

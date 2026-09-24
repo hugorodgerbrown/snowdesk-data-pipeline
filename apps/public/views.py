@@ -121,6 +121,7 @@ from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
+from apps.routes.models import Route
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
@@ -1752,8 +1753,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``route_bulletin_url_template``,
-        ``route_delete_url_template``, ``routes_geojson_url`` and
-        ``routes_signin_url``.
+        ``route_delete_url_template``, ``route_name_max_length``,
+        ``routes_geojson_url`` and ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1807,6 +1808,10 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # docstring says), but the rail below the map is filled by JS for
         # whichever route is open, so its Delete is a fetch built from
         # this — the rename template's own reasoning.
+        # SNOW-1018: the rail's rename input is capped at the column's own
+        # length, which routes:rename enforces with a 400 — read off the
+        # field rather than restated, so the two cannot drift.
+        "route_name_max_length": Route._meta.get_field("name").max_length,
         "route_delete_url_template": reverse(
             "routes:delete", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

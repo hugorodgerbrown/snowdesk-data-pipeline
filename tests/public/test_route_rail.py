@@ -3,8 +3,10 @@ tests/public/test_route_rail.py — rail one as the map page ships it (SNOW-1018
 
 What the page carries before any route is open: the rail itself, hidden and
 inside ``#map``, its eyebrow, its strings template, its actions as ONE
-``[data-overflow-menu]`` rather than loose icons (design-system rule 5), in
-the routes row's order, and the three scripts that fill it. What the rail
+``[data-overflow-menu]`` rather than loose icons (design-system rule 5) —
+Terrain and bulletin first, then the routes row's four in its order — its
+own × close, a pending share's claim slot, and the three scripts that fill
+it. What the rail
 does once open is tests/js/test_route_rail.js's.
 """
 
@@ -17,6 +19,7 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
+from apps.routes.models import Route
 from tests.factories import UserFactory
 
 # The rail's own markup: from its opening tag to the end of the section.
@@ -143,6 +146,7 @@ class TestTheActionsAreAMenu:
         assert menu is not None
         outside = rail.replace(menu.group(0), "")
         for hook in (
+            "data-route-rail-details",
             "data-route-rail-plan-trip",
             "data-route-rail-share",
             "data-route-rename",
@@ -154,16 +158,64 @@ class TestTheActionsAreAMenu:
             assert exact.search(menu.group(0))
             assert not exact.search(outside)
 
-    def test_the_order_is_the_routes_rows(self, client: Client) -> None:
-        """Plan a trip → Share → Rename → Delete, destructive last."""
+    def test_the_order_leads_with_details_then_the_routes_rows(
+        self, client: Client
+    ) -> None:
+        """Terrain and bulletin → Plan a trip → Share → Rename → Delete."""
         menu = _MENU_RE.search(_rail(_home(client)))
         assert menu is not None
 
         positions = [
             menu.group(0).index(label)
-            for label in ("Plan a trip", "Share", "Rename", "Delete")
+            for label in (
+                "Terrain and bulletin",
+                "Plan a trip",
+                "Share",
+                "Rename",
+                "Delete",
+            )
         ]
         assert positions == sorted(positions)
+
+    def test_every_owner_item_is_marked_for_a_pending_share_to_hide(
+        self, client: Client
+    ) -> None:
+        """The details item alone is unmarked: a pending share keeps it."""
+        menu = _MENU_RE.search(_rail(_home(client)))
+        assert menu is not None
+
+        items = re.findall(r"<li\b[^>]*>", menu.group(0))
+        marked = [item for item in items if "data-route-rail-owner" in item]
+        assert len(items) - len(marked) == 1
+
+    def test_the_rail_has_its_own_close_outside_the_menu(self, client: Client) -> None:
+        """A bare × with a translated name, not an item inside the menu."""
+        rail = _rail(_home(client))
+        menu = _MENU_RE.search(rail)
+        assert menu is not None
+
+        close = re.search(r"<button[^>]*data-route-rail-close[^>]*>", rail)
+        assert close is not None
+        assert 'aria-label="Close the route profile"' in close.group(0)
+        assert "data-route-rail-close" not in menu.group(0)
+
+    def test_the_claim_slot_ships_hidden(self, client: Client) -> None:
+        """Filled and shown by route_rail.js for a pending share only."""
+        rail = _rail(_home(client))
+
+        assert re.search(r"<div\s+data-route-rail-claim\s+hidden", rail)
+
+    def test_the_rename_input_is_capped_at_the_name_column(
+        self, client: Client
+    ) -> None:
+        """routes:rename answers 400 past Route.name's max_length."""
+        rail = _rail(_home(client))
+        field = Route._meta.get_field("name")
+
+        tag = re.search(r"<input[^>]*data-row-rename-input[^>]*>", rail)
+        assert tag is not None
+        assert f'maxlength="{field.max_length}"' in tag.group(0)
+        assert field.max_length == 100
 
     def test_no_htmx_attribute_ships_in_the_rail(self, client: Client) -> None:
         """Delete is a fetch, so the page's htmx pairing is unchanged."""

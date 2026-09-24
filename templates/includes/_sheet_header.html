@@ -116,19 +116,6 @@ one keyed to the glyph's text.
         aria-label="{% trans 'Close' %}"
         class="{% icon_button_classes extra='-mt-3 -mr-3' %}"
     >
-        <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-        >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-        </svg>
+        {% include "includes/_icon_close.html" only %}
     </button>
 </div>

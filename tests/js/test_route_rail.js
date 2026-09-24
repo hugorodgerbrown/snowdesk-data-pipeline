@@ -36,14 +36,19 @@ document.body.innerHTML = `
         <div data-route-rail-actions>
           <div data-overflow-menu>
             <ul role="menu">
-              <li><a role="menuitem" data-route-rail-plan-trip>Plan a trip</a></li>
-              <li><button role="menuitem" data-route-rail-share>Share</button></li>
-              <li><button role="menuitem" data-row-rename data-route-rename="">Rename</button></li>
-              <li><button role="menuitem" data-route-rail-delete>Delete</button></li>
+              <li><button role="menuitem" data-route-rail-details>Terrain and bulletin</button></li>
+              <li aria-hidden="true" data-route-rail-owner></li>
+              <li data-route-rail-owner><a role="menuitem" data-route-rail-plan-trip>Plan a trip</a></li>
+              <li data-route-rail-owner><button role="menuitem" data-route-rail-share>Share</button></li>
+              <li aria-hidden="true" data-route-rail-owner></li>
+              <li data-route-rail-owner><button role="menuitem" data-row-rename data-route-rename="">Rename</button></li>
+              <li data-route-rail-owner><button role="menuitem" data-route-rail-delete>Delete</button></li>
             </ul>
           </div>
         </div>
+        <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
         <p data-route-rail-figures></p>
+        <div data-route-rail-claim hidden></div>
       </div>
       <svg data-route-rail-lane></svg>
       <div data-route-rail-ticks></div>
@@ -53,7 +58,7 @@ document.body.innerHTML = `
       </form>
     </section>
   </div>
-  <div id="route-detail-sheet"></div>
+  <div id="route-detail-sheet" data-overlay hidden></div>
 `;
 
 await import('../../static/js/route_rail.js');
@@ -99,8 +104,29 @@ function legPaths() {
 }
 
 beforeEach(() => {
-  sheet.removeAttribute('hidden');
+  sheet.setAttribute('hidden', '');
 });
+
+/**
+ * The menu items a reader can see, by their visible label.
+ *
+ * @returns {Array<string>}
+ */
+function visibleMenuItems() {
+  return Array.from(rail.querySelectorAll('[role="menuitem"]'))
+    .filter((item) => !item.closest('li').hidden)
+    .map((item) => item.textContent.trim());
+}
+
+/**
+ * Press Escape the way a keyboard does: on the focused element, bubbling
+ * through the document to the window.
+ *
+ * @param {Element} [target] Where focus is. Defaults to the body.
+ */
+function pressEscape(target = document.body) {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+}
 
 afterEach(() => {
   window.pwaRouteRail.close();
@@ -185,10 +211,79 @@ describe('open', () => {
     expect(window.pwaRouteRail.cursor()).toBeNull();
   });
 
-  it('hides the menu for a pending share, which has no uuid', () => {
-    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+  it('keeps only the details item for a pending share, which has no uuid', () => {
+    window.pwaRouteRail.open(
+      feature({ uuid: undefined, token: 'abc', pending: true }),
+      { details: vi.fn() },
+    );
 
-    expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(true);
+    expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(false);
+    expect(visibleMenuItems()).toEqual(['Terrain and bulletin']);
+  });
+
+  it('offers every item for an owned route, details first', () => {
+    window.pwaRouteRail.open(feature(), { details: vi.fn() });
+
+    expect(visibleMenuItems()).toEqual([
+      'Terrain and bulletin',
+      'Plan a trip',
+      'Share',
+      'Rename',
+      'Delete',
+    ]);
+  });
+
+  it('seats a pending share\'s Save in the claim slot', () => {
+    const save = document.createElement('button');
+    save.textContent = 'Save route';
+
+    window.pwaRouteRail.open(
+      feature({ uuid: undefined, token: 'abc', pending: true }),
+      { details: vi.fn(), claim: save },
+    );
+
+    const slot = rail.querySelector('[data-route-rail-claim]');
+    expect(slot.hidden).toBe(false);
+    expect(slot.contains(save)).toBe(true);
+  });
+
+  it('leaves the claim slot empty for an owned route', () => {
+    window.pwaRouteRail.open(feature(), { claim: document.createElement('button') });
+
+    const slot = rail.querySelector('[data-route-rail-claim]');
+    expect(slot.hidden).toBe(true);
+    expect(slot.children).toHaveLength(0);
+  });
+
+  it('omits the range when the GPX\'s first or last point has no elevation', () => {
+    // readProfile's first run then starts inside the route, and its last
+    // stops short of the finish: those readings are heights the route
+    // passes, not the ones it starts and finishes at.
+    const gappy = feature();
+    const coordinates = gappy.geometry.coordinates;
+    coordinates[0] = [coordinates[0][0], coordinates[0][1], null];
+    coordinates[coordinates.length - 1] = [
+      coordinates[coordinates.length - 1][0],
+      coordinates[coordinates.length - 1][1],
+      null,
+    ];
+
+    window.pwaRouteRail.open(gappy);
+
+    expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
+      '0.6 km · ▲200 m · ▼200 m',
+    );
+  });
+
+  it('omits the range when only the finish is missing its elevation', () => {
+    const gappy = feature();
+    const coordinates = gappy.geometry.coordinates;
+    const last = coordinates.length - 1;
+    coordinates[last] = [coordinates[last][0], coordinates[last][1], null];
+
+    window.pwaRouteRail.open(gappy);
+
+    expect(rail.querySelector('[data-route-rail-figures]').textContent).not.toContain('→');
   });
 });
 
@@ -245,16 +340,81 @@ describe('pressing a leg', () => {
   });
 });
 
-describe('lifetime', () => {
-  it('closes when the route detail sheet closes', async () => {
+describe('the details item', () => {
+  it('calls the details callback map.js handed over', () => {
+    const details = vi.fn();
+    window.pwaRouteRail.open(feature(), { details });
+
+    rail.querySelector('[data-route-rail-details]').click();
+
+    expect(details).toHaveBeenCalledTimes(1);
+  });
+
+  it('is hidden when there is no sheet to open', () => {
     window.pwaRouteRail.open(feature());
+
+    expect(visibleMenuItems()).not.toContain('Terrain and bulletin');
+  });
+});
+
+describe('lifetime', () => {
+  it('stays open while the sheet opens and closes over it', async () => {
+    window.pwaRouteRail.open(feature(), {
+      details: () => sheet.removeAttribute('hidden'),
+    });
+
+    rail.querySelector('[data-route-rail-details]').click();
+    await Promise.resolve();
+    expect(rail.hidden).toBe(false);
 
     sheet.setAttribute('hidden', '');
     await Promise.resolve();
+    expect(rail.hidden).toBe(false);
+    expect(window.pwaRouteRail.cursor()).not.toBeNull();
+  });
+
+  it('closes on its own ×', () => {
+    window.pwaRouteRail.open(feature());
+
+    rail.querySelector('[data-route-rail-close]').click();
 
     expect(rail.hidden).toBe(true);
     expect(mapEl.hasAttribute('data-route-rail-open')).toBe(false);
     expect(window.pwaRouteRail.cursor()).toBeNull();
+  });
+
+  it('closes on Escape when nothing else is open', () => {
+    window.pwaRouteRail.open(feature());
+
+    pressEscape();
+
+    expect(rail.hidden).toBe(true);
+  });
+
+  it('leaves Escape to an open sheet', () => {
+    window.pwaRouteRail.open(feature());
+    sheet.removeAttribute('hidden');
+
+    pressEscape();
+
+    expect(rail.hidden).toBe(false);
+  });
+
+  it('leaves Escape to a field being edited', () => {
+    window.pwaRouteRail.open(feature());
+    const input = rail.querySelector('[data-row-rename-input]');
+
+    pressEscape(input);
+
+    expect(rail.hidden).toBe(false);
+  });
+
+  it('replaces its contents when another route opens', () => {
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.open(feature({ name: 'Rosablanche' }));
+
+    expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Rosablanche');
+    expect(rail.hidden).toBe(false);
   });
 });
 

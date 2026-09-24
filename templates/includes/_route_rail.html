@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 includes/_route_rail.html — rail one: the whole route's profile, cut at
 its transitions (SNOW-1018).
@@ -29,9 +29,25 @@ keeps a press on the rail from counting as a click outside the route
 detail sheet (static/js/map_sheet.js excludes #map), which would close the
 sheet and, with it, the rail.
 
-THE ACTIONS ARE A MENU. Four actions in a restricted area collapse into
-the "…" menu (design-system rule 5), in the routes row's order —
-includes/_route_rail_menu_items.html.
+THE ACTIONS ARE A MENU. Five actions in a restricted area collapse into
+the "…" menu (design-system rule 5): Terrain and bulletin, then the
+routes row's own four in its order — includes/_route_rail_menu_items.html.
+The first opens the route detail sheet, which a tap no longer opens: the
+rail took the sheet's top half (name, figures, profile), and the sheet
+keeps what the rail does not show — the terrain lines and the day's
+bulletin reading. A pending share has only that first item.
+
+ITS OWN CLOSE, BECAUSE ITS LIFETIME IS ITS OWN. The rail opens on a tap
+and stays open while the sheet opens and closes over it, so it cannot
+borrow the sheet's dismissal. The × beside the menu is the one control
+for it, the sheet header's × drawn the same way. It is not a second
+action competing for rule 5's threshold: it dismisses the surface rather
+than acting on the route, the same place every map sheet keeps its ×.
+
+A PENDING SHARE'S SAVE SITS HERE. `[data-route-rail-claim]` holds the
+"Save route" / "Sign in to save this route" control map.js builds, shown
+for a pending share only: a recipient lands on the rail, and a Save one
+menu press away is a Save most recipients would never find.
 
 TICK LABELS ARE HTML, NOT SVG TEXT. The lane is stretched to the rail's
 width with `preserveAspectRatio="none"`, and SVG text scales with its
@@ -43,12 +59,16 @@ Context:
     route_rename_url_template : str — routes:rename, ``__UUID__`` for the uuid.
     route_share_url_template  : str — routes:share_create, likewise.
     route_delete_url_template : str — routes:delete, likewise.
+    route_name_max_length     : int — Route.name's max_length, which
+                                routes:rename enforces; the rename input's
+                                maxlength.
     static                    : bool, optional — render visible and in
                                 normal flow, for the component library,
                                 which runs no JS to reveal it.
 {% endcomment %}
 {% trans "Route profile" as route_rail_eyebrow %}
 {% trans "Route actions" as route_rail_menu_label %}
+{% trans "Close the route profile" as route_rail_close_label %}
 <section
     id="route-rail"
     data-route-rail
@@ -74,16 +94,29 @@ Context:
                     type="text"
                     data-row-rename-input
                     hidden
-                    maxlength="200"
+                    maxlength="{{ route_name_max_length }}"
                     aria-label="{% trans 'Route name' %}"
                     class="mt-1 w-full rounded-tag border border-border bg-card px-2 py-1 text-sm text-text-1"
                 >
             </div>
-            <div data-route-rail-actions>
-                {% include "includes/_overflow_menu.html" with trigger_id="route-rail-menu-trigger" menu_id="route-rail-menu" trigger_label=route_rail_menu_label items_template="includes/_route_rail_menu_items.html" %}
+            <div class="-mr-3 -mt-3 flex flex-none items-start">
+                <div data-route-rail-actions>
+                    {% include "includes/_overflow_menu.html" with trigger_id="route-rail-menu-trigger" menu_id="route-rail-menu" trigger_label=route_rail_menu_label items_template="includes/_route_rail_menu_items.html" %}
+                </div>
+                <button
+                    type="button"
+                    data-route-rail-close
+                    aria-label="{{ route_rail_close_label }}"
+                    class="{% icon_button_classes %}"
+                >
+                    {% include "includes/_icon_close.html" only %}
+                </button>
             </div>
         </div>
         <p data-route-rail-figures class="mt-1 font-mono text-meta text-text-2"></p>
+        {# A pending share's Save — filled by static/js/route_rail.js with   #}
+        {# the control map.js builds, and hidden for an owned route.         #}
+        <div data-route-rail-claim hidden></div>
     </div>
     {# The lane. Filled per open by static/js/route_rail.js.             #}
     <div class="min-w-0">

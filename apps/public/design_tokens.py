@@ -1552,8 +1552,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "Rail one (SNOW-1018): the strip docked over the map's foot "
             "while a route is open. Three columns — the identity block "
-            "(eyebrow, name, figures, the actions as a '…' menu in the "
-            "routes row's order), the lane (the elevation profile as one "
+            "(eyebrow, name, figures, a × and the actions as a '…' menu — "
+            "Terrain and bulletin, which opens the route detail sheet, then "
+            "the routes row's four in its order), the lane (the elevation "
+            "profile as one "
             "filled shape per leg under one outline, with distance ticks), "
             "and a readout naming the open leg. Pressing a leg opens it on "
             "the route cursor; pressing it again closes it. Rendered once, "
