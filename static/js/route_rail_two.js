@@ -48,6 +48,7 @@
  *           onResize})  — follow one route's cursor
  *   detach()            — stop following it and hide
  *   centreOn(index)     — centre the window on a sample
+ *   cursorPoint()       — where the cursor meets the profile, viewport px
  *   view()              — the window `{from, to}`, or null when hidden
  */
 
@@ -713,6 +714,32 @@
     zoomInEl.disabled = span <= c.minSpan(leg) + eps;
     zoomOutEl.disabled = span >= c.legLength(leg) - eps;
     if (ctx.onView) ctx.onView({ from: view.from, to: view.to }, leg);
+    // The leader line (route_leader.js) follows this rail's cursor point,
+    // which a pan or a zoom moves without the cursor changing.
+    document.dispatchEvent(new CustomEvent('snowdesk:route-rail-two-drawn', { detail: null }));
+  }
+
+  /**
+   * Where the cursor line meets the profile, in viewport px (SNOW-1019).
+   *
+   * The leader line's last stop. Null while rail two is hidden, with no
+   * index, or with the index outside the window.
+   *
+   * @returns {?{x: number, y: number}}
+   */
+  function cursorPoint() {
+    if (!ctx || !leg || row.hidden) return null;
+    var index = ctx.cursor.state().index;
+    if (index === null || index + 1 <= view.from || index >= view.to) return null;
+    var c = core();
+    var rect = lane.getBoundingClientRect();
+    var s = index + 0.5;
+    var y = legLine ? c.profileYAt(legLine, s) : null;
+    var scale = rect.height > 0 ? rect.height / c.ROWS.height : 1;
+    return {
+      x: rect.left + (c.xOf(s, view, width) / width) * (rect.width || width),
+      y: rect.top + (y === null ? c.ROWS.profileBottom : y) * scale,
+    };
   }
 
   // ---- zoom and pan -------------------------------------------------------
@@ -999,6 +1026,7 @@
     frame = 0;
     if (ctx) hide();
     ctx = null;
+    document.dispatchEvent(new CustomEvent('snowdesk:route-rail-two-drawn', { detail: null }));
     lastState = null;
   }
 
@@ -1018,6 +1046,7 @@
     attach: attach,
     detach: detach,
     centreOn: centreOn,
+    cursorPoint: cursorPoint,
     view: function () {
       return leg ? { from: view.from, to: view.to } : null;
     },

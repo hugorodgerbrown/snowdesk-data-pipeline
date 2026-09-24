@@ -179,6 +179,22 @@
     z-index: 3;
 }
 
+/* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over
+   the whole of #map, so it can run from the cursor's dot on the map down
+   into the docked rails. The rail's own z-index (3), and appended to #map
+   after it, so it paints over the rail's card and reaches its stops
+   there; under the control columns (4) and the utility cluster (6). It
+   takes no pointer events: nothing under it may stop answering a press. */
+.route-leader {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3;
+    pointer-events: none;
+    overflow: visible;
+}
+
 .map-utility-cluster {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 12px);

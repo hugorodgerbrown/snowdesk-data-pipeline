@@ -2565,6 +2565,52 @@
   };
 
   /**
+   * The route cursor's screen point on the map, for the leader line
+   * (route_leader.js, SNOW-1019).
+   *
+   * Computed from the cursor's state rather than read back off the dot's
+   * source, so a subscriber that runs before this module's own cursor
+   * subscription still gets the new place.
+   *
+   * @returns {?{x: number, y: number}} Viewport px, or null with no open
+   *   route, no index, the routes overlay off or no slope record.
+   */
+  const routeCursorScreenPoint = () => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !map || !routeCursorTarget || !overlayState.routes) return null;
+    const index = routeCursorTarget.cursor.state().index;
+    const point = core.cursorPoint(routeCursorTarget.slope, index);
+    if (!point) return null;
+    const px = map.project(point.geometry.coordinates);
+    const container = map.getContainer();
+    const rect = container && container.getBoundingClientRect
+      ? container.getBoundingClientRect()
+      : { left: 0, top: 0 };
+    return px ? { x: rect.left + px.x, y: rect.top + px.y } : null;
+  };
+
+  // SNOW-1019: the leader line's bridge to the map — the cursor dot's
+  // screen point, and a way to hear the camera move it.
+  window.pwaRouteCursorMap = Object.freeze({
+    point: routeCursorScreenPoint,
+    /**
+     * Call `fn` whenever the camera moves or the map resizes.
+     *
+     * @param {function(): void} fn
+     * @returns {function(): void} Removes the listeners.
+     */
+    onChange: (fn) => {
+      if (!map) return () => {};
+      map.on('move', fn);
+      map.on('resize', fn);
+      return () => {
+        map.off('move', fn);
+        map.off('resize', fn);
+      };
+    },
+  });
+
+  /**
    * Whether a pointer on the map may speak to the open route's cursor.
    *
    * Only while the rail is open on that route, and only while the routes

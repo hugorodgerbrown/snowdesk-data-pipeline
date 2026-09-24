@@ -286,6 +286,18 @@ describe('legProfile and legFigures', () => {
     expect(area.endsWith('Z')).toBe(true);
   });
 
+  it('finds the curve\'s y at a sample, top of the leg highest', () => {
+    const lp = core.legProfile(profile, leg, 24, rail.clipRun);
+    const low = core.profileYAt(lp, 0.5);
+    const high = core.profileYAt(lp, 11.5);
+
+    // A climb: the end sits higher on screen, which is a smaller y.
+    expect(high).toBeLessThan(low);
+    expect(low).toBeLessThanOrEqual(core.ROWS.profileBottom);
+    expect(core.profileYAt(core.legProfile(readProfile([]), leg, 24, rail.clipRun), 3))
+      .toBeNull();
+  });
+
   it('knows the distance alone for a leg with no elevation', () => {
     const lp = core.legProfile(readProfile([]), leg, 24, rail.clipRun);
     expect(core.legFigures(lp, leg, 24, 620)).toEqual({

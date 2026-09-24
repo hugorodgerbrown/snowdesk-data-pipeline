@@ -317,6 +317,10 @@ one and presses on rail two. A tap on the open route's line moves the
 cursor to the tapped place and opens the leg there; the first tap on a
 route still opens the rail and frames the track. Closing the rail clears
 the dot and the highlight. All of it is hidden with the routes overlay.
+A dashed leader line in the route colour runs from the dot on the map
+down to rail one's cursor, where it meets the profile, and on to rail
+two's while a leg is open, so one place can be followed across all three
+drawings. It is hidden while the cursor has no position.
 
 **Tapping a route** opens the **route detail panel** — the docked sheet
 (`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once

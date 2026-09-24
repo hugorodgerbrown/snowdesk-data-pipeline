@@ -395,6 +395,12 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_two.js' %}"></script>
     <script defer src="{% static 'js/route_rail.js' %}"></script>
+    {# SNOW-1019: the leader line — a dashed line from the route cursor's    #}
+    {# dot on the map to rail one's cursor and on to rail two's. Its pure    #}
+    {# half (window.pwaRouteLeaderCore) and its DOM half                     #}
+    {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
+    <script defer src="{% static 'js/route_leader_core.js' %}"></script>
+    <script defer src="{% static 'js/route_leader.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
     {# geometry is fetched from, and what the address bar should say once   #}

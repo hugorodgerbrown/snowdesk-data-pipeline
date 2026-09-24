@@ -133,6 +133,8 @@ class TestTheRailShipsWithTheMap:
                 "route_rail_two_core.js",
                 "route_rail_two.js",
                 "route_rail.js",
+                "route_leader_core.js",
+                "route_leader.js",
             )
         ]
 

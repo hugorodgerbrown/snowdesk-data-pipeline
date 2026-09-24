@@ -848,6 +848,22 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
+  it('gives the leader line the cursor dot\'s screen point', () => {
+    projectLngLat = alongTheRoute;
+    const cursor = openSampledRoute();
+    expect(window.pwaRouteCursorMap.point()).toBeNull();
+
+    cursor.setIndex(1);
+    const point = window.pwaRouteCursorMap.point();
+
+    // The second segment's middle, 46.0075, projects to y = 75.
+    expect(point.x).toBeCloseTo(0);
+    expect(point.y).toBeCloseTo(75);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+  });
+
   it('stops answering the pointer once the rail has let the cursor go', () => {
     projectLngLat = alongTheRoute;
     const cursor = openSampledRoute();

@@ -66,6 +66,8 @@ interface Window {
   pwaRouteCursorCore: any;
   /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */
   pwaRouteCursorMapCore: any;
+  /** static/js/route_leader_core.js — the leader line's path. */
+  pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
   /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, ticks. */
@@ -100,6 +102,10 @@ interface Window {
   pwaRouteRail: any;
   /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
   pwaRouteRailTwo: any;
+  /** static/js/route_leader.js — the leader line from the map to the rails. */
+  pwaRouteLeader: any;
+  /** static/js/map.js — the route cursor's screen point on the map. */
+  pwaRouteCursorMap: any;
 }
 
 /**

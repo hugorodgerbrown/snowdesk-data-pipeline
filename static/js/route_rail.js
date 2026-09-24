@@ -83,6 +83,8 @@
  *                    a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
+ *   cursorPoint()  — where the cursor line meets the profile, viewport
+ *                    px, or null; the leader line's stop (SNOW-1019)
  *   cursor()       — the open route's cursor, or null; map.js follows it
  *                    to dim every leg but the open one (SNOW-1017) and to
  *                    draw the selection and index on the line, and writes
@@ -146,6 +148,8 @@
   var legs = [];
   /** N, the segments the open route's legs index; 0 with no legs. */
   var sampleCount = 0;
+  /** The open route's readProfile result, for the cursor's point on it. */
+  var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, name: '' };
   /** Opens the open route's detail sheet; null when there is none. */
@@ -573,6 +577,7 @@
       },
       STRINGS,
     );
+    currentProfile = profile;
     drawLane(profile, sampleCount, spanM);
     if (cursor && window.pwaRouteRailTwo) {
       window.pwaRouteRailTwo.attach({
@@ -593,6 +598,7 @@
     rail.hidden = false;
     if (mapEl) mapEl.setAttribute('data-route-rail-open', '');
     publishHeight();
+    announceRailChanged();
     return true;
   }
 
@@ -619,6 +625,7 @@
     cursor = null;
     legs = [];
     sampleCount = 0;
+    currentProfile = null;
     openDetails = null;
     fillClaim(null);
     rail.hidden = true;
@@ -626,6 +633,40 @@
       mapEl.removeAttribute('data-route-rail-open');
       mapEl.style.removeProperty('--route-rail-height');
     }
+    announceRailChanged();
+  }
+
+  /**
+   * Tell the leader line (route_leader.js) the rail opened, closed or was
+   * refilled, so it follows the new cursor or clears (SNOW-1019).
+   */
+  function announceRailChanged() {
+    document.dispatchEvent(new CustomEvent('snowdesk:route-rail-changed', { detail: null }));
+  }
+
+  /**
+   * Where the cursor line meets the profile, in viewport px (SNOW-1019).
+   *
+   * The leader line's stop on this rail. Placed by share like the line
+   * itself; the y is the outline's at that distance, or the lane's middle
+   * where the profile has no elevation there.
+   *
+   * @returns {?{x: number, y: number}} Null with no cursor index, or while
+   *   the rail is hidden.
+   */
+  function cursorPoint() {
+    if (!cursor || rail.hidden || !(sampleCount > 0)) return null;
+    var index = cursor.state().index;
+    if (index === null) return null;
+    var box = self.pwaRouteRailCore.BOX;
+    var rect = lane.getBoundingClientRect();
+    var fraction = (index + 0.5) / sampleCount;
+    var d = currentProfile ? fraction * currentProfile.distanceM : 0;
+    var y = currentProfile ? self.pwaRouteRailCore.profileY(currentProfile, d, box) : null;
+    return {
+      x: rect.left + fraction * rect.width,
+      y: rect.top + (y === null ? 0.5 : y / box.height) * rect.height,
+    };
   }
 
   // ---- presses ----------------------------------------------------------
@@ -777,6 +818,7 @@
     close: close,
     isOpen: function () { return !rail.hidden; },
     cursor: function () { return cursor; },
+    cursorPoint: cursorPoint,
     element: rail,
   });
 }());

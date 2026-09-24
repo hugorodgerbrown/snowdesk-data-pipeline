@@ -316,6 +316,39 @@ describe('keys', () => {
   });
 });
 
+describe('the cursor point (SNOW-1019)', () => {
+  it('is where the cursor meets the profile, and null while hidden', () => {
+    const { cursor } = attach();
+    vi.spyOn(lane, 'getBoundingClientRect')
+      .mockReturnValue({ left: 20, top: 200, right: 620, bottom: 312, width: 600, height: 112 });
+    expect(two.cursorPoint()).toBeNull();
+
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(110);
+    const point = two.cursorPoint();
+
+    // Sample 110 of the 100–140 window: its centre is 10.5/40 across.
+    expect(point.x).toBeCloseTo(20 + (10.5 / 40) * 600);
+    expect(point.y).toBeGreaterThanOrEqual(200);
+    expect(point.y).toBeLessThanOrEqual(312);
+
+    cursor.closeLeg();
+    expect(two.cursorPoint()).toBeNull();
+  });
+
+  it('announces each redraw, so the leader line follows a pan', () => {
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:route-rail-two-drawn', heard);
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    row.querySelector('[data-route-rail-two-zoom="in"]').click();
+
+    expect(heard).toHaveBeenCalled();
+    document.removeEventListener('snowdesk:route-rail-two-drawn', heard);
+  });
+});
+
 describe('the ribbon', () => {
   it('draws no tick for a null bank', () => {
     const banks = BANKS.slice();

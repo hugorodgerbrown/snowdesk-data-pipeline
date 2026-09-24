@@ -53,6 +53,7 @@
  *                                              two clips its leg with it)
  *   legPaths(profile, legs, sampleCount, box) → one fill per leg + outline
  *   legAt(fraction, legs, sampleCount)       → the leg under an x fraction
+ *   profileY(profile, d, box?)               → the outline's y at distance d
  *   BOX                                      → the lane's user-space box
  */
 
@@ -387,6 +388,36 @@
   }
 
   /**
+   * Where the outline sits at one distance, in the lane's user space.
+   *
+   * The y `legPaths` draws at `d`, interpolated between the two points
+   * either side of it — where the cursor line meets the profile, which is
+   * where the leader line (route_leader.js) attaches to this rail.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} d A distance on the profile's own axis.
+   * @param {Box} [box] The user-space box. Defaults to `BOX`.
+   * @returns {?number} Null where the profile has no elevation at `d`.
+   */
+  function profileY(profile, d, box) {
+    var b = box || BOX;
+    if (!profile || !profile.hasElevation) return null;
+    var minEle = /** @type {number} */ (profile.minEle);
+    var range = /** @type {number} */ (profile.maxEle) - minEle;
+    var floor = b.height - PAD_Y;
+    var usable = b.height - PAD_Y * 2;
+    for (var r = 0; r < profile.runs.length; r += 1) {
+      var run = profile.runs[r];
+      for (var i = 1; i < run.length; i += 1) {
+        if (d < run[i - 1].d || d > run[i].d) continue;
+        var e = between(run[i - 1], run[i], d).e;
+        return range ? floor - ((e - minEle) / range) * usable : b.height / 2;
+      }
+    }
+    return null;
+  }
+
+  /**
    * The leg under a point on the strip.
    *
    * @param {number} fraction How far along the strip, 0 to 1.
@@ -413,6 +444,7 @@
     clipRun: clipRun,
     legPaths: legPaths,
     legAt: legAt,
+    profileY: profileY,
     BOX: BOX,
   });
 })();

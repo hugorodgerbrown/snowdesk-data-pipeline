@@ -244,11 +244,10 @@ describe('the routes layer with no legs core', () => {
       .toEqual(['==', ['get', 'pending'], true]);
   });
 
-  it('paints empty leg, transition and passage sources rather than throwing', () => {
+  it('paints empty leg and transition sources rather than throwing', () => {
     // `setData` throws on a null, which is why the guarded fallback is a
     // collection with no features rather than nothing at all.
     expect(sources.get('route-legs').data).toEqual(EMPTY_FC);
     expect(sources.get('route-transitions').data).toEqual(EMPTY_FC);
-    expect(sources.get('route-passages').data).toEqual(EMPTY_FC);
   });
 });

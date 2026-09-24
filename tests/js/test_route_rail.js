@@ -475,6 +475,32 @@ describe('the cursor line (SNOW-1019)', () => {
     expect(window.pwaRouteRail.cursor().state().index).toBe(11);
   });
 
+  it('reports where its cursor meets the profile, for the leader line', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 10, top: 100, right: 1010, bottom: 196, width: 1000, height: 96 });
+    expect(window.pwaRouteRail.cursorPoint()).toBeNull();
+
+    window.pwaRouteRail.cursor().setIndex(5);
+    const point = window.pwaRouteRail.cursorPoint();
+
+    expect(point.x).toBeCloseTo(10 + (5.5 / 24) * 1000);
+    // On the climb, so above the lane's floor and below its top.
+    expect(point.y).toBeGreaterThan(100);
+    expect(point.y).toBeLessThan(196);
+  });
+
+  it('announces opening and closing, which the leader line follows', () => {
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:route-rail-changed', heard);
+
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.close();
+
+    expect(heard).toHaveBeenCalledTimes(2);
+    document.removeEventListener('snowdesk:route-rail-changed', heard);
+  });
+
   it('clears the cursor when the rail closes', () => {
     window.pwaRouteRail.open(feature());
     const cursor = window.pwaRouteRail.cursor();

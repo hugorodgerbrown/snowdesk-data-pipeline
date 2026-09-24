@@ -201,3 +201,15 @@ describe('legAt', () => {
     expect(core.legAt(0.5, legs, 0)).toBeNull();
   });
 });
+
+describe('profileY', () => {
+  it('is the outline\'s y at a distance, inside the box', () => {
+    const profile = readProfile(track(81));
+    const start = core.profileY(profile, 0);
+    const top = core.profileY(profile, profile.distanceM / 2);
+
+    expect(top).toBeLessThan(start);
+    expect(start).toBeLessThanOrEqual(core.BOX.height);
+    expect(core.profileY(readProfile([]), 10)).toBeNull();
+  });
+});

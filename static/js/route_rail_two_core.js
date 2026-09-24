@@ -67,6 +67,7 @@
  *   ribbonTicks(options)                      → bankTicks, laid on the view
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   profilePaths(legProfile, view, width, clipRun)  → area + line, in px
+ *   profileYAt(legProfile, s)                 → the curve's y at s, in px
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   distanceTicks(view, sampleCount, spanM, rail, units?) → [{x, major, label}]
  */
@@ -549,6 +550,36 @@
   }
 
   /**
+   * Where the profile curve sits at one axis coordinate, in lane px.
+   *
+   * The y `profilePaths` draws at `s`, interpolated between the two
+   * points either side of it — where a cursor line meets the curve, which
+   * is where the leader line (route_leader.js) attaches to this rail.
+   *
+   * @param {LegProfile} lp A `legProfile` result.
+   * @param {number} s An axis coordinate.
+   * @returns {?number} Null where the leg has no elevation at `s`.
+   */
+  function profileYAt(lp, s) {
+    if (!lp.runs.length || lp.minEle === null || lp.maxEle === null) return null;
+    const minEle = lp.minEle;
+    const range = lp.maxEle - minEle;
+    const top = ROWS.profileTop;
+    const floor = ROWS.profileBottom;
+    for (let r = 0; r < lp.runs.length; r += 1) {
+      const run = lp.runs[r];
+      for (let i = 1; i < run.length; i += 1) {
+        const a = run[i - 1];
+        const b = run[i];
+        if (s < a.s || s > b.s) continue;
+        const e = b.s === a.s ? a.e : a.e + ((b.e - a.e) * (s - a.s)) / (b.s - a.s);
+        return range ? floor - ((e - minEle) / range) * (floor - top) : (top + floor) / 2;
+      }
+    }
+    return null;
+  }
+
+  /**
    * The leg's figures, in the shape `formatFigures` takes.
    *
    * The distance is the leg's share of the route's length, so it agrees
@@ -668,6 +699,7 @@
     ribbonTicks: ribbonTicks,
     legProfile: legProfile,
     profilePaths: profilePaths,
+    profileYAt: profileYAt,
     legFigures: legFigures,
     distanceTicks: distanceTicks,
   });
