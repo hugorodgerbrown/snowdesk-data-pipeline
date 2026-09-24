@@ -1575,6 +1575,32 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .route-rail-leg[aria-pressed="true"] { fill-opacity: 0.6; }
 .route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
 
+/* —— Rail two's lane (SNOW-1019) ————————————————
+   static/js/route_rail_two.js pans and pinch-zooms the lane itself, so
+   the browser must not take a touch on it as a page scroll or a zoom:
+   `touch-action: none` hands every pointer to the script. The bands and
+   passage bars are pressable selections; `data-selected` marks the one
+   the cursor holds, a data-attribute selector no utility can express. */
+.route-rail-two-lane {
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+}
+.route-rail-two-lane:active { cursor: grabbing; }
+.route-rail-two-lane:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+.route-rail-two-band,
+.route-rail-two-passage {
+    cursor: pointer;
+    transition: opacity 120ms ease-out;
+}
+.route-rail-two-band:hover,
+.route-rail-two-passage:hover { opacity: 0.75; }
+.route-rail-two-passage[data-selected="false"] { opacity: 0.85; }
+.route-rail-two-passage[data-selected="false"]:hover { opacity: 0.65; }
+
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
    revealed while its associated hx-request is in flight.  Mirrors the
