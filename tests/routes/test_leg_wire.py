@@ -178,18 +178,44 @@ class TestTheLegsCoverTheSamples:
         assert set(legs[0]) == {"i", "from", "to", "climbing"}
 
 
-class TestNothingToSend:
-    """No slope, no legs."""
+class TestUnsampledRoutes:
+    """Legs are a fact about the geometry, so an unsampled route has them."""
 
-    def test_an_unsampled_route_has_no_legs(self) -> None:
-        """A never-sampled record answers None, so the key is omitted."""
-        assert wire_legs(_track(CANONICAL[0]), None) is None
+    @pytest.mark.parametrize("filename", CANONICAL)
+    def test_an_unsampled_route_is_cut_as_its_record_will_be(
+        self, filename: str
+    ) -> None:
+        """Never sampled answers the same legs sampling would index."""
+        points = _track(filename)
 
-    def test_a_record_with_no_segments_has_no_legs(self) -> None:
-        """Nothing to index into."""
+        assert wire_legs(points, None) == wire_legs(points, _record_for(points))
+
+    @pytest.mark.parametrize("filename", CANONICAL)
+    def test_an_unsampled_route_tiles_the_stride_walk(self, filename: str) -> None:
+        """First from 0, last to N − 1 of the walk, contiguous between."""
+        points = _track(filename)
+        segment_count = len(stride_coordinates(points, SAMPLE_STRIDE_M)) - 1
+
+        legs = wire_legs(points, None)
+
+        assert legs is not None
+        assert len(legs) > 1
+        assert legs[0]["from"] == 0
+        assert legs[-1]["to"] == segment_count - 1
+        for previous, current in zip(legs, legs[1:], strict=False):
+            assert current["from"] == previous["to"] + 1
+
+    def test_a_record_with_no_segments_indexes_the_stride_walk(self) -> None:
+        """An empty record gives the client no angles; same as unsampled."""
         points = _track(CANONICAL[0])
 
-        assert wire_legs(points, _record_for(points, segments=[])) is None
+        assert wire_legs(points, _record_for(points, segments=[])) == wire_legs(
+            points, None
+        )
+
+
+class TestNothingToSend:
+    """A track that holds no leg sends nothing."""
 
     def test_a_track_without_elevation_has_no_legs(self) -> None:
         """``detect_legs`` finds nothing, so nothing is sent."""

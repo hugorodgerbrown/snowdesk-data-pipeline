@@ -6,7 +6,7 @@
  * cursor and pressing it again clears it, with `aria-pressed` following
  * the CURSOR rather than the click — so a leg closed from rail two's side
  * un-presses here too. Around it: one path per leg with its direction, an
- * unsampled route drawing the outline alone, a pending share without its
+ * unsampled route still cut into legs, a pending share without its
  * menu, the rail closing with the detail sheet, and Delete confirming
  * before it posts.
  *
@@ -161,7 +161,23 @@ describe('open', () => {
     expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(false);
   });
 
-  it('draws the outline alone for a route that was never sampled', () => {
+  it('cuts a never-sampled route into legs, sizing the cursor from them', () => {
+    window.pwaRouteRail.open(feature({ slope: undefined }));
+
+    expect(legPaths()).toHaveLength(2);
+    const cursor = window.pwaRouteRail.cursor();
+    expect(cursor).not.toBeNull();
+    cursor.setIndex(1000);
+    expect(cursor.state().index).toBe(23);
+  });
+
+  it('cuts a pending share into legs, though its slope is not drawn', () => {
+    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+
+    expect(legPaths()).toHaveLength(2);
+  });
+
+  it('draws the outline alone for a route with no legs', () => {
     window.pwaRouteRail.open(feature({ slope: undefined, legs: undefined }));
 
     expect(legPaths()).toHaveLength(0);

@@ -21,6 +21,18 @@ the stored track, measured with the sampler's own
 sampler's own ``stride_distances`` produced. Using the sampler's two
 functions is what makes the two distance scales one scale.
 
+## An unsampled route has legs too
+
+A leg is a fact about the GEOMETRY — ``detect_legs`` reads nothing but
+``Route.points`` — and so is the segment index space: the stride walk
+above is a pure function of the track's length. So a route the sampler
+has never visited is still cut into legs, in the indices its record WILL
+have once it is sampled, and the client sizes its cursor from the legs
+(the last ``to`` plus one) when there is no ``angles`` array to size it
+from. Tying legs to ``slope`` would leave every unsampled route drawn as
+one uncut profile, which reads as a route with no transitions — a claim,
+and a false one.
+
 Placed in its own module rather than inside ``slope_wire.compact_slope``
 because it needs ``Route.points``, which ``compact_slope`` does not take —
 and ``compact_slope`` has a second caller (the trip page) that has no use
@@ -45,6 +57,7 @@ from typing import Any
 
 from apps.routes.services.legs import detect_legs
 from apps.routes.services.slope_segments import (
+    SAMPLE_STRIDE_M,
     cumulative_distances,
     stride_distances,
 )
@@ -125,26 +138,28 @@ def wire_legs(
     Args:
         points: ``Route.points`` — ``[lon, lat, ele]`` in stored order.
         samples: The row's ``slope_samples``, or None if never sampled.
+            When None (or segment-less) the boundaries are the stride
+            walk the sampler would take at ``SAMPLE_STRIDE_M``.
 
     Returns:
         ``[{"i", "from", "to", "climbing"}, …]``, or None when there is
-        nothing to send: never sampled (no ``slope`` means no ``legs``), a
-        record with no segments, or a track ``detect_legs`` finds no leg
-        in.
+        nothing to send: a track ``detect_legs`` finds no leg in, or one
+        too short to hold a segment.
 
     """
-    if not samples:
-        return None
-    segment_count = len(samples.get("segments") or [])
-    if segment_count == 0:
-        return None
-
     legs = detect_legs(points)
     if not legs:
         return None
 
     cumulative = cumulative_distances(points)
-    boundaries = _segment_boundaries(cumulative[-1], samples, segment_count)
+    segment_count = len((samples or {}).get("segments") or [])
+    if segment_count:
+        boundaries = _segment_boundaries(cumulative[-1], samples or {}, segment_count)
+    else:
+        boundaries = stride_distances(cumulative[-1], SAMPLE_STRIDE_M)
+        segment_count = len(boundaries) - 1
+        if segment_count == 0:
+            return None
 
     # One cut per leg start: leg k covers segments cuts[k] .. cuts[k+1] - 1.
     cuts = [0]

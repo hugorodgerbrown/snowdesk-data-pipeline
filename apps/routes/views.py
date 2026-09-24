@@ -296,14 +296,22 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
             # value, by a null angle; see compact_slope.
             **({"slope": slope} if slope is not None else {}),
             # SNOW-1018: the route cut at its transitions, for the rail
-            # below the map. ``from``/``to`` are indices into
-            # ``slope.angles`` — never into the coordinates — so the key
-            # rides only beside a ``slope``: no slope, no legs. Omitted
-            # rather than null for the same presence reason as ``slope``.
+            # below the map. ``from``/``to`` are segment indices — the
+            # index space of ``slope.angles`` — never coordinate indices.
+            # Sent for an unsampled route too, in the indices its record
+            # will have: legs are a fact about the geometry (see
+            # leg_wire). The record is passed only when ``slope`` is sent:
+            # a record compact_slope refused gives the client no
+            # ``angles``, so the legs must index the stride walk instead.
+            # Omitted rather than null when there are none.
             **(
                 {"legs": legs}
-                if slope is not None
-                and (legs := wire_legs(route.points, route.slope_samples))
+                if (
+                    legs := wire_legs(
+                        route.points,
+                        route.slope_samples if slope is not None else None,
+                    )
+                )
                 else {}
             ),
             # SNOW-961: the same record in figures, and a SEPARATE key

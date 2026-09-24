@@ -25,9 +25,12 @@
  * follows the CURSOR, not the click, so when rail two (SNOW-1017) closes a
  * leg from its own side this rail un-presses without being told.
  *
- * A route with no `slope` has no `legs` (apps/routes/views.py) and no
- * sample count to build a cursor over, so it gets the identity block and
- * the outline alone: no leg targets, nothing to press.
+ * The cursor is sized from `slope.angles` when the route has one, and
+ * otherwise from the legs themselves (the last `to` plus one): legs are a
+ * fact about the geometry and ride on an unsampled route too, in the
+ * segment indices its record will have (apps/routes/services/leg_wire.py).
+ * Only a route with no legs at all — no elevation, or too short — gets the
+ * outline alone, with nothing to press.
  *
  * THE ACTIONS. Plan a trip is a link; Share and Rename reuse
  * window.pwaShare and window.pwaRowRenameCommit exactly as the routes
@@ -184,8 +187,8 @@
    * tick labels under it.
    *
    * @param {object} profile A readProfile result.
-   * @param {number} sampleCount N, the length of `slope.angles`; 0 when
-   *   the route has never been sampled.
+   * @param {number} sampleCount N, the segments the legs index; 0 when
+   *   the route has no legs.
    * @param {number} spanM The route's length for the tick labels.
    */
   function drawLane(profile, sampleCount, spanM) {
@@ -319,6 +322,25 @@
   }
 
   /**
+   * How many segments the open route's cursor runs over.
+   *
+   * `slope.angles` when the route has been sampled; otherwise the legs'
+   * own extent, since they tile the segments exactly (the last `to` is
+   * N − 1). Zero when there is neither.
+   *
+   * @param {?{angles?: Array}} slope The feature's parsed `slope`.
+   * @param {Array<{to: number}>} wireLegs The feature's parsed `legs`.
+   * @returns {number}
+   */
+  function sampleCountOf(slope, wireLegs) {
+    if (slope && Array.isArray(slope.angles) && slope.angles.length) {
+      return slope.angles.length;
+    }
+    var last = wireLegs.length ? wireLegs[wireLegs.length - 1] : null;
+    return last && Number.isInteger(last.to) ? last.to + 1 : 0;
+  }
+
+  /**
    * Fill and show the rail for one route.
    *
    * @param {{geometry?: {coordinates?: Array}, properties?: object}} feature
@@ -342,7 +364,7 @@
     var slope = props.pending ? null : readJson(props.slope);
     var wireLegs = readJson(props.legs);
     legs = Array.isArray(wireLegs) ? wireLegs : [];
-    var sampleCount = slope && Array.isArray(slope.angles) ? slope.angles.length : 0;
+    var sampleCount = sampleCountOf(slope, legs);
     if (sampleCount > 0 && self.pwaRouteCursorCore) {
       cursor = self.pwaRouteCursorCore.createRouteCursor(sampleCount);
       unsubscribe = cursor.subscribe(paintState);

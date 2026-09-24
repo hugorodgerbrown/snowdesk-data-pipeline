@@ -64,6 +64,7 @@ from django.utils import timezone
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.models import Route
+from apps.routes.services.leg_wire import wire_legs
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -1186,7 +1187,7 @@ class TestRoutesGeojsonShape:
         assert feature["geometry"]["coordinates"][0][1] == pytest.approx(46.1)
 
     def test_every_property_the_client_reads_is_present(self, client: Client) -> None:
-        """uuid, name, the figures, duration_s, bounds — popup + fitBounds."""
+        """uuid, name, the figures, duration_s, bounds, legs — popup, fitBounds, rail."""
         user = UserFactory.create()
         client.force_login(user)
         route = RouteFactory.create(user=user, name="Haute Route")
@@ -1201,6 +1202,7 @@ class TestRoutesGeojsonShape:
             "descent_m": route.descent_m,
             "duration_s": 7200,
             "bounds": route.bounds,
+            "legs": wire_legs(route.points, None),
         }
 
     def test_duration_is_derived_seconds_not_two_timestamps(
@@ -1430,8 +1432,8 @@ class TestRoutesGeojsonSlope:
 class TestRoutesGeojsonLegs:
     """The route cut at its transitions, for the rail (SNOW-1018).
 
-    ``from``/``to`` index ``slope.angles``, so the key rides beside
-    ``slope`` and nowhere else.
+    ``from``/``to`` index the segments ``slope.angles`` holds, or will
+    hold once the route is sampled.
     """
 
     def test_a_sampled_route_carries_legs_over_its_samples(
@@ -1453,27 +1455,32 @@ class TestRoutesGeojsonLegs:
 
         assert properties["legs"] == [{"i": 1, "from": 0, "to": 2, "climbing": True}]
 
-    def test_an_unsampled_route_carries_no_legs_key(self, client: Client) -> None:
-        """No slope, no legs — absent rather than null."""
+    def test_an_unsampled_route_carries_legs(self, client: Client) -> None:
+        """Legs come from the geometry, so no slope still means legs."""
         user = UserFactory.create()
         client.force_login(user)
-        RouteFactory.create(user=user)
+        route = RouteFactory.create(user=user)
 
         properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
 
-        assert "legs" not in properties
+        assert "slope" not in properties
+        assert properties["legs"] == wire_legs(route.points, None)
+        assert properties["legs"][0]["from"] == 0
 
-    def test_a_malformed_slope_record_carries_no_legs(self, client: Client) -> None:
-        """A record ``compact_slope`` refuses sends no slope, so no legs."""
+    def test_a_malformed_slope_record_indexes_the_stride_walk(
+        self, client: Client
+    ) -> None:
+        """A record ``compact_slope`` refuses is not the legs' index space."""
         user = UserFactory.create()
         client.force_login(user)
         malformed = _slope_record({"angle_deg": 34.2, "aspect_deg": 105.3})
         malformed["points"] = [[7.4, 46.1]]
-        RouteFactory.create(user=user, slope_samples=malformed)
+        route = RouteFactory.create(user=user, slope_samples=malformed)
 
         properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
 
-        assert "legs" not in properties
+        assert "slope" not in properties
+        assert properties["legs"] == wire_legs(route.points, None)
 
 
 @pytest.mark.django_db
