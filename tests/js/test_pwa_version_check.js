@@ -489,11 +489,10 @@ describe('the forced-update gate is the server verdict (SNOW-609)', () => {
 });
 
 describe('window.pwaVersionInfo (SNOW-869)', () => {
-  it('publishes the identity of the build this shell was delivered on', () => {
-    // Both meta tags, read once here so `sw_register.js` does not read the
-    // DOM a second time to label the banner.
-    expect(window.pwaVersionInfo.build).toBe(CURRENT_BUILD);
-    expect(window.pwaVersionInfo.release).toBe(CURRENT_RELEASE);
+  it('publishes only the verified body', () => {
+    // SNOW-1025 removed the banner's versioned copy, which was the only
+    // reader of the shell's own build and release.
+    expect(Object.keys(window.pwaVersionInfo)).toEqual(['verified']);
   });
 
   it('hands back the verified body', async () => {
@@ -535,9 +534,9 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
     await settle();
     expect(versionCalls).toHaveLength(1);
 
-    // The labelling read runs immediately after the reveal that round
+    // The banner gate's read runs immediately after the offer that round
     // trip caused; going back to the network for a body we are holding
-    // would double the cost of every update.
+    // would double the cost of every offer.
     const verdict = await window.pwaVersionInfo.verified();
 
     expect(versionCalls).toHaveLength(1);
@@ -547,8 +546,7 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
   it('returns null when the endpoint is unreachable', async () => {
     versionUnreachable = true;
 
-    // "Cannot confirm" is never "confirmed": the caller keeps the
-    // unnumbered copy rather than naming builds it could not check.
+    // "Cannot confirm" is never "confirmed".
     await expect(window.pwaVersionInfo.verified()).resolves.toBeNull();
   });
 

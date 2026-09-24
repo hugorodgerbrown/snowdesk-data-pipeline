@@ -33,8 +33,9 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | `X-App-Version` on every response                  | SNOW-369      | `apps.core.middleware.AppVersionHeaderMiddleware` in `config/settings/base.py::MIDDLEWARE`             |
 | 12.2 | Server-decided forced-update verdict              | SNOW-369 / SNOW-609 | `apps.public.api.version` returns `update_required` from `settings.APP_BLOCKED_VERSIONS` × the request's `X-Client-Version`. **Supersedes the `X-App-Min-Version` response header**, which SNOW-609 removed — see [`decisions/blocked-builds-not-a-version-floor.md`](decisions/blocked-builds-not-a-version-floor.md) |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `apps.public.api.version_view` at `/api/version/`                                                      |
-| 12.2 | Server-decided soft-update verdict + release labels | SNOW-869 | `apps.public.api.version` also returns `update_available` (`X-Client-Version` != `APP_VERSION`, failing **closed** on an unidentified client) and `release` (`apps.public.release.release_label`). The banner names both builds from that one body; the shell's own label rides in `<meta name="pwa-app-release">` |
-| 12.2 | Update banner gated on the device's shell, not the build | SNOW-952 | `apps.public.api.version` also returns `shell` (`apps.core.sw_shell.cached_cache_version`), and the worker reports its own `CACHE_VERSION` in the `build-identity` reply. `shellIsStale()` in `static/js/sw_register.js` compares them, behind `window.pwaUpdateBanner.reveal()`, so a deploy that changed no shell source raises no banner — see [`decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md`](decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md) |
+| 12.2 | Server-decided soft-update verdict + release labels | SNOW-869 | `apps.public.api.version` also returns `update_available` (`X-Client-Version` != `APP_VERSION`, failing **closed** on an unidentified client) and `release` (`apps.public.release.release_label`). SNOW-1025 removed the banner's versioned copy, so `release` and `<meta name="pwa-app-release">` currently have no client reader |
+| 12.2 | Update banner gated on the device's shell, not the build | SNOW-952 | `apps.public.api.version` also returns `shell` (`apps.core.sw_shell.cached_cache_version`), and the worker reports its own `CACHE_VERSION` in its `shell-identity` reply. `shellIsStale()` in `static/js/sw_register.js` compares them, behind `window.pwaUpdateBanner.reveal()`, so a deploy that changed no shell source raises no banner — see [`decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md`](decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md) |
+| 12.2 | Updates apply silently; banner only for a stuck worker | SNOW-1025 | A waiting worker gets `SKIP_WAITING` on `visibilitychange` → `hidden` (not during a `warmCache` run) and its `controllerchange` does not reload. `workerIsStuck()` in `static/js/sw_register.js` is the banner's second gate: stale shell **and** no worker that can install. See [`decisions/service-worker-updates-apply-silently.md`](decisions/service-worker-updates-apply-silently.md) |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
 | 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
@@ -86,9 +87,10 @@ from the response **body**:
   — a code update does not destroy user data.
 - body `update_available: true` → **offer** the soft `#sw-update-banner`,
   which `sw_register.js` reveals only if this device's shell is stale
-  (SNOW-952 — the body's `shell` against the controlling worker's own
-  `CACHE_VERSION`; a server-build drift says the server redeployed, not
-  that this device has anything to pick up).
+  (SNOW-952: the body's `shell` against the controlling worker's own
+  `CACHE_VERSION`) **and** the worker is stuck (SNOW-1025: no replacement
+  can install). A routine update is applied silently and never shows the
+  banner.
   The verdict itself is the server's boolean, not a client comparison of
   `current` against the shell's build (SNOW-869): the request carried
   `X-Client-Version`, so the server holds both strings anyway, and

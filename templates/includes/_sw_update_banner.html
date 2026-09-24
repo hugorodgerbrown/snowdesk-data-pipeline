@@ -2,13 +2,18 @@
 {% comment %}
 templates/includes/_sw_update_banner.html — Service-worker update banner.
 
-Rendered hidden by base.html on every public page. Revealed by:
+Rendered hidden by base.html on every public page. Revealed ONLY when the
+service worker is stuck on a stale shell (SNOW-1025): the server has moved
+on (``static/js/pwa_version_check.js`` confirmed an ``X-App-Version``
+drift), the controlling worker holds a different shell from the one the
+server would serve (SNOW-952), and the browser cannot install a
+replacement on its own. The gates live in ``static/js/sw_register.js``
+(``revealUpdateBannerIfStuck``). A routine update never shows this banner:
+a waiting worker is applied silently the next time the page is hidden.
 
-  * ``static/js/sw_register.js`` — a new SW has installed and is waiting
-    while an old SW still controls the page (SNOW-79 / SNOW-331).
-  * ``static/js/pwa_version_check.js`` — the server declared an
-    ``X-App-Version`` that differs from the shell's baked ``<meta>``
-    (SNOW-374 soft-update path).
+The copy is plain. SNOW-869 named the two builds ("Update available
+(3de6af2) / You are on 5f20005"); SNOW-1025 removed that. A person who is
+stuck needs to know what to press, not which commit they are on.
 
 Clicking Reload triggers ``SKIP_WAITING`` on the waiting worker when one
 exists, otherwise clears the SW shell cache and reloads — see
@@ -19,10 +24,9 @@ The body copy does NOT say what the reload keeps. SNOW-609 added "your
 downloaded maps and saved data are kept" so a user weighing "will this
 cost me my downloads?" did not have to guess; SNOW-869 removed it,
 because a reassurance is a warning in disguise. Naming the thing that
-survives plants the idea that it might not, and this banner is the
-routine case — both reload paths touch only the ``snowdesk-shell-*`` /
-``map-shell-*`` caches, so nothing the user owns is at risk and there is
-nothing to disclose.
+survives plants the idea that it might not — and both reload paths touch
+only the ``snowdesk-shell-*`` / ``map-shell-*`` caches, so nothing the
+user owns is at risk and there is nothing to disclose.
 
 The rule that replaces it: warn when we are about to delete something,
 say nothing when we are not. ``pwa_reset.js``'s everything-goes wipe is
@@ -47,20 +51,13 @@ this template (templates/admin/base_site.html) feeds the SAME read for
 the fallback banner, and a key present in one and missing in the other
 is a string that silently falls back to English on half the site.
 {% endcomment %}
-{% trans "Update available" as sw_update_banner_title %}
-{% trans "A newer version of Snowdesk is ready." as sw_update_banner_body %}
+{% trans "Snowdesk needs a refresh" as sw_update_banner_title %}
+{% trans "It couldn't update itself. Reload to finish." as sw_update_banner_body %}
 {% trans "Reload" as sw_update_banner_cta_label %}
 {% include "includes/_overlay_banner.html" with id="sw-update-banner" variant="floating" aria_live="polite" icon="refresh" title_id="sw-update-banner-title" title=sw_update_banner_title body_id="sw-update-banner-body" body=sw_update_banner_body cta_id="sw-update-banner-reload" cta_label=sw_update_banner_cta_label dismissible=True bottom_offset="calc(5.5rem + env(safe-area-inset-bottom))" %}
 <template id="sw-update-strings-template">
-    <span data-string="update-title">{% trans "Update available" %}</span>
-    <span data-string="update-body">{% trans "A newer version of Snowdesk is ready." %}</span>
-    {# SNOW-869: the versioned copy, used when /api/version confirms the #}
-    {# update AND something distinguishes the two builds — release       #}
-    {# labels when they differ, short SHAs otherwise. The two unnumbered #}
-    {# strings above stay: they are the third state, shown whenever the  #}
-    {# endpoint is unreachable or the builds cannot be told apart.       #}
-    <span data-string="update-title-versioned">{% trans "Update available (%(version)s)" %}</span>
-    <span data-string="update-body-versioned">{% trans "You are on %(current)s. Reload to update to %(next)s." %}</span>
+    <span data-string="update-title">{% trans "Snowdesk needs a refresh" %}</span>
+    <span data-string="update-body">{% trans "It couldn't update itself. Reload to finish." %}</span>
     <span data-string="reload">{% trans "Reload" %}</span>
     <span data-string="dismiss">{% trans "Dismiss" %}</span>
     <span data-string="updating">{% trans "Updating…" %}</span>

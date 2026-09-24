@@ -1171,37 +1171,20 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "Floating — dismissible with CTA (SW update shape)",
+        "caption": "Floating — dismissible with CTA (stuck service worker)",
         "context": {
             "variant": "floating",
             "icon": "refresh",
-            "title": "Update available",
-            "body": "A new version of Snowdesk is ready.",
+            # SNOW-1025: the one state the SW banner has — the worker is
+            # stuck. Routine updates apply silently and show nothing.
+            "title": "Snowdesk needs a refresh",
+            "body": "It couldn't update itself. Reload to finish.",
             "title_id": "component-library-banner-title-2",
             # SNOW-586: body_id — a caller-writable hook for a body line JS
             # rewrites at runtime (the basemap-download whole-area-eviction
             # confirm banner injects a dynamic area-name list here).
             "body_id": "component-library-banner-body-2",
             "cta_id": "component-library-banner-cta",
-            "cta_label": "Reload",
-            "dismissible": True,
-            "static": True,
-        },
-    },
-    {
-        "caption": "Floating — SW update shape, versioned copy",
-        "context": {
-            "variant": "floating",
-            "icon": "refresh",
-            # SNOW-869: the state the banner reaches when /api/version
-            # confirms the update and both builds can be named. The
-            # unnumbered variant above is the third state — kept, because
-            # it is what an unreachable endpoint still shows.
-            "title": "Update available (v30)",
-            "body": "You are on v29. Reload to update to v30.",
-            "title_id": "component-library-banner-title-4",
-            "body_id": "component-library-banner-body-4",
-            "cta_id": "component-library-banner-cta-2",
             "cta_label": "Reload",
             "dismissible": True,
             "static": True,

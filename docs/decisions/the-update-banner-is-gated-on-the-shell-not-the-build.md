@@ -2,10 +2,20 @@
 name: the-update-banner-is-gated-on-the-shell-not-the-build
 description: Why the update banner compares CACHE_VERSION not APP_VERSION — shellIsStale, the /api/version shell field, build-identity cache, revealNow
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-09-24
 ---
 
 # The update banner is gated on the shell, not the build
+
+> **Narrowed by
+> [`service-worker-updates-apply-silently.md`](service-worker-updates-apply-silently.md)
+> (SNOW-1025).** The shell comparison below is still the banner's first
+> gate, but it is no longer the whole decision. A waiting worker is now
+> applied silently and never reveals the banner, and a second gate,
+> `workerIsStuck`, has to agree before it shows. The worker reports its
+> cache name on `shell-identity` (not `build-identity`), the banner names
+> no builds, and the `refresh` option on `verified()` is gone along with
+> the waiting-worker path that needed it.
 
 **Decision.** `#sw-update-banner` is revealed only when the shell cache
 name the **controlling service worker** holds differs from the one the

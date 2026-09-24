@@ -14,9 +14,10 @@ Covers:
   * Both controls take the pointer cursor — Tailwind v4's preflight gives
     ``<button>`` the default arrow, so a control that does not say
     otherwise reads as inert under the mouse.
+  * The copy is plain (SNOW-1025): it names no build, and the versioned
+    strings are gone.
   * The strings ``<template>`` carries the runtime-only copy (the busy
-    state, and the versioned copy naming both builds) with the same keys
-    the admin fallback declares.
+    state) with the same keys the admin fallback declares.
   * The roundel draws ``includes/_icon_refresh.html`` — both arrowheads
     and both arcs — rather than the corrupted inline path it replaced.
   * The rendered surface uses design tokens (``bg-card``, ``rounded-card``,
@@ -115,26 +116,25 @@ class TestRuntimeStrings:
         assert 'id="sw-update-strings-template"' in html
         assert 'data-string="updating"' in html
 
-    def test_versioned_copy_ships_with_named_placeholders(self) -> None:
-        """The versioned strings carry ``%(name)s`` holes, never positional.
+    def test_copy_is_plain_and_names_no_build(self) -> None:
+        """The banner speaks to a stuck user, not to a changelog (SNOW-1025).
 
-        ``pwaStrings.interpolate`` substitutes by name because a locale is
-        free to reorder the two builds in the sentence; a positional
-        substitution would silently swap "from" and "to".
+        SNOW-869 named both builds ("Update available (v30) / You are on
+        v29. Reload to update to v30."). The banner now appears only for a
+        worker that cannot update itself, and what that person needs is
+        the action, so the versioned strings and their placeholders are
+        gone.
         """
         html = render()
-        assert 'data-string="update-title-versioned"' in html
-        assert "%(version)s" in html
-        assert 'data-string="update-body-versioned"' in html
-        assert "%(current)s" in html
-        assert "%(next)s" in html
+        assert "Snowdesk needs a refresh" in html
+        assert "It couldn't update itself. Reload to finish." in html
+        assert "update-title-versioned" not in html
+        assert "update-body-versioned" not in html
+        assert "%(" not in html
+        assert "Update available" not in html
 
-    def test_unnumbered_copy_survives(self) -> None:
-        """The original strings are the third state, not dead copy.
-
-        They are what shows when ``/api/version`` is unreachable or when
-        nothing distinguishes the two builds.
-        """
+    def test_plain_copy_keys_are_present(self) -> None:
+        """The title and body keys the admin fallback reads are still there."""
         html = render()
         assert 'data-string="update-title"' in html
         assert 'data-string="update-body"' in html
@@ -143,7 +143,7 @@ class TestRuntimeStrings:
         """No string tells the user their downloads are safe (SNOW-869).
 
         SNOW-609 added "your downloaded maps and saved data are kept" to
-        both the unnumbered and, later, the versioned body. It reads as
+        the banner's body copy. It reads as
         care and works as alarm: naming the thing that survives is what
         raises the possibility that it might not, on a banner where
         nothing the user owns is at risk in the first place.

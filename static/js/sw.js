@@ -49,22 +49,31 @@
  *
  * Update contract (the important part)
  * -------------------------------------
- * The goal is a contract a non-technical user can rely on: *if there is
- * an update, you see one "Reload" message; if there is no message, you
- * are already on the latest version.* No silent swaps, no stale tab that
- * never catches up.
+ * The contract a non-technical user can rely on (SNOW-1025): *a deploy
+ * asks nothing of you.* Updates land on their own, out of sight. The only
+ * message you ever see is "Snowdesk needs a refresh", and it appears only
+ * when this worker is stuck and cannot update without help.
  *
- * To make that true the worker does NOT call ``skipWaiting()`` on
- * install. A freshly-installed worker sits in the "waiting" state — that
- * waiting worker IS the pending update, and ``sw_register.js`` shows the
- * banner for exactly that condition. The worker only activates when the
- * page tells it to, by posting ``{ type: 'SKIP_WAITING' }`` (the user
- * clicked "Reload"). On ``activate`` it then calls ``clients.claim()`` so
- * it takes control of every open tab immediately; that fires
- * ``controllerchange`` in the page, which does ONE guarded reload onto
- * the new shell. Because activation is user-driven, claiming here cannot
- * reproduce the dev reload-loop the previous design hit — that loop
- * required auto-skipWaiting on install, which we no longer do.
+ * The worker does NOT call ``skipWaiting()`` on install. A freshly
+ * installed worker sits in the "waiting" state until a page posts
+ * ``{ type: 'SKIP_WAITING' }``. ``sw_register.js`` posts it the next time
+ * the page is hidden (tab switch, app switch, screen lock), unless a
+ * basemap download is in flight. Activation therefore never swaps the
+ * worker under a page someone is looking at, and never cuts off a
+ * download. On ``activate`` the worker calls ``clients.claim()``. That
+ * fires ``controllerchange`` in the page, which reloads only when the user
+ * pressed Reload on the stuck-worker banner. A silent activation leaves
+ * the open page alone, and its next navigation lands on the new shell.
+ *
+ * This replaced the SNOW-331 contract ("if there is an update, you see one
+ * Reload message"). That contract meant every deploy that touched a shell
+ * source interrupted everyone, which taught people to dismiss the one
+ * banner that exists for a worker that really is stuck. See
+ * docs/decisions/service-worker-updates-apply-silently.md.
+ *
+ * Claiming here cannot reproduce the dev reload-loop the SNOW-79 design
+ * hit. That loop required auto-skipWaiting on install, which we still
+ * never do.
  *
  * Dev shell-cache bypass (SNOW-585)
  * ----------------------------------
@@ -245,22 +254,6 @@ try {
 // string so that a substitution failure is obvious in devtools rather than
 // looking like a legitimate cache name.
 const CACHE_VERSION = 'snowdesk-shell-UNSUBSTITUTED';
-
-// SNOW-933: the build this worker was served from — the git SHA the server
-// was running (`settings.APP_VERSION`) and the release label a person reads
-// (`v34`, or '' on an unnumbered build). Substituted per-response by
-// apps.public.views.serve_sw, on the same required footing as CACHE_VERSION
-// above: a body that cannot be substituted raises rather than shipping the
-// placeholder, because the update banner puts this value on screen and
-// offering an update from "UNSUBST" is worse than the unnumbered copy it
-// replaced.
-//
-// It is a SECOND identity beside CACHE_VERSION, not a replacement for it.
-// CACHE_VERSION is derived from the shell content hash and names a cache;
-// this names a deploy, which is what the server's /api/version answer is
-// also expressed in, and the banner can only compare two strings of the
-// same kind. See docs/decisions/the-update-banner-names-the-worker-being-replaced.md.
-const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };
 
 // SNOW-585: literal placeholder substituted by apps.public.views.serve_sw
 // (never serve_sw_kill) on its own response, when settings.SW_DEV_SHELL_BYPASS
@@ -1201,10 +1194,10 @@ self.addEventListener('install', (event) => {
     })(),
   );
   // Deliberately NOT calling self.skipWaiting() here. The new worker
-  // stays "waiting" until the page posts SKIP_WAITING (the user clicked
-  // "Reload" on the update banner). A waiting worker is exactly what the
-  // banner means by "an update is available" — activating silently would
-  // break that contract. See the message handler below.
+  // stays "waiting" until the page posts SKIP_WAITING, which
+  // sw_register.js does the next time the page is hidden (SNOW-1025) —
+  // never in front of the user, and never mid-download. See the update
+  // contract at the top of this file.
 });
 
 // ---------------------------------------------------------------------------
@@ -1254,14 +1247,14 @@ self.addEventListener('activate', (event) => {
           .map((name) => caches.delete(name));
         await Promise.all(deletions);
         // Take control of every open client the moment we activate. This is
-        // safe now precisely because we no longer auto-skipWaiting on
-        // install: activation only happens after the user opts into the
-        // update (SKIP_WAITING) or after every tab has closed, so claiming
+        // safe because we never auto-skipWaiting on install: activation only
+        // happens when a page posts SKIP_WAITING (while hidden, or from the
+        // stuck-worker banner) or after every tab has closed, so claiming
         // can't drive the dev reload-loop the old design avoided. Claiming
-        // fires ``controllerchange`` in the page, which sw_register.js turns
-        // into exactly one reload onto the new shell — guaranteeing the tab
-        // actually moves to the new version rather than lingering on the old
-        // worker.
+        // fires ``controllerchange`` in the page; sw_register.js reloads on
+        // it only when the user pressed Reload. A silent activation leaves
+        // the open page as it is, and its next navigation lands on the new
+        // shell.
         await self.clients.claim();
         // SNOW-384: the browser fires 'activate' exactly once per SW
         // instance — no extra gating needed for idempotency here.
@@ -3967,37 +3960,25 @@ self.addEventListener('message', (event) => {
   // this is one page's question about its own next action, not worker state
   // anybody else needs. A caller that sent no port gets no reply and falls
   // back to its own budget, which answers false — the safe direction.
-  // SNOW-933: "which build are you?", asked by sw_register.js when it is
-  // about to label the update banner. The asker is the page, but the answer
-  // is about the worker CONTROLLING it, which is the build the update
-  // replaces — the page's own <meta> names whichever build served its HTML,
-  // and navigations are network-first, so after a deploy that meta is
-  // already the NEW build while this worker is still the old one.
+  // SNOW-1025: "which shell do you hold?", asked by sw_register.js before
+  // it offers the stuck-worker banner. The answer is this worker's
+  // CACHE_VERSION, derived from the shell content hash, so comparing it with
+  // the server's (`shell` on /api/version) says whether this device is
+  // holding an out-of-date shell at all (SNOW-952). The page cannot read it
+  // from anywhere else: it is the identity of the worker in control, not of
+  // the response that served the page.
   //
   // Replies down the transferred MessagePort (the SNOW-922 pattern above)
   // rather than to every client: one page asked about its own banner. A
-  // caller that sent no port gets no reply and falls back to its meta.
+  // caller that sent no port gets no reply and treats the silence as stale.
   //
-  // SNOW-952: the reply also carries this worker's CACHE_VERSION, which is
-  // what decides whether the banner appears at all. The build above names
-  // a DEPLOY and changes on every one of them; the cache name is derived
-  // from the shell content hash and changes only when a shell source does,
-  // so comparing it against the server's is the difference between "we
-  // shipped something" and "this device is holding a stale shell". The
-  // page cannot read this from anywhere else — it is the identity of the
-  // worker in control, not of the response that served the page.
-  //
-  // One reply, both values, for the reason the two build fields are taken
-  // whole (see the ADR): a page pairing this worker's cache name with some
-  // other worker's build would be describing two different things.
-  if (event.data && event.data.type === 'build-identity') {
+  // This replaced SNOW-933's `build-identity`, which also carried the git SHA
+  // and release label the banner used to print. The banner no longer names
+  // builds, and baking one into the worker made its bytes differ on every
+  // deploy.
+  if (event.data && event.data.type === 'shell-identity') {
     const port = event.ports && event.ports[0];
-    port?.postMessage({
-      type: 'build-identity',
-      build: BUILD_IDENTITY.build,
-      release: BUILD_IDENTITY.release,
-      cache: CACHE_VERSION,
-    });
+    port?.postMessage({ type: 'shell-identity', cache: CACHE_VERSION });
   }
   if (event.data && event.data.type === 'can-open-offline') {
     const port = event.ports && event.ports[0];

@@ -19,19 +19,19 @@
  *      blocking modal opens and stays open; nothing is wiped and nothing
  *      reloads until the user clicks "Reload now". No dismiss control.
  *
- *   2. body ``update_available: true`` → OFFER the existing soft
+ *   2. body ``update_available: true`` → OFFER the soft
  *      ``#sw-update-banner`` to ``sw_register.js``, which reveals it only
- *      when this device's shell is actually stale (SNOW-952 — see
- *      ``showSoftBanner``). This is the same visible affordance as the
- *      SW-update flow. Since SNOW-869 that is the server's boolean rather
- *      than a client-side comparison of ``current`` against the shell's
- *      build: the server holds both strings anyway (the request carried
- *      ``X-Client-Version``), so one authority answers both verdicts, and
- *      the same body carries the release labels the banner names.
+ *      when the worker is stuck on a stale shell (SNOW-952, SNOW-1025 —
+ *      see ``showSoftBanner``). A routine update is applied silently and
+ *      never shows it. Since SNOW-869 the offer keys off the server's
+ *      boolean rather than a client-side comparison of ``current`` against
+ *      the shell's build: the server holds both strings anyway (the
+ *      request carried ``X-Client-Version``), so one authority answers
+ *      both verdicts.
  *
  * The body is published as ``window.pwaVersionInfo.verified()`` for
- * ``sw_register.js``, which labels the banner with it. Both callers share
- * one round trip.
+ * ``sw_register.js``, whose banner gate reads the server's shell from it.
+ * Both callers share one round trip.
  *
  * The client performs NO version arithmetic (SNOW-609)
  * ----------------------------------------------------
@@ -95,13 +95,6 @@
   const CURRENT_BUILD = readMeta('pwa-app-version');
   if (!CURRENT_BUILD) return; // Meta tag absent — bail safely.
 
-  // SNOW-869: the release label of the build THIS shell was delivered on
-  // ("v29"), baked beside the build tag. Empty on an unnumbered build,
-  // which the banner's copy rule reads as "no label here". It cannot be
-  // derived later: the client identifies itself to /api/version with a
-  // SHA, and no map runs from an arbitrary SHA back to a release ordinal.
-  const CURRENT_RELEASE = readMeta('pwa-app-release');
-
   const VERSION_ENDPOINT = '/api/version';
 
   // The pristine fetch, captured BEFORE wrapFetch() replaces window.fetch.
@@ -121,15 +114,15 @@
   const staleConfirmed = new Set();
   const driftConfirmed = new Set();
   // Single-flight guard, on the FETCH rather than on the drift
-  // verification (SNOW-869): the verification and the banner-labelling
-  // read both want the same body, and concurrent callers must share one
-  // round trip rather than issue two.
+  // verification (SNOW-869): the verification and the banner gate's read
+  // both want the same body, and concurrent callers must share one round
+  // trip rather than issue two.
   let fetchInFlight = null;
   // The most recent body a round trip actually returned, or null while
-  // none has. Read by ``window.pwaVersionInfo.verified()`` so the
-  // labelling caller — which runs immediately after the reveal the
-  // verification caused — does not go back to the network for a body we
-  // are already holding. Deliberately NOT a permanent memo of the fetch:
+  // none has. Read by ``window.pwaVersionInfo.verified()`` so the banner
+  // gate, which runs immediately after the verification that offered the
+  // banner, does not go back to the network for a body we are already
+  // holding. Deliberately NOT a permanent memo of the fetch:
   // a later, distinct header drift still gets its own round trip, which
   // is what makes a second deploy in one session verifiable.
   let lastVerdict = null;
@@ -196,14 +189,14 @@
    * remembers. The dev-bypass suppression is checked there too, so the
    * banner cannot be revealed by either path under the bypass.
    *
-   * SNOW-952: the delegation is now also a GATE. A server-build drift says
-   * the server has redeployed; it does not say this device has anything to
-   * pick up, and for most of them it does not — HTML is network-first and
-   * static assets are hashed, so an online client is already current. What
-   * an update replaces is the offline shell, and only ``sw_register.js``
-   * can ask the controlling worker which shell it holds. So this hands the
-   * offer over and lets that comparison decide, rather than revealing on
-   * the strength of the header alone.
+   * SNOW-952 / SNOW-1025: the delegation is also a GATE. A server-build
+   * drift says the server has redeployed; it does not say this device
+   * needs anyone to act. HTML is network-first and static assets are
+   * hashed, so an online client is already current, and a new worker is
+   * applied silently. The one case a person must act on is a worker stuck
+   * on a stale shell, and only ``sw_register.js`` can ask the controlling
+   * worker and the registration about that. So this hands the offer over
+   * and lets those two gates decide.
    *
    * SNOW-609: nothing else stays here. This function used to also stamp
    * ``localStorage['pwa.update.first_shown_at']``, the clock behind the
@@ -281,8 +274,8 @@
    * request cannot recurse into ``inspectHeaders``.
    *
    * Single-flight: concurrent callers share one round trip, and the
-   * resolved body is held in ``lastVerdict`` for the labelling read that
-   * follows a reveal.
+   * resolved body is held in ``lastVerdict`` for the banner gate's read
+   * that follows an offer.
    *
    * @returns {Promise<{current: string, release: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
@@ -341,7 +334,7 @@
    *
    * Single-flight: concurrent observations share one round trip. The
    * guard sits on ``fetchAuthoritativeVersion`` since SNOW-869, so the
-   * banner-labelling read shares it too.
+   * banner gate's read shares it too.
    *
    * @param {string} observed The drifting header value that prompted this
    *   verification, memoised under whichever verdict comes back.
@@ -370,8 +363,7 @@
         // comparison of the same two strings the server now compares
         // itself, against the ``X-Client-Version`` this very request
         // carried. Reading it from the body puts both verdicts on the
-        // same authority, and gives the banner the labels in the same
-        // breath. ``differs()`` stays as the header-drift HINT in
+        // same authority. ``differs()`` stays as the header-drift HINT in
         // ``inspectHeaders``, which is a comparison of two strings the
         // client already holds.
         if (verdict.update_available) {
@@ -471,42 +463,26 @@
    * The verified server body, or ``null`` when it cannot be had.
    *
    * Returns the body the last round trip produced when we are holding
-   * one — which is the normal case for the banner-labelling caller, since
-   * the reveal it is labelling was itself caused by that round trip — and
-   * otherwise issues one (sharing any fetch already in flight).
+   * one, which is the normal case for the banner gate, since the offer it
+   * is judging was itself caused by that round trip. Otherwise issues one
+   * (sharing any fetch already in flight).
    *
-   * ``{refresh: true}`` skips the held body and goes to the network
-   * (SNOW-952). The held body is only as fresh as the event that fetched
-   * it, and one event does not refresh it: a header drift is verified
-   * once per distinct header value, so a tab that confirmed deploy B goes
-   * on returning B's body for every replay of B's header. A caller whose
-   * question was raised by something OTHER than that verification —
-   * ``showUpdateBanner``, woken by a worker from deploy C installing —
-   * would otherwise compare C's worker against B's shell, and where B was
-   * a build-only deploy the two match and the only notification of C is
-   * suppressed. The refresh shares any fetch already in flight, so a
-   * caller cannot make this cost a second round trip.
+   * SNOW-1025 removed the ``{refresh: true}`` option. Its one caller was
+   * the waiting-worker banner path, which no longer exists: a waiting
+   * worker is applied silently.
    *
-   * ``null`` means "cannot confirm", never "confirmed": the caller shows
-   * the unnumbered copy rather than naming builds it could not check.
-   *
-   * @param {{refresh?: boolean}} [options] ``refresh`` forces the network
-   *   read described above. Omitted, the held body wins.
    * @returns {Promise<{current: string, release: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    */
-  function verified(options) {
-    if (options && options.refresh === true) return fetchAuthoritativeVersion();
+  function verified() {
     if (lastVerdict) return Promise.resolve(lastVerdict);
     return fetchAuthoritativeVersion();
   }
 
-  // SNOW-869: the shell's own identity plus the server's verdict, for
-  // ``sw_register.js``'s banner copy. Exposing the two meta values here
-  // rather than re-reading the DOM there keeps one reader of the tags.
+  // The server's verdict, for ``sw_register.js``'s banner gate. SNOW-869
+  // also published the shell's own build and release here for the banner's
+  // versioned copy; SNOW-1025 removed that copy, and with it the readers.
   window.pwaVersionInfo = Object.freeze({
-    build: CURRENT_BUILD,
-    release: CURRENT_RELEASE,
     verified: verified,
   });
 

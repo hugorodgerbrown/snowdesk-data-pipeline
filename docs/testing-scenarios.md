@@ -570,77 +570,58 @@ the LAN — `runserver 0.0.0.0:8000`).
 | 1 | Reset state, load the map page, and interact with it | `#pwa-install-ios` appears with an animated arrow pointing to the Share icon in the Safari toolbar and the message "Tap Share, then Add to Home Screen" |
 | 2 | Follow the guide: Share → Add to Home Screen → Add | The Snowdesk icon appears on the home screen using the Apple touch icon (not a screenshot of the page); tapping it opens the app in standalone mode without Safari chrome |
 
-### Scenario P4: Update banner via a new sw.js (SW-driven path)
+### Scenario P4: A new sw.js is applied silently
 
-> Automated in part: what the banner shows, and what Reload does when it is
-> pressed, are covered in
-> [tests/js/test_sw_register_update_feedback.js](../tests/js/test_sw_register_update_feedback.js)
-> and [tests/js/test_sw_register_update_throttle.js](../tests/js/test_sw_register_update_throttle.js).
-> The browser-level byte-diff test went with the Playwright lifecycle suite in
-> SNOW-649, so the trigger itself is manual — and Playwright could not observe
-> or intercept a service worker's own script fetch in any case, which the
-> SNOW-389 spike established before its artefact was removed with the suite.
+> Automated in part:
+> [tests/js/test_sw_register_silent_update.js](../tests/js/test_sw_register_silent_update.js)
+> (applied on hidden, held back by a download, no reload) and
+> [tests/js/test_sw_register_update_throttle.js](../tests/js/test_sw_register_update_throttle.js).
+> The browser-level byte-diff test went with the Playwright lifecycle suite
+> in SNOW-649, so the trigger itself is manual.
 
-**Goal**: Verify the soft update banner appears when a new SW installs,
-and clicking Reload lands cleanly on the new shell in a single reload.
+**Goal**: Verify a routine update asks nothing of the user (SNOW-1025). A
+new worker installs, shows no banner, and takes over the next time the page
+is hidden, without reloading it.
 
 **Preconditions**: Complete Scenario P1 first so an SW is already
 controlling the page. Touch any shell source (e.g. add a comment to
-[static/js/sw.js](../static/js/sw.js)) — the derived `CACHE_VERSION` changes with it (SNOW-590)
-(e.g. `'snowdesk-shell-v8'` → `'snowdesk-shell-v99-test'`) — this is
-the change that causes the browser to detect a new SW. Revert after
-the scenario.
+[static/js/sw.js](../static/js/sw.js)): the derived `CACHE_VERSION` changes
+with it (SNOW-590), and that is what makes the browser see a new SW. Revert
+after the scenario.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | With the tab open, DevTools → Application → Service workers → click **Update** (top right) | A second SW appears in state `installed, waiting to activate` alongside the still-`activated` prior worker |
-| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready.", and a "Reload" primary CTA + `×`. Where `/api/version` is reachable and the builds can be told apart, the copy names them instead — "Update available (v31)" / "You are on v30. Reload to update to v31." Neither state says anything about what the reload keeps (SNOW-869) |
-| 3 | Click "Reload" on the banner | The banner button briefly disables; the waiting worker activates (Service workers panel: the new SW becomes `activated and is running`, the old one disappears); the page reloads exactly once onto the new shell (URL and content preserved) |
-| 4 | Reload one more time | No banner appears — you are already on the latest version |
-| 5 | Revert the shell edit, restart the server with a different `APP_VERSION`, and reload | No banner. A new build alone is not an update to this device (SNOW-952) — only a changed shell is |
+| 1 | With the tab open, DevTools → Application → Service workers → click **Update** | A second SW appears as `installed, waiting to activate` beside the still-`activated` prior worker |
+| 2 | Look at the page | **No banner.** A waiting worker is a routine update |
+| 3 | Switch to another tab for a moment, then come back | The new SW is now `activated and is running`, and the old one is gone. The page did **not** reload: map position, open panels and scroll are as you left them |
+| 4 | Navigate (open a bulletin, or reload) | The page is served by the new shell. Application → Cache storage holds only the new `snowdesk-shell-*` entry |
+| 5 | Repeat steps 1–3, but start a basemap download (Download → pick an area) before switching away | The new SW stays `waiting` while the download runs, and activates once it finishes, as long as the tab is still in the background |
+| 6 | Revert the shell edit, restart the server with a different `APP_VERSION`, and click **Update** | No new SW installs: the worker's bytes do not depend on the build (SNOW-1025), only on the shell |
 
-### Scenario P5: Update banner via server X-App-Version drift (header path)
+### Scenario P5: The banner appears only for a stuck worker
 
-> Automated: [tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js)
-> — the drift-is-only-a-hint rule, the authoritative `/api/version` round
-> trip, the soft banner on a confirmed drift, and the shell wipe that spares
-> the pinned basemap buckets. The endpoint's own side is
-> [tests/public/test_pwa_version_api.py](../tests/public/test_pwa_version_api.py).
-> The browser journey went with the Playwright lifecycle suite in SNOW-649.
+> Automated: the two gates in
+> [tests/js/test_sw_register_update_gate.js](../tests/js/test_sw_register_update_gate.js);
+> the drift-is-only-a-hint rule, the `/api/version` round trip and the
+> shell wipe in [tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js);
+> the endpoint in [tests/public/test_pwa_version_api.py](../tests/public/test_pwa_version_api.py).
 
-**Goal**: Verify that a server build moving on its own — the shell this
-device holds unchanged — surfaces **nothing**, and that the header path
-still runs its round trip underneath.
+**Goal**: Verify the banner appears for a worker that cannot update itself,
+and for nothing else.
 
-Since SNOW-952 the banner is gated on the shell, not the build: a deploy
-that changed no shell source has nothing for this device to pick up, and
-saying otherwise turned the stuck-worker escape hatch into an
-every-deploy interruption. The header drift still schedules the
-`/api/version` verification; what changed is what the answer is allowed
-to do. The stuck-worker case the path exists for cannot be staged by
-hand — it needs a controller that answers an arbitrary cache version —
-and is covered in
-[tests/js/test_sw_register_shell_staleness.js](../tests/js/test_sw_register_shell_staleness.js).
-
-**Preconditions**: Scenario P1 completed; the dev server running.
-Restart the server with an overridden version so the response header
-`X-App-Version` differs from the `<meta name="pwa-app-version">` that
-was baked into the currently-loaded page. Change nothing else — no shell
-source, so the derived `CACHE_VERSION` stays put:
-
-```bash
-APP_VERSION=test-newer-build uv run python manage.py runserver
-```
+**Preconditions**: Scenario P1 completed; the dev server running with the
+production cache path (untick the dev bypass on `/_sw-version/`, see "Dev
+shell-cache bypass" in [offline-map.md](offline-map.md)).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Keep the tab open, then trigger any request (scroll the timeline, tap a region — anything that fires a `fetch` or HTMX call) | `pwa_version_check.js` sees the header mismatch and confirms it against the `/api/version` body — Network panel: one `no-store` request to `/api/version`, whose `shell` matches the `CACHE_VERSION` the controlling worker holds |
-| 2 | Look at the page | **No banner.** The build moved; nothing this device holds did |
-| 3 | Trigger several more requests | Still no banner, and no further `/api/version` round trips — the answer is memoised against that shell |
-| 4 | Now touch a shell source (add a comment to [static/js/sw.js](../static/js/sw.js)), hard-reload, and repeat step 1 | The banner appears: the served `CACHE_VERSION` no longer matches the one in the worker. Clicking "Reload" clears the `snowdesk-shell-*` entries in Application → Cache storage and reloads once. Revert the edit afterwards |
+| 1 | Restart the server with `APP_VERSION=test-newer-build uv run python manage.py runserver` (no shell change), then trigger any request (scroll the timeline, tap a region) | Network panel: one `no-store` request to `/api/version`, whose `shell` matches the controlling worker's. **No banner**: the build moved, but nothing this device holds did |
+| 2 | Add a comment to [static/js/sw.js](../static/js/sw.js) (a healthy shell change) and trigger a request | **No banner.** A new SW installs and waits, to be applied as in P4 |
+| 3 | Now break the install: add `'/does-not-exist.js'` to `PRECACHE_URLS` in [static/js/sw.js](../static/js/sw.js), restart the server with another `APP_VERSION`, and trigger a request | The new SW goes `redundant` (its atomic `cache.addAll` rejects). The banner appears: "Snowdesk needs a refresh / It couldn't update itself. Reload to finish.", with no build SHAs |
+| 4 | Click "Reload" | The `snowdesk-shell-*` entries in Application → Cache storage are cleared and the page reloads once. Revert both edits afterwards |
 
-A header mismatch the `/api/version` body does **not** back — e.g. a
-response replayed from the browser HTTP cache right after a deploy —
+A header mismatch the `/api/version` body does **not** back (e.g. a
+response replayed from the browser HTTP cache right after a deploy)
 reveals nothing (automated: the "does not re-verify a header the server has
 already disowned" and "cannot confirm" cases in
 [tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js)).
