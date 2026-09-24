@@ -6400,6 +6400,37 @@
     return padding;
   };
 
+  /**
+   * Widen a fit's bottom padding to clear rail one, when it is open.
+   *
+   * SNOW-1018. The rail is docked over the map's foot, so a route framed
+   * without it would have its lower end drawn behind the profile of that
+   * same route. The reservation is the rail's own top edge measured from
+   * the canvas's bottom, and it is taken only where it exceeds what the
+   * padding already reserves there — on a phone the detail sheet's dock
+   * has already claimed the bottom edge, and the two overlap rather than
+   * stack.
+   *
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   A `paddingClearing` result, mutated and returned.
+   * @returns {{top: number, right: number, bottom: number, left: number}}
+   */
+  const paddingClearingRail = (padding) => {
+    const rail = window.pwaRouteRail;
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!rail || !rail.isOpen() || !container) return padding;
+
+    const canvas = container.getBoundingClientRect();
+    const box = rail.element.getBoundingClientRect();
+    if (!(canvas.height > 0) || !(box.height > 0)) return padding;
+
+    const want = FIT_PADDING.bottom + (canvas.bottom - box.top);
+    if (want > padding.bottom) {
+      reserveFitEdge(padding, 'bottom', 'top', want - padding.bottom, canvas.height);
+    }
+    return padding;
+  };
+
   // The fit behind both `bounds` and `region` below. A module-scope
   // function rather than one bridge method calling another through `this`:
   // a caller that destructures the frozen bridge (`const { region } =
@@ -8473,6 +8504,19 @@
         day: currentDisplayedDate,
       });
 
+      // SNOW-1018: rail one, the route's profile cut at its transitions,
+      // docked over the map's foot. Handed the CACHED feature, for the
+      // reason appendElevationProfile reads it: the one MapLibre gave the
+      // tap has lost the third ordinate the profile is drawn from. Opened
+      // before the fit below so the fit can measure it.
+      const cachedFeature = (routesGeojsonCache?.features || []).find(
+        (f) =>
+          f && f.properties
+          && ((props.uuid && f.properties.uuid === props.uuid)
+            || (props.token && f.properties.token === props.token)),
+      );
+      if (cachedFeature) window.pwaRouteRail?.open(cachedFeature);
+
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
         // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
@@ -8505,8 +8549,8 @@
         // whatever marks exist by then. Padding is not a cap: it frames
         // into less map, which zooms the camera OUT, never past a floor.
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearing(
-            opened ? window.pwaRouteDetail.element : null,
+          padding: paddingClearingRail(
+            paddingClearing(opened ? window.pwaRouteDetail.element : null),
           ),
           duration: 400,
         });

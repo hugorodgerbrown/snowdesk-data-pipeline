@@ -369,6 +369,16 @@ in addition to the shared map assets.
     {# like the other call-site cores it sits here and not inside the map    #}
     {# bundle's contiguous run.                                              #}
     <script defer src="{% static 'js/route_slope_core.js' %}"></script>
+    {# SNOW-1018: rail one. The route cursor (window.pwaRouteCursorCore,     #}
+    {# SNOW-1016) had no caller until this rail, which is its first; the     #}
+    {# rail's pure half (window.pwaRouteRailCore) — tick step, figures line, #}
+    {# one fill per leg — and its DOM half (window.pwaRouteRail), which      #}
+    {# map.js's activateRoute calls on a tap. None of the three reads map    #}
+    {# state at parse time, so they sit with the call-site cores and not     #}
+    {# inside the map bundle's contiguous run.                               #}
+    <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
     {# geometry is fetched from, and what the address bar should say once   #}
