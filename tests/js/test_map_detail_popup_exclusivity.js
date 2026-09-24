@@ -15,6 +15,14 @@
  * keeps it out. The routes PANEL (`route-sheet`, SNOW-686) is a third
  * surface again, and stays in the matrix where it always was.
  *
+ * SNOW-1018 MOVED THE SHEET ONE PRESS FURTHER. A tap opens rail one and
+ * only the rail; the sheet opens from the rail's "Terrain and bulletin"
+ * item, which calls the `details` function map.js handed the rail. The
+ * rail is a recording stub here (tests/js/_route_rail_stub.js), so the
+ * sheet's exclusivity is tested from that call — the same sheet, reached
+ * one press later — and the fit is framed around the rail rather than the
+ * sheet, because the rail is what a tap leaves over the map.
+ *
  * Both directions matter, and before this ticket only one existed: map.js
  * dispatched ``snowdesk:map-detail-opening``, which favourites.js alone
  * listened for, and favourites.js dispatched
@@ -35,6 +43,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
 import { loadMapBundle } from './_load_map_bundle.js';
+import { installRouteRailStub } from './_route_rail_stub.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -123,15 +132,16 @@ function stubMapLibre() {
     hasImage: () => true,
     addImage: () => {},
     triggerRepaint: () => {},
-    // `sheetOpen` records the sheet's state AT THE MOMENT OF THE FIT,
-    // which is the only way to observe SNOW-973's inverted order: the
-    // sheet has to be on screen and measurable before the camera can
-    // frame the route into the map it leaves.
+    // `railOpen` records the rail's state AT THE MOMENT OF THE FIT, which
+    // is the only way to observe the order: the rail has to be on screen
+    // and measurable before the camera can frame the route into the map
+    // it leaves. `sheetOpen` holds the other half — a tap opens no sheet.
     fitBounds: (bounds, opts) => {
       const sheet = document.getElementById('route-detail-sheet');
       fits.push({
         bounds,
         opts,
+        railOpen: !!window.pwaRouteRail && window.pwaRouteRail.isOpen(),
         sheetOpen: !!sheet && !sheet.hasAttribute('hidden'),
       });
     },
@@ -242,6 +252,7 @@ function openRouteSheet() {
 }
 
 let mapStub;
+let rail;
 
 beforeAll(async () => {
   localStorage.clear();
@@ -269,6 +280,7 @@ beforeAll(async () => {
   // the same order, both deferred.
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_route_detail.js');
+  rail = installRouteRailStub();
   loadMapBundle();
   // MapLibre never fires 'load' in jsdom, and the detail-popup surface
   // hangs off it.
@@ -292,6 +304,7 @@ beforeEach(() => {
   fits.length = 0;
   hitFeatures = [FAVOURITE_FEATURE];
   window.pwaRouteDetail.close();
+  rail.reset();
 });
 
 describe('the anchored detail popup and the shared registry', () => {
@@ -322,42 +335,21 @@ describe('the anchored detail popup and the shared registry', () => {
   });
 });
 
-describe('a saved route opens the docked sheet (SNOW-973)', () => {
-  it('opens the sheet on a route tap, and no anchored popup', () => {
+describe('a saved route opens rail one, and not the sheet (SNOW-1018)', () => {
+  it('opens the rail on a route tap, with no sheet and no anchored popup', () => {
     tapTheRoute(mapStub);
 
-    expect(openRouteSheet()).not.toBeNull();
-    // The point of the ticket: the detail left the shared popup chrome
-    // entirely rather than widening it for one of its three callers.
+    expect(rail.last()).not.toBeNull();
+    expect(rail.last().feature.properties.uuid).toBe('r-1');
+    expect(openRouteSheet()).toBeNull();
     expect(openPopup()).toBeNull();
   });
 
-  it('closes every other overlay as it opens, like any other detail', () => {
-    // Free from MapSheet.attach, which registers the sheet under its own
-    // DOM id — the same way the route popup got it from mountDetailPopup.
-    const panel = { open: true };
-    window.pwaMapOverlays.register('routes-panel-stub', {
-      isOpen: () => panel.open,
-      close: () => { panel.open = false; },
-    });
-
+  it('hands the rail a way to open the sheet, and no Save for an owned route', () => {
     tapTheRoute(mapStub);
 
-    expect(openRouteSheet()).not.toBeNull();
-    expect(panel.open).toBe(false);
-  });
-
-  it('is closed when another overlay opens', () => {
-    tapTheRoute(mapStub);
-    expect(openRouteSheet()).not.toBeNull();
-
-    window.pwaMapOverlays.opening('routes-panel-stub');
-
-    expect(openRouteSheet()).toBeNull();
-  });
-
-  it('registers under its own DOM id', () => {
-    expect(window.pwaMapOverlays.names()).toContain('route-detail-sheet');
+    expect(typeof rail.last().options.details).toBe('function');
+    expect(rail.last().options.claim).toBeNull();
   });
 
   it('fits the viewport to the route bounds', () => {
@@ -381,10 +373,10 @@ describe('a saved route opens the docked sheet (SNOW-973)', () => {
     tapTheMap(mapStub);
 
     expect(fits[0].bounds).toEqual([[7.5, 46.1], [7.54, 46.14]]);
-    expect(openRouteSheet()).not.toBeNull();
+    expect(rail.last()).not.toBeNull();
   });
 
-  it('still opens the sheet when bounds are unusable', () => {
+  it('still opens the rail when bounds are unusable', () => {
     // A route whose bbox cannot be read is a route the user can still be
     // told about — skip the fit, keep the detail. Throwing here would take
     // the tap out entirely.
@@ -395,14 +387,14 @@ describe('a saved route opens the docked sheet (SNOW-973)', () => {
 
     expect(() => tapTheMap(mapStub)).not.toThrow();
     expect(fits).toHaveLength(0);
-    expect(openRouteSheet()).not.toBeNull();
+    expect(rail.last()).not.toBeNull();
   });
 
   it('frames with the plain padding when nothing can be measured', () => {
     // jsdom lays nothing out, so every rect is zero — the same answer a
-    // `display: none` sheet or a pre-layout measurement gives. A fit that
-    // reserved space against a zero-width box would push the route off
-    // centre for a panel that occupies nothing.
+    // `display: none` rail or a pre-layout measurement gives. A fit that
+    // reserved space against a zero-height box would push the route off
+    // centre for a strip that occupies nothing.
     tapTheRoute(mapStub);
 
     expect(fits[0].opts.padding).toEqual({
@@ -411,7 +403,49 @@ describe('a saved route opens the docked sheet (SNOW-973)', () => {
   });
 });
 
-describe('framing a route around the sheet (SNOW-973)', () => {
+describe('the sheet, opened from the rail\'s menu', () => {
+  it('opens on the rail\'s details press', () => {
+    tapTheRoute(mapStub);
+
+    rail.openDetails();
+
+    expect(openRouteSheet()).not.toBeNull();
+    // The rail stays: the sheet opens over it, not instead of it.
+    expect(window.pwaRouteRail.isOpen()).toBe(true);
+  });
+
+  it('closes every other overlay as it opens, like any other detail', () => {
+    // Free from MapSheet.attach, which registers the sheet under its own
+    // DOM id — the same way the route popup got it from mountDetailPopup.
+    const panel = { open: true };
+    window.pwaMapOverlays.register('routes-panel-stub', {
+      isOpen: () => panel.open,
+      close: () => { panel.open = false; },
+    });
+    tapTheRoute(mapStub);
+
+    rail.openDetails();
+
+    expect(openRouteSheet()).not.toBeNull();
+    expect(panel.open).toBe(false);
+  });
+
+  it('is closed when another overlay opens', () => {
+    tapTheRoute(mapStub);
+    rail.openDetails();
+    expect(openRouteSheet()).not.toBeNull();
+
+    window.pwaMapOverlays.opening('routes-panel-stub');
+
+    expect(openRouteSheet()).toBeNull();
+  });
+
+  it('registers under its own DOM id', () => {
+    expect(window.pwaMapOverlays.names()).toContain('route-detail-sheet');
+  });
+});
+
+describe('framing a route around the rail (SNOW-1018)', () => {
   /** A DOMRect-shaped literal; jsdom returns all zeros without one. */
   function rect({ top, left, width, height }) {
     return {
@@ -420,108 +454,62 @@ describe('framing a route around the sheet (SNOW-973)', () => {
   }
 
   /**
-   * Give #map and the detail sheet real boxes, the way a browser would.
+   * Give #map and the rail real boxes, the way a browser would.
    *
    * @param {object} mapBox The map container's rect.
-   * @param {object} sheetBox The sheet's rect, once it is open.
-   * @param {boolean} desktop What window.pwaOverlayBounds.isDesktop() says.
+   * @param {object} railBox The rail's rect, once it is open.
    */
-  function layOut(mapBox, sheetBox, desktop) {
+  function layOut(mapBox, railBox) {
     document.getElementById('map').getBoundingClientRect = () => mapBox;
-    document.getElementById('route-detail-sheet').getBoundingClientRect =
-      () => sheetBox;
-    window.pwaOverlayBounds = {
-      isDesktop: () => desktop,
-      positionSheet: () => {},
-      compute: () => null,
-    };
+    rail.element.getBoundingClientRect = () => railBox;
   }
 
   afterEach(() => {
     delete document.getElementById('map').getBoundingClientRect;
-    delete document.getElementById('route-detail-sheet').getBoundingClientRect;
-    delete window.pwaOverlayBounds;
+    delete rail.element.getBoundingClientRect;
   });
 
-  it('opens the sheet BEFORE the fit, so there is something to measure', () => {
-    // The inversion itself. The fit ran first until this ticket, on a
-    // rationale that belonged to the anchored popup — and you cannot frame
-    // a route into free space you have not measured.
+  it('opens the rail BEFORE the fit, and no sheet', () => {
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 1136, width: 448, height: 700 }),
-      true,
+      rect({ top: 740, left: 16, width: 1568, height: 144 }),
     );
 
     tapTheRoute(mapStub);
 
-    expect(fits[0].sheetOpen).toBe(true);
+    expect(fits[0].railOpen).toBe(true);
+    expect(fits[0].sheetOpen).toBe(false);
   });
 
-  it('reserves the room the sheet takes on the right, on desktop', () => {
+  it('reserves the room the rail takes at the bottom', () => {
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 1136, width: 448, height: 700 }),
-      true,
+      rect({ top: 740, left: 16, width: 1568, height: 144 }),
     );
 
     tapTheRoute(mapStub);
 
-    // The sheet's near edge to the map's far edge — 464px, which is its
-    // measured width plus the inset map_overlay_bounds.js gave it — on top
-    // of the 40 every fit starts with. Nothing here names 28rem: the width
-    // lives in the partial's Tailwind class.
+    // The rail's top edge to the map's bottom — 160px, its height plus the
+    // inset it sits above — on top of the 40 every fit starts with.
     expect(fits[0].opts.padding).toEqual({
-      top: 60, right: 504, bottom: 40, left: 40,
+      top: 60, right: 40, bottom: 200, left: 40,
     });
   });
 
-  it('reserves the bottom instead below the sm breakpoint', () => {
-    // The same partial is a full-width bottom dock on a phone, so what it
-    // takes is height rather than width.
+  it('clamps a rail that would swallow the map', () => {
+    // MapLibre throws outright when the padding exceeds the canvas; a rail
+    // wrapped tall on a short phone must degrade to a usable fit.
     layOut(
-      rect({ top: 0, left: 0, width: 390, height: 800 }),
-      rect({ top: 600, left: 0, width: 390, height: 200 }),
-      false,
-    );
-
-    tapTheRoute(mapStub);
-
-    expect(fits[0].opts.padding).toEqual({
-      top: 60, right: 40, bottom: 240, left: 40,
-    });
-  });
-
-  it('clamps a sheet that would swallow the map', () => {
-    // MapLibre throws outright when the padding exceeds the canvas, and a
-    // tall sheet on a short phone reaches that honestly: here it covers
-    // 700 of 800px. It must degrade to a usable fit, not an exception.
-    layOut(
-      rect({ top: 0, left: 0, width: 390, height: 800 }),
-      rect({ top: 100, left: 0, width: 390, height: 700 }),
-      false,
+      rect({ top: 0, left: 0, width: 390, height: 500 }),
+      rect({ top: 150, left: 8, width: 374, height: 340 }),
     );
 
     tapTheRoute(mapStub);
 
     const padding = fits[0].opts.padding;
-    // 40% of the 800px canvas, and no more.
-    expect(padding.bottom).toBe(320);
-    expect(padding.top + padding.bottom).toBeLessThan(800);
-  });
-
-  it('clamps the desktop side the same way', () => {
-    layOut(
-      rect({ top: 0, left: 0, width: 700, height: 900 }),
-      rect({ top: 60, left: 236, width: 448, height: 700 }),
-      true,
-    );
-
-    tapTheRoute(mapStub);
-
-    const padding = fits[0].opts.padding;
-    expect(padding.right).toBe(280);
-    expect(padding.left + padding.right).toBeLessThan(700);
+    // 40% of the 500px canvas, and no more.
+    expect(padding.bottom).toBe(200);
+    expect(padding.top + padding.bottom).toBeLessThan(500);
   });
 
   it('reserves space without reintroducing a zoom cap', () => {
@@ -531,8 +519,7 @@ describe('framing a route around the sheet (SNOW-973)', () => {
     // against each route mark's own minzoom.
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 1136, width: 448, height: 700 }),
-      true,
+      rect({ top: 740, left: 16, width: 1568, height: 144 }),
     );
 
     tapTheRoute(mapStub);
@@ -547,46 +534,17 @@ describe('what the route sheet says', () => {
     return (openRouteSheet().textContent || '').replace(/\s+/g, ' ').trim();
   }
 
-  it('names the route and states distance and ascent', () => {
+  it('leaves the name and the figures to the rail', () => {
+    // SNOW-1018: the rail carries the name, the distance/ascent/descent
+    // line and the profile, so the sheet repeating them would be the same
+    // facts twice on one screen. What the rail does NOT show — the terrain
+    // lines and the bulletin reading — is what the sheet is for now.
     tapTheRoute(mapStub);
+    rail.openDetails();
 
     const text = sheetText();
-    expect(text).toContain('Rosablanche');
-    expect(text).toContain('12.4km');
-    expect(text).toContain('850m ↑');
-  });
-
-  it('OMITS ascent entirely when the GPX carried no elevation', () => {
-    // The safety-relevant one. Route.ascent_m is null — not zero — when the
-    // source file has no <ele> at all, and "we don't know" and "flat" are
-    // different facts about a mountain route. Rendering "0m ↑" for an
-    // unknown would be a lie a user could plan on, so the line is absent
-    // rather than zeroed. tests/routes/test_views.py asserts the null
-    // survives the wire; this asserts what the map does with it.
-    hitFeatures = [{
-      ...ROUTE_FEATURE,
-      properties: { ...ROUTE_FEATURE.properties, ascent_m: null },
-    }];
-    tapTheMap(mapStub);
-
-    const text = sheetText();
-    expect(text).toContain('Rosablanche');
-    expect(text).toContain('12.4km');
-    expect(text).not.toContain('m ↑');
-    expect(text).not.toContain('↑');
-  });
-
-  it('still renders a genuine zero ascent, which is not the same thing', () => {
-    // The other side of the null test: 0 is a real measurement (a flat
-    // valley loop), so it must survive. An implementation that used a
-    // falsy check instead of an explicit null test passes the case above
-    // and fails this one.
-    hitFeatures = [{
-      ...ROUTE_FEATURE,
-      properties: { ...ROUTE_FEATURE.properties, ascent_m: 0 },
-    }];
-    tapTheMap(mapStub);
-
-    expect(sheetText()).toContain('0m ↑');
+    expect(text).not.toContain('Rosablanche');
+    expect(text).not.toContain('12.4');
+    expect(openRouteSheet().querySelector('svg')).toBeNull();
   });
 });

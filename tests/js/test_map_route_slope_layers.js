@@ -38,6 +38,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
 import { loadMapBundle } from './_load_map_bundle.js';
+import { installRouteRailStub } from './_route_rail_stub.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -108,13 +109,17 @@ const ROUTES_FC = {
   ],
 };
 
+/** The recording rail stub (tests/js/_route_rail_stub.js). */
+let rail;
+
 /**
- * The figures map.js has seated in the route detail sheet, if it is open.
+ * The body map.js has seated in the route detail sheet, if it is open.
  *
- * SNOW-973: the detail left the anchored popup for the docked sheet, so
- * what used to be read off a `setDOMContent` stub is read off the sheet
- * itself. `window.pwaRouteDetail.close()` between taps is what makes
- * "the newest one" meaningful — MapSheet's teardown empties the body.
+ * SNOW-1018: a tap opens rail one, and the sheet opens from the rail's
+ * menu — `rail.openDetails()` below is that press. The body is the
+ * terrain lines alone; the name, figures and profile are the rail's.
+ * `window.pwaRouteDetail.close()` between taps is what makes "the newest
+ * one" meaningful — MapSheet's teardown empties the body.
  *
  * @returns {HTMLElement|null}
  */
@@ -299,15 +304,12 @@ beforeAll(async () => {
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/route_markers_core.js');
   await import('../../static/js/route_slope_core.js');
-  // SNOW-960: the detail panel's chart. Without it
-  // `appendElevationProfile` returns early and the two profile assertions
-  // below would pass vacuously against a body carrying no <svg> at all.
-  await import('../../static/js/elevation_profile_core.js');
   // SNOW-973: the sheet the tap opens, and the controller it attaches
   // through. Both before the bundle, as the page loads them.
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_route_detail.js');
   core = globalThis.pwaRouteSlopeCore;
+  rail = installRouteRailStub();
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
@@ -708,6 +710,7 @@ describe('tapping a coloured route', () => {
     // 25 m chord of a recorded track.
     window.pwaRouteDetail.close();
     tapSlopeSegment('routes-slope-line');
+    rail.openDetails();
 
     const text = detailBody().textContent;
 
@@ -715,29 +718,28 @@ describe('tapping a coloured route', () => {
     expect(text).toContain('down the fall line');
   });
 
-  it('colours the profile of the route it opens', () => {
-    window.pwaRouteDetail.close();
+  it('hands the rail the whole route the segment belongs to', () => {
+    // SNOW-1018: the tap opens rail one, with the cached route — its slope
+    // record included — rather than the segment, which carries a uuid and
+    // a class and nothing else.
     tapSlopeSegment('routes-slope-line');
 
-    const strokes = [...detailBody().querySelectorAll('path')]
-      .map((path) => path.getAttribute('stroke'));
-
-    expect(strokes.some((stroke) => /--color-slope-/.test(stroke))).toBe(true);
+    const { feature } = rail.last();
+    expect(feature.properties.uuid).toBe('sampled-route');
+    expect(feature.properties.slope).toBeDefined();
   });
 });
 
 describe('tapping a sampled route somebody shared', () => {
-  it('leaves its profile uncoloured', () => {
-    // Codex flagged this on #933. The colouring was briefly extended to
-    // pending shares on the grounds that the chart is not the line, and
-    // the line's teal dash already carries "not yours yet". But the
-    // six-swatch key and its link to the slope caveats live on the MAP
-    // legend, and `anyRouteSampled` excludes pending routes from the
-    // condition that reveals it — so a visitor who follows a sampled
-    // share and owns no sampled route of their own would meet the whole
-    // palette with nothing on screen to say what it means, on the one
-    // path where the reader is newest to the feature. A pending share is
-    // not coloured, anywhere.
+  it('opens the rail with the cached pending share', () => {
+    // Codex flagged the colouring half of this on #933: the six-swatch key
+    // and its link to the slope caveats live on the MAP legend, and
+    // `anyRouteSampled` excludes pending routes from the condition that
+    // reveals it, so a pending share is not coloured anywhere. SNOW-1018
+    // took the chart off the sheet (the rail's profile is filled by leg,
+    // never by slope class); what is left to hold here is that the tap on
+    // the pending layer reaches the rail with the cached share. Its Save
+    // control is tests/js/test_map_route_share.js's.
     window.pwaRouteDetail.close();
     queryAnswer = (options) => (
       (options.layers || []).includes('routes-line-pending')
@@ -757,13 +759,9 @@ describe('tapping a sampled route somebody shared', () => {
     }
     queryAnswer = () => [];
 
-    const strokes = [...detailBody().querySelectorAll('path')]
-      .map((path) => path.getAttribute('stroke'));
-
-    // A chart was drawn — the share carries elevation — and none of it
-    // names a slope token.
-    expect(strokes.length).toBeGreaterThan(0);
-    for (const stroke of strokes) expect(stroke).not.toMatch(/--color-slope-/);
+    const { feature } = rail.last();
+    expect(feature.properties.token).toBe('tok-pending');
+    expect(feature.geometry.coordinates.length).toBeGreaterThan(0);
   });
 });
 

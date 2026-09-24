@@ -43,7 +43,7 @@ TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
   visitor gets the Save form; an anonymous one gets a link to sign in,
   because routes:share_claim answers a claim with no account to claim
   onto with a 403 — and the same control is what the map popup draws for
-  the same visitor (static/js/map.js's appendRouteClaimCta). Never
+  the same visitor (static/js/map.js's buildRouteClaimCta). Never
   nothing: the reason they are on this surface at all is that somebody
   sent them the route.
 
@@ -135,7 +135,7 @@ Context:
             outcome is a swallowed error reads as a broken page.
 
             The same two states, and the same copy, the map popup's own CTA
-            uses (static/js/map.js's appendRouteClaimCta, whose signed-out
+            uses (static/js/map.js's buildRouteClaimCta, whose signed-out
             branch is a link to `route-save-signin`): a recipient who meets
             the shared route on the map and one who meets it in the panel
             are told the same thing. It is a link and not a form because

@@ -119,8 +119,8 @@
     'elevation-profile': 'Elevation profile of the route',
     // The profile's y-axis is fitted to this track's own lowest and
     // highest point, so the curve says nothing without the pair that
-    // bounds it. Same wording as the map page's route popup — see
-    // map_state.js's 'route-elevation-range'.
+    // bounds it. The map page's route popup carried the same string until
+    // SNOW-1018 moved its profile to rail one, which captions none.
     'elevation-range': '%(low)s–%(high)s m',
     'map-failed':
       "The map couldn't be loaded. The route details above are unaffected.",
@@ -404,11 +404,9 @@
     if (typeof profile.minEle !== 'number' || typeof profile.maxEle !== 'number') {
       return;
     }
-    // UNGROUPED, and deliberately: `elevation-range` is the map popup's
-    // own string (`route-elevation-range` in static/js/map_state.js), and
-    // this caption has to read the same on both surfaces. The design
-    // draws "1,680–3,020 m"; grouping it here alone would give one
-    // measurement two spellings.
+    // UNGROUPED, and deliberately: the design draws "1,680–3,020 m", the
+    // spelling the map page's route popup used for the same measurement
+    // until SNOW-1018 retired it.
     host.textContent = self.pwaStrings.interpolate(STRINGS['elevation-range'], {
       low: String(Math.round(profile.minEle)),
       high: String(Math.round(profile.maxEle)),

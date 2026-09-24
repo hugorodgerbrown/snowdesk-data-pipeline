@@ -2468,47 +2468,8 @@ Optional context:
     {# showing even when the honest answer is "none yet" — a blank         #}
     {# choropleth with no cue is the bug that ticket fixed.                 #}
     <span data-string="map-date-none">{% trans "No date selected" %}</span>
-    {# SNOW-687: the route detail popup's figures (map.js's activateRoute), #}
-    {# plus the last-resort label for a route with no name. Separate        #}
-    {# strings and not one templated line, because each figure is OMITTED   #}
-    {# ENTIRELY when its Route field is null — a GPX with no <ele> means    #}
-    {# "unknown", not "flat", and rendering the second for the first would  #}
-    {# be a safety-relevant lie. The wording and the " · " join match       #}
-    {# routes/partials/_route.html exactly, so one route reads the same in  #}
-    {# the panel and in the popup.                                          #}
-    <span data-string="route-distance">{% blocktrans %}%(km)skm{% endblocktrans %}</span>
-    {# SNOW-830 compresses all three, in step with the panel row — the two   #}
-    {# surfaces show the same figures for the same route and have to read    #}
-    {# the same. The panel is where it is load-bearing (its meta line went   #}
-    {# mono at 12px and the spaced full words overflow a 340px row); the     #}
-    {# popup follows so a user does not meet two spellings of one            #}
-    {# measurement. The unit closes up to its value ("850m"), which is how   #}
-    {# the duration beneath has always read, and ascent/descent became the   #}
-    {# arrows rather than the words or the "asc"/"desc" they passed through. #}
-    {#                                                                       #}
-    {# LITERAL ↑ AND ↓, not `&uarr;` / `&darr;`: map.js writes this line     #}
-    {# with `textContent`, so a named entity would show as the text          #}
-    {# "&uarr;". _route.html carries the same note for its own reader.       #}
-    <span data-string="route-ascent">{% blocktrans %}%(m)sm ↑{% endblocktrans %}</span>
-    <span data-string="route-descent">{% blocktrans %}%(m)sm ↓{% endblocktrans %}</span>
-    {# The elevation profile chart's accessible name, and the range caption #}
-    {# printed under it. The caption carries the chart's meaning rather     #}
-    {# than decorating it: the curve is scaled to the track's OWN highest   #}
-    {# and lowest point (static/js/elevation_profile_core.js), so its       #}
-    {# height says nothing without the two numbers that bound it. The en    #}
-    {# dash is the range dash, not a hyphen.                                #}
-    <span data-string="route-profile-label">{% trans "Elevation profile of this route" %}</span>
-    <span data-string="route-elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
-    {# SNOW-750: the tour's ELAPSED time, shown on the same caption line as  #}
-    {# the range. Two forms, not one padded string: a 41-minute tour written #}
-    {# "0h41m" states an hours figure it does not have, and an hour count is #}
-    {# not a leading zero on a minute count. A locale that writes durations  #}
-    {# differently ("4 h 05") can say so in each form independently.         #}
-    <span data-string="route-duration-hours">{% blocktrans %}%(hours)sh%(minutes)sm{% endblocktrans %}</span>
-    <span data-string="route-duration-minutes">{% blocktrans %}%(minutes)sm{% endblocktrans %}</span>
     {# SNOW-961: the route's TERRAIN line — what the ground under the track #}
-    {# amounts to, on its own line under the track's own figures. Six       #}
-    {# strings and not one, for the reasons the figures above are separate: #}
+    {# amounts to, in the route detail sheet. Six strings and not one:      #}
     {# each is omitted entirely when there is nothing to say, and a length  #}
     {# under a kilometre is written in metres rather than as "0.1km", which #}
     {# is a number the reader has to convert back.                          #}
@@ -2558,7 +2519,6 @@ Optional context:
     <span data-string="route-terrain-passage-descending">{% trans "down the fall line" %}</span>
     <span data-string="route-terrain-passage-climbing">{% trans "up the fall line" %}</span>
     <span data-string="route-terrain-passage-crossing">{% trans "across the fall line" %}</span>
-    <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-764: the shared-route popup — the Save control's label and its   #}
     {# three outcomes. There is deliberately no "Shared with you" qualifier  #}
     {# here: both labels below already say the route is somebody else's      #}

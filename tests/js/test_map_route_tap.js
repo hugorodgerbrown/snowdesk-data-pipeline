@@ -15,11 +15,12 @@
  * 1.5px line really would — with nothing — and only reports the route
  * when the query geometry is a box that actually covers it.
  *
- * SNOW-973: what the tap OPENS is now the docked `#route-detail-sheet`
- * rather than an anchored popup, so the fixture carries the sheet and its
- * body template and `tapAt` reads the figures map.js seats in it. Every
- * assertion below is unchanged — the hit test is the subject, and the
- * surface it feeds is incidental to it.
+ * SNOW-973 made what the tap OPENS the docked `#route-detail-sheet`, and
+ * SNOW-1018 made it rail one — a recording stub here
+ * (tests/js/_route_rail_stub.js) — so `tapAt` reads what map.js handed
+ * the rail. The hit test is the subject, and the surface it feeds is
+ * incidental to it. What the rail then shows (the name, the figures, the
+ * profile) is tests/js/test_route_rail.js's.
  *
  * Booting map.js in jsdom follows tests/js/test_map_detail_popup_exclusivity.js's
  * pattern — see its header for the rationale.
@@ -30,16 +31,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
 import { loadMapBundle } from './_load_map_bundle.js';
+import { installRouteRailStub } from './_route_rail_stub.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /**
- * The routes feed, whose geometry the popup's profile is drawn from.
+ * The routes feed, whose geometry the rail's profile is drawn from.
  *
- * THE CACHE, NOT THE TAPPED FEATURE — see appendElevationProfile. A click
- * feature is the tile's clipped, zoom-simplified copy of the line; this is
- * the whole track as the server sent it, and the uuid is what ties one to
- * the other. The elevations here are what the range caption reports.
+ * THE CACHE, NOT THE TAPPED FEATURE. A click feature is the tile's
+ * clipped, zoom-simplified copy of the line; this is the whole track as
+ * the server sent it, and the uuid is what ties one to the other.
  */
 const ROUTES_FC = {
   type: 'FeatureCollection',
@@ -222,18 +223,17 @@ function buildFixture() {
 let mapStub;
 
 /**
- * Tap the map at a screen position, and return the detail it opened.
+ * Tap the map at a screen position, and return what it handed the rail.
  *
- * The sheet is closed first, so "did this tap open one" is answered by
- * this tap rather than by a previous one — MapSheet's teardown empties
- * the body, so a leftover node cannot be found after a close.
+ * The rail's record is cleared first, so "did this tap open it" is
+ * answered by this tap rather than by a previous one.
  *
  * @param {number} y The tap's y in pixels.
- * @returns {HTMLElement|undefined} The figures map.js built, if the sheet
- *   opened.
+ * @returns {{feature: object, options: object}|undefined} The rail's open
+ *   call, if the tap opened it.
  */
 function tapAt(y) {
-  window.pwaRouteDetail.close();
+  rail.reset();
   for (const handler of mapStub.handlers.click || []) {
     handler({
       point: { x: 10, y },
@@ -241,10 +241,10 @@ function tapAt(y) {
       originalEvent: { target: document.body },
     });
   }
-  const sheetEl = document.getElementById('route-detail-sheet');
-  if (!sheetEl || sheetEl.hasAttribute('hidden')) return undefined;
-  return sheetEl.querySelector('[data-route-detail]') || undefined;
+  return rail.last() || undefined;
 }
+
+let rail;
 
 beforeAll(async () => {
   localStorage.clear();
@@ -274,105 +274,57 @@ beforeAll(async () => {
   // through. Both before the bundle, as the page loads them.
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_route_detail.js');
+  rail = installRouteRailStub();
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
-  // Populates routesGeojsonCache, which is where the popup's profile — and
-  // so the elevation half of its caption — comes from.
+  // Populates routesGeojsonCache, which is where the rail's feature comes
+  // from.
   await window.pwaRoutesOverlay.show();
 });
 
 beforeEach(() => {
   installedLayers = new Set(['routes-line', 'routes-line-casing']);
   favouriteUnderPoint = false;
-  ROUTE_FEATURE.properties.duration_s = 17997;
   ROUTE_FEATURE.properties.uuid = '11111111-2222-3333-4444-555555555555';
 });
 
 describe('tapping a saved route', () => {
-  it('opens the route popup from a tap NEAR the line, not exactly on it', () => {
+  it('opens the rail from a tap NEAR the line, not exactly on it', () => {
     // 6px above the line: a normal, accurate tap by any human standard, and
     // a dead miss for an exact-point hit test. This is the regression.
-    const node = tapAt(LINE_Y - 6);
+    const opened = tapAt(LINE_Y - 6);
 
-    expect(node).toBeDefined();
-    expect(node.getAttribute('data-route-detail')).toBe('');
-    expect(node.textContent).toContain('Haute Route');
+    expect(opened).toBeDefined();
+    expect(opened.feature.properties.uuid).toBe(ROUTE_FEATURE.properties.uuid);
   });
 
-  it('shows the route the tap found, with both vertical figures', () => {
-    const node = tapAt(LINE_Y - 6);
+  it('hands the rail the CACHED track, not the tile\'s clipped copy', () => {
+    // The tapped feature has two points and no elevations; the cache has
+    // the whole track with its third ordinate, which the profile needs.
+    const opened = tapAt(LINE_Y - 6);
 
-    expect(node.textContent).toContain('12.4km');
-    expect(node.textContent).toContain('850m ↑');
-    expect(node.textContent).toContain('1100m ↓');
+    expect(opened.feature.geometry.coordinates).toEqual(
+      ROUTES_FC.features[0].geometry.coordinates,
+    );
   });
 
-  // SNOW-750: the caption line under the profile. Two independent facts,
-  // either of which may be unknown, joined by the same separator the
-  // figures line uses.
-  it('captions the profile with its range and the duration', () => {
-    const node = tapAt(LINE_Y - 6);
-
-    expect(node.textContent).toContain('1500–2100 m · 5h00m');
-  });
-
-  it('shows the duration even when no profile was drawn', () => {
-    // The regression the caption was lifted out of appendElevationProfile
-    // to fix. A GPX with timing but no <ele> draws no chart, and until the
-    // two were separated the duration went with it. Here the geometry is
-    // simply absent from the cache, which reaches the same branch.
+  it('falls back to the tapped feature when the cache has no entry', () => {
+    // A deletion landing between the paint and the tap: the rail still
+    // names the route and frames it, over a partial profile.
     ROUTE_FEATURE.properties.uuid = 'not-in-the-cache';
 
-    const node = tapAt(LINE_Y - 6);
+    const opened = tapAt(LINE_Y - 6);
 
-    expect(node.textContent).not.toContain('–');
-    expect(node.textContent).toContain('5h00m');
+    expect(opened.feature.properties.name).toBe('Haute Route');
   });
 
-  it('omits the duration entirely for an untimed route', () => {
-    // Null means "the file carried no timing", never "took no time" — the
-    // same contract the null ascent figure carries. A planned <rte> reaches
-    // this branch, and "0m" would be a claim the file does not make.
-    //
-    // Asserted on the caption ENDING at the range, rather than on the
-    // absence of a duration-shaped substring. The guard was
-    // not.toMatch(/\dh\d|\dm/), which closing the space between a value
-    // and its unit turned into a false failure: the figures line above now
-    // reads "850m ↑", and "850m" matches \dm.
-    ROUTE_FEATURE.properties.duration_s = null;
+  it('opens no sheet on the tap', () => {
+    tapAt(LINE_Y - 6);
 
-    const node = tapAt(LINE_Y - 6);
-
-    expect(node.textContent).toContain('1500–2100 m');
-    expect(node.textContent).not.toContain('1500–2100 m · ');
-  });
-
-  it('drops the hours segment under an hour', () => {
-    // 41m57s — the committed timed_track.gpx fixture's own span. "0h42m"
-    // would state an hours figure the tour does not have.
-    ROUTE_FEATURE.properties.duration_s = 2517;
-
-    const node = tapAt(LINE_Y - 6);
-
-    expect(node.textContent).toContain('42m');
-    expect(node.textContent).not.toContain('0h42m');
-  });
-
-  it('pads the minutes inside an hours figure', () => {
-    // "4h5m" reads as four hours five minutes only if you already know the
-    // format; "4h05m" cannot be misread.
-    ROUTE_FEATURE.properties.duration_s = 14700;
-
-    expect(tapAt(LINE_Y - 6).textContent).toContain('4h05m');
-  });
-
-  it('keeps counting in hours past a day', () => {
-    // A hut trip recorded as one track. Elapsed is elapsed — a days unit
-    // would be a third form for a case worth stating in hours.
-    ROUTE_FEATURE.properties.duration_s = 111960;
-
-    expect(tapAt(LINE_Y - 6).textContent).toContain('31h06m');
+    expect(document.getElementById('route-detail-sheet').hasAttribute('hidden')).toBe(
+      true,
+    );
   });
 
   it('still opens for a tap exactly on the line', () => {
@@ -393,7 +345,7 @@ describe('tapping a saved route', () => {
     installedLayers.add('favourites-pin');
     favouriteUnderPoint = true;
 
-    // No route popup opens. The favourite's own popup needs favourites.js to
+    // The rail does not open. The favourite's own popup needs favourites.js to
     // fill its container (see activateFavourite), and this suite does not
     // load it — so "nothing mounted" is exactly the favourite winning.
     expect(tapAt(LINE_Y)).toBeUndefined();
@@ -406,7 +358,7 @@ describe('tapping a saved route', () => {
     installedLayers.add('favourites-pin');
     favouriteUnderPoint = false;
 
-    expect(tapAt(LINE_Y)?.getAttribute('data-route-detail')).toBe('');
+    expect(tapAt(LINE_Y)).toBeDefined();
   });
 
   it('does nothing when the routes layer is not installed', () => {

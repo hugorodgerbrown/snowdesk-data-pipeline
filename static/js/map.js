@@ -6360,62 +6360,24 @@
   };
 
   /**
-   * Fit padding that frames into the map an open sheet has NOT covered.
-   *
-   * Every dimension is MEASURED. The sheet's width lives in a Tailwind
-   * class on the partial (`sm:w-[28rem]`), so a number here would be a
-   * second source of truth that stops matching the first time the class
-   * changes; what is reserved is the gap from the sheet's near edge to the
-   * far edge of the map, which also picks up whatever inset
-   * map_overlay_bounds.js gave it — ground the track cannot use either.
-   *
-   * Measured ONCE, by the caller, right after the sheet opens. On a phone
-   * the dock's height grows when the bulletin lands, and chasing that with
-   * a second camera move reads as a glitch; the first frame is the answer.
-   *
-   * @param {?HTMLElement} sheetEl The sheet docked over the map, if one is
-   *   open. Null gives the plain padding, which is every other caller's.
-   * @returns {{top: number, right: number, bottom: number, left: number}}
-   */
-  const paddingClearing = (sheetEl) => {
-    const padding = { ...FIT_PADDING };
-    const container = map && map.getContainer ? map.getContainer() : null;
-    if (!sheetEl || !container) return padding;
-
-    const canvas = container.getBoundingClientRect();
-    const box = sheetEl.getBoundingClientRect();
-    // A canvas or a sheet with no box — jsdom, `display: none`, a sheet
-    // measured before layout — is not a measurement to reserve against.
-    if (!(canvas.width > 0) || !(canvas.height > 0)) return padding;
-    if (!(box.width > 0) || !(box.height > 0)) return padding;
-
-    if (window.pwaOverlayBounds && window.pwaOverlayBounds.isDesktop()) {
-      // A floating card against the right-hand side.
-      reserveFitEdge(padding, 'right', 'left', canvas.right - box.left, canvas.width);
-    } else {
-      // Below `sm` the same partial is a full-width bottom dock, so the
-      // space it takes is height rather than width.
-      reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
-    }
-    return padding;
-  };
-
-  /**
-   * Widen a fit's bottom padding to clear rail one, when it is open.
+   * Fit padding that frames a route into the map rail one leaves visible.
    *
    * SNOW-1018. The rail is docked over the map's foot, so a route framed
    * without it would have its lower end drawn behind the profile of that
-   * same route. The reservation is the rail's own top edge measured from
-   * the canvas's bottom, and it is taken only where it exceeds what the
-   * padding already reserves there — on a phone the detail sheet's dock
-   * has already claimed the bottom edge, and the two overlap rather than
-   * stack.
+   * same route. Every dimension is MEASURED — the rail's height depends on
+   * how its grid wraps at this width — and the reservation is the rail's
+   * top edge measured from the canvas's bottom. Measured once, right after
+   * the rail opens.
    *
-   * @param {{top: number, right: number, bottom: number, left: number}} padding
-   *   A `paddingClearing` result, mutated and returned.
+   * This replaced SNOW-973's `paddingClearing`, which reserved the route
+   * detail sheet instead. A tap no longer opens that sheet — it sits behind
+   * the rail's menu — so on the tap there is no sheet to frame around, and
+   * a padding for one would push the route off-centre for no one.
+   *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
-  const paddingClearingRail = (padding) => {
+  const paddingClearingRail = () => {
+    const padding = { ...FIT_PADDING };
     const rail = window.pwaRouteRail;
     const container = map && map.getContainer ? map.getContainer() : null;
     if (!rail || !rail.isOpen() || !container) return padding;
@@ -6424,10 +6386,7 @@
     const box = rail.element.getBoundingClientRect();
     if (!(canvas.height > 0) || !(box.height > 0)) return padding;
 
-    const want = FIT_PADDING.bottom + (canvas.bottom - box.top);
-    if (want > padding.bottom) {
-      reserveFitEdge(padding, 'bottom', 'top', want - padding.bottom, canvas.height);
-    }
+    reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
     return padding;
   };
 
@@ -6440,8 +6399,8 @@
   // default: the two callers frame different kinds of thing at different
   // scales, and a default here would silently hand one of them the
   // other's answer — which is the defect SNOW-972 fixed.
-  // NO SHEET RESERVATION HERE, deliberately (SNOW-973). `activateRoute`'s
-  // own fit reserves the space its sheet is about to take, and this one
+  // NO RESERVATION HERE, deliberately (SNOW-973). `activateRoute`'s
+  // own fit reserves the space its rail takes (SNOW-1018), and this one
   // does not, because the panel a row was pressed in is already CLOSED by
   // the time the camera moves — step 2 of static/js/row_focus.js, which
   // dismisses the panel before calling this bridge. There is nothing
@@ -6495,9 +6454,9 @@
      * rest at the same scale. That is why SNOW-972 had to uncap BOTH:
      * fixing the tap alone would have made the row disagree with it.
      *
-     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves the
-     * route detail sheet docked over the map, so that fit reserves the
-     * room it takes (``paddingClearing`` above); a row press has already
+     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves rail
+     * one docked over the map's foot (SNOW-1018), so that fit reserves the
+     * room it takes (``paddingClearingRail`` above); a row press has already
      * dismissed its panel, so this one has nothing to frame around. The
      * two still agree on the question they answer — frame the track into
      * the map the user can actually see — and now differ on the answer
@@ -8041,161 +8000,6 @@
       }
     };
 
-    /**
-     * Draw the route's elevation profile into its popup, if it has one.
-     *
-     * The chart is a picture of the SAME data the figures above it state:
-     * every route coordinate carries its elevation as a third ordinate
-     * (RFC 7946 allows it, MapLibre ignores it), straight from the GPX's
-     * own `<ele>`. Nothing is fetched, so this works offline exactly as
-     * the rest of the popup does.
-     *
-     * THE GEOMETRY COMES FROM THE CACHE, NOT FROM THE TAPPED FEATURE, and
-     * that is the whole reason this takes a uuid rather than the feature
-     * it is called beside. A click feature is whatever
-     * `queryRenderedFeatures` returned, which is the TILE's copy of the
-     * line: clipped at tile boundaries — a long route comes back as just
-     * the piece the tap landed in — and simplified for the current zoom.
-     * Drawing from it would give a profile of part of the route, or of a
-     * coarser one, varying with where the user tapped and how far out
-     * they were zoomed. `routesGeojsonCache` holds the whole line as the
-     * server sent it, already in memory, and never varies.
-     *
-     * Silently draws nothing when the track has no elevation at all — a
-     * GPX with no `<ele>` means "unknown", and an empty flat line at zero
-     * would be the same lie the omitted ascent figure exists to avoid.
-     * Returns the profile either way, so appendRouteCaption can caption a
-     * chart that exists without having to re-read the geometry.
-     *
-     * SNOW-960 COLOURS IT BY SLOPE where the route has been sampled,
-     * from the `slope` property on the very feature this already found.
-     *
-     * NOT FOR A PENDING SHARE, and that restriction was learned rather
-     * than designed. `_route_feature` serves `slope` on the pending
-     * branch too, so colouring one was possible and at first sight
-     * better — the line is already spoken for by the teal dash saying
-     * "this one is not yours yet", and the chart is a different surface.
-     * But the six-swatch key and the link to /help/#help-topic-slope are
-     * on the MAP legend, and `anyRouteSampled` excludes pending routes
-     * from the condition that reveals it. A visitor who follows a sampled
-     * share and owns no sampled route of their own would therefore meet
-     * the whole steepness palette with nothing on screen to say what it
-     * means — on the one path where the reader is newest to the feature.
-     * Widening the legend instead would put a key for the map line over a
-     * map whose only route is drawn teal. So the rule stays the one
-     * `route_slope_core.js` already applies to the line: a pending share
-     * is not coloured, anywhere. Saving it makes it an owned route, and
-     * owned routes are coloured.
-     *
-     * SNOW-764: the key may be a uuid OR a share token. A pending route
-     * carries no uuid at all — a non-owner must not be handed the
-     * identifier the owner-scoped endpoints are addressed by — so the
-     * cache lookup matches on either. It has to be the cache for a pending
-     * route too, and for the same reason as an owned one: the tapped
-     * feature is the tile's clipped, zoom-simplified copy, and a profile
-     * drawn from it would be a profile of part of the track.
-     *
-     * @param {HTMLElement} container The popup body being built.
-     * @param {string} key The route's uuid, or a pending share's token,
-     *   from the feature properties.
-     * @returns {object|null} The profile drawn, or null if none was.
-     */
-    const appendElevationProfile = (container, key) => {
-      const core = self.pwaElevationProfileCore;
-      if (!core || !key || !routesGeojsonCache) return null;
-
-      const features = routesGeojsonCache.features || [];
-      const cached = features.find(
-        (f) =>
-          f && f.properties && (f.properties.uuid === key || f.properties.token === key),
-      );
-      const coordinates = cached && cached.geometry && cached.geometry.coordinates;
-      if (!Array.isArray(coordinates)) return null;
-
-      const cachedProps = cached.properties || {};
-      const profile = core.readProfile(coordinates);
-      const svg = core.createProfileSvg(profile, {
-        label: MAP_STRINGS['route-profile-label'],
-        // SNOW-960: the same record the slope layers paint the line
-        // from, read off the same CACHED feature — not the tapped one,
-        // whose properties MapLibre would have serialised to JSON text
-        // on the way out. Undefined for a route nothing has sampled and
-        // for a pending share (see above), and the chart then draws its
-        // single-colour curve.
-        slope: cachedProps.pending ? undefined : cachedProps.slope,
-      });
-      if (!svg) return null;
-      container.appendChild(svg);
-      return profile;
-    };
-
-    /**
-     * Format a duration in seconds as hours and minutes, or null.
-     *
-     * Whole minutes: a tour is not read to the second, and rounding rather
-     * than truncating keeps 59.6 minutes from reading as 59. The hours form
-     * pads the minutes so "4h05m" cannot be misread as "4h5m"; the
-     * minutes-only form does not, since there is nothing to align it to.
-     *
-     * @param {number} seconds Elapsed seconds, from the feature's duration_s.
-     * @returns {string|null} The formatted span, or null if not a duration.
-     */
-    const formatDuration = (seconds) => {
-      if (typeof seconds !== 'number' || !isFinite(seconds) || seconds <= 0) {
-        return null;
-      }
-      const totalMinutes = Math.round(seconds / 60);
-      const hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-      if (hours === 0) {
-        return self.pwaStrings.interpolate(
-          MAP_STRINGS['route-duration-minutes'],
-          { minutes: String(minutes) },
-        );
-      }
-      return self.pwaStrings.interpolate(MAP_STRINGS['route-duration-hours'], {
-        hours: String(hours),
-        minutes: String(minutes).padStart(2, '0'),
-      });
-    };
-
-    /**
-     * Append the caption line under the profile: elevation range, duration.
-     *
-     * SEPARATE FROM THE CHART ON PURPOSE (SNOW-750). The range caption used
-     * to live inside appendElevationProfile, which tied it to a chart being
-     * drawn — so a GPX carrying timing but no <ele> drew nothing and lost
-     * its duration with it. The two facts are independent: either, both or
-     * neither may be known, and the line renders whatever is.
-     *
-     * The range half is not decoration. The chart's y-axis is scaled to
-     * this track's own highest and lowest point, so the curve's height
-     * means nothing without the pair that bounds it.
-     *
-     * @param {HTMLElement} container The popup body being built.
-     * @param {object|null} profile The drawn profile, or null if none was.
-     * @param {number} durationSeconds The feature's duration_s.
-     */
-    const appendRouteCaption = (container, profile, durationSeconds) => {
-      const parts = [];
-      if (profile) {
-        parts.push(
-          self.pwaStrings.interpolate(MAP_STRINGS['route-elevation-range'], {
-            low: String(Math.round(profile.minEle)),
-            high: String(Math.round(profile.maxEle)),
-          }),
-        );
-      }
-      const duration = formatDuration(durationSeconds);
-      if (duration) parts.push(duration);
-      if (!parts.length) return;
-
-      const caption = document.createElement('div');
-      caption.className = 'text-xs text-text-3';
-      caption.textContent = parts.join(' · ');
-      container.appendChild(caption);
-    };
-
     // The shared-route popup's Save control, in both its states. Design
     // tokens only — `bg-status-info-*` is the informational status pair
     // from @theme, the same one static/js/signin_cta.js uses for the four
@@ -8224,31 +8028,35 @@
     };
 
     /**
-     * Append the Save control to a pending (unclaimed) route's popup.
+     * Build the Save control for a pending (unclaimed) route.
      *
-     * SNOW-764. The popup is where a deep-link recipient arrives — the
-     * link lands on the map with the camera already on the track — so the
-     * action has to be here and not only in the routes panel, which they
-     * would have to know to open.
+     * SNOW-764. A deep-link recipient arrives on the map with the camera
+     * already on the track, so the action has to be where they land and
+     * not only in the routes panel, which they would have to know to open.
+     * SNOW-1018 moved it from the detail sheet to rail one's identity block
+     * (`[data-route-rail-claim]`): a tap opens the rail and no longer the
+     * sheet, and a Save one menu press away is a Save most recipients
+     * would never find.
      *
      * TWO STATES, AND NEITHER IS "NOTHING". A signed-in viewer gets a
      * button that posts the claim; a signed-out one gets a link to sign
      * in. The control is never hidden: a hidden control reads as a bug,
-     * and the whole reason they are looking at this popup is that somebody
-     * sent them the route.
+     * and the whole reason they are looking at this route is that somebody
+     * sent it to them.
      *
      * The claim itself is window.pwaShare's, so this and the panel's own
      * HTMX form reach the same endpoint the same way. On success it
-     * announces `snowdesk:routes-changed` and closes the popup — the
-     * claimed route is an owned route now, and the pending line it was
-     * drawn as has to be replaced by the owned one, which the refetch that
-     * event triggers does.
+     * announces `snowdesk:routes-changed` and closes the rail and any open
+     * sheet — the claimed route is an owned route now, and the pending
+     * line it was drawn as is replaced by the owned one, which the refetch
+     * that event triggers does. A tap on the owned line then opens a rail
+     * with the owner's menu.
      *
-     * @param {HTMLElement} container The popup body being built.
      * @param {string} token The share token, from the feature properties.
-     * @returns {void}
+     * @returns {?HTMLElement} The control, or null when there is nothing
+     *   to offer (no sign-in URL, no claim endpoint, no token).
      */
-    const appendRouteClaimCta = (container, token) => {
+    const buildRouteClaimCta = (token) => {
       // NO "Shared with you" line above the control. It shipped with one
       // and it said nothing the control below it does not already say —
       // "Sign in to save this route" and "Save route" both state that this
@@ -8256,20 +8064,23 @@
       // its own prefix, because a row sits in a list beside owned ones and
       // has only its actions to tell them apart; a popup has no such
       // neighbour and needs no such label.
+      //
+      // The sign-in link / Save button carry `mt-2` for the popup they were
+      // built for; on the rail they sit under the figures line, where the
+      // same gap reads correctly.
 
       // Signed out: the way in, not a dead button. Same treatment the four
       // UGC panels give an ineligible visitor.
       if (!ROUTES_UPLOAD_ELIGIBLE) {
-        if (!ROUTES_SIGNIN_URL) return;
+        if (!ROUTES_SIGNIN_URL) return null;
         const link = document.createElement('a');
         link.href = ROUTES_SIGNIN_URL;
         link.className = ROUTE_CLAIM_CTA_CLASS;
         link.textContent = MAP_STRINGS['route-save-signin'];
-        container.appendChild(link);
-        return;
+        return link;
       }
 
-      if (!ROUTE_CLAIM_URL_TEMPLATE || !token || !window.pwaShare) return;
+      if (!ROUTE_CLAIM_URL_TEMPLATE || !token || !window.pwaShare) return null;
 
       const button = document.createElement('button');
       button.type = 'button';
@@ -8292,9 +8103,10 @@
                 detail: { claimed: true },
               }),
             );
-            // SNOW-973: the route detail is a sheet now, and this control
-            // is built into its body — closing the popup would close
-            // something that is not on screen.
+            // SNOW-1018: this control sits on the rail now. Both surfaces
+            // describe a pending route that no longer exists as such, so
+            // both close; the refetch above redraws it as an owned line.
+            window.pwaRouteRail?.close();
             window.pwaRouteDetail?.close();
           })
           .catch(function (resp) {
@@ -8306,7 +8118,7 @@
                 : MAP_STRINGS['route-save-failed'];
           });
       });
-      container.appendChild(button);
+      return button;
     };
 
     /**
@@ -8317,9 +8129,9 @@
      * onto several hundred segments per route to save this lookup would
      * be a large amount of duplicated string for a tap that happens once.
      *
-     * Reads the same cache and the same key `appendElevationProfile`
-     * does, so a segment and the chart its popup draws can never resolve
-     * to different routes. Owned routes only: a pending share produces no
+     * Reads the same cache `activateRoute` hands the rail from, so a
+     * segment and the route it opens can never resolve to different
+     * routes. Owned routes only: a pending share produces no
      * segments at all (route_slope_core.js), so there is no token branch
      * here and no way for one to appear.
      *
@@ -8336,197 +8148,145 @@
     };
 
     // SNOW-687: tapping a saved route frames the whole track and opens its
-    // detail. Two halves, and the order matters — SNOW-973 INVERTED IT.
-    // The fit used to run first, so that the map was already easing
-    // towards the track by the time the panel describing it appeared. That
-    // rationale belonged to the ANCHORED POPUP, which opened at the tap
-    // point and covered a card's worth of map wherever the finger landed.
-    // A docked sheet is anchored to the viewport and takes a known edge of
-    // it, and you cannot frame a route into the space a sheet leaves
-    // without having measured the sheet. So the sheet opens first, is
-    // measured, and the fit then frames into what is left
-    // (`paddingClearing`) — otherwise a horizontally-extended route has
-    // its eastern end sitting behind the 28rem panel, which is the exact
-    // complaint the popup was replaced over.
+    // detail. SNOW-1018 CHANGED WHAT "ITS DETAIL" IS. A tap opens rail one
+    // — the route's profile cut at its transitions, docked over the map's
+    // foot — and ONLY the rail. The rail carries what the sheet's top half
+    // used to: the name, the distance/ascent/descent figures and the
+    // elevation profile. The route detail sheet (SNOW-973) is one press
+    // further, behind the rail's "Terrain and bulletin" menu item, and now
+    // holds the two things the rail does not: the terrain lines below and
+    // the day's bulletin reading, which map_route_detail.js fetches.
     //
-    // SNOW-973 ALSO TOOK THE ANCHOR AWAY. The detail was a popup at the
-    // tap point — a line has no single natural anchor, so the honest one
-    // was where the finger went — and it is now the docked sheet
-    // (map_route_detail.js), which is anchored to the viewport rather than
-    // to the ground. That is what removed the `lngLat` argument from this
-    // function, from activateMarker, and from the share deep link's
-    // synthesised bounds centre.
+    // So the sheet's body is built here but DEFERRED: handed to the rail as
+    // `details`, a function the menu item calls. The day is read INSIDE it,
+    // at press time, because the scrubber may have moved between the tap
+    // and the press, and the reading has to answer for the day on screen.
     //
-    // The body is the panel row's own two lines, in the panel's own order
-    // and format ("12.4 km · 850 m asc · 1100 m desc"), for the
-    // reason activateCommunityReport gives above: one route should read the
-    // same whichever surface it is reached from. Built with createElement,
-    // never innerHTML — the name is user-supplied.
+    // The rail opens BEFORE the fit, so the fit can measure it
+    // (`paddingClearingRail`) — otherwise a route's lower end would be
+    // drawn behind its own profile.
     //
-    // It then adds what the panel row cannot: the elevation profile itself.
-    // The row is includes/_ugc_panel_row.html, whose five-slot anatomy is
-    // shared with favourites, observations and downloads — a chart inside
-    // it would be a shape only one of the four panels has. What the SHEET
-    // adds on top of both is the day's bulletin along this line, which the
-    // 320px popup never had room for; that half is fetched by
-    // map_route_detail.js and is the whole reason this function hands over
-    // a node instead of mounting one.
+    // SNOW-973 took the anchor away: the detail was a popup at the tap
+    // point and is now viewport-anchored, which is what removed the
+    // `lngLat` argument from this function, from activateMarker, and from
+    // the share deep link's synthesised bounds centre.
+    //
+    // Built with createElement, never innerHTML — everything on a route
+    // feature that reaches the page is either user-supplied or ours.
     const activateRoute = (feature) => {
       const props = feature.properties || {};
 
-      const container = document.createElement('div');
-      container.setAttribute('data-route-detail', '');
+      /**
+       * Build the sheet's body: the terrain lines, and nothing the rail
+       * already shows.
+       *
+       * @returns {HTMLElement}
+       */
+      const buildDetailBody = () => {
+        const container = document.createElement('div');
+        container.setAttribute('data-route-detail', '');
 
-      const title = document.createElement('div');
-      title.className = 'text-sm font-semibold text-text-1';
-      title.textContent = props.name || MAP_STRINGS['route-untitled'];
-      container.appendChild(title);
+        // SNOW-961: the ground, on a line of its own. It sat under the
+        // route's figures until SNOW-1018 moved those to the rail; it stays
+        // apart from them there too — distance and ascent are facts about
+        // the track, these are facts about what it crosses, and running them
+        // together invites the reader to take "43°" for something the GPX
+        // said.
+        //
+        // Absent entirely for a route that has never been sampled — see
+        // summaryLines, which distinguishes that from one we looked at and
+        // could not answer.
+        // The core is in home.html's DEFERRED group, so it is not
+        // guaranteed to exist when this runs — the same reason
+        // ``routeSlopeSegmentsFor`` and ``flatOwnedRouteFilter`` test for
+        // it rather than assuming it. Without the core the sheet loses its
+        // terrain line and keeps the bulletin reading, which is the right
+        // degradation: the figures are an addition to a sheet that stands
+        // on its own without them.
+        const slopeCore = self.pwaRouteSlopeCore;
+        const terrainLines = slopeCore
+          ? slopeCore.summaryLines(readFeatureJson(props.terrain))
+          : [];
+        // SNOW-911: how many passages the terrain flagged, on the same
+        // line as the figures rather than a line of its own — it is one
+        // more fact about the ground, and a line carrying a single short
+        // count would read as more important than the steepness beside it.
+        //
+        // OMITTED AT ZERO. "0 key passages" is a claim that the algorithm
+        // looked and found nothing, which is exactly the reading
+        // /help/#help-topic-slope exists to prevent: the markers are not
+        // exhaustive, and a route with none is not a safe route.
+        // Parsed ONCE and shared with the passage lines below: the slope
+        // record is the largest property on the feature, and it arrives as
+        // a JSON string that both readers would otherwise parse
+        // separately.
+        const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
+        // SNOW-964: the no-fall passages, pushed BEFORE the crux count so
+        // the line reads in the order the eye takes the map in — the
+        // colour under the track, then the split across it, then the ring
+        // around it.
+        //
+        // The two marks land on nearly the same ground (anything over 50°
+        // was already flagged a crux at 35°), so the words have to keep
+        // them apart: the ring says the terrain around you can release,
+        // the split says you are on it.
+        if (slopeCore?.passageLines) {
+          terrainLines.push(...slopeCore.passageLines(slopeFeature));
+        }
+        const cruxes = slopeCore?.cruxCount ? slopeCore.cruxCount(slopeFeature) : 0;
+        if (cruxes > 0) {
+          terrainLines.push({
+            key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',
+            params: { count: String(cruxes) },
+          });
+        }
+        if (terrainLines.length) {
+          const terrainMeta = document.createElement('div');
+          terrainMeta.className = 'mt-0.5 text-xs text-text-2';
+          terrainMeta.textContent = terrainLines
+            .map((line) => self.pwaStrings.interpolate(MAP_STRINGS[line.key], line.params))
+            .join(' · ');
+          container.appendChild(terrainMeta);
+        }
 
-      const parts = [];
-      if (typeof props.distance_m === 'number') {
-        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-distance'], {
-          km: (props.distance_m / 1000).toFixed(1),
-        }));
-      }
-      // ``ascent_m`` is null when the GPX carried no <ele> at all, and that
-      // null is MEANINGFUL: Route's own docstring says "we don't know" and
-      // "flat" are different facts, and rendering the second for the first
-      // is a safety-relevant lie about a route somebody may be planning to
-      // ski. So the segment is omitted entirely rather than shown as 0 m —
-      // note the explicit null test, since 0 is a legitimate ascent.
-      if (props.ascent_m != null) {
-        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-ascent'], {
-          m: String(Math.round(props.ascent_m)),
-        }));
-      }
-      // Descent gets the same null test and for the same reason. It sits
-      // beside the ascent rather than replacing it: the two are not each
-      // other's mirror (an out-and-back climbs and drops the same height,
-      // a traverse does not), and they are never netted — see
-      // Route.descent_m.
-      if (props.descent_m != null) {
-        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-descent'], {
-          m: String(Math.round(props.descent_m)),
-        }));
-      }
-      if (parts.length) {
-        const meta = document.createElement('div');
-        meta.className = 'mt-0.5 text-xs text-text-2';
-        meta.textContent = parts.join(' · ');
-        container.appendChild(meta);
-      }
+        return container;
+      };
 
-      // SNOW-961: the ground, on its own line under the route's own
-      // figures. A SECOND line rather than three more segments on the
-      // first: distance and ascent are facts about the track, these are
-      // facts about what it crosses, and running them together invites
-      // the reader to take "43°" for something the GPX said.
-      //
-      // Absent entirely for a route that has never been sampled — see
-      // summaryLines, which distinguishes that from one we looked at and
-      // could not answer.
-      // The core is in home.html's DEFERRED group, so it is not
-      // guaranteed to exist when this runs — the same reason
-      // ``routeSlopeSegmentsFor`` and ``flatOwnedRouteFilter`` test for
-      // it rather than assuming it. Without the core the popup loses its
-      // terrain line and keeps everything else, which is the right
-      // degradation: the figures are an addition to a popup that stood
-      // on its own before them.
-      const slopeCore = self.pwaRouteSlopeCore;
-      const terrainLines = slopeCore
-        ? slopeCore.summaryLines(readFeatureJson(props.terrain))
-        : [];
-      // SNOW-911: how many passages the terrain flagged, on the same
-      // line as the figures rather than a line of its own — it is one
-      // more fact about the ground, and a line carrying a single short
-      // count would read as more important than the steepness beside it.
-      //
-      // OMITTED AT ZERO. "0 key passages" is a claim that the algorithm
-      // looked and found nothing, which is exactly the reading
-      // /help/#help-topic-slope exists to prevent: the markers are not
-      // exhaustive, and a route with none is not a safe route.
-      // Parsed ONCE and shared with the passage lines below: the slope
-      // record is the largest property on the feature, and it arrives as
-      // a JSON string that both readers would otherwise parse
-      // separately.
-      const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
-      // SNOW-964: the no-fall passages, pushed BEFORE the crux count so
-      // the line reads in the order the eye takes the map in — the
-      // colour under the track, then the split across it, then the ring
-      // around it.
-      //
-      // The two marks land on nearly the same ground (anything over 50°
-      // was already flagged a crux at 35°), so the words have to keep
-      // them apart: the ring says the terrain around you can release,
-      // the split says you are on it.
-      if (slopeCore?.passageLines) {
-        terrainLines.push(...slopeCore.passageLines(slopeFeature));
-      }
-      const cruxes = slopeCore?.cruxCount ? slopeCore.cruxCount(slopeFeature) : 0;
-      if (cruxes > 0) {
-        terrainLines.push({
-          key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',
-          params: { count: String(cruxes) },
-        });
-      }
-      if (terrainLines.length) {
-        const terrainMeta = document.createElement('div');
-        terrainMeta.className = 'mt-0.5 text-xs text-text-2';
-        terrainMeta.textContent = terrainLines
-          .map((line) => self.pwaStrings.interpolate(MAP_STRINGS[line.key], line.params))
-          .join(' · ');
-        container.appendChild(terrainMeta);
-      }
-
-      // uuid for an owned route, token for a pending one — see
-      // appendElevationProfile. The two can never collide: a pending
-      // feature carries no uuid and an owned one carries no token.
-      const profile = appendElevationProfile(container, props.uuid || props.token);
-      appendRouteCaption(container, profile, props.duration_s);
-
-      if (props.pending) appendRouteClaimCta(container, props.token);
-
-      // SNOW-973: over to the sheet. map.js knows only this call — the
-      // clone, the fetch, the offline read-back and the sheet's own
-      // exclusivity registration are map_route_detail.js's, exactly as
-      // the weather sheet's are map_weather_detail.js's.
-      //
-      // `uuid` is absent for a pending share, which is what tells the
-      // module not to ask for a reading: routes:bulletin is owner-scoped,
-      // and a recipient who has not saved the route yet would only be
-      // shown a 404's failure line.
-      //
-      // The day is the one the scrubber is showing, so the reading answers
-      // for the day on screen rather than for today.
-      const opened = window.pwaRouteDetail?.open({
-        node: container,
-        uuid: props.uuid || null,
-        day: currentDisplayedDate,
-      });
-
-      // SNOW-1018: rail one, the route's profile cut at its transitions,
-      // docked over the map's foot. Handed the CACHED feature, for the
-      // reason appendElevationProfile reads it: the one MapLibre gave the
-      // tap has lost the third ordinate the profile is drawn from. Opened
-      // before the fit below so the fit can measure it.
+      // Handed the CACHED feature: the one MapLibre gave the tap is the
+      // tile's copy — clipped at tile boundaries and simplified for the
+      // current zoom — so a profile drawn from it would be of part of the
+      // route. Falls back to the tapped feature when the cache has no
+      // entry (a deletion landing between the paint and the tap): the rail
+      // still names the route and frames it, over a partial profile.
       const cachedFeature = (routesGeojsonCache?.features || []).find(
         (f) =>
           f && f.properties
           && ((props.uuid && f.properties.uuid === props.uuid)
             || (props.token && f.properties.token === props.token)),
       );
-      if (cachedFeature) window.pwaRouteRail?.open(cachedFeature);
+
+      // `uuid` is absent for a pending share, which is what tells the
+      // sheet not to ask for a reading: routes:bulletin is owner-scoped,
+      // and a recipient who has not saved the route yet would only be
+      // shown a 404's failure line.
+      window.pwaRouteRail?.open(cachedFeature || feature, {
+        details: () => window.pwaRouteDetail?.open({
+          node: buildDetailBody(),
+          uuid: props.uuid || null,
+          day: currentDisplayedDate,
+        }),
+        claim: props.pending ? buildRouteClaimCta(props.token) : null,
+      });
 
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
         // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
         // [[west, south], [east, north]].
         //
-        // SNOW-973: the padding reserves the sheet opened just above —
-        // measured now, while it is on screen and before its bulletin half
-        // lands, because a second camera move chasing that reflow reads as
-        // a glitch. With no sheet open (no module, or a body it refused)
-        // this is the plain padding every other fit uses.
+        // SNOW-1018: the padding reserves the rail opened just above,
+        // measured now while it is on screen. No sheet is open on a tap
+        // any more, so there is nothing else docked over the map to frame
+        // around.
         //
         // SNOW-972: NO `maxZoom`. This fit carried `zoomToFeatureBounds`'
         // cap of 10 on the reasoning that "a route and a region frame
@@ -8549,9 +8309,7 @@
         // whatever marks exist by then. Padding is not a cap: it frames
         // into less map, which zooms the camera OUT, never past a floor.
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(
-            paddingClearing(opened ? window.pwaRouteDetail.element : null),
-          ),
+          padding: paddingClearingRail(),
           duration: 400,
         });
       }
