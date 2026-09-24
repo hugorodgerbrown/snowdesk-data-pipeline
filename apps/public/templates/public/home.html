@@ -372,6 +372,11 @@ in addition to the shared map assets.
     {# dims the rest with. After the slope core, whose segments its          #}
     {# passages are built from. Read at install time, never at parse time.   #}
     <script defer src="{% static 'js/route_legs_core.js' %}"></script>
+    {# SNOW-1019: the route cursor on the map (window.pwaRouteCursorMapCore)  #}
+    {# — a selection as a stretch of line, the cursor index as a dot, and a  #}
+    {# pointer on the line back to the nearest sample. Read by map.js when a #}
+    {# route opens and on a pointer, never at parse time.                    #}
+    <script defer src="{% static 'js/route_cursor_map_core.js' %}"></script>
     {# SNOW-1018: rail one. The route cursor (window.pwaRouteCursorCore,     #}
     {# SNOW-1016) had no caller until this rail, which is its first; the     #}
     {# rail's pure half (window.pwaRouteRailCore) — tick step, figures line, #}

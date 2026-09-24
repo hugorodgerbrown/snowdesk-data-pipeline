@@ -64,6 +64,8 @@ interface Window {
   pwaRouteLegsCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
+  /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */
+  pwaRouteCursorMapCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
   /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, ticks. */
