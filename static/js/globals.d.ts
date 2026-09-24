@@ -64,6 +64,8 @@ interface Window {
   pwaRouteCursorCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
+  /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
+  pwaBankRibbonCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */

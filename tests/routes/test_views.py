@@ -1694,6 +1694,51 @@ class TestRoutesGeojsonFallLines:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonBanks:
+    """The bank angle on a route feature (SNOW-1021).
+
+    A flat per-segment list aligned with ``angles``, whole degrees,
+    signed. ``_slope_record`` lays its boundaries out due EAST, so a
+    south-facing segment falls away on the skier's right (+) and a
+    north-facing one on the left (-).
+    """
+
+    def test_banks_align_with_angles_and_keep_their_sign(self, client: Client) -> None:
+        """One signed whole degree per segment, null for an unknown."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            slope_samples=_slope_record(
+                {"angle_deg": 38.0, "aspect_deg": 180.0},
+                {"unknown": "outside_coverage"},
+                {"angle_deg": 38.0, "aspect_deg": 0.0},
+                {"angle_deg": 30.0, "aspect_deg": 90.0},
+            ),
+        )
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert len(slope["banks"]) == len(slope["angles"])
+        assert slope["banks"] == [38, None, -38, 0]
+        assert all(isinstance(bank, int) for bank in slope["banks"] if bank)
+
+    def test_nothing_is_written_back_to_the_record(self, client: Client) -> None:
+        """Derived on read, like the fall-line marks — never stored."""
+        user = UserFactory.create()
+        client.force_login(user)
+        record = _slope_record({"angle_deg": 38.0, "aspect_deg": 180.0})
+        route = RouteFactory.create(user=user, slope_samples=record)
+
+        client.get(GEOJSON_URL)
+
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert "banks" not in route.slope_samples
+        assert "banks" not in route.slope_samples.get("summary", {})
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonTerrain:
     """The terrain summary on a route feature (SNOW-961).
 

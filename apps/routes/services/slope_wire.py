@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from apps.routes.services.bank import bank_angles
 from apps.routes.services.fall_line import fall_line_marks
 from apps.routes.services.passages import route_passages
 
@@ -71,6 +72,17 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     be read at all, and **empty means nothing qualified** — a complete
     answer, the ``passages`` rule again.
 
+    ``banks`` (SNOW-1021) are the bank angle — how far the ground tilts
+    ACROSS the track, signed, positive where it falls away on the skier's
+    right. DERIVED HERE on the same terms (``apps.routes.services.bank``).
+    Unlike ``fall_lines`` this IS a flat per-segment list aligned with
+    ``angles``, one whole degree each and **null for an unknown**, and the
+    difference is the drawing: the ribbon places a tick every few pixels
+    on a zoomed leg, so marks thinned by distance would still be needed
+    about every other segment, at five times the bytes of a bare integer.
+    ``docs/decisions/the-bank-angle-is-drawn-signed.md`` has the count.
+    Present whenever the record could be read at all.
+
     ``passages`` (SNOW-964) are the stretches where the TRACK is on
     no-fall ground, and they are DERIVED HERE rather than read out of the
     record: both their inputs are already stored, so caching them would
@@ -87,8 +99,9 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
 
     Returns:
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
-        ``cruxes`` where the record has them, and ``passages`` and
-        ``fall_lines`` whenever the record could be read at all. None
+        ``cruxes`` where the record has them, and ``passages``,
+        ``fall_lines`` and ``banks`` whenever the record could be read
+        at all. None
         when there is nothing to draw — never sampled, or a record whose
         halves do not pair up (N + 1 coordinates to N angles), which
         would draw segments against the wrong ground.
@@ -110,6 +123,7 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     cruxes = samples.get("cruxes")
     passages = route_passages(samples)
     fall_lines = fall_line_marks(samples)
+    banks = bank_angles(samples)
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
@@ -126,4 +140,8 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
         # pairing check above has already refused, so in practice the key
         # is always present here.
         **({"fall_lines": fall_lines} if isinstance(fall_lines, list) else {}),
+        # And a fourth: ``bank_angles`` refuses exactly the records the
+        # pairing check has refused, plus an empty one, which has nothing
+        # to align with anyway.
+        **({"banks": banks} if isinstance(banks, list) else {}),
     }
