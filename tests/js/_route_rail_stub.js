@@ -17,8 +17,12 @@
 /**
  * Install the stub and return its handle.
  *
+ * `state.cursor` is what `cursor()` answers — null unless a suite sets
+ * one, which the leg-dimming tests do (SNOW-1017).
+ *
  * @returns {{
- *   state: {open: boolean, calls: Array<{feature: object, options: object}>},
+ *   state: {open: boolean, cursor: ?object,
+ *     calls: Array<{feature: object, options: object}>},
  *   element: HTMLElement,
  *   last: function(): ?{feature: object, options: object},
  *   openDetails: function(): *,
@@ -26,7 +30,7 @@
  * }}
  */
 export function installRouteRailStub() {
-  const state = { open: false, calls: [] };
+  const state = { open: false, cursor: null, calls: [] };
   const element = document.createElement('section');
   element.id = 'route-rail-stub';
   window.pwaRouteRail = {
@@ -39,7 +43,7 @@ export function installRouteRailStub() {
       state.open = false;
     },
     isOpen: () => state.open,
-    cursor: () => null,
+    cursor: () => state.cursor,
     element,
   };
   return {
@@ -50,6 +54,7 @@ export function installRouteRailStub() {
     openDetails: () => state.calls.at(-1).options.details(),
     reset: () => {
       state.open = false;
+      state.cursor = null;
       state.calls.length = 0;
     },
   };

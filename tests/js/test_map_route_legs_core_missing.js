@@ -1,19 +1,19 @@
 /*
- * tests/js/test_map_route_slope_core_missing.js — what a sampled route
- * looks like when `route_slope_core.js` is not there (SNOW-910).
+ * tests/js/test_map_route_legs_core_missing.js — what a legged route looks
+ * like when `route_legs_core.js` is not there (SNOW-1017, replacing
+ * SNOW-910's slope-core version of the same guard).
  *
  * Scenario: none — a layer filter computed from a global that may not have
  * arrived. No browser is needed to prove it, and no manual test script
  * could arrange it.
  *
- * `routeSlopeSegmentsFor` guards on the core and falls back to an empty
- * collection, so a load failure costs the COLOURING and not the overlay.
- * That promise is only kept if the flat line stays behind to be fallen
- * back TO: the exclusion that takes a sampled route off `routes-line` has
+ * `routeLegsFor` guards on the core and falls back to an empty collection,
+ * so a load failure costs the LEGS and not the overlay. That promise is
+ * only kept if the flat line stays behind to be fallen back TO: the
+ * exclusion that takes a legged route off `routes-line` and its casing has
  * to be conditional on the same global. Unconditional, it hides every
- * sampled route from the one layer still capable of drawing it, and the
- * track renders as nothing but its own translucent casing — present,
- * unreadable, and with no error anywhere to say why.
+ * legged route from the one layer still capable of drawing it, and the
+ * track renders as nothing at all — with no error anywhere to say why.
  *
  * The core is in home.html's DEFERRED call-site script group, which is why
  * the filter is computed at layer-install time rather than at parse time;
@@ -21,13 +21,13 @@
  * a moment behind.
  *
  * The core-PRESENT half of this pair lives in
- * tests/js/test_map_route_slope_layers.js ("drops a sampled route, so it
- * is not painted flat underneath"), which boots the bundle with the core
+ * tests/js/test_map_route_leg_layers.js ("drop a legged route, so it is
+ * not painted flat underneath"), which boots the bundle with the core
  * loaded. Keeping the two in separate files is deliberate: each boot binds
  * its own document listeners, so one suite cannot boot the bundle twice
  * and still count anything.
  *
- * Booting map.js in jsdom follows tests/js/test_map_route_slope_layers.js's
+ * Booting map.js in jsdom follows tests/js/test_map_route_leg_layers.js's
  * pattern; see its header for the general rationale.
  */
 
@@ -38,7 +38,7 @@ import { loadMapBundle } from './_load_map_bundle.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/** One sampled route and one that has never been sampled. */
+/** One legged route and one with no legs. */
 const ROUTES_FC = {
   type: 'FeatureCollection',
   features: [
@@ -56,12 +56,13 @@ const ROUTES_FC = {
           points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01]],
           angles: [12.0, 41.0],
         },
+        legs: [{ i: 1, from: 0, to: 1, climbing: true, point_from: 0, point_to: 1 }],
       },
     },
     {
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: [[8.0, 47.0], [8.0, 47.02]] },
-      properties: { uuid: 'flat-route', name: 'Never sampled' },
+      properties: { uuid: 'flat-route', name: 'No legs' },
     },
   ],
 };
@@ -181,7 +182,7 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
-    <section id="map-route-slope-section" hidden></section>`;
+    <section id="map-route-legs-section" hidden></section>`;
 }
 
 let mapStub;
@@ -211,9 +212,10 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/route_markers_core.js');
-  // route_slope_core.js is deliberately NOT imported — this whole suite is
+  await import('../../static/js/route_slope_core.js');
+  // route_legs_core.js is deliberately NOT imported — this whole suite is
   // the page it failed to load on.
-  delete globalThis.pwaRouteSlopeCore;
+  delete globalThis.pwaRouteLegsCore;
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
@@ -226,13 +228,15 @@ afterAll(() => {
   delete globalThis.maplibregl;
 });
 
-describe('the routes layer with no slope core', () => {
-  it('still draws a sampled route, flat', () => {
-    // Owned-only, and nothing about `slope`: with no core to paint the
-    // segments, the flat fuchsia line is the only thing that can draw this
-    // track at all.
+describe('the routes layer with no legs core', () => {
+  it('still draws a legged route, flat, over its casing', () => {
+    // Owned-only, and nothing about `legs`: with no core to paint the legs,
+    // the flat fuchsia line is the only thing that can draw this track.
     expect(layers.get('routes-line').filter)
       .toEqual(['!=', ['get', 'pending'], true]);
+    expect(layers.get('routes-line-casing').filter).toEqual([
+      'any', ['==', ['get', 'pending'], true], ['!=', ['get', 'pending'], true],
+    ]);
   });
 
   it('leaves the pending line alone, as it does with the core present', () => {
@@ -240,9 +244,11 @@ describe('the routes layer with no slope core', () => {
       .toEqual(['==', ['get', 'pending'], true]);
   });
 
-  it('paints an empty slope source rather than throwing', () => {
+  it('paints empty leg, transition and passage sources rather than throwing', () => {
     // `setData` throws on a null, which is why the guarded fallback is a
     // collection with no features rather than nothing at all.
-    expect(sources.get('route-slopes').data).toEqual(EMPTY_FC);
+    expect(sources.get('route-legs').data).toEqual(EMPTY_FC);
+    expect(sources.get('route-transitions').data).toEqual(EMPTY_FC);
+    expect(sources.get('route-passages').data).toEqual(EMPTY_FC);
   });
 });

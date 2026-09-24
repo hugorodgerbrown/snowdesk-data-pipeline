@@ -288,12 +288,11 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
             "bounds": route.bounds,
             # OMITTED ENTIRELY when the route has never been sampled, not
             # passed through as a null like the two above. The key's
-            # presence is what the map's ``routes-line`` filter tests to
-            # decide whether a route is already being painted by the slope
-            # layers, and a present-but-null value would answer that
-            # question wrongly — a flat fuchsia line drawn underneath its
-            # own colours. Unknown-per-segment is expressed inside the
-            # value, by a null angle; see compact_slope.
+            # presence says whether the route has a slope record at all —
+            # the map's refetch after an upload waits on exactly that —
+            # and a present-but-null value would answer it wrongly.
+            # Unknown-per-segment is expressed inside the value, by a null
+            # angle; see compact_slope.
             **({"slope": slope} if slope is not None else {}),
             # SNOW-1018: the route cut at its transitions, for the rail
             # below the map. ``from``/``to`` are segment indices — the
@@ -303,7 +302,11 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
             # leg_wire). The record is passed only when ``slope`` is sent:
             # a record compact_slope refused gives the client no
             # ``angles``, so the legs must index the stride walk instead.
-            # Omitted rather than null when there are none.
+            # Omitted rather than null when there are none: the home map's
+            # ``routes-line`` filter tests the key's PRESENCE to decide
+            # whether the leg layers are drawing a route (SNOW-1017), and
+            # ``point_from``/``point_to`` slice those legs out of the
+            # geometry.
             **(
                 {"legs": legs}
                 if (

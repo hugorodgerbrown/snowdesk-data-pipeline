@@ -77,7 +77,8 @@
  *                    a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
- *   cursor()       — the open route's cursor, or null (for SNOW-1017)
+ *   cursor()       — the open route's cursor, or null; map.js follows it
+ *                    to dim every leg but the open one (SNOW-1017)
  *   element        — the rail itself, measured by map.js's fit padding
  */
 
@@ -550,8 +551,16 @@
     return true;
   }
 
-  /** Hide the rail and drop its cursor. */
+  /**
+   * Hide the rail and drop its cursor.
+   *
+   * The open leg is closed FIRST, while every subscriber is still
+   * listening, so the map (SNOW-1017) hears `openLeg: null` and restores
+   * the legs it dimmed. That covers the rail's own ×, Escape and backdrop
+   * closes, none of which the map sees.
+   */
   function close() {
+    if (cursor) cursor.closeLeg();
     if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;

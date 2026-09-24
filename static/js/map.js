@@ -2245,23 +2245,56 @@
   };
 
   /**
-   * The slope-coloured segments for a routes payload (SNOW-910).
+   * The leg lines for a routes payload (SNOW-1017).
    *
-   * A guarded wrapper over `route_slope_core.js`, on the same terms as
-   * `routeEndpointsFor` above: a load failure should cost the colouring,
-   * not the routes overlay. An empty collection is what the fallback has
-   * to be — `setData` throws on a null — and it paints nothing, which
-   * leaves every route drawn by `routes-line` as it was before this
-   * existed.
+   * A guarded wrapper over `route_legs_core.js`, on the same terms as
+   * `routeEndpointsFor` above: a load failure should cost the legs, not
+   * the routes overlay. An empty collection is what the fallback has to
+   * be — `setData` throws on a null — and it paints nothing, which leaves
+   * every route drawn by `routes-line` (see flatOwnedRouteFilter).
    *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} A line
    *   FeatureCollection, empty when the core is unavailable.
    */
-  const routeSlopeSegmentsFor = (geojson) => {
-    const core = self.pwaRouteSlopeCore;
+  const routeLegsFor = (geojson) => {
+    const core = self.pwaRouteLegsCore;
     if (!core) return { type: 'FeatureCollection', features: [] };
-    return core.segmentCollection(geojson);
+    return core.legCollection(geojson);
+  };
+
+  /**
+   * The numbered transition markers for a routes payload (SNOW-1017).
+   *
+   * Guarded like the legs above, and for the same reason.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A Point
+   *   FeatureCollection, empty when there is nothing to mark.
+   */
+  const routeTransitionsFor = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    if (!core) return { type: 'FeatureCollection', features: [] };
+    return core.transitionCollection(geojson);
+  };
+
+  /**
+   * The no-fall passage segments for a routes payload (SNOW-964,
+   * redrawn by SNOW-1017).
+   *
+   * Only the passages, each tagged with its leg's `climbing` so the edge
+   * can take the leg's colour. Guarded like the legs above; the core
+   * itself answers empty when `route_slope_core.js` is missing, since
+   * the segments come from there.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A line
+   *   FeatureCollection, empty when there is nothing to mark.
+   */
+  const routePassagesFor = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    if (!core) return { type: 'FeatureCollection', features: [] };
+    return core.passageCollection(geojson);
   };
 
   /**
@@ -2304,56 +2337,59 @@
   };
 
   /**
-   * The MapLibre `step` expression painting a segment by its slope class.
+   * The two leg colours, read off the core with a literal fallback.
    *
-   * Built from the core's CLASSES rather than written out, so the line and
-   * the legend swatches beside it cannot drift: both read the same list.
-   * A `step` takes the first colour, then a (stop, colour) pair per class
-   * after it — the stops are the CLASS INDICES the core assigns, not the
-   * angles, because the angle was already classified server-side and the
-   * expression's job is only to look the colour up.
+   * The literals mirror `--color-route-rail-climb` and
+   * `--color-route-rail-descent` in src/css/main.css, as the core's own
+   * constants do; the fallback is only for a page where the core has not
+   * loaded, where no leg is drawn and only the passage edge reads them.
    *
-   * @returns {Array<*>|string} The expression, or the flat route colour
-   *   when the core is unavailable and there is nothing to classify by.
+   * @returns {{climb: string, descent: string}}
    */
-  const routeSlopeColourExpression = () => {
-    const core = self.pwaRouteSlopeCore;
-    if (!core) return ROUTE_LINE_COLOUR;
-    const expression = ['step', ['get', 'slope_class'], core.CLASSES[0].hex];
-    for (let i = 1; i < core.CLASSES.length; i += 1) {
-      expression.push(i, core.CLASSES[i].hex);
-    }
-    return expression;
+  const legColours = () => {
+    const core = self.pwaRouteLegsCore || {};
+    return {
+      climb: core.LEG_CLIMB_COLOUR || '#c026d3',
+      descent: core.LEG_DESCENT_COLOUR || '#64748b',
+    };
   };
 
   /**
-   * Whether any route in the current payload has been sampled (SNOW-910).
+   * Whether any owned route in the current payload carries legs
+   * (SNOW-1017).
    *
-   * The legend's condition. Read off the payload rather than off the
-   * source's feature count, because the two answer different questions: a
-   * route sampled entirely outside the terrain coverage produces only
-   * unknown segments, which is still a sampled route and still needs the
-   * key that explains the dashes.
+   * The legend's condition. Read off the payload rather than off the leg
+   * source's feature count, on the reasoning SNOW-910's steepness key
+   * used: the payload says what is on the map, the source only what the
+   * core managed to draw of it.
    *
-   * @returns {boolean} True when at least one owned route carries a slope
-   *   record.
+   * A route whose legs the core cannot slice (an old cached payload) is
+   * drawn flat, so it does not count.
+   *
+   * @returns {boolean} True when at least one owned route has legs the
+   *   leg layers draw.
    */
-  const anyRouteSampled = () => {
+  const anyRouteLegged = () => {
+    const core = self.pwaRouteLegsCore;
     const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
     return features.some(
-      (f) => f && f.properties && f.properties.slope && !f.properties.pending,
+      (f) => f && f.properties && !f.properties.pending
+        && (core && core.hasDrawableLegs
+          ? core.hasDrawableLegs(f)
+          : Array.isArray(f.properties.legs) && f.properties.legs.length > 0),
     );
   };
 
   /**
-   * Show the legend card's route-steepness key while it applies (SNOW-910).
+   * Show the legend card's route-legs key while it applies (SNOW-1017,
+   * replacing SNOW-910's route-steepness key).
    *
    * TWO conditions, and both are needed. The overlay has to be drawn — a
    * key for something not on screen is clutter on every other visit, which
    * is `syncCoverageLegend`'s reasoning above — AND something on screen has
-   * to be coloured. Most readers have no routes at all, and every one of
-   * them would otherwise get a six-swatch key explaining a line they have
-   * never uploaded.
+   * to be cut into legs. Most readers have no routes at all, and every one
+   * of them would otherwise get a key explaining a line they have never
+   * uploaded.
    *
    * Reads live layer state rather than a flag of its own, which is what
    * makes it correct however the caller reached here: boot, a toggle, a
@@ -2361,20 +2397,20 @@
    * `snowdesk:overlay-visibility-changed` for the first three and called
    * directly for the last.
    *
-   * `hidden` rather than a class, matching the two sections it sits
-   * beside. A missing element is not an error — this partial is embedded
-   * on pages that carry no legend.
+   * `hidden` rather than a class, matching the sections it sits beside. A
+   * missing element is not an error — this partial is embedded on pages
+   * that carry no legend.
    *
    * @returns {void}
    */
-  const syncRouteSlopeLegend = () => {
-    const section = document.getElementById('map-route-slope-section');
+  const syncRouteLegLegend = () => {
+    const section = document.getElementById('map-route-legs-section');
     if (!section) return;
-    section.hidden = !layerPainted('routes-slope-line') || !anyRouteSampled();
+    section.hidden = !layerPainted('routes-leg-climb') || !anyRouteLegged();
   };
 
   document.addEventListener(
-    'snowdesk:overlay-visibility-changed', syncRouteSlopeLegend,
+    'snowdesk:overlay-visibility-changed', syncRouteLegLegend,
   );
 
   // SNOW-764: which features each of the three route line layers draws.
@@ -2387,47 +2423,169 @@
   const OWNED_ROUTE_FILTER = ['!=', ['get', 'pending'], true];
   const PENDING_ROUTE_FILTER = ['==', ['get', 'pending'], true];
 
-  // SNOW-910: and which of the OWNED ones are drawn flat.
+  // SNOW-1017: and which of the OWNED ones are drawn flat.
   //
-  // A sampled route is painted segment by segment by `routes-slope-line`
-  // and `routes-slope-unknown` over the whole of its length, so leaving it
-  // in the flat layer as well would paint it twice — the fuchsia showing
-  // through at every join, where the segments meet with butt caps.
+  // A route that carries `legs` is painted leg by leg by `routes-leg-climb`
+  // and `routes-leg-descent` over the whole of its length, so it leaves
+  // BOTH flat layers. The line, because it would otherwise show through at
+  // every seam; the casing, because the legs carry a casing of their own
+  // that a selection dims (bindLegDimming), and a per-route casing left
+  // underneath would keep a dimmed leg framed at full strength.
   //
-  // ``['!', ['has', 'slope']]`` and not a test on the value: the server
-  // OMITS the property entirely for a route it has never sampled
-  // (apps/routes/views.py's `_route_feature` says why), so presence is
-  // exactly the question. A route sampled with no answer anywhere DOES
-  // carry the property, and is right to leave this layer — it is drawn
-  // dashed instead, which is a different statement from a flat line.
+  // ``['!', ['has', 'legs']]`` and not a test on the value: the server
+  // OMITS the property for a route it finds no leg in (a track with no
+  // elevation), so presence is exactly the question. SNOW-910 tested
+  // ``slope`` here; legs replaced the slope colours on the map, and a
+  // route has legs whether or not it has been sampled.
+  //
+  // The test runs against `routesSourceData`'s copy of the payload, not
+  // the server's: an overlay payload cached before SNOW-1017 carries
+  // `legs` without the point indices the core slices by, and the copy has
+  // `legs` removed from any route like that, so it stays on this layer
+  // rather than leaving it for leg layers that cannot draw it.
   //
   // `routes-line-pending` is deliberately NOT filtered, and the pending
-  // routes produce no segments at all (route_slope_core.js). A pending
-  // line's teal dash says "this one is not yours yet", which is the fact
-  // that matters about it and the only action it offers; recolouring it by
-  // steepness would spend the one line on a second message and leave the
-  // first with nothing to carry it. Saving it makes it an owned route, and
-  // owned routes are coloured.
+  // routes produce no legs at all (route_legs_core.js). A pending line's
+  // teal dash says "this one is not yours yet", which is the fact that
+  // matters about it and the only action it offers.
   //
   // A FUNCTION, called at layer-install time, and both halves of that
-  // matter. `routeSlopeSegmentsFor` falls back to an empty collection when
-  // `route_slope_core.js` failed to load, so with no core the two slope
-  // layers draw NOTHING — and an unconditional exclusion here would then
-  // take every sampled route off the flat layer as well, leaving it as
-  // nothing but its own translucent casing. Excluding only when there is a
-  // core to do the painting means a sampled route falls back to its
-  // ordinary fuchsia line, which is exactly what the guard promises.
+  // matter. `routeLegsFor` falls back to an empty collection when
+  // `route_legs_core.js` failed to load, so with no core the leg layers
+  // draw NOTHING — and an unconditional exclusion here would then take
+  // every route off the flat layers as well. Excluding only when there is
+  // a core to do the painting means a route falls back to its ordinary
+  // fuchsia line, which is exactly what the guard promises.
   //
   // And it cannot be a module-level const testing the same thing, because
   // the core is in home.html's DEFERRED call-site script group: at the
   // moment this file is parsed it is not guaranteed to exist yet, so a
   // const would bake in "no core" on a page where the core arrives a
   // moment later.
+  /**
+   * The payload the `routes` source is given (SNOW-1017).
+   *
+   * The server's payload with `legs` removed from every route whose legs
+   * the core cannot slice (route_legs_core.js's `withDrawableLegs`), so the
+   * flat-line filter's `has legs` test is true only of a route the leg
+   * layers actually draw. `routesGeojsonCache` keeps the server's payload
+   * untouched — the rail reads its legs from there, and the rail's legs are
+   * in sample indices, which an old payload has.
+   *
+   * With no core the payload passes through as it is, and the filter is
+   * the owned-only one, so the flat line draws every owned route.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {?object} The payload for the `routes` source.
+   */
+  const routesSourceData = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    return core && core.withDrawableLegs ? core.withDrawableLegs(geojson) : geojson;
+  };
+
   const flatOwnedRouteFilter = () => (
-    self.pwaRouteSlopeCore
-      ? ['all', OWNED_ROUTE_FILTER, ['!', ['has', 'slope']]]
+    self.pwaRouteLegsCore
+      ? ['all', OWNED_ROUTE_FILTER, ['!', ['has', 'legs']]]
       : OWNED_ROUTE_FILTER
   );
+
+  // SNOW-1017: the leg a selection holds open — `{uuid, i}` of the leg
+  // opened on the rail, or null. Kept here rather than read back off the
+  // cursor so installRoutesLayer can paint it on a basemap re-install,
+  // when the layers are rebuilt from scratch under an open rail.
+  let openLegOnMap = null;
+  // Removes the map's subscription to the open route's cursor.
+  let unsubscribeLegDimming = null;
+
+  /**
+   * The opacity a no-fall passage is painted with while a leg is open.
+   *
+   * The passage dims WITH the leg it lies in, by the leg's own `i`, so a
+   * dimmed leg carries no full-strength stretch across it. A passage on a
+   * route drawn flat carries no `i` (route_legs_core.js's
+   * passageCollection) and stays at full strength, as its flat line does:
+   * the flat line is never dimmed, and a mark on it should not be either.
+   *
+   * @param {?{dimOpacity: function(*, number, number): *}} core The legs
+   *   core, or null.
+   * @returns {number|Array<*>} A number or a `case` expression.
+   */
+  const passageOpacity = (core) => {
+    const dimmed = core ? core.dimOpacity(openLegOnMap, 1, 0.25) : 1;
+    if (typeof dimmed === 'number') return dimmed;
+    return ['case', ['has', 'i'], dimmed, 1];
+  };
+
+  /**
+   * Paint the open leg at full strength and dim every other (SNOW-1017).
+   *
+   * DIMS THE OTHERS rather than darkening the chosen one: the chosen leg
+   * keeps the exact colour and weight the rail beside it uses, so the two
+   * surfaces still read as one drawing, and the rest of the route stays
+   * visible as context. docs/decisions/legs-not-slope-classes-on-the-map.md
+   * has the fuller argument.
+   *
+   * @returns {void}
+   */
+  const applyLegDimming = () => {
+    const core = self.pwaRouteLegsCore;
+    if (!core) return;
+    for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
+      }
+    }
+    for (const id of ['routes-passage-edge', 'routes-passage-core']) {
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', passageOpacity(core));
+      }
+    }
+    if (map.getLayer('routes-leg-casing')) {
+      map.setPaintProperty(
+        'routes-leg-casing', 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15),
+      );
+    }
+  };
+
+  /**
+   * Follow the open route's cursor, so a leg opened on the rail dims the
+   * rest of the map (SNOW-1017).
+   *
+   * Called after every `pwaRouteRail.open`. Drops the previous route's
+   * subscription first — the rail made a new cursor for this route and the
+   * old one will never speak again. With no cursor (a pending share, or a
+   * route too short to hold a segment) or no uuid, there is nothing to
+   * follow and every leg is restored to full strength.
+   *
+   * The rail's `close()` closes the open leg before it lets the cursor go
+   * (route_rail.js), so a close from the rail's own ×, Escape or backdrop
+   * reaches here as `openLeg: null` and restores the lines.
+   *
+   * The subscription itself is dropped LAZILY, on the next open, not on
+   * the close. That costs nothing: the rail drops a closed cursor and
+   * never touches it again, so it emits nothing more, and the listener
+   * left on it is inert until this function replaces it.
+   *
+   * @param {?string} uuid The opened route's uuid.
+   * @returns {void}
+   */
+  const bindLegDimming = (uuid) => {
+    if (unsubscribeLegDimming) unsubscribeLegDimming();
+    unsubscribeLegDimming = null;
+    openLegOnMap = null;
+    const cursor = window.pwaRouteRail?.cursor ? window.pwaRouteRail.cursor() : null;
+    if (cursor && uuid) {
+      const follow = (state) => {
+        const leg = state && state.openLeg;
+        openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
+        applyLegDimming();
+      };
+      unsubscribeLegDimming = cursor.subscribe(follow);
+      follow(cursor.state());
+      return;
+    }
+    applyLegDimming();
+  };
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
   // LineStrings (routes:geojson), drawn as TWO ``line`` layers (three
@@ -2447,11 +2605,14 @@
   const installRoutesLayer = (geojson) => {
     if (!geojson || map.getSource('routes')) return;
     routesGeojsonCache = geojson;
-    map.addSource('routes', { type: 'geojson', data: geojson });
+    map.addSource('routes', { type: 'geojson', data: routesSourceData(geojson) });
     map.addLayer({
       id: 'routes-line-casing',
       type: 'line',
       source: 'routes',
+      // SNOW-1017: a legged route leaves the casing as well as the line —
+      // see flatOwnedRouteFilter. The pending ones keep theirs.
+      filter: ['any', PENDING_ROUTE_FILTER, flatOwnedRouteFilter()],
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
         'line-cap': 'round',
@@ -2473,9 +2634,9 @@
       // below so they can be painted differently; without the filter they
       // would be drawn twice, once in each colour, with whichever layer
       // sits on top winning.
-      // SNOW-910 narrows it again to the routes nothing has sampled — see
-      // flatOwnedRouteFilter for why a sampled one must leave, and for why
-      // it stays when there is no core to paint it segment by segment.
+      // SNOW-1017 narrows it again to the routes that carry no legs — see
+      // flatOwnedRouteFilter for why a legged one must leave, and for why
+      // it stays when there is no core to paint it leg by leg.
       filter: flatOwnedRouteFilter(),
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
@@ -2485,6 +2646,147 @@
       paint: {
         'line-color': ROUTE_LINE_COLOUR,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    // SNOW-1017: the route as its legs. THREE layers over a source of
+    // their own (route_legs_core.js slices each leg out of the route's own
+    // coordinates), replacing SNOW-910's slope-coloured segments — see
+    // docs/decisions/legs-not-slope-classes-on-the-map.md for why the
+    // classes left the map.
+    //
+    // A casing of their own rather than the flat one, because a selection
+    // dims every leg but the open one and the casing has to dim with them.
+    // Narrower than `routes-line-casing`'s 3/7/11 because the legs are
+    // narrower than the flat line: a leg is one of several on a route, and
+    // the dash on a climb needs gaps a reader can see at z12.
+    //
+    // TWO line layers because a climb is DASHED and a descent solid, and
+    // `line-dasharray` is not a data-driven property in MapLibre — the
+    // reason `routes-line-pending` is a layer of its own. The dash carries
+    // the direction for a reader who cannot tell the two colours apart;
+    // the colours are the rail's, so a leg on the map is the colour of the
+    // same leg below it.
+    const colours = legColours();
+    const legsCore = self.pwaRouteLegsCore;
+    const legOpacity = (on, off) => (legsCore ? legsCore.dimOpacity(openLegOnMap, on, off) : on);
+    map.addSource('route-legs', {
+      type: 'geojson',
+      data: routeLegsFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-leg-casing',
+      type: 'line',
+      source: 'route-legs',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ROUTE_CASING_COLOUR,
+        'line-opacity': legOpacity(0.55, 0.15),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5.5, 16, 9],
+      },
+    });
+    // SNOW-964: the no-fall passages, drawn as a SPLIT LINE — this wider
+    // under-stroke, with `routes-passage-core`'s light run down its
+    // centre over the leg lines below. Their own source (route_legs_core's
+    // passageCollection), which holds nothing but passages, so neither
+    // layer needs a filter.
+    //
+    // THE EDGE TAKES ITS LEG'S COLOUR, so the split reads as part of the
+    // line it splits. Under SNOW-910 it took the slope band's colour; the
+    // bands left the map with SNOW-1017 and the edge followed the line.
+    //
+    // The widths stay at or inside `routes-leg-casing` at every stop, so
+    // the casing keeps framing the mark over a pale basemap.
+    map.addSource('route-passages', {
+      type: 'geojson',
+      data: routePassagesFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-passage-edge',
+      type: 'line',
+      source: 'route-passages',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        // Butt caps: a round cap on a 25 m segment overlaps its neighbour.
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        // `match` rather than `case`, because a passage on a route drawn
+        // flat carries no `climbing` at all and must take the flat line's
+        // colour — reading a missing flag as a descent would paint it
+        // slate on a fuchsia line.
+        'line-color': [
+          'match', ['get', 'climbing'],
+          true, colours.climb,
+          false, colours.descent,
+          ROUTE_LINE_COLOUR,
+        ],
+        'line-opacity': passageOpacity(legsCore),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 5, 16, 8.5],
+      },
+    });
+    map.addLayer({
+      id: 'routes-leg-climb',
+      type: 'line',
+      source: 'route-legs',
+      filter: ['==', ['get', 'climbing'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        // Butt caps, the pending line's reason: round caps on a short
+        // dash close the gaps.
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': colours.climb,
+        'line-opacity': legOpacity(1, 0.25),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
+        // In line-widths, so the dash keeps its proportions as the line
+        // thickens with zoom — the pending line's own [2, 1.5].
+        'line-dasharray': [2, 1.5],
+      },
+    });
+    map.addLayer({
+      id: 'routes-leg-descent',
+      type: 'line',
+      source: 'route-legs',
+      filter: ['!=', ['get', 'climbing'], true],
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': colours.descent,
+        'line-opacity': legOpacity(1, 0.25),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
+      },
+    });
+    // SNOW-964: the other half of the split — the light core, over both
+    // leg layers so it reads as a gap opening in the line itself.
+    //
+    // Off every colour on the line (see PASSAGE_CORE_COLOUR): a hue of its
+    // own would make a mark about the TRACK read as a kind of leg.
+    map.addLayer({
+      id: 'routes-passage-core',
+      type: 'line',
+      source: 'route-passages',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
+        // mirroring --color-passage-core, which a MapLibre paint
+        // property cannot read for itself.
+        'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
+        'line-opacity': passageOpacity(legsCore),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2, 16, 3.5],
       },
     });
     // SNOW-764: the shared-with-you line. A THIRD layer rather than a
@@ -2500,9 +2802,9 @@
     // you own support different actions, and the map has to say which is
     // which before it is tapped.
     //
-    // It is added AFTER the owned line, so a pending route drawn over one
-    // of your own is the one on top — which is right, because it is the one
-    // with an action attached.
+    // It is added AFTER the owned lines — the flat one and the legs — so a
+    // pending route drawn over one of your own is the one on top, which is
+    // right, because it is the one with an action attached.
     map.addLayer({
       id: 'routes-line-pending',
       type: 'line',
@@ -2522,146 +2824,13 @@
         'line-dasharray': [2, 1.5],
       },
     });
-    // SNOW-910: the slope-coloured line. TWO more layers over a source of
-    // their own, because neither the geometry nor the paint can come off
-    // the routes source.
-    //
-    // THE GEOMETRY. A route is one LineString and MapLibre paints a line
-    // layer in one colour per feature, so a track that changes colour
-    // every 25 m has to arrive as one feature per 25 m. The segments are
-    // built client-side (route_slope_core.js) from the compact record on
-    // each route's `slope` property — sampled coordinates, not the stored
-    // ones, since the stride interpolates between them.
-    //
-    // THE SECOND LAYER. The unknown segments are DASHED, and
-    // `line-dasharray` is not a data-driven property in MapLibre — it
-    // cannot vary per feature. Exactly the reason `routes-line-pending`
-    // exists above, and the same remedy.
-    //
-    // `routes-line-casing` is deliberately NOT split alongside these: it
-    // is one flat colour that never varies per feature, so it keeps
-    // drawing the whole route off the routes source and these lines sit
-    // over it like the flat one does.
-    map.addSource('route-slopes', {
-      type: 'geojson',
-      data: routeSlopeSegmentsFor(geojson),
-    });
-    // SNOW-964: the no-fall passages, drawn as a SPLIT LINE — this wider
-    // under-stroke, with `routes-passage-core`'s light run down its
-    // centre after the unknowns below. Two layers over the SAME source
-    // the coloured line uses, so the mark cannot land on different
-    // geometry from the colour it marks.
-    //
-    // THE EDGE TAKES THE BAND COLOUR, not a flat ink. A passage grows
-    // outward through the 45–50 band, so painting the whole of it
-    // `slope-50`'s near-black would report 47° ground as over 50 — the
-    // one direction of error this feature exists to prevent. It is the
-    // SAME expression `routes-slope-line` paints with, read once here,
-    // so the two cannot drift.
-    //
-    // DISTINCT FROM THE UNSURVEYED DASH, and the two are orthogonal: the
-    // dash interrupts the line ALONG its length, this splits it ACROSS
-    // its width. A segment can never be both (route_slope_core.js).
-    //
-    // The widths stay at or inside `routes-line-casing`'s 3/7/11 at
-    // every stop, so the casing keeps framing the mark over a pale
-    // basemap. Do not widen the casing to suit a wider mark — it draws
-    // off the `routes` source and would thicken every route on the map.
-    map.addLayer({
-      id: 'routes-passage-edge',
-      type: 'line',
-      source: 'route-slopes',
-      filter: ['==', ['get', 'passage'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        // Butt caps, for the reason `routes-slope-line` has them: a round
-        // cap on a 25 m segment overlaps its neighbour.
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': routeSlopeColourExpression(),
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 6.5, 16, 11],
-      },
-    });
-    map.addLayer({
-      id: 'routes-slope-line',
-      type: 'line',
-      source: 'route-slopes',
-      // `step` needs a number and an unknown segment has no class at all,
-      // so the unknowns are excluded here rather than left to fall on the
-      // expression's first stop — which is the GENTLE colour, and painting
-      // unsurveyed ground as gentle is the one outcome this whole feature
-      // exists to prevent.
-      filter: ['!=', ['get', 'unknown'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        // Butt caps, not round: a round cap on a 25 m segment overlaps its
-        // neighbour and smears each colour a few metres into the next.
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': routeSlopeColourExpression(),
-        // The same widths as the flat line above, deliberately: a sampled
-        // route and an unsampled one are the same object and must read as
-        // the same weight of thing on the map.
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-      },
-    });
-    map.addLayer({
-      id: 'routes-slope-unknown',
-      type: 'line',
-      source: 'route-slopes',
-      filter: ['==', ['get', 'unknown'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        // See UNKNOWN_COLOUR in route_slope_core.js — a neutral grey that
-        // is not on the steepness scale, mirroring --color-slope-unknown.
-        'line-color': (self.pwaRouteSlopeCore || {}).UNKNOWN_COLOUR || '#94a3b8',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-        // In line-widths, so the dash keeps its proportions as the line
-        // thickens with zoom — the same reasoning as the pending line's.
-        'line-dasharray': [2, 1.5],
-      },
-    });
-    // SNOW-964: the other half of the split — the light core, over both
-    // slope layers so it reads as a gap opening in the line itself. At
-    // z12 that is about 2px of band colour, 2.4px of light, 2px of band.
-    //
-    // NOT A SEVENTH BAND: the passage keeps the colour of the ground
-    // under it, and the core is off the steepness scale entirely (see
-    // PASSAGE_CORE_COLOUR). A hue of its own would make a mark about the
-    // TRACK read as a class of GROUND.
-    map.addLayer({
-      id: 'routes-passage-core',
-      type: 'line',
-      source: 'route-slopes',
-      filter: ['==', ['get', 'passage'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        // See PASSAGE_CORE_COLOUR in route_slope_core.js — a near-white
-        // mirroring --color-passage-core, which a MapLibre paint
-        // property cannot read for itself.
-        'line-color': (self.pwaRouteSlopeCore || {}).PASSAGE_CORE_COLOUR || '#f8fafc',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2.4, 16, 4.2],
-      },
-    });
     // The fall-line arrows. Their own Point source over the same
     // payload, because a symbol cannot be placed on a line layer — and
     // one arrow per segment is not what is wanted anyway: the server
     // spaced them (`apps/routes/services/fall_line.py`) and this draws
     // what it was given.
     //
-    // ABOVE the coloured line and its split, BELOW the crux rings and
+    // ABOVE the leg lines and their split, BELOW the crux rings and
     // the endpoint markers. MapLibre paints later layers over earlier
     // ones, so this is a statement about what gives way to what: an
     // arrow is ambient, a ring is an instruction to look at one place,
@@ -2713,14 +2882,14 @@
         // --color-fall-line-arrow, which a MapLibre paint property
         // cannot read for itself.
         'icon-color': (self.pwaRouteSlopeCore || {}).FALL_LINE_COLOUR || '#1a1916',
-        // The ring's halo, for the ring's reason: over `slope-50`'s
-        // near-black band the ink alone would vanish, and the halo is
-        // what carries the shape there.
+        // The ring's halo, for the ring's reason: over the dark casing
+        // the ink alone would vanish, and the halo is what carries the
+        // shape there.
         'icon-halo-color': '#ffffff',
         'icon-halo-width': 1,
       },
     });
-    syncRouteSlopeLegend();
+    syncRouteLegLegend();
 
     // SNOW-687 follow-up: the start dot and finish flag. Their own point
     // source, derived from the same payload — MapLibre cannot symbolise
@@ -2733,7 +2902,7 @@
     // than littering a country-scale view with flags on tracks a few
     // pixels long. It is also the zoom at which a route's two ends are far
     // enough apart to read as two markers.
-    // SNOW-911: the crux rings, over the coloured line and BEFORE the
+    // SNOW-911: the crux rings, over the leg lines and BEFORE the
     // endpoint markers — MapLibre paints later layers above earlier
     // ones, so installing after them would let a ring and its white halo
     // cover a start dot. That is not hypothetical: ``crux_points``
@@ -2766,11 +2935,67 @@
         'icon-anchor': 'center',
       },
       paint: {
-        // Readable over all six band colours the ring sits on, which the
-        // scale's own colours are not — see ROUTE_CRUX_COLOUR.
+        // Readable over both leg colours the ring sits on — see
+        // ROUTE_CRUX_COLOUR.
         'icon-color': ROUTE_CRUX_COLOUR,
         'icon-halo-color': '#ffffff',
         'icon-halo-width': 1,
+      },
+    });
+
+    // SNOW-1017: the numbered transitions — a circle at each point where
+    // one leg ends and the next begins, numbered 1 to legs − 1 along the
+    // track, so "transition 2" on the map is the one between legs 2 and 3
+    // on the rail. Over the crux rings and under the endpoint markers: a
+    // transition is where the route changes activity, which the reader
+    // plans around more than a ring, and less than where it starts.
+    //
+    // minzoom 11, the crux rings' step and for their reason: at a country
+    // scale the markers would pile onto one another and onto the start
+    // dot. The fit on a tap has no cap (activateRoute), so the camera
+    // always comes to rest far enough in for them.
+    //
+    // The circle carries the position on its own; the number is a symbol
+    // and needs glyphs, which a style that fails to load them leaves out
+    // without taking the marker with it.
+    map.addSource('route-transitions', {
+      type: 'geojson',
+      data: routeTransitionsFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-transitions',
+      type: 'circle',
+      source: 'route-transitions',
+      minzoom: 11,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+      },
+      paint: {
+        // The colour of the leg the transition OPENS, so the marker reads
+        // as the start of what follows it.
+        'circle-color': ['case', ['get', 'climbing'], colours.climb, colours.descent],
+        'circle-radius': 7,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.5,
+      },
+    });
+    map.addLayer({
+      id: 'routes-transition-labels',
+      type: 'symbol',
+      source: 'route-transitions',
+      minzoom: 11,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'text-field': ['to-string', ['get', 'n']],
+        'text-font': overlayTextFont,
+        'text-size': 10,
+        // Every transition keeps its number, on the crux rings' reasoning:
+        // dropping one would renumber the route in the reader's head.
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#ffffff',
       },
     });
 
@@ -5826,22 +6051,24 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // FIVE sources, not one: the lines, the derived start/finish
-          // points, the slope segments, the crux rings and the fall-line
-          // arrows (see installRoutesLayer). Refreshing only the first
-          // would leave a deleted route's flag standing on the map, its
-          // colours drawn along a track that is no longer there, and its
-          // rings and arrows marking ground nothing is drawn across.
-          map.getSource('routes')?.setData(data);
+          // SEVEN sources, not one: the lines, the derived start/finish
+          // points, the legs, the passages, the transitions, the crux
+          // rings and the fall-line arrows (see installRoutesLayer).
+          // Refreshing only the first would leave a deleted route's flag
+          // standing on the map, its legs drawn along a track that is no
+          // longer there, and its marks on ground nothing is drawn across.
+          map.getSource('routes')?.setData(routesSourceData(data));
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
-          map.getSource('route-slopes')?.setData(routeSlopeSegmentsFor(data));
+          map.getSource('route-legs')?.setData(routeLegsFor(data));
+          map.getSource('route-passages')?.setData(routePassagesFor(data));
+          map.getSource('route-transitions')?.setData(routeTransitionsFor(data));
           map.getSource('route-cruxes')?.setData(routeCruxesFor(data));
           map.getSource('route-fall-lines')?.setData(routeFallLinesFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
           // already drawn, and the route that just landed is the first
-          // sampled one.
-          syncRouteSlopeLegend();
+          // one with legs.
+          syncRouteLegLegend();
         } else {
           // Cached pristine above, mutated here — the same order
           // ``_loadOverlay`` uses, so the stored copy is the server's
@@ -5864,6 +6091,11 @@
   // uploaded stays uncoloured until a full page reload — on the one path
   // every new user takes first, which is where the feature would look
   // broken.
+  //
+  // SNOW-1017 took the colouring off the map — a route draws as its legs
+  // whether or not it is sampled — but the refetch still carries the
+  // marks the record holds: the no-fall passages, the crux rings and the
+  // fall-line arrows.
   //
   // Twenty seconds is a judgement about a queued task on a shared worker
   // for a track of a few hundred samples, not a measurement.
@@ -5975,7 +6207,7 @@
       // down or the style replaced underneath it. Both read the same way
       // from here — there is no source left to write to — and the next
       // enable fetches this URL itself.
-      if (!overlayLoaded.routes || !map.getSource('route-slopes')) return;
+      if (!overlayLoaded.routes || !map.getSource('route-legs')) return;
       refreshPanelOverlay('routes');
     }, SLOPE_REFETCH_DELAY_MS);
   };
@@ -7409,26 +7641,26 @@
     // takes the tap — it is the one carrying an action (Save) the user has
     // not taken yet.
     //
-    // SNOW-910: and the two slope layers, alongside 'routes-line' rather
-    // than instead of it. They are not an addition to what is tappable —
-    // they are where a SAMPLED route now draws, and 'routes-line' no
-    // longer draws it, so leaving them out would have made every coloured
-    // route untappable and sent the tap through to the region underneath.
-    // Their features carry the route's uuid for exactly this (see
-    // route_slope_core.js's segmentFeatures).
+    // SNOW-1017: and the two leg layers, alongside 'routes-line' rather
+    // than instead of it (SNOW-910's slope layers held this place before
+    // them). They are not an addition to what is tappable — they are where
+    // a legged route now draws, and 'routes-line' no longer draws it, so
+    // leaving them out would make every such route untappable and send
+    // the tap through to the region underneath. Their features carry the
+    // route's uuid for exactly this (see route_legs_core.js).
     //
     // SNOW-964's two passage layers are DELIBERATELY ABSENT, and so is
-    // their entry in ROUTE_LINE_LAYERS below. They add no geometry:
-    // `routes-slope-line` still draws every passage, with the same
-    // coordinates and the same uuid, so nothing left the tap path the
-    // way `routes-line` did for a sampled route in SNOW-910. Adding them
-    // would return the same route two more times from one tap for no
-    // behavioural change at all.
+    // their entry in ROUTE_LINE_LAYERS below. They add no geometry: a leg
+    // line still runs under every passage, with the same uuid. Adding
+    // them would return the same route two more times from one tap for
+    // no behavioural change at all. The transition markers are absent on
+    // the endpoint markers' reasoning: each sits on a leg's own first
+    // coordinate, well inside the 8px tolerance below.
     //
     // 'routes-fall-lines' is ABSENT on the endpoint markers' reasoning
     // rather than the passages': it IS new geometry — a point source of
-    // its own — but every arrow sits on the middle of a segment
-    // `routes-slope-line` still draws, which is well inside the 8px
+    // its own — but every arrow sits on the middle of a stretch a leg
+    // line still draws, which is well inside the 8px
     // tolerance below. So a tap on an arrow already opens its route,
     // and putting the layer in this set would maintain a second path to
     // the same popup. An arrow is also the one mark here the collision
@@ -7439,8 +7671,8 @@
       'favourites-pin',
       'community-reports-point',
       'routes-line-pending',
-      'routes-slope-line',
-      'routes-slope-unknown',
+      'routes-leg-climb',
+      'routes-leg-descent',
       'routes-line',
     ];
 
@@ -7463,8 +7695,8 @@
     const ROUTE_LINE_LAYERS = [
       'routes-line',
       'routes-line-pending',
-      'routes-slope-line',
-      'routes-slope-unknown',
+      'routes-leg-climb',
+      'routes-leg-descent',
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -8122,20 +8354,21 @@
     };
 
     /**
-     * The route feature one of its slope segments belongs to (SNOW-910).
+     * The route feature one of its legs belongs to (SNOW-910, for the
+     * slope segments that drew a route before SNOW-1017's legs).
      *
-     * A slope segment carries a uuid and a class and nothing else — the
-     * popup needs the name, the figures and the bbox, and copying those
-     * onto several hundred segments per route to save this lookup would
-     * be a large amount of duplicated string for a tap that happens once.
+     * A leg carries a uuid, its number and its direction and nothing else
+     * — the rail needs the name, the figures and the bbox, and copying
+     * those onto every leg to save this lookup would be duplicated string
+     * for a tap that happens once.
      *
-     * Reads the same cache `activateRoute` hands the rail from, so a
-     * segment and the route it opens can never resolve to different
-     * routes. Owned routes only: a pending share produces no
-     * segments at all (route_slope_core.js), so there is no token branch
-     * here and no way for one to appear.
+     * Reads the same cache `activateRoute` hands the rail from, so a leg
+     * and the route it opens can never resolve to different routes. Owned
+     * routes only: a pending share produces no legs at all
+     * (route_legs_core.js), so there is no token branch here and no way
+     * for one to appear.
      *
-     * @param {?string} uuid The segment's route uuid.
+     * @param {?string} uuid The leg's route uuid.
      * @returns {?object} The route feature, or null if it is not in the
      *   cache — a deletion landing between the paint and the tap.
      */
@@ -8198,8 +8431,8 @@
         // could not answer.
         // The core is in home.html's DEFERRED group, so it is not
         // guaranteed to exist when this runs — the same reason
-        // ``routeSlopeSegmentsFor`` and ``flatOwnedRouteFilter`` test for
-        // it rather than assuming it. Without the core the sheet loses its
+        // ``routeCruxesFor`` and ``flatOwnedRouteFilter`` test for their
+        // cores rather than assuming them. Without the core the sheet loses its
         // terrain line and keeps the bulletin reading, which is the right
         // degradation: the figures are an addition to a sheet that stands
         // on its own without them.
@@ -8277,6 +8510,10 @@
         }),
         claim: props.pending ? buildRouteClaimCta(props.token) : null,
       });
+      // SNOW-1017: follow the new cursor, so a leg opened on the rail dims
+      // the rest of the map. A pending share has no uuid and is never
+      // dimmed — it draws no legs to dim.
+      bindLegDimming(props.pending ? null : props.uuid || null);
 
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
@@ -8303,7 +8540,7 @@
         // said "3 key passages" over a map that had decided not to show
         // them.
         //
-        // `tests/js/test_map_route_slope_layers.js` holds the invariant
+        // `tests/js/test_map_route_leg_layers.js` holds the invariant
         // against every route mark's own minzoom rather than against the
         // number 10, so a cap reintroduced a step too low fails there
         // whatever marks exist by then. Padding is not a cap: it frames
@@ -8334,13 +8571,14 @@
         case 'routes-line-pending':
           activateRoute(feature);
           break;
-        // SNOW-910: a tap on a slope segment opens the route it belongs
-        // to. The segment carries the uuid and nothing else — the popup
-        // needs the name, the figures and the bbox — so the route feature
-        // is looked up before activation. A miss is silent: better no
-        // popup than a popup about the wrong route.
-        case 'routes-slope-line':
-        case 'routes-slope-unknown': {
+        // SNOW-1017: a tap on a leg opens the route it belongs to (SNOW-910
+        // did the same for a slope segment). The leg carries the uuid and
+        // its number and nothing else — the rail needs the name, the
+        // figures and the bbox — so the route feature is looked up before
+        // activation. A miss is silent: better no rail than a rail about
+        // the wrong route.
+        case 'routes-leg-climb':
+        case 'routes-leg-descent': {
           const route = routeFeatureByUuid(feature.properties?.uuid);
           if (route) activateRoute(route);
           break;

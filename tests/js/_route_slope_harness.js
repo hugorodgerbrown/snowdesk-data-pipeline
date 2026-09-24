@@ -25,7 +25,13 @@ import { loadMapBundle } from './_load_map_bundle.js';
 
 export const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/** A route the server has not sampled yet — no `slope` property at all. */
+/**
+ * A route the server has not sampled yet — no `slope` property at all.
+ *
+ * It still carries `legs` (SNOW-1017): a leg is a fact about the geometry,
+ * so the server cuts an unsampled route too, and the map draws it as legs
+ * either way.
+ */
 export const ROUTES_UNSAMPLED = {
   type: 'FeatureCollection',
   features: [
@@ -39,6 +45,7 @@ export const ROUTES_UNSAMPLED = {
         uuid: 'r-1',
         name: 'Rosablanche',
         bounds: [7.5, 46.1, 7.54, 46.14],
+        legs: [{ i: 1, from: 0, to: 1, climbing: true, point_from: 0, point_to: 1 }],
       },
     },
   ],
@@ -175,7 +182,7 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
-    <section id="map-route-slope-section" hidden></section>`;
+    <section id="map-route-legs-section" hidden></section>`;
 }
 
 
@@ -268,6 +275,7 @@ export async function boot(options) {
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/route_markers_core.js');
   await import('../../static/js/route_slope_core.js');
+  await import('../../static/js/route_legs_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 

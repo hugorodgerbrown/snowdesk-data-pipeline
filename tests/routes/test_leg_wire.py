@@ -175,7 +175,45 @@ class TestTheLegsCoverTheSamples:
         legs = wire_legs(points, _record_for(points))
 
         assert legs is not None
-        assert set(legs[0]) == {"i", "from", "to", "climbing"}
+        assert set(legs[0]) == {
+            "i",
+            "from",
+            "to",
+            "climbing",
+            "point_from",
+            "point_to",
+        }
+
+
+class TestTheLegsCoverThePoints:
+    """``point_from``/``point_to`` tile ``Route.points``, sharing each seam."""
+
+    @pytest.mark.parametrize("filename", CANONICAL)
+    def test_the_points_are_covered_end_to_end(self, filename: str) -> None:
+        """First point_from 0, last point_to the last point, seams shared."""
+        points = _track(filename)
+
+        legs = wire_legs(points, _record_for(points))
+
+        assert legs is not None
+        assert legs[0]["point_from"] == 0
+        assert legs[-1]["point_to"] == len(points) - 1
+        for previous, current in zip(legs, legs[1:], strict=False):
+            assert current["point_from"] == previous["point_to"]
+        for leg in legs:
+            assert leg["point_from"] < leg["point_to"]
+
+    @pytest.mark.parametrize("filename", CANONICAL)
+    def test_the_points_are_the_detected_boundaries(self, filename: str) -> None:
+        """With no leg folded away, each leg's points are detection's own."""
+        points = _track(filename)
+
+        legs = wire_legs(points, _record_for(points))
+
+        assert legs is not None
+        assert [(leg["point_from"], leg["point_to"]) for leg in legs] == [
+            (leg.start, leg.end) for leg in detect_legs(points)
+        ]
 
 
 class TestUnsampledRoutes:
@@ -246,6 +284,8 @@ class TestShortAndOddRecords:
                 "from": 0,
                 "to": len(record["segments"]) - 1,
                 "climbing": True,
+                "point_from": 0,
+                "point_to": len(points) - 1,
             }
         ]
 
@@ -283,8 +323,43 @@ class TestShortAndOddRecords:
                 "from": 0,
                 "to": len(record["segments"]) - 1,
                 "climbing": True,
+                "point_from": 0,
+                "point_to": len(points) - 1,
             }
         ]
+
+    def test_a_folded_leg_keeps_the_points_contiguous(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Down, up, down, up — the first up folds, and no points go missing.
+
+        Four legs so two survive: the merged descent spans the run up to
+        the last climb's start, which is the seam the climb opens on.
+        """
+        points: list[list[float | None]] = [
+            [7.4 + index / 10000, 46.1, 1500.0 + index] for index in range(60)
+        ]
+        cumulative = cumulative_distances(points)
+        near = [_nearest_point(cumulative, target) for target in (103.0, 109.0)]
+        last_start = _nearest_point(cumulative, 200.0)
+        legs = [
+            _leg(0, near[0], climbing=False),
+            _leg(near[0], near[1], climbing=True),
+            _leg(near[1], last_start, climbing=False),
+            _leg(last_start, len(points) - 1, climbing=True),
+        ]
+        monkeypatch.setattr(
+            "apps.routes.services.leg_wire.detect_legs", lambda _points: legs
+        )
+
+        wire = wire_legs(points, _record_for(points))
+
+        assert wire is not None
+        assert [(leg["point_from"], leg["point_to"]) for leg in wire] == [
+            (0, last_start),
+            (last_start, len(points) - 1),
+        ]
+        assert [leg["climbing"] for leg in wire] == [False, True]
 
     def test_a_record_without_a_stride_places_legs_by_share(self) -> None:
         """No ``stride_m`` still yields exact coverage over the stored segments."""

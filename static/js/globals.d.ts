@@ -60,6 +60,8 @@ interface Window {
   pwaRouteMarkersCore: any;
   /** static/js/route_slope_core.js — slope class buckets and segment split. */
   pwaRouteSlopeCore: any;
+  /** static/js/route_legs_core.js — a saved route's leg lines and transitions. */
+  pwaRouteLegsCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */

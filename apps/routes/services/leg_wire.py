@@ -47,6 +47,20 @@ N − 1, and each ``from`` is the previous ``to`` plus one. Unlike
 ``Leg.start``/``Leg.end``, adjacent legs do not share a boundary here: a
 segment is a stretch of ground and belongs to one leg, where a point is a
 boundary and belongs to both.
+
+Each leg also carries ``point_from`` and ``point_to`` (SNOW-1017): the
+same leg in ``Route.points`` indices, so the map can slice the route's
+own geometry into one line per leg — the slope record's 25 m points are
+absent on an unsampled route, and the stored points are what the flat
+line has always drawn. These DO share a boundary, as ``Leg.start`` and
+``Leg.end`` do: each leg's ``point_to`` is the next leg's ``point_from``,
+the first ``point_from`` is the first leg's start and the last
+``point_to`` the last leg's end, so the lines meet with no gap. A leg
+dropped for collapsing to no segment hands its points to the span before
+it, which is what the reset after the merge below does.
+
+``[{"i": 1, "from": 0, "to": 41, "climbing": true,
+"point_from": 0, "point_to": 212}, …]``
 """
 
 from __future__ import annotations
@@ -142,7 +156,8 @@ def wire_legs(
             walk the sampler would take at ``SAMPLE_STRIDE_M``.
 
     Returns:
-        ``[{"i", "from", "to", "climbing"}, …]``, or None when there is
+        ``[{"i", "from", "to", "climbing", "point_from", "point_to"}, …]``,
+        or None when there is
         nothing to send: a track ``detect_legs`` finds no leg in, or one
         too short to hold a segment.
 
@@ -168,6 +183,7 @@ def wire_legs(
     )
     cuts.append(segment_count)
 
+    # [first segment, last segment, climbing, first point, last point].
     spans: list[list[Any]] = []
     for index, leg in enumerate(legs):
         first, last = cuts[index], cuts[index + 1] - 1
@@ -175,10 +191,27 @@ def wire_legs(
             continue
         if spans and spans[-1][2] == leg.climbing:
             spans[-1][1] = last
+            spans[-1][4] = leg.end
             continue
-        spans.append([first, last, leg.climbing])
+        spans.append([first, last, leg.climbing, leg.start, leg.end])
+
+    # A dropped leg would otherwise leave a gap in the points: close every
+    # seam onto the next span's start, and pin both ends to the track's.
+    spans[0][3] = legs[0].start
+    for span, following in zip(spans, spans[1:], strict=False):
+        span[4] = following[3]
+    spans[-1][4] = legs[-1].end
 
     return [
-        {"i": number, "from": first, "to": last, "climbing": climbing}
-        for number, (first, last, climbing) in enumerate(spans, start=1)
+        {
+            "i": number,
+            "from": first,
+            "to": last,
+            "climbing": climbing,
+            "point_from": point_from,
+            "point_to": point_to,
+        }
+        for number, (first, last, climbing, point_from, point_to) in enumerate(
+            spans, start=1
+        )
     ]
