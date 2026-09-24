@@ -62,6 +62,8 @@ interface Window {
   pwaRouteSlopeCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
+  /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
+  pwaRouteRailCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
@@ -86,6 +88,8 @@ interface Window {
   pwaDb: any;
   /** static/js/pwa_network_mode.js — reads and sets the network mode. */
   pwaNetworkMode: any;
+  /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
+  pwaRouteRail: any;
 }
 
 /**
