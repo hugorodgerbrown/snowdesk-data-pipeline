@@ -62,6 +62,8 @@ interface Window {
   pwaRouteSlopeCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
+  /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
+  pwaBankRibbonCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */

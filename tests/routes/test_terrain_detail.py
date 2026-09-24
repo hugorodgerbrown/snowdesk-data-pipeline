@@ -193,6 +193,46 @@ class TestFigures:
         assert rows is not None
         assert all(tuple(row) == COLUMNS for row in rows)
 
+    def test_the_roll_is_a_column(self) -> None:
+        """The bank angle reaches the staff page and its CSV (SNOW-1021)."""
+        assert "roll_deg" in COLUMNS
+
+    @pytest.mark.parametrize(("heading", "roll"), [(0.0, 40.0), (180.0, -40.0)])
+    def test_a_traverse_carries_its_signed_roll(
+        self, heading: float, roll: float
+    ) -> None:
+        """Across a 40 degree east face: +40 heading north, -40 south."""
+        points = _plane_track(heading, 40.0, 90.0)
+        rows = terrain_detail(_record(points, 40.0, 90.0), points)
+        assert rows is not None
+        for row in rows:
+            assert row["roll_deg"] == pytest.approx(roll, abs=0.2)
+            assert row["track_gradient_deg"] == pytest.approx(0.0, abs=0.2)
+
+    @pytest.mark.parametrize("heading", range(0, 360, 30))
+    def test_the_measured_gradient_and_the_roll_recompose_the_slope(
+        self, heading: int
+    ) -> None:
+        """``tan²(gradient) + tan²(roll) = tan²(slope)`` from the table itself.
+
+        The gradient here is measured from the track's elevations, not
+        computed from the aspect, so this checks the roll against an
+        independent figure rather than against its own formula.
+        """
+        points = _plane_track(float(heading), 40.0, 135.0)
+        rows = terrain_detail(_record(points, 40.0, 135.0), points)
+        assert rows is not None
+        for row in rows:
+            recomposed = math.degrees(
+                math.atan(
+                    math.hypot(
+                        math.tan(math.radians(row["track_gradient_deg"])),
+                        math.tan(math.radians(row["roll_deg"])),
+                    )
+                )
+            )
+            assert recomposed == pytest.approx(40.0, abs=0.3)
+
 
 class TestLengths:
     """Distances come from the record's stride, not from chords."""
@@ -317,6 +357,7 @@ class TestMissing:
         assert row["angle_deg"] is None
         assert row["aspect_deg"] is None
         assert row["fall_line"] is None
+        assert row["roll_deg"] is None
         assert row["bearing_deg"] is not None
         assert row["track_gradient_deg"] is not None
 
@@ -326,6 +367,7 @@ class TestMissing:
         rows = terrain_detail(_record(points, 0.0, None), points)
         assert rows is not None
         assert all(row["fall_line"] is None for row in rows)
+        assert all(row["roll_deg"] is None for row in rows)
         assert all(row["bearing_deg"] is not None for row in rows)
 
     def test_a_track_without_elevation_has_no_gradient(self) -> None:
