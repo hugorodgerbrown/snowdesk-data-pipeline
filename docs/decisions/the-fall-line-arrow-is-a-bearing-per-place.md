@@ -2,10 +2,22 @@
 name: the-fall-line-arrow-is-a-bearing-per-place
 description: fall_line.py, fall_line_marks, fall_lines on the wire, routes-fall-lines — the downhill arrow on a route, steep ground only
 status: current
-last-reviewed: 2026-09-15
+last-reviewed: 2026-09-24
 ---
 
 # The fall-line arrow is a bearing per place, not an aspect per segment
+
+> **2026-09-24 — no longer drawn on either map (SNOW-1019).** The arrow is
+> gone from the home map (`routes-fall-lines`) and the trip map
+> (`trip-route-fall-lines`). The bank ribbon on rail two replaced it: a
+> tick per place leaning by how far the ground tilts across the track,
+> which answers "does the track cut across this face or run down it" on
+> the axis the reader is already reading. The data still travels —
+> `fall_line_marks` still runs and `fall_lines` is still on the slope
+> record — and `fallLineCollection` in `route_slope_core.js` and
+> `fallLineArrowPixels` in `route_markers_core.js` are kept, though no
+> client code calls them now. The rest of this record describes the arrow
+> as it was drawn.
 
 ## Decision
 
