@@ -20,9 +20,17 @@
  * A PENDING ROUTE PRODUCES NOTHING, `route_slope_core.js`'s rule for its
  * reason: a followed share's one line is a teal dash saying "this one is
  * not yours yet", and cutting it into legs would spend that line on a
- * second message. A leg without point indices (an older cached payload,
- * from before SNOW-1017) is skipped, and its route stays on the flat line
- * only if it carries no `legs` at all — see map.js's flat-route filter.
+ * second message.
+ *
+ * A ROUTE WHOSE LEGS CANNOT ALL BE SLICED DRAWS FLAT. An overlay payload
+ * cached before SNOW-1017 carries `legs` without point indices. map.js's
+ * flat-line filter tests the presence of `legs`, so such a route would
+ * leave the flat line and draw no legs — invisible. `withDrawableLegs`
+ * is the answer: the copy of the payload handed to the `routes` source
+ * has `legs` removed from any route `hasDrawableLegs` rejects, so the
+ * flat line keeps it. `legCollection` and `transitionCollection` apply
+ * the same test, so a route is drawn one way or the other, never both
+ * and never neither.
  *
  * Hex literals rather than CSS variables: MapLibre paint properties take
  * literal colours and cannot reference a custom property. Each names the
@@ -40,6 +48,9 @@
  *   passageCollection(fc)     — the no-fall passages, tagged with their
  *                               leg's `climbing`
  *   dimOpacity(open, on, off) — the opacity expression a selection paints
+ *   hasDrawableLegs(f)        — whether every leg of a route can be sliced
+ *   withDrawableLegs(fc)      — the payload with undrawable `legs` removed,
+ *                               for the flat line's source
  */
 
 // @ts-check
@@ -98,6 +109,55 @@
   }
 
   /**
+   * Whether every leg of one route feature can be sliced from its
+   * coordinates.
+   *
+   * All or nothing: a route drawn with one leg missing would show a gap
+   * that reads as a break in the track. `false` for a route with no legs
+   * at all, and for any leg whose `point_from`/`point_to` are missing,
+   * not integers, out of order or past the end of the geometry.
+   *
+   * @param {?{geometry?: any, properties?: any}} feature One route feature.
+   * @returns {boolean}
+   */
+  function hasDrawableLegs(feature) {
+    const properties = (feature && feature.properties) || {};
+    const legs = properties.legs;
+    const coordinates = feature && feature.geometry && feature.geometry.coordinates;
+    if (!Array.isArray(legs) || !legs.length || !Array.isArray(coordinates)) return false;
+    return legs.every((leg) => Boolean(leg) && slices(leg, coordinates));
+  }
+
+  /**
+   * The routes payload with `legs` removed from every route whose legs
+   * cannot be drawn.
+   *
+   * For the `routes` source only, whose flat-line filter tests the
+   * presence of `legs`: a route that keeps the key there must be one the
+   * leg layers draw. A shallow copy — the features that change are new
+   * objects with new `properties`, the rest are the originals — so the
+   * caller's payload, which the rail reads its legs from, is untouched.
+   *
+   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
+   * @returns {?{features?: Array<any>}} The copy, or `geojson` itself when
+   *   it holds no features.
+   */
+  function withDrawableLegs(geojson) {
+    if (!geojson || !Array.isArray(geojson.features)) return geojson;
+    return Object.assign({}, geojson, {
+      features: geojson.features.map((feature) => {
+        const properties = feature && feature.properties;
+        if (!properties || !('legs' in properties) || hasDrawableLegs(feature)) {
+          return feature;
+        }
+        const stripped = Object.assign({}, properties);
+        delete stripped.legs;
+        return Object.assign({}, feature, { properties: stripped });
+      }),
+    });
+  }
+
+  /**
    * The owned routes that carry legs, with the pieces each reader needs.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
@@ -111,9 +171,8 @@
       const feature = features[i] || {};
       const properties = feature.properties || {};
       if (properties.pending) continue;
-      if (!Array.isArray(properties.legs) || !properties.legs.length) continue;
-      const coordinates = feature.geometry && feature.geometry.coordinates;
-      if (!Array.isArray(coordinates)) continue;
+      if (!hasDrawableLegs(feature)) continue;
+      const coordinates = feature.geometry.coordinates;
       routes.push({
         uuid: properties.uuid ? String(properties.uuid) : null,
         coordinates: coordinates,
@@ -291,5 +350,7 @@
     transitionCollection: transitionCollection,
     passageCollection: passageCollection,
     dimOpacity: dimOpacity,
+    hasDrawableLegs: hasDrawableLegs,
+    withDrawableLegs: withDrawableLegs,
   });
 })();

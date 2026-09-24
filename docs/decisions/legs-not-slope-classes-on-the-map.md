@@ -56,7 +56,11 @@ teal dashed line, with no legs and no markers. The trip page
   carries `legs` while `route_legs_core.js` is loaded. The legs carry
   their own casing, so a dimmed leg is not framed at full strength.
 - An overlay payload cached before SNOW-1017 carries `legs` without
-  point indices; its routes draw nothing until the next online read.
+  point indices. The `routes` source is handed a copy with `legs`
+  removed from any route whose legs cannot all be sliced
+  (`withDrawableLegs`), so such a route falls back to the flat line. The
+  cached payload itself is untouched, because the rail reads its legs
+  from it.
 - The legend's route key has two leg rows plus the passage, fall-line and
   crux rows. The steepness bands and "Not surveyed" rows are gone.
 - The dimming follows `window.pwaRouteRail.cursor()`. The rail's

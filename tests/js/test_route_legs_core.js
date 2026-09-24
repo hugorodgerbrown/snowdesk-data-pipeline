@@ -202,6 +202,62 @@ describe('dimOpacity', () => {
   });
 });
 
+describe('hasDrawableLegs', () => {
+  it('is true when every leg slices the geometry', () => {
+    expect(core.hasDrawableLegs(routes().features[0])).toBe(true);
+  });
+
+  it('is false for legs without point indices, as an older payload sends', () => {
+    const feature = routes({ legs: [{ i: 1, from: 0, to: 3, climbing: true }] }).features[0];
+
+    expect(core.hasDrawableLegs(feature)).toBe(false);
+  });
+
+  it('is false when any one leg cannot be sliced — all or nothing', () => {
+    const legs = [LEGS[0], { ...LEGS[1], point_to: 40 }];
+
+    expect(core.hasDrawableLegs(routes({ legs }).features[0])).toBe(false);
+  });
+
+  it('is false for non-integer indices and for no legs at all', () => {
+    const fractional = [{ ...LEGS[0], point_to: 2.5 }];
+
+    expect(core.hasDrawableLegs(routes({ legs: fractional }).features[0])).toBe(false);
+    expect(core.hasDrawableLegs(routes({ legs: [] }).features[0])).toBe(false);
+    expect(core.hasDrawableLegs(null)).toBe(false);
+  });
+});
+
+describe('withDrawableLegs', () => {
+  it('removes undrawable legs from a copy and leaves the payload alone', () => {
+    const fc = routes({ legs: [{ i: 1, from: 0, to: 3, climbing: true }] });
+
+    const copy = core.withDrawableLegs(fc);
+
+    expect(copy.features[0].properties).not.toHaveProperty('legs');
+    expect(copy.features[0].properties.uuid).toBe('r-1');
+    // The rail reads its legs from the original.
+    expect(fc.features[0].properties.legs).toHaveLength(1);
+  });
+
+  it('hands a drawable route through as the same object', () => {
+    const fc = routes();
+
+    expect(core.withDrawableLegs(fc).features[0]).toBe(fc.features[0]);
+  });
+
+  it('hands a route with no legs through as the same object', () => {
+    const fc = routes();
+    delete fc.features[0].properties.legs;
+
+    expect(core.withDrawableLegs(fc).features[0]).toBe(fc.features[0]);
+  });
+
+  it('passes a missing payload straight through', () => {
+    expect(core.withDrawableLegs(null)).toBeNull();
+  });
+});
+
 describe('the colours', () => {
   it('mirror the rail\'s two tokens', () => {
     // The map line and the rail below it are one drawing of one route; a

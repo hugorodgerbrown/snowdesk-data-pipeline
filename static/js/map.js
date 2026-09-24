@@ -2363,13 +2363,20 @@
    * used: the payload says what is on the map, the source only what the
    * core managed to draw of it.
    *
-   * @returns {boolean} True when at least one owned route has legs.
+   * A route whose legs the core cannot slice (an old cached payload) is
+   * drawn flat, so it does not count.
+   *
+   * @returns {boolean} True when at least one owned route has legs the
+   *   leg layers draw.
    */
   const anyRouteLegged = () => {
+    const core = self.pwaRouteLegsCore;
     const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
     return features.some(
-      (f) => f && f.properties && Array.isArray(f.properties.legs)
-        && f.properties.legs.length > 0 && !f.properties.pending,
+      (f) => f && f.properties && !f.properties.pending
+        && (core && core.hasDrawableLegs
+          ? core.hasDrawableLegs(f)
+          : Array.isArray(f.properties.legs) && f.properties.legs.length > 0),
     );
   };
 
@@ -2431,10 +2438,11 @@
   // ``slope`` here; legs replaced the slope colours on the map, and a
   // route has legs whether or not it has been sampled.
   //
-  // One edge this does not cover: an overlay payload cached before
-  // SNOW-1017 carries `legs` without the point indices the core slices by,
-  // so its routes leave this layer and draw no legs either — until the
-  // next online read replaces the payload, which every page load makes.
+  // The test runs against `routesSourceData`'s copy of the payload, not
+  // the server's: an overlay payload cached before SNOW-1017 carries
+  // `legs` without the point indices the core slices by, and the copy has
+  // `legs` removed from any route like that, so it stays on this layer
+  // rather than leaving it for leg layers that cannot draw it.
   //
   // `routes-line-pending` is deliberately NOT filtered, and the pending
   // routes produce no legs at all (route_legs_core.js). A pending line's
@@ -2454,6 +2462,27 @@
   // moment this file is parsed it is not guaranteed to exist yet, so a
   // const would bake in "no core" on a page where the core arrives a
   // moment later.
+  /**
+   * The payload the `routes` source is given (SNOW-1017).
+   *
+   * The server's payload with `legs` removed from every route whose legs
+   * the core cannot slice (route_legs_core.js's `withDrawableLegs`), so the
+   * flat-line filter's `has legs` test is true only of a route the leg
+   * layers actually draw. `routesGeojsonCache` keeps the server's payload
+   * untouched — the rail reads its legs from there, and the rail's legs are
+   * in sample indices, which an old payload has.
+   *
+   * With no core the payload passes through as it is, and the filter is
+   * the owned-only one, so the flat line draws every owned route.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {?object} The payload for the `routes` source.
+   */
+  const routesSourceData = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    return core && core.withDrawableLegs ? core.withDrawableLegs(geojson) : geojson;
+  };
+
   const flatOwnedRouteFilter = () => (
     self.pwaRouteLegsCore
       ? ['all', OWNED_ROUTE_FILTER, ['!', ['has', 'legs']]]
@@ -2547,7 +2576,7 @@
   const installRoutesLayer = (geojson) => {
     if (!geojson || map.getSource('routes')) return;
     routesGeojsonCache = geojson;
-    map.addSource('routes', { type: 'geojson', data: geojson });
+    map.addSource('routes', { type: 'geojson', data: routesSourceData(geojson) });
     map.addLayer({
       id: 'routes-line-casing',
       type: 'line',
@@ -5988,7 +6017,7 @@
           // Refreshing only the first would leave a deleted route's flag
           // standing on the map, its legs drawn along a track that is no
           // longer there, and its marks on ground nothing is drawn across.
-          map.getSource('routes')?.setData(data);
+          map.getSource('routes')?.setData(routesSourceData(data));
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-legs')?.setData(routeLegsFor(data));
           map.getSource('route-passages')?.setData(routePassagesFor(data));

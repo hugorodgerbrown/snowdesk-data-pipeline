@@ -113,8 +113,58 @@ const ROUTES_FC = {
         legs: [{ i: 1, from: 0, to: 2, climbing: true, point_from: 0, point_to: 1 }],
       },
     },
+    {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [[6.0, 46.5, 1500], [6.0, 46.51, 1800]],
+      },
+      // An overlay payload cached before SNOW-1017: `legs` in sample
+      // indices only, with no point indices to slice a line by.
+      properties: {
+        uuid: 'stale-route',
+        name: 'Cached before legs',
+        bounds: [6.0, 46.5, 6.0, 46.51],
+        legs: [{ i: 1, from: 0, to: 0, climbing: true }],
+      },
+    },
   ],
 };
+
+/**
+ * Evaluate the handful of MapLibre filter operators the route layers use
+ * against one feature's properties.
+ *
+ * @param {Array<*>} filter A filter expression.
+ * @param {object} properties The feature's properties.
+ * @returns {*} The expression's value.
+ */
+function evaluate(filter, properties) {
+  const [op, ...args] = filter;
+  switch (op) {
+    case 'all': return args.every((arg) => evaluate(arg, properties));
+    case 'any': return args.some((arg) => evaluate(arg, properties));
+    case '!': return !evaluate(args[0], properties);
+    case 'has': return args[0] in properties;
+    case 'get': return properties[args[0]] ?? null;
+    case '==': return evaluate(args[0], properties) === args[1];
+    case '!=': return evaluate(args[0], properties) !== args[1];
+    default: throw new Error(`unsupported operator ${op}`);
+  }
+}
+
+/**
+ * The uuids a line layer draws out of the `routes` source's data.
+ *
+ * @param {string} layerId A layer on the `routes` source.
+ * @returns {Array<string>}
+ */
+function drawnBy(layerId) {
+  const filter = layers.get(layerId).filter;
+  return sources.get('routes').data.features
+    .filter((f) => !filter || evaluate(filter, f.properties))
+    .map((f) => f.properties.uuid || f.properties.token);
+}
 
 /** The recording rail stub (tests/js/_route_rail_stub.js). */
 let rail;
@@ -359,6 +409,30 @@ describe('routes-line and its casing', () => {
     expect(layers.get('routes-line').filter).toEqual(flat);
     expect(layers.get('routes-line-casing').filter)
       .toEqual(['any', ['==', ['get', 'pending'], true], flat]);
+  });
+
+  it('draw the routes the leg layers do not, and only those', () => {
+    expect(drawnBy('routes-line')).toEqual(['flat-route', 'stale-route']);
+    expect(drawnBy('routes-line-casing'))
+      .toEqual(['flat-route', 'tok-pending', 'stale-route']);
+  });
+
+  it('keep a route whose cached legs cannot be sliced, rather than lose it', () => {
+    // The stale payload's legs carry no point indices, so no leg layer
+    // can draw it. The source copy drops its `legs`, and the flat line
+    // keeps it — where the server's own payload, which the rail reads,
+    // keeps its legs.
+    const stale = sources.get('routes').data.features
+      .find((f) => f.properties.uuid === 'stale-route');
+
+    expect(stale.properties).not.toHaveProperty('legs');
+    expect(sources.get('route-legs').data.features
+      .some((f) => f.properties.uuid === 'stale-route')).toBe(false);
+
+    tapLayer('routes-line', { uuid: 'stale-route', name: 'Cached before legs' });
+    expect(rail.last().feature.properties.legs).toEqual([
+      { i: 1, from: 0, to: 0, climbing: true },
+    ]);
   });
 
   it('leave the pending line alone — its dash carries a different fact', () => {
