@@ -333,6 +333,21 @@ describe('the ribbon', () => {
     expect(drawn).not.toContain(103);
   });
 
+  it('inks a strong bank and mutes the rest', () => {
+    const banks = BANKS.slice();
+    banks[102] = 40;
+    banks[104] = 5;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(103);
+    row.querySelector('[data-route-rail-two-zoom="in"]').click();
+
+    const stroke = (index) =>
+      lane.querySelector(`.route-rail-two-tick[data-index="${index}"]`).getAttribute('stroke');
+    expect(stroke(102)).toBe('var(--color-text-1)');
+    expect(stroke(104)).toBe('var(--color-text-3)');
+  });
+
   it('reads the slope and bank under the cursor', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);

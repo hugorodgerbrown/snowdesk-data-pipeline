@@ -1573,6 +1573,10 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
 .route-rail-leg:hover { fill-opacity: 0.36; }
 .route-rail-leg[aria-pressed="true"] { fill-opacity: 0.6; }
+/* A mouse or touch press focuses the leg (it is a tabindex path) and the
+   browser would ring its bounding box; only keyboard focus is marked, and
+   by the fill below rather than by an outline. */
+.route-rail-leg:focus { outline: none; }
 .route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
 
 /* —— Rail two's lane (SNOW-1019) ————————————————
@@ -1587,6 +1591,8 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     user-select: none;
 }
 .route-rail-two-lane:active { cursor: grabbing; }
+/* A press on the lane focuses it; the ring is for keyboard focus only. */
+.route-rail-two-lane:focus:not(:focus-visible) { outline: none; }
 .route-rail-two-lane:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;

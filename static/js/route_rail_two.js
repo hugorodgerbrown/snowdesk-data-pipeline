@@ -70,6 +70,8 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
+  /** A distance label this close to an edge hangs inward, in px. */
+  var LABEL_EDGE_PX = 24;
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
@@ -492,10 +494,14 @@
         y1: tick.y1.toFixed(2),
         x2: tick.x2.toFixed(2),
         y2: tick.y2.toFixed(2),
-        stroke: 'currentColor',
-        'stroke-width': tick.strong ? '2.25' : '1.25',
+        // Muted by default and inked where the bank reaches `strongDeg`, so
+        // the eye goes to the lean that matters rather than to a solid
+        // hatch of equal ticks — bank_ribbon_core.js leaves this to the mount.
+        stroke: tick.strong ? 'var(--color-text-1)' : 'var(--color-text-3)',
+        'stroke-width': tick.strong ? '2' : '1.25',
         'stroke-linecap': 'round',
         class: 'route-rail-two-tick',
+        'data-strong': tick.strong ? 'true' : 'false',
         'data-index': String(tick.index),
         'pointer-events': 'none',
       }));
@@ -610,11 +616,13 @@
       }));
       if (!tick.label) return;
       var label = document.createElement('span');
-      // A label at the very left hangs right of its tick, and one at the
-      // very right hangs left, so neither is cut off at the rail's edge.
+      // A label near the left edge hangs right of its tick, and one near the
+      // right edge hangs left, so neither runs off the lane; none wraps.
       var fraction = tick.x / width;
-      var shift = fraction < 0.02 ? '' : fraction > 0.98 ? ' -translate-x-full' : ' -translate-x-1/2';
-      label.className = 'absolute top-0' + shift;
+      var shift = tick.x < LABEL_EDGE_PX
+        ? ''
+        : tick.x > width - LABEL_EDGE_PX ? ' -translate-x-full' : ' -translate-x-1/2';
+      label.className = 'absolute top-0 whitespace-nowrap' + shift;
       label.style.left = (fraction * 100).toFixed(3) + '%';
       label.textContent = tick.label;
       ticksEl.appendChild(label);
