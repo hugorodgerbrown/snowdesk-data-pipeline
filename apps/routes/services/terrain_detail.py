@@ -23,6 +23,11 @@ points. Nothing is re-sampled either.
   table and a passage's label can never be two measurements.
 * ``track_gradient_deg`` — the along-track gradient, SIGNED: positive
   climbing, negative descending, in the direction the track was recorded.
+* ``roll_deg`` — the bank angle across the track (SNOW-1021), SIGNED:
+  positive where the ground falls away on the skier's right.
+  ``bank.bank_angle_deg`` over the stored angle and aspect and the
+  unrounded chord bearing, so it is the figure ``compact_slope`` sends as
+  ``banks`` before that rounds it to a whole degree.
 
 ## The track gradient needs the route's points, not just the record
 
@@ -81,11 +86,12 @@ ramifications, both recorded in that decision's consequences:
 
 ## An unknown segment keeps its track figures
 
-An unknown segment carries its reason, and ``angle_deg``, ``aspect_deg``
-and ``fall_line`` are None — an unknown is a reason, never a zero. Its
-bearing and track gradient are NOT blanked: they are measurements of the
-track rather than of the ground, and the terrain model having no answer
-for the ground says nothing about which way the skier was going.
+An unknown segment carries its reason, and ``angle_deg``, ``aspect_deg``,
+``fall_line`` and ``roll_deg`` are None — an unknown is a reason, never a
+zero. Its bearing and track gradient are NOT blanked: they are
+measurements of the track rather than of the ground, and the terrain
+model having no answer for the ground says nothing about which way the
+skier was going.
 """
 
 from __future__ import annotations
@@ -94,6 +100,7 @@ import math
 from typing import Any
 
 from apps.core.geo import initial_bearing_deg
+from apps.routes.services.bank import bank_angle_deg
 from apps.routes.services.passages import fall_line_alignment
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 from apps.routes.services.slope_summary import segment_lengths_m
@@ -134,6 +141,7 @@ COLUMNS: tuple[str, ...] = (
     "bearing_deg",
     "track_gradient_deg",
     "track_gradient_rejected",
+    "roll_deg",
     "fall_line",
     "unknown",
 )
@@ -220,6 +228,9 @@ def terrain_detail(
                     None if rejected[index] else _rounded(gradients[index])
                 ),
                 "track_gradient_rejected": rejected[index],
+                "roll_deg": _rounded(
+                    bank_angle_deg(angle_deg, aspect_deg, bearing_deg)
+                ),
                 "fall_line": fall_line_alignment(bearing_deg, aspect_deg),
                 "unknown": segment.get("unknown"),
             }
