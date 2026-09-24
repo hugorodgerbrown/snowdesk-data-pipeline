@@ -26,9 +26,12 @@
  * the cursor. Rail two opens on 2 km of ground (or the whole leg), pans by
  * drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
  * the −/+ buttons and the −/+ keys. An index or a selection published from
- * elsewhere that lands outside the window scrolls it the least distance
- * that shows it; after a pan or zoom the cursor index is pulled into the
- * window. Rail one draws a bracket over what the window shows from
+ * elsewhere that lands outside the window CENTRES it there (a range wider
+ * than the window aligns its start), so the cursor line and the leader
+ * line ending on it sit mid-lane; rail two's own writes — its keys and
+ * pointer — scroll the least distance instead, so stepping with the
+ * arrows does not jump the view. After a pan or zoom the cursor index is
+ * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
  * PRESSES. A press that moves past `DRAG_PX` pans; a tap selects the band
@@ -147,6 +150,30 @@
   var pinch = null;
   /** The pending animation-frame redraw, or 0. */
   var frame = 0;
+  /**
+   * True while rail two itself writes to the cursor (its pointer, keys,
+   * or the clamp after a pan), so `onState` scrolls the least distance
+   * for its own writes and centres for everyone else's (`followView`).
+   */
+  var ownWrite = false;
+
+  /**
+   * Wrap a handler so every cursor write inside it counts as rail two's.
+   *
+   * @param {function(*): void} handler
+   * @returns {function(*): void}
+   */
+  function asOwnWrite(handler) {
+    return function (event) {
+      var outer = ownWrite;
+      ownWrite = true;
+      try {
+        handler(event);
+      } finally {
+        ownWrite = outer;
+      }
+    };
+  }
 
   /** @returns {object} rail two's pure half. */
   function core() {
@@ -270,7 +297,7 @@
     if (index === null) return;
     var whole = core().fullyVisible(view);
     var next = clamp(index, whole[0], whole[1]);
-    if (next !== index) ctx.cursor.setIndex(next);
+    if (next !== index) asOwnWrite(function () { ctx.cursor.setIndex(next); })(null);
   }
 
   /** Redraw on the next animation frame, once however often it is asked. */
@@ -371,12 +398,16 @@
     var fresh = !leg || leg.from !== open.from || leg.to !== open.to;
     if (fresh) showLeg(open);
 
+    // Least distance for rail two's own writes; centred for a write from
+    // the map or rail one, so its cursor is mid-lane rather than on the
+    // edge (followView).
+    var bring = ownWrite ? c.ensureVisible : c.followView;
     if (state.index !== null && (fresh || !previous || previous.index !== state.index)) {
-      setView(c.ensureVisible(leg, view, state.index, state.index));
+      setView(bring(leg, view, state.index, state.index));
     }
     var selected = inLeg(state.selection);
     if (selected && (fresh || !previous || previous.selection !== state.selection)) {
-      setView(c.ensureVisible(leg, view, selected.from, selected.to));
+      setView(bring(leg, view, selected.from, selected.to));
     }
     draw();
   }
@@ -832,7 +863,7 @@
     }
   });
 
-  lane.addEventListener('pointermove', function (event) {
+  lane.addEventListener('pointermove', asOwnWrite(function (event) {
     if (!ctx || !leg) return;
     var id = pointerIdOf(event);
     var x = laneX(event);
@@ -860,7 +891,7 @@
     if (!press && !pinch && event.pointerType === 'mouse') {
       ctx.cursor.setIndex(clamp(c.indexAt(x, view, width), leg.from, leg.to));
     }
-  });
+  }));
 
   /**
    * A pointer lifted or lost.
@@ -893,9 +924,9 @@
     }
   }
 
-  lane.addEventListener('pointerup', function (event) {
+  lane.addEventListener('pointerup', asOwnWrite(function (event) {
     release(/** @type {PointerEvent} */ (event), true);
-  });
+  }));
   lane.addEventListener('pointercancel', function (event) {
     release(/** @type {PointerEvent} */ (event), false);
   });
@@ -922,7 +953,7 @@
     scheduleDraw();
   }, { passive: false });
 
-  lane.addEventListener('keydown', function (event) {
+  lane.addEventListener('keydown', asOwnWrite(function (event) {
     if (!ctx || !leg) return;
     var cursor = ctx.cursor;
     var index = cursor.state().index;
@@ -961,7 +992,7 @@
         return;
     }
     event.preventDefault();
-  });
+  }));
 
   row.addEventListener('click', function (event) {
     if (!ctx) return;

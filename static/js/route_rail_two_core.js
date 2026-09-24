@@ -56,6 +56,7 @@
  *   openingSpan(leg, sampleCount, spanM, windowM?) → the span it opens at
  *   placeView(leg, span, from)                → a view clamped to the leg
  *   ensureVisible(leg, view, from, to)        → the view, scrolled the least
+ *   followView(leg, view, from, to)           → the view, centred on a range
  *   zoom(leg, span, nextSpan, anchor, fraction) → {span, view}
  *   fullyVisible(view)                        → [first, last] whole samples
  *   xOf(s, view, width)                       → px for an axis coordinate
@@ -275,6 +276,33 @@
     if (a >= view.from - EPSILON && b <= view.to + EPSILON) return view;
     if (b - a > span || a < view.from) return placeView(leg, span, a);
     return placeView(leg, span, b - span);
+  }
+
+  /**
+   * Bring `[from, to]` into view for a write from ANOTHER surface.
+   *
+   * A range already inside is a no-op and returns the same view. One that
+   * fits is CENTRED, not scrolled the least: an index the map or rail one
+   * moved lands mid-lane, where rail two's cursor line and the leader line
+   * that ends on it can be seen, rather than on the lane's edge. A range
+   * wider than the view aligns its start with the left edge, as
+   * `ensureVisible` does. Rail two's own writes (keys, pointer) keep
+   * `ensureVisible`, so stepping with the arrows does not jump the view on
+   * every step.
+   *
+   * @param {Leg} leg
+   * @param {View} view
+   * @param {number} from First sample, inclusive.
+   * @param {number} to Last sample, inclusive.
+   * @returns {View}
+   */
+  function followView(leg, view, from, to) {
+    var a = Math.min(from, to);
+    var b = Math.max(from, to) + 1;
+    var span = view.to - view.from;
+    if (a >= view.from - EPSILON && b <= view.to + EPSILON) return view;
+    if (b - a > span) return placeView(leg, span, a);
+    return placeView(leg, span, (a + b) / 2 - span / 2);
   }
 
   /**
@@ -688,6 +716,7 @@
     openingSpan: openingSpan,
     placeView: placeView,
     ensureVisible: ensureVisible,
+    followView: followView,
     zoom: zoom,
     fullyVisible: fullyVisible,
     xOf: xOf,

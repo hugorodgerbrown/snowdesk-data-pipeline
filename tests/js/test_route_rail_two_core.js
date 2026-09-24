@@ -105,6 +105,27 @@ describe('ensureVisible', () => {
   });
 });
 
+describe('followView', () => {
+  const view = { from: 120, to: 140 };
+
+  it('leaves the view alone for a range inside it', () => {
+    expect(core.followView(LEG, view, 125, 130)).toBe(view);
+  });
+
+  it('centres a range that fits', () => {
+    expect(core.followView(LEG, view, 160, 161)).toEqual({ from: 151, to: 171 });
+  });
+
+  it('aligns the start of a range longer than the window', () => {
+    expect(core.followView(LEG, view, 150, 190)).toEqual({ from: 150, to: 170 });
+  });
+
+  it('clamps the centred window to the leg', () => {
+    expect(core.followView(LEG, view, 198, 198)).toEqual({ from: 180, to: 200 });
+    expect(core.followView(LEG, { from: 150, to: 170 }, 101, 101)).toEqual({ from: 100, to: 120 });
+  });
+});
+
 describe('zoom', () => {
   it('keeps the anchor at its fraction of the lane', () => {
     const { span, view } = core.zoom(LEG, 40, 20, 150, 0.25);

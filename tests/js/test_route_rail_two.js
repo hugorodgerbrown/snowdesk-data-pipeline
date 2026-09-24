@@ -170,16 +170,38 @@ describe('following the cursor', () => {
     expect(row.hidden).toBe(true);
   });
 
-  it('scrolls an index published elsewhere into the window', () => {
+  it('centres the window on an index published elsewhere', () => {
+    // A map tap or rail one's hover: the cursor lands mid-lane, not on its
+    // edge, where the leader line and the cursor line could barely be seen.
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     cursor.setIndex(200);
 
-    const view = two.view();
-    expect(view.from).toBeLessThanOrEqual(200);
-    expect(view.to).toBeGreaterThanOrEqual(201);
-    expect(view).toEqual({ from: 161, to: 201 });
+    // Sample 200's centre, 200.5, in the middle of a 40-sample window.
+    expect(two.view()).toEqual({ from: 180.5, to: 220.5 });
+  });
+
+  it('still scrolls the least distance for an arrow-key step past the edge', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(139);
+    expect(two.view()).toEqual({ from: 100, to: 140 });
+
+    lane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    expect(cursor.state().index).toBe(140);
+    expect(two.view()).toEqual({ from: 101, to: 141 });
+  });
+
+  it('centres a selection from elsewhere that fits the window', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    cursor.select({ kind: 'passage', from: 200, to: 209 });
+
+    // The range 200–210 centred in 40 samples.
+    expect(two.view()).toEqual({ from: 185, to: 225 });
   });
 
   it('aligns a selection longer than the window with its left edge', () => {
