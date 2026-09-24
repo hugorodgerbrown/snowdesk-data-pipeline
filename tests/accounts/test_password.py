@@ -15,6 +15,8 @@ Covers:
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.contrib.auth.models import User
 from django.core import mail
@@ -156,6 +158,41 @@ class TestPasswordSignIn:
         assert response.status_code == 200
         assert "Check your inbox" in response.content.decode()
         assert len(mail.outbox) == 1
+
+    def test_blank_page_button_names_the_magic_link(self, client: Client) -> None:
+        """With the password field hidden, the button offers the link."""
+        response = client.get(self.URL)
+        assert _submit_label(response.content.decode()) == "Send sign-in link"
+
+    def test_password_error_button_says_sign_in(self, client: Client) -> None:
+        """SNOW-1022: a re-render with the password field open signs in.
+
+        The field is shown already, so the button and the intro must name
+        what the form now does — not a link that will never be sent.
+        """
+        self._user_with_password()
+        response = client.post(
+            self.URL, {"email": "signin@example.com", "password": "wrong-password"}
+        )
+        html = response.content.decode()
+        assert _submit_label(html) == "Sign in"
+        assert "Enter your email address and password." in html
+        assert "we&#x27;ll send you a sign-in link" not in html
+
+
+def _submit_label(html: str) -> str:
+    """Return the text of the sign-in page's primary button.
+
+    Args:
+        html: The rendered sign-in page.
+
+    Returns:
+        The button's text, whitespace-stripped.
+
+    """
+    match = re.search(r'id="sign-in-submit"[^>]*>(.*?)</button>', html, re.DOTALL)
+    assert match is not None
+    return match.group(1).strip()
 
 
 # ---------------------------------------------------------------------------

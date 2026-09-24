@@ -33,8 +33,19 @@ the manage page can be authenticated-only.
             {% card padding="p-8" %}
             {% trans "Sign in" as page_heading %}
             {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" %}
-            <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                {% trans "Enter your email address and we'll send you a sign-in link." %}
+            {% comment %}
+                SNOW-1022: the intro and the primary button name what the form
+                will do. With the password field shown it signs in and emails
+                nothing, so both switch to the password wording — here when a
+                password error re-renders the page with the field open, and in
+                the toggle handler below when the reader opens it.
+            {% endcomment %}
+            <p id="sign-in-intro" class="text-text-2 text-sm mb-6 leading-relaxed">
+                {% if password_error %}
+                    {% trans "Enter your email address and password." %}
+                {% else %}
+                    {% trans "Enter your email address and we'll send you a sign-in link." %}
+                {% endif %}
             </p>
             {% if password_error %}
                 <div
@@ -92,8 +103,12 @@ the manage page can be authenticated-only.
                         </a>
                     </p>
                 </div>
-                {% trans "Send sign-in link" as label %}
-                {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
+                {% if password_error %}
+                    {% trans "Sign in" as label %}
+                {% else %}
+                    {% trans "Send sign-in link" as label %}
+                {% endif %}
+                {% include "includes/_button.html" with label=label variant="primary" full_width=True button_id="sign-in-submit" %}
                 <button
                     type="button"
                     id="toggle-password-signin"
@@ -163,6 +178,14 @@ the manage page can be authenticated-only.
                 pwToggle.addEventListener("click", function () {
                     pwWrap.classList.remove("hidden");
                     pwToggle.classList.add("hidden");
+                    /* SNOW-1022: the form now signs in rather than emailing a
+                       link, so the button and intro say so. */
+                    var submit = document.getElementById("sign-in-submit");
+                    var intro = document.getElementById("sign-in-intro");
+                    {% trans "Sign in" as password_submit_label %}
+                    if (submit) submit.textContent = "{{ password_submit_label|escapejs }}";
+                    {% trans "Enter your email address and password." as password_intro %}
+                    if (intro) intro.textContent = "{{ password_intro|escapejs }}";
                     var input = document.getElementById("id_password");
                     if (input) input.focus();
                     window.Passkey.abortConditionalSignIn();
