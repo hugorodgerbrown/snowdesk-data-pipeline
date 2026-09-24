@@ -21,8 +21,8 @@
  * over it — it is not registered with window.pwaMapOverlays, which would
  * close it the moment the sheet it opened announced itself. It closes on
  * its own × (`[data-route-rail-close]`), on Escape when nothing else is
- * open to take that Escape and no leg is open, on a claim or a delete, and it is refilled in
- * place when another route is tapped.
+ * open to take that Escape and no leg is open, on a claim or a delete, and
+ * it is refilled in place when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,
@@ -40,6 +40,12 @@
  * it, the raised fill (src/css/main.css, `.route-rail-leg`) — follows the
  * CURSOR, not the click, so when rail two closes a leg from its own side
  * this rail un-presses without being told.
+ *
+ * THE CURSOR LINE (SNOW-1019). The cursor index is drawn across the lane
+ * as a vertical line (`[data-route-rail-cursor]`), placed by share, and a
+ * mouse moving over the lane sets it — so the map's dot and rail two's
+ * window follow the pointer along the profile. The map writes the same
+ * index from a pointer on the route's line (map.js's bindRouteCursor).
  *
  * RAIL TWO'S WINDOW. Rail two reports what it shows through `onView`, and
  * this rail draws a bracket (`[data-route-rail-window]`) over that part of
@@ -78,7 +84,9 @@
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
  *   cursor()       — the open route's cursor, or null; map.js follows it
- *                    to dim every leg but the open one (SNOW-1017)
+ *                    to dim every leg but the open one (SNOW-1017) and to
+ *                    draw the selection and index on the line, and writes
+ *                    the index back from a pointer on it (SNOW-1019)
  *   element        — the rail itself, measured by map.js's fit padding
  */
 
@@ -307,12 +315,49 @@
   }
 
   /**
-   * Bring the pressed state and the readout in line with the cursor.
+   * Draw the cursor index as a vertical line across the lane (SNOW-1019).
    *
-   * @param {?{openLeg: ?{from: number, to: number, i: number, climbing: boolean}}} state
+   * Placed by share, the rule the leg fills follow: sample i owns the
+   * i-th of N shares, and the line sits at its middle. Hidden — removed —
+   * while the index is null.
+   *
+   * @param {?number} index The cursor index.
+   */
+  function drawCursorLine(index) {
+    var line = lane.querySelector('[data-route-rail-cursor]');
+    if (index === null || index === undefined || !(sampleCount > 0)) {
+      if (line) line.remove();
+      return;
+    }
+    var box = self.pwaRouteRailCore.BOX;
+    if (!line) {
+      line = svgEl('line', {
+        'data-route-rail-cursor': '',
+        y1: '0',
+        y2: String(box.height),
+        stroke: 'currentColor',
+        'stroke-width': '1.5',
+        'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
+        class: 'text-text-1',
+      });
+      lane.appendChild(line);
+    }
+    var x = (((index + 0.5) / sampleCount) * box.width).toFixed(2);
+    line.setAttribute('x1', x);
+    line.setAttribute('x2', x);
+  }
+
+  /**
+   * Bring the pressed state, the cursor line and the readout in line with
+   * the cursor.
+   *
+   * @param {?{index?: ?number, openLeg: ?{from: number, to: number, i: number,
+   *   climbing: boolean}}} state
    */
   function paintState(state) {
     var open = state && state.openLeg;
+    drawCursorLine(state && typeof state.index === 'number' ? state.index : null);
     lane.querySelectorAll('.route-rail-leg').forEach(function (path) {
       var pressed = !!open
         && Number(path.getAttribute('data-leg-from')) === open.from
@@ -589,6 +634,19 @@
     var target = /** @type {Element} */ (event.target);
     var path = target && target.closest ? target.closest('.route-rail-leg') : null;
     if (path) pressLeg(path, /** @type {MouseEvent} */ (event));
+  });
+
+  // SNOW-1019: a mouse over the lane moves the cursor, so the map's dot
+  // and rail two follow it along the profile. Mouse only: a finger's move
+  // is the start of a press, and the click that opens or recentres a leg
+  // must stay the only thing a press does. The cursor clamps the index
+  // into the open leg, so hovering past its ends holds the cursor there.
+  lane.addEventListener('pointermove', function (event) {
+    if (!cursor || !(sampleCount > 0) || event.pointerType !== 'mouse') return;
+    var rect = lane.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    var at = Math.floor(((event.clientX - rect.left) / rect.width) * sampleCount);
+    cursor.setIndex(Math.min(sampleCount - 1, Math.max(0, at)));
   });
 
   lane.addEventListener('keydown', function (event) {

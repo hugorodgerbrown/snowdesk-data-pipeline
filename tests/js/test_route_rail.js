@@ -421,6 +421,72 @@ describe('rail two', () => {
   });
 });
 
+describe('the cursor line (SNOW-1019)', () => {
+  /** @returns {?Element} The cursor line, if drawn. */
+  const cursorLine = () => rail.querySelector('[data-route-rail-cursor]');
+
+  /**
+   * Move a pointer over rail one's lane.
+   *
+   * @param {string} pointerType 'mouse' or 'touch'.
+   * @param {number} clientX The pointer's x.
+   */
+  const moveOverLane = (pointerType, clientX) => {
+    const event = new MouseEvent('pointermove', { bubbles: true, clientX });
+    Object.defineProperty(event, 'pointerType', { value: pointerType });
+    rail.querySelector('[data-route-rail-lane]').dispatchEvent(event);
+  };
+
+  it('draws the cursor index by share, and hides on null', () => {
+    window.pwaRouteRail.open(feature());
+    expect(cursorLine()).toBeNull();
+
+    window.pwaRouteRail.cursor().setIndex(5);
+    // Sample 5 of 24: the middle of the sixth share of 1000.
+    expect(Number(cursorLine().getAttribute('x1'))).toBeCloseTo((5.5 / 24) * 1000);
+    expect(cursorLine().getAttribute('pointer-events')).toBe('none');
+    expect(cursorLine().getAttribute('vector-effect')).toBe('non-scaling-stroke');
+
+    window.pwaRouteRail.cursor().setIndex(null);
+    expect(cursorLine()).toBeNull();
+  });
+
+  it('moves the cursor on a mouse hover, and not on a touch', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+
+    moveOverLane('touch', 500);
+    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
+
+    // 500 of 1000 is sample 12 of 24.
+    moveOverLane('mouse', 500);
+    expect(window.pwaRouteRail.cursor().state().index).toBe(12);
+  });
+
+  it('holds a hover to the open leg', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+
+    moveOverLane('mouse', 900);
+
+    expect(window.pwaRouteRail.cursor().state().index).toBe(11);
+  });
+
+  it('clears the cursor when the rail closes', () => {
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    cursor.setIndex(3);
+    cursor.select({ kind: 'band', from: 2, to: 4 });
+
+    window.pwaRouteRail.close();
+
+    expect(cursor.state()).toMatchObject({ index: null, selection: null, openLeg: null });
+  });
+});
+
 describe('the details item', () => {
   it('calls the details callback map.js handed over', () => {
     const details = vi.fn();
