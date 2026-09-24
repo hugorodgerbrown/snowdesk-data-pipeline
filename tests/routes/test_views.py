@@ -1442,7 +1442,7 @@ class TestRoutesGeojsonLegs:
         """The factory's steady climb is one leg across every segment."""
         user = UserFactory.create()
         client.force_login(user)
-        RouteFactory.create(
+        route = RouteFactory.create(
             user=user,
             slope_samples=_slope_record(
                 {"angle_deg": 20.0, "aspect_deg": 90.0},
@@ -1453,7 +1453,16 @@ class TestRoutesGeojsonLegs:
 
         properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
 
-        assert properties["legs"] == [{"i": 1, "from": 0, "to": 2, "climbing": True}]
+        assert properties["legs"] == [
+            {
+                "i": 1,
+                "from": 0,
+                "to": 2,
+                "climbing": True,
+                "point_from": 0,
+                "point_to": len(route.points) - 1,
+            }
+        ]
 
     def test_an_unsampled_route_carries_legs(self, client: Client) -> None:
         """Legs come from the geometry, so no slope still means legs."""
@@ -1466,6 +1475,8 @@ class TestRoutesGeojsonLegs:
         assert "slope" not in properties
         assert properties["legs"] == wire_legs(route.points, None)
         assert properties["legs"][0]["from"] == 0
+        assert properties["legs"][0]["point_from"] == 0
+        assert properties["legs"][-1]["point_to"] == len(route.points) - 1
 
     def test_a_malformed_slope_record_indexes_the_stride_walk(
         self, client: Client

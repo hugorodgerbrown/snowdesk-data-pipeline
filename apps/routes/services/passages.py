@@ -70,7 +70,8 @@ than measuring a chord across it.
 
 An unknown segment carries no ``angle_deg`` at all, so it fails both the
 seed test and the grow test and always stops a run. That is deliberate
-and it is why ``routes-slope-unknown`` needs no change: no feature can
+and it is why the unknown-segment layers (the trip map's
+``trip-route-slope-unknown``) need no change: no feature can
 ever carry both ``unknown`` and ``passage``. Ground nothing surveyed is
 not ground we may mark.
 

@@ -1772,7 +1772,26 @@ def test_the_passage_wording_separates_the_split_from_the_ring() -> None:
 
 
 @pytest.mark.django_db
-def test_the_route_steepness_key_explains_the_no_fall_passage() -> None:
+def test_the_route_key_names_the_two_kinds_of_leg() -> None:
+    """A climb and a descent each have a row, and nothing is left of the bands.
+
+    SNOW-1017 redrew a saved route as its legs, so the key that explained
+    six slope colours would now explain a line nobody can see.
+    """
+    content = Client().get(reverse("public:home")).content.decode()
+    section = content.split('id="map-route-legs-section"', 1)[1]
+    key = section.split("</section>", 1)[0]
+
+    assert "map-legend-swatch--leg-climb" in key
+    assert "Climbing" in key
+    assert "map-legend-swatch--leg-descent" in key
+    assert "Descending" in key
+    assert "map-legend-swatch--slope-" not in key
+    assert "Not surveyed" not in key
+
+
+@pytest.mark.django_db
+def test_the_route_key_explains_the_no_fall_passage() -> None:
     """The split line has a row, and the key carries its caveat.
 
     A mark nobody can look up is a mark that gets guessed at, and the
@@ -1782,7 +1801,7 @@ def test_the_route_steepness_key_explains_the_no_fall_passage() -> None:
     one, on the surface the mark appears on.
     """
     content = Client().get(reverse("public:home")).content.decode()
-    section = content.split('id="map-route-slope-section"', 1)[1]
+    section = content.split('id="map-route-legs-section"', 1)[1]
     key = section.split("</section>", 1)[0]
 
     assert "map-legend-swatch--passage" in key
@@ -1793,7 +1812,7 @@ def test_the_route_steepness_key_explains_the_no_fall_passage() -> None:
 
 
 @pytest.mark.django_db
-def test_the_route_steepness_key_explains_the_fall_line_arrow() -> None:
+def test_the_route_key_explains_the_fall_line_arrow() -> None:
     """The arrow has a row, and the row carries what the mark cannot.
 
     The dangerous reading is the ABSENCE of an arrow: nothing is drawn
@@ -1803,7 +1822,7 @@ def test_the_route_steepness_key_explains_the_fall_line_arrow() -> None:
     ``/help/#help-topic-slope`` for the long version.
     """
     content = Client().get(reverse("public:home")).content.decode()
-    section = content.split('id="map-route-slope-section"', 1)[1]
+    section = content.split('id="map-route-legs-section"', 1)[1]
     key = section.split("</section>", 1)[0]
 
     assert "map-legend-swatch--fall-line" in key
@@ -1811,7 +1830,7 @@ def test_the_route_steepness_key_explains_the_fall_line_arrow() -> None:
     assert "steep ground only" in key
     # And the key's closing paragraph says what the arrows are FOR,
     # which the three-word row cannot.
-    assert "point the way that ground falls" in key
+    assert "point the way the ground falls" in key
 
 
 @pytest.mark.django_db

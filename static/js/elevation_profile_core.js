@@ -159,9 +159,11 @@
   /**
    * The dash of a stretch the terrain had no answer for.
    *
-   * `[2, 1.5]` line-widths, which is `routes-slope-unknown`'s
-   * `line-dasharray` in `map.js` verbatim — the same stretch of ground
-   * dashes identically on the map and in the popup.
+   * `[2, 1.5]` line-widths, which is `trip-route-slope-unknown`'s
+   * `line-dasharray` in `trip_map.js` verbatim — the same stretch of
+   * ground dashes identically on the trip map and in the chart. (The home
+   * map's `routes-slope-unknown` carried it too, until SNOW-1017 drew
+   * routes there as legs.)
    */
   var UNKNOWN_DASH = [2, 1.5];
 

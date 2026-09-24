@@ -11,18 +11,30 @@
  *                          angles: [34.2, null, …] }  // N
  *
  * with `null` for a segment the terrain had no answer for. This module
- * turns that into the two-point LineStrings MapLibre paints, and decides
- * which colour bucket an angle falls in.
+ * turns that into two-point LineStrings, and decides which colour bucket
+ * an angle falls in.
+ *
+ * WHO READS IT NOW. SNOW-1017 took the slope-coloured line off the home
+ * map — a route there draws as its legs (route_legs_core.js, and
+ * docs/decisions/legs-not-slope-classes-on-the-map.md) — and the classes
+ * return on SNOW-1019's leg rail. What map.js still reads from here is
+ * the marks the record carries: the no-fall passages (through
+ * route_legs_core.js's passageCollection, which builds on
+ * `segmentFeatures`), the crux rings, the fall-line arrows, and the
+ * terrain lines in words. The trip page (trip_map.js) still paints the
+ * slope-coloured line with `segmentCollection` and `CLASSES`, and the
+ * elevation profile (elevation_profile_core.js) its bands with
+ * `classify`, so every export stays.
  *
  * THREE STATES, AND THEY MUST NOT COLLAPSE INTO TWO:
  *
  *   - NO `slope` PROPERTY AT ALL — the route has never been sampled. It
- *     produces NOTHING here, and `map.js` draws it as the flat line it has
- *     always been. An unsampled route is not an unknown one, and drawing
+ *     produces NOTHING here, and the trip page draws it as the flat line
+ *     it has always been. An unsampled route is not an unknown one, and drawing
  *     a dashed "we looked and could not tell" over a track nothing has
  *     looked at would be a claim we have not earned.
  *   - A NULL ANGLE — sampled, no answer. That becomes an `unknown: true`
- *     feature, which `map.js` paints dashed and grey, and it NEVER carries
+ *     feature, which the trip page paints dashed and grey, and it NEVER carries
  *     a `slope_class`: a step expression given a class for an unknown is
  *     one refactor away from painting it green.
  *   - A NUMBER — one of six buckets, below.
@@ -264,9 +276,9 @@
    * from `points[i]` to `points[i + 1]`. Pairing them back out here is
    * what lets the payload carry half the coordinates it otherwise would.
    *
-   * Each feature carries the owning route's `uuid`, because these layers
-   * are what a tap on a sampled route lands on and `map.js` has to get
-   * from the segment back to the route to open its popup.
+   * Each feature carries the owning route's `uuid`, so a consumer can get
+   * from the segment back to its route — `route_legs_core.js` builds the
+   * home map's passage marks from these.
    *
    * A PENDING ROUTE PRODUCES NOTHING. A followed share is drawn as a teal
    * dashed line saying "this one is not yours yet", which is the fact that
@@ -331,7 +343,7 @@
   /**
    * Every route's segments, as one FeatureCollection.
    *
-   * The source `map.js` hands to MapLibre. Always a valid collection, even
+   * The source the trip page hands to MapLibre. Always a valid collection, even
    * when nothing in the payload has been sampled — an empty one paints
    * nothing, where a null would make `setData` throw.
    *

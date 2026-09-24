@@ -279,7 +279,7 @@ class TestGrouping:
     def test_an_unknown_segment_is_never_inside_a_passage(self) -> None:
         """Unsurveyed ground stops a run and is never marked.
 
-        This is why ``routes-slope-unknown`` needs no change: no segment
+        This is why ``trip-route-slope-unknown`` needs no change: no segment
         can ever carry both ``unknown`` and ``passage``.
         """
         passages = route_passages(_record([52.0, None, 52.0]))

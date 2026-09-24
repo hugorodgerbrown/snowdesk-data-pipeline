@@ -1,7 +1,8 @@
 /*
  * tests/js/test_map_route_slope_upload_refetch.js — the one delayed re-read
- * that lets an uploaded route become coloured without a page reload
- * (SNOW-910).
+ * that lets an uploaded route pick up its slope record without a page
+ * reload (SNOW-910). Since SNOW-1017 the record no longer colours the
+ * line; it carries the passages, crux rings and fall-line arrows.
  *
  * Scenario: none — a timer scheduled off an event payload, asserted by
  * counting fetches. No browser is needed to prove it, and no manual test
@@ -103,8 +104,8 @@ describe('an upload of a route the server has not sampled yet', () => {
 
     // A basemap swap or a teardown between the schedule and the fire: the
     // sources are gone, so there is nothing to write the payload to.
-    const removed = mapStub.sources.get('route-slopes');
-    mapStub.sources.delete('route-slopes');
+    const removed = mapStub.sources.get('route-legs');
+    mapStub.sources.delete('route-legs');
 
     await vi.advanceTimersByTimeAsync(120000);
     expect(routesFetchCount()).toBe(1);
@@ -114,7 +115,7 @@ describe('an upload of a route the server has not sampled yet', () => {
     // makes every later test read as "the overlay is gone" and pass by
     // asserting the wrong reason — which is how the claim case below
     // could have looked green while doing nothing.
-    mapStub.sources.set('route-slopes', removed);
+    mapStub.sources.set('route-legs', removed);
   });
 });
 
