@@ -120,7 +120,7 @@ class Command(BaseCommand):
             if verbosity >= 1:
                 self.stdout.write(
                     f"No dev user {NORMAL_USER_EMAIL} — no canonical routes "
-                    "to seed. Run seed_test_data --include user first."
+                    "to seed. Run seed_test_data --include user --commit first."
                 )
             return
 
