@@ -39,12 +39,19 @@
  * **Routine update: silent.** The PWA shell SW (``static/js/sw.js``) does
  * NOT ``skipWaiting()`` on install, so a new worker parks in "waiting".
  * This script records it (``queueSilentUpdate``) and posts
- * ``{ type: 'SKIP_WAITING' }`` the next time the page is hidden (tab
- * switch, app switch, screen lock). See ``applyWaitingWorker``. Two things
- * hold it back. First, a visible page: swapping the worker under someone
- * who is looking at the map is the interruption this replaced. Second, an
- * in-flight ``warmCache`` run: the worker that owns a basemap download
- * must not be retired halfway through it. The new worker claims the page;
+ * ``{ type: 'SKIP_WAITING' }`` to it. When depends on the page:
+ *
+ *   * If the waiting worker holds the same shell as this page's
+ *     ``<meta name="pwa-shell">`` (SNOW-1027), post at once. The page came
+ *     off the network as that worker's build; only the old worker is out of
+ *     date. This is the fresh-tab case, where opening the tab is what
+ *     installed the new worker.
+ *   * Otherwise, post the next time the page is hidden (tab switch, app
+ *     switch, screen lock). The page was served by the old worker and may
+ *     still read the old shell cache that activation sweeps.
+ *
+ * Either way, an in-flight ``warmCache`` run holds it back: the worker
+ * that owns a basemap download must not be retired halfway through it. The new worker claims the page;
  * the ``controllerchange`` that follows does NOT reload. The open page
  * keeps running and its next navigation lands on the new shell.
  *
@@ -124,6 +131,15 @@
   const DEV_SHELL_BYPASS_ACTIVE =
     document.querySelector('meta[name="pwa-dev-shell-bypass"]')?.getAttribute('content') === '1';
 
+  // SNOW-1027: the shell cache name this page was built against, the same
+  // CACHE_VERSION serve_sw injects into sw.js (base.html renders it). A
+  // waiting worker reporting this same name holds exactly this page's
+  // build, so it can take over at once. Empty on pages that do not extend
+  // public/base.html (the admin), which then keep the hide-to-apply rule.
+  const PAGE_SHELL = (
+    document.querySelector('meta[name="pwa-shell"]')?.getAttribute('content') || ''
+  ).trim();
+
   // SNOW-620: copy for the self-injected fallback banner (ensureBanner
   // below), which is what admin pages get — they don't include the public
   // chrome, so includes/_sw_update_banner.html and its already-translated
@@ -163,6 +179,10 @@
   // the ``controllerchange`` that follows is recorded as an applied update
   // even though it does not reload.
   let silentUpdatePosted = false;
+  // SNOW-1027: a waiting worker whose shell matches this page's, remembered
+  // when a basemap download held it back, so the end of the download can
+  // apply it without waiting for the page to be hidden.
+  let matchedWorker = null;
   // Guards against a double reload if controllerchange fires more than
   // once.
   let refreshing = false;
@@ -512,6 +532,7 @@
     const release = () => {
       _warmCacheRunsPending -= 1;
       if (document.visibilityState === 'hidden') applyWaitingWorker();
+      else if (matchedWorker) applyWaitingWorker(matchedWorker);
     };
     mine.then(release, release);
     return mine;
@@ -704,41 +725,71 @@
 
   /**
    * Remember a waiting worker and apply it silently at the next chance
-   * (SNOW-1025).
+   * (SNOW-1025, SNOW-1027).
    *
-   * This used to reveal the update banner. A waiting worker is a routine
-   * update, not a problem, and nobody needs to be told about it. The worker
-   * is applied the next time the page is hidden. If the page is already
-   * hidden (an update check that finished in a background tab), that is now.
+   * A waiting worker is a routine update, not a problem, and nobody needs to
+   * be told about it. When it is applied depends on whether this page
+   * already is that worker's build:
+   *
+   *   * **It is** (SNOW-1027): the worker reports the shell this page's
+   *     ``<meta name="pwa-shell">`` names. The page came off the network
+   *     (navigations are network-first) and the old worker is the only
+   *     thing out of date, which is exactly what happens on a fresh tab:
+   *     opening it is what installed the new worker. Apply it now, visible
+   *     or not. Nothing on screen changes, and the page and its worker stop
+   *     disagreeing from the first second rather than for a whole session.
+   *   * **It is not, or the worker does not answer**: the page was served
+   *     by the old worker, usually offline, and may still read the old shell
+   *     cache that activation sweeps. Apply the next time the page is hidden
+   *     (SNOW-1025). If it is already hidden (an update check that finished
+   *     in a background tab), that is now.
    *
    * @param {ServiceWorker} worker The installed, waiting worker.
    * @returns {void}
    */
   function queueSilentUpdate(worker) {
     if (worker) waitingWorker = worker;
-    if (document.visibilityState === 'hidden') applyWaitingWorker();
+    if (document.visibilityState === 'hidden') {
+      applyWaitingWorker();
+      return;
+    }
+    if (!worker || !PAGE_SHELL) return;
+    workerShell(worker).then((shell) => {
+      if (shell !== PAGE_SHELL) return;
+      matchedWorker = worker;
+      applyWaitingWorker(worker);
+    });
   }
 
   /**
    * Post SKIP_WAITING to the waiting worker, if it is safe to (SNOW-1025).
    *
-   * Only ever called while the page is hidden. Held back while a
-   * ``warmCache`` run is queued or in flight: activating retires the worker
-   * doing the download. ``warmCache`` calls back in here when its last run
-   * settles.
+   * Two callers, two rules:
    *
-   * The waiting worker is re-read from the live registration rather than
-   * trusted from ``waitingWorker``, for the reason ``handleReloadClick``
-   * gives: a captured reference can have gone redundant, and posting to a
-   * redundant worker is a silent no-op.
+   *   * With no argument, the hide-to-apply path: only while the page is
+   *     hidden. The waiting worker is re-read from the live registration
+   *     rather than trusted from ``waitingWorker``, for the reason
+   *     ``handleReloadClick`` gives: a captured reference can have gone
+   *     redundant, and posting to a redundant worker is a silent no-op.
+   *   * With ``matched``, a worker ``queueSilentUpdate`` has just confirmed
+   *     holds this page's shell (SNOW-1027): applied whether or not the page
+   *     is visible, but only while it is still the worker waiting. A newer
+   *     install that has since replaced it was not checked, so it falls back
+   *     to the hide-to-apply rule.
+   *
+   * Both are held back while a ``warmCache`` run is queued or in flight:
+   * activating retires the worker doing the download. ``warmCache`` calls
+   * back in here when its last run settles.
    *
    * Posting SKIP_WAITING to a worker that is already activating is
    * harmless. ``skipWaiting()`` resolves at once on a worker that is not
    * waiting.
    *
+   * @param {ServiceWorker} [matched] A waiting worker known to hold this
+   *   page's shell.
    * @returns {Promise<void>}
    */
-  async function applyWaitingWorker() {
+  async function applyWaitingWorker(matched) {
     if (_warmCacheRunsPending > 0) return;
     let waiting =
       waitingWorker && waitingWorker.state === 'installed' ? waitingWorker : null;
@@ -751,7 +802,10 @@
     if (!waiting) return;
     // Re-checked after the await: a download can have started, or the page
     // come back into view, while the registration was being read.
-    if (_warmCacheRunsPending > 0 || document.visibilityState !== 'hidden') return;
+    if (_warmCacheRunsPending > 0) return;
+    const immediate = matched !== undefined && waiting === matched;
+    if (!immediate && document.visibilityState !== 'hidden') return;
+    matchedWorker = null;
     silentUpdatePosted = true;
     try {
       waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -791,7 +845,7 @@
   }
 
   /**
-   * How long to wait for the controlling worker to name its shell.
+   * How long to wait for a worker to name its shell.
    *
    * The reply is a synchronous read of a constant in the worker's own
    * scope, so a live worker answers in single-digit milliseconds. The
@@ -801,24 +855,25 @@
    * docs/decisions/bounded-offline-read-paths.md gives: an unanswered read
    * must resolve, not hang.
    */
-  const CONTROLLER_SHELL_TIMEOUT_MS = 2000;
+  const WORKER_SHELL_TIMEOUT_MS = 2000;
 
   /**
-   * Ask the controlling worker which shell cache it holds (SNOW-952).
+   * Ask a service worker which shell cache it holds (SNOW-952, SNOW-1027).
    *
    * The worker answers ``shell-identity`` with its ``CACHE_VERSION``,
-   * derived from the shell content hash. The page cannot read it from
-   * anywhere else: it describes the worker in control, not the response
-   * that served the page.
+   * derived from the shell content hash. Asked of the controlling worker by
+   * ``shellIsStale``, and of a waiting worker by ``queueSilentUpdate``: a
+   * waiting worker's ``message`` handler runs like any other's, which is
+   * what SKIP_WAITING already relies on.
    *
+   * @param {ServiceWorker | null | undefined} worker
    * @returns {Promise<string>} The cache name, or ``''`` when there is no
-   *   controller, no ``MessageChannel``, or no reply inside the budget.
-   *   ``shellIsStale`` reads ``''`` as unknown, and unknown as stale.
+   *   worker, no ``MessageChannel``, or no reply inside the budget. Both
+   *   callers read ``''`` as "cannot tell", each in its own safe direction.
    */
-  function controllerShell() {
+  function workerShell(worker) {
     return new Promise((resolve) => {
-      const controller = navigator.serviceWorker?.controller;
-      if (!controller || typeof MessageChannel !== 'function') {
+      if (!worker || typeof MessageChannel !== 'function') {
         resolve('');
         return;
       }
@@ -849,13 +904,13 @@
         }
         resolve(value);
       };
-      const timer = setTimeout(() => settle(''), CONTROLLER_SHELL_TIMEOUT_MS);
+      const timer = setTimeout(() => settle(''), WORKER_SHELL_TIMEOUT_MS);
       channel.port1.onmessage = (event) => {
         const data = event.data;
         settle(data && data.type === 'shell-identity' ? String(data.cache || '').trim() : '');
       };
       try {
-        controller.postMessage({ type: 'shell-identity' }, [channel.port2]);
+        worker.postMessage({ type: 'shell-identity' }, [channel.port2]);
       } catch (_err) {
         settle('');
       }
@@ -888,7 +943,9 @@
     if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
       return Promise.resolve(false);
     }
-    return controllerShell().then((held) => !server || !held || server !== held);
+    return workerShell(navigator.serviceWorker.controller).then(
+      (held) => !server || !held || server !== held,
+    );
   }
 
   /**

@@ -29,6 +29,7 @@ import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
 
+from apps.core.sw_shell import cached_cache_version
 from apps.public.context_processors import pwa_version
 
 
@@ -48,6 +49,7 @@ def test_context_processor_returns_configured_values() -> None:
     assert result == {
         "APP_VERSION": "2026.07.15.abcdef",
         "APP_RELEASE_LABEL": "v24",
+        "PWA_SHELL": cached_cache_version(),
     }
 
 
@@ -60,7 +62,11 @@ def test_context_processor_defaults_to_empty_string() -> None:
     with override_settings(APP_VERSION="", APP_RELEASE=""):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": "", "APP_RELEASE_LABEL": ""}
+    assert result == {
+        "APP_VERSION": "",
+        "APP_RELEASE_LABEL": "",
+        "PWA_SHELL": cached_cache_version(),
+    }
 
 
 @pytest.mark.django_db
@@ -71,6 +77,25 @@ def test_meta_tag_present_on_home_page() -> None:
     body = response.content.decode("utf-8")
 
     assert '<meta name="pwa-app-version" content="2026.07.15.testbuild">' in body
+
+
+@pytest.mark.django_db
+def test_shell_meta_tag_matches_the_served_worker() -> None:
+    """The page names the shell the worker ``/sw.js`` serves (SNOW-1027).
+
+    ``sw_register.js`` compares this with a waiting worker's own
+    ``CACHE_VERSION`` to decide whether the page already IS that worker's
+    build, and so whether the worker can take over at once. If the two were
+    computed differently the comparison would never match, and every fresh
+    tab would fall back to waiting until hidden, silently.
+    """
+    client = Client()
+    page = client.get("/").content.decode("utf-8")
+    worker = client.get("/sw.js").content.decode("utf-8")
+
+    shell = cached_cache_version()
+    assert f'<meta name="pwa-shell" content="{shell}">' in page
+    assert f"const CACHE_VERSION = '{shell}';" in worker
 
 
 @pytest.mark.django_db

@@ -64,6 +64,8 @@ import re
 from functools import cache
 from pathlib import Path
 
+from django.conf import settings
+
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
 SW_JS_PATH: Path = REPO_ROOT / "static" / "js" / "sw.js"
@@ -194,6 +196,21 @@ def cached_cache_version() -> str:
     only uses this cached form in production.
     """
     return cache_version()
+
+
+def served_cache_version() -> str:
+    """
+    Return the cache name this process is serving right now.
+
+    The one rule ``serve_sw``, ``/api/version`` and the page's
+    ``<meta name="pwa-shell">`` must all share (SNOW-1027): recomputed under
+    ``DEBUG``, where the tree changes under a running process, and the
+    per-process cached value otherwise. If any two of them disagreed, the
+    update banner's staleness check, or the page-matches-worker check in
+    ``sw_register.js``, would compare values computed two different ways,
+    and both failures are silent.
+    """
+    return cache_version() if settings.DEBUG else cached_cache_version()
 
 
 def inject_cache_version(body: str, version: str | None = None) -> str:

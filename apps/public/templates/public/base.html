@@ -114,6 +114,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# pwa-app-min-version tag: the forced-update verdict is a server    #}
         {# decision (update_required), never a client-side comparison.       #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
+        {# SNOW-1027: the shell cache name this page was built against, the  #}
+        {# same CACHE_VERSION serve_sw injects into sw.js. sw_register.js     #}
+        {# compares it with a waiting worker's: a match means this page came  #}
+        {# off the network as that worker's build, so it takes over at once.  #}
+        <meta name="pwa-shell" content="{{ PWA_SHELL }}">
         {# SNOW-869: the release label of the build THIS page was delivered  #}
         {# on, so the update banner can say "You are on v29" as well as name #}
         {# the release the server is now serving. It has to be baked here    #}

@@ -574,14 +574,19 @@ the LAN — `runserver 0.0.0.0:8000`).
 
 > Automated in part:
 > [tests/js/test_sw_register_silent_update.js](../tests/js/test_sw_register_silent_update.js)
-> (applied on hidden, held back by a download, no reload) and
+> (applied on hidden, held back by a download, no reload),
+> [tests/js/test_sw_register_matched_update.js](../tests/js/test_sw_register_matched_update.js)
+> (a fresh tab's worker applied at once, SNOW-1027),
+> [tests/js/test_pwa_sw_version_probe.js](../tests/js/test_pwa_sw_version_probe.js)
+> (the `/_sw-version/` worker list) and
 > [tests/js/test_sw_register_update_throttle.js](../tests/js/test_sw_register_update_throttle.js).
 > The browser-level byte-diff test went with the Playwright lifecycle suite
 > in SNOW-649, so the trigger itself is manual.
 
 **Goal**: Verify a routine update asks nothing of the user (SNOW-1025). A
-new worker installs, shows no banner, and takes over the next time the page
-is hidden, without reloading it.
+new worker installs and shows no banner. It takes over at once on a fresh
+tab (SNOW-1027), or the next time the page is hidden on a tab that was
+already open, and never reloads the page.
 
 **Preconditions**: Complete Scenario P1 first so an SW is already
 controlling the page. Touch any shell source (e.g. add a comment to
@@ -597,6 +602,8 @@ after the scenario.
 | 4 | Navigate (open a bulletin, or reload) | The page is served by the new shell. Application → Cache storage holds only the new `snowdesk-shell-*` entry |
 | 5 | Repeat steps 1–3, but start a basemap download (Download → pick an area) before switching away | The new SW stays `waiting` while the download runs, and activates once it finishes, as long as the tab is still in the background |
 | 6 | Revert the shell edit, restart the server with a different `APP_VERSION`, and click **Update** | No new SW installs: the worker's bytes do not depend on the build (SNOW-1025), only on the shell |
+| 7 | Touch a shell source again, then open the site in a **new** tab and watch Application → Service workers | A second SW installs, and within a moment of the page loading it is `activated and is running` with nobody switching tabs: the page's `pwa-shell` meta matches the new worker (SNOW-1027). No banner, no reload |
+| 8 | Open `/_sw-version/` (staff) at any point in steps 1–7 | The Live table lists every worker (Active, Waiting, Installing) with the `CACHE_VERSION` each reports; the one controlling the page and any that match Deployed are marked |
 
 ### Scenario P5: The banner appears only for a stuck worker
 
