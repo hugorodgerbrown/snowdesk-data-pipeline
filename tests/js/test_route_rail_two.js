@@ -739,6 +739,37 @@ describe('the opening motion (SNOW-1033)', () => {
     expect(onResize).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the played-out picker and every copy out of the tab order until the end', () => {
+    attach();
+    stub = stubAnimate();
+
+    legButtons()[1].click();
+
+    // Mid-motion: the picker is shown only to be played out, and each copy
+    // (the ghost, the header and control snapshots) is inert.
+    expect(legsLayer.hasAttribute('inert')).toBe(true);
+    const copies = Array.from(row.querySelectorAll('[data-route-rail-two-snapshot]'));
+    expect(copies.length).toBeGreaterThan(0);
+    copies.forEach((copy) => expect(copy.hasAttribute('inert')).toBe(true));
+
+    finishAll(stub.calls);
+
+    expect(legsLayer.hasAttribute('inert')).toBe(false);
+  });
+
+  it('leaves the picker live while a leg closes, so focus can return to it', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    stub = stubAnimate();
+
+    cursor.closeLeg();
+
+    expect(legsLayer.hidden).toBe(false);
+    expect(legsLayer.hasAttribute('inert')).toBe(false);
+    Array.from(row.querySelectorAll('[data-route-rail-two-snapshot]'))
+      .forEach((copy) => expect(copy.hasAttribute('inert')).toBe(true));
+  });
+
   it('plays the same motion for a leg opened from rail one or the map', () => {
     const { cursor } = attach();
     stub = stubAnimate();

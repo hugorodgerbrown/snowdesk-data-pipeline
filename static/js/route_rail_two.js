@@ -781,6 +781,10 @@
       });
     });
     el.setAttribute('aria-hidden', 'true');
+    // Out of the tab order as well as the accessibility tree: a copy of a
+    // button is still a button, and a Tab during the motion must not land
+    // on something the clean-up is about to remove.
+    el.setAttribute('inert', '');
     el.setAttribute('data-route-rail-two-snapshot', '');
     return el;
   }
@@ -927,6 +931,7 @@
       before.header.forEach(function (copy) { copy.remove(); });
       button.style.opacity = '';
       legsEl.style.pointerEvents = '';
+      legsEl.toggleAttribute('inert', false);
       row.style.overflow = '';
       if (leg) {
         clearPicker();
@@ -938,6 +943,11 @@
 
     legsEl.hidden = false;
     legsEl.style.pointerEvents = 'none';
+    // The picker is shown only to be played out, and its buttons are
+    // cleared at the end: keep them out of the tab order until then. (A
+    // close leaves it live — its buttons are the real ones the row returns
+    // to, and focus goes back onto one of them.)
+    legsEl.toggleAttribute('inert', true);
     veils.forEach(function (v) { legsEl.insertBefore(v, legsEl.firstChild); });
     button.style.opacity = '0';
     legsEl.appendChild(parts.ghost);
