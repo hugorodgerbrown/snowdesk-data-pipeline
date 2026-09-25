@@ -552,7 +552,7 @@ describe('the readout (SNOW-1024)', () => {
 
     cursor.setIndex(101);
 
-    expect(readoutLines()).toEqual(['Flat', '3° slope · 20° bank']);
+    expect(readoutLines()).toEqual(['Flat', '3° slope']);
   });
 
   it('says the slope is not known where the angle is unknown', () => {
@@ -587,7 +587,7 @@ describe('the readout (SNOW-1024)', () => {
     expect(readoutLines()).toEqual(['250 m 30–35°']);
   });
 
-  it('offers the hint with nothing under the cursor, left-aligned at 0', () => {
+  it('offers the hint with nothing under the cursor, spanning the lane so it wraps', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
@@ -595,7 +595,9 @@ describe('the readout (SNOW-1024)', () => {
       'Drag to read a point. Tap a band or passage to select it.',
     ]);
     expect(readout.classList.contains('text-left')).toBe(true);
-    expect(parseFloat(readout.style.left)).toBe(0);
+    expect(readout.classList.contains('inset-x-0')).toBe(true);
+    expect(readout.classList.contains('whitespace-nowrap')).toBe(false);
+    expect(readout.style.left).toBe('');
     expect(stem.hidden).toBe(true);
   });
 

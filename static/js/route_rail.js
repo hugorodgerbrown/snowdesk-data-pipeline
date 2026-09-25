@@ -307,10 +307,12 @@
         if (!tick.label) return;
         var label = document.createElement('span');
         // The first label hangs right of its tick and the rest are centred
-        // on theirs, so "0 km" is not cut off at the rail's left edge.
+        // on theirs, so "0 km" is not cut off at the rail's left edge. None
+        // wraps: an absolute box near the right edge shrinks to the space
+        // left, which broke "15 km" over two lines on a phone.
         label.className = fraction === 0
-          ? 'absolute top-0'
-          : 'absolute top-0 -translate-x-1/2';
+          ? 'absolute top-0 whitespace-nowrap'
+          : 'absolute top-0 -translate-x-1/2 whitespace-nowrap';
         label.style.left = (fraction * 100).toFixed(3) + '%';
         label.textContent = tick.label;
         ticksEl.appendChild(label);

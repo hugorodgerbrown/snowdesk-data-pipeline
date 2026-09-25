@@ -708,9 +708,17 @@
   /**
    * Place the readout under its anchor, stepped by `readoutAnchor`.
    *
-   * @param {number} x The anchor's px across the lane.
+   * With no anchor — the idle hint — it spans the lane and wraps: the hint
+   * is a sentence, wider than a phone's lane, and describes no one place.
+   *
+   * @param {?number} x The anchor's px across the lane, or null.
    */
   function placeReadout(x) {
+    if (x === null) {
+      readoutEl.className = 'absolute inset-x-0 top-1 text-left';
+      readoutEl.style.left = '';
+      return;
+    }
     var anchor = core().readoutAnchor(x, width);
     readoutEl.className = 'absolute top-1 whitespace-nowrap ' + ALIGN_CLASSES[anchor.align];
     readoutEl.style.left = anchor.left.toFixed(2) + 'px';
@@ -770,9 +778,13 @@
       if (typeof angle !== 'number' || !isFinite(angle)) {
         lines.push(classLabel(null));
       } else {
-        var word = attitudeLabel(c.trackAttitude(angle, roll, !!leg.climbing));
+        var attitude = c.trackAttitude(angle, roll, !!leg.climbing);
+        var word = attitudeLabel(attitude);
         if (word) lines.push(word);
-        var bankKnown = typeof roll === 'number' && isFinite(roll);
+        // Flat ground has no side to lean to, so its bank is not said (the
+        // design review's "Flat / 3° slope").
+        var bankKnown = typeof roll === 'number' && isFinite(roll)
+          && !(attitude && attitude.term === 'flat');
         lines.push(interpolate(
           STRINGS[bankKnown ? 'readout-slope-bank' : 'readout-slope'],
           {
@@ -789,7 +801,7 @@
       lines.push(STRINGS['two-hint']);
     }
     readoutEl.replaceChildren.apply(readoutEl, lines.map(readoutLine));
-    placeReadout(anchorX === null ? 0 : anchorX);
+    placeReadout(anchorX);
     stemEl.hidden = !stem;
     if (stem && anchorX !== null) stemEl.style.left = (anchorX - 0.5).toFixed(2) + 'px';
 
