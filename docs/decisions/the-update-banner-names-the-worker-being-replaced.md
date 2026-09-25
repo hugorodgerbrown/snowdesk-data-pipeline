@@ -1,11 +1,17 @@
 ---
 name: the-update-banner-names-the-worker-being-replaced
 description: Why the update banner's build comes from the controlling worker, not pwa-app-version — BUILD_IDENTITY, build-identity, controllerIdentity
-status: current
-last-reviewed: 2026-09-12
+status: historical
+last-reviewed: 2026-09-24
 ---
 
 # The update banner names the worker being replaced
+
+> **Superseded by
+> [`service-worker-updates-apply-silently.md`](service-worker-updates-apply-silently.md)
+> (SNOW-1025).** The banner no longer names builds. `BUILD_IDENTITY`,
+> `inject_build_identity` and the `build-identity` message are gone, and
+> the worker answers `shell-identity` with its cache name only.
 
 **Decision.** The build the update banner calls the user's is the one the
 **controlling service worker** was served from — read by posting

@@ -20,18 +20,16 @@
  * ends in a timer rather than in `location.reload()`, which jsdom does not
  * implement. The busy state is set before any of it, which is the point.
  *
- * SNOW-869 added the banner's other copy state — the one naming both
- * builds — and its tests run FIRST in this file for the same
- * single-import reason: `showBannerBusy` latches, and once the Reload
- * test has fired the labelling is deliberately inert.
+ * SNOW-952 made `window.pwaUpdateBanner.reveal()` the GATED entry point,
+ * and SNOW-1025 added a second gate, so this file calls `revealNow`, the
+ * ungated primitive beneath it. That is the right call here and not a
+ * shortcut: these tests are about what the banner SAYS and DOES, and the
+ * gates are tested in test_sw_register_update_gate.js.
  *
- * SNOW-952 made `window.pwaUpdateBanner.reveal()` the GATED entry point —
- * it reveals only when this device's shell is stale — so this file calls
- * `revealNow`, the ungated primitive beneath it. That is the right call
- * here and not a shortcut: these tests are about what the banner SAYS,
- * and routing them through the gate would make every copy assertion also
- * depend on a stubbed controller answering a message. The gate itself is
- * tested in test_sw_register_shell_staleness.js.
+ * SNOW-1025 also removed the versioned copy ("Update available (v30) /
+ * You are on v29…") and the SNOW-933 controller-identity labelling behind
+ * it, so the banner has one plain copy state and the tests for the other
+ * are gone with it.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -56,8 +54,8 @@ function bannerMarkup() {
   return `
     <div id="sw-update-banner" class="hidden" role="status" aria-live="polite">
       <span data-overlay-icon aria-hidden="true"></span>
-      <p id="sw-update-banner-title">Update available</p>
-      <p id="sw-update-banner-body">A newer version of Snowdesk is ready.</p>
+      <p id="sw-update-banner-title">Snowdesk needs a refresh</p>
+      <p id="sw-update-banner-body">It couldn't update itself. Reload to finish.</p>
       <button type="button" id="sw-update-banner-reload">Reload</button>
       <button type="button" data-action="dismiss">&times;</button>
     </div>`;
@@ -92,314 +90,38 @@ beforeAll(async () => {
   await import('../../static/js/sw_register.js');
 });
 
-/** Restore the copy the template renders, before a case that must keep it. */
-function resetCopy() {
-  document.getElementById('sw-update-banner-title').textContent = 'Update available';
-  document.getElementById('sw-update-banner-body').textContent =
-    'A newer version of Snowdesk is ready.';
-}
-
-/**
- * Stand in for `pwa_version_check.js`'s export.
- *
- * @param {string} release The shell's own release label ('' when unnumbered).
- * @param {string} build The shell's own build id.
- * @param {object | null} verdict The `/api/version` body, or null for
- *   "could not confirm".
- * @returns {void}
- */
-function stubVersionInfo(release, build, verdict) {
-  window.pwaVersionInfo = Object.freeze({
-    build: build,
-    release: release,
-    verified: () => Promise.resolve(verdict),
-  });
-}
-
-/**
- * Install a controlling worker that answers `build-identity` with `reply`.
- *
- * @param {object | null} reply The message body to post back down the
- *   transferred port, or null for a worker that never answers at all.
- * @returns {void}
- */
-function stubController(reply) {
-  navigator.serviceWorker.controller = {
-    postMessage: (data, transfer) => {
-      if (!reply) return;
-      if (!data || data.type !== 'build-identity') return;
-      transfer[0].postMessage(reply);
-    },
-  };
-}
-
-/** Put the harness back to "no worker is controlling this page". */
-function clearController() {
-  navigator.serviceWorker.controller = null;
-}
-
 /** @returns {string} */
 const titleText = () => document.getElementById('sw-update-banner-title').textContent;
 /** @returns {string} */
 const bodyText = () => document.getElementById('sw-update-banner-body').textContent;
 
-describe('the copy rule', () => {
-  /** The exported pure function — no DOM, no fetch. */
-  const describeUpdate = (builds) => window.pwaUpdateBanner.describeUpdate(builds);
-
-  it('prefers the release labels when they differ', () => {
-    expect(
-      describeUpdate({
-        clientRelease: 'v29',
-        serverRelease: 'v30',
-        clientBuild: 'aaaaaaa1111',
-        serverBuild: 'bbbbbbb2222',
-      }),
-    ).toEqual({ current: 'v29', next: 'v30' });
-  });
-
-  it('falls back to short SHAs when the labels are equal', () => {
-    // Staging deploys between releases, so two genuinely different
-    // builds can carry one label. The SHA is what tells them apart.
-    expect(
-      describeUpdate({
-        clientRelease: 'v30',
-        serverRelease: 'v30',
-        clientBuild: 'aaaaaaa1111',
-        serverBuild: 'bbbbbbb2222',
-      }),
-    ).toEqual({ current: 'aaaaaaa', next: 'bbbbbbb' });
-  });
-
-  it('falls back to short SHAs when there are no labels at all', () => {
-    expect(
-      describeUpdate({
-        clientRelease: '',
-        serverRelease: '',
-        clientBuild: 'aaaaaaa1111',
-        serverBuild: 'bbbbbbb2222',
-      }),
-    ).toEqual({ current: 'aaaaaaa', next: 'bbbbbbb' });
-  });
-
-  it('declines when nothing distinguishes the two builds', () => {
-    // "You are on v30. Reload to update to v30." reads as a bug in the
-    // update rather than as an update, so the caller keeps the
-    // unnumbered copy instead.
-    expect(
-      describeUpdate({
-        clientRelease: 'v30',
-        serverRelease: 'v30',
-        clientBuild: 'aaaaaaa1111',
-        serverBuild: 'aaaaaaa1111',
-      }),
-    ).toBeNull();
-  });
-
-  it('declines when one side has no build at all', () => {
-    expect(
-      describeUpdate({
-        clientRelease: '',
-        serverRelease: 'v30',
-        clientBuild: '',
-        serverBuild: 'bbbbbbb2222',
-      }),
-    ).toBeNull();
-  });
-});
-
 describe('the revealed banner', () => {
-  it('names both releases when they differ', async () => {
-    stubVersionInfo('v29', 'aaaaaaa1111', {
-      current: 'bbbbbbb2222',
-      release: 'v30',
-      update_available: true,
+  it('shows the plain copy the template rendered, and names no build', async () => {
+    // SNOW-1025: a stuck user needs to know what to press, not which
+    // commit they are on. Nothing rewrites the copy after a reveal.
+    window.pwaVersionInfo = Object.freeze({
+      verified: () =>
+        Promise.resolve({ current: 'bbbbbbb2222', release: 'v30', shell: 's' }),
     });
 
     window.pwaUpdateBanner.revealNow();
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
-    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
-  });
-
-  it('names the short SHAs when the releases are equal', async () => {
-    stubVersionInfo('v30', 'aaaaaaa1111', {
-      current: 'bbbbbbb2222',
-      release: 'v30',
-      update_available: true,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
-    expect(bodyText()).toContain('You are on aaaaaaa.');
-  });
-
-  it('keeps the unnumbered copy when the body cannot be verified', async () => {
-    resetCopy();
-    stubVersionInfo('v29', 'aaaaaaa1111', null);
-
-    window.pwaUpdateBanner.revealNow();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // An unreachable endpoint is "cannot confirm", never "confirmed" —
-    // the banner does not name a build it could not check.
-    expect(titleText()).toBe('Update available');
-    expect(bodyText()).toBe('A newer version of Snowdesk is ready.');
-  });
-
-  it('keeps the unnumbered copy when nothing distinguishes the builds', async () => {
-    resetCopy();
-    stubVersionInfo('v30', 'aaaaaaa1111', {
-      current: 'aaaaaaa1111',
-      release: 'v30',
-      update_available: false,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(titleText()).toBe('Update available');
-  });
-
-  it('keeps the unnumbered copy on a page with no version check', async () => {
-    resetCopy();
+    expect(document.getElementById('sw-update-banner').classList.contains('hidden')).toBe(
+      false,
+    );
+    expect(titleText()).toBe('Snowdesk needs a refresh');
+    expect(bodyText()).toBe("It couldn't update itself. Reload to finish.");
     delete window.pwaVersionInfo;
-
-    // Admin pages, and any page the version check did not load on.
-    window.pwaUpdateBanner.revealNow();
-    await Promise.resolve();
-
-    expect(titleText()).toBe('Update available');
-  });
-});
-
-describe('which build the banner calls yours', () => {
-  // The staging regression (SNOW-933). Every staging deploy shares one
-  // release label, so the copy rule falls through to the SHAs — and
-  // navigations are network-first, so the page already carries the NEW
-  // build's meta while the OLD worker still controls it. Read from the
-  // page, both SHAs match and the banner stays unnumbered forever.
-  it('takes the controlling worker\'s build over the page\'s meta', async () => {
-    resetCopy();
-    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v34' });
-    // The page's own meta is already the server's build.
-    stubVersionInfo('v34', 'bbbbbbb2222', {
-      current: 'bbbbbbb2222',
-      release: 'v34',
-      update_available: true,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
-    expect(bodyText()).toBe('You are on aaaaaaa. Reload to update to bbbbbbb.');
-    clearController();
   });
 
-  it('takes the worker\'s release label too, not the page\'s', async () => {
-    // Production's half of the same gap: a fresh v34 page controlled by
-    // a v33 worker. The answer is taken whole — the worker's label with
-    // the worker's build, never one paired with the other's.
-    resetCopy();
-    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v33' });
-    stubVersionInfo('v34', 'bbbbbbb2222', {
-      current: 'bbbbbbb2222',
-      release: 'v34',
-      update_available: true,
-    });
-
+  it('is hidden again by the dismiss control', () => {
     window.pwaUpdateBanner.revealNow();
+    document.querySelector('[data-action="dismiss"]').click();
 
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (v34)'));
-    expect(bodyText()).toBe('You are on v33. Reload to update to v34.');
-    clearController();
-  });
-
-  it('falls back to the page meta when the worker answers something else', async () => {
-    resetCopy();
-    stubController({ type: 'not-the-answer' });
-    stubVersionInfo('v29', 'aaaaaaa1111', {
-      current: 'bbbbbbb2222',
-      release: 'v30',
-      update_available: true,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
-    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
-    clearController();
-  });
-
-  it('falls back to the page meta when the worker never answers', async () => {
-    // A worker that predates the build-identity handler — which every
-    // worker does on the first deploy carrying it. The read is bounded,
-    // so it resolves rather than leaving the copy pending forever.
-    resetCopy();
-    stubController(null);
-    stubVersionInfo('v29', 'aaaaaaa1111', {
-      current: 'bbbbbbb2222',
-      release: 'v30',
-      update_available: true,
-    });
-    vi.useFakeTimers();
-
-    window.pwaUpdateBanner.revealNow();
-    await vi.advanceTimersByTimeAsync(2000);
-    vi.useRealTimers();
-
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (v30)'));
-    expect(bodyText()).toBe('You are on v29. Reload to update to v30.');
-    clearController();
-  });
-});
-
-describe('the identity message port', () => {
-  it('is closed on every settlement path', async () => {
-    // Assigning onmessage starts the port, and a reveal is not a one-off:
-    // pwa_version_check.js re-reveals the banner for every response
-    // carrying a confirmed drift. An unclosed port per response
-    // accumulates for as long as the page stays on the outdated build.
-    const closed = [];
-    const RealChannel = globalThis.MessageChannel;
-    class RecordingChannel extends RealChannel {
-      constructor() {
-        super();
-        const close = this.port1.close.bind(this.port1);
-        this.port1.close = () => {
-          closed.push(true);
-          close();
-        };
-      }
-    }
-    vi.stubGlobal('MessageChannel', RecordingChannel);
-
-    resetCopy();
-    stubController({ type: 'build-identity', build: 'aaaaaaa1111', release: 'v34' });
-    stubVersionInfo('v34', 'bbbbbbb2222', {
-      current: 'bbbbbbb2222',
-      release: 'v34',
-      update_available: true,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-    await vi.waitFor(() => expect(titleText()).toBe('Update available (bbbbbbb)'));
-    expect(closed).toHaveLength(1);
-
-    // And on the path where the worker never answers at all.
-    resetCopy();
-    stubController(null);
-    vi.useFakeTimers();
-    window.pwaUpdateBanner.revealNow();
-    await vi.advanceTimersByTimeAsync(2000);
-    vi.useRealTimers();
-    await vi.waitFor(() => expect(closed).toHaveLength(2));
-
-    vi.stubGlobal('MessageChannel', RealChannel);
-    clearController();
+    expect(document.getElementById('sw-update-banner').classList.contains('hidden')).toBe(
+      true,
+    );
   });
 });
 
@@ -430,24 +152,5 @@ describe('pressing Reload', () => {
     cta().click();
 
     expect(posted).toHaveLength(1);
-  });
-});
-
-describe('once the update is applying', () => {
-  it('does not let a late version body write the offer back', async () => {
-    // The user clicked while the /api/version body was still in flight.
-    // The busy copy owns the banner from that moment: putting "Update
-    // available" back would claim the update had not started when it had.
-    stubVersionInfo('v29', 'aaaaaaa1111', {
-      current: 'bbbbbbb2222',
-      release: 'v30',
-      update_available: true,
-    });
-
-    window.pwaUpdateBanner.revealNow();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(titleText()).toBe('Updating Snowdesk');
   });
 });

@@ -246,74 +246,43 @@ def test_sw_kill_file_exists_on_disk() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Build identity (SNOW-933)
+# No build identity in the worker (SNOW-1025)
 # ---------------------------------------------------------------------------
 
 
-@override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="34")
-def test_serve_sw_injects_the_build_identity() -> None:
-    """``/sw.js`` carries the build and release label of the serving deploy.
+def test_serve_sw_bytes_do_not_depend_on_the_deploy() -> None:
+    """Two deploys with the same shell serve byte-identical workers.
 
-    The worker hands these back when the page asks it ``build-identity``,
-    and the update banner names them — it is the only way the page can
-    learn which build the worker CONTROLLING it came from.
+    SNOW-933 baked the git SHA and release label into ``/sw.js`` so the
+    update banner could name builds. That made the worker's bytes differ on
+    every deploy, so the browser installed a replacement even when no shell
+    source had changed. SNOW-1025 removed it: the worker now changes when,
+    and only when, the shell does.
     """
     client = Client()
-    response = client.get("/sw.js")
-    body = response.content.decode("utf-8")
-    assert (
-        'const BUILD_IDENTITY = { build: "073ee8c68d7465e9", release: "v34" };' in body
-    )
-    assert "UNSUBSTITUTED" not in body
+    with override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="34"):
+        first = client.get("/sw.js")
+    with override_settings(APP_VERSION="9f21ab4c0de1f2a3", APP_RELEASE="35"):
+        second = client.get("/sw.js")
+
+    assert first.content == second.content
+    assert first["ETag"] == second["ETag"]
+    assert b"BUILD_IDENTITY" not in first.content
 
 
-@override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="")
-def test_serve_sw_injects_an_empty_label_for_an_unnumbered_build() -> None:
-    """An unnumbered build reports no label, so the banner falls to the SHAs."""
-    client = Client()
-    response = client.get("/sw.js")
-    body = response.content.decode("utf-8")
-    assert 'release: ""' in body
+def test_sw_js_answers_the_shell_identity_message() -> None:
+    """The worker names its ``CACHE_VERSION`` when the page asks.
 
-
-def test_sw_js_on_disk_still_carries_the_build_identity_placeholder() -> None:
-    """The committed value is the inert placeholder, never a real-looking build.
-
-    A plausible literal in source would make a substitution failure
-    indistinguishable from correct operation in devtools.
+    ``sw_register.js`` compares it with the ``shell`` field on
+    ``/api/version`` before it will even consider showing the banner
+    (SNOW-952). A worker that never replies reads as "cannot confirm",
+    which fails toward the banner, so a handler deleted by a refactor would
+    not fail loudly; it would only make the second gate do all the work.
     """
     path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
     content = path.read_text(encoding="utf-8")
-    assert "const BUILD_IDENTITY = { build: 'UNSUBSTITUTED', release: '' };" in content
-
-
-def test_sw_js_answers_the_build_identity_message() -> None:
-    """The worker source still carries the ``build-identity`` handler.
-
-    ``sw_register.js`` waits 2s for this reply before falling back to the
-    page's meta, and the fallback is silent — so a handler deleted by a
-    refactor would show up only as the unnumbered banner coming back.
-    """
-    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
-    content = path.read_text(encoding="utf-8")
-    assert "event.data.type === 'build-identity'" in content
-    assert "BUILD_IDENTITY.build" in content
-
-
-def test_sw_js_reports_its_cache_version_in_the_build_identity_reply() -> None:
-    """The reply carries ``CACHE_VERSION`` — the value the banner is gated on.
-
-    SNOW-952: the build names a deploy and changes on every one of them;
-    the cache name is derived from the shell content hash and changes only
-    when a shell source does. ``sw_register.js`` compares this against the
-    ``shell`` field on ``/api/version`` to decide whether to reveal the
-    banner at all, and a reply missing the field reads as "cannot confirm"
-    — which reveals. So dropping it would not fail loudly; it would put
-    the every-deploy interruption straight back.
-    """
-    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
-    content = path.read_text(encoding="utf-8")
-    assert "cache: CACHE_VERSION," in content
+    assert "event.data.type === 'shell-identity'" in content
+    assert "{ type: 'shell-identity', cache: CACHE_VERSION }" in content
 
 
 # ---------------------------------------------------------------------------
