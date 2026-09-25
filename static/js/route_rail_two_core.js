@@ -43,11 +43,19 @@
  * ## Slope bands
  *
  * A band is a run of consecutive segments sharing one slope class
- * (`pwaRouteSlopeCore.classify`), UNMERGED: a one-segment 35° band between
- * two 30° ones is its own band, because that one segment is the reading.
- * Consecutive unknown (null) angles make a run of their own, and a null
- * never joins a known class — "not known" must not read as the class
- * beside it.
+ * (`pwaRouteSlopeCore.classify`). `bandRuns` builds the runs UNMERGED:
+ * consecutive unknown (null) angles make a run of their own, and a null
+ * never joins a known class there — "not known" must not read as the
+ * class beside it.
+ *
+ * Rail two then folds the slivers away (SNOW-1032). Most one-segment runs
+ * are elevation-model noise, and each drew a band a few px wide that no
+ * finger could select. `mergeShortRuns` folds every run shorter than
+ * `ROUTE_BAND_MIN_RUN_M` (config/settings/base.py) into a neighbour — the
+ * steeper one, so a merge never hides steeper ground under a gentler
+ * colour — and the strip, the selection, the map's highlight and the
+ * readout all read the merged runs. A null run counts as the gentlest
+ * class there: a sliver of unknown folds into the ground beside it.
  *
  * Exports (frozen `self.pwaRouteRailTwoCore`):
  *
@@ -55,6 +63,9 @@
  *   WINDOW_M                                  → the opening window, 2000 m
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
+ *   mergeShortRuns(runs, perSampleM, minLengthM) → runs, slivers folded in
+ *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
+ *   selectionBox(part, view, width, minPx)    → {x, w} of the drawn box
  *   legLength(leg)                            → samples in the leg
  *   minSpan(leg)                              → the narrowest span it allows
  *   openingSpan(leg, sampleCount, spanM, windowM?) → the span it opens at
@@ -244,6 +255,139 @@
       }
     }
     return runs;
+  }
+
+  /**
+   * A class index ranked for a merge: null (unknown) below every class.
+   *
+   * @param {?number} classIndex
+   * @returns {number}
+   */
+  function steepness(classIndex) {
+    return typeof classIndex === 'number' ? classIndex : -1;
+  }
+
+  /**
+   * Fold every run shorter than `minLengthM` into a neighbour (SNOW-1032).
+   *
+   * While any run is too short, the shortest (the leftmost on a tie) is
+   * folded into the steeper of its two neighbours — a null run counting
+   * as gentler than every class — or into its only neighbour at either
+   * end. The neighbour's range grows and keeps its class, and neighbours
+   * left sharing one class are joined. Each pass removes a run, so it
+   * ends; the first `from` and the last `to` never move.
+   *
+   * @param {Array<BandRun>} runs A `bandRuns` result, left to right.
+   * @param {number} perSampleM The ground one sample covers, in metres.
+   * @param {number} minLengthM Runs shorter than this are folded in.
+   * @returns {Array<BandRun>} New runs; the input is not changed. A single
+   *   run or an empty list comes back as it was (copied).
+   */
+  function mergeShortRuns(runs, perSampleM, minLengthM) {
+    if (!Array.isArray(runs)) return [];
+    /** @type {Array<BandRun>} */
+    var out = runs.map(function (run) {
+      return { from: run.from, to: run.to, classIndex: run.classIndex };
+    });
+    if (out.length < 2 || !(perSampleM > 0) || !(minLengthM > 0)) return out;
+    while (out.length > 1) {
+      var shortest = -1;
+      var shortestM = Infinity;
+      for (var i = 0; i < out.length; i += 1) {
+        var metres = (out[i].to - out[i].from + 1) * perSampleM;
+        if (metres < minLengthM && metres < shortestM) {
+          shortest = i;
+          shortestM = metres;
+        }
+      }
+      if (shortest < 0) break;
+      var left = shortest > 0 ? out[shortest - 1] : null;
+      var right = shortest < out.length - 1 ? out[shortest + 1] : null;
+      var into = /** @type {BandRun} */ (
+        !left || (right && steepness(right.classIndex) > steepness(left.classIndex))
+          ? right
+          : left
+      );
+      into.from = Math.min(into.from, out[shortest].from);
+      into.to = Math.max(into.to, out[shortest].to);
+      out.splice(shortest, 1);
+      /** @type {Array<BandRun>} */
+      var joined = [];
+      out.forEach(function (run) {
+        var open = joined.length ? joined[joined.length - 1] : null;
+        if (open && open.classIndex === run.classIndex) {
+          open.to = run.to;
+        } else {
+          joined.push(run);
+        }
+      });
+      out = joined;
+    }
+    return out;
+  }
+
+  /**
+   * The range a tap at `x` picks: the one whose drawn extent is nearest
+   * (SNOW-1032).
+   *
+   * Each range is clipped to the view and measured on screen as
+   * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
+   * the nearer edge otherwise. So a band one sample wide is still picked
+   * by a tap `radiusPx` beside it. On a tie the range whose half-open
+   * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
+   * then the leftmost.
+   *
+   * @template {{from: number, to: number}} R
+   * @param {Array<R>} ranges Bands or passages, sample indices inclusive.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, nothing is picked.
+   * @returns {?R}
+   */
+  function nearestRange(ranges, x, view, width, radiusPx) {
+    if (!Array.isArray(ranges)) return null;
+    /** @type {?R} */
+    var best = null;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    ranges.forEach(function (range) {
+      var part = range ? clip(range, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var holds = x >= x0 && x < x1;
+      if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
+        best = range;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
+  }
+
+  /**
+   * The selection box drawn round a part of a range, at least `minPx`
+   * wide (SNOW-1032).
+   *
+   * Centred on the part and clamped to the lane, so a one-sample band
+   * still gets a box a reader can see. Only the box is widened: the
+   * readout and the map read the range's real extent.
+   *
+   * @param {View} part The visible part of the range (a `clip` result).
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} minPx The narrowest box.
+   * @returns {{x: number, w: number}} Its left edge and width, px.
+   */
+  function selectionBox(part, view, width, minPx) {
+    var x0 = xOf(part.from, view, width);
+    var x1 = xOf(part.to, view, width);
+    var w = Math.min(Math.max(minPx, x1 - x0), Math.max(0, width));
+    var x = clamp((x0 + x1) / 2 - w / 2, 0, Math.max(0, width - w));
+    return { x: x, w: w };
   }
 
   /**
@@ -735,6 +879,9 @@
     WINDOW_M: WINDOW_M,
     ROWS: ROWS,
     bandRuns: bandRuns,
+    mergeShortRuns: mergeShortRuns,
+    nearestRange: nearestRange,
+    selectionBox: selectionBox,
     legLength: legLength,
     minSpan: minSpan,
     openingSpan: openingSpan,

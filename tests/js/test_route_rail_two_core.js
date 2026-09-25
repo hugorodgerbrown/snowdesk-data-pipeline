@@ -8,7 +8,8 @@
  * pitch turning per-sample, and the leg's profile and figures on the
  * sample axis — the same axis rail one places its legs on — plus the
  * readout: the track's attitude, where the readout sits, and a stretch's
- * length to the nearest 25 m (SNOW-1024).
+ * length to the nearest 25 m (SNOW-1024). SNOW-1032 adds the sliver merge,
+ * the tap's nearest-band pick and the selection box's minimum width.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -55,6 +56,139 @@ describe('bandRuns', () => {
 
   it('answers nothing for no angles', () => {
     expect(core.bandRuns(undefined, classify)).toEqual([]);
+  });
+});
+
+describe('mergeShortRuns (SNOW-1032)', () => {
+  // 20 m a sample and a 25 m threshold: a one-sample run is a sliver, a
+  // two-sample run is not.
+  const PER = 20;
+  const MIN = 25;
+  const run = (from, to, classIndex) => ({ from, to, classIndex });
+
+  it('folds a sliver into the steeper neighbour', () => {
+    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 8, 1)], PER, MIN))
+      .toEqual([run(0, 3, 0), run(4, 8, 1)]);
+    expect(core.mergeShortRuns([run(0, 3, 3), run(4, 4, 2), run(5, 8, 1)], PER, MIN))
+      .toEqual([run(0, 4, 3), run(5, 8, 1)]);
+  });
+
+  it('folds adjacent slivers one at a time, leftmost first', () => {
+    // The c2 sliver goes first, into the c3 sliver beside it, which is then
+    // 40 m and stays.
+    expect(core.mergeShortRuns(
+      [run(0, 3, 0), run(4, 4, 2), run(5, 5, 3), run(6, 9, 0)],
+      PER,
+      MIN,
+    )).toEqual([run(0, 3, 0), run(4, 5, 3), run(6, 9, 0)]);
+  });
+
+  it('folds an end sliver into its only neighbour', () => {
+    expect(core.mergeShortRuns([run(0, 0, 3), run(1, 4, 0)], PER, MIN))
+      .toEqual([run(0, 4, 0)]);
+    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 3)], PER, MIN))
+      .toEqual([run(0, 4, 0)]);
+  });
+
+  it('ends with one run when every run is a sliver', () => {
+    expect(core.mergeShortRuns([run(0, 0, 0), run(1, 1, 1), run(2, 2, 2)], PER, MIN))
+      .toEqual([run(0, 2, 1)]);
+  });
+
+  it('returns clean runs as they were, as new objects', () => {
+    const runs = [run(0, 1, 0), run(2, 3, 1)];
+    const merged = core.mergeShortRuns(runs, PER, MIN);
+    expect(merged).toEqual(runs);
+    expect(merged[0]).not.toBe(runs[0]);
+  });
+
+  it('returns a single run or no runs unchanged', () => {
+    expect(core.mergeShortRuns([run(0, 0, 2)], PER, MIN)).toEqual([run(0, 0, 2)]);
+    expect(core.mergeShortRuns([], PER, MIN)).toEqual([]);
+  });
+
+  it('ranks unknown below every class', () => {
+    // An unknown sliver folds into the steeper known side …
+    expect(core.mergeShortRuns([run(0, 3, 1), run(4, 4, null), run(5, 8, 0)], PER, MIN))
+      .toEqual([run(0, 4, 1), run(5, 8, 0)]);
+    // … and a known sliver beside unknown ground folds into the known side.
+    expect(core.mergeShortRuns([run(0, 3, null), run(4, 4, 2), run(5, 8, 0)], PER, MIN))
+      .toEqual([run(0, 3, null), run(4, 8, 0)]);
+  });
+
+  it('joins the neighbours a merge leaves sharing a class', () => {
+    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 8, 0)], PER, MIN))
+      .toEqual([run(0, 8, 0)]);
+  });
+
+  it('keeps the coverage whole and leaves no sliver', () => {
+    const angles = Array.from({ length: 200 }, (_, i) => [20, 32, 37, 20, 42, null][(i * 7) % 6]);
+    const merged = core.mergeShortRuns(core.bandRuns(angles, classify), PER, MIN);
+    expect(merged[0].from).toBe(0);
+    expect(merged[merged.length - 1].to).toBe(199);
+    for (let i = 1; i < merged.length; i += 1) {
+      expect(merged[i].from).toBe(merged[i - 1].to + 1);
+      expect(merged[i].classIndex).not.toBe(merged[i - 1].classIndex);
+    }
+    for (const r of merged) expect((r.to - r.from + 1) * PER).toBeGreaterThanOrEqual(MIN);
+  });
+});
+
+describe('nearestRange (SNOW-1032)', () => {
+  // 10 px a sample across a 100 px lane.
+  const VIEW = { from: 0, to: 10 };
+
+  it('picks the range a tap falls inside', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }, { from: 3, to: 9 }];
+    expect(core.nearestRange(ranges, 25, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('gives a shared edge to the range that starts there, as indexAt does', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }];
+    expect(core.nearestRange(ranges, 20, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('picks a range up to 22 px beside the tap', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    // 22 px right of the first, 18 px left of the second.
+    expect(core.nearestRange(ranges, 32, VIEW, 100, 22)).toBe(ranges[1]);
+    expect(core.nearestRange([ranges[0]], 32, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('picks nothing farther than 22 px away', () => {
+    expect(core.nearestRange([{ from: 0, to: 0 }], 33, VIEW, 100, 22)).toBeNull();
+  });
+
+  it('breaks a tie between two neighbours to the left', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    expect(core.nearestRange(ranges, 30, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('ignores a range outside the view', () => {
+    expect(core.nearestRange([{ from: 20, to: 30 }], 99, VIEW, 100, 22)).toBeNull();
+  });
+});
+
+describe('selectionBox (SNOW-1032)', () => {
+  // 6 px a sample across a 600 px lane.
+  const VIEW = { from: 0, to: 100 };
+
+  it('draws a one-sample part 12 px wide, centred on it', () => {
+    expect(core.selectionBox({ from: 50, to: 51 }, VIEW, 600, 12)).toEqual({ x: 297, w: 12 });
+  });
+
+  it('keeps a wide part at its own width', () => {
+    expect(core.selectionBox({ from: 10, to: 20 }, VIEW, 600, 12)).toEqual({ x: 60, w: 60 });
+  });
+
+  it('clamps the widened box to the lane at both edges', () => {
+    expect(core.selectionBox({ from: 0, to: 1 }, VIEW, 600, 12)).toEqual({ x: 0, w: 12 });
+    expect(core.selectionBox({ from: 99, to: 100 }, VIEW, 600, 12)).toEqual({ x: 588, w: 12 });
+  });
+
+  it('never draws wider than the lane', () => {
+    expect(core.selectionBox({ from: 0, to: 1 }, { from: 0, to: 100 }, 8, 12))
+      .toEqual({ x: 0, w: 8 });
   });
 });
 
