@@ -23,7 +23,12 @@
  * row of level-ski wedges showing its bank (bank_ribbon_core.js,
  * SNOW-1031), and one bar per no-fall passage;
  * then the cursor line, the selection's outline, and edge fades where more
- * leg lies beyond the window. The leg's elevation profile was a fourth row
+ * leg lies beyond the window. The bands are `bandRuns` with every run
+ * shorter than `data-band-min-run-m` on `#route-rail` (the
+ * ROUTE_BAND_MIN_RUN_M setting, 25 m when absent) folded into its steeper
+ * neighbour (`mergeShortRuns`, SNOW-1032); the strip, the selection, the
+ * readout and the map all read the merged runs. While a band or passage
+ * is selected, the rest of the lane is dimmed under a card-coloured veil. The leg's elevation profile was a fourth row
  * above the bands until SNOW-1019 removed it: at a 2 km window it drew
  * near-flat and added nothing rail one's highlighted leg does not show.
  * SNOW-1024 removed the distance ticks and their labels: rail one's
@@ -48,9 +53,15 @@
  * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
- * PRESSES. A press that moves past `DRAG_PX` pans; a tap selects the band
- * or passage under it (`cursor.select`) — tapping the same one again
- * clears it — and moves the cursor there; a mouse hover moves the cursor.
+ * PRESSES. A press that moves past `DRAG_PX` pans; a tap selects a band
+ * or passage (`cursor.select`) — tapping the same one again clears it —
+ * and moves the cursor there; a mouse hover moves the cursor. The tap
+ * target is not the drawn width (SNOW-1032): a tap in the passage row's
+ * foot picks the passage, anywhere else the band, whose on-screen extent
+ * is nearest the tap within `TAP_RADIUS_PX` (`nearestRange`). The
+ * selection box is drawn at least `MIN_BOX_PX` wide (`selectionBox`); the
+ * readout and the map read the band's real extent. A band's selection
+ * carries its `classIndex`, which the map draws the stretch in.
  * A second pointer starts a pinch and cancels the press in progress, so a
  * pinch never pans, scrubs or selects.
  *
@@ -101,6 +112,16 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
+  /** How far beside a band or passage a tap still picks it, in px. */
+  var TAP_RADIUS_PX = 22;
+  /** The narrowest selection box drawn, in px. */
+  var MIN_BOX_PX = 12;
+  /** How far above the passage bars a tap still counts as their row, px. */
+  var PASSAGE_ROW_SLACK_PX = 4;
+  /** The veil's opacity over the lane outside a selection. */
+  var DIM_OPACITY = '0.62';
+  /** The shortest band when `#route-rail` carries no threshold, in m. */
+  var DEFAULT_MIN_RUN_M = 25;
   /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
   var ALIGN_CLASSES = Object.freeze({
     left: 'text-left',
@@ -153,6 +174,16 @@
   var zoomOutEl = row.querySelector('[data-route-rail-two-zoom="out"]');
   var zoomInEl = row.querySelector('[data-route-rail-two-zoom="in"]');
   var closeEl = row.querySelector('[data-route-rail-two-close]');
+
+  /**
+   * Runs shorter than this many metres are folded into a neighbour
+   * (ROUTE_BAND_MIN_RUN_M, rendered on `#route-rail`).
+   */
+  var minRunM = (function () {
+    var raw = rail.getAttribute('data-band-min-run-m');
+    var value = raw === null || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_MIN_RUN_M;
+  }());
 
   /**
    * What rail one attached: the route's cursor and the data drawn from.
@@ -311,6 +342,18 @@
   }
 
   /**
+   * An event's y down the lane, in the lane's own units (`ROWS.height`).
+   *
+   * @param {MouseEvent} event
+   * @returns {number}
+   */
+  function laneY(event) {
+    var rect = lane.getBoundingClientRect();
+    var scale = rect.height > 0 ? core().ROWS.height / rect.height : 1;
+    return (event.clientY - rect.top) * scale;
+  }
+
+  /**
    * An event's pointer id; a synthetic event without one counts as 1.
    *
    * @param {*} event
@@ -366,7 +409,8 @@
     var railCore = self.pwaRouteRailCore;
     leg = openLeg;
     legLine = c.legProfile(ctx.profile, leg, ctx.sampleCount, railCore.clipRun);
-    bands = c.bandRuns(angles(), classify, leg);
+    var perSampleM = ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
+    bands = c.mergeShortRuns(c.bandRuns(angles(), classify, leg), perSampleM, minRunM);
     var slope = ctx.slope;
     passages = (slope && Array.isArray(slope.passages) ? slope.passages : []).filter(
       function (p) {
@@ -664,7 +708,32 @@
     });
   }
 
-  /** The selection's outline, the cursor line, and the edge fades. */
+  /**
+   * The veil over one side of the selection: the card's colour, so the
+   * rest of the lane recedes rather than greys.
+   *
+   * @param {number} x0 Its left edge, px.
+   * @param {number} x1 Its right edge, px.
+   * @param {string} side 'left' or 'right'.
+   */
+  function drawDim(x0, x1, side) {
+    if (x1 - x0 <= 0) return;
+    lane.appendChild(svgEl('rect', {
+      x: x0.toFixed(2),
+      y: '0',
+      width: (x1 - x0).toFixed(2),
+      height: String(core().ROWS.height),
+      fill: 'var(--color-card)',
+      'fill-opacity': DIM_OPACITY,
+      'pointer-events': 'none',
+      'data-route-rail-two-dim': side,
+    }));
+  }
+
+  /**
+   * The veil either side of the selection, the selection's outline, the
+   * cursor line, and the edge fades.
+   */
   function drawMarks() {
     var c = core();
     var height = c.ROWS.height;
@@ -672,11 +741,15 @@
     var selected = inLeg(state.selection);
     var part = selected ? c.clip(selected, view) : null;
     if (part) {
-      var x = c.xOf(part.from, view, width);
+      // The box is widened to be seen; the readout and the map read the
+      // range's real extent (SNOW-1032).
+      var box = c.selectionBox(part, view, width, MIN_BOX_PX);
+      drawDim(0, box.x, 'left');
+      drawDim(box.x + box.w, width, 'right');
       lane.appendChild(svgEl('rect', {
-        x: x.toFixed(2),
+        x: box.x.toFixed(2),
         y: '1',
-        width: Math.max(0, c.xOf(part.to, view, width) - x).toFixed(2),
+        width: box.w.toFixed(2),
         height: String(height - 2),
         rx: '2',
         fill: 'none',
@@ -771,6 +844,22 @@
   }
 
   /**
+   * A selected band's slope class: the merged run's, never its first
+   * sample's, which may be a sliver of another class folded into it
+   * (SNOW-1032).
+   *
+   * @param {{from: number, to: number, classIndex?: ?number}} selection
+   * @returns {?number}
+   */
+  function selectedClass(selection) {
+    if (typeof selection.classIndex === 'number') return selection.classIndex;
+    var match = bands.find(function (b) {
+      return b.from === selection.from && b.to === selection.to;
+    });
+    return match ? match.classIndex : classify(angles()[selection.from]);
+  }
+
+  /**
    * The readout: the selection's length and class, under the selection;
    * or the terrain and its figures, under the cursor; or a hint.
    * `aria-valuetext` carries the same lines.
@@ -795,7 +884,7 @@
       } else {
         lines.push(interpolate(STRINGS['readout-band'], {
           length: length,
-          class: classLabel(classify(angles()[state.selection.from])),
+          class: classLabel(selectedClass(state.selection)),
         }));
       }
       var part = c.clip(selected, view);
@@ -916,32 +1005,43 @@
    * @param {string} kind
    * @param {number} from
    * @param {number} to
+   * @param {?number} [classIndex] A band's slope class, for the map's
+   *   colour (SNOW-1032); none for a passage.
    */
-  function toggleSelection(kind, from, to) {
+  function toggleSelection(kind, from, to, classIndex) {
     var cursor = ctx.cursor;
     if (isSelected(kind, { from: from, to: to })) {
       cursor.clearSelection();
+    } else if (kind === 'band') {
+      cursor.select({ kind: kind, from: from, to: to, classIndex: classIndex });
     } else {
       cursor.select({ kind: kind, from: from, to: to });
     }
   }
 
   /**
-   * A tap: select what was under it, and move the cursor there.
+   * A tap: select the band or passage nearest it, and move the cursor there.
+   *
+   * The row is read from the tap's y: from `PASSAGE_ROW_SLACK_PX` above the
+   * passage bars down, a passage; anywhere else in the lane, a band. In
+   * that row the pick is the nearest on-screen extent within
+   * `TAP_RADIUS_PX` (`nearestRange`), so a band one sample wide is not a
+   * target one sample wide (SNOW-1032).
    *
    * @param {number} x The lane x the press went down at.
-   * @param {?Element} target What it went down on.
+   * @param {number} y The lane y it went down at, in `ROWS` units.
    */
-  function tap(x, target) {
-    var hit = target && target.closest ? target.closest('[data-select-kind]') : null;
-    ctx.cursor.setIndex(clamp(core().indexAt(x, view, width), leg.from, leg.to));
-    if (hit) {
-      toggleSelection(
-        hit.getAttribute('data-select-kind'),
-        Number(hit.getAttribute('data-from')),
-        Number(hit.getAttribute('data-to')),
-      );
+  function tap(x, y) {
+    var c = core();
+    ctx.cursor.setIndex(clamp(c.indexAt(x, view, width), leg.from, leg.to));
+    var passageRow = y >= c.ROWS.passageTop - PASSAGE_ROW_SLACK_PX;
+    if (passageRow) {
+      var passage = c.nearestRange(passages, x, view, width, TAP_RADIUS_PX);
+      if (passage) toggleSelection('passage', passage.from, passage.to);
+      return;
     }
+    var band = c.nearestRange(bands, x, view, width, TAP_RADIUS_PX);
+    if (band) toggleSelection('band', band.from, band.to, band.classIndex);
   }
 
   /** Start a pinch from the two pointers down. */
@@ -964,7 +1064,7 @@
     var x = laneX(event);
     pointers.set(id, { x: x, y: event.clientY });
     if (pointers.size === 1) {
-      press = { id: id, x0: x, from0: view.from, moved: false, target: event.target };
+      press = { id: id, x0: x, y0: laneY(event), from0: view.from, moved: false };
       if (lane.setPointerCapture) {
         try {
           lane.setPointerCapture(id);
@@ -1037,7 +1137,7 @@
       clampIndex();
       draw();
     } else if (lifted) {
-      tap(ended.x0, ended.target);
+      tap(ended.x0, ended.y0);
     }
   }
 
@@ -1094,7 +1194,7 @@
         if (index === null) return;
         var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
         if (!band) return;
-        toggleSelection('band', band.from, band.to);
+        toggleSelection('band', band.from, band.to, band.classIndex);
         break;
       }
       case '-':

@@ -10,7 +10,14 @@
  * the limits, an index published from elsewhere scrolls the window, a
  * drag pans it, a null bank draws no tick, and the readout reads the
  * terrain under the cursor or the stretch selected, stepped left, centred
- * or right under its anchor (SNOW-1024).
+ * or right under its anchor (SNOW-1024). SNOW-1032: slivers under the
+ * rail's `data-band-min-run-m` are folded away, a tap picks by row and by
+ * nearest extent, the selection box is at least 12 px with the rest of the
+ * lane dimmed, and a band's selection carries its class.
+ *
+ * The fixture's rail sets `data-band-min-run-m="60"`: at 50 m a sample a
+ * one-sample run is then a sliver, while the default five-sample bands are
+ * not.
  *
  * jsdom lays nothing out, so the lane measures 0 px and rail two falls
  * back to 600 px; a pointer's lane x is its clientX. Pointer events are
@@ -29,7 +36,7 @@ import '../../static/js/bank_ribbon_core.js';
 import '../../static/js/route_rail_two_core.js';
 
 document.body.innerHTML = `
-  <section id="route-rail">
+  <section id="route-rail" data-band-min-run-m="60">
     <div data-route-rail-two hidden>
       <p data-route-rail-two-title></p>
       <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
@@ -135,14 +142,15 @@ function pointer(target, type, { x = 0, y = 0, id = 1, pointerType = 'touch' } =
 }
 
 /**
- * Tap an element at its left edge plus one px.
+ * Tap an element one px inside its top-left corner.
  *
  * @param {Element} el A band or passage rect.
  */
 function tap(el) {
   const x = Number(el.getAttribute('x')) + 1;
-  pointer(el, 'pointerdown', { x });
-  pointer(lane, 'pointerup', { x });
+  const y = Number(el.getAttribute('y')) + 1;
+  pointer(el, 'pointerdown', { x, y });
+  pointer(lane, 'pointerup', { x, y });
 }
 
 /** @returns {Array<Element>} The band rects drawn. */
@@ -246,7 +254,7 @@ describe('pressing a band or a passage', () => {
     const band = bandRects().find((rect) => rect.getAttribute('data-from') === '105');
 
     tap(band);
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
 
     tap(bandRects().find((rect) => rect.getAttribute('data-from') === '105'));
     expect(cursor.state().selection).toBeNull();
@@ -258,8 +266,54 @@ describe('pressing a band or a passage', () => {
 
     tap(lane.querySelector('.route-rail-two-passage'));
 
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 110, to: 114 });
+    expect(cursor.state().selection)
+      .toEqual({ kind: 'passage', from: 110, to: 114, classIndex: null });
     expect(readoutLines()).toEqual(['No-fall passage · 250 m']);
+  });
+
+  it('picks a passage up to 22 px beside its bar, in the passage row (SNOW-1032)', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    // Passage 110–114 is drawn at 150–225 px; 20 px right of its end.
+    pointer(lane, 'pointerdown', { x: 245, y: 42 });
+    pointer(lane, 'pointerup', { x: 245, y: 42 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 110, to: 114, classIndex: null });
+  });
+
+  it('picks nothing in the passage row farther than 22 px from a bar', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    pointer(lane, 'pointerdown', { x: 260, y: 42 });
+    pointer(lane, 'pointerup', { x: 260, y: 42 });
+
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('picks the band under a tap anywhere above the passage row', () => {
+    // In the wedge row, which draws nothing a pointer can hit.
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    pointer(lane, 'pointerdown', { x: 80, y: 27 });
+    pointer(lane, 'pointerup', { x: 80, y: 27 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
+  });
+
+  it('scales the tap\'s y to the lane\'s rows', () => {
+    // A lane laid out twice as tall: client y 60 is lane y 30, the wedges.
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    vi.spyOn(lane, 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 600, bottom: 88, width: 600, height: 88 });
+
+    pointer(lane, 'pointerdown', { x: 80, y: 60 });
+    pointer(lane, 'pointerup', { x: 80, y: 60 });
+
+    expect(cursor.state().selection.kind).toBe('band');
+    vi.restoreAllMocks();
   });
 
   it('selects nothing when a second pointer turns the press into a pinch', () => {
@@ -292,6 +346,94 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().selection).toBeNull();
     // The cursor was pulled into the window after the pan.
     expect(cursor.state().index).toBe(110);
+  });
+});
+
+describe('merged bands (SNOW-1032)', () => {
+  /** The default angles with one-sample slivers at 107 and 120. */
+  const SLIVERED = ANGLES.map((angle, i) => (i === 107 ? 20 : i === 120 ? 42 : angle));
+
+  it('draws fewer rects: each sliver is folded into a neighbour', () => {
+    const { cursor } = attach({ angles: SLIVERED });
+    cursor.openLeg(LEGS[1]);
+    const raw = self.pwaRouteRailTwoCore.bandRuns(SLIVERED, self.pwaRouteSlopeCore.classify, {
+      from: 100,
+      to: 139,
+    });
+
+    const spans = bandRects().map((rect) => [rect.getAttribute('data-from'), rect.getAttribute('data-to')]);
+
+    // 107 splits 105–109 in three; 120 splits 120–124 in two.
+    expect(raw).toHaveLength(11);
+    // 107 folds back into its 32° neighbours; 120 (42°) folds into the
+    // steeper side, 115–119 at 32°, not 121–124 at 20°.
+    expect(spans).toEqual([
+      ['100', '104'], ['105', '109'], ['110', '114'], ['115', '120'],
+      ['121', '124'], ['125', '129'], ['130', '134'], ['135', '139'],
+    ]);
+  });
+
+  it('selects and reads the merged run, in its own class', () => {
+    const { cursor } = attach({ angles: SLIVERED });
+    cursor.openLeg(LEGS[1]);
+
+    tap(bandRects().find((rect) => rect.getAttribute('data-from') === '115'));
+
+    // Sample 120 is 42°, folded in: the run keeps the 30–35° class.
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 115, to: 120, classIndex: 1 });
+    expect(readoutLines()).toEqual(['300 m 30–35°']);
+  });
+
+  it('reads the run\'s class, not the class of a sliver folded into its start', () => {
+    // 114 (37°) sits between 110–113 at 20° and 115–119 at 32°, so it
+    // folds right, into the steeper side, and becomes that run's first sample.
+    const angles = ANGLES.map((angle, i) => (i === 114 ? 37 : angle));
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[1]);
+
+    tap(bandRects().find((rect) => rect.getAttribute('data-from') === '114'));
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 114, to: 119, classIndex: 1 });
+    expect(readoutLines()).toEqual(['300 m 30–35°']);
+  });
+});
+
+describe('the selection box (SNOW-1032)', () => {
+  it('draws a one-sample selection at least 12 px wide', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    // All 200 samples across 600 px: one sample is 3 px.
+    zoomOutButton.click();
+    zoomOutButton.click();
+    zoomOutButton.click();
+
+    cursor.select({ kind: 'passage', from: 150, to: 150 });
+
+    const box = lane.querySelector('[data-route-rail-two-selection]');
+    expect(Number(box.getAttribute('width'))).toBe(12);
+    // Centred on sample 150's 3 px, 150–151 → 150 to 153 px.
+    expect(Number(box.getAttribute('x'))).toBeCloseTo(151.5 - 6);
+  });
+
+  it('dims the lane either side of the box, and nowhere without a selection', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    expect(lane.querySelectorAll('[data-route-rail-two-dim]')).toHaveLength(0);
+
+    cursor.select({ kind: 'band', from: 110, to: 114, classIndex: 0 });
+
+    const left = lane.querySelector('[data-route-rail-two-dim="left"]');
+    const right = lane.querySelector('[data-route-rail-two-dim="right"]');
+    expect(Number(left.getAttribute('x'))).toBe(0);
+    expect(Number(left.getAttribute('width'))).toBe(150);
+    expect(Number(right.getAttribute('x'))).toBe(225);
+    expect(Number(right.getAttribute('width'))).toBe(375);
+    for (const veil of [left, right]) {
+      expect(veil.getAttribute('fill')).toBe('var(--color-card)');
+      expect(veil.getAttribute('fill-opacity')).toBe('0.62');
+      expect(veil.getAttribute('pointer-events')).toBe('none');
+      expect(veil.getAttribute('height')).toBe('44');
+    }
   });
 });
 
@@ -356,7 +498,7 @@ describe('keys', () => {
     expect(cursor.state().index).toBe(105);
 
     lane.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
   });
 });
 
