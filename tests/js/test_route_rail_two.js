@@ -8,7 +8,8 @@
  * passage tap selects a passage, a second pointer cancels the press so a
  * pinch selects nothing, the −/+ buttons change the span and disable at
  * the limits, an index published from elsewhere scrolls the window, a
- * drag pans it, a null bank draws no tick, and the readout reads the
+ * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
+ * it, a null bank draws no tick, and the readout reads the
  * terrain under the cursor or the stretch selected, stepped left, centred
  * or right under its anchor (SNOW-1024).
  *
@@ -278,14 +279,51 @@ describe('pressing a band or a passage', () => {
     expect(two.view().to - two.view().from).toBeLessThan(40);
   });
 
-  it('pans on a drag and selects nothing', () => {
+  it('scrubs the cursor on a one-finger drag, as the idle hint says', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    const from = two.view().from;
+
+    pointer(lane, 'pointerdown', { x: 300 });
+    pointer(lane, 'pointermove', { x: 150 });
+    // 150 px of 600 is a quarter of the 40-sample window.
+    expect(cursor.state().index).toBe(from + 10);
+    pointer(lane, 'pointermove', { x: 450 });
+    expect(cursor.state().index).toBe(from + 30);
+    pointer(lane, 'pointerup', { x: 450 });
+
+    expect(two.view().from).toBe(from);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('pans on a two-finger drag', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(101);
+    const from = two.view().from;
+
+    pointer(lane, 'pointerdown', { x: 200, id: 1 });
+    pointer(lane, 'pointerdown', { x: 400, id: 2 });
+    pointer(lane, 'pointermove', { x: 50, id: 1 });
+    pointer(lane, 'pointermove', { x: 250, id: 2 });
+    pointer(lane, 'pointerup', { x: 50, id: 1 });
+    pointer(lane, 'pointerup', { x: 250, id: 2 });
+
+    // The fingers kept their spacing, so the span holds and the window
+    // follows their midpoint 150 px (10 samples) to the right.
+    expect(two.view().to - two.view().from).toBeCloseTo(40);
+    expect(two.view().from).toBeCloseTo(from + 10);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('pans on a mouse drag and selects nothing', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(101);
 
-    pointer(lane, 'pointerdown', { x: 300 });
-    pointer(lane, 'pointermove', { x: 150 });
-    pointer(lane, 'pointerup', { x: 150 });
+    pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
+    pointer(lane, 'pointermove', { x: 150, pointerType: 'mouse' });
+    pointer(lane, 'pointerup', { x: 150, pointerType: 'mouse' });
 
     // 150 px of 600 is a quarter of the 40-sample window.
     expect(two.view().from).toBeCloseTo(110);
