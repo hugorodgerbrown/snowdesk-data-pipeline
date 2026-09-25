@@ -24,7 +24,14 @@ selection (the leg's elevation profile was a fourth row until it was
 taken out: at a 2 km window it drew near-flat and said nothing rail one
 does not; SNOW-1024 took out its distance ticks). With no leg open it
 shows EMPTY (`data-empty`): the eyebrow, "Select a route leg to view
-terrain", an empty lane, and no zoom, close or readout. It opens on 2 km of
+terrain", and no zoom, close or readout; its lane holds the LEG PICKER
+(SNOW-1033), `[data-route-rail-two-legs]` — one button per leg on rail
+one's scale, so each sits under its leg on the profile, tinted by
+direction and numbered, which opens its leg through the cursor as a press
+on rail one does. Opening a leg from the empty row, from any surface, is
+one ~340 ms motion: the segment fills, stretches to the lane and becomes
+the band strip while the card, anchored by its bottom edge, grows upward;
+closing reverses it, and reduced motion skips it. It opens on 2 km of
 ground (or the whole leg), pans and zooms within the leg, and its bands
 and passages are pressable selections. static/js/route_rail_two.js draws
 it in REAL PIXELS — the viewBox is the lane's measured width, never
