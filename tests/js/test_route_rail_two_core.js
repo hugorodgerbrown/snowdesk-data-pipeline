@@ -8,7 +8,8 @@
  * pitch turning per-sample, and the leg's profile and figures on the
  * sample axis — the same axis rail one places its legs on — plus the
  * readout: the track's attitude, where the readout sits, and a stretch's
- * length to the nearest 25 m (SNOW-1024).
+ * length to the nearest 25 m (SNOW-1024). SNOW-1033 adds the leg picker's
+ * slots, the nearest-leg pick and the opening motion's timeline.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -438,5 +439,112 @@ describe('roundStretch', () => {
   it('never reads under 25 m', () => {
     expect(core.roundStretch(10)).toBe(25);
     expect(core.roundStretch(0)).toBe(25);
+  });
+});
+
+describe('legSlots (SNOW-1033)', () => {
+  const LEGS = [
+    { i: 1, from: 0, to: 99, climbing: true },
+    { i: 2, from: 100, to: 102, climbing: false },
+    { i: 3, from: 103, to: 299, climbing: true },
+  ];
+
+  it('places each leg on rail one\'s scale, in true proportion', () => {
+    const slots = core.legSlots(LEGS, 300);
+
+    expect(slots.map((s) => s.leg.i)).toEqual([1, 2, 3]);
+    expect(slots[0].left).toBe(0);
+    expect(slots[0].width).toBeCloseTo(100 / 300);
+    // A three-sample leg keeps its three samples' width: no minimum.
+    expect(slots[1].left).toBeCloseTo(100 / 300);
+    expect(slots[1].width).toBeCloseTo(3 / 300);
+  });
+
+  it('is contiguous and fills the lane', () => {
+    const slots = core.legSlots(LEGS, 300);
+
+    for (let k = 1; k < slots.length; k += 1) {
+      expect(slots[k].left).toBeCloseTo(slots[k - 1].left + slots[k - 1].width);
+    }
+    const last = slots[slots.length - 1];
+    expect(last.left + last.width).toBeCloseTo(1);
+  });
+
+  it('comes back in route order whatever order the legs arrive in', () => {
+    const slots = core.legSlots([LEGS[2], LEGS[0], LEGS[1]], 300);
+
+    expect(slots.map((s) => s.leg.i)).toEqual([1, 2, 3]);
+  });
+
+  it('gives a single leg the whole lane', () => {
+    expect(core.legSlots([{ from: 0, to: 49 }], 50)).toEqual([
+      { leg: { from: 0, to: 49 }, left: 0, width: 1 },
+    ]);
+  });
+
+  it('drops malformed legs and returns none with no samples', () => {
+    expect(core.legSlots([{ from: 5, to: 2 }, null, { from: 0, to: 400 }], 300)).toEqual([]);
+    expect(core.legSlots(LEGS, 0)).toEqual([]);
+    expect(core.legSlots(null, 300)).toEqual([]);
+  });
+});
+
+describe('motionPlan (SNOW-1033)', () => {
+  it('opens as press 0–80, stretch 80–220 eased out, fill 220–340', () => {
+    const plan = core.motionPlan(false);
+
+    expect(plan.totalMs).toBe(340);
+    expect(plan.phases).toEqual([
+      { name: 'press', start: 0, end: 80, easing: 'linear' },
+      { name: 'stretch', start: 80, end: 220, easing: 'ease-out' },
+      { name: 'fill', start: 220, end: 340, easing: 'ease-in-out' },
+    ]);
+  });
+
+  it('closes as fill, stretch, press on the same total, the stretch eased in', () => {
+    const plan = core.motionPlan(true);
+
+    expect(plan.totalMs).toBe(340);
+    expect(plan.phases).toEqual([
+      { name: 'fill', start: 0, end: 120, easing: 'ease-in-out' },
+      { name: 'stretch', start: 120, end: 260, easing: 'ease-in' },
+      { name: 'press', start: 260, end: 340, easing: 'linear' },
+    ]);
+  });
+
+  it('matches MOTION', () => {
+    expect(core.MOTION.pressMs + core.MOTION.stretchMs + core.MOTION.fillMs)
+      .toBe(core.MOTION.totalMs);
+  });
+});
+
+describe('motionSlice (SNOW-1033)', () => {
+  it('times a whole phase and a part of one', () => {
+    const plan = core.motionPlan(false);
+
+    expect(core.motionSlice(plan, 'stretch', 0, 1)).toEqual({
+      delay: 80,
+      duration: 140,
+      easing: 'ease-out',
+    });
+    expect(core.motionSlice(plan, 'fill', 0.5, 1)).toEqual({
+      delay: 280,
+      duration: 60,
+      easing: 'ease-in-out',
+    });
+  });
+
+  it('clamps its fractions to the phase', () => {
+    const plan = core.motionPlan(true);
+
+    expect(core.motionSlice(plan, 'press', -1, 2)).toEqual({
+      delay: 260,
+      duration: 80,
+      easing: 'linear',
+    });
+  });
+
+  it('refuses a phase it does not have', () => {
+    expect(() => core.motionSlice(core.motionPlan(false), 'spin', 0, 1)).toThrow(RangeError);
   });
 });
