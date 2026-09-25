@@ -27,6 +27,9 @@
  * the lane's full 44 px. A short leg keeps its true width, and a press in
  * a gap between buttons picks the leg nearest it within `TAP_RADIUS_PX`
  * (`nearestRange`). Pressing one calls `cursor.openLeg`, as rail one does.
+ * A leg closed while focus is inside the row (its ×, the lane, a zoom
+ * button) hands focus to that leg's segment, or to the first segment; a
+ * close from the map or rail one leaves focus where it is.
  *
  * THE OPENING MOTION (SNOW-1033). Going from empty to a leg, from any
  * surface, is one motion of about 340 ms (`motionPlan`), drawn the FLIP
@@ -549,6 +552,18 @@
     ));
   }
 
+  /**
+   * Put keyboard focus on a leg's picker segment, or on the first segment
+   * when that leg has none.
+   *
+   * @param {{from: number, to: number}} target
+   */
+  function focusPicker(target) {
+    var button = legButtonFor(target)
+      || (legsEl ? /** @type {?HTMLElement} */ (legsEl.querySelector('.route-rail-two-leg')) : null);
+    if (button) button.focus({ preventScroll: true });
+  }
+
   /** Forget the open leg and every press on it, and clear the drawing. */
   function forgetLeg() {
     leg = null;
@@ -621,9 +636,14 @@
       if (leg || row.hidden || !row.hasAttribute('data-empty')) {
         stopMotion();
         var closing = leg;
+        // Focus inside the row (the ×, the lane, a zoom button) would be
+        // left on a control about to hide; it goes to the closed leg's
+        // segment instead. A close from the map or rail one leaves focus be.
+        var hadFocus = !!closing && row.contains(document.activeElement);
         var animate = !!closing && shown && canAnimate();
         var before = animate ? captureClose() : null;
         showEmpty(animate);
+        if (hadFocus && closing) focusPicker(closing);
         var slot = closing && animate ? legButtonFor(closing) : null;
         if (slot && before) {
           animateClose(slot, before);
@@ -905,7 +925,7 @@
       parts.ghost.remove();
       veils.forEach(function (v) { v.remove(); });
       before.header.forEach(function (copy) { copy.remove(); });
-      button.style.visibility = '';
+      button.style.opacity = '';
       legsEl.style.pointerEvents = '';
       row.style.overflow = '';
       if (leg) {
@@ -919,7 +939,7 @@
     legsEl.hidden = false;
     legsEl.style.pointerEvents = 'none';
     veils.forEach(function (v) { legsEl.insertBefore(v, legsEl.firstChild); });
-    button.style.visibility = 'hidden';
+    button.style.opacity = '0';
     legsEl.appendChild(parts.ghost);
     before.header.forEach(function (copy) { row.appendChild(copy); });
 
@@ -984,14 +1004,14 @@
       before.readout.remove();
       before.controls.remove();
       before.header.forEach(function (copy) { copy.remove(); });
-      button.style.visibility = '';
+      button.style.opacity = '';
       legsEl.style.pointerEvents = '';
       row.style.overflow = '';
       if (ctx && ctx.onResize) ctx.onResize();
     });
 
     legsEl.style.pointerEvents = 'none';
-    button.style.visibility = 'hidden';
+    button.style.opacity = '0';
     legsEl.appendChild(before.lane);
     legsEl.appendChild(parts.ghost);
     cell.appendChild(before.readout);

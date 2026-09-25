@@ -609,6 +609,55 @@ describe('the leg picker (SNOW-1033)', () => {
   });
 });
 
+describe('focus on close (SNOW-1033)', () => {
+  it('moves focus from rail two\'s × to the closed leg\'s segment', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    closeButton.focus();
+
+    closeButton.click();
+
+    expect(document.activeElement).toBe(legButtons()[1]);
+  });
+
+  it('moves focus from the lane or a zoom button the same way', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[0]);
+    lane.focus();
+    cursor.closeLeg();
+    expect(document.activeElement).toBe(legButtons()[0]);
+
+    cursor.openLeg(LEGS[1]);
+    zoomInButton.focus();
+    cursor.closeLeg();
+    expect(document.activeElement).toBe(legButtons()[1]);
+  });
+
+  it('falls back to the first segment when the closed leg has none', () => {
+    const { cursor } = attach();
+    // A leg the picker does not offer: not one of the route's legs.
+    cursor.openLeg({ i: 9, from: 40, to: 60, climbing: true });
+    closeButton.focus();
+
+    cursor.closeLeg();
+
+    expect(document.activeElement).toBe(legButtons()[0]);
+  });
+
+  it('leaves focus alone for a close from outside rail two', () => {
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    outside.focus();
+
+    cursor.closeLeg();
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+});
+
 describe('the opening motion (SNOW-1033)', () => {
   /** @type {?{calls: Array<object>, restore: Function}} */
   let stub = null;
@@ -725,7 +774,7 @@ describe('the opening motion (SNOW-1033)', () => {
     expect(ghosts()).toHaveLength(0);
     expect(row.querySelectorAll('[data-route-rail-two-snapshot]')).toHaveLength(0);
     expect(legsLayer.hidden).toBe(false);
-    expect(legButtons().every((b) => b.style.visibility === '')).toBe(true);
+    expect(legButtons().every((b) => b.style.opacity === '')).toBe(true);
     expect(onResize).toHaveBeenCalledTimes(before + 1);
   });
 
