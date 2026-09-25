@@ -162,6 +162,11 @@ typography:
     fontSize: 14px
     fontWeight: 400
     lineHeight: 20px
+  button:
+    fontFamily: DM Sans
+    fontSize: 14px
+    fontWeight: 500
+    lineHeight: 20px
   summary:
     fontFamily: DM Sans
     fontSize: 13px
@@ -238,12 +243,13 @@ components:
     textColor: "{colors.card}"
     rounded: "{rounded.tag}"
     padding: 10px 20px
-    typography: "{typography.small}"
+    typography: "{typography.button}"
   button-secondary:
     backgroundColor: "{colors.card}"
     textColor: "{colors.text-1}"
     rounded: "{rounded.tag}"
     padding: 10px 20px
+    typography: "{typography.button}"
   card:
     backgroundColor: "{colors.card}"
     textColor: "{colors.text-1}"
