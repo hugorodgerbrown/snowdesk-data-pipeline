@@ -36,9 +36,11 @@ document.body.innerHTML = `
   <section id="route-rail">
     <div data-route-rail-two hidden>
       <p data-route-rail-two-title></p>
-      <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
-      <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
-      <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
+      <div>
+        <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
+        <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
+        <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
+      </div>
       <p data-route-rail-two-figures></p>
       <div>
         <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
@@ -604,6 +606,181 @@ describe('the leg picker (SNOW-1033)', () => {
     attach();
     two.detach();
     expect(legsLayer.hidden).toBe(true);
+  });
+});
+
+describe('the opening motion (SNOW-1033)', () => {
+  /** @type {?{calls: Array<object>, restore: Function}} */
+  let stub = null;
+
+  /**
+   * Stand in for WAAPI, which jsdom lacks: record each call and hand back
+   * an animation the test finishes by hand.
+   *
+   * @returns {{calls: Array<object>, restore: Function}}
+   */
+  function stubAnimate() {
+    const calls = [];
+    Element.prototype.animate = function animate(keyframes, timing) {
+      const animation = {
+        el: this,
+        keyframes,
+        timing,
+        onfinish: null,
+        cancelled: false,
+        cancel() { this.cancelled = true; },
+        finish() { if (this.onfinish) this.onfinish(); },
+      };
+      calls.push(animation);
+      return animation;
+    };
+    return {
+      calls,
+      restore() { delete Element.prototype.animate; },
+    };
+  }
+
+  /** @param {Array<object>} calls */
+  const finishAll = (calls) => calls.slice().forEach((a) => a.finish());
+
+  /** @returns {Array<Element>} The ghosts in the picker layer. */
+  const ghosts = () => Array.from(legsLayer.querySelectorAll('[data-route-rail-two-ghost]'));
+
+  afterEach(() => {
+    if (stub) stub.restore();
+    stub = null;
+    window.matchMedia = (query) => ({
+      matches: false,
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+    });
+  });
+
+  it('plays press, stretch and fill from the pressed segment', () => {
+    const { onResize } = attach();
+    stub = stubAnimate();
+
+    legButtons()[1].click();
+
+    const timings = stub.calls.map((a) => a.timing);
+    expect(timings).toContainEqual({ delay: 0, duration: 80, easing: 'linear', fill: 'both' });
+    expect(timings).toContainEqual({ delay: 80, duration: 140, easing: 'ease-out', fill: 'both' });
+    expect(Math.max(...timings.map((t) => t.delay + t.duration))).toBe(340);
+    // The ghost stretches from the segment's slot to the lane.
+    const [ghost] = ghosts();
+    const stretch = stub.calls.find((a) => a.el === ghost && a.keyframes[0].left);
+    expect(stretch.keyframes).toEqual([
+      { left: 'calc(33.3333% + 1px)', width: 'calc(66.6667% - 2px)' },
+      { left: '0px', width: '100%' },
+    ]);
+    // The leg is drawn under it already; the map hears the height at the end.
+    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(legsLayer.hidden).toBe(false);
+    expect(onResize).toHaveBeenCalledTimes(1);
+
+    finishAll(stub.calls);
+
+    expect(ghosts()).toHaveLength(0);
+    expect(row.querySelectorAll('[data-route-rail-two-snapshot]')).toHaveLength(0);
+    expect(legsLayer.hidden).toBe(true);
+    expect(stub.calls.every((a) => a.cancelled)).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(2);
+  });
+
+  it('plays the same motion for a leg opened from rail one or the map', () => {
+    const { cursor } = attach();
+    stub = stubAnimate();
+
+    cursor.openLeg(LEGS[0]);
+
+    expect(ghosts()).toHaveLength(1);
+    const stretch = stub.calls.find((a) => a.el === ghosts()[0] && a.keyframes[0].left);
+    expect(stretch.keyframes[0]).toEqual({ left: 'calc(0% + 1px)', width: 'calc(33.3333% - 2px)' });
+  });
+
+  it('closes in reverse: fill, stretch, then press', () => {
+    const { cursor, onResize } = attach();
+    cursor.openLeg(LEGS[1]);
+    stub = stubAnimate();
+    const before = onResize.mock.calls.length;
+
+    cursor.closeLeg();
+
+    const timings = stub.calls.map((a) => a.timing);
+    expect(timings).toContainEqual({ delay: 120, duration: 140, easing: 'ease-in', fill: 'both' });
+    expect(timings).toContainEqual({ delay: 260, duration: 80, easing: 'linear', fill: 'both' });
+    const stretch = stub.calls.find((a) => a.el === ghosts()[0] && a.keyframes[0].left);
+    expect(stretch.keyframes[1]).toEqual({
+      left: 'calc(33.3333% + 1px)',
+      width: 'calc(66.6667% - 2px)',
+    });
+    expect(row.hasAttribute('data-empty')).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(before);
+
+    finishAll(stub.calls);
+
+    expect(ghosts()).toHaveLength(0);
+    expect(row.querySelectorAll('[data-route-rail-two-snapshot]')).toHaveLength(0);
+    expect(legsLayer.hidden).toBe(false);
+    expect(legButtons().every((b) => b.style.visibility === '')).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(before + 1);
+  });
+
+  it('cancels a running motion cleanly when the leg changes mid-way', () => {
+    const { cursor } = attach();
+    stub = stubAnimate();
+    legButtons()[1].click();
+    const opening = stub.calls.slice();
+
+    cursor.closeLeg();
+
+    expect(opening.every((a) => a.cancelled)).toBe(true);
+    // Only the closing motion's ghost is left, and nothing of the opening's.
+    expect(ghosts()).toHaveLength(1);
+    expect(row.style.overflow).toBe('');
+    finishAll(stub.calls);
+    expect(ghosts()).toHaveLength(0);
+    expect(legButtons()).toHaveLength(2);
+  });
+
+  it('cancels the motion on detach', () => {
+    attach();
+    stub = stubAnimate();
+    legButtons()[0].click();
+
+    two.detach();
+
+    expect(stub.calls.every((a) => a.cancelled)).toBe(true);
+    expect(ghosts()).toHaveLength(0);
+    expect(row.hidden).toBe(true);
+  });
+
+  it('cuts straight to the end state when motion is reduced', () => {
+    const { onResize } = attach();
+    stub = stubAnimate();
+    window.matchMedia = (query) => ({ matches: query.includes('reduce'), media: query });
+
+    legButtons()[1].click();
+
+    expect(stub.calls).toHaveLength(0);
+    expect(ghosts()).toHaveLength(0);
+    expect(legsLayer.hidden).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(2);
+  });
+
+  it('cuts straight to the end state without WAAPI', () => {
+    const { cursor } = attach();
+
+    legButtons()[1].click();
+    expect(ghosts()).toHaveLength(0);
+    expect(legsLayer.hidden).toBe(true);
+
+    cursor.closeLeg();
+    expect(ghosts()).toHaveLength(0);
+    expect(legsLayer.hidden).toBe(false);
   });
 });
 

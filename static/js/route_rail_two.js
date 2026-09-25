@@ -28,6 +28,23 @@
  * a gap between buttons picks the leg nearest it within `TAP_RADIUS_PX`
  * (`nearestRange`). Pressing one calls `cursor.openLeg`, as rail one does.
  *
+ * THE OPENING MOTION (SNOW-1033). Going from empty to a leg, from any
+ * surface, is one motion of about 340 ms (`motionPlan`), drawn the FLIP
+ * way: the end state is rendered first, then a ghost of the leg's segment
+ * and a few veils play from where the empty row was. PRESS (0–80 ms) —
+ * the segment fills solid and the others fade; STRETCH (80–220 ms, eased
+ * out) — it widens to the lane while the placeholder crossfades to the
+ * leg's title and figures and the row's height animates, so the card,
+ * anchored by its bottom edge (static/css/map.css `.route-rail`), grows
+ * upwards; FILL (220–340 ms) — it shrinks onto the band strip and fades
+ * into the bands, the bank row comes in, then the controls and the
+ * readout. Closing plays the phases in reverse. It is `Element.animate`
+ * (WAAPI) and CSS only; where `animate` is missing (jsdom) or the reader
+ * prefers reduced motion there is no motion, only the end state. A change
+ * of open leg mid-motion cancels it and cleans up before rendering, and
+ * `onResize` fires once the motion is over, so the map's bottom chrome is
+ * measured against the finished card.
+ *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
  * comment has the axis): the strip of slope bands, the track drawn as a
  * row of level-ski wedges showing its bank (bank_ribbon_core.js,
@@ -116,6 +133,13 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
+  /** How far beside a leg's segment a tap on the picker still picks it, px. */
+  var TAP_RADIUS_PX = 22;
+  /**
+   * The leg picker's coloured part inside its 44 px button, in px: the
+   * `top-2.5 h-6` of `legButton`, which the motion shrinks onto the band.
+   */
+  var PICKER_FILL = Object.freeze({ top: 10, height: 24 });
   /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
   var ALIGN_CLASSES = Object.freeze({
     left: 'text-left',
@@ -212,6 +236,14 @@
    * for its own writes and centres for everyone else's (`followView`).
    */
   var ownWrite = false;
+  /**
+   * The opening or closing motion in progress (SNOW-1033): its running
+   * animations, how many are yet to finish, and the clean-up that restores
+   * the end state. Null when nothing moves.
+   *
+   * @type {?{animations: Array<Animation>, pending: number, cleanup: function(): void}}
+   */
+  var motion = null;
 
   /**
    * Wrap a handler so every cursor write inside it counts as rail two's.
@@ -376,8 +408,9 @@
    * it opens at.
    *
    * @param {{i: number, from: number, to: number, climbing: boolean}} openLeg
+   * @param {boolean} [quiet] Leave `onResize` to the motion about to run.
    */
-  function showLeg(openLeg) {
+  function showLeg(openLeg, quiet) {
     var c = core();
     var railCore = self.pwaRouteRailCore;
     leg = openLeg;
@@ -403,9 +436,14 @@
 
     var changed = row.hidden || row.hasAttribute('data-empty');
     setEmpty(false);
+    // A leg opened from the keyboard on the picker keeps the keyboard in
+    // rail two: the segment that held focus is about to go.
+    if (legsEl && legsEl.contains(document.activeElement) && lane.focus) {
+      lane.focus({ preventScroll: true });
+    }
     if (legsEl) legsEl.hidden = true;
     row.hidden = false;
-    if (changed && ctx.onResize) ctx.onResize();
+    if (changed && !quiet && ctx.onResize) ctx.onResize();
   }
 
   /**
@@ -528,8 +566,10 @@
   /**
    * Show the empty row: attached to a route, with no leg open. Rail one
    * hears `onView(null, null)` and drops its bracket.
+   *
+   * @param {boolean} [quiet] Leave `onResize` to the motion about to run.
    */
-  function showEmpty() {
+  function showEmpty(quiet) {
     forgetLeg();
     var changed = row.hidden || !row.hasAttribute('data-empty');
     titleEl.textContent = STRINGS['two-placeholder'];
@@ -540,7 +580,7 @@
     renderPicker();
     row.hidden = false;
     if (ctx && ctx.onView) ctx.onView(null, null);
-    if (changed && ctx && ctx.onResize) ctx.onResize();
+    if (changed && !quiet && ctx && ctx.onResize) ctx.onResize();
   }
 
   /** Hide rail two outright and forget the leg, on detach. */
@@ -576,13 +616,37 @@
     var previous = lastState;
     lastState = state;
     var open = state.openLeg;
+    var shown = !row.hidden;
     if (!open) {
-      if (leg || row.hidden || !row.hasAttribute('data-empty')) showEmpty();
+      if (leg || row.hidden || !row.hasAttribute('data-empty')) {
+        stopMotion();
+        var closing = leg;
+        var animate = !!closing && shown && canAnimate();
+        var before = animate ? captureClose() : null;
+        showEmpty(animate);
+        var slot = closing && animate ? legButtonFor(closing) : null;
+        if (slot && before) {
+          animateClose(slot, before);
+        } else if (animate && ctx && ctx.onResize) {
+          ctx.onResize();
+        }
+      }
       return;
     }
     var c = core();
     var fresh = !leg || leg.from !== open.from || leg.to !== open.to;
-    if (fresh) showLeg(open);
+    /** The picker's segment the open plays from, or null for no motion. */
+    var opening = null;
+    /** @type {?{height: number, header: Array<HTMLElement>}} */
+    var from = null;
+    if (fresh) {
+      stopMotion();
+      if (!leg && shown && row.hasAttribute('data-empty') && canAnimate()) {
+        opening = legButtonFor(open);
+        if (opening) from = captureOpen();
+      }
+      showLeg(open, !!opening);
+    }
 
     // Least distance for rail two's own writes; centred for a write from
     // the map or rail one, so its cursor is mid-lane rather than on the
@@ -596,6 +660,371 @@
       setView(bring(leg, view, selected.from, selected.to));
     }
     draw();
+    if (opening && from) animateOpen(opening, from);
+  }
+
+  // ---- the opening motion (SNOW-1033) -------------------------------------
+
+  /**
+   * Whether to animate: WAAPI is there and the reader has not asked for
+   * reduced motion.
+   *
+   * @returns {boolean}
+   */
+  function canAnimate() {
+    if (typeof Element === 'undefined' || typeof Element.prototype.animate !== 'function') {
+      return false;
+    }
+    if (typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * End a motion: cancel what is still running — and what has finished,
+   * whose `fill: both` would otherwise hold its last frame — then restore
+   * the end state.
+   *
+   * @param {{animations: Array<Animation>, cleanup: function(): void}} ending
+   */
+  function endMotion(ending) {
+    if (motion === ending) motion = null;
+    ending.animations.forEach(function (animation) {
+      try {
+        animation.cancel();
+      } catch (_err) {
+        // An animation already gone has nothing to cancel.
+      }
+    });
+    ending.cleanup();
+  }
+
+  /** Cancel the motion in progress, if any, leaving the end state. */
+  function stopMotion() {
+    if (motion) endMotion(motion);
+  }
+
+  /**
+   * Start a motion that `cleanup` ends.
+   *
+   * @param {function(): void} cleanup
+   */
+  function startMotion(cleanup) {
+    stopMotion();
+    motion = { animations: [], pending: 0, cleanup: cleanup };
+  }
+
+  /**
+   * Play one animation in the current motion; the motion ends when the
+   * last of its animations finishes.
+   *
+   * @param {Element} el
+   * @param {Array<Object<string, string|number>>} keyframes
+   * @param {{delay: number, duration: number, easing: string}} timing A
+   *   `motionSlice`.
+   */
+  function play(el, keyframes, timing) {
+    var running = motion;
+    if (!running) return;
+    var animation = el.animate(keyframes, {
+      delay: timing.delay,
+      duration: timing.duration,
+      easing: timing.easing,
+      fill: 'both',
+    });
+    running.animations.push(animation);
+    running.pending += 1;
+    animation.onfinish = function () {
+      if (motion !== running) return;
+      running.pending -= 1;
+      if (running.pending === 0) endMotion(running);
+    };
+  }
+
+  /**
+   * Strip a clone of the hooks, ids and live regions that would make it
+   * read as the real thing — to the script, the tests or a screen reader.
+   *
+   * @param {Element} el
+   * @returns {Element} el
+   */
+  function inert(el) {
+    [el].concat(Array.from(el.querySelectorAll('*'))).forEach(function (node) {
+      Array.from(node.attributes).forEach(function (attr) {
+        if (attr.name.indexOf('data-route-rail-two') === 0 || attr.name === 'id'
+          || attr.name === 'aria-live' || attr.name === 'role' || attr.name === 'tabindex'
+          || attr.name === 'aria-label' || attr.name === 'aria-labelledby') {
+          node.removeAttribute(attr.name);
+        }
+      });
+    });
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-route-rail-two-snapshot', '');
+    return el;
+  }
+
+  /**
+   * A still copy of an element, laid absolutely over where it is now in
+   * `container`, to fade out while the real one changes under it.
+   *
+   * @param {HTMLElement} el
+   * @param {HTMLElement} container A positioned ancestor.
+   * @returns {HTMLElement}
+   */
+  function snapshotOver(el, container) {
+    var rect = el.getBoundingClientRect();
+    var box = container.getBoundingClientRect();
+    var copy = /** @type {HTMLElement} */ (inert(el.cloneNode(true)));
+    copy.style.position = 'absolute';
+    copy.style.margin = '0';
+    copy.style.left = (rect.left - box.left) + 'px';
+    copy.style.top = (rect.top - box.top) + 'px';
+    copy.style.width = rect.width + 'px';
+    copy.style.pointerEvents = 'none';
+    return copy;
+  }
+
+  /** @returns {number} The row's height now, in px. */
+  function rowHeight() {
+    return row.getBoundingClientRect().height;
+  }
+
+  /**
+   * What the empty row looked like, taken before a leg is drawn over it.
+   *
+   * @returns {{height: number, header: Array<HTMLElement>}}
+   */
+  function captureOpen() {
+    return {
+      height: rowHeight(),
+      header: [snapshotOver(titleEl, row), snapshotOver(figuresEl, row)],
+    };
+  }
+
+  /**
+   * What the open leg looked like, taken before the row empties.
+   *
+   * @returns {{height: number, header: Array<HTMLElement>, controls: HTMLElement,
+   *   lane: HTMLElement, readout: HTMLElement}}
+   */
+  function captureClose() {
+    var cell = /** @type {HTMLElement} */ (lane.parentElement);
+    var controls = /** @type {HTMLElement} */ (closeEl.parentElement);
+    return {
+      height: rowHeight(),
+      header: [snapshotOver(titleEl, row), snapshotOver(figuresEl, row)],
+      controls: snapshotOver(controls, row),
+      lane: snapshotOver(/** @type {HTMLElement} */ (/** @type {unknown} */ (lane)), cell),
+      readout: snapshotOver(readoutBoxEl, cell),
+    };
+  }
+
+  /**
+   * The ghost the motion plays on: a copy of a picker segment, with its
+   * leg's full colour laid in its fill to fade in or out.
+   *
+   * @param {HTMLElement} button The segment.
+   * @returns {{ghost: HTMLElement, fill: HTMLElement, solid: HTMLElement,
+   *   number: HTMLElement}}
+   */
+  function ghostOf(button) {
+    var ghost = /** @type {HTMLElement} */ (inert(button.cloneNode(true)));
+    ghost.setAttribute('data-route-rail-two-ghost', '');
+    ghost.removeAttribute('data-leg-from');
+    ghost.removeAttribute('data-leg-to');
+    var fill = /** @type {HTMLElement} */ (ghost.firstElementChild);
+    var number = /** @type {HTMLElement} */ (fill.firstElementChild);
+    var solid = document.createElement('span');
+    solid.className = 'route-rail-two-leg-solid absolute inset-0';
+    solid.setAttribute('aria-hidden', 'true');
+    fill.insertBefore(solid, number);
+    return { ghost: ghost, fill: fill, solid: solid, number: number };
+  }
+
+  /**
+   * A card-coloured veil over rows of the lane, hiding what the motion has
+   * not brought in yet.
+   *
+   * @param {number} top px from the lane's top.
+   * @param {number} height px.
+   * @returns {HTMLElement}
+   */
+  function veil(top, height) {
+    var el = document.createElement('div');
+    el.className = 'absolute inset-x-0 bg-card';
+    el.style.top = top + 'px';
+    el.style.height = height + 'px';
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-route-rail-two-veil', '');
+    return el;
+  }
+
+  /**
+   * The row's height from `before` to what it is now, over the stretch.
+   *
+   * @param {number} before px.
+   * @param {{delay: number, duration: number, easing: string}} timing
+   */
+  function playHeight(before, timing) {
+    var after = rowHeight();
+    if (!(before > 0) || !(after > 0) || before === after) return;
+    row.style.overflow = 'hidden';
+    play(row, [{ height: before + 'px' }, { height: after + 'px' }], timing);
+  }
+
+  /**
+   * The segment stretched into the leg (SNOW-1033): press, stretch, fill.
+   * The leg is already drawn; everything here plays over it and is
+   * removed when the motion ends.
+   *
+   * @param {HTMLElement} button The pressed leg's picker segment.
+   * @param {{height: number, header: Array<HTMLElement>}} before The empty
+   *   row, from `captureOpen`.
+   */
+  function animateOpen(button, before) {
+    if (!legsEl) return;
+    var c = core();
+    var plan = c.motionPlan(false);
+    /**
+     * @param {string} name
+     * @param {number} a
+     * @param {number} b
+     */
+    function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
+    var rows = c.ROWS;
+    var parts = ghostOf(button);
+    var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
+      return b !== button;
+    });
+    var veils = [veil(0, rows.bandHeight), veil(rows.bandHeight, rows.height - rows.bandHeight)];
+    var controls = [zoomOutEl, zoomInEl, closeEl, readoutBoxEl];
+
+    startMotion(function () {
+      parts.ghost.remove();
+      veils.forEach(function (v) { v.remove(); });
+      before.header.forEach(function (copy) { copy.remove(); });
+      button.style.visibility = '';
+      legsEl.style.pointerEvents = '';
+      row.style.overflow = '';
+      if (leg) {
+        clearPicker();
+      } else {
+        legsEl.hidden = false;
+      }
+      if (ctx && ctx.onResize) ctx.onResize();
+    });
+
+    legsEl.hidden = false;
+    legsEl.style.pointerEvents = 'none';
+    veils.forEach(function (v) { legsEl.insertBefore(v, legsEl.firstChild); });
+    button.style.visibility = 'hidden';
+    legsEl.appendChild(parts.ghost);
+    before.header.forEach(function (copy) { row.appendChild(copy); });
+
+    // PRESS: the segment fills solid; the others fade.
+    var press = slice('press', 0, 1);
+    play(parts.solid, [{ opacity: 0 }, { opacity: 1 }], press);
+    play(parts.number, [{ opacity: 1 }, { opacity: 0 }], press);
+    others.forEach(function (other) { play(other, [{ opacity: 1 }, { opacity: 0 }], press); });
+
+    // STRETCH: to the lane's width, the header crossfading, the card growing.
+    var stretch = slice('stretch', 0, 1);
+    play(parts.ghost, [
+      { left: button.style.left, width: button.style.width },
+      { left: '0px', width: '100%' },
+    ], stretch);
+    before.header.forEach(function (copy) { play(copy, [{ opacity: 1 }, { opacity: 0 }], stretch); });
+    [titleEl, figuresEl].forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], stretch); });
+    playHeight(before.height, stretch);
+
+    // FILL: onto the band strip and into the bands; the bank row, then
+    // the controls and the readout.
+    play(parts.fill, [
+      { top: PICKER_FILL.top + 'px', height: PICKER_FILL.height + 'px' },
+      { top: rows.bandTop + 'px', height: rows.bandHeight + 'px' },
+    ], slice('fill', 0, 0.5));
+    play(veils[0], [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.5));
+    play(parts.ghost, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.4, 0.9));
+    play(veils[1], [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.3, 0.8));
+    controls.forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], slice('fill', 0.7, 1)); });
+  }
+
+  /**
+   * The leg folded back into its segment (SNOW-1033): fill, stretch and
+   * press in reverse. The empty row is already rendered; the old lane,
+   * readout and header play out over it from their snapshots.
+   *
+   * @param {HTMLElement} button The closed leg's picker segment.
+   * @param {{height: number, header: Array<HTMLElement>, controls: HTMLElement,
+   *   lane: HTMLElement, readout: HTMLElement}} before The open row, from
+   *   `captureClose`.
+   */
+  function animateClose(button, before) {
+    if (!legsEl) return;
+    var c = core();
+    var plan = c.motionPlan(true);
+    /**
+     * @param {string} name
+     * @param {number} a
+     * @param {number} b
+     */
+    function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
+    var rows = c.ROWS;
+    var parts = ghostOf(button);
+    var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
+      return b !== button;
+    });
+    var cell = /** @type {HTMLElement} */ (lane.parentElement);
+
+    startMotion(function () {
+      parts.ghost.remove();
+      before.lane.remove();
+      before.readout.remove();
+      before.controls.remove();
+      before.header.forEach(function (copy) { copy.remove(); });
+      button.style.visibility = '';
+      legsEl.style.pointerEvents = '';
+      row.style.overflow = '';
+      if (ctx && ctx.onResize) ctx.onResize();
+    });
+
+    legsEl.style.pointerEvents = 'none';
+    button.style.visibility = 'hidden';
+    legsEl.appendChild(before.lane);
+    legsEl.appendChild(parts.ghost);
+    cell.appendChild(before.readout);
+    before.header.concat([before.controls]).forEach(function (copy) { row.appendChild(copy); });
+
+    // FILL, reversed: the controls, the readout and the lane go; the band
+    // gathers into the segment's solid colour and grows back to the
+    // segment's height.
+    play(before.controls, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.3));
+    play(before.readout, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.3));
+    play(before.lane, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.2, 0.7));
+    play(parts.ghost, [{ opacity: 0 }, { opacity: 1 }], slice('fill', 0.1, 0.6));
+    play(parts.fill, [
+      { top: rows.bandTop + 'px', height: rows.bandHeight + 'px' },
+      { top: PICKER_FILL.top + 'px', height: PICKER_FILL.height + 'px' },
+    ], slice('fill', 0.5, 1));
+
+    // STRETCH, reversed: back to the segment's slot, the header
+    // crossfading to the placeholder, the card shrinking.
+    var stretch = slice('stretch', 0, 1);
+    play(parts.ghost, [
+      { left: '0px', width: '100%' },
+      { left: button.style.left, width: button.style.width },
+    ], stretch);
+    before.header.forEach(function (copy) { play(copy, [{ opacity: 1 }, { opacity: 0 }], stretch); });
+    [titleEl, figuresEl].forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], stretch); });
+    playHeight(before.height, stretch);
+
+    // PRESS, reversed: the tint returns and the other segments come back.
+    var press = slice('press', 0, 1);
+    play(parts.solid, [{ opacity: 1 }, { opacity: 0 }], press);
+    play(parts.number, [{ opacity: 0 }, { opacity: 1 }], press);
+    others.forEach(function (other) { play(other, [{ opacity: 0 }, { opacity: 1 }], press); });
   }
 
   // ---- drawing ------------------------------------------------------------
@@ -1299,6 +1728,7 @@
 
   /** Stop following the cursor and hide the row. */
   function detach() {
+    stopMotion();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     if (frame && typeof window.cancelAnimationFrame === 'function') {
