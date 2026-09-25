@@ -1,6 +1,6 @@
 ---
 name: the-bank-angle-is-drawn-signed
-description: bank.py, bank_angles, roll_deg, `banks` on the wire, bankWedges level-ski wedges — the signed roll across a track, kept signed, sent flat
+description: bank.py, `banks` on the wire, bankWedge level-ski wedges, bankGlyphs max-|roll| grouping, the zoom placeholder — kept signed, sent flat
 status: current
 last-reviewed: 2026-09-25
 ---
@@ -126,10 +126,49 @@ above for keeping the sign stand; only the mark changed.
   drawn. A null bank still draws nothing.
 - **The ×1.5 exaggeration** lets a 10° bank read at the glyph's width;
   the 13 px cap (reached at about 51°) keeps the row at 26 px, and
-  rail two moved its passage bars into the lane's foot so a capped wedge
-  never covers one.
+  rail two keeps its passage bars in their own 4 px row under the bank
+  row, so a capped wedge never covers one.
 - **The `strong` threshold is gone.** The wedge's size carries the
   magnitude, so no second ink is needed.
 - **The pitch widened from 8 px to 15 px**, so the "flat array" argument
   above now reads a value about every fourth segment on a zoomed leg
-  rather than every other; the cost comparison is unchanged.
+  rather than every other; the cost comparison is unchanged. Rail two no
+  longer lays glyphs at a fixed pitch — see the next section; `bankWedges`
+  keeps the fixed-pitch layout for any other caller.
+
+## The bank row follows the zoom (SNOW-1031 revision)
+
+The Leg 7 review revised how rail two lays the glyphs out. Rail two now
+always opens **fitted** — the whole leg, however long — so at that scale
+it is an overview, and zooming is how it is read in detail. The rail is
+never widened to make something tappable, and the bank is never averaged
+to make it drawable.
+
+- **Glyphs group whole segments.** `bankGlyphs` in
+  `static/js/route_rail_two_core.js` gives each glyph N consecutive
+  segments, `N = ceil(10 px / segment width)` (`glyphGroup`), aligned to
+  the leg's start so a group never splits a segment and never shifts as
+  the view pans. Each glyph's geometry comes from `bankWedge`, the one-glyph
+  function `bank_ribbon_core.js` exports, at half-width
+  `min(7, group width / 2 − 0.5)`.
+- **The maximum |roll|, never the mean.** A glyph draws the segment with
+  the largest |roll| in its group, with that segment's side. A zig-zag of
+  +20°, −35°, +20° averages to about level, which would draw a switchback
+  on a steep face as a track on the fall line — the opposite of what the
+  ribbon exists to show. The largest roll is the one a reader has to plan
+  for, and its sign is a real segment's sign. A group whose banks are all
+  unknown draws nothing.
+- **The placeholder.** Past `MAX_GROUP` (N > 3, a glyph summarising more
+  than 75 m) the row draws no glyphs at all: a dashed centre line and the
+  plain-text label "Zoom in to see the bank" stand in. It is not a button;
+  pinch, wheel and the −/+ buttons zoom, and a double-tap goes straight to
+  `resolveSpan`, the widest span that draws. The scale is constant across
+  the lane, so the row is all drawn or all placeholder. On a 390 px lane
+  Leg 7 fitted is 0.9 px a segment (N = 12, placeholder); at ×4 it is
+  3.7 px (N = 3, drawn); legs up to about 1.2 km draw fitted.
+- **Passages keep their own mark.** A 4 px bar under the bank row,
+  spanning the passage's real extent but never under 6 px wide
+  (`passageBox`), drawn at every zoom and never folded into the band or
+  the bank row.
+- **The readout stays exact.** "37° slope · 36° bank" reads the segment
+  under the cursor at every zoom; only the drawing groups.
