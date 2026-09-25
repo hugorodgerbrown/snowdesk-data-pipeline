@@ -817,6 +817,7 @@
     var at = 0;
     var phases = order.map(function (entry) {
       var name = /** @type {string} */ (entry[0]);
+      /** @type {string} */
       var easing = PHASE_EASING[/** @type {'press'|'stretch'|'fill'} */ (name)];
       if (reverse && easing === 'ease-out') easing = 'ease-in';
       var phase = { name: name, start: at, end: at + /** @type {number} */ (entry[1]), easing: easing };
