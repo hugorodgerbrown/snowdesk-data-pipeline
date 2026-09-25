@@ -125,9 +125,8 @@ class TestSiteFooterVersion:
         """
         body = client.get("/").content.decode("utf-8")
         # Anchored on the footer row, not on the first "v24" in the
-        # document: SNOW-869 bakes the same label into
-        # <meta name="pwa-app-release"> in the head, so the first match is
-        # now the meta tag and the slice would run backwards.
+        # document, so a label added anywhere earlier cannot make the slice
+        # run backwards.
         row = body[body.index('data-testid="site-footer-version"') :]
         row = row[: row.index("v24") + 3]
 
@@ -138,12 +137,11 @@ class TestSiteFooterVersion:
     def test_the_account_menu_no_longer_carries_it(self) -> None:
         """SNOW-769 moved the row, it did not copy it.
 
-        The account menu is scoped to everything before the footer, so a
-        version string found there would be a genuine duplicate.
-
-        The head is excluded from that scope: SNOW-869 bakes the label
-        into <meta name="pwa-app-release"> for the update banner, which is
-        machine-readable metadata rather than a second thing on screen.
+        The account menu is scoped to everything the reader sees before the
+        footer, so a version string found there would be a genuine duplicate.
+        The head is left out: SNOW-1029 puts the release inside the shell
+        cache name (``<meta name="pwa-shell" content="snowdesk-shell-v24-…">``),
+        which is machine-readable metadata, not a second thing on screen.
         """
         body = self._signed_in_client().get("/").content.decode("utf-8")
         before_footer = body[

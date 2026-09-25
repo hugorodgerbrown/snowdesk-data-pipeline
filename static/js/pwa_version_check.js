@@ -277,7 +277,7 @@
    * resolved body is held in ``lastVerdict`` for the banner gate's read
    * that follows an offer.
    *
-   * @returns {Promise<{current: string, release: string, shell: string,
+   * @returns {Promise<{current: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    *   The trimmed identifiers and both server verdicts, or ``null`` when
    *   the endpoint is unreachable / non-2xx — "cannot confirm" must never
@@ -293,9 +293,6 @@
         const json = await res.json();
         return {
           current: String(json.current || '').trim(),
-          // SNOW-869: the release label the server is serving ("v30"), or
-          // "" on an unnumbered build.
-          release: String(json.release || '').trim(),
           // SNOW-952: the shell cache name this build would serve. Carried
           // through untouched for ``sw_register.js``'s staleness gate,
           // which compares it against the controlling worker's own. Empty
@@ -471,7 +468,7 @@
    * the waiting-worker banner path, which no longer exists: a waiting
    * worker is applied silently.
    *
-   * @returns {Promise<{current: string, release: string, shell: string,
+   * @returns {Promise<{current: string, shell: string,
    *   update_required: boolean, update_available: boolean} | null>}
    */
   function verified() {
@@ -481,7 +478,8 @@
 
   // The server's verdict, for ``sw_register.js``'s banner gate. SNOW-869
   // also published the shell's own build and release here for the banner's
-  // versioned copy; SNOW-1025 removed that copy, and with it the readers.
+  // versioned copy; SNOW-1025 removed that copy, and SNOW-1026 removed the
+  // ``release`` field from ``/api/version``.
   window.pwaVersionInfo = Object.freeze({
     verified: verified,
   });

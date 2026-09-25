@@ -145,7 +145,6 @@ from apps.weather.services.weather_display import (
 )
 
 from .decorators import lowercase_region_id
-from .release import release_label
 from .views import (
     _resolve_region_for_bulletin,
 )
@@ -3633,28 +3632,24 @@ def version(request: HttpRequest) -> JsonResponse:
     Update Required state when the server says so (``update_required``),
     and (c) trigger the Mechanism-A kill switch when ``kill`` is true.
 
-    Two further fields (SNOW-869) let the soft update banner NAME the two
-    builds instead of saying only that one exists:
+    ``update_available`` (SNOW-869) is true when the request carried an
+    ``X-Client-Version`` AND that value differs from ``APP_VERSION``. It
+    is *equality*, never ordering, for the same reason ``update_required``
+    is membership: a git SHA has no order (see
+    ``docs/decisions/blocked-builds-not-a-version-floor.md``). It fails
+    CLOSED on an unidentified client — no header means false — which is
+    the mirror of ``update_required``'s fail-open: a client whose build we
+    cannot read is never *told* it has an update we cannot confirm.
 
-    * ``release`` — the release label a person reads (``"v30"``, or ``""``
-      when ``APP_RELEASE`` is unset). The SHA in ``current`` identifies a
-      build to a machine; this is the same string the site footer shows,
-      so the banner and the footer cannot disagree.
-    * ``update_available`` — true when the request carried an
-      ``X-Client-Version`` AND that value differs from ``APP_VERSION``.
-      It is *equality*, never ordering, for the same reason
-      ``update_required`` is membership: a git SHA has no order (see
-      ``docs/decisions/blocked-builds-not-a-version-floor.md``). It fails
-      CLOSED on an unidentified client — no header means false — which is
-      the mirror of ``update_required``'s fail-open: a client whose build
-      we cannot read is never *told* it has an update we cannot confirm.
+    SNOW-952: this is not the whole soft-banner verdict. It says the
+    server has redeployed since this page was served, which is a statement
+    about the SERVER; whether the *device* has anything to pick up is a
+    statement about its shell, answered by ``shell`` below. The client
+    needs both, and this one is the cheap pre-filter that decides whether
+    to ask the second question at all.
 
-      SNOW-952: this is no longer the whole soft-banner verdict. It says
-      the server has redeployed since this page was served, which is a
-      statement about the SERVER; whether the *device* has anything to
-      pick up is a statement about its shell, answered by ``shell``
-      below. The client now needs both, and this one is the cheap
-      pre-filter that decides whether to ask the second question at all.
+    SNOW-869 also added a ``release`` label for the banner to print;
+    SNOW-1025 removed that copy and SNOW-1026 removed the field.
 
     ``shell`` (SNOW-952) is the third identifier, and the one the update
     banner is actually gated on: the shell cache name this build would
@@ -3672,8 +3667,8 @@ def version(request: HttpRequest) -> JsonResponse:
     a shell source does. See
     ``docs/decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md``.
 
-    Both new fields are functions of ``X-Client-Version``, which is already
-    in ``Vary`` below, so the 60-second edge cache is unaffected.
+    ``update_available`` is a function of ``X-Client-Version``, which is
+    already in ``Vary`` below, so the 60-second edge cache is unaffected.
 
     ``update_required`` (SNOW-609) is the whole forced-update verdict; the
     client does no version arithmetic of its own. It is true only when the
@@ -3717,7 +3712,6 @@ def version(request: HttpRequest) -> JsonResponse:
     response = JsonResponse(
         {
             "current": settings.APP_VERSION,
-            "release": release_label(),
             # SNOW-952: the shell the banner is gated on. Recomputed under
             # DEBUG and cached per process otherwise, mirroring ``serve_sw``
             # exactly — this value is compared against the one that view

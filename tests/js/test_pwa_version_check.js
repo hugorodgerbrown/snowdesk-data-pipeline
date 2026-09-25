@@ -78,11 +78,8 @@ import '../../static/js/i18n_strings.js';
 
 const CURRENT_BUILD = '2026.08.01';
 const NEWER_BUILD = '2026.08.02';
-const CURRENT_RELEASE = 'v29';
 
-document.head.innerHTML =
-  `<meta name="pwa-app-version" content="${CURRENT_BUILD}">` +
-  `<meta name="pwa-app-release" content="${CURRENT_RELEASE}">`;
+document.head.innerHTML = `<meta name="pwa-app-version" content="${CURRENT_BUILD}">`;
 document.body.innerHTML = `
   <div id="sw-update-banner" class="hidden"></div>
   <div id="pwa-update-modal" class="hidden">
@@ -205,7 +202,6 @@ beforeEach(async () => {
   versionUnreachable = false;
   versionBody = {
     current: CURRENT_BUILD,
-    release: CURRENT_RELEASE,
     update_required: false,
     update_available: false,
   };
@@ -498,7 +494,6 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
   it('hands back the verified body', async () => {
     versionBody = {
       current: NEWER_BUILD,
-      release: 'v30',
       shell: 'snowdesk-shell-bbbbbbbbbbbb',
       update_required: false,
       update_available: true,
@@ -508,7 +503,6 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
 
     expect(verdict).toEqual({
       current: NEWER_BUILD,
-      release: 'v30',
       // SNOW-952: carried through for `sw_register.js`'s staleness gate,
       // which is what actually decides whether the banner appears.
       shell: 'snowdesk-shell-bbbbbbbbbbbb',
@@ -521,7 +515,7 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
     // Deploy ordering: the page can be newer than the server answering it
     // (a CDN entry, a rolling deploy). The gate reads "" as "cannot
     // confirm" and reveals, which is the pre-SNOW-952 behaviour.
-    versionBody = { current: NEWER_BUILD, release: 'v30', update_available: true };
+    versionBody = { current: NEWER_BUILD, update_available: true };
 
     const verdict = await window.pwaVersionInfo.verified();
 
@@ -529,7 +523,7 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
   });
 
   it('reuses the round trip the drift verification already made', async () => {
-    versionBody = { current: NEWER_BUILD, release: 'v30', update_available: true };
+    versionBody = { current: NEWER_BUILD, update_available: true };
     await respondWith({ version: NEWER_BUILD });
     await settle();
     expect(versionCalls).toHaveLength(1);
@@ -540,7 +534,7 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
     const verdict = await window.pwaVersionInfo.verified();
 
     expect(versionCalls).toHaveLength(1);
-    expect(verdict.release).toBe('v30');
+    expect(verdict.current).toBe(NEWER_BUILD);
   });
 
   it('returns null when the endpoint is unreachable', async () => {

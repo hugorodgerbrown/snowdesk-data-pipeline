@@ -38,25 +38,24 @@ from config.settings.base import comma_separated_frozenset
 @pytest.mark.django_db
 @override_settings(
     APP_VERSION="2026.07.15.testabc",
-    APP_RELEASE="30",
     APP_BLOCKED_VERSIONS=frozenset(),
     APP_RELEASED_AT="2026-07-15T09:00:00+00:00",
     SW_KILL=False,
 )
 def test_version_endpoint_returns_expected_shape() -> None:
-    """``/api/version`` returns the full seven-field body.
+    """``/api/version`` returns the full six-field body.
 
-    ``release`` and ``update_available`` (SNOW-869) are what let the soft
-    banner name both builds, ``shell`` (SNOW-952) is what decides whether
-    it appears; the other four are the original spec shape.
+    ``update_available`` (SNOW-869) and ``shell`` (SNOW-952) decide whether
+    the soft banner appears; the other four are the original spec shape.
+    SNOW-1026 removed ``release``, which the banner's versioned copy read
+    until SNOW-1025 removed that copy.
     """
     response = Client().get("/api/version")
     assert response.status_code == 200
     body = json.loads(response.content)
     assert body == {
         "current": "2026.07.15.testabc",
-        "release": "v30",
-        # Computed under this test's settings: the name carries APP_RELEASE
+        # Computed the same way the view does: the name carries APP_RELEASE
         # since SNOW-1029.
         "shell": served_cache_version(),
         "update_required": False,
@@ -98,18 +97,6 @@ def test_version_endpoint_shell_does_not_move_with_the_build() -> None:
     # SNOW-1029: the release label is part of the name, so the release is
     # left at its real value here; only the build moves.
     assert body["shell"] == served_cache_version()
-
-
-@pytest.mark.django_db
-@override_settings(APP_RELEASE="")
-def test_version_endpoint_release_is_empty_without_a_release_number() -> None:
-    """An unnumbered build reports ``""``, never a bare ``v``.
-
-    The banner falls back to short SHAs on the empty string, which is why
-    it must be empty rather than absent.
-    """
-    response = Client().get("/api/version")
-    assert json.loads(response.content)["release"] == ""
 
 
 @pytest.mark.django_db
