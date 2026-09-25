@@ -442,6 +442,42 @@ describe('roundStretch', () => {
   });
 });
 
+describe('nearestRange (SNOW-1033)', () => {
+  // 10 px a sample across a 100 px lane.
+  const VIEW = { from: 0, to: 10 };
+
+  it('picks the range a tap falls inside', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }, { from: 3, to: 9 }];
+    expect(core.nearestRange(ranges, 25, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('gives a shared edge to the range that starts there, as indexAt does', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }];
+    expect(core.nearestRange(ranges, 20, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('picks a range up to 22 px beside the tap', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    // 22 px right of the first, 18 px left of the second.
+    expect(core.nearestRange(ranges, 32, VIEW, 100, 22)).toBe(ranges[1]);
+    expect(core.nearestRange([ranges[0]], 32, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('picks nothing farther than 22 px away', () => {
+    expect(core.nearestRange([{ from: 0, to: 0 }], 33, VIEW, 100, 22)).toBeNull();
+  });
+
+  it('breaks a tie between two neighbours to the left', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    expect(core.nearestRange(ranges, 30, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('ignores a range outside the view', () => {
+    expect(core.nearestRange([{ from: 20, to: 30 }], 99, VIEW, 100, 22)).toBeNull();
+  });
+});
+
+
 describe('legSlots (SNOW-1033)', () => {
   const LEGS = [
     { i: 1, from: 0, to: 99, climbing: true },

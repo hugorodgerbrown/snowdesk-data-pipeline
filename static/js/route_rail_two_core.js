@@ -67,6 +67,7 @@
  *   sampleAt(x, view, width)                  → the axis coordinate at px
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
+ *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
  *   tickPitch(span, width, basePitch)         → the wedges' pitch
  *   tickPhase(view, width, pitch)             → px the wedges scroll by
  *   ribbonWedges(options)                     → bankWedges, laid on the view
@@ -461,6 +462,49 @@
    */
   function indexAt(x, view, width) {
     return Math.floor(sampleAt(x, view, width) + EPSILON);
+  }
+
+  /**
+   * The range a tap at `x` picks: the one whose drawn extent is nearest
+   * (SNOW-1033).
+   *
+   * Each range is clipped to the view and measured on screen as
+   * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
+   * the nearer edge otherwise. So a leg only a few px wide is still picked
+   * by a tap `radiusPx` beside it. On a tie the range whose half-open
+   * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
+   * then the leftmost.
+   *
+   * @template {{from: number, to: number}} R
+   * @param {Array<R>} ranges Leg slots (or any ranges), sample indices
+   *   inclusive.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, nothing is picked.
+   * @returns {?R}
+   */
+  function nearestRange(ranges, x, view, width, radiusPx) {
+    if (!Array.isArray(ranges)) return null;
+    /** @type {?R} */
+    var best = null;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    ranges.forEach(function (range) {
+      var part = range ? clip(range, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var holds = x >= x0 && x < x1;
+      if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
+        best = range;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
   }
 
   /**
@@ -874,6 +918,7 @@
     sampleAt: sampleAt,
     indexAt: indexAt,
     clip: clip,
+    nearestRange: nearestRange,
     tickPitch: tickPitch,
     tickPhase: tickPhase,
     ribbonWedges: ribbonWedges,
