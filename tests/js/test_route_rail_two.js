@@ -8,15 +8,16 @@
  * passage tap selects a passage, a second pointer cancels the press so a
  * pinch selects nothing, the −/+ buttons change the span and disable at
  * the limits, an index published from elsewhere scrolls the window, a
- * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
- * it, a null bank draws no tick, and the readout reads the
- * terrain under the cursor or the stretch selected, stepped left, centred
+ * one-finger drag scrubs the cursor while two fingers pan it, a null bank
+ * draws no tick, and the readout reads the terrain under the cursor or the stretch selected, stepped left, centred
  * or right under its anchor (SNOW-1024). SNOW-1031's revision: a leg opens
  * fitted, a long one shows the bank placeholder, a double-click or a touch
  * double-tap zooms to where the bank row draws and back, and passage bars
  * are 4 px tall and never under 6 px wide. SNOW-1032: a tap picks by row
  * and by nearest extent, the selection box is at least 12 px with the
- * rest of the lane dimmed, and a band's selection carries its class.
+ * rest of the lane dimmed, a band's selection carries its class, and a
+ * touch or mouse drag scrubs and on release selects the band holding the
+ * cursor's index, exactly; a mouse drag no longer pans.
  * SNOW-1033: the empty lane is a leg picker, one button per leg opening it
  * through the cursor, and opening or closing a leg runs a WAAPI motion
  * that is skipped where `Element.prototype.animate` is missing or motion
@@ -373,7 +374,7 @@ describe('pressing a band or a passage', () => {
     expect(two.view().to - two.view().from).toBeLessThan(40);
   });
 
-  it('scrubs the cursor on a one-finger drag, as the idle hint says', () => {
+  it('scrubs the cursor on a one-finger drag, and selects its band on release', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
     const from = two.view().from;
@@ -384,10 +385,11 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().index).toBe(from + 10);
     pointer(lane, 'pointermove', { x: 450 });
     expect(cursor.state().index).toBe(from + 30);
+    expect(cursor.state().selection).toBeNull();
     pointer(lane, 'pointerup', { x: 450 });
 
     expect(two.view().from).toBe(from);
-    expect(cursor.state().selection).toBeNull();
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 130, to: 134, classIndex: 0 });
   });
 
   it('pans on a two-finger drag', () => {
@@ -410,32 +412,120 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().selection).toBeNull();
   });
 
-  it('pans on a mouse drag and selects nothing', () => {
+  it('scrubs on a mouse drag, never pans, and selects on release (SNOW-1032)', () => {
     const { cursor } = attach();
     openLongZoomed(cursor);
-    cursor.setIndex(281);
 
     pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
     pointer(lane, 'pointermove', { x: 150, pointerType: 'mouse' });
+    // 150 px of 600 is a quarter of the 40-sample window 280–320.
+    expect(cursor.state().index).toBe(290);
     pointer(lane, 'pointerup', { x: 150, pointerType: 'mouse' });
 
-    // 150 px of 600 is a quarter of the 40-sample window.
-    expect(two.view().from).toBeCloseTo(290);
-    expect(cursor.state().selection).toBeNull();
-    // The cursor was pulled into the window after the pan.
-    expect(cursor.state().index).toBe(290);
+    expect(two.view()).toEqual({ from: 280, to: 320 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 290, to: 294, classIndex: 0 });
   });
 
   it('stops a pan at the leg\'s end', () => {
     const { cursor } = attach();
     openLongZoomed(cursor);
 
-    pointer(lane, 'pointerdown', { x: 50, pointerType: 'mouse' });
-    pointer(lane, 'pointermove', { x: 590, pointerType: 'mouse' });
-    pointer(lane, 'pointermove', { x: 5000, pointerType: 'mouse' });
-    pointer(lane, 'pointerup', { x: 5000, pointerType: 'mouse' });
+    // A mouse pans with the horizontal wheel, not by dragging.
+    lane.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaX: -50000, deltaY: 0,
+    }));
 
     expect(two.view()).toEqual({ from: 140, to: 180 });
+  });
+});
+
+describe('releasing a drag selects (SNOW-1032)', () => {
+  /**
+   * The default angles with 296–309 alternating 20° and 32° sample by
+   * sample: fourteen one-segment bands, 1.875 px each on leg 3 fitted.
+   */
+  const STRIPED = ANGLES.map((angle, i) => (i >= 296 && i <= 309 ? (i % 2 ? 32 : 20) : angle));
+  /** Leg 3 fitted: 320 samples across 600 px from sample 140. */
+  const xOfSample = (index) => (index - 140) * (600 / 320) + 0.9;
+
+  it('draws a one-segment band as its own rect, nothing merged', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    const rect = bandRects().find((r) => r.getAttribute('data-from') === '301');
+    expect(rect.getAttribute('data-to')).toBe('301');
+    expect(Number(rect.getAttribute('width'))).toBeLessThan(2);
+    // Its neighbours are one segment each too.
+    for (const from of ['300', '302']) {
+      const other = bandRects().find((r) => r.getAttribute('data-from') === from);
+      expect(other.getAttribute('data-to')).toBe(from);
+    }
+  });
+
+  for (const pointerType of ['touch', 'mouse']) {
+    it(`selects the one-segment band holding the index a ${pointerType} drag ends on`, () => {
+      const { cursor } = attach({ angles: STRIPED });
+      cursor.openLeg(LEGS[2]);
+
+      pointer(lane, 'pointerdown', { x: 100, y: 5, pointerType });
+      pointer(lane, 'pointermove', { x: 200, y: 5, pointerType });
+      pointer(lane, 'pointermove', { x: xOfSample(301), y: 5, pointerType });
+      expect(cursor.state().index).toBe(301);
+      pointer(lane, 'pointerup', { x: xOfSample(301), y: 5, pointerType });
+
+      expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+      expect(two.view()).toEqual({ from: 140, to: 460 });
+    });
+  }
+
+  it('selects the band, not a passage, when a drag ends in the passage foot', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    pointer(lane, 'pointerdown', { x: 100, y: 42 });
+    pointer(lane, 'pointermove', { x: xOfSample(302), y: 42 });
+    pointer(lane, 'pointerup', { x: xOfSample(302), y: 42 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 302, to: 302, classIndex: 0 });
+  });
+
+  it('keeps the band selected when a drag is released onto it', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+    cursor.select({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+
+    pointer(lane, 'pointerdown', { x: 100 });
+    pointer(lane, 'pointermove', { x: xOfSample(301) });
+    pointer(lane, 'pointerup', { x: xOfSample(301) });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+  });
+
+  it('selects nothing when a drag is cancelled rather than released', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    pointer(lane, 'pointerdown', { x: 100 });
+    pointer(lane, 'pointermove', { x: xOfSample(301) });
+    pointer(lane, 'pointercancel', { x: xOfSample(301) });
+
+    expect(cursor.state().index).toBe(301);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('still toggles on a tap, and picks by nearest extent within 22 px', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    now += 1000;
+    pointer(lane, 'pointerdown', { x: xOfSample(301), y: 5 });
+    pointer(lane, 'pointerup', { x: xOfSample(301), y: 5 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+
+    now += 1000;
+    pointer(lane, 'pointerdown', { x: xOfSample(301), y: 5 });
+    pointer(lane, 'pointerup', { x: xOfSample(301), y: 5 });
+    expect(cursor.state().selection).toBeNull();
   });
 });
 

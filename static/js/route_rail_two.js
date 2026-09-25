@@ -81,7 +81,7 @@
  *
  * THE WINDOW IS RAIL TWO'S OWN. The view and the span live here, never on
  * the cursor. Rail two opens FITTED — the whole leg, however long — pans
- * by drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
+ * by a two-finger drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
  * the −/+ buttons, the −/+ keys and a double-tap. Panning stops at the
  * leg's ends; the next leg is opened on rail one. An index or a selection published from
  * elsewhere that lands outside the window CENTRES it there (a range wider
@@ -92,15 +92,20 @@
  * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
- * PRESSES. A one-finger (or pen) press that moves past `DRAG_PX` SCRUBS:
- * the cursor follows it, which is what the idle hint "Drag to read a
- * point" promises. A touch drag used to pan, so the hint pointed at a
- * gesture that never read anything (SNOW-1024). Two fingers pan and zoom
- * together — the pinch keeps the sample under their midpoint beneath it,
- * so moving both fingers moves the window. A mouse drag still pans, since
- * a mouse already reads a point by hovering. A tap selects a band or
- * passage (`cursor.select`) — tapping the same one again clears it — and
- * moves the cursor there. The tap target is not the drawn width
+ * PRESSES. A one-finger, pen or mouse press that moves past `DRAG_PX`
+ * SCRUBS: the cursor follows it, which is what the idle hint "Drag to
+ * read a point" promises — dragging reads points, releasing selects. A
+ * touch drag used to pan, so the hint pointed at a gesture that never
+ * read anything (SNOW-1024); since SNOW-1032's revision a mouse drag
+ * scrubs too, and a mouse pans with the horizontal or Shift wheel or by
+ * zooming. RELEASING a drag selects the band holding the cursor's index,
+ * exactly — the band whose `from ≤ index ≤ to`, with no radius and no
+ * snapping — wherever the pointer ends, the passage foot included; a
+ * release onto the band already selected leaves it selected. Two fingers
+ * pan and zoom together — the pinch keeps the sample under their midpoint
+ * beneath it, so moving both fingers moves the window. A tap selects a
+ * band or passage (`cursor.select`) — tapping the same one again clears
+ * it — and moves the cursor there. The tap target is not the drawn width
  * (SNOW-1032): a tap in the passage row's foot picks the passage,
  * anywhere else the band, whose on-screen extent is nearest the tap
  * within `TAP_RADIUS_PX` (`nearestRange`). The selection box is drawn at
@@ -1683,6 +1688,19 @@
   }
 
   /**
+   * A drag's release: select the band holding the cursor's index, exactly
+   * — `from ≤ index ≤ to`, no radius, no snapping (SNOW-1032). A release
+   * onto the band already selected leaves it selected; only a tap toggles.
+   */
+  function selectUnderCursor() {
+    var index = ctx.cursor.state().index;
+    if (index === null) return;
+    var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
+    if (!band || isSelected('band', band)) return;
+    ctx.cursor.select({ kind: 'band', from: band.from, to: band.to, classIndex: band.classIndex });
+  }
+
+  /**
    * A tap: select the band or passage nearest it, and move the cursor there.
    *
    * The row is read from the tap's y: from `PASSAGE_ROW_SLACK_PX` above the
@@ -1734,11 +1752,8 @@
         id: id,
         x0: x,
         y0: laneY(event),
-        from0: view.from,
         moved: false,
         pointerType: event.pointerType || '',
-        // A mouse drag pans; a finger or a pen drag scrubs the cursor.
-        scrubs: event.pointerType !== 'mouse',
       };
       if (lane.setPointerCapture) {
         try {
@@ -1775,11 +1790,9 @@
     if (press && press.id === id) {
       var dx = x - press.x0;
       if (!press.moved && Math.abs(dx) > DRAG_PX) press.moved = true;
-      if (press.moved && press.scrubs) {
+      // Every pointer's drag scrubs the cursor; none pans (SNOW-1032).
+      if (press.moved) {
         ctx.cursor.setIndex(clamp(c.indexAt(clamp(x, 0, width), view, width), leg.from, leg.to));
-      } else if (press.moved) {
-        setView(c.placeView(leg, span, press.from0 - (dx / width) * span));
-        scheduleDraw();
       }
       return;
     }
@@ -1813,6 +1826,7 @@
     if (!ended) return;
     if (ended.moved) {
       lastTap = null;
+      if (lifted) selectUnderCursor();
       clampIndex();
       draw();
     } else if (lifted) {
