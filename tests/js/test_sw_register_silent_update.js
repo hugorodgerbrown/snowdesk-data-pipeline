@@ -55,9 +55,18 @@ const emitted = [];
 /** The `warmCache` run the stubbed worker is holding open, if any. */
 let warmRequestId = null;
 
+/**
+ * What the controlling worker says about every other window (SNOW-1027), or
+ * null for a worker that never answers `activation-check`.
+ */
+let activationReply = { othersVisible: false, warming: false };
+
 const controller = {
-  postMessage: (data) => {
+  postMessage: (data, transfer) => {
     if (data && data.type === 'warm-cache') warmRequestId = data.requestId;
+    if (data && data.type === 'activation-check' && activationReply) {
+      transfer[0].postMessage({ type: 'activation-check', ...activationReply });
+    }
   },
 };
 
@@ -120,6 +129,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   posted.length = 0;
+  activationReply = { othersVisible: false, warming: false };
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
 });
 
@@ -143,6 +153,47 @@ describe('a worker that installed while the page was open', () => {
     await settle();
 
     expect(posted).toEqual([]);
+  });
+});
+
+describe('other windows (SNOW-1027)', () => {
+  // Activation is origin-wide: it claims every window and sweeps the old
+  // shell cache. So one window going hidden is not enough on its own.
+  it('holds the update back while another window is on screen', async () => {
+    activationReply = { othersVisible: true, warming: false };
+
+    setVisibility('hidden');
+    await settle();
+
+    expect(posted).toEqual([]);
+  });
+
+  it('holds the update back while another window is running a download', async () => {
+    // This page's own counter cannot see another window's download; the
+    // controlling worker, which runs every window's downloads, can.
+    activationReply = { othersVisible: false, warming: true };
+
+    setVisibility('hidden');
+    await settle();
+
+    expect(posted).toEqual([]);
+  });
+
+  it('goes ahead when the controlling worker cannot be asked', async () => {
+    // A worker from before activation-check existed. Holding back until it
+    // could answer would hold back forever; this lasts one deploy.
+    activationReply = null;
+
+    vi.useFakeTimers();
+    try {
+      setVisibility('hidden');
+      await vi.advanceTimersByTimeAsync(2100);
+    } finally {
+      vi.useRealTimers();
+    }
+    await settle();
+
+    expect(posted).toEqual([{ type: 'SKIP_WAITING' }]);
   });
 });
 

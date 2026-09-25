@@ -14,9 +14,8 @@
             <p class="text-text-3 text-sm uppercase tracking-wide">debug</p>
             <h1 class="text-2xl font-semibold text-text-1">Service-worker shell version</h1>
             <p class="text-text-2">
-                Deployed vs live-controlling values for the SW shell cache version (SNOW-517). Deployed values are
-                server-rendered; the live value is filled in by a message to the active service worker, when one is
-                controlling this page.
+                Deployed vs live values for the SW shell cache version (SNOW-517). Deployed values are server-rendered;
+                the live values are filled in by a message to each service worker this browser holds (SNOW-1027).
             </p>
         </header>
 
@@ -36,9 +35,49 @@
                 <dt class="text-text-3">Controlling SW</dt>
                 <dd data-testid="sw-live-version" class="text-text-1 font-mono">—</dd>
             </dl>
+            {# SNOW-1027: every worker the registration holds, not just the one #}
+            {# in control. DevTools labels them with Chrome's own counter       #}
+            {# (worker 66397, worker 66402), which says nothing about which     #}
+            {# build each one is. This names the CACHE_VERSION each reports.    #}
+            <table data-testid="sw-workers" class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-text-3">
+                        <th class="font-normal py-1 pr-4">Slot</th>
+                        <th class="font-normal py-1 pr-4">State</th>
+                        <th class="font-normal py-1">CACHE_VERSION</th>
+                    </tr>
+                </thead>
+                <tbody data-sw-workers-body>
+                    <tr>
+                        <td class="py-1 text-text-3" colspan="3">—</td>
+                    </tr>
+                </tbody>
+            </table>
+            {# The probe's copy. Read from here rather than written as literals #}
+            {# in the script, so static/js stays free of user-facing strings    #}
+            {# (bin/i18n-lint).                                                 #}
+            <template id="sw-worker-strings">
+                <span data-string="active">Active</span>
+                <span data-string="waiting">Waiting</span>
+                <span data-string="installing">Installing</span>
+                <span data-string="controls">controls this page</span>
+                <span data-string="deployed">= deployed</span>
+                <span data-string="no-answer">no answer</span>
+            </template>
+            <template id="sw-worker-row-template">
+                <tr>
+                    <td class="py-1 pr-4 text-text-1" data-field="slot"></td>
+                    <td class="py-1 pr-4 text-text-2" data-field="state"></td>
+                    <td class="py-1 font-mono text-text-1">
+                        <span data-field="shell"></span>
+                        <span class="text-text-3" data-field="note"></span>
+                    </td>
+                </tr>
+            </template>
             <p class="text-text-3 text-xs">
-                Populated by a live probe to the active service worker. Stays "—" if no service worker currently
-                controls this page (JS disabled, or first visit).
+                Populated by a live probe to each service worker. A waiting worker whose version matches Deployed is the
+                update this browser is about to apply. Stays "—" if no service worker is registered (JS disabled, or
+                first visit).
             </p>
         </section>
 
