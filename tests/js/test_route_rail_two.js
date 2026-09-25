@@ -394,31 +394,33 @@ describe('the cursor point (SNOW-1019)', () => {
 });
 
 describe('the rows (SNOW-1019, SNOW-1024)', () => {
-  it('draws no profile and no distance scale: bands, ribbon and passages only', () => {
+  it('draws no profile and no distance scale: bands, wedges and passages only', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     expect(lane.querySelectorAll('path')).toHaveLength(0);
-    // Every line in the lane is a ribbon tick or the cursor; no tick marks.
+    // Every line in the lane is a wedge's ground line or the cursor.
     lane.querySelectorAll('line').forEach((line) => {
       expect(
-        line.classList.contains('route-rail-two-tick') || line.hasAttribute('data-route-rail-two-cursor'),
+        line.classList.contains('route-rail-two-wedge') || line.hasAttribute('data-route-rail-two-cursor'),
       ).toBe(true);
     });
     expect(row.querySelectorAll('[data-route-rail-two-ticks]')).toHaveLength(0);
     expect(lane.getAttribute('viewBox')).toBe(`0 0 600 ${self.pwaRouteRailTwoCore.ROWS.height}`);
   });
 
-  it('lays a 44 px lane: band 10, a 4 px gap, the bank row, then 4 px', () => {
+  it('lays a 44 px lane: band 10, a 4 px gap, the wedges 14–40, passages in the foot', () => {
     const rows = self.pwaRouteRailTwoCore.ROWS;
 
     expect(rows.height).toBe(44);
     expect(rows.bandTop).toBe(0);
     expect(rows.bandHeight).toBe(10);
-    // The bank row runs 14–40: ribbon ticks, then the passage bars.
-    expect(rows.ribbonY - rows.ribbonHalf).toBeGreaterThanOrEqual(14);
-    expect(rows.passageTop).toBeGreaterThan(rows.ribbonY + rows.ribbonHalf);
-    expect(rows.passageTop + rows.passageHeight).toBe(rows.height - 4);
+    // A capped wedge spans 14–40; the passage bars sit below it (SNOW-1031).
+    expect(rows.ribbonHalf).toBe(self.pwaBankRibbonCore.CAP_PX);
+    expect(rows.ribbonY - rows.ribbonHalf).toBe(14);
+    expect(rows.ribbonY + rows.ribbonHalf).toBe(40);
+    expect(rows.passageTop).toBeGreaterThan(40);
+    expect(rows.passageTop + rows.passageHeight).toBe(rows.height);
   });
 });
 
@@ -455,38 +457,94 @@ describe('the empty state (SNOW-1024)', () => {
   });
 });
 
-describe('the ribbon', () => {
-  it('draws no tick for a null bank', () => {
-    const banks = BANKS.slice();
-    banks[103] = null;
+describe('the wedges (SNOW-1031)', () => {
+  /** Open leg 2 zoomed in on sample 103, with the given banks. */
+  function openZoomed(banks) {
     const { cursor } = attach({ banks });
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(103);
     row.querySelector('[data-route-rail-two-zoom="in"]').click();
+  }
 
-    const drawn = Array.from(lane.querySelectorAll('.route-rail-two-tick')).map((line) =>
-      Number(line.getAttribute('data-index')),
+  /** The drawn marks of one kind ('up', 'down' or 'ground') at a sample. */
+  function marks(kind, index) {
+    return lane.querySelectorAll(`.route-rail-two-wedge[data-wedge="${kind}"][data-index="${index}"]`);
+  }
+
+  it('draws no glyph for a null bank', () => {
+    const banks = BANKS.slice();
+    banks[103] = null;
+    openZoomed(banks);
+
+    const drawn = Array.from(lane.querySelectorAll('.route-rail-two-wedge[data-wedge="ground"]')).map(
+      (line) => Number(line.getAttribute('data-index')),
     );
     expect(drawn).toContain(102);
     expect(drawn).toContain(104);
     expect(drawn).not.toContain(103);
   });
 
-  it('inks a strong bank and mutes the rest', () => {
+  it('fills the uphill wedge solid and the downhill one pale, in tokens', () => {
     const banks = BANKS.slice();
     banks[102] = 40;
-    banks[104] = 5;
-    const { cursor } = attach({ banks });
-    cursor.openLeg(LEGS[1]);
-    cursor.setIndex(103);
-    row.querySelector('[data-route-rail-two-zoom="in"]').click();
+    openZoomed(banks);
 
-    const stroke = (index) =>
-      lane.querySelector(`.route-rail-two-tick[data-index="${index}"]`).getAttribute('stroke');
-    expect(stroke(102)).toBe('var(--color-text-1)');
-    expect(stroke(104)).toBe('var(--color-text-3)');
+    const [up] = marks('up', 102);
+    const [down] = marks('down', 102);
+    const [ground] = marks('ground', 102);
+    expect(up.tagName).toBe('polygon');
+    expect(up.getAttribute('fill')).toBe('var(--color-text-2)');
+    expect(up.hasAttribute('fill-opacity')).toBe(false);
+    expect(down.getAttribute('fill')).toBe('var(--color-text-2)');
+    expect(down.getAttribute('fill-opacity')).toBe('0.3');
+    expect(ground.tagName).toBe('line');
+    expect(ground.getAttribute('stroke')).toBe('var(--color-text-1)');
+    for (const mark of [up, down, ground]) {
+      expect(mark.getAttribute('pointer-events')).toBe('none');
+    }
   });
 
+  it('puts the pale wedge on the side the ground falls away to', () => {
+    const banks = BANKS.slice();
+    banks[102] = 30;
+    banks[104] = -30;
+    openZoomed(banks);
+
+    const xs = (el) => el.getAttribute('points').split(' ').map((p) => Number(p.split(',')[0]));
+    const centre = (index) => {
+      const g = marks('ground', index)[0];
+      return (Number(g.getAttribute('x1')) + Number(g.getAttribute('x2'))) / 2;
+    };
+    expect(Math.min(...xs(marks('down', 102)[0]))).toBeGreaterThanOrEqual(centre(102) - 0.01);
+    expect(Math.max(...xs(marks('down', 104)[0]))).toBeLessThanOrEqual(centre(104) + 0.01);
+  });
+
+  it('draws the fall line as a flat ground line with no fills', () => {
+    const banks = BANKS.slice();
+    banks[102] = 0;
+    openZoomed(banks);
+
+    expect(marks('up', 102)).toHaveLength(0);
+    expect(marks('down', 102)).toHaveLength(0);
+    const [ground] = marks('ground', 102);
+    expect(ground.getAttribute('y1')).toBe(ground.getAttribute('y2'));
+  });
+
+  it('keeps every glyph inside the bank row, clear of the passages', () => {
+    const banks = BANKS.slice();
+    banks[102] = 80;
+    banks[104] = -80;
+    openZoomed(banks);
+
+    const rows = self.pwaRouteRailTwoCore.ROWS;
+    lane.querySelectorAll('.route-rail-two-wedge[data-wedge="ground"]').forEach((line) => {
+      for (const y of [line.getAttribute('y1'), line.getAttribute('y2')].map(Number)) {
+        expect(y).toBeGreaterThanOrEqual(14);
+        expect(y).toBeLessThanOrEqual(40);
+        expect(y).toBeLessThan(rows.passageTop);
+      }
+    });
+  });
 });
 
 describe('the readout (SNOW-1024)', () => {

@@ -196,58 +196,79 @@ describe('tickPitch', () => {
   });
 });
 
-describe('ribbonTicks', () => {
+describe('ribbonWedges', () => {
   const banks = Array.from({ length: 300 }, (_, i) => (i % 2 ? 30 : -30));
 
-  it('puts one tick on each sample centre once zoomed in, however far panned', () => {
+  it('puts one glyph on each sample centre once zoomed in, however far panned', () => {
     const view = { from: 120.4, to: 140.4 };
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+    const wedges = core.ribbonWedges({
+      bankWedges: self.pwaBankRibbonCore.bankWedges,
       banks,
       leg: LEG,
       view,
       width: 600,
     });
-    expect(ticks.length).toBeGreaterThanOrEqual(19);
-    for (const tick of ticks) {
-      expect(tick.x).toBeCloseTo(core.xOf(tick.index + 0.5, view, 600));
+    expect(wedges.length).toBeGreaterThanOrEqual(19);
+    for (const w of wedges) {
+      expect(w.x).toBeCloseTo(core.xOf(w.index + 0.5, view, 600));
     }
-    expect(new Set(ticks.map((t) => t.index)).size).toBe(ticks.length);
+    expect(new Set(wedges.map((w) => w.index)).size).toBe(wedges.length);
   });
 
-  it('keeps the base pitch at a wide view', () => {
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+  it('shifts the ground line and both wedges by the same phase as the centre', () => {
+    const view = { from: 120.4, to: 140.4 };
+    const wedges = core.ribbonWedges({
+      bankWedges: self.pwaBankRibbonCore.bankWedges,
+      banks,
+      leg: LEG,
+      view,
+      width: 600,
+      y: 27,
+    });
+    for (const w of wedges) {
+      expect((w.ground.x1 + w.ground.x2) / 2).toBeCloseTo(w.x, 9);
+      expect(w.up[1]).toEqual([w.x, 27]);
+      expect(w.down[0]).toEqual([w.x, 27]);
+      // A positive roll falls away right: the pale wedge is right of centre.
+      const pale = w.down.map(([x]) => x);
+      if (w.roll > 0) expect(Math.min(...pale)).toBeGreaterThanOrEqual(w.x);
+      else expect(Math.max(...pale)).toBeLessThanOrEqual(w.x);
+    }
+  });
+
+  it('keeps the 15 px glyph pitch at a wide view', () => {
+    const wedges = core.ribbonWedges({
+      bankWedges: self.pwaBankRibbonCore.bankWedges,
       banks,
       leg: LEG,
       view: { from: 100, to: 200 },
-      width: 400,
+      width: 600,
     });
-    expect(ticks[1].x - ticks[0].x).toBeCloseTo(8);
+    expect(wedges[1].x - wedges[0].x).toBeCloseTo(15);
   });
 
-  it('draws no tick for a null bank', () => {
+  it('draws no glyph for a null bank', () => {
     const gappy = banks.slice();
     gappy[125] = null;
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+    const wedges = core.ribbonWedges({
+      bankWedges: self.pwaBankRibbonCore.bankWedges,
       banks: gappy,
       leg: LEG,
       view: { from: 120, to: 130 },
       width: 600,
     });
-    expect(ticks.map((t) => t.index)).toEqual([120, 121, 122, 123, 124, 126, 127, 128, 129]);
+    expect(wedges.map((w) => w.index)).toEqual([120, 121, 122, 123, 124, 126, 127, 128, 129]);
   });
 
   it('draws nothing outside the leg', () => {
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+    const wedges = core.ribbonWedges({
+      bankWedges: self.pwaBankRibbonCore.bankWedges,
       banks,
       leg: { from: 0, to: 3 },
       view: { from: 0, to: 4 },
       width: 600,
     });
-    expect(ticks.map((t) => t.index)).toEqual([0, 1, 2, 3]);
+    expect(wedges.map((w) => w.index)).toEqual([0, 1, 2, 3]);
   });
 });
 

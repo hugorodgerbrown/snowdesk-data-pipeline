@@ -1,78 +1,135 @@
 /*
- * tests/js/test_bank_ribbon_core.js — the bank ribbon's tick geometry
- * (static/js/bank_ribbon_core.js, SNOW-1021).
+ * tests/js/test_bank_ribbon_core.js — the bank's level-ski wedge geometry
+ * (static/js/bank_ribbon_core.js, SNOW-1021, redrawn by SNOW-1031).
  *
- * Pure geometry: how many ticks a width holds, which segment each reads,
- * how far each leans, and where a null leaves a gap. The case most worth
- * holding is the sign — alternating rolls must alternate the lean, because
- * that alternation is the switchback pattern SNOW-1021 kept the sign for.
+ * Pure geometry: how many glyphs a width holds, which segment each reads,
+ * how far each ground line rises, where the cap and the no-fill threshold
+ * cut in, and where a null leaves a gap. The case most worth holding is
+ * the sign — a positive roll must put the pale (downhill) wedge on the
+ * right and a negative one on the left, because that side is what
+ * SNOW-1021 kept the sign for.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/bank_ribbon_core.js';
 
-const { bankTicks } = self.pwaBankRibbonCore;
-
-/** The lean of a tick from vertical, in degrees, positive to the right. */
-function lean(tick) {
-  return (Math.atan2(tick.x2 - tick.x1, tick.y1 - tick.y2) * 180) / Math.PI;
-}
+const ribbon = self.pwaBankRibbonCore;
+const { bankWedges } = ribbon;
 
 /** An x → index conversion spreading `count` segments across `width`. */
 function linear(count, width) {
   return (x) => Math.floor((x / width) * count);
 }
 
-describe('bankTicks', () => {
-  it('lays one tick per pitch, whatever the segment count', () => {
-    const few = bankTicks({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600) });
-    const many = bankTicks({ banks: Array(600).fill(10), width: 600, indexAt: linear(600, 600) });
-    expect(few).toHaveLength(75);
-    expect(many).toHaveLength(75);
-    expect(bankTicks({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600), pitch: 12 }))
+/** One glyph for one roll, centred at x 7.5, y 27. */
+function one(roll, extra = {}) {
+  return bankWedges({ banks: [roll], width: 15, indexAt: () => 0, y: 27, ...extra })[0];
+}
+
+/** The rise the spec asks for: 7 × 1.5 × tan|roll|, capped at 13. */
+function expectedDy(roll) {
+  return Math.min(13, 7 * 1.5 * Math.tan((Math.abs(roll) * Math.PI) / 180));
+}
+
+describe('constants', () => {
+  it('names the pitch, width, exaggeration, cap and fill threshold', () => {
+    expect(ribbon.GLYPH_PITCH).toBe(15);
+    expect(ribbon.GLYPH_HALF_WIDTH).toBe(7);
+    expect(ribbon.EXAGGERATION).toBe(1.5);
+    expect(ribbon.CAP_PX).toBe(13);
+    expect(ribbon.MIN_FILL_PX).toBe(0.6);
+  });
+});
+
+describe('bankWedges', () => {
+  it('lays one glyph per pitch, whatever the segment count', () => {
+    const few = bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600) });
+    const many = bankWedges({ banks: Array(600).fill(10), width: 600, indexAt: linear(600, 600) });
+    expect(few).toHaveLength(40);
+    expect(many).toHaveLength(40);
+    expect(bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600), pitch: 12 }))
       .toHaveLength(50);
   });
 
-  it('centres each tick in its slot and reads the segment under it', () => {
-    const ticks = bankTicks({ banks: [5, 6, 7, 8], width: 32, indexAt: linear(4, 32) });
-    expect(ticks.map((tick) => tick.x)).toEqual([4, 12, 20, 28]);
-    expect(ticks.map((tick) => tick.index)).toEqual([0, 1, 2, 3]);
-    expect(ticks.map((tick) => tick.roll)).toEqual([5, 6, 7, 8]);
+  it('centres each glyph in its slot and reads the segment under it', () => {
+    const wedges = bankWedges({ banks: [5, 6, 7, 8], width: 60, indexAt: linear(4, 60) });
+    expect(wedges.map((w) => w.x)).toEqual([7.5, 22.5, 37.5, 52.5]);
+    expect(wedges.map((w) => w.index)).toEqual([0, 1, 2, 3]);
+    expect(wedges.map((w) => w.roll)).toEqual([5, 6, 7, 8]);
   });
 
-  it.each([0, 12, -12, 40, -40])('leans a %s° roll by that many degrees', (roll) => {
-    const [tick] = bankTicks({ banks: [roll], width: 8, indexAt: () => 0, y: 20 });
-    expect(lean(tick)).toBeCloseTo(roll, 9);
-    expect(Math.hypot(tick.x2 - tick.x1, tick.y2 - tick.y1)).toBeCloseTo(18, 9);
-    expect((tick.y1 + tick.y2) / 2).toBeCloseTo(20, 9);
+  it('draws a 0° roll flat on the centre line, with no fills', () => {
+    const w = one(0);
+    expect(w.dy).toBe(0);
+    expect(w.ground).toEqual({ x1: 0.5, y1: 27, x2: 14.5, y2: 27 });
+    expect(w.up).toBeNull();
+    expect(w.down).toBeNull();
   });
 
-  it('leans a positive roll right and a negative one left (SNOW-1021)', () => {
-    const ticks = bankTicks({ banks: [30, -30, 30, -30], width: 32, indexAt: linear(4, 32) });
-    expect(ticks.map((tick) => Math.sign(tick.x2 - tick.x))).toEqual([1, -1, 1, -1]);
-    expect(ticks.every((tick) => tick.y2 < tick.y1)).toBe(true);
+  it.each([5, -5, 12, -12, 30, -30, 45, -45])('rises a %s° roll by 7·1.5·tan', (roll) => {
+    const w = one(roll);
+    expect(w.dy).toBeCloseTo(expectedDy(roll), 9);
+    expect(w.ground.y1).toBeCloseTo(27 - w.dy, 9);
+    expect(w.ground.y2).toBeCloseTo(27 + w.dy, 9);
+    // The ground line pivots on the glyph's centre.
+    expect((w.ground.x1 + w.ground.x2) / 2).toBeCloseTo(7.5, 9);
+    expect(Math.abs(w.ground.x2 - w.ground.x1)).toBeCloseTo(14, 9);
+  });
+
+  it.each([60, -60, 80, -80, 89])('caps a %s° roll at 13 px', (roll) => {
+    expect(one(roll).dy).toBe(13);
+  });
+
+  it('holds a custom cap and exaggeration', () => {
+    expect(one(60, { capPx: 9 }).dy).toBe(9);
+    expect(one(20, { exaggeration: 1 }).dy).toBeCloseTo(7 * Math.tan((20 * Math.PI) / 180), 9);
+  });
+
+  it('puts the pale wedge right for a positive roll and left for a negative one', () => {
+    const right = one(30);
+    expect(right.ground.x1).toBeLessThan(right.ground.x2);
+    expect(right.down.every(([x]) => x >= right.x)).toBe(true);
+    expect(right.up.every(([x]) => x <= right.x)).toBe(true);
+
+    const left = one(-30);
+    expect(left.ground.x1).toBeGreaterThan(left.ground.x2);
+    expect(left.down.every(([x]) => x <= left.x)).toBe(true);
+    expect(left.up.every(([x]) => x >= left.x)).toBe(true);
+  });
+
+  it('draws the uphill wedge above the skis and the downhill one below', () => {
+    const w = one(30);
+    expect(w.up).toEqual([[0.5, 27 - w.dy], [7.5, 27], [0.5, 27]]);
+    expect(w.down).toEqual([[7.5, 27], [14.5, 27 + w.dy], [14.5, 27]]);
+  });
+
+  it('keeps the ground line but drops the fills for a tiny roll', () => {
+    const w = one(1);
+    expect(w.dy).toBeCloseTo(0.183, 3);
+    expect(w.ground).not.toBeNull();
+    expect(w.up).toBeNull();
+    expect(w.down).toBeNull();
+  });
+
+  it('fills from the threshold up', () => {
+    // 7 × 1.5 × tan(4°) ≈ 0.73 px, over the 0.6 px threshold.
+    expect(one(4).up).not.toBeNull();
+    expect(one(3).up).toBeNull();
   });
 
   it('leaves a gap for a null bank rather than drawing it flat', () => {
-    const ticks = bankTicks({ banks: [10, null, 10], width: 24, indexAt: linear(3, 24) });
-    expect(ticks.map((tick) => tick.index)).toEqual([0, 2]);
+    const wedges = bankWedges({ banks: [10, null, 10], width: 45, indexAt: linear(3, 45) });
+    expect(wedges.map((w) => w.index)).toEqual([0, 2]);
   });
 
   it('draws nothing for an index outside the banks', () => {
-    const ticks = bankTicks({ banks: [10, 10], width: 32, indexAt: (x) => x / 8 - 1.4 });
-    expect(ticks.map((tick) => tick.index)).toEqual([0, 1]);
-  });
-
-  it('marks a tick strong at the threshold, on either side', () => {
-    const ticks = bankTicks({ banks: [24, 25, -25, -24], width: 32, indexAt: linear(4, 32) });
-    expect(ticks.map((tick) => tick.strong)).toEqual([false, true, true, false]);
-    const custom = bankTicks({ banks: [15], width: 8, indexAt: () => 0, strongDeg: 15 });
-    expect(custom[0].strong).toBe(true);
+    const wedges = bankWedges({ banks: [10, 10], width: 60, indexAt: (x) => x / 15 - 1.4 });
+    expect(wedges.map((w) => w.index)).toEqual([0, 1]);
   });
 
   it('rejects a non-positive pitch and a negative width', () => {
-    expect(() => bankTicks({ banks: [], width: 10, indexAt: () => 0, pitch: 0 })).toThrow(RangeError);
-    expect(() => bankTicks({ banks: [], width: -1, indexAt: () => 0 })).toThrow(RangeError);
+    expect(() => bankWedges({ banks: [], width: 10, indexAt: () => 0, pitch: 0 })).toThrow(RangeError);
+    expect(() => bankWedges({ banks: [], width: -1, indexAt: () => 0 })).toThrow(RangeError);
   });
 });

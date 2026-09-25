@@ -4,8 +4,8 @@
  *
  * Rail two opens under rail one when a leg is pressed. It draws the open
  * leg on three rows sharing one x-axis — a strip of slope bands, the track
- * line drawn as the bank ribbon (bank_ribbon_core.js), and one bar per
- * no-fall passage — and it pans and zooms within the leg. (It drew the
+ * drawn as a row of level-ski wedges showing its bank (bank_ribbon_core.js,
+ * SNOW-1031), and one bar per no-fall passage — and it pans and zooms within the leg. (It drew the
  * leg's elevation profile above them until SNOW-1019 took the row out;
  * the leg's profile is still read here, for the identity cell's figures.
  * Its distance scale went in SNOW-1024: rail one already prints where
@@ -67,9 +67,9 @@
  *   sampleAt(x, view, width)                  → the axis coordinate at px
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
- *   tickPitch(span, width, basePitch)         → the ribbon's tick pitch
- *   tickPhase(view, width, pitch)             → px the ticks scroll by
- *   ribbonTicks(options)                      → bankTicks, laid on the view
+ *   tickPitch(span, width, basePitch)         → the wedges' pitch
+ *   tickPhase(view, width, pitch)             → px the wedges scroll by
+ *   ribbonWedges(options)                     → bankWedges, laid on the view
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
@@ -97,6 +97,22 @@
    *   A run of segments sharing one class, sample indices inclusive;
    *   `classIndex` is the index into `pwaRouteSlopeCore.CLASSES`, or null
    *   for a run of unknown angles.
+   */
+
+  /**
+   * @typedef {{
+   *   x: number,
+   *   index: number,
+   *   roll: number,
+   *   dy: number,
+   *   ground: {x1: number, y1: number, x2: number, y2: number},
+   *   up: ?Array<[number, number]>,
+   *   down: ?Array<[number, number]>,
+   * }} RibbonWedge
+   *   One level-ski glyph, the shape `pwaBankRibbonCore.bankWedges`
+   *   returns: its centre `x`, the sample it reads, the signed roll, the
+   *   rise either side of the centre, the ground line and the uphill and
+   *   downhill triangles (null under the fill threshold).
    */
 
   /**
@@ -137,10 +153,12 @@
    * The lane's vertical layout, in px. The svg is drawn at this height in
    * real pixels (the partial's `h-11`, 44 px), so these are screen units.
    *
-   * The band strip (0–10), a 4 px gap, the bank row (14–40: the ribbon
-   * about y 23 and the no-fall bars at 34–40 under it), then 4 px at the
-   * foot, and nothing else: SNOW-1024 took the distance ticks off the foot,
-   * so no dead space sits between the band, the bank row and the readout.
+   * The band strip (0–10), a 4 px gap, the bank row (14–40: the wedges
+   * centred on y 27, rising at most `ribbonHalf` — bank_ribbon_core.js's
+   * CAP_PX — either side), then the no-fall bars at 41–44 in the foot, so
+   * a capped wedge never covers a passage (SNOW-1031). SNOW-1024 took the
+   * distance ticks off the foot, so no dead space sits between the band,
+   * the bank row and the readout.
    * SNOW-1019 took the leg's elevation profile off the top: at a 2 km
    * window it drew near-flat and said nothing rail one's highlighted leg
    * does not.
@@ -149,10 +167,10 @@
     height: 44,
     bandTop: 0,
     bandHeight: 10,
-    ribbonY: 23,
-    ribbonHalf: 8,
-    passageTop: 34,
-    passageHeight: 6,
+    ribbonY: 27,
+    ribbonHalf: 13,
+    passageTop: 41,
+    passageHeight: 3,
   });
 
   /**
@@ -420,10 +438,10 @@
   }
 
   /**
-   * The ribbon's tick pitch in px.
+   * The wedges' pitch in px.
    *
    * `basePitch` until a sample is wider than that, then one sample's
-   * width, so `bankTicks` draws one tick per sample once zoomed in.
+   * width, so `bankWedges` draws one glyph per sample once zoomed in.
    *
    * @param {number} span Samples across the lane.
    * @param {number} width The lane's width in px.
@@ -435,12 +453,12 @@
   }
 
   /**
-   * How far the ribbon's ticks are scrolled left, in px.
+   * How far the wedges are scrolled left, in px.
    *
-   * The ticks are pinned to the GROUND, not to the lane: a tick sits at
+   * The glyphs are pinned to the GROUND, not to the lane: a glyph sits at
    * whole multiples of `pitch` from the leg's axis origin, so a pan
    * carries them along instead of making them shimmer between samples.
-   * At a per-sample pitch that puts each tick on its sample's centre.
+   * At a per-sample pitch that puts each glyph on its sample's centre.
    *
    * @param {View} view
    * @param {number} width
@@ -454,44 +472,47 @@
   }
 
   /**
-   * The bank ribbon's ticks for the view, pinned to the ground.
+   * The level-ski wedges for the view, pinned to the ground (SNOW-1031).
    *
-   * `bankTicks` lays ticks from the lane's left edge; this asks it for one
-   * pitch more than the lane and slides the row left by `tickPhase`, so
-   * each tick stays on the same ground as the view pans. Ticks off either
-   * edge, and any reading a sample outside the leg, are dropped.
+   * `bankWedges` lays glyphs from the lane's left edge; this asks it for
+   * one pitch more than the lane and slides the row left by `tickPhase`,
+   * so each glyph stays on the same ground as the view pans. Glyphs whose
+   * centre is off either edge, and any reading a sample outside the leg,
+   * are dropped.
    *
    * @param {{
-   *   bankTicks: function(Object): Array<{x: number, index: number,
-   *     roll: number, x1: number, y1: number, x2: number, y2: number,
-   *     strong: boolean}>,
+   *   bankWedges: function(Object): Array<RibbonWedge>,
    *   banks: Array<?number>,
    *   leg: Leg,
    *   view: View,
    *   width: number,
    *   basePitch?: number,
-   *   halfLength?: number,
-   *   strongDeg?: number,
+   *   halfWidth?: number,
+   *   exaggeration?: number,
+   *   capPx?: number,
+   *   minFillPx?: number,
    *   y?: number,
-   * }} options `bankTicks` is `pwaBankRibbonCore.bankTicks`; the rest as
-   *   that function and this module name them.
-   * @returns {Array<{x: number, index: number, roll: number, x1: number,
-   *   y1: number, x2: number, y2: number, strong: boolean}>} In lane px.
+   * }} options `bankWedges` is `pwaBankRibbonCore.bankWedges`; the rest
+   *   as that function and this module name them. `basePitch` defaults to
+   *   15, the core's `GLYPH_PITCH`.
+   * @returns {Array<RibbonWedge>} In lane px.
    */
-  function ribbonTicks(options) {
+  function ribbonWedges(options) {
     var view = options.view;
     var width = options.width;
     var leg = options.leg;
     if (!Array.isArray(options.banks) || !(width > 0)) return [];
     var span = view.to - view.from;
-    var pitch = tickPitch(span, width, options.basePitch === undefined ? 8 : options.basePitch);
+    var pitch = tickPitch(span, width, options.basePitch === undefined ? 15 : options.basePitch);
     var phase = tickPhase(view, width, pitch);
-    var ticks = options.bankTicks({
+    var wedges = options.bankWedges({
       banks: options.banks,
       width: width + pitch,
       pitch: pitch,
-      halfLength: options.halfLength,
-      strongDeg: options.strongDeg,
+      halfWidth: options.halfWidth,
+      exaggeration: options.exaggeration,
+      capPx: options.capPx,
+      minFillPx: options.minFillPx,
       y: options.y,
       /** @param {number} x */
       indexAt: function (x) {
@@ -499,18 +520,31 @@
         return index >= leg.from && index <= leg.to ? index : -1;
       },
     });
-    return ticks
-      .filter(function (tick) { return tick.x - phase >= 0 && tick.x - phase <= width; })
-      .map(function (tick) {
+    /**
+     * @param {?Array<[number, number]>} points
+     * @returns {?Array<[number, number]>}
+     */
+    function shift(points) {
+      return points
+        ? points.map(function (p) { return /** @type {[number, number]} */ ([p[0] - phase, p[1]]); })
+        : null;
+    }
+    return wedges
+      .filter(function (w) { return w.x - phase >= 0 && w.x - phase <= width; })
+      .map(function (w) {
         return {
-          x: tick.x - phase,
-          index: tick.index,
-          roll: tick.roll,
-          x1: tick.x1 - phase,
-          y1: tick.y1,
-          x2: tick.x2 - phase,
-          y2: tick.y2,
-          strong: tick.strong,
+          x: w.x - phase,
+          index: w.index,
+          roll: w.roll,
+          dy: w.dy,
+          ground: {
+            x1: w.ground.x1 - phase,
+            y1: w.ground.y1,
+            x2: w.ground.x2 - phase,
+            y2: w.ground.y2,
+          },
+          up: shift(w.up),
+          down: shift(w.down),
         };
       });
   }
@@ -715,7 +749,7 @@
     clip: clip,
     tickPitch: tickPitch,
     tickPhase: tickPhase,
-    ribbonTicks: ribbonTicks,
+    ribbonWedges: ribbonWedges,
     legProfile: legProfile,
     legFigures: legFigures,
   });

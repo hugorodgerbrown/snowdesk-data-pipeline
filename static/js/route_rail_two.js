@@ -19,8 +19,9 @@
  * row outright.
  *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
- * comment has the axis): the strip of slope bands, the track line drawn as
- * the bank ribbon (bank_ribbon_core.js), and one bar per no-fall passage;
+ * comment has the axis): the strip of slope bands, the track drawn as a
+ * row of level-ski wedges showing its bank (bank_ribbon_core.js,
+ * SNOW-1031), and one bar per no-fall passage;
  * then the cursor line, the selection's outline, and edge fades where more
  * leg lies beyond the window. The leg's elevation profile was a fourth row
  * above the bands until SNOW-1019 removed it: at a 2 km window it drew
@@ -29,9 +30,10 @@
  * bracket already says where the window sits on the route.
  *
  * REAL PIXELS. The svg's viewBox is the lane's measured width and never
- * stretched: the ribbon's tick lean IS the bank angle, and a lane squeezed
- * to 0.6× would draw a 45° bank at about 31°. Zoom and pan are therefore a
- * re-projection of every mark, not a transform, so strokes, ticks and bars
+ * stretched: a wedge's ground line is the bank angle (exaggerated by a
+ * fixed factor), and a lane squeezed to 0.6× would flatten every one of
+ * them. Zoom and pan are therefore a
+ * re-projection of every mark, not a transform, so strokes, wedges and bars
  * stay in screen units at any zoom. A `ResizeObserver` redraws on resize.
  *
  * THE WINDOW IS RAIL TWO'S OWN. The view and the span live here, never on
@@ -93,8 +95,6 @@
 
   /** The lane's width when it has not been laid out (jsdom, a hidden rail). */
   var FALLBACK_WIDTH = 600;
-  /** The ribbon's tick pitch at a wide view, in px. */
-  var BASE_PITCH = 8;
   /** How far a press moves before it is a pan, in px. */
   var DRAG_PX = 4;
   /** Ctrl/⌘-wheel zoom rate: the span scales by exp(deltaY × this). */
@@ -577,40 +577,71 @@
     });
   }
 
-  /** The track line, drawn as the bank ribbon. */
+  /**
+   * The track, drawn as level-ski wedges (SNOW-1031): per glyph the
+   * uphill triangle solid, the downhill one pale, then the ground line
+   * over both. Colours are tokens; bank_ribbon_core.js owns the geometry.
+   */
   function drawRibbon() {
     var c = core();
-    if (!self.pwaBankRibbonCore) return;
-    c.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+    var ribbon = self.pwaBankRibbonCore;
+    if (!ribbon) return;
+    /**
+     * @param {Array<[number, number]>} points
+     * @returns {string}
+     */
+    function pointsAttr(points) {
+      return points.map(function (p) { return p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+    }
+    c.ribbonWedges({
+      bankWedges: ribbon.bankWedges,
       banks: banks(),
       leg: leg,
       view: view,
       width: width,
-      basePitch: BASE_PITCH,
-      halfLength: c.ROWS.ribbonHalf,
+      basePitch: ribbon.GLYPH_PITCH,
+      capPx: c.ROWS.ribbonHalf,
       y: c.ROWS.ribbonY,
-    }).forEach(function (tick) {
+    }).forEach(function (wedge) {
+      var index = String(wedge.index);
+      if (wedge.up) {
+        lane.appendChild(svgEl('polygon', {
+          points: pointsAttr(wedge.up),
+          fill: 'var(--color-text-2)',
+          class: 'route-rail-two-wedge',
+          'data-wedge': 'up',
+          'data-index': index,
+          'pointer-events': 'none',
+        }));
+      }
+      if (wedge.down) {
+        lane.appendChild(svgEl('polygon', {
+          points: pointsAttr(wedge.down),
+          fill: 'var(--color-text-2)',
+          'fill-opacity': '0.3',
+          class: 'route-rail-two-wedge',
+          'data-wedge': 'down',
+          'data-index': index,
+          'pointer-events': 'none',
+        }));
+      }
       lane.appendChild(svgEl('line', {
-        x1: tick.x1.toFixed(2),
-        y1: tick.y1.toFixed(2),
-        x2: tick.x2.toFixed(2),
-        y2: tick.y2.toFixed(2),
-        // Muted by default and inked where the bank reaches `strongDeg`, so
-        // the eye goes to the lean that matters rather than to a solid
-        // hatch of equal ticks — bank_ribbon_core.js leaves this to the mount.
-        stroke: tick.strong ? 'var(--color-text-1)' : 'var(--color-text-3)',
-        'stroke-width': tick.strong ? '2' : '1.25',
+        x1: wedge.ground.x1.toFixed(2),
+        y1: wedge.ground.y1.toFixed(2),
+        x2: wedge.ground.x2.toFixed(2),
+        y2: wedge.ground.y2.toFixed(2),
+        stroke: 'var(--color-text-1)',
+        'stroke-width': '1.25',
         'stroke-linecap': 'round',
-        class: 'route-rail-two-tick',
-        'data-strong': tick.strong ? 'true' : 'false',
-        'data-index': String(tick.index),
+        class: 'route-rail-two-wedge',
+        'data-wedge': 'ground',
+        'data-index': index,
         'pointer-events': 'none',
       }));
     });
   }
 
-  /** One bar per no-fall passage, under the ribbon. */
+  /** One bar per no-fall passage, in the foot under the wedges. */
   function drawPassages() {
     var c = core();
     passages.forEach(function (passage) {
