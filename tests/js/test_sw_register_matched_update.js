@@ -44,14 +44,23 @@ const registration = {
 /** The `warmCache` run the stubbed controller is holding open, if any. */
 let warmRequestId = null;
 
+/**
+ * What the controlling worker says about every other window, or null for a
+ * worker that never answers `activation-check`.
+ */
+let activationReply = { othersVisible: false, warming: false };
+
 /** `navigator.serviceWorker` listeners, so a test can deliver messages. */
 const containerListeners = {};
 
 Object.defineProperty(navigator, 'serviceWorker', {
   value: {
     controller: {
-      postMessage: (data) => {
+      postMessage: (data, transfer) => {
         if (data && data.type === 'warm-cache') warmRequestId = data.requestId;
+        if (data && data.type === 'activation-check' && activationReply) {
+          transfer[0].postMessage({ type: 'activation-check', ...activationReply });
+        }
       },
     },
     register: vi.fn(() => Promise.resolve(registration)),
@@ -136,6 +145,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   registration.waiting = null;
+  activationReply = { othersVisible: false, warming: false };
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
 });
 
@@ -165,6 +175,30 @@ describe('a waiting worker that holds this page’s shell', () => {
     await settle();
 
     expect(worker.skipped).toBe(1);
+  });
+});
+
+describe('another window (the Codex P1 on #978)', () => {
+  // Matching THIS page's shell says nothing about other windows, and
+  // activation reaches them all.
+  it('holds a matched worker back while another window is on screen', async () => {
+    activationReply = { othersVisible: true, warming: false };
+    const worker = fakeWorker(PAGE_SHELL);
+
+    install(worker);
+    await settle();
+
+    expect(worker.skipped).toBe(0);
+  });
+
+  it('holds a matched worker back while another window is downloading', async () => {
+    activationReply = { othersVisible: false, warming: true };
+    const worker = fakeWorker(PAGE_SHELL);
+
+    install(worker);
+    await settle();
+
+    expect(worker.skipped).toBe(0);
   });
 });
 

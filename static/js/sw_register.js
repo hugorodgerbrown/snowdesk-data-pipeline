@@ -781,6 +781,12 @@
    * activating retires the worker doing the download. ``warmCache`` calls
    * back in here when its last run settles.
    *
+   * Both are also held back while ANY other window is on screen or running
+   * a download (``activationIsSafe``). Activation is origin-wide, so this
+   * page's own state is not enough. That window gets its own turn: it runs
+   * this same function when it is hidden or its download ends, and the last
+   * window to go quiet applies the update.
+   *
    * Posting SKIP_WAITING to a worker that is already activating is
    * harmless. ``skipWaiting()`` resolves at once on a worker that is not
    * waiting.
@@ -804,6 +810,11 @@
     // come back into view, while the registration was being read.
     if (_warmCacheRunsPending > 0) return;
     const immediate = matched !== undefined && waiting === matched;
+    if (!immediate && document.visibilityState !== 'hidden') return;
+    // Every window, not just this one: another may be on screen or mid-download.
+    if (!(await activationIsSafe())) return;
+    // Re-checked after that await too.
+    if (_warmCacheRunsPending > 0) return;
     if (!immediate && document.visibilityState !== 'hidden') return;
     matchedWorker = null;
     silentUpdatePosted = true;
@@ -858,23 +869,19 @@
   const WORKER_SHELL_TIMEOUT_MS = 2000;
 
   /**
-   * Ask a service worker which shell cache it holds (SNOW-952, SNOW-1027).
-   *
-   * The worker answers ``shell-identity`` with its ``CACHE_VERSION``,
-   * derived from the shell content hash. Asked of the controlling worker by
-   * ``shellIsStale``, and of a waiting worker by ``queueSilentUpdate``: a
-   * waiting worker's ``message`` handler runs like any other's, which is
-   * what SKIP_WAITING already relies on.
+   * Send one question to a service worker down its own MessageChannel, and
+   * resolve with the reply (SNOW-952, SNOW-1027).
    *
    * @param {ServiceWorker | null | undefined} worker
-   * @returns {Promise<string>} The cache name, or ``''`` when there is no
-   *   worker, no ``MessageChannel``, or no reply inside the budget. Both
-   *   callers read ``''`` as "cannot tell", each in its own safe direction.
+   * @param {string} type The message type; the reply must carry the same.
+   * @returns {Promise<Object | null>} The reply's data, or ``null`` when there
+   *   is no worker, no ``MessageChannel``, a reply of another type, or no
+   *   reply inside ``WORKER_SHELL_TIMEOUT_MS``.
    */
-  function workerShell(worker) {
+  function askWorker(worker, type) {
     return new Promise((resolve) => {
       if (!worker || typeof MessageChannel !== 'function') {
-        resolve('');
+        resolve(null);
         return;
       }
       /** @type {MessageChannel} */
@@ -882,7 +889,7 @@
       try {
         channel = new MessageChannel();
       } catch (_err) {
-        resolve('');
+        resolve(null);
         return;
       }
       let settled = false;
@@ -891,7 +898,7 @@
        * re-offered the banner does not pile up live ports. ``canOpenOffline``
        * in pwa_network_mode.js closes its port the same way.
        *
-       * @param {string} value
+       * @param {Object | null} value
        */
       const settle = (value) => {
         if (settled) return;
@@ -904,17 +911,62 @@
         }
         resolve(value);
       };
-      const timer = setTimeout(() => settle(''), WORKER_SHELL_TIMEOUT_MS);
+      const timer = setTimeout(() => settle(null), WORKER_SHELL_TIMEOUT_MS);
       channel.port1.onmessage = (event) => {
         const data = event.data;
-        settle(data && data.type === 'shell-identity' ? String(data.cache || '').trim() : '');
+        settle(data && data.type === type ? data : null);
       };
       try {
-        worker.postMessage({ type: 'shell-identity' }, [channel.port2]);
+        worker.postMessage({ type: type }, [channel.port2]);
       } catch (_err) {
-        settle('');
+        settle(null);
       }
     });
+  }
+
+  /**
+   * Ask a service worker which shell cache it holds (SNOW-952, SNOW-1027).
+   *
+   * The worker answers ``shell-identity`` with its ``CACHE_VERSION``,
+   * derived from the shell content hash. Asked of the controlling worker by
+   * ``shellIsStale``, and of a waiting worker by ``queueSilentUpdate``: a
+   * waiting worker's ``message`` handler runs like any other's, which is
+   * what SKIP_WAITING already relies on.
+   *
+   * @param {ServiceWorker | null | undefined} worker
+   * @returns {Promise<string>} The cache name, or ``''`` when the worker
+   *   cannot be asked or does not answer. Both callers read ``''`` as
+   *   "cannot tell", each in its own safe direction.
+   */
+  function workerShell(worker) {
+    return askWorker(worker, 'shell-identity').then((data) =>
+      data ? String(data.cache || '').trim() : '',
+    );
+  }
+
+  /**
+   * Is it safe, for every open window and not just this one, to replace the
+   * controlling worker now? (SNOW-1027)
+   *
+   * Activation is origin-wide. It claims every window and sweeps the old
+   * shell cache, so a decision this page makes alone can pull the worker out
+   * from under another window that is still on screen, or retire the worker
+   * that is running another window's basemap download (this page's own
+   * ``_warmCacheRunsPending`` sees only its own). The controlling worker is
+   * the one that can see all of it: it serves every window's downloads and
+   * can list every window.
+   *
+   * @returns {Promise<boolean>} ``false`` when another window is visible or
+   *   any download is running. ``true`` when neither, and also when the
+   *   worker does not answer: a worker from before this check existed
+   *   cannot be asked, and holding the update back until it could be would
+   *   hold it back forever. That is the pre-SNOW-1027 behaviour, and it
+   *   lasts one deploy.
+   */
+  function activationIsSafe() {
+    return askWorker(navigator.serviceWorker.controller, 'activation-check').then(
+      (data) => !data || (!data.othersVisible && !data.warming),
+    );
   }
 
   /**

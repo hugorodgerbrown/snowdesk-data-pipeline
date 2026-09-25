@@ -20,7 +20,11 @@ last-reviewed: 2026-09-25
   * otherwise the next time `document.visibilityState` becomes `hidden`.
 
   Either way it holds back while any `warmCache` run is queued or in
-  flight. The `controllerchange` that follows does **not** reload the page.
+  flight, **in any window**, and while any other window is on screen. The
+  controlling worker answers that (`activation-check`), because it runs
+  every window's downloads and can list every window. The last window to
+  go quiet applies the update. The `controllerchange` that follows does
+  **not** reload the page.
 * **Stuck worker: the banner.** `window.pwaUpdateBanner.reveal()` shows
   the banner only when both gates agree. Two things ask it: an installing
   worker that goes `redundant` without ever reaching `installed`
@@ -80,6 +84,18 @@ and one waiting from the moment it opened. The page names its shell in
 `serve_sw` and `/api/version` use, so a match is exact. A worker that does
 not answer, or a newer worker that has replaced the one checked, falls back
 to the hide rule.
+
+**Why every window is asked (SNOW-1027 review).** `SKIP_WAITING` is not a
+per-page action. Activation claims every window on the origin and sweeps
+the old shell cache, so one page's view of itself ("I match", "I am
+hidden", "I have no download running") is not enough. Another window can
+be on screen on the old shell, or mid-download on the worker being retired.
+The controlling worker sees every window (`clients.matchAll`) and runs
+every download (`_warmCacheActiveIds`), so it answers `activation-check`
+and the page holds back unless no other window is visible and no download
+runs anywhere. A worker that cannot answer (one deploy, while the old worker
+predates the message) is treated as safe, because holding back until it
+could answer would hold back forever.
 
 **Why not reload after the silent activation.** A reload in a background
 tab still loses whatever the user left there: a half-written trip or field

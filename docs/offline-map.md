@@ -47,8 +47,11 @@ A freshly installed worker sits in the `waiting` state, and
 - otherwise the next time the page is hidden (`visibilitychange` →
   `hidden`: a tab switch, an app switch, a screen lock).
 
-Either way it holds back while a `warmCache` run is queued or in flight, so
-a basemap download is never cut off. On `activate` the worker
+Either way it holds back while a `warmCache` run is queued or in flight in
+any window, and while any other window is on screen. Activation is
+origin-wide, so the page asks the controlling worker (`activation-check`),
+which runs every window's downloads and can list every window. A basemap
+download is never cut off, and no visible window has its worker swapped. On `activate` the worker
 calls `self.clients.claim()`. The resulting `controllerchange` does not
 reload the page: the open page keeps running, and its next navigation
 lands on the new shell.
