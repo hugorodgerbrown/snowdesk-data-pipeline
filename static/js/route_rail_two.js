@@ -105,7 +105,9 @@
  * to the widest span whose bank row draws (`resolveSpan`), centred on the
  * tap; the same on a view already at or inside it returns to the fitted
  * leg. The first tap's selection stands: the second tap of a pair does
- * not toggle it.
+ * not toggle it. A pair whose first press was on the leg picker, or
+ * within `DOUBLE_TAP_MS` of one, does not zoom: a double-click on a
+ * picker segment opens the leg, fitted, and nothing more (SNOW-1033).
  *
  * THE READOUT sits under the lane, ANCHORED to what it reads
  * (SNOW-1024). Under the cursor it is two lines: a word for the terrain —
@@ -267,6 +269,15 @@
   var lastTap = null;
   /** The pointer type of the last press, so `dblclick` acts for a mouse only. */
   var lastPointerType = '';
+  /**
+   * When the leg picker was last pressed, in ms (`Date.now`), so the lane
+   * does not read a press that opened a leg as the first of a double-tap.
+   */
+  var pickerPressAt = -Infinity;
+  /** When the lane was pressed before its last press, in ms. */
+  var prevLanePressAt = -Infinity;
+  /** When the lane was last pressed, in ms. */
+  var lanePressAt = -Infinity;
   /**
    * True while rail two itself writes to the cursor (its pointer, keys,
    * or the clamp after a pan), so `onState` scrolls the least distance
@@ -1629,6 +1640,8 @@
     var id = pointerIdOf(event);
     var x = laneX(event);
     lastPointerType = event.pointerType || '';
+    prevLanePressAt = lanePressAt;
+    lanePressAt = Date.now();
     pointers.set(id, { x: x, y: event.clientY });
     if (pointers.size === 1) {
       press = {
@@ -1722,6 +1735,20 @@
   }
 
   /**
+   * Whether a double-tap whose first press was at `firstPressAt` began on
+   * the leg picker: that press was before the picker's, or within
+   * `DOUBLE_TAP_MS` of it. A double-click on a picker segment opens the
+   * leg and nothing more; its second click, landing on the lane the
+   * picker has just uncovered, must not zoom it (SNOW-1033).
+   *
+   * @param {number} firstPressAt ms, `Date.now`.
+   * @returns {boolean}
+   */
+  function startsOnPicker(firstPressAt) {
+    return firstPressAt < pickerPressAt || firstPressAt - pickerPressAt <= DOUBLE_TAP_MS;
+  }
+
+  /**
    * A press lifted without a drag: a tap, or the second tap of a pair.
    * The second tap never toggles the selection the first one made; for a
    * finger or a pen it zooms (`doubleTap`), and for a mouse the browser's
@@ -1735,8 +1762,9 @@
       && now - lastTap.time <= DOUBLE_TAP_MS
       && Math.abs(ended.x0 - lastTap.x) <= DOUBLE_TAP_PX;
     if (pair) {
+      var firstAt = lastTap.time;
       lastTap = null;
-      if (ended.pointerType !== 'mouse') doubleTap(ended.x0);
+      if (ended.pointerType !== 'mouse' && !startsOnPicker(firstAt)) doubleTap(ended.x0);
       return;
     }
     lastTap = { time: now, x: ended.x0 };
@@ -1754,6 +1782,9 @@
     // A touch double-tap is handled on its lifts; a browser that also
     // synthesises a dblclick for it must not zoom twice.
     if (!ctx || !leg || lastPointerType !== 'mouse') return;
+    // The pair's first press: the lane's press before its last one, or the
+    // picker's when that came later (a double-click that opened the leg).
+    if (startsOnPicker(prevLanePressAt)) return;
     event.preventDefault();
     doubleTap(laneX(/** @type {MouseEvent} */ (event)));
   }));
@@ -1841,6 +1872,7 @@
   if (legsEl) {
     legsEl.addEventListener('click', function (event) {
       if (!ctx || leg) return;
+      pickerPressAt = Date.now();
       var target = /** @type {Element} */ (event.target);
       var button = target && target.closest ? target.closest('.route-rail-two-leg') : null;
       var legs = pickerLegs();
@@ -1904,6 +1936,9 @@
   /** Stop following the cursor and hide the row. */
   function detach() {
     stopMotion();
+    pickerPressAt = -Infinity;
+    prevLanePressAt = -Infinity;
+    lanePressAt = -Infinity;
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     if (frame && typeof window.cancelAnimationFrame === 'function') {

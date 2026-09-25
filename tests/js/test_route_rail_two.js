@@ -629,6 +629,20 @@ describe('the leg picker (SNOW-1033)', () => {
     expect(cursor.state().openLeg).toMatchObject({ from: 140, to: 459 });
   });
 
+  it('opens the leg fitted on a double-click, and does not zoom it', () => {
+    const { cursor } = attach();
+
+    // The first click opens leg 3 from the picker; the second lands on the
+    // lane the picker has just uncovered, and the browser fires dblclick.
+    legButtons()[2].click();
+    pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
+    pointer(lane, 'pointerup', { x: 300, pointerType: 'mouse' });
+    lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
+
+    expect(cursor.state().openLeg).toMatchObject({ from: 140, to: 459 });
+    expect(two.view()).toEqual({ from: 140, to: 460 });
+  });
+
   it('hides the picker with a leg open and restores it on close', () => {
     const { cursor } = attach();
 
