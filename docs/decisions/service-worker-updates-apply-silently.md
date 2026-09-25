@@ -124,6 +124,3 @@ when, and only when, the shell does.
   that worker never answers `shell-identity`, so gate one reads "unknown",
   which is stale. Gate two then finds the new worker installing or waiting,
   so no banner appears.
-* **The release label is still sent** (`release` on `/api/version`,
-  `<meta name="pwa-app-release">`) but has no client reader. Removing it is
-  follow-up work.
