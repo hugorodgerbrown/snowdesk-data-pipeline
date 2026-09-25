@@ -411,6 +411,21 @@ describe('merged bands (SNOW-1032)', () => {
     ]);
   });
 
+  it('measures a sample on the slope record\'s own points, not route length ÷ N', () => {
+    // The route says 50 m a sample, but the samples lie 150 m apart along
+    // the simplified track: a one-sample sliver is 150 m, over the 60 m
+    // threshold, and stays.
+    const step = 150 / 111195;
+    const points = Array.from({ length: N + 1 }, (_, i) => [7.4, 46.1 + i * step]);
+    const { cursor } = attach({ angles: SLIVERED, points });
+    cursor.openLeg(LEGS[1]);
+
+    const spans = bandRects().map((rect) => [rect.getAttribute('data-from'), rect.getAttribute('data-to')]);
+
+    expect(spans).toContainEqual(['107', '107']);
+    expect(spans).toContainEqual(['120', '120']);
+  });
+
   it('selects and reads the merged run, in its own class', () => {
     const { cursor } = attach({ angles: SLIVERED });
     cursor.openLeg(LEGS[1]);

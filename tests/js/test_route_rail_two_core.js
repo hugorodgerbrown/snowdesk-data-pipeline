@@ -59,6 +59,28 @@ describe('bandRuns', () => {
   });
 });
 
+describe('sampledStrideM (SNOW-1032)', () => {
+  // 0.001° of latitude is 111.195 m on the mean-radius sphere.
+  const line = (count, stepDeg) => Array.from({ length: count }, (_, i) => [7.4, 46 + i * stepDeg]);
+
+  it('averages the segment lengths in the range', () => {
+    expect(core.sampledStrideM(line(11, 0.001), { from: 0, to: 9 })).toBeCloseTo(111.195, 2);
+    expect(core.sampledStrideM(line(11, 0.001), { from: 3, to: 4 })).toBeCloseTo(111.195, 2);
+  });
+
+  it('skips a segment with a missing end, and stops at the last point', () => {
+    const points = line(5, 0.001);
+    points[2] = null;
+    // Segments 1 and 2 touch the missing point; 0 and 3 remain.
+    expect(core.sampledStrideM(points, { from: 0, to: 9 })).toBeCloseTo(111.195, 2);
+  });
+
+  it('returns 0 with nothing to measure', () => {
+    expect(core.sampledStrideM(undefined, { from: 0, to: 3 })).toBe(0);
+    expect(core.sampledStrideM([[7.4, 46]], { from: 0, to: 3 })).toBe(0);
+  });
+});
+
 describe('mergeShortRuns (SNOW-1032)', () => {
   // 20 m a sample and a 25 m threshold: a one-sample run is a sliver, a
   // two-sample run is not.

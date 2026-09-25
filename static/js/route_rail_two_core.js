@@ -64,6 +64,7 @@
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
  *   mergeShortRuns(runs, perSampleM, minLengthM) → runs, slivers folded in
+ *   sampledStrideM(points, range)              → mean sample length, metres
  *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
  *   selectionBox(part, view, width, minPx)    → {x, w} of the drawn box
  *   legLength(leg)                            → samples in the leg
@@ -156,6 +157,9 @@
 
   /** How much ground rail two shows when a leg opens, in metres. */
   var WINDOW_M = 2000;
+
+  /** The mean Earth radius, metres — elevation_profile_core.js's figure. */
+  var EARTH_RADIUS_M = 6371008.8;
 
   /** Two numbers closer than this are the same point on the axis. */
   var EPSILON = 1e-6;
@@ -265,6 +269,41 @@
    */
   function steepness(classIndex) {
     return typeof classIndex === 'number' ? classIndex : -1;
+  }
+
+  /**
+   * The mean length of the segments in `range`, measured on the slope
+   * record's own boundary points (SNOW-1032).
+   *
+   * The route's `distance_m` is measured on the full-resolution GPX, but
+   * the slope samples are laid along the SIMPLIFIED track, so dividing
+   * one by the other overstates a sample on a noisy track that simplifies
+   * hard — enough to lift a one-segment sliver past the merge threshold.
+   * Segment i runs from `points[i]` to `points[i + 1]`.
+   *
+   * @param {Array<?Array<number>>} points `slope.points`, [lon, lat, …]
+   *   per boundary; one more than the segments.
+   * @param {{from: number, to: number}} range Segment indices, inclusive.
+   * @returns {number} Metres, or 0 when no segment in the range can be
+   *   measured.
+   */
+  function sampledStrideM(points, range) {
+    if (!Array.isArray(points)) return 0;
+    var total = 0;
+    var count = 0;
+    for (var i = Math.max(0, range.from); i <= range.to && i + 1 < points.length; i += 1) {
+      var a = points[i];
+      var b = points[i + 1];
+      if (!Array.isArray(a) || !Array.isArray(b)) continue;
+      var rad = Math.PI / 180;
+      var dLat = (b[1] - a[1]) * rad;
+      var dLon = (b[0] - a[0]) * rad;
+      var h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      total += 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+      count += 1;
+    }
+    return count ? total / count : 0;
   }
 
   /**
@@ -889,6 +928,7 @@
     ROWS: ROWS,
     bandRuns: bandRuns,
     mergeShortRuns: mergeShortRuns,
+    sampledStrideM: sampledStrideM,
     nearestRange: nearestRange,
     selectionBox: selectionBox,
     legLength: legLength,

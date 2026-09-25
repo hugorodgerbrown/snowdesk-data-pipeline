@@ -414,7 +414,11 @@
     var railCore = self.pwaRouteRailCore;
     leg = openLeg;
     legLine = c.legProfile(ctx.profile, leg, ctx.sampleCount, railCore.clipRun);
-    var perSampleM = ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
+    // Measured on the slope record's own points, not route length ÷ N:
+    // `distance_m` is the full-resolution track's, the samples lie along
+    // the simplified one (sampledStrideM).
+    var perSampleM = c.sampledStrideM(ctx.slope && ctx.slope.points, leg)
+      || (ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0);
     bands = c.mergeShortRuns(c.bandRuns(angles(), classify, leg), perSampleM, minRunM);
     var slope = ctx.slope;
     passages = (slope && Array.isArray(slope.passages) ? slope.passages : []).filter(
