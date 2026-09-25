@@ -368,7 +368,11 @@ URL and fails a page that is in neither state
 The canonical reference is the staff-only **component library at `/_components/`**
 (source: [`apps/public/design_tokens.py`](apps/public/design_tokens.py), variant fixtures in
 [`apps/public/_component_fixtures.py`](apps/public/_component_fixtures.py)). Read it before
-adding any new visual surface. Rules for any change that adds or touches
+adding any new visual surface. The external
+[Snowdesk Design System](https://claude.ai/artifact/6n3bKzXkQfr5QsANFDjPUq) and its
+condensed [`DESIGN.md`](DESIGN.md) at the repo root are synced copies for
+design tools; `src/css/main.css` stays the source of truth for every token.
+Rules for any change that adds or touches
 templates **or `static/js/*.js`** (SNOW-619 — a class string built in
 JavaScript reaches the page exactly as a template one does) — enforced by
 `bin/ds-lint` (`tox -e ds-lint`, and the `lint-guards` CI workflow), which

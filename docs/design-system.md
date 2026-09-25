@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-09-25
 ---
 
 
@@ -36,7 +36,9 @@ sentinels, each either rendered or excluded with a written reason, and
 ## Design tokens
 
 
-The canonical source of truth for all tokens is [`src/css/main.css`](../src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
+The canonical source of truth for all tokens is [`src/css/main.css`](../src/css/main.css), which declares them in a Tailwind v4 `@theme` block. When the CSS and this document disagree, the CSS wins.
+
+The full system — every token, the fonts, the `/_components/` registry rendered as real partials, and the map's layers, marks and controls — is published as the [Snowdesk Design System](https://claude.ai/artifact/6n3bKzXkQfr5QsANFDjPUq), synced from `main@40a5bb7` on 25 September 2026. [`DESIGN.md`](../DESIGN.md) at the repo root condenses it into the DESIGN.md format (YAML tokens plus prose) for coding agents and design tools. Both are copies of `main.css`, not sources; the tables below cover the core tokens only.
 
 ### Typography
 
@@ -71,7 +73,7 @@ Applied when `.dark` is present on `<html>`. EAWS danger colours intentionally d
 | `--color-tag` | `#f5f3ef` | `#302e2a` |
 | `--color-text-1` | `#1a1916` | `#edece8` |
 | `--color-text-2` | `#6b6860` | `#a8a49c` |
-| `--color-text-3` | `#6e6b65` | `#8a867e` |
+| `--color-text-3` | `#6e6b65` | `#9a968e` |
 | `--color-border` | `rgba(0,0,0,0.09)` | `rgba(255,255,255,0.09)` |
 
 ### Colour — interactive accent
@@ -110,8 +112,9 @@ A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render
 
 | Token | Value | Purpose |
 |---|---|---|
-| `--radius-card` | `16px` | Outer card shell |
+| `--radius-card` | `12px` | Outer card shell |
 | `--radius-tag` | `8px` | Problem tag, inner chips |
+| `--radius-sm` | `6px` | Small tag badge, callout icon |
 | `--radius-pill` | `4px` | Timing badge, period pill |
 
 ### Layout
@@ -132,7 +135,7 @@ Content column inside `<nav>` and primary body copy: **640px max-width**, centre
 - When contrast matters, use `text-text-1`, `text-text-2`, or the `--color-eaws-*-text` tokens. `text-text-3` sits on the WCAG AA boundary — never dim it further with `opacity-*`.
 - EAWS tokens are theme-invariant by design: their saturated backgrounds don't change in dark mode, so their foreground text mustn't either (`--color-eaws-*-fg`).
 
-## Design direction (for Claude Design)
+## Design direction
 
 A condensed brief of the editorial character. Expanded reasoning is in "What Snowdesk's design has to do" and "Editorial principles for the page" below.
 
