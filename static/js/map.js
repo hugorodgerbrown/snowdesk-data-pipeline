@@ -2152,6 +2152,12 @@
   // surface the rails are drawn on), so the stretch reads over both leg
   // colours and over any basemap. The cursor dot takes the route line's
   // own fuchsia with the same card-white ring.
+  //
+  // SNOW-1032: a selected slope BAND is drawn in its class colour instead
+  // — the feature's `colour`, route_slope_core.js's hex mirror of
+  // --color-slope-* — over ROUTE_CURSOR_INK as the casing, which is also
+  // the value of --color-route-line-casing (both are #1a1916). A passage
+  // has no `colour` and keeps the ink-over-white look.
   const ROUTE_CURSOR_INK = '#1a1916';
   const ROUTE_CURSOR_HALO = '#ffffff';
 
@@ -2986,7 +2992,10 @@
         'line-join': 'round',
       },
       paint: {
-        'line-color': ROUTE_CURSOR_HALO,
+        // A band's colour sits on the dark route casing
+        // (--color-route-line-casing); the ink core keeps the white halo
+        // (--color-card).
+        'line-color': ['case', ['has', 'colour'], ROUTE_CURSOR_INK, ROUTE_CURSOR_HALO],
         'line-opacity': 0.9,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 12, 9, 16, 14],
       },
@@ -3001,7 +3010,8 @@
         'line-join': 'round',
       },
       paint: {
-        'line-color': ROUTE_CURSOR_INK,
+        // A band's --color-slope-* mirror, else the --color-text-1 ink.
+        'line-color': ['coalesce', ['get', 'colour'], ROUTE_CURSOR_INK],
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 4.5, 16, 7],
       },
     });

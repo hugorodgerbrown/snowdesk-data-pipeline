@@ -5,10 +5,12 @@
  * A selection's inclusive `to` reaching point to + 1, the cursor dot on
  * its segment's middle, the nearest sample on screen with its distance
  * cap, and null for everything a route with no slope record cannot answer.
+ * SNOW-1032: a selected band carries its slope class's hex as `colour`.
  */
 
 import { describe, expect, it } from 'vitest';
 
+import '../../static/js/route_slope_core.js';
 import '../../static/js/route_cursor_map_core.js';
 
 const core = self.pwaRouteCursorMapCore;
@@ -28,6 +30,23 @@ describe('selectionLine', () => {
       coordinates: [[7.0, 46.002], [7.0, 46.004], [7.0, 46.006]],
     });
     expect(line.properties).toEqual({ kind: 'band', from: 1, to: 2 });
+  });
+
+  it('colours a band by its class, the --color-slope-* mirror (SNOW-1032)', () => {
+    const line = core.selectionLine(SLOPE, { kind: 'band', from: 1, to: 1, classIndex: 2 });
+
+    expect(line.properties.colour).toBe(self.pwaRouteSlopeCore.CLASSES[2].hex);
+    expect(line.properties.colour).toBe('#f46f24');
+  });
+
+  it('gives no colour to a passage, an unknown band or an unknown class', () => {
+    const passage = core.selectionLine(SLOPE, { kind: 'passage', from: 0, to: 0, classIndex: 2 });
+    const unknown = core.selectionLine(SLOPE, { kind: 'band', from: 2, to: 2, classIndex: null });
+    const beyond = core.selectionLine(SLOPE, { kind: 'band', from: 0, to: 0, classIndex: 99 });
+
+    expect(passage.properties).not.toHaveProperty('colour');
+    expect(unknown.properties).not.toHaveProperty('colour');
+    expect(beyond.properties).not.toHaveProperty('colour');
   });
 
   it('draws a one-sample selection as its one segment', () => {

@@ -795,6 +795,13 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
+  it('paints a band in its slope colour on the dark casing, a passage in ink (SNOW-1032)', () => {
+    expect(layers.get('routes-cursor-selection').paint['line-color'])
+      .toEqual(['coalesce', ['get', 'colour'], '#1a1916']);
+    expect(layers.get('routes-cursor-selection-casing').paint['line-color'])
+      .toEqual(['case', ['has', 'colour'], '#1a1916', '#ffffff']);
+  });
+
   it('draws the cursor index as a dot on its segment, and hides it on null', () => {
     const cursor = openSampledRoute();
 
