@@ -18,6 +18,16 @@
  * readout, so the empty row reserves no space for it. `detach()` hides the
  * row outright.
  *
+ * THE LEG PICKER (SNOW-1033). The empty lane holds the route's legs, one
+ * `<button class="route-rail-two-leg">` per leg in `[data-route-rail-two-legs]`,
+ * laid on rail one's scale (`legSlots`) so each sits under its leg on the
+ * profile: a descent in the fuchsia tint, a climb in the slate, the leg
+ * number in a darker ink of the same colour, its accessible name rail
+ * one's "Leg 4 — climb". The coloured part is 24 px tall; the button is
+ * the lane's full 44 px. A short leg keeps its true width, and a press in
+ * a gap between buttons picks the leg nearest it within `TAP_RADIUS_PX`
+ * (`nearestRange`). Pressing one calls `cursor.openLeg`, as rail one does.
+ *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
  * comment has the axis): the strip of slope bands, the track drawn as a
  * row of level-ski wedges showing its bank (bank_ribbon_core.js,
@@ -158,6 +168,7 @@
   var zoomOutEl = row.querySelector('[data-route-rail-two-zoom="out"]');
   var zoomInEl = row.querySelector('[data-route-rail-two-zoom="in"]');
   var closeEl = row.querySelector('[data-route-rail-two-close]');
+  var legsEl = row.querySelector('[data-route-rail-two-legs]');
 
   /**
    * What rail one attached: the route's cursor and the data drawn from.
@@ -392,6 +403,7 @@
 
     var changed = row.hidden || row.hasAttribute('data-empty');
     setEmpty(false);
+    if (legsEl) legsEl.hidden = true;
     row.hidden = false;
     if (changed && ctx.onResize) ctx.onResize();
   }
@@ -422,6 +434,83 @@
     }
   }
 
+  /**
+   * A fraction of the lane as a CSS percentage.
+   *
+   * @param {number} fraction
+   * @returns {string}
+   */
+  function percent(fraction) {
+    return (fraction * 100).toFixed(4) + '%';
+  }
+
+  /**
+   * One leg picker segment: a lane-high button with its 24 px fill and
+   * the leg number, inset 1 px each side so neighbours part by 2 px.
+   *
+   * @param {{leg: {i: number, from: number, to: number, climbing: boolean},
+   *   left: number, width: number}} slot A `legSlots` entry.
+   * @returns {HTMLButtonElement}
+   */
+  function legButton(slot) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'route-rail-two-leg absolute top-0 h-11';
+    button.setAttribute('data-climbing', slot.leg.climbing ? 'true' : 'false');
+    button.setAttribute('data-leg-from', String(slot.leg.from));
+    button.setAttribute('data-leg-to', String(slot.leg.to));
+    button.setAttribute('aria-label', legLabel(slot.leg));
+    button.style.left = 'calc(' + percent(slot.left) + ' + 1px)';
+    button.style.width = 'calc(' + percent(slot.width) + ' - 2px)';
+    var fill = document.createElement('span');
+    fill.className = 'route-rail-two-leg-fill absolute inset-x-0 top-2.5 flex h-6 items-center '
+      + 'justify-center overflow-hidden rounded-sm font-mono text-meta';
+    fill.setAttribute('data-route-rail-two-leg-fill', '');
+    fill.setAttribute('aria-hidden', 'true');
+    var number = document.createElement('span');
+    number.className = 'relative';
+    number.setAttribute('data-route-rail-two-leg-number', '');
+    number.textContent = String(slot.leg.i);
+    fill.appendChild(number);
+    button.appendChild(fill);
+    return button;
+  }
+
+  /** The legs the picker offers, in route order. */
+  function pickerLegs() {
+    return ctx ? core().legSlots(ctx.legs, ctx.sampleCount).map(function (slot) {
+      return slot.leg;
+    }) : [];
+  }
+
+  /** Lay the leg picker over the empty lane: one button per leg. */
+  function renderPicker() {
+    if (!legsEl) return;
+    var slots = ctx ? core().legSlots(ctx.legs, ctx.sampleCount) : [];
+    legsEl.replaceChildren.apply(legsEl, slots.map(legButton));
+    legsEl.hidden = slots.length === 0;
+  }
+
+  /** Take the leg picker away, with a leg open or the row hidden. */
+  function clearPicker() {
+    if (!legsEl) return;
+    legsEl.replaceChildren();
+    legsEl.hidden = true;
+  }
+
+  /**
+   * The picker's button for a leg, matched by its ends, or null.
+   *
+   * @param {{from: number, to: number}} target
+   * @returns {?HTMLElement}
+   */
+  function legButtonFor(target) {
+    if (!legsEl) return null;
+    return /** @type {?HTMLElement} */ (legsEl.querySelector(
+      '.route-rail-two-leg[data-leg-from="' + target.from + '"][data-leg-to="' + target.to + '"]',
+    ));
+  }
+
   /** Forget the open leg and every press on it, and clear the drawing. */
   function forgetLeg() {
     leg = null;
@@ -448,6 +537,7 @@
     ['aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']
       .forEach(function (name) { lane.removeAttribute(name); });
     setEmpty(true);
+    renderPicker();
     row.hidden = false;
     if (ctx && ctx.onView) ctx.onView(null, null);
     if (changed && ctx && ctx.onResize) ctx.onResize();
@@ -456,6 +546,7 @@
   /** Hide rail two outright and forget the leg, on detach. */
   function hide() {
     forgetLeg();
+    clearPicker();
     var wasShown = !row.hidden;
     row.hidden = true;
     if (ctx && ctx.onView) ctx.onView(null, null);
@@ -1139,6 +1230,32 @@
       zoomBy(zoomEl.getAttribute('data-route-rail-two-zoom') === 'in' ? 0.5 : 2);
     }
   });
+
+  // The leg picker (SNOW-1033): a press on a segment opens its leg; one in
+  // a gap between segments opens the nearest within TAP_RADIUS_PX, since a
+  // short leg keeps its true, narrow width.
+  if (legsEl) {
+    legsEl.addEventListener('click', function (event) {
+      if (!ctx || leg) return;
+      var target = /** @type {Element} */ (event.target);
+      var button = target && target.closest ? target.closest('.route-rail-two-leg') : null;
+      var legs = pickerLegs();
+      var picked = null;
+      if (button && legsEl.contains(button)) {
+        var from = Number(button.getAttribute('data-leg-from'));
+        var to = Number(button.getAttribute('data-leg-to'));
+        picked = legs.find(function (l) { return l.from === from && l.to === to; }) || null;
+      } else {
+        var measured = legsEl.clientWidth || legsEl.getBoundingClientRect().width;
+        var layerWidth = measured > 0 ? measured : FALLBACK_WIDTH;
+        var x = /** @type {MouseEvent} */ (event).clientX - legsEl.getBoundingClientRect().left;
+        picked = core().nearestRange(
+          legs, x, { from: 0, to: ctx.sampleCount }, layerWidth, TAP_RADIUS_PX,
+        );
+      }
+      if (picked) ctx.cursor.openLeg(picked);
+    });
+  }
 
   if (typeof window.ResizeObserver === 'function') {
     new window.ResizeObserver(function () {

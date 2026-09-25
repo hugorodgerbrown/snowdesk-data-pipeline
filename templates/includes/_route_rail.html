@@ -167,7 +167,7 @@ Context:
         hidden
         role="group"
         aria-labelledby="route-rail-two-eyebrow"
-        class="col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
+        class="relative col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
     >
         <div class="min-w-0">
             <div class="flex items-start justify-between gap-2">
@@ -205,7 +205,7 @@ Context:
             <p data-route-rail-two-figures class="mt-1 font-mono text-meta text-text-2"></p>
         </div>
         {# The lane, drawn in real pixels by static/js/route_rail_two.js.   #}
-        <div class="min-w-0">
+        <div class="relative min-w-0">
             <svg
                 data-route-rail-two-lane
                 role="slider"
@@ -214,6 +214,10 @@ Context:
                 class="route-rail-two-lane block h-11 w-full text-route-line"
             >
             </svg>
+            {# The leg picker (SNOW-1033): one button per leg over the empty  #}
+            {# lane, filled by static/js/route_rail_two.js; hidden with a leg #}
+            {# open.                                                          #}
+            <div data-route-rail-two-legs hidden class="absolute inset-x-0 top-0 h-11"></div>
             {# The readout, anchored under the cursor or the selection by     #}
             {# static/js/route_rail_two.js; the stem carries the cursor line  #}
             {# on from the lane's foot to just above the text.                #}

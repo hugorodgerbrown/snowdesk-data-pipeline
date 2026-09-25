@@ -11,7 +11,10 @@
  * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
  * it, a null bank draws no tick, and the readout reads the
  * terrain under the cursor or the stretch selected, stepped left, centred
- * or right under its anchor (SNOW-1024).
+ * or right under its anchor (SNOW-1024). SNOW-1033: the empty lane is a
+ * leg picker, one button per leg opening it through the cursor, and
+ * opening or closing a leg runs a WAAPI motion that is skipped where
+ * `Element.prototype.animate` is missing or motion is reduced.
  *
  * jsdom lays nothing out, so the lane measures 0 px and rail two falls
  * back to 600 px; a pointer's lane x is its clientX. Pointer events are
@@ -37,7 +40,10 @@ document.body.innerHTML = `
       <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
       <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
       <p data-route-rail-two-figures></p>
-      <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
+      <div>
+        <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
+        <div data-route-rail-two-legs hidden></div>
+      </div>
       <div data-route-rail-two-readout-box>
         <span data-route-rail-two-stem hidden></span>
         <div data-route-rail-two-readout></div>
@@ -58,6 +64,10 @@ const title = row.querySelector('[data-route-rail-two-title]');
 const zoomOutButton = row.querySelector('[data-route-rail-two-zoom="out"]');
 const zoomInButton = row.querySelector('[data-route-rail-two-zoom="in"]');
 const closeButton = row.querySelector('[data-route-rail-two-close]');
+const legsLayer = row.querySelector('[data-route-rail-two-legs]');
+
+/** @returns {Array<HTMLButtonElement>} The leg picker's buttons. */
+const legButtons = () => Array.from(legsLayer.querySelectorAll('.route-rail-two-leg'));
 
 /** @returns {Array<string>} The readout's lines. */
 const readoutLines = () => Array.from(readout.children).map((line) => line.textContent);
@@ -492,6 +502,108 @@ describe('the empty state (SNOW-1024)', () => {
     expect(readoutBox.hidden).toBe(false);
     expect(lane.getAttribute('tabindex')).toBe('0');
     expect(lane.hasAttribute('aria-hidden')).toBe(false);
+  });
+});
+
+describe('the leg picker (SNOW-1033)', () => {
+  it('lays one button per leg on rail one\'s scale, named from the strings', () => {
+    attach();
+
+    expect(legsLayer.hidden).toBe(false);
+    const buttons = legButtons();
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Leg 1 — climb',
+      'Leg 2 — descent',
+    ]);
+    expect(buttons.map((b) => b.getAttribute('data-climbing'))).toEqual(['true', 'false']);
+    expect(buttons.every((b) => b.type === 'button')).toBe(true);
+    // Leg 1 is samples 0–99 of 300, leg 2 the rest; 1 px inset each side.
+    expect(buttons[0].style.left).toBe('calc(0% + 1px)');
+    expect(buttons[0].style.width).toBe('calc(33.3333% - 2px)');
+    expect(buttons[1].style.left).toBe('calc(33.3333% + 1px)');
+    expect(buttons[1].style.width).toBe('calc(66.6667% - 2px)');
+  });
+
+  it('shows the leg number as the only text, in a 24 px fill', () => {
+    attach();
+
+    const [first] = legButtons();
+    expect(first.textContent).toBe('1');
+    const fill = first.querySelector('[data-route-rail-two-leg-fill]');
+    expect(fill.classList.contains('h-6')).toBe(true);
+    expect(first.classList.contains('h-11')).toBe(true);
+  });
+
+  it('opens the pressed leg through the cursor', () => {
+    // The cursor is frozen, so the spy wraps a copy of its methods.
+    const real = self.pwaRouteCursorCore.createRouteCursor(N);
+    const openLeg = vi.fn(real.openLeg);
+    const cursor = { ...real, openLeg };
+    two.attach({
+      cursor,
+      slope: { angles: ANGLES, banks: BANKS, passages: [] },
+      profile: self.pwaElevationProfileCore.readProfile(track(200)),
+      legs: LEGS,
+      sampleCount: N,
+      spanM: SPAN_M,
+    });
+
+    legButtons()[1].click();
+
+    expect(openLeg).toHaveBeenCalledWith(LEGS[1]);
+    expect(cursor.state().openLeg).toMatchObject({ from: 100, to: 299 });
+    expect(title.textContent).toBe('Leg 2 — descent');
+  });
+
+  it('opens the leg under a press in a gap between segments', () => {
+    const { cursor } = attach();
+
+    // 200 px on the 600 px fallback lane is the boundary between legs 1
+    // and 2 — the 2 px gap, on the layer rather than on a button. The leg
+    // holding it wins the tie, as a band does (nearestRange).
+    legsLayer.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 200 }));
+
+    expect(cursor.state().openLeg).toMatchObject({ from: 100, to: 299 });
+  });
+
+  it('picks the nearest leg within 22 px of a press, and none farther', () => {
+    const { cursor } = attach();
+
+    legsLayer.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 630 }));
+    expect(cursor.state().openLeg).toBeNull();
+
+    legsLayer.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 615 }));
+    expect(cursor.state().openLeg).toMatchObject({ from: 100, to: 299 });
+  });
+
+  it('hides the picker with a leg open and restores it on close', () => {
+    const { cursor } = attach();
+
+    cursor.openLeg(LEGS[0]);
+    expect(legsLayer.hidden).toBe(true);
+
+    cursor.closeLeg();
+    expect(legsLayer.hidden).toBe(false);
+    expect(legButtons()).toHaveLength(2);
+  });
+
+  it('offers no picker for a route without legs, and none once detached', () => {
+    const cursor = self.pwaRouteCursorCore.createRouteCursor(N);
+    two.attach({
+      cursor,
+      slope: { angles: ANGLES, banks: BANKS, passages: [] },
+      profile: self.pwaElevationProfileCore.readProfile(track(200)),
+      legs: [],
+      sampleCount: N,
+      spanM: SPAN_M,
+    });
+    expect(legsLayer.hidden).toBe(true);
+    expect(legButtons()).toHaveLength(0);
+
+    attach();
+    two.detach();
+    expect(legsLayer.hidden).toBe(true);
   });
 });
 
