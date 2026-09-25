@@ -21,12 +21,14 @@ x-axis — a strip of slope bands (one per run of segments sharing a class,
 unmerged), the track drawn as level-ski wedges showing its bank, and one bar per
 no-fall passage — and the readout under it, anchored to the cursor or the
 selection (the leg's elevation profile was a fourth row until it was
-taken out: at a 2 km window it drew near-flat and said nothing rail one
-does not; SNOW-1024 took out its distance ticks). With no leg open it
-shows EMPTY (`data-empty`): the eyebrow, "Select a route leg to view
-terrain", an empty lane, and no zoom, close or readout. It opens on 2 km of
-ground (or the whole leg), pans and zooms within the leg, and its bands
-and passages are pressable selections. static/js/route_rail_two.js draws
+taken out: it drew near-flat and said nothing rail one does not;
+SNOW-1024 took out its distance ticks). With no leg open it shows EMPTY
+(`data-empty`): the eyebrow, "Select a route leg to view terrain", an
+empty lane, and no zoom, close or readout. It opens FITTED, the whole leg
+however long (SNOW-1031), pans and zooms within the leg, and its bands
+and passages are pressable selections. Fitted, the bank row may be too
+coarse to draw: it then shows "Zoom in to see the bank", and a double-tap
+zooms to where it draws. static/js/route_rail_two.js draws
 it in REAL PIXELS — the viewBox is the lane's measured width, never
 stretched — because a wedge's ground line draws the bank angle, and a
 stretched wedge would lie about it. Rail one marks the part of the open leg
@@ -267,6 +269,7 @@ Context:
         <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
         <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
         <span data-string="two-placeholder">{% trans "Select a route leg to view terrain" %}</span>
+        <span data-string="two-bank-zoom">{% trans "Zoom in to see the bank" %}</span>
         <span data-string="two-hint">{% trans "Drag to read a point. Tap a band or passage to select it." %}</span>
         <span data-string="class-slope-gentle">{% trans "under 30°" %}</span>
         <span data-string="class-slope-30">{% trans "30–35°" %}</span>

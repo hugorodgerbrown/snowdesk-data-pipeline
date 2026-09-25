@@ -11,7 +11,10 @@
  * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
  * it, a null bank draws no tick, and the readout reads the
  * terrain under the cursor or the stretch selected, stepped left, centred
- * or right under its anchor (SNOW-1024).
+ * or right under its anchor (SNOW-1024). SNOW-1031's revision: a leg opens
+ * fitted, a long one shows the bank placeholder, a double-click or a touch
+ * double-tap zooms to where the bank row draws and back, and passage bars
+ * are 4 px tall and never under 6 px wide.
  *
  * jsdom lays nothing out, so the lane measures 0 px and rail two falls
  * back to 600 px; a pointer's lane x is its clientX. Pointer events are
@@ -19,7 +22,7 @@
  * `pointerId` where it does not.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/route_cursor_core.js';
@@ -62,13 +65,22 @@ const closeButton = row.querySelector('[data-route-rail-two-close]');
 /** @returns {Array<string>} The readout's lines. */
 const readoutLines = () => Array.from(readout.children).map((line) => line.textContent);
 
-/** 300 samples over 15 km: 50 m a sample, so 2 km is 40 samples. */
-const N = 300;
-const SPAN_M = 15000;
+/**
+ * 460 samples over 23 km: 50 m a sample. Leg 2 is 40 samples, 15 px each
+ * fitted across 600 px, so its bank row draws; leg 3 is 320 samples,
+ * 1.9 px each fitted, so its bank row shows the placeholder, and three
+ * zoom-ins halve it to 40.
+ */
+const N = 460;
+const SPAN_M = 23000;
 const LEGS = [
   { i: 1, from: 0, to: 99, climbing: true },
-  { i: 2, from: 100, to: 299, climbing: false },
+  { i: 2, from: 100, to: 139, climbing: false },
+  { i: 3, from: 140, to: 459, climbing: true },
 ];
+
+/** A clock the tests move, so two taps are a double-tap only on purpose. */
+let now = 1e6;
 
 /**
  * Angles in runs of five, 20° then 32°, so every band is five samples wide
@@ -141,6 +153,7 @@ function pointer(target, type, { x = 0, y = 0, id = 1, pointerType = 'touch' } =
  * @param {Element} el A band or passage rect.
  */
 function tap(el) {
+  now += 1000;
   const x = Number(el.getAttribute('x')) + 1;
   pointer(el, 'pointerdown', { x });
   pointer(lane, 'pointerup', { x });
@@ -151,12 +164,31 @@ function bandRects() {
   return Array.from(lane.querySelectorAll('.route-rail-two-band'));
 }
 
+/**
+ * Open leg 3 and zoom in three times about its centre, to the 40-sample
+ * window 280–320.
+ *
+ * @param {object} cursor
+ */
+function openLongZoomed(cursor) {
+  cursor.openLeg(LEGS[2]);
+  zoomInButton.click();
+  zoomInButton.click();
+  zoomInButton.click();
+  expect(two.view()).toEqual({ from: 280, to: 320 });
+}
+
+beforeEach(() => {
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+});
+
 afterEach(() => {
   two.detach();
+  vi.restoreAllMocks();
 });
 
 describe('following the cursor', () => {
-  it('draws openLeg with 2 km of ground and empties on closeLeg', () => {
+  it('draws openLeg fitted and empties on closeLeg', () => {
     const { cursor, onView, onResize } = attach();
     expect(row.hidden).toBe(false);
     expect(row.hasAttribute('data-empty')).toBe(true);
@@ -199,43 +231,43 @@ describe('following the cursor', () => {
     // A map tap or rail one's hover: the cursor lands mid-lane, not on its
     // edge, where the leader line and the cursor line could barely be seen.
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
+    openLongZoomed(cursor);
 
-    cursor.setIndex(200);
+    cursor.setIndex(350);
 
-    // Sample 200's centre, 200.5, in the middle of a 40-sample window.
-    expect(two.view()).toEqual({ from: 180.5, to: 220.5 });
+    // Sample 350's centre, 350.5, in the middle of a 40-sample window.
+    expect(two.view()).toEqual({ from: 330.5, to: 370.5 });
   });
 
   it('still scrolls the least distance for an arrow-key step past the edge', () => {
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
-    cursor.setIndex(139);
-    expect(two.view()).toEqual({ from: 100, to: 140 });
+    openLongZoomed(cursor);
+    cursor.setIndex(319);
+    expect(two.view()).toEqual({ from: 280, to: 320 });
 
     lane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
-    expect(cursor.state().index).toBe(140);
-    expect(two.view()).toEqual({ from: 101, to: 141 });
+    expect(cursor.state().index).toBe(320);
+    expect(two.view()).toEqual({ from: 281, to: 321 });
   });
 
   it('centres a selection from elsewhere that fits the window', () => {
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
+    openLongZoomed(cursor);
 
-    cursor.select({ kind: 'passage', from: 200, to: 209 });
+    cursor.select({ kind: 'passage', from: 330, to: 339 });
 
-    // The range 200–210 centred in 40 samples.
-    expect(two.view()).toEqual({ from: 185, to: 225 });
+    // The range 330–340 centred in 40 samples.
+    expect(two.view()).toEqual({ from: 315, to: 355 });
   });
 
   it('aligns a selection longer than the window with its left edge', () => {
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
+    openLongZoomed(cursor);
 
-    cursor.select({ kind: 'band', from: 180, to: 260 });
+    cursor.select({ kind: 'band', from: 330, to: 400 });
 
-    expect(two.view()).toEqual({ from: 180, to: 220 });
+    expect(two.view()).toEqual({ from: 330, to: 370 });
     expect(lane.querySelector('[data-route-rail-two-selection]')).not.toBeNull();
   });
 });
@@ -298,8 +330,8 @@ describe('pressing a band or a passage', () => {
 
   it('pans on a two-finger drag', () => {
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
-    cursor.setIndex(101);
+    openLongZoomed(cursor);
+    cursor.setIndex(281);
     const from = two.view().from;
 
     pointer(lane, 'pointerdown', { x: 200, id: 1 });
@@ -318,18 +350,30 @@ describe('pressing a band or a passage', () => {
 
   it('pans on a mouse drag and selects nothing', () => {
     const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
-    cursor.setIndex(101);
+    openLongZoomed(cursor);
+    cursor.setIndex(281);
 
     pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
     pointer(lane, 'pointermove', { x: 150, pointerType: 'mouse' });
     pointer(lane, 'pointerup', { x: 150, pointerType: 'mouse' });
 
     // 150 px of 600 is a quarter of the 40-sample window.
-    expect(two.view().from).toBeCloseTo(110);
+    expect(two.view().from).toBeCloseTo(290);
     expect(cursor.state().selection).toBeNull();
     // The cursor was pulled into the window after the pan.
-    expect(cursor.state().index).toBe(110);
+    expect(cursor.state().index).toBe(290);
+  });
+
+  it('stops a pan at the leg\'s end', () => {
+    const { cursor } = attach();
+    openLongZoomed(cursor);
+
+    pointer(lane, 'pointerdown', { x: 50, pointerType: 'mouse' });
+    pointer(lane, 'pointermove', { x: 590, pointerType: 'mouse' });
+    pointer(lane, 'pointermove', { x: 5000, pointerType: 'mouse' });
+    pointer(lane, 'pointerup', { x: 5000, pointerType: 'mouse' });
+
+    expect(two.view()).toEqual({ from: 140, to: 180 });
   });
 });
 
@@ -351,10 +395,7 @@ describe('zoom', () => {
     zoomOut.click();
     zoomOut.click();
     zoomOut.click();
-    zoomOut.click();
-    zoomOut.click();
-    zoomOut.click();
-    expect(span()).toBe(200);
+    expect(span()).toBe(40);
     expect(zoomOut.disabled).toBe(true);
     expect(zoomIn.disabled).toBe(false);
   });
@@ -447,7 +488,7 @@ describe('the rows (SNOW-1019, SNOW-1024)', () => {
     expect(lane.getAttribute('viewBox')).toBe(`0 0 600 ${self.pwaRouteRailTwoCore.ROWS.height}`);
   });
 
-  it('lays a 44 px lane: band 10, a 4 px gap, the wedges 14–40, passages in the foot', () => {
+  it('lays a 44 px lane: band 10, a 4 px gap, the wedges 14–40, passages 4 px under them', () => {
     const rows = self.pwaRouteRailTwoCore.ROWS;
 
     expect(rows.height).toBe(44);
@@ -457,7 +498,8 @@ describe('the rows (SNOW-1019, SNOW-1024)', () => {
     expect(rows.ribbonHalf).toBe(self.pwaBankRibbonCore.CAP_PX);
     expect(rows.ribbonY - rows.ribbonHalf).toBe(14);
     expect(rows.ribbonY + rows.ribbonHalf).toBe(40);
-    expect(rows.passageTop).toBeGreaterThan(40);
+    expect(rows.passageTop).toBe(40);
+    expect(rows.passageHeight).toBe(4);
     expect(rows.passageTop + rows.passageHeight).toBe(rows.height);
   });
 });
@@ -579,9 +621,123 @@ describe('the wedges (SNOW-1031)', () => {
       for (const y of [line.getAttribute('y1'), line.getAttribute('y2')].map(Number)) {
         expect(y).toBeGreaterThanOrEqual(14);
         expect(y).toBeLessThanOrEqual(40);
-        expect(y).toBeLessThan(rows.passageTop);
+        expect(y).toBeLessThanOrEqual(rows.passageTop);
       }
     });
+  });
+});
+
+describe('the bank row follows the zoom (SNOW-1031)', () => {
+  /** @returns {?Element} The placeholder group, or null. */
+  const placeholder = () => lane.querySelector('[data-route-rail-two-bank-placeholder]');
+  /** @returns {number} Glyph ground lines drawn. */
+  const glyphCount = () => lane.querySelectorAll('.route-rail-two-wedge[data-wedge="ground"]').length;
+
+  /**
+   * Two touch taps at x, `gap` ms apart. The first goes down on `target`;
+   * the second on the lane, since the first tap's redraw replaces it.
+   *
+   * @param {number} x
+   * @param {number} [gap]
+   * @param {Element} [target]
+   */
+  function doubleTap(x, gap = 100, target = lane) {
+    now += 1000;
+    pointer(target, 'pointerdown', { x });
+    pointer(lane, 'pointerup', { x });
+    now += gap;
+    pointer(lane, 'pointerdown', { x: x + 10 });
+    pointer(lane, 'pointerup', { x: x + 10 });
+  }
+
+  it('opens a long leg fitted, with the placeholder in place of glyphs', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[2]);
+
+    expect(two.view()).toEqual({ from: 140, to: 460 });
+    expect(glyphCount()).toBe(0);
+    const group = placeholder();
+    expect(group).not.toBeNull();
+    expect(group.getAttribute('pointer-events')).toBe('none');
+    expect(group.querySelector('text').textContent).toBe('Zoom in to see the bank');
+    expect(group.querySelector('text').getAttribute('fill')).toBe('var(--color-text-3)');
+    const line = group.querySelector('line');
+    expect(line.getAttribute('stroke-dasharray')).toBe('3 3');
+    expect(line.getAttribute('y1')).toBe(String(self.pwaRouteRailTwoCore.ROWS.ribbonY));
+    expect(group.querySelector('rect').getAttribute('fill')).toBe('var(--color-card)');
+    // The bands are still drawn per segment, and the passages marked.
+    expect(bandRects().length).toBeGreaterThan(0);
+  });
+
+  it('draws glyphs, not the placeholder, on a leg that resolves fitted', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    expect(placeholder()).toBeNull();
+    expect(glyphCount()).toBe(40);
+  });
+
+  it('zooms to the resolved span on a double-click, and back on another', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[2]);
+    // A mouse press first, as a real double-click has.
+    pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
+    pointer(lane, 'pointerup', { x: 300, pointerType: 'mouse' });
+
+    lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
+
+    // resolveSpan at 600 px is 180, centred on sample 300.
+    expect(two.view()).toEqual({ from: 210, to: 390 });
+    expect(placeholder()).toBeNull();
+    expect(glyphCount()).toBeGreaterThan(0);
+
+    lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
+
+    expect(two.view()).toEqual({ from: 140, to: 460 });
+    expect(placeholder()).not.toBeNull();
+  });
+
+  it('zooms on a touch double-tap without toggling the selection', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[2]);
+    const band = bandRects().find((rect) => rect.getAttribute('data-from') === '300');
+    const x = Number(band.getAttribute('x')) + 0.5;
+
+    doubleTap(x, 100, band);
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 300, to: 304 });
+    expect(two.view().to - two.view().from).toBe(180);
+
+    now += 1000;
+    doubleTap(300);
+    expect(two.view()).toEqual({ from: 140, to: 460 });
+  });
+
+  it('treats two taps too far apart in time as two taps', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[2]);
+
+    doubleTap(300, 400);
+
+    expect(two.view()).toEqual({ from: 140, to: 460 });
+  });
+
+  it('marks a passage 4 px tall and at least 6 px wide at every zoom', () => {
+    const { cursor } = attach({ passages: [{ from: 300, to: 300, m: 50, fall_line: 'across' }] });
+    cursor.openLeg(LEGS[2]);
+
+    // One 1.9 px sample, widened to 6 px.
+    let bar = lane.querySelector('.route-rail-two-passage');
+    expect(bar.getAttribute('height')).toBe('4');
+    expect(bar.getAttribute('y')).toBe('40');
+    expect(Number(bar.getAttribute('width'))).toBe(6);
+
+    zoomInButton.click();
+    zoomInButton.click();
+    zoomInButton.click();
+    // 15 px a sample at the 40-sample window: its real extent.
+    bar = lane.querySelector('.route-rail-two-passage');
+    expect(Number(bar.getAttribute('width'))).toBe(15);
   });
 });
 
