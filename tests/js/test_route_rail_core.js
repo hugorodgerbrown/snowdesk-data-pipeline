@@ -103,7 +103,7 @@ describe('formatFigures', () => {
   };
 
   it('writes distance · ascent · descent · start→end', () => {
-    expect(core.formatFigures(full)).toBe('12.9 km · ▲ 1234m · ▼ 1100m · 1820→2410m');
+    expect(core.formatFigures(full)).toBe('12.9 km · ▲ 1234 m · ▼ 1100 m · 1820 → 2410 m');
   });
 
   it('gives a route and a leg the identical shape', () => {
@@ -126,7 +126,7 @@ describe('formatFigures', () => {
   });
 
   it('keeps a genuine zero', () => {
-    expect(core.formatFigures({ distance_m: 1000, ascent_m: 0 })).toBe('1.0 km · ▲ 0m');
+    expect(core.formatFigures({ distance_m: 1000, ascent_m: 0 })).toBe('1.0 km · ▲ 0 m');
   });
 
   it('drops the range when either end is unknown', () => {

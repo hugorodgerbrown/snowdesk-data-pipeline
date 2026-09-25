@@ -2,12 +2,16 @@
  * tests/js/test_route_rail_two.js — rail two's DOM half
  * (static/js/route_rail_two.js, SNOW-1019).
  *
- * Rail two follows the route cursor: it shows on `openLeg` and hides on
- * `closeLeg`. Around that: a band tap selects and a second tap clears, a
+ * Rail two follows the route cursor: it draws the leg on `openLeg` and
+ * shows its empty state on `closeLeg` and on attach (SNOW-1024), and hides
+ * on detach. Around that: a band tap selects and a second tap clears, a
  * passage tap selects a passage, a second pointer cancels the press so a
  * pinch selects nothing, the −/+ buttons change the span and disable at
  * the limits, an index published from elsewhere scrolls the window, a
- * drag pans it, and a null bank draws no tick.
+ * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
+ * it, a null bank draws no tick, and the readout reads the
+ * terrain under the cursor or the stretch selected, stepped left, centred
+ * or right under its anchor (SNOW-1024).
  *
  * jsdom lays nothing out, so the lane measures 0 px and rail two falls
  * back to 600 px; a pointer's lane x is its clientX. Pointer events are
@@ -34,8 +38,10 @@ document.body.innerHTML = `
       <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
       <p data-route-rail-two-figures></p>
       <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
-      <div data-route-rail-two-ticks></div>
-      <div data-route-rail-two-readout></div>
+      <div data-route-rail-two-readout-box>
+        <span data-route-rail-two-stem hidden></span>
+        <div data-route-rail-two-readout></div>
+      </div>
     </div>
   </section>
 `;
@@ -45,6 +51,16 @@ await import('../../static/js/route_rail_two.js');
 const two = window.pwaRouteRailTwo;
 const row = document.querySelector('[data-route-rail-two]');
 const lane = row.querySelector('[data-route-rail-two-lane]');
+const readout = row.querySelector('[data-route-rail-two-readout]');
+const readoutBox = row.querySelector('[data-route-rail-two-readout-box]');
+const stem = row.querySelector('[data-route-rail-two-stem]');
+const title = row.querySelector('[data-route-rail-two-title]');
+const zoomOutButton = row.querySelector('[data-route-rail-two-zoom="out"]');
+const zoomInButton = row.querySelector('[data-route-rail-two-zoom="in"]');
+const closeButton = row.querySelector('[data-route-rail-two-close]');
+
+/** @returns {Array<string>} The readout's lines. */
+const readoutLines = () => Array.from(readout.children).map((line) => line.textContent);
 
 /** 300 samples over 15 km: 50 m a sample, so 2 km is 40 samples. */
 const N = 300;
@@ -140,34 +156,43 @@ afterEach(() => {
 });
 
 describe('following the cursor', () => {
-  it('shows on openLeg with 2 km of ground and hides on closeLeg', () => {
+  it('draws openLeg with 2 km of ground and empties on closeLeg', () => {
     const { cursor, onView, onResize } = attach();
-    expect(row.hidden).toBe(true);
-
-    cursor.openLeg(LEGS[1]);
     expect(row.hidden).toBe(false);
-    expect(two.view()).toEqual({ from: 100, to: 140 });
-    expect(row.querySelector('[data-route-rail-two-title]').textContent).toBe(
-      'Leg 2 — descent',
-    );
-    expect(onView).toHaveBeenLastCalledWith({ from: 100, to: 140 }, expect.anything());
+    expect(row.hasAttribute('data-empty')).toBe(true);
     expect(onResize).toHaveBeenCalledTimes(1);
 
+    cursor.openLeg(LEGS[1]);
+    expect(row.hasAttribute('data-empty')).toBe(false);
+    expect(two.view()).toEqual({ from: 100, to: 140 });
+    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(onView).toHaveBeenLastCalledWith({ from: 100, to: 140 }, expect.anything());
+    expect(onResize).toHaveBeenCalledTimes(2);
+
     cursor.closeLeg();
-    expect(row.hidden).toBe(true);
+    expect(row.hidden).toBe(false);
+    expect(row.hasAttribute('data-empty')).toBe(true);
     expect(two.view()).toBeNull();
     expect(onView).toHaveBeenLastCalledWith(null, null);
-    expect(onResize).toHaveBeenCalledTimes(2);
+    expect(onResize).toHaveBeenCalledTimes(3);
+  });
+
+  it('hides the row outright on detach', () => {
+    attach();
+
+    two.detach();
+
+    expect(row.hidden).toBe(true);
   });
 
   it('closes the leg on its own ×', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
-    row.querySelector('[data-route-rail-two-close]').click();
+    closeButton.click();
 
     expect(cursor.state().openLeg).toBeNull();
-    expect(row.hidden).toBe(true);
+    expect(row.hasAttribute('data-empty')).toBe(true);
   });
 
   it('centres the window on an index published elsewhere', () => {
@@ -235,9 +260,7 @@ describe('pressing a band or a passage', () => {
     tap(lane.querySelector('.route-rail-two-passage'));
 
     expect(cursor.state().selection).toEqual({ kind: 'passage', from: 110, to: 114 });
-    expect(row.querySelector('[data-route-rail-two-readout]').textContent).toBe(
-      'No-fall passage — 250 m',
-    );
+    expect(readoutLines()).toEqual(['No-fall passage · 250 m']);
   });
 
   it('selects nothing when a second pointer turns the press into a pinch', () => {
@@ -256,14 +279,51 @@ describe('pressing a band or a passage', () => {
     expect(two.view().to - two.view().from).toBeLessThan(40);
   });
 
-  it('pans on a drag and selects nothing', () => {
+  it('scrubs the cursor on a one-finger drag, as the idle hint says', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    const from = two.view().from;
+
+    pointer(lane, 'pointerdown', { x: 300 });
+    pointer(lane, 'pointermove', { x: 150 });
+    // 150 px of 600 is a quarter of the 40-sample window.
+    expect(cursor.state().index).toBe(from + 10);
+    pointer(lane, 'pointermove', { x: 450 });
+    expect(cursor.state().index).toBe(from + 30);
+    pointer(lane, 'pointerup', { x: 450 });
+
+    expect(two.view().from).toBe(from);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('pans on a two-finger drag', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(101);
+    const from = two.view().from;
+
+    pointer(lane, 'pointerdown', { x: 200, id: 1 });
+    pointer(lane, 'pointerdown', { x: 400, id: 2 });
+    pointer(lane, 'pointermove', { x: 50, id: 1 });
+    pointer(lane, 'pointermove', { x: 250, id: 2 });
+    pointer(lane, 'pointerup', { x: 50, id: 1 });
+    pointer(lane, 'pointerup', { x: 250, id: 2 });
+
+    // The fingers kept their spacing, so the span holds and the window
+    // follows their midpoint 150 px (10 samples) to the right.
+    expect(two.view().to - two.view().from).toBeCloseTo(40);
+    expect(two.view().from).toBeCloseTo(from + 10);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('pans on a mouse drag and selects nothing', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(101);
 
-    pointer(lane, 'pointerdown', { x: 300 });
-    pointer(lane, 'pointermove', { x: 150 });
-    pointer(lane, 'pointerup', { x: 150 });
+    pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
+    pointer(lane, 'pointermove', { x: 150, pointerType: 'mouse' });
+    pointer(lane, 'pointerup', { x: 150, pointerType: 'mouse' });
 
     // 150 px of 600 is a quarter of the 40-sample window.
     expect(two.view().from).toBeCloseTo(110);
@@ -339,10 +399,10 @@ describe('keys', () => {
 });
 
 describe('the cursor point (SNOW-1019)', () => {
-  it('is the cursor at the band strip\'s top, and null while hidden', () => {
+  it('is the cursor at the band strip\'s top, and null while empty', () => {
     const { cursor } = attach();
     vi.spyOn(lane, 'getBoundingClientRect')
-      .mockReturnValue({ left: 20, top: 200, right: 620, bottom: 256, width: 600, height: 56 });
+      .mockReturnValue({ left: 20, top: 200, right: 620, bottom: 244, width: 600, height: 44 });
     expect(two.cursorPoint()).toBeNull();
 
     cursor.openLeg(LEGS[1]);
@@ -371,24 +431,65 @@ describe('the cursor point (SNOW-1019)', () => {
   });
 });
 
-describe('the rows (SNOW-1019)', () => {
-  it('draws no profile: bands, ribbon, passages and ticks only', () => {
+describe('the rows (SNOW-1019, SNOW-1024)', () => {
+  it('draws no profile and no distance scale: bands, ribbon and passages only', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     expect(lane.querySelectorAll('path')).toHaveLength(0);
+    // Every line in the lane is a ribbon tick or the cursor; no tick marks.
+    lane.querySelectorAll('line').forEach((line) => {
+      expect(
+        line.classList.contains('route-rail-two-tick') || line.hasAttribute('data-route-rail-two-cursor'),
+      ).toBe(true);
+    });
+    expect(row.querySelectorAll('[data-route-rail-two-ticks]')).toHaveLength(0);
     expect(lane.getAttribute('viewBox')).toBe(`0 0 600 ${self.pwaRouteRailTwoCore.ROWS.height}`);
   });
 
-  it('stacks the rows with no gap for the profile that left', () => {
+  it('lays a 44 px lane: band 10, a 4 px gap, the bank row, then 4 px', () => {
     const rows = self.pwaRouteRailTwoCore.ROWS;
 
-    expect(rows).not.toHaveProperty('profileTop');
-    expect(rows.bandTop).toBeLessThan(8);
-    expect(rows.ribbonY - rows.ribbonHalf).toBeGreaterThan(rows.bandTop + rows.bandHeight);
+    expect(rows.height).toBe(44);
+    expect(rows.bandTop).toBe(0);
+    expect(rows.bandHeight).toBe(10);
+    // The bank row runs 14–40: ribbon ticks, then the passage bars.
+    expect(rows.ribbonY - rows.ribbonHalf).toBeGreaterThanOrEqual(14);
     expect(rows.passageTop).toBeGreaterThan(rows.ribbonY + rows.ribbonHalf);
-    expect(rows.passageTop + rows.passageHeight).toBeLessThan(rows.height - 6);
-    expect(rows.height).toBe(56);
+    expect(rows.passageTop + rows.passageHeight).toBe(rows.height - 4);
+  });
+});
+
+describe('the empty state (SNOW-1024)', () => {
+  it('shows the placeholder with zoom, close and the readout hidden', () => {
+    attach();
+
+    expect(title.textContent).toBe('Select a route leg to view terrain');
+    expect(title.classList.contains('text-text-2')).toBe(true);
+    expect(row.querySelector('[data-route-rail-two-figures]').textContent).toBe('');
+    expect(zoomOutButton.hidden).toBe(true);
+    expect(zoomInButton.hidden).toBe(true);
+    expect(closeButton.hidden).toBe(true);
+    expect(readoutBox.hidden).toBe(true);
+    expect(lane.children).toHaveLength(0);
+    expect(lane.getAttribute('tabindex')).toBe('-1');
+    expect(lane.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('restores them when a leg opens', () => {
+    const { cursor } = attach();
+
+    cursor.openLeg(LEGS[1]);
+
+    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(title.classList.contains('text-text-1')).toBe(true);
+    expect(title.classList.contains('text-text-2')).toBe(false);
+    expect(zoomOutButton.hidden).toBe(false);
+    expect(zoomInButton.hidden).toBe(false);
+    expect(closeButton.hidden).toBe(false);
+    expect(readoutBox.hidden).toBe(false);
+    expect(lane.getAttribute('tabindex')).toBe('0');
+    expect(lane.hasAttribute('aria-hidden')).toBe(false);
   });
 });
 
@@ -424,12 +525,10 @@ describe('the ribbon', () => {
     expect(stroke(104)).toBe('var(--color-text-3)');
   });
 
-  /** @returns {Array<string>} The readout's lines. */
-  const readoutLines = () => Array.from(
-    row.querySelector('[data-route-rail-two-readout]').children,
-  ).map((line) => line.textContent);
+});
 
-  it('reads what the track does on the ground, and how steep it is', () => {
+describe('the readout (SNOW-1024)', () => {
+  it('reads the terrain, then the slope and the bank', () => {
     // Sample 101: 20° ground banked 20° to the right, so the track runs
     // straight across it.
     const { cursor } = attach();
@@ -437,9 +536,9 @@ describe('the ribbon', () => {
 
     cursor.setIndex(101);
 
-    expect(readoutLines()).toEqual(['Traverse', '20° slope · falls away to the right']);
+    expect(readoutLines()).toEqual(['Traverse · falls away right', '20° slope · 20° bank']);
     expect(lane.getAttribute('aria-valuetext')).toContain(
-      'Traverse. 20° slope · falls away to the right',
+      'Traverse · falls away right. 20° slope · 20° bank',
     );
   });
 
@@ -450,32 +549,40 @@ describe('the ribbon', () => {
     const { cursor } = attach({ banks });
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(101);
-    expect(readoutLines()).toEqual(['Fall line', '20° slope']);
+    expect(readoutLines()).toEqual(['Fall line', '20° slope · 0° bank']);
 
     cursor.openLeg(LEGS[0]);
     cursor.setIndex(5);
-    expect(readoutLines()).toEqual(['Fall line', '32° slope']);
+    expect(readoutLines()).toEqual(['Fall line', '32° slope · 0° bank']);
   });
 
-  it('names the traverse between by the leg\'s direction', () => {
+  it('says which way the ground falls away, with the bank unsigned', () => {
     // 20° ground banked 12° is 35.7° off the fall line.
     const banks = BANKS.slice();
     banks[101] = -12;
-    banks[1] = -12;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['Ground falls away left', '20° slope · 12° bank']);
+  });
+
+  it('reads gentle ground by the leg\'s direction', () => {
     const angles = ANGLES.slice();
-    angles[1] = 20;
-    const { cursor } = attach({ banks, angles });
+    angles[101] = 7;
+    angles[1] = 7;
+    const { cursor } = attach({ angles });
     cursor.openLeg(LEGS[1]);
     cursor.setIndex(101);
-    expect(readoutLines()).toEqual(['Downhill traverse', '20° slope · falls away to the left']);
-    expect(lane.getAttribute('aria-valuetext')).toContain('Downhill traverse');
+    expect(readoutLines()).toEqual(['Gentle descent', '7° slope · 20° bank']);
 
     cursor.openLeg(LEGS[0]);
     cursor.setIndex(1);
-    expect(readoutLines()).toEqual(['Uphill traverse', '20° slope · falls away to the left']);
+    expect(readoutLines()).toEqual(['Gentle ascent', '7° slope · 20° bank']);
   });
 
-  it('reads flat ground as flat, with no side', () => {
+  it('reads flat ground as flat', () => {
     const angles = ANGLES.slice();
     angles[101] = 3;
     const { cursor } = attach({ angles });
@@ -497,7 +604,7 @@ describe('the ribbon', () => {
     expect(readoutLines()).toEqual(['slope not known']);
   });
 
-  it('keeps the slope but not the attitude where only the bank is unknown', () => {
+  it('keeps the slope but not the terrain where only the bank is unknown', () => {
     const banks = BANKS.slice();
     banks[101] = null;
     const { cursor } = attach({ banks });
@@ -506,5 +613,64 @@ describe('the ribbon', () => {
     cursor.setIndex(101);
 
     expect(readoutLines()).toEqual(['20° slope']);
+  });
+
+  it('reads a band as its length to the nearest 25 m and its class, on one line', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    // Five 50 m samples of 32° ground.
+    cursor.select({ kind: 'band', from: 105, to: 109 });
+
+    expect(readoutLines()).toEqual(['250 m 30–35°']);
+  });
+
+  it('offers the hint with nothing under the cursor, spanning the lane so it wraps', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    expect(readoutLines()).toEqual([
+      'Drag to read a point. Tap a band or passage to select it.',
+    ]);
+    expect(readout.classList.contains('text-left')).toBe(true);
+    expect(readout.classList.contains('inset-x-0')).toBe(true);
+    expect(readout.classList.contains('whitespace-nowrap')).toBe(false);
+    expect(readout.style.left).toBe('');
+    expect(stem.hidden).toBe(true);
+  });
+
+  it('steps left, centred and right with the cursor, the stem on the line', () => {
+    // The 100–140 window across 600 px: 15 px a sample.
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(102);
+    expect(readout.classList.contains('text-left')).toBe(true);
+    expect(readout.classList.contains('-translate-x-1/2')).toBe(false);
+    expect(parseFloat(readout.style.left)).toBe(37.5);
+    expect(stem.hidden).toBe(false);
+    expect(parseFloat(stem.style.left)).toBe(37);
+
+    cursor.setIndex(120);
+    expect(readout.classList.contains('text-center')).toBe(true);
+    expect(readout.classList.contains('-translate-x-1/2')).toBe(true);
+    expect(parseFloat(readout.style.left)).toBe(307.5);
+
+    cursor.setIndex(138);
+    expect(readout.classList.contains('text-right')).toBe(true);
+    expect(readout.classList.contains('-translate-x-full')).toBe(true);
+    expect(parseFloat(readout.style.left)).toBe(577.5);
+  });
+
+  it('centres a selection\'s readout under its box, with no stem', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    cursor.select({ kind: 'band', from: 115, to: 119 });
+
+    // 115–120 of the 100–140 window is 225–300 px; its middle is 262.5.
+    expect(readout.classList.contains('text-center')).toBe(true);
+    expect(parseFloat(readout.style.left)).toBe(262.5);
+    expect(stem.hidden).toBe(true);
   });
 });

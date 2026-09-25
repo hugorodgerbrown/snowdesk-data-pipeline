@@ -7,7 +7,10 @@
  * line drawn as the bank ribbon (bank_ribbon_core.js), and one bar per
  * no-fall passage — and it pans and zooms within the leg. (It drew the
  * leg's elevation profile above them until SNOW-1019 took the row out;
- * the leg's profile is still read here, for the identity cell's figures.) This module is the arithmetic of that drawing: no
+ * the leg's profile is still read here, for the identity cell's figures.
+ * Its distance scale went in SNOW-1024: rail one already prints where
+ * the window sits, and the readout reads the point.) This module is the
+ * arithmetic of that drawing and of where its readout sits: no
  * DOM, no globals read at parse time, so every rule below is covered in
  * tests/js/test_route_rail_two_core.js. static/js/route_rail_two.js is the
  * DOM half.
@@ -20,7 +23,7 @@
  * profile point at distance d on `readProfile`'s axis sits at
  * s = d / distanceM × N, and a label at s reads s / N × spanM metres,
  * where spanM is the route length rail one prints. The two rails therefore
- * put a segment in the same place and label it with the same number.
+ * put a segment in the same place and measure it with the same number.
  *
  * A leg `{from, to}` (inclusive sample indices) covers [from, to + 1].
  *
@@ -69,8 +72,9 @@
  *   ribbonTicks(options)                      → bankTicks, laid on the view
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
- *   distanceTicks(view, sampleCount, spanM, rail, units?) → [{x, major, label}]
  *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
+ *   readoutAnchor(x, width)                   → {align, left} for the readout
+ *   roundStretch(metres)                      → a length to the nearest 25 m
  */
 
 // @ts-check
@@ -131,42 +135,57 @@
 
   /**
    * The lane's vertical layout, in px. The svg is drawn at this height in
-   * real pixels (the partial's `h-14`, 56 px), so these are screen units.
+   * real pixels (the partial's `h-11`, 44 px), so these are screen units.
    *
-   * Three rows and the distance ticks: the band strip, the bank ribbon,
-   * the no-fall bars, the tick marks at the foot. SNOW-1019 took the leg's
-   * elevation profile off the top: at a 2 km window it drew near-flat and
-   * said nothing rail one's highlighted leg does not.
+   * The band strip (0–10), a 4 px gap, the bank row (14–40: the ribbon
+   * about y 23 and the no-fall bars at 34–40 under it), then 4 px at the
+   * foot, and nothing else: SNOW-1024 took the distance ticks off the foot,
+   * so no dead space sits between the band, the bank row and the readout.
+   * SNOW-1019 took the leg's elevation profile off the top: at a 2 km
+   * window it drew near-flat and said nothing rail one's highlighted leg
+   * does not.
    */
   var ROWS = Object.freeze({
-    height: 56,
-    bandTop: 4,
+    height: 44,
+    bandTop: 0,
     bandHeight: 10,
-    ribbonY: 28,
-    ribbonHalf: 9,
-    passageTop: 41,
+    ribbonY: 23,
+    ribbonHalf: 8,
+    passageTop: 34,
     passageHeight: 6,
   });
 
   /**
-   * How far off the fall line a track may run and still be ON it, in
-   * degrees — `FALL_LINE_TOLERANCE_DEG` in apps/routes/services/passages.py,
-   * the tolerance its fall-line vote uses, restated so the readout and the
-   * passage labels agree on what "down the fall line" means.
+   * The fall-line tolerance of `FALL_LINE_TOLERANCE_DEG` in
+   * apps/routes/services/passages.py, the tolerance its fall-line vote
+   * uses. Kept here for that cross-reference; the readout's own words use
+   * the narrower `FALL_LINE_DEG` (SNOW-1024's design review).
    */
   var FALL_LINE_TOLERANCE_DEG = 30;
 
-  /** At or past this far off the fall line, a track is traversing. */
-  var TRAVERSE_DEG = 60;
+  /** Under this far off the fall line, the readout says "Fall line". */
+  var FALL_LINE_DEG = 20;
+
+  /** Past this far off the fall line, a track is traversing. */
+  var TRAVERSE_DEG = 65;
 
   /** Under this slope angle the ground is flat and has no fall line. */
   var FLAT_DEG = 5;
 
+  /** Under this slope angle the ground is a gentle ascent or descent. */
+  var GENTLE_DEG = 10;
+
   /** Under this bank the ground falls away to neither side. */
   var LEVEL_BANK_DEG = 3;
 
-  /** The English units, the fallback when no strings are passed. */
-  var DEFAULT_UNITS = Object.freeze({ m: '%(value)s m', km: '%(value)s km' });
+  /** Under this fraction of the lane the readout hangs right of `x`. */
+  var ANCHOR_LEFT = 0.25;
+
+  /** Over this fraction of the lane the readout hangs left of `x`. */
+  var ANCHOR_RIGHT = 0.75;
+
+  /** A stretch's length is read to the nearest this many metres. */
+  var STRETCH_STEP_M = 25;
 
   /**
    * Clamp a number into a closed range.
@@ -178,20 +197,6 @@
    */
   function clamp(value, low, high) {
     return Math.min(high, Math.max(low, value));
-  }
-
-  /**
-   * Substitute `%(name)s` placeholders by name — route_rail_core.js's rule,
-   * restated so this module reads no globals.
-   *
-   * @param {string} template
-   * @param {Object<string, string>} params
-   * @returns {string}
-   */
-  function interpolate(template, params) {
-    return String(template).replace(/%\((\w+)\)s/g, function (whole, name) {
-      return Object.prototype.hasOwnProperty.call(params, name) ? params[name] : whole;
-    });
   }
 
   /**
@@ -599,56 +604,8 @@
   }
 
   /**
-   * The distance ticks inside the view, labelled in route metres.
-   *
-   * The step is rail one's rule applied to the ground the view shows, and
-   * the ticks fall on whole multiples of it from the ROUTE's start, so a
-   * label here is the same number rail one prints at that place.
-   *
-   * @param {View} view
-   * @param {number} sampleCount N.
-   * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @param {{niceStep: function(number): number,
-   *   majorStep: function(number): number,
-   *   tickUnit: function(number): string}} rail `pwaRouteRailCore`.
-   * @param {{m?: string, km?: string}} [units] Label templates.
-   * @param {number} [width] The lane's width in px. Defaults to 1, so `x`
-   *   is a fraction.
-   * @returns {Array<{x: number, d: number, major: boolean, label: ?string}>}
-   */
-  function distanceTicks(view, sampleCount, spanM, rail, units, width) {
-    if (!(sampleCount > 0) || !(spanM > 0)) return [];
-    var w = width === undefined ? 1 : width;
-    var perSample = spanM / sampleCount;
-    var startM = view.from * perSample;
-    var endM = view.to * perSample;
-    var windowM = endM - startM;
-    if (!(windowM > 0)) return [];
-    var step = rail.niceStep(windowM);
-    var major = rail.majorStep(windowM);
-    var unit = rail.tickUnit(windowM);
-    var templates = { ...DEFAULT_UNITS, ...(units || {}) };
-    var template = unit === 'km' ? templates.km : templates.m;
-
-    /** @type {Array<{x: number, d: number, major: boolean, label: ?string}>} */
-    var out = [];
-    for (var n = Math.ceil(startM / step - EPSILON); n * step <= endM + EPSILON; n += 1) {
-      var d = n * step;
-      var isMajor = d % major === 0;
-      out.push({
-        x: xOf(d / perSample, view, w),
-        d: d,
-        major: isMajor,
-        label: isMajor
-          ? interpolate(template, { value: String(unit === 'km' ? d / 1000 : d) })
-          : null,
-      });
-    }
-    return out;
-  }
-
-  /**
-   * What the track is doing on the ground at one segment.
+   * What the track is doing on the ground at one segment, in the words of
+   * SNOW-1024's design review.
    *
    * The slope angle `a` is the ground's steepness and the bank `roll` is
    * how far it tilts ACROSS the track (apps/routes/services/bank.py), so
@@ -657,44 +614,89 @@
    * carries, clamped to [0, 1] before the `asin` because both are rounded
    * to whole degrees.
    *
-   *   a < 5°          → 'flat': no fall line to be on or off;
-   *   δ ≤ 30°         → 'fall-line', either way along it;
-   *   30° < δ < 60°   → 'downhill-traverse' on a descending leg,
-   *                     'uphill-traverse' on a climbing one;
-   *   δ ≥ 60°         → 'traverse'.
+   *   a < 5°            → 'flat': no fall line to be on or off;
+   *   5° ≤ a < 10°      → 'gentle-descent' on a descending leg,
+   *                       'gentle-ascent' on a climbing one, no side;
+   *   δ < 20°           → 'fall-line', either way along it;
+   *   20° ≤ δ ≤ 65°     → 'falls-away': the ground drops to one side;
+   *   δ > 65°           → 'traverse'.
    *
    * `side` is where the ground falls away: 'right' for a positive roll
-   * (bank.py's sign), 'left' for a negative one, and null under 3° or on
-   * flat ground.
+   * (bank.py's sign), 'left' for a negative one, and null under 3°, on
+   * flat or gentle ground, or with the bank unknown. On ground of 10° or
+   * more a bank under 3° puts δ under 17.4°, so 'falls-away' and
+   * 'traverse' always carry a side when the bank is known.
    *
    * @param {?number} angle The segment's slope angle, degrees.
    * @param {?number} roll The segment's signed bank, degrees.
    * @param {boolean} climbing Whether the open leg climbs.
-   * @returns {?{term: string, side: ?string}} Null when either number is
-   *   unknown.
+   * @returns {?{term: string, side: ?string}} Null when the angle is
+   *   unknown, or the bank is unknown on ground of 10° or more — below
+   *   that the angle alone decides the term.
    */
   function trackAttitude(angle, roll, climbing) {
     if (typeof angle !== 'number' || !Number.isFinite(angle)) return null;
-    if (typeof roll !== 'number' || !Number.isFinite(roll)) return null;
     if (angle < FLAT_DEG) return { term: 'flat', side: null };
+    if (angle < GENTLE_DEG) {
+      return { term: climbing ? 'gentle-ascent' : 'gentle-descent', side: null };
+    }
+    if (typeof roll !== 'number' || !Number.isFinite(roll)) return null;
     var rad = Math.PI / 180;
     var sinDelta = clamp(Math.tan(Math.abs(roll) * rad) / Math.tan(angle * rad), 0, 1);
     var delta = Math.asin(sinDelta) / rad;
     var term;
-    if (delta <= FALL_LINE_TOLERANCE_DEG) {
+    if (delta < FALL_LINE_DEG) {
       term = 'fall-line';
-    } else if (delta >= TRAVERSE_DEG) {
+    } else if (delta > TRAVERSE_DEG) {
       term = 'traverse';
     } else {
-      term = climbing ? 'uphill-traverse' : 'downhill-traverse';
+      term = 'falls-away';
     }
     var side = Math.abs(roll) < LEVEL_BANK_DEG ? null : roll > 0 ? 'right' : 'left';
     return { term: term, side: side };
   }
 
+  /**
+   * Where the readout sits under the lane, stepped rather than clamped.
+   *
+   * In the lane's left quarter the readout is left-aligned and starts at
+   * `x`; in the middle half it is centred on `x`; in the right quarter it
+   * is right-aligned and ends at `x`. The step is the design review's
+   * (SNOW-1024): a smooth clamp would slide the text against the line it
+   * belongs to.
+   *
+   * @param {number} x The cursor's (or the selection's middle's) px.
+   * @param {number} width The lane's width in px.
+   * @returns {{align: string, left: number}} `align` is 'left', 'center'
+   *   or 'right'; `left` is the px the anchor sits at, which is `x`.
+   */
+  function readoutAnchor(x, width) {
+    var fraction = width > 0 ? x / width : 0;
+    var align = 'center';
+    if (fraction < ANCHOR_LEFT) align = 'left';
+    else if (fraction > ANCHOR_RIGHT) align = 'right';
+    return { align: align, left: x };
+  }
+
+  /**
+   * A stretch's length to the nearest 25 m, never under 25 m.
+   *
+   * @param {number} metres
+   * @returns {number}
+   */
+  function roundStretch(metres) {
+    if (!Number.isFinite(metres)) return STRETCH_STEP_M;
+    return Math.max(STRETCH_STEP_M, Math.round(metres / STRETCH_STEP_M) * STRETCH_STEP_M);
+  }
+
   self.pwaRouteRailTwoCore = Object.freeze({
     FALL_LINE_TOLERANCE_DEG: FALL_LINE_TOLERANCE_DEG,
+    FALL_LINE_DEG: FALL_LINE_DEG,
+    TRAVERSE_DEG: TRAVERSE_DEG,
+    GENTLE_DEG: GENTLE_DEG,
     trackAttitude: trackAttitude,
+    readoutAnchor: readoutAnchor,
+    roundStretch: roundStretch,
     MIN_SPAN: MIN_SPAN,
     WINDOW_M: WINDOW_M,
     ROWS: ROWS,
@@ -716,6 +718,5 @@
     ribbonTicks: ribbonTicks,
     legProfile: legProfile,
     legFigures: legFigures,
-    distanceTicks: distanceTicks,
   });
 })();

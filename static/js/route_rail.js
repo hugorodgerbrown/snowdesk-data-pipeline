@@ -109,13 +109,12 @@
     'unit-m': '%(value)s m',
     'unit-km': '%(value)s km',
     'figure-distance': '%(km)s km',
-    'figure-ascent': '▲ %(m)sm',
-    'figure-descent': '▼ %(m)sm',
-    'figure-range': '%(start)s→%(end)sm',
+    'figure-ascent': '▲ %(m)s m',
+    'figure-descent': '▼ %(m)s m',
+    'figure-range': '%(start)s → %(end)s m',
     'leg-climb': 'Leg %(i)s — climb',
     'leg-descent': 'Leg %(i)s — descent',
     'lane-label': 'Elevation profile of %(name)s',
-    'readout-hint': 'Press a leg to open it.',
     untitled: 'Untitled route',
     'delete-confirm': "Delete %(name)s? You'll need the .gpx file again to put it back.",
     'delete-failed': "That route couldn't be deleted. Try again.",
@@ -134,7 +133,6 @@
   var figuresEl = rail.querySelector('[data-route-rail-figures]');
   var lane = rail.querySelector('[data-route-rail-lane]');
   var ticksEl = rail.querySelector('[data-route-rail-ticks]');
-  var readoutEl = rail.querySelector('[data-route-rail-readout]');
   var actionsEl = rail.querySelector('[data-route-rail-actions]');
   var planTripEl = rail.querySelector('[data-route-rail-plan-trip]');
   var renameEl = rail.querySelector('[data-route-rename]');
@@ -309,10 +307,12 @@
         if (!tick.label) return;
         var label = document.createElement('span');
         // The first label hangs right of its tick and the rest are centred
-        // on theirs, so "0 km" is not cut off at the rail's left edge.
+        // on theirs, so "0 km" is not cut off at the rail's left edge. None
+        // wraps: an absolute box near the right edge shrinks to the space
+        // left, which broke "15 km" over two lines on a phone.
         label.className = fraction === 0
-          ? 'absolute top-0'
-          : 'absolute top-0 -translate-x-1/2';
+          ? 'absolute top-0 whitespace-nowrap'
+          : 'absolute top-0 -translate-x-1/2 whitespace-nowrap';
         label.style.left = (fraction * 100).toFixed(3) + '%';
         label.textContent = tick.label;
         ticksEl.appendChild(label);
@@ -355,8 +355,9 @@
   }
 
   /**
-   * Bring the pressed state, the cursor line and the readout in line with
-   * the cursor.
+   * Bring the pressed state and the cursor line in line with the cursor.
+   * Rail one has no readout of its own (SNOW-1024): rail two's empty
+   * state says what to press.
    *
    * @param {?{index?: ?number, openLeg: ?{from: number, to: number, i: number,
    *   climbing: boolean}}} state
@@ -370,10 +371,6 @@
         && Number(path.getAttribute('data-leg-to')) === open.to;
       path.setAttribute('aria-pressed', pressed ? 'true' : 'false');
     });
-    // With a leg open the readout is EMPTY: rail two's identity cell
-    // names the leg, and saying it twice is noise. The cell itself stays,
-    // because the grid's third column keeps the two rails' lanes aligned.
-    readoutEl.textContent = !open && legs.length && cursor ? STRINGS['readout-hint'] : '';
   }
 
   /**

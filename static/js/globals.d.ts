@@ -70,7 +70,7 @@ interface Window {
   pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
-  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, ticks. */
+  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, readout. */
   pwaRouteRailTwoCore: any;
   /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
   pwaBankRibbonCore: any;

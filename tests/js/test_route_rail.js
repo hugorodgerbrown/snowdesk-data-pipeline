@@ -57,7 +57,6 @@ document.body.innerHTML = `
       </div>
       <svg data-route-rail-lane></svg>
       <div data-route-rail-ticks></div>
-      <div data-route-rail-readout></div>
       <div data-route-rail-two hidden>
         <p data-route-rail-two-title></p>
         <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
@@ -65,8 +64,10 @@ document.body.innerHTML = `
         <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
         <p data-route-rail-two-figures></p>
         <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
-        <div data-route-rail-two-ticks></div>
-        <div data-route-rail-two-readout></div>
+        <div data-route-rail-two-readout-box>
+          <span data-route-rail-two-stem hidden></span>
+          <div data-route-rail-two-readout></div>
+        </div>
       </div>
       <form data-route-rail-csrf hidden>
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
@@ -193,7 +194,7 @@ describe('open', () => {
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲ 200m · ▼ 200m · 1500→1500m',
+      '0.6 km · ▲ 200 m · ▼ 200 m · 1500 → 1500 m',
     );
   });
 
@@ -313,7 +314,7 @@ describe('open', () => {
     window.pwaRouteRail.open(gappy);
 
     expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲ 200m · ▼ 200m',
+      '0.6 km · ▲ 200 m · ▼ 200 m',
     );
   });
 
@@ -341,9 +342,8 @@ describe('pressing a leg', () => {
       to: 11,
     });
     expect(first.getAttribute('aria-pressed')).toBe('true');
-    // Rail two's identity cell names the leg; this readout goes quiet.
-    expect(rail.querySelector('[data-route-rail-readout]').textContent).toBe('');
     expect(railTwo.hidden).toBe(false);
+    expect(railTwo.hasAttribute('data-empty')).toBe(false);
   });
 
   it('moves rail two’s window when the open leg is pressed, without closing it', () => {
@@ -368,16 +368,19 @@ describe('pressing a leg', () => {
     expect(window.pwaRouteRailTwo.view()).toEqual({ from: 0, to: 6 });
   });
 
-  it('offers the hint while no leg is open, and again once it closes', () => {
+  it('shows rail two empty while no leg is open, and again once it closes', () => {
+    // SNOW-1024: rail one has no readout; rail two's placeholder says
+    // what to press.
     window.pwaRouteRail.open(feature());
-    const readout = rail.querySelector('[data-route-rail-readout]');
-    expect(readout.textContent).toBe('Press a leg to open it.');
+    expect(rail.querySelector('[data-route-rail-readout]')).toBeNull();
+    expect(railTwo.hidden).toBe(false);
+    expect(railTwo.hasAttribute('data-empty')).toBe(true);
 
     legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(readout.textContent).toBe('');
+    expect(railTwo.hasAttribute('data-empty')).toBe(false);
 
     window.pwaRouteRail.cursor().closeLeg();
-    expect(readout.textContent).toBe('Press a leg to open it.');
+    expect(railTwo.hasAttribute('data-empty')).toBe(true);
   });
 
   it('moves the open leg when another is pressed', () => {
@@ -433,13 +436,35 @@ describe('rail two', () => {
     expect(bracket()).toBeNull();
   });
 
+  it('keeps the bracket and the pressed leg live while rail two pans (SNOW-1024)', async () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const twoLane = railTwo.querySelector('[data-route-rail-two-lane]');
+    railTwo.querySelector('[data-route-rail-two-zoom="in"]').click();
+    const before = window.pwaRouteRailTwo.view();
+
+    // A horizontal wheel pans rail two's window by a quarter of its span.
+    twoLane.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaX: 150, clientX: 300,
+    }));
+    // A pan redraws on the next animation frame.
+    await new Promise((resolve) => { window.requestAnimationFrame(resolve); });
+
+    const after = window.pwaRouteRailTwo.view();
+    expect(after.from).toBeGreaterThan(before.from);
+    const bracket = rail.querySelector('[data-route-rail-window]');
+    expect(Number(bracket.getAttribute('x'))).toBeCloseTo((after.from / 24) * 1000);
+    expect(first.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('closes on Escape before the rail does', () => {
     window.pwaRouteRail.open(feature());
     legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     pressEscape();
     expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(railTwo.hidden).toBe(true);
+    expect(railTwo.hasAttribute('data-empty')).toBe(true);
     expect(rail.hidden).toBe(false);
 
     pressEscape();

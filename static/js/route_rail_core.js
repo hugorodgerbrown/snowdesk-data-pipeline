@@ -34,8 +34,8 @@
  *
  * ## The figures line
  *
- * `formatFigures` is the ONE formatter for `distance · ▲ascent · ▼descent ·
- * start→end`, taken by the route today and by a leg on rail two
+ * `formatFigures` is the ONE formatter for `distance · ▲ ascent · ▼ descent ·
+ * start → end`, taken by the route today and by a leg on rail two
  * (SNOW-1019), so the two lines cannot drift apart. A null figure is
  * OMITTED, never shown as zero: a route whose GPX carried no elevation has
  * an unknown ascent, not a flat one (Route.ascent_m's docstring).
@@ -127,9 +127,9 @@
   /** The English figure templates, the fallback when no strings are passed. */
   var DEFAULT_FIGURES = Object.freeze({
     'figure-distance': '%(km)s km',
-    'figure-ascent': '▲ %(m)sm',
-    'figure-descent': '▼ %(m)sm',
-    'figure-range': '%(start)s→%(end)sm',
+    'figure-ascent': '▲ %(m)s m',
+    'figure-descent': '▼ %(m)s m',
+    'figure-range': '%(start)s → %(end)s m',
     'figure-separator': ' · ',
   });
 
