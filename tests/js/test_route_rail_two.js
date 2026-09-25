@@ -8,16 +8,20 @@
  * passage tap selects a passage, a second pointer cancels the press so a
  * pinch selects nothing, the −/+ buttons change the span and disable at
  * the limits, an index published from elsewhere scrolls the window, a
- * one-finger drag scrubs the cursor while two fingers or a mouse drag pan
- * it, a null bank draws no tick, and the readout reads the
- * terrain under the cursor or the stretch selected, stepped left, centred
+ * one-finger drag scrubs the cursor while two fingers pan it, a null bank
+ * draws no tick, and the readout reads the terrain under the cursor or the stretch selected, stepped left, centred
  * or right under its anchor (SNOW-1024). SNOW-1031's revision: a leg opens
  * fitted, a long one shows the bank placeholder, a double-click or a touch
  * double-tap zooms to where the bank row draws and back, and passage bars
- * are 4 px tall and never under 6 px wide. SNOW-1033: the empty lane is a
- * leg picker, one button per leg opening it through the cursor, and
- * opening or closing a leg runs a WAAPI motion that is skipped where
- * `Element.prototype.animate` is missing or motion is reduced.
+ * are 4 px tall and never under 6 px wide. SNOW-1032: a tap picks by row
+ * and by nearest extent, the selection box is at least 12 px with the
+ * rest of the lane dimmed, a band's selection carries its class, and a
+ * touch or mouse drag scrubs and on release selects the band holding the
+ * cursor's index, exactly; a mouse drag no longer pans.
+ * SNOW-1033: the empty lane is a leg picker, one button per leg opening it
+ * through the cursor, and opening or closing a leg runs a WAAPI motion
+ * that is skipped where `Element.prototype.animate` is missing or motion
+ * is reduced.
  *
  * jsdom lays nothing out, so the lane measures 0 px and rail two falls
  * back to 600 px; a pointer's lane x is its clientX. Pointer events are
@@ -160,15 +164,16 @@ function pointer(target, type, { x = 0, y = 0, id = 1, pointerType = 'touch' } =
 }
 
 /**
- * Tap an element at its left edge plus one px.
+ * Tap an element one px inside its top-left corner.
  *
  * @param {Element} el A band or passage rect.
  */
 function tap(el) {
   now += 1000;
   const x = Number(el.getAttribute('x')) + 1;
-  pointer(el, 'pointerdown', { x });
-  pointer(lane, 'pointerup', { x });
+  const y = Number(el.getAttribute('y')) + 1;
+  pointer(el, 'pointerdown', { x, y });
+  pointer(lane, 'pointerup', { x, y });
 }
 
 /** @returns {Array<Element>} The band rects drawn. */
@@ -291,7 +296,7 @@ describe('pressing a band or a passage', () => {
     const band = bandRects().find((rect) => rect.getAttribute('data-from') === '105');
 
     tap(band);
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
 
     tap(bandRects().find((rect) => rect.getAttribute('data-from') === '105'));
     expect(cursor.state().selection).toBeNull();
@@ -303,8 +308,84 @@ describe('pressing a band or a passage', () => {
 
     tap(lane.querySelector('.route-rail-two-passage'));
 
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 110, to: 114 });
+    expect(cursor.state().selection)
+      .toEqual({ kind: 'passage', from: 110, to: 114, classIndex: null });
     expect(readoutLines()).toEqual(['No-fall passage · 250 m']);
+  });
+
+  it('picks a passage up to 22 px beside its bar, in the passage row (SNOW-1032)', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    // Passage 110–114 is drawn at 150–225 px; 20 px right of its end.
+    pointer(lane, 'pointerdown', { x: 245, y: 42 });
+    pointer(lane, 'pointerup', { x: 245, y: 42 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 110, to: 114, classIndex: null });
+  });
+
+  it('picks nothing in the passage row farther than 22 px from a bar', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    pointer(lane, 'pointerdown', { x: 260, y: 42 });
+    pointer(lane, 'pointerup', { x: 260, y: 42 });
+
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('picks the band under a tap anywhere above the passage row', () => {
+    // In the wedge row, which draws nothing a pointer can hit.
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+
+    pointer(lane, 'pointerdown', { x: 80, y: 27 });
+    pointer(lane, 'pointerup', { x: 80, y: 27 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
+  });
+
+  it('gives a thin steep band a 44 px target: a tap picks the steepest band within 22 px', () => {
+    // Leg 3 fitted: 1.9 px a sample. A one-segment 42° band at 300 sits in
+    // 20° ground; a tap 15 px to its left, on the gentle band, takes it.
+    const angles = ANGLES.map((angle, i) => (i >= 290 && i <= 310 ? (i === 300 ? 42 : 20) : angle));
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[2]);
+    const steep = bandRects().find((rect) => rect.getAttribute('data-from') === '300');
+    const x = Number(steep.getAttribute('x')) - 15;
+
+    pointer(lane, 'pointerdown', { x, y: 5 });
+    pointer(lane, 'pointerup', { x, y: 5 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 300, to: 300, classIndex: 3 });
+    // The cursor is pulled onto what was selected.
+    expect(cursor.state().index).toBe(300);
+  });
+
+  it('keeps the band under the tap when nothing steeper is within 22 px', () => {
+    const angles = ANGLES.map((angle, i) => (i >= 280 && i <= 320 ? 20 : angle));
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[2]);
+    const x = (300.5 - 140) * (600 / 320);
+
+    pointer(lane, 'pointerdown', { x, y: 5 });
+    pointer(lane, 'pointerup', { x, y: 5 });
+
+    // 320–324 are 20° in the fixture too, so the gentle band runs to 324.
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 280, to: 324, classIndex: 0 });
+  });
+
+  it('scales the tap\'s y to the lane\'s rows', () => {
+    // A lane laid out twice as tall: client y 60 is lane y 30, the wedges.
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    vi.spyOn(lane, 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 600, bottom: 88, width: 600, height: 88 });
+
+    pointer(lane, 'pointerdown', { x: 80, y: 60 });
+    pointer(lane, 'pointerup', { x: 80, y: 60 });
+
+    expect(cursor.state().selection.kind).toBe('band');
+    vi.restoreAllMocks();
   });
 
   it('selects nothing when a second pointer turns the press into a pinch', () => {
@@ -323,7 +404,7 @@ describe('pressing a band or a passage', () => {
     expect(two.view().to - two.view().from).toBeLessThan(40);
   });
 
-  it('scrubs the cursor on a one-finger drag, as the idle hint says', () => {
+  it('scrubs the cursor on a one-finger drag, and selects its band on release', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
     const from = two.view().from;
@@ -334,10 +415,11 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().index).toBe(from + 10);
     pointer(lane, 'pointermove', { x: 450 });
     expect(cursor.state().index).toBe(from + 30);
+    expect(cursor.state().selection).toBeNull();
     pointer(lane, 'pointerup', { x: 450 });
 
     expect(two.view().from).toBe(from);
-    expect(cursor.state().selection).toBeNull();
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 130, to: 134, classIndex: 0 });
   });
 
   it('pans on a two-finger drag', () => {
@@ -360,32 +442,156 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().selection).toBeNull();
   });
 
-  it('pans on a mouse drag and selects nothing', () => {
+  it('scrubs on a mouse drag, never pans, and selects on release (SNOW-1032)', () => {
     const { cursor } = attach();
     openLongZoomed(cursor);
-    cursor.setIndex(281);
 
     pointer(lane, 'pointerdown', { x: 300, pointerType: 'mouse' });
     pointer(lane, 'pointermove', { x: 150, pointerType: 'mouse' });
+    // 150 px of 600 is a quarter of the 40-sample window 280–320.
+    expect(cursor.state().index).toBe(290);
     pointer(lane, 'pointerup', { x: 150, pointerType: 'mouse' });
 
-    // 150 px of 600 is a quarter of the 40-sample window.
-    expect(two.view().from).toBeCloseTo(290);
-    expect(cursor.state().selection).toBeNull();
-    // The cursor was pulled into the window after the pan.
-    expect(cursor.state().index).toBe(290);
+    expect(two.view()).toEqual({ from: 280, to: 320 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 290, to: 294, classIndex: 0 });
   });
 
   it('stops a pan at the leg\'s end', () => {
     const { cursor } = attach();
     openLongZoomed(cursor);
 
-    pointer(lane, 'pointerdown', { x: 50, pointerType: 'mouse' });
-    pointer(lane, 'pointermove', { x: 590, pointerType: 'mouse' });
-    pointer(lane, 'pointermove', { x: 5000, pointerType: 'mouse' });
-    pointer(lane, 'pointerup', { x: 5000, pointerType: 'mouse' });
+    // A mouse pans with the horizontal wheel, not by dragging.
+    lane.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaX: -50000, deltaY: 0,
+    }));
 
     expect(two.view()).toEqual({ from: 140, to: 180 });
+  });
+});
+
+describe('releasing a drag selects (SNOW-1032)', () => {
+  /**
+   * The default angles with 296–309 alternating 20° and 32° sample by
+   * sample: fourteen one-segment bands, 1.875 px each on leg 3 fitted.
+   */
+  const STRIPED = ANGLES.map((angle, i) => (i >= 296 && i <= 309 ? (i % 2 ? 32 : 20) : angle));
+  /** Leg 3 fitted: 320 samples across 600 px from sample 140. */
+  const xOfSample = (index) => (index - 140) * (600 / 320) + 0.9;
+
+  it('draws a one-segment band as its own rect, nothing merged', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    const rect = bandRects().find((r) => r.getAttribute('data-from') === '301');
+    expect(rect.getAttribute('data-to')).toBe('301');
+    expect(Number(rect.getAttribute('width'))).toBeLessThan(2);
+    // Its neighbours are one segment each too.
+    for (const from of ['300', '302']) {
+      const other = bandRects().find((r) => r.getAttribute('data-from') === from);
+      expect(other.getAttribute('data-to')).toBe(from);
+    }
+  });
+
+  for (const pointerType of ['touch', 'mouse']) {
+    it(`selects the one-segment band holding the index a ${pointerType} drag ends on`, () => {
+      const { cursor } = attach({ angles: STRIPED });
+      cursor.openLeg(LEGS[2]);
+
+      pointer(lane, 'pointerdown', { x: 100, y: 5, pointerType });
+      pointer(lane, 'pointermove', { x: 200, y: 5, pointerType });
+      pointer(lane, 'pointermove', { x: xOfSample(301), y: 5, pointerType });
+      expect(cursor.state().index).toBe(301);
+      pointer(lane, 'pointerup', { x: xOfSample(301), y: 5, pointerType });
+
+      expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+      expect(two.view()).toEqual({ from: 140, to: 460 });
+    });
+  }
+
+  it('selects the band, not a passage, when a drag ends in the passage foot', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    pointer(lane, 'pointerdown', { x: 100, y: 42 });
+    pointer(lane, 'pointermove', { x: xOfSample(302), y: 42 });
+    pointer(lane, 'pointerup', { x: xOfSample(302), y: 42 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 302, to: 302, classIndex: 0 });
+  });
+
+  it('keeps the band selected when a drag is released onto it', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+    cursor.select({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+
+    pointer(lane, 'pointerdown', { x: 100 });
+    pointer(lane, 'pointermove', { x: xOfSample(301) });
+    pointer(lane, 'pointerup', { x: xOfSample(301) });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+  });
+
+  it('selects nothing when a drag is cancelled rather than released', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    pointer(lane, 'pointerdown', { x: 100 });
+    pointer(lane, 'pointermove', { x: xOfSample(301) });
+    pointer(lane, 'pointercancel', { x: xOfSample(301) });
+
+    expect(cursor.state().index).toBe(301);
+    expect(cursor.state().selection).toBeNull();
+  });
+
+  it('still toggles on a tap, and picks by nearest extent within 22 px', () => {
+    const { cursor } = attach({ angles: STRIPED });
+    cursor.openLeg(LEGS[2]);
+
+    now += 1000;
+    pointer(lane, 'pointerdown', { x: xOfSample(301), y: 5 });
+    pointer(lane, 'pointerup', { x: xOfSample(301), y: 5 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 301, to: 301, classIndex: 1 });
+
+    now += 1000;
+    pointer(lane, 'pointerdown', { x: xOfSample(301), y: 5 });
+    pointer(lane, 'pointerup', { x: xOfSample(301), y: 5 });
+    expect(cursor.state().selection).toBeNull();
+  });
+});
+
+describe('the selection box (SNOW-1032)', () => {
+  it('draws a one-sample selection at least 12 px wide', () => {
+    const { cursor } = attach();
+    // Leg 3 opens fitted: 320 samples across 600 px, 1.875 px each.
+    cursor.openLeg(LEGS[2]);
+
+    cursor.select({ kind: 'passage', from: 300, to: 300 });
+
+    const box = lane.querySelector('[data-route-rail-two-selection]');
+    expect(Number(box.getAttribute('width'))).toBe(12);
+    // Centred on sample 300's 1.875 px, 300 to 301.875 px.
+    expect(Number(box.getAttribute('x'))).toBeCloseTo(300.9375 - 6);
+  });
+
+  it('dims the lane either side of the box, and nowhere without a selection', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    expect(lane.querySelectorAll('[data-route-rail-two-dim]')).toHaveLength(0);
+
+    cursor.select({ kind: 'band', from: 110, to: 114, classIndex: 0 });
+
+    const left = lane.querySelector('[data-route-rail-two-dim="left"]');
+    const right = lane.querySelector('[data-route-rail-two-dim="right"]');
+    expect(Number(left.getAttribute('x'))).toBe(0);
+    expect(Number(left.getAttribute('width'))).toBe(150);
+    expect(Number(right.getAttribute('x'))).toBe(225);
+    expect(Number(right.getAttribute('width'))).toBe(375);
+    for (const veil of [left, right]) {
+      expect(veil.getAttribute('fill')).toBe('var(--color-card)');
+      expect(veil.getAttribute('fill-opacity')).toBe('0.62');
+      expect(veil.getAttribute('pointer-events')).toBe('none');
+      expect(veil.getAttribute('height')).toBe('44');
+    }
   });
 });
 
@@ -447,7 +653,7 @@ describe('keys', () => {
     expect(cursor.state().index).toBe(105);
 
     lane.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
   });
 });
 
@@ -1096,7 +1302,10 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
 
     doubleTap(x, 100, band);
 
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 300, to: 304 });
+    // Fitted, the 32° band 295–299 ends within 22 px of the tap on the 20°
+    // band 300–304, and a tap takes the steepest band in reach.
+    expect(cursor.state().selection)
+      .toEqual({ kind: 'band', from: 295, to: 299, classIndex: 1 });
     expect(two.view().to - two.view().from).toBe(180);
 
     now += 1000;

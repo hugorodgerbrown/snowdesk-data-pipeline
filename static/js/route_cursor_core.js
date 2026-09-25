@@ -38,6 +38,11 @@
  *     open leg: a passage that runs past the leg's end is still the
  *     passage, and rail two clips it when it draws.
  *
+ * A selection carries `classIndex` (SNOW-1032): the slope class of a
+ * selected band, an index into `pwaRouteSlopeCore.CLASSES`, so the map can
+ * draw the stretch in the band's colour. Anything that is not an integer —
+ * a passage, a band of unknown ground — is held as null.
+ *
  * `null` is a real state for the index and the selection: no pointer over
  * any surface, nothing selected. A non-finite number is not — it is a
  * conversion bug in the surface that sent it, and it throws.
@@ -51,7 +56,7 @@
  *   state()                 — the current frozen `{index, openLeg, selection}`
  *   setIndex(index | null)
  *   openLeg(leg) / closeLeg()
- *   select({kind, from, to}) / clearSelection()
+ *   select({kind, from, to, classIndex?}) / clearSelection()
  *   subscribe(fn)           — returns the unsubscribe function
  */
 
@@ -67,9 +72,10 @@
    */
 
   /**
-   * @typedef {{kind: string, from: number, to: number}} Selection
+   * @typedef {{kind: string, from: number, to: number, classIndex?: ?number}} Selection
    *   A selected range in sample indices, both ends inclusive. `kind` names
-   *   what was pressed (`'band'`, `'passage'`, …) so a surface can draw it.
+   *   what was pressed (`'band'`, `'passage'`, …) so a surface can draw it;
+   *   `classIndex` is a band's slope class, null for anything else.
    */
 
   /**
@@ -203,6 +209,9 @@
     /**
      * Select a range, replacing any selection already held.
      *
+     * Selecting the range already held — same kind, same ends — is a no-op
+     * whatever its `classIndex`.
+     *
      * @param {Selection} selection What was pressed, in sample indices.
      */
     function select(selection) {
@@ -212,10 +221,13 @@
       const to = Math.max(a, b);
       const held = current.selection;
       if (held && held.kind === selection.kind && held.from === from && held.to === to) return;
+      const classIndex = Number.isInteger(selection.classIndex)
+        ? /** @type {number} */ (selection.classIndex)
+        : null;
       commit(
         current.index,
         current.openLeg,
-        Object.freeze({ kind: selection.kind, from: from, to: to }),
+        Object.freeze({ kind: selection.kind, from: from, to: to, classIndex: classIndex }),
       );
     }
 

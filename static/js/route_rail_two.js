@@ -53,7 +53,10 @@
  * row of level-ski wedges showing its bank (bank_ribbon_core.js,
  * SNOW-1031), and one bar per no-fall passage;
  * then the cursor line, the selection's outline, and edge fades where more
- * leg lies beyond the window. The leg's elevation profile was a fourth row
+ * leg lies beyond the window. The bands are `bandRuns`, one per run of
+ * segments sharing a class, never merged. While a band or passage is
+ * selected, the rest of the lane is dimmed under a card-coloured veil
+ * (SNOW-1032). The leg's elevation profile was a fourth row
  * above the bands until SNOW-1019 removed it: it drew near-flat and added
  * nothing rail one's highlighted leg does not show. SNOW-1024 removed the
  * distance ticks and their labels: rail one's bracket already says where
@@ -78,7 +81,7 @@
  *
  * THE WINDOW IS RAIL TWO'S OWN. The view and the span live here, never on
  * the cursor. Rail two opens FITTED — the whole leg, however long — pans
- * by drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
+ * by a two-finger drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
  * the −/+ buttons, the −/+ keys and a double-tap. Panning stops at the
  * leg's ends; the next leg is opened on rail one. An index or a selection published from
  * elsewhere that lands outside the window CENTRES it there (a range wider
@@ -89,15 +92,27 @@
  * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
- * PRESSES. A one-finger (or pen) press that moves past `DRAG_PX` SCRUBS:
- * the cursor follows it, which is what the idle hint "Drag to read a
- * point" promises. A touch drag used to pan, so the hint pointed at a
- * gesture that never read anything (SNOW-1024). Two fingers pan and zoom
- * together — the pinch keeps the sample under their midpoint beneath it,
- * so moving both fingers moves the window. A mouse drag still pans, since
- * a mouse already reads a point by hovering. A tap selects the band or
- * passage under it (`cursor.select`) — tapping the same one again clears
- * it — and moves the cursor there. A second pointer starts a pinch and
+ * PRESSES. A one-finger, pen or mouse press that moves past `DRAG_PX`
+ * SCRUBS: the cursor follows it, which is what the idle hint "Drag to
+ * read a point" promises — dragging reads points, releasing selects. A
+ * touch drag used to pan, so the hint pointed at a gesture that never
+ * read anything (SNOW-1024); since SNOW-1032's revision a mouse drag
+ * scrubs too, and a mouse pans with the horizontal or Shift wheel or by
+ * zooming. RELEASING a drag selects the band holding the cursor's index,
+ * exactly — the band whose `from ≤ index ≤ to`, with no radius and no
+ * snapping — wherever the pointer ends, the passage foot included; a
+ * release onto the band already selected leaves it selected. Two fingers
+ * pan and zoom together — the pinch keeps the sample under their midpoint
+ * beneath it, so moving both fingers moves the window. A tap selects a
+ * band or passage (`cursor.select`) — tapping the same one again clears
+ * it — and moves the cursor there. The tap target is not the drawn width
+ * (SNOW-1032): a tap in the passage row's foot picks the passage whose
+ * extent is nearest within `TAP_RADIUS_PX` (`nearestRange`); anywhere
+ * else it picks the STEEPEST band within `TAP_RADIUS_PX`
+ * (`steepestBand`) — bands touch, so the nearest would always be the one
+ * under the finger. The selection box is drawn at least `MIN_BOX_PX` wide (`selectionBox`); the readout and the map read
+ * the band's real extent. A band's selection carries its `classIndex`,
+ * which the map draws the stretch in. A second pointer starts a pinch and
  * cancels the press in progress, so a pinch never scrubs or selects.
  *
  * DOUBLE-TAP. A double-click, or two touch or pen lifts within
@@ -156,8 +171,17 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
-  /** How far beside a leg's segment a tap on the picker still picks it, px. */
+  /**
+   * How far beside a leg's segment on the picker, or a band or passage on
+   * an open leg, a tap still picks it, in px.
+   */
   var TAP_RADIUS_PX = 22;
+  /** The narrowest selection box drawn, in px. */
+  var MIN_BOX_PX = 12;
+  /** How far above the passage bars a tap still counts as their row, px. */
+  var PASSAGE_ROW_SLACK_PX = 4;
+  /** The veil's opacity over the lane outside a selection. */
+  var DIM_OPACITY = '0.62';
   /**
    * The leg picker's coloured part inside its 44 px button, in px: the
    * `top-2.5 h-6` of `legButton`, which the motion shrinks onto the band.
@@ -404,6 +428,18 @@
    */
   function laneX(event) {
     return event.clientX - lane.getBoundingClientRect().left;
+  }
+
+  /**
+   * An event's y down the lane, in the lane's own units (`ROWS.height`).
+   *
+   * @param {MouseEvent} event
+   * @returns {number}
+   */
+  function laneY(event) {
+    var rect = lane.getBoundingClientRect();
+    var scale = rect.height > 0 ? core().ROWS.height / rect.height : 1;
+    return (event.clientY - rect.top) * scale;
   }
 
   /**
@@ -1321,7 +1357,32 @@
     });
   }
 
-  /** The selection's outline, the cursor line, and the edge fades. */
+  /**
+   * The veil over one side of the selection: the card's colour, so the
+   * rest of the lane recedes rather than greys.
+   *
+   * @param {number} x0 Its left edge, px.
+   * @param {number} x1 Its right edge, px.
+   * @param {string} side 'left' or 'right'.
+   */
+  function drawDim(x0, x1, side) {
+    if (x1 - x0 <= 0) return;
+    lane.appendChild(svgEl('rect', {
+      x: x0.toFixed(2),
+      y: '0',
+      width: (x1 - x0).toFixed(2),
+      height: String(core().ROWS.height),
+      fill: 'var(--color-card)',
+      'fill-opacity': DIM_OPACITY,
+      'pointer-events': 'none',
+      'data-route-rail-two-dim': side,
+    }));
+  }
+
+  /**
+   * The veil either side of the selection, the selection's outline, the
+   * cursor line, and the edge fades.
+   */
   function drawMarks() {
     var c = core();
     var height = c.ROWS.height;
@@ -1329,11 +1390,15 @@
     var selected = inLeg(state.selection);
     var part = selected ? c.clip(selected, view) : null;
     if (part) {
-      var x = c.xOf(part.from, view, width);
+      // The box is widened to be seen; the readout and the map read the
+      // range's real extent (SNOW-1032).
+      var box = c.selectionBox(part, view, width, MIN_BOX_PX);
+      drawDim(0, box.x, 'left');
+      drawDim(box.x + box.w, width, 'right');
       lane.appendChild(svgEl('rect', {
-        x: x.toFixed(2),
+        x: box.x.toFixed(2),
         y: '1',
-        width: Math.max(0, c.xOf(part.to, view, width) - x).toFixed(2),
+        width: box.w.toFixed(2),
         height: String(height - 2),
         rx: '2',
         fill: 'none',
@@ -1428,6 +1493,22 @@
   }
 
   /**
+   * A selected band's slope class: the one its selection carries
+   * (SNOW-1032), else the matching band's, else its first sample's. A
+   * band is one class throughout, so any of the three reads the same.
+   *
+   * @param {{from: number, to: number, classIndex?: ?number}} selection
+   * @returns {?number}
+   */
+  function selectedClass(selection) {
+    if (typeof selection.classIndex === 'number') return selection.classIndex;
+    var match = bands.find(function (b) {
+      return b.from === selection.from && b.to === selection.to;
+    });
+    return match ? match.classIndex : classify(angles()[selection.from]);
+  }
+
+  /**
    * The readout: the selection's length and class, under the selection;
    * or the terrain and its figures, under the cursor; or a hint.
    * `aria-valuetext` carries the same lines.
@@ -1452,7 +1533,7 @@
       } else {
         lines.push(interpolate(STRINGS['readout-band'], {
           length: length,
-          class: classLabel(classify(angles()[state.selection.from])),
+          class: classLabel(selectedClass(state.selection)),
         }));
       }
       var part = c.clip(selected, view);
@@ -1593,32 +1674,64 @@
    * @param {string} kind
    * @param {number} from
    * @param {number} to
+   * @param {?number} [classIndex] A band's slope class, for the map's
+   *   colour (SNOW-1032); none for a passage.
    */
-  function toggleSelection(kind, from, to) {
+  function toggleSelection(kind, from, to, classIndex) {
     var cursor = ctx.cursor;
     if (isSelected(kind, { from: from, to: to })) {
       cursor.clearSelection();
+    } else if (kind === 'band') {
+      cursor.select({ kind: kind, from: from, to: to, classIndex: classIndex });
     } else {
       cursor.select({ kind: kind, from: from, to: to });
     }
   }
 
   /**
-   * A tap: select what was under it, and move the cursor there.
+   * A drag's release: select the band holding the cursor's index, exactly
+   * — `from ≤ index ≤ to`, no radius, no snapping (SNOW-1032). A release
+   * onto the band already selected leaves it selected; only a tap toggles.
+   */
+  function selectUnderCursor() {
+    var index = ctx.cursor.state().index;
+    if (index === null) return;
+    var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
+    if (!band || isSelected('band', band)) return;
+    ctx.cursor.select({ kind: 'band', from: band.from, to: band.to, classIndex: band.classIndex });
+  }
+
+  /**
+   * A tap: select a band or passage near it, and move the cursor there.
+   *
+   * The row is read from the tap's y: from `PASSAGE_ROW_SLACK_PX` above the
+   * passage bars down, a passage — the nearest on-screen extent within
+   * `TAP_RADIUS_PX` (`nearestRange`); anywhere else in the lane, a band —
+   * the STEEPEST within `TAP_RADIUS_PX` (`steepestBand`), because bands
+   * touch and "nearest" would always be the one under the finger, leaving
+   * a one-segment band a one-segment target (SNOW-1032). The cursor moves
+   * to the tap, pulled inside the picked band so the readout and the
+   * leader line sit on what was selected.
    *
    * @param {number} x The lane x the press went down at.
-   * @param {?Element} target What it went down on.
+   * @param {number} y The lane y it went down at, in `ROWS` units.
    */
-  function tap(x, target) {
-    var hit = target && target.closest ? target.closest('[data-select-kind]') : null;
-    ctx.cursor.setIndex(clamp(core().indexAt(x, view, width), leg.from, leg.to));
-    if (hit) {
-      toggleSelection(
-        hit.getAttribute('data-select-kind'),
-        Number(hit.getAttribute('data-from')),
-        Number(hit.getAttribute('data-to')),
-      );
+  function tap(x, y) {
+    var c = core();
+    ctx.cursor.setIndex(clamp(c.indexAt(x, view, width), leg.from, leg.to));
+    var passageRow = y >= c.ROWS.passageTop - PASSAGE_ROW_SLACK_PX;
+    if (passageRow) {
+      var passage = c.nearestRange(passages, x, view, width, TAP_RADIUS_PX);
+      if (passage) toggleSelection('passage', passage.from, passage.to);
+      return;
     }
+    var band = c.steepestBand(bands, x, view, width, TAP_RADIUS_PX);
+    if (!band) return;
+    var index = ctx.cursor.state().index;
+    if (index !== null && (index < band.from || index > band.to)) {
+      ctx.cursor.setIndex(clamp(index, band.from, band.to));
+    }
+    toggleSelection('band', band.from, band.to, band.classIndex);
   }
 
   /** Start a pinch from the two pointers down. */
@@ -1647,12 +1760,9 @@
       press = {
         id: id,
         x0: x,
-        from0: view.from,
+        y0: laneY(event),
         moved: false,
         pointerType: event.pointerType || '',
-        target: event.target,
-        // A mouse drag pans; a finger or a pen drag scrubs the cursor.
-        scrubs: event.pointerType !== 'mouse',
       };
       if (lane.setPointerCapture) {
         try {
@@ -1689,11 +1799,9 @@
     if (press && press.id === id) {
       var dx = x - press.x0;
       if (!press.moved && Math.abs(dx) > DRAG_PX) press.moved = true;
-      if (press.moved && press.scrubs) {
+      // Every pointer's drag scrubs the cursor; none pans (SNOW-1032).
+      if (press.moved) {
         ctx.cursor.setIndex(clamp(c.indexAt(clamp(x, 0, width), view, width), leg.from, leg.to));
-      } else if (press.moved) {
-        setView(c.placeView(leg, span, press.from0 - (dx / width) * span));
-        scheduleDraw();
       }
       return;
     }
@@ -1727,6 +1835,7 @@
     if (!ended) return;
     if (ended.moved) {
       lastTap = null;
+      if (lifted) selectUnderCursor();
       clampIndex();
       draw();
     } else if (lifted) {
@@ -1754,7 +1863,7 @@
    * finger or a pen it zooms (`doubleTap`), and for a mouse the browser's
    * own `dblclick` does.
    *
-   * @param {{x0: number, pointerType: string, target: ?Element}} ended
+   * @param {{x0: number, y0: number, pointerType: string}} ended
    */
   function liftTap(ended) {
     var now = Date.now();
@@ -1768,7 +1877,7 @@
       return;
     }
     lastTap = { time: now, x: ended.x0 };
-    tap(ended.x0, ended.target);
+    tap(ended.x0, ended.y0);
   }
 
   lane.addEventListener('pointerup', asOwnWrite(function (event) {
@@ -1835,7 +1944,7 @@
         if (index === null) return;
         var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
         if (!band) return;
-        toggleSelection('band', band.from, band.to);
+        toggleSelection('band', band.from, band.to, band.classIndex);
         break;
       }
       case '-':

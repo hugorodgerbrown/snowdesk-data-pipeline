@@ -22,8 +22,18 @@
  * slope is not drawn — has no sample axis at all, and every function here
  * answers null for it rather than guessing a position.
  *
- * Pure: no DOM, no map, no globals read. map.js projects the midpoints
- * (`map.project`) and hands the pixels in.
+ * Pure: no DOM, no map, and one global read — `selectionLine` looks a
+ * band's colour up in `self.pwaRouteSlopeCore` when it is called, never at
+ * parse time. map.js projects the midpoints (`map.project`) and hands the
+ * pixels in.
+ *
+ * ## A band's stretch is drawn in its colour (SNOW-1032)
+ *
+ * A selected band's feature carries `colour`: the hex of its slope class,
+ * `pwaRouteSlopeCore.CLASSES[classIndex].hex`, which mirrors the
+ * `--color-slope-*` token rail two fills the band with. map.js paints the
+ * stretch in it over the dark route casing. A passage, or a band of
+ * unknown ground, carries no `colour` and keeps the ink-over-white look.
  *
  * Exports (frozen `self.pwaRouteCursorMapCore`):
  *
@@ -88,13 +98,30 @@
   }
 
   /**
+   * The hex a selected band is drawn in on the map, or null.
+   *
+   * @param {{kind?: string, classIndex?: ?number}} selection
+   * @returns {?string} The class's `hex` (the `--color-slope-*` mirror) for
+   *   a band with an integer `classIndex` the slope core knows; null for a
+   *   passage, an unknown class, or no slope core.
+   */
+  function selectionColour(selection) {
+    if (selection.kind !== 'band' || !Number.isInteger(selection.classIndex)) return null;
+    const slopeCore = self.pwaRouteSlopeCore;
+    const classes = slopeCore && Array.isArray(slopeCore.CLASSES) ? slopeCore.CLASSES : [];
+    const entry = classes[/** @type {number} */ (selection.classIndex)];
+    return entry && typeof entry.hex === 'string' ? entry.hex : null;
+  }
+
+  /**
    * The stretch of line a selection covers.
    *
    * @param {?Slope} slope
-   * @param {?{kind?: string, from: number, to: number}} selection Sample
-   *   indices, both inclusive.
+   * @param {?{kind?: string, from: number, to: number, classIndex?: ?number}} selection
+   *   Sample indices, both inclusive.
    * @returns {?Feature} Null for no selection, no record, or a range that
-   *   is not whole indices inside the route.
+   *   is not whole indices inside the route. A band with a known class
+   *   carries `properties.colour` (SNOW-1032).
    */
   function selectionLine(slope, selection) {
     const count = sampleCount(slope);
@@ -105,13 +132,17 @@
     if (from < 0 || to >= count || from > to) return null;
     const coordinates = slope.points.slice(from, to + 2);
     if (!coordinates.every(isPoint)) return null;
+    /** @type {Object<string, *>} */
+    const properties = { kind: selection.kind || null, from: from, to: to };
+    const colour = selectionColour(selection);
+    if (colour) properties.colour = colour;
     return {
       type: 'Feature',
       geometry: {
         type: 'LineString',
         coordinates: coordinates.map((p) => [p[0], p[1]]),
       },
-      properties: { kind: selection.kind || null, from: from, to: to },
+      properties: properties,
     };
   }
 

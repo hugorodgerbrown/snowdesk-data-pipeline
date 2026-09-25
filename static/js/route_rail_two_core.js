@@ -66,7 +66,8 @@
  * two 30° ones is its own band, because that one segment is the reading.
  * Consecutive unknown (null) angles make a run of their own, and a null
  * never joins a known class — "not known" must not read as the class
- * beside it.
+ * beside it. A band too thin to press at the fitted scale is reached by
+ * zooming, never by folding it into a neighbour (SNOW-1032's revision).
  *
  * Exports (frozen `self.pwaRouteRailTwoCore`):
  *
@@ -76,6 +77,7 @@
  *   PASSAGE_MIN_PX                            → a passage bar's least width, 6
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
+ *   selectionBox(part, view, width, minPx)    → {x, w} of the drawn box
  *   legLength(leg)                            → samples in the leg
  *   minSpan(leg)                              → the narrowest span it allows
  *   openingSpan(leg)                          → the span it opens at: all of it
@@ -89,6 +91,7 @@
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
  *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
+ *   steepestBand(bands, x, view, width, radiusPx) → the band a tap picks
  *   glyphGroup(span, width)                   → segments per bank glyph, N
  *   resolveSpan(leg, width)                   → the widest span whose row draws
  *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
@@ -334,6 +337,28 @@
   }
 
   /**
+   * The selection box drawn round a part of a range, at least `minPx`
+   * wide (SNOW-1032).
+   *
+   * Centred on the part and clamped to the lane, so a one-sample band
+   * still gets a box a reader can see. Only the box is widened: the
+   * readout and the map read the range's real extent.
+   *
+   * @param {View} part The visible part of the range (a `clip` result).
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} minPx The narrowest box.
+   * @returns {{x: number, w: number}} Its left edge and width, px.
+   */
+  function selectionBox(part, view, width, minPx) {
+    var x0 = xOf(part.from, view, width);
+    var x1 = xOf(part.to, view, width);
+    var w = Math.min(Math.max(minPx, x1 - x0), Math.max(0, width));
+    var x = clamp((x0 + x1) / 2 - w / 2, 0, Math.max(0, width - w));
+    return { x: x, w: w };
+  }
+
+  /**
    * How many samples a leg holds.
    *
    * @param {Leg} leg
@@ -505,18 +530,18 @@
 
   /**
    * The range a tap at `x` picks: the one whose drawn extent is nearest
-   * (SNOW-1033).
+   * (SNOW-1032, SNOW-1033).
    *
    * Each range is clipped to the view and measured on screen as
    * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
-   * the nearer edge otherwise. So a leg only a few px wide is still picked
-   * by a tap `radiusPx` beside it. On a tie the range whose half-open
+   * the nearer edge otherwise. So a leg, band or passage only a few px
+   * wide is still picked by a tap `radiusPx` beside it. On a tie the range whose half-open
    * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
    * then the leftmost.
    *
    * @template {{from: number, to: number}} R
-   * @param {Array<R>} ranges Leg slots (or any ranges), sample indices
-   *   inclusive.
+   * @param {Array<R>} ranges Leg slots, bands or passages, sample
+   *   indices inclusive.
    * @param {number} x The tap's px across the lane.
    * @param {View} view
    * @param {number} width The lane's width in px.
@@ -539,6 +564,56 @@
       var holds = x >= x0 && x < x1;
       if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
         best = range;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
+  }
+
+  /**
+   * The band a tap at `x` picks: the STEEPEST within `radiusPx` (SNOW-1032).
+   *
+   * Bands tile the leg edge to edge, so "nearest extent" always answers
+   * with the band under the finger and never widens a thin one: a
+   * one-segment band on a fitted long leg stays about 2 px to a tap.
+   * Picking the steepest class among every band whose on-screen extent
+   * comes within `radiusPx` gives a thin steep band inside gentle ground a
+   * 44 px target — the band a reader is most likely hunting for — while a
+   * thin gentle band beside steep ground gets none, which errs to the
+   * conservative side. Unknown (null) ranks below every class. Ties go to
+   * the nearer extent, then the one holding `x`, then the leftmost.
+   *
+   * @template {{from: number, to: number, classIndex: ?number}} B
+   * @param {Array<B>} bands `bandRuns` for the open leg.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, a band is not considered.
+   * @returns {?B}
+   */
+  function steepestBand(bands, x, view, width, radiusPx) {
+    if (!Array.isArray(bands)) return null;
+    /** @type {?B} */
+    var best = null;
+    var bestRank = -Infinity;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    bands.forEach(function (band) {
+      var part = band ? clip(band, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var rank = typeof band.classIndex === 'number' ? band.classIndex : -1;
+      var holds = x >= x0 && x < x1;
+      var better = rank > bestRank
+        || (rank === bestRank && distance < bestDistance)
+        || (rank === bestRank && distance === bestDistance && holds && !bestHolds);
+      if (better) {
+        best = band;
+        bestRank = rank;
         bestDistance = distance;
         bestHolds = holds;
       }
@@ -962,6 +1037,7 @@
     PASSAGE_MIN_PX: PASSAGE_MIN_PX,
     ROWS: ROWS,
     bandRuns: bandRuns,
+    selectionBox: selectionBox,
     legLength: legLength,
     minSpan: minSpan,
     openingSpan: openingSpan,
@@ -975,6 +1051,7 @@
     indexAt: indexAt,
     clip: clip,
     nearestRange: nearestRange,
+    steepestBand: steepestBand,
     glyphGroup: glyphGroup,
     resolveSpan: resolveSpan,
     bankGlyphs: bankGlyphs,

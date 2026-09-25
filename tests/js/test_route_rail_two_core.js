@@ -9,8 +9,10 @@
  * (SNOW-1031), and the leg's profile and figures on the
  * sample axis — the same axis rail one places its legs on — plus the
  * readout: the track's attitude, where the readout sits, and a stretch's
- * length to the nearest 25 m (SNOW-1024). SNOW-1033 adds the leg picker's
- * slots, the nearest-leg pick and the opening motion's timeline.
+ * length to the nearest 25 m (SNOW-1024). SNOW-1032 adds the selection
+ * box's minimum width. SNOW-1033 adds the leg picker's slots, the
+ * nearest-range pick (the leg picker's, and rail two's band and passage
+ * taps') and the opening motion's timeline.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -57,6 +59,29 @@ describe('bandRuns', () => {
 
   it('answers nothing for no angles', () => {
     expect(core.bandRuns(undefined, classify)).toEqual([]);
+  });
+});
+
+describe('selectionBox (SNOW-1032)', () => {
+  // 6 px a sample across a 600 px lane.
+  const VIEW = { from: 0, to: 100 };
+
+  it('draws a one-sample part 12 px wide, centred on it', () => {
+    expect(core.selectionBox({ from: 50, to: 51 }, VIEW, 600, 12)).toEqual({ x: 297, w: 12 });
+  });
+
+  it('keeps a wide part at its own width', () => {
+    expect(core.selectionBox({ from: 10, to: 20 }, VIEW, 600, 12)).toEqual({ x: 60, w: 60 });
+  });
+
+  it('clamps the widened box to the lane at both edges', () => {
+    expect(core.selectionBox({ from: 0, to: 1 }, VIEW, 600, 12)).toEqual({ x: 0, w: 12 });
+    expect(core.selectionBox({ from: 99, to: 100 }, VIEW, 600, 12)).toEqual({ x: 588, w: 12 });
+  });
+
+  it('never draws wider than the lane', () => {
+    expect(core.selectionBox({ from: 0, to: 1 }, { from: 0, to: 100 }, 8, 12))
+      .toEqual({ x: 0, w: 8 });
   });
 });
 
@@ -487,7 +512,40 @@ describe('roundStretch', () => {
   });
 });
 
-describe('nearestRange (SNOW-1033)', () => {
+describe('steepestBand (SNOW-1032)', () => {
+  // 10 px a sample across a 100 px lane.
+  const VIEW = { from: 0, to: 10 };
+  const band = (from, to, classIndex) => ({ from, to, classIndex });
+
+  it('takes the steepest band within the radius, not the one under the tap', () => {
+    const bands = [band(0, 4, 0), band(5, 5, 3), band(6, 9, 0)];
+    // 15 px left of the one-segment 40–45° band, inside the gentle one.
+    expect(core.steepestBand(bands, 35, VIEW, 100, 22)).toBe(bands[1]);
+  });
+
+  it('ignores a steeper band beyond the radius', () => {
+    const bands = [band(0, 4, 0), band(5, 5, 3), band(6, 9, 0)];
+    expect(core.steepestBand(bands, 25, VIEW, 100, 22)).toBe(bands[0]);
+  });
+
+  it('breaks a tie of class by the nearer extent, then the one holding the tap', () => {
+    const bands = [band(0, 1, 2), band(2, 7, 0), band(8, 9, 2)];
+    expect(core.steepestBand(bands, 35, VIEW, 100, 22)).toBe(bands[0]);
+    expect(core.steepestBand(bands, 65, VIEW, 100, 22)).toBe(bands[2]);
+  });
+
+  it('ranks unknown below every class', () => {
+    const bands = [band(0, 4, null), band(5, 9, 0)];
+    expect(core.steepestBand(bands, 45, VIEW, 100, 22)).toBe(bands[1]);
+  });
+
+  it('picks nothing with nothing in view', () => {
+    expect(core.steepestBand([band(20, 30, 5)], 50, VIEW, 100, 22)).toBeNull();
+    expect(core.steepestBand(undefined, 50, VIEW, 100, 22)).toBeNull();
+  });
+});
+
+describe('nearestRange (SNOW-1032, SNOW-1033)', () => {
   // 10 px a sample across a 100 px lane.
   const VIEW = { from: 0, to: 10 };
 

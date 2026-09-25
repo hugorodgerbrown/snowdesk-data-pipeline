@@ -111,10 +111,10 @@ describe('an open leg', () => {
 describe('the selection', () => {
   it('is set, replaced and cleared', () => {
     cursor.select({ kind: 'band', from: 10, to: 14 });
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: null });
 
     cursor.select({ kind: 'passage', from: 40, to: 43 });
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 40, to: 43 });
+    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 40, to: 43, classIndex: null });
 
     cursor.clearSelection();
     expect(cursor.state().selection).toBeNull();
@@ -122,20 +122,42 @@ describe('the selection', () => {
 
   it('is put in order and clamped to the route', () => {
     cursor.select({ kind: 'band', from: 120, to: 95 });
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 95, to: 99 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 95, to: 99, classIndex: null });
   });
 
   it('is not clamped to the open leg', () => {
     cursor.openLeg({ from: 30, to: 59 });
     cursor.select({ kind: 'passage', from: 55, to: 70 });
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 55, to: 70 });
+    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 55, to: 70, classIndex: null });
+  });
+
+  it('keeps an integer classIndex and holds anything else as null (SNOW-1032)', () => {
+    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 3 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: 3 });
+
+    cursor.select({ kind: 'band', from: 20, to: 24, classIndex: 2.5 });
+    expect(cursor.state().selection.classIndex).toBeNull();
+
+    cursor.select({ kind: 'passage', from: 40, to: 43 });
+    expect(cursor.state().selection.classIndex).toBeNull();
+  });
+
+  it('treats a re-select of the same range as a no-op, whatever its class', () => {
+    const fn = vi.fn();
+    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 1 });
+    cursor.subscribe(fn);
+
+    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 4 });
+
+    expect(fn).not.toHaveBeenCalled();
+    expect(cursor.state().selection.classIndex).toBe(1);
   });
 
   it('survives opening and closing a leg', () => {
     cursor.select({ kind: 'band', from: 10, to: 14 });
     cursor.openLeg({ from: 30, to: 59 });
     cursor.closeLeg();
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14 });
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: null });
   });
 });
 
