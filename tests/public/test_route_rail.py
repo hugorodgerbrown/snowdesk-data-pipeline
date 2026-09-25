@@ -19,6 +19,7 @@ import pytest
 from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
+from pytest_django.fixtures import Settings
 
 from apps.routes.models import Route
 from tests.factories import UserFactory
@@ -119,6 +120,15 @@ class TestTheRailShipsWithTheMap:
             assert value is not None
             assert "__UUID__" in value.group(1)
         assert f'data-route-plan-trip-url="{reverse("trips:new")}"' in tag
+
+    def test_it_carries_the_band_merge_threshold(
+        self, client: Client, settings: Settings
+    ) -> None:
+        """Rail two folds bands shorter than ROUTE_BAND_MIN_RUN_M (SNOW-1032)."""
+        settings.ROUTE_BAND_MIN_RUN_M = 40
+        tag = _opening_tag(_rail(_home(client)))
+
+        assert 'data-band-min-run-m="40"' in tag
 
     def test_the_scripts_load_cursor_then_cores_then_rail_two_then_rail(
         self, client: Client

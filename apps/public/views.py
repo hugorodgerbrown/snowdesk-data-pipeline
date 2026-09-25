@@ -1748,7 +1748,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``route_bulletin_url_template``,
         ``route_delete_url_template``, ``route_name_max_length``,
-        ``routes_geojson_url`` and ``routes_signin_url``.
+        ``route_band_min_run_m``, ``routes_geojson_url`` and
+        ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1809,6 +1810,10 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         "route_delete_url_template": reverse(
             "routes:delete", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
+        # SNOW-1032: rail two folds slope bands shorter than this into a
+        # neighbour. The runs are built in JS, so the setting rides on
+        # #route-rail as data-band-min-run-m.
+        "route_band_min_run_m": settings.ROUTE_BAND_MIN_RUN_M,
         # SNOW-687: the map layer's data. Emitted only for an eligible user
         # (see the template) — the endpoint 403s for anyone else, and there
         # is nothing to draw.

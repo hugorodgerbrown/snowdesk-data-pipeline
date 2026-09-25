@@ -84,6 +84,10 @@ Context:
     route_name_max_length     : int — Route.name's max_length, which
                                 routes:rename enforces; the rename input's
                                 maxlength.
+    route_band_min_run_m      : int, optional — ROUTE_BAND_MIN_RUN_M, the
+                                shortest slope band rail two draws
+                                (SNOW-1032); route_rail_two.js falls back to
+                                25 when it is absent.
     static                    : bool, optional — render visible and in
                                 normal flow, for the component library,
                                 which runs no JS to reveal it.
@@ -103,6 +107,7 @@ Context:
     data-route-rename-url-template="{{ route_rename_url_template }}"
     data-route-share-url-template="{{ route_share_url_template }}"
     data-route-delete-url-template="{{ route_delete_url_template }}"
+    data-band-min-run-m="{{ route_band_min_run_m }}"
     data-route-plan-trip-url="{% url 'trips:new' %}"
     class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]"
 >
