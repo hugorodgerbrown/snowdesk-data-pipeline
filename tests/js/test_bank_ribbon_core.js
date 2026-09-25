@@ -2,8 +2,8 @@
  * tests/js/test_bank_ribbon_core.js — the bank's level-ski wedge geometry
  * (static/js/bank_ribbon_core.js, SNOW-1021, redrawn by SNOW-1031).
  *
- * Pure geometry: how many glyphs a width holds, which segment each reads,
- * how far each ground line rises, where the cap and the no-fill threshold
+ * Pure geometry: one glyph's shape (`bankWedge`), how many glyphs a width
+ * holds, which segment each reads, how far each ground line rises, where the cap and the no-fill threshold
  * cut in, and where a null leaves a gap. The case most worth holding is
  * the sign — a positive roll must put the pale (downhill) wedge on the
  * right and a negative one on the left, because that side is what
@@ -15,16 +15,16 @@ import { describe, expect, it } from 'vitest';
 import '../../static/js/bank_ribbon_core.js';
 
 const ribbon = self.pwaBankRibbonCore;
-const { bankWedges } = ribbon;
+const { bankWedge, bankWedges } = ribbon;
 
 /** An x → index conversion spreading `count` segments across `width`. */
 function linear(count, width) {
   return (x) => Math.floor((x / width) * count);
 }
 
-/** One glyph for one roll, centred at x 7.5, y 27. */
+/** One glyph for one roll, centred at x 7.5, y 27 (`bankWedge`). */
 function one(roll, extra = {}) {
-  return bankWedges({ banks: [roll], width: 15, indexAt: () => 0, y: 27, ...extra })[0];
+  return { x: 7.5, ...bankWedge(7.5, roll, { y: 27, ...extra }) };
 }
 
 /** The rise the spec asks for: 7 × 1.5 × tan|roll|, capped at 13. */
@@ -42,23 +42,7 @@ describe('constants', () => {
   });
 });
 
-describe('bankWedges', () => {
-  it('lays one glyph per pitch, whatever the segment count', () => {
-    const few = bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600) });
-    const many = bankWedges({ banks: Array(600).fill(10), width: 600, indexAt: linear(600, 600) });
-    expect(few).toHaveLength(40);
-    expect(many).toHaveLength(40);
-    expect(bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600), pitch: 12 }))
-      .toHaveLength(50);
-  });
-
-  it('centres each glyph in its slot and reads the segment under it', () => {
-    const wedges = bankWedges({ banks: [5, 6, 7, 8], width: 60, indexAt: linear(4, 60) });
-    expect(wedges.map((w) => w.x)).toEqual([7.5, 22.5, 37.5, 52.5]);
-    expect(wedges.map((w) => w.index)).toEqual([0, 1, 2, 3]);
-    expect(wedges.map((w) => w.roll)).toEqual([5, 6, 7, 8]);
-  });
-
+describe('bankWedge', () => {
   it('draws a 0° roll flat on the centre line, with no fills', () => {
     const w = one(0);
     expect(w.dy).toBe(0);
@@ -116,6 +100,33 @@ describe('bankWedges', () => {
     // 7 × 1.5 × tan(4°) ≈ 0.73 px, over the 0.6 px threshold.
     expect(one(4).up).not.toBeNull();
     expect(one(3).up).toBeNull();
+  });
+});
+
+describe('bankWedges', () => {
+  it('lays each glyph with bankWedge\'s geometry', () => {
+    const [w] = bankWedges({ banks: [30], width: 15, indexAt: () => 0, y: 27 });
+    const shape = bankWedge(7.5, 30, { y: 27 });
+    expect(w.dy).toBe(shape.dy);
+    expect(w.ground).toEqual(shape.ground);
+    expect(w.up).toEqual(shape.up);
+    expect(w.down).toEqual(shape.down);
+  });
+
+  it('lays one glyph per pitch, whatever the segment count', () => {
+    const few = bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600) });
+    const many = bankWedges({ banks: Array(600).fill(10), width: 600, indexAt: linear(600, 600) });
+    expect(few).toHaveLength(40);
+    expect(many).toHaveLength(40);
+    expect(bankWedges({ banks: Array(20).fill(10), width: 600, indexAt: linear(20, 600), pitch: 12 }))
+      .toHaveLength(50);
+  });
+
+  it('centres each glyph in its slot and reads the segment under it', () => {
+    const wedges = bankWedges({ banks: [5, 6, 7, 8], width: 60, indexAt: linear(4, 60) });
+    expect(wedges.map((w) => w.x)).toEqual([7.5, 22.5, 37.5, 52.5]);
+    expect(wedges.map((w) => w.index)).toEqual([0, 1, 2, 3]);
+    expect(wedges.map((w) => w.roll)).toEqual([5, 6, 7, 8]);
   });
 
   it('leaves a gap for a null bank rather than drawing it flat', () => {
