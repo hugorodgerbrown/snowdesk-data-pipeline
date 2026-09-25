@@ -28,10 +28,16 @@
  * is drawn, so a track on the fall line reads as a row of flat dashes
  * without a gap in it: 0° is a reading, not a missing one.
  *
- * THE GLYPH COUNT FOLLOWS THE PITCH, NOT THE SEGMENT COUNT. A zoomed leg
- * of twenty segments across 600 px and a whole 600-segment tour across
- * the same width both get 40 glyphs at a 15 px pitch; each glyph reads the
- * segment under its own x.
+ * ONE GLYPH'S GEOMETRY IS `bankWedge`. It takes a centre and a roll and
+ * answers the ground line and the two triangles; a caller that lays its
+ * own glyphs (rail two, which groups whole segments per glyph —
+ * route_rail_two_core.js's `bankGlyphs`, SNOW-1031) calls it directly.
+ *
+ * `bankWedges` is the fixed-pitch layout built on it. Its glyph count
+ * follows the pitch, not the segment count: a zoomed leg of twenty
+ * segments across 600 px and a whole 600-segment tour across the same
+ * width both get 40 glyphs at a 15 px pitch; each glyph reads the segment
+ * under its own x.
  *
  * THE X → INDEX CONVERSION IS THE CALLER'S. The rule route_cursor_core.js
  * set: each surface owns its geometry and converts it to a sample index
@@ -53,6 +59,8 @@
  *   EXAGGERATION      → the tilt's exaggeration, 1.5
  *   CAP_PX            → the most a glyph rises either side of y, 13
  *   MIN_FILL_PX       → under this rise the wedges are not filled, 0.6
+ *   bankWedge(x, roll, {halfWidth, exaggeration, capPx, minFillPx, y})
+ *     — one glyph's {dy, ground, up, down}
  *   bankWedges({banks, width, indexAt, pitch, halfWidth, exaggeration,
  *     capPx, minFillPx, y})
  *     — one glyph per `pitch` px across `width`
@@ -100,6 +108,69 @@
    *   (`down`, drawn pale) triangles — both null under `minFillPx`. In the
    *   caller's pixel space, y down as SVG and canvas are.
    */
+
+  /**
+   * @typedef {{
+   *   dy: number,
+   *   ground: {x1: number, y1: number, x2: number, y2: number},
+   *   up: ?Array<Point>,
+   *   down: ?Array<Point>,
+   * }} WedgeShape
+   *   One glyph's geometry, without the sample it reads: `BankWedge`
+   *   less `x`, `index` and `roll`.
+   */
+
+  /**
+   * @typedef {{
+   *   halfWidth?: number,
+   *   exaggeration?: number,
+   *   capPx?: number,
+   *   minFillPx?: number,
+   *   y?: number,
+   * }} WedgeShapeOptions
+   */
+
+  /**
+   * One level-ski glyph centred on `x`.
+   *
+   * @param {number} x The glyph's centre in px.
+   * @param {number} roll The signed bank in degrees; positive falls away
+   *   right.
+   * @param {WedgeShapeOptions} [options]
+   *   `halfWidth` — half the glyph's width in px (default
+   *     `GLYPH_HALF_WIDTH`).
+   *   `exaggeration` — the tilt's exaggeration (default `EXAGGERATION`).
+   *   `capPx` — the most `dy` may reach (default `CAP_PX`).
+   *   `minFillPx` — under this `dy` the wedges are null
+   *     (default `MIN_FILL_PX`).
+   *   `y` — the glyph's vertical centre (default 0).
+   * @returns {WedgeShape}
+   */
+  function bankWedge(x, roll, options) {
+    const opts = options || {};
+    const halfWidth = opts.halfWidth === undefined ? GLYPH_HALF_WIDTH : opts.halfWidth;
+    const exaggeration = opts.exaggeration === undefined ? EXAGGERATION : opts.exaggeration;
+    const capPx = opts.capPx === undefined ? CAP_PX : opts.capPx;
+    const minFillPx = opts.minFillPx === undefined ? MIN_FILL_PX : opts.minFillPx;
+    const y = opts.y === undefined ? 0 : opts.y;
+    const radians = (Math.abs(roll) * Math.PI) / 180;
+    const dy = Math.min(capPx, halfWidth * exaggeration * Math.tan(radians));
+    // The uphill end is on the side opposite the fall: positive → left.
+    const sign = roll >= 0 ? 1 : -1;
+    const xu = x - halfWidth * sign;
+    const xd = x + halfWidth * sign;
+    const filled = dy >= minFillPx;
+    return {
+      dy: dy,
+      ground: Object.freeze({ x1: xu, y1: y - dy, x2: xd, y2: y + dy }),
+      up: filled
+        ? /** @type {Array<Point>} */ ([[xu, y - dy], [x, y], [xu, y]])
+        : null,
+      down: filled
+        ? /** @type {Array<Point>} */ ([[x, y], [xd, y + dy], [xd, y]])
+        : null,
+    };
+  }
 
   /**
    * @typedef {{
@@ -162,26 +233,22 @@
       const roll = banks[index];
       // A gap, not a flat glyph: null is "not known", never "level".
       if (typeof roll !== 'number' || !Number.isFinite(roll)) continue;
-      const radians = (Math.abs(roll) * Math.PI) / 180;
-      const dy = Math.min(capPx, halfWidth * exaggeration * Math.tan(radians));
-      // The uphill end is on the side opposite the fall: positive → left.
-      const sign = roll >= 0 ? 1 : -1;
-      const xu = x - halfWidth * sign;
-      const xd = x + halfWidth * sign;
-      const filled = dy >= minFillPx;
+      const shape = bankWedge(x, roll, {
+        halfWidth: halfWidth,
+        exaggeration: exaggeration,
+        capPx: capPx,
+        minFillPx: minFillPx,
+        y: y,
+      });
       wedges.push(
         Object.freeze({
           x: x,
           index: index,
           roll: roll,
-          dy: dy,
-          ground: Object.freeze({ x1: xu, y1: y - dy, x2: xd, y2: y + dy }),
-          up: filled
-            ? /** @type {Array<Point>} */ ([[xu, y - dy], [x, y], [xu, y]])
-            : null,
-          down: filled
-            ? /** @type {Array<Point>} */ ([[x, y], [xd, y + dy], [xd, y]])
-            : null,
+          dy: shape.dy,
+          ground: shape.ground,
+          up: shape.up,
+          down: shape.down,
         }),
       );
     }
@@ -194,6 +261,7 @@
     EXAGGERATION: EXAGGERATION,
     CAP_PX: CAP_PX,
     MIN_FILL_PX: MIN_FILL_PX,
+    bankWedge: bankWedge,
     bankWedges: bankWedges,
   });
 })();

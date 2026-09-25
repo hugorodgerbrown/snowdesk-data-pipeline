@@ -2,14 +2,17 @@
  * tests/js/test_route_rail_two_core.js — rail two's pure half
  * (static/js/route_rail_two_core.js, SNOW-1019).
  *
- * The band runs (unmerged, unknowns kept apart), the window a leg opens
- * at, the view's clamps, scrolling a range into view by the least
- * distance, zoom about an anchor between its two limits, the ribbon's
- * pitch turning per-sample, and the leg's profile and figures on the
+ * The band runs (unmerged, unknowns kept apart), a leg opening fitted,
+ * the view's clamps, scrolling a range into view by the least distance,
+ * zoom about an anchor between its two limits, the bank row's grouping of
+ * whole segments and its placeholder, the passage bars' least width
+ * (SNOW-1031), and the leg's profile and figures on the
  * sample axis — the same axis rail one places its legs on — plus the
  * readout: the track's attitude, where the readout sits, and a stretch's
- * length to the nearest 25 m (SNOW-1024). SNOW-1032 adds the sliver merge,
- * the tap's nearest-band pick and the selection box's minimum width.
+ * length to the nearest 25 m (SNOW-1024). SNOW-1032 adds the selection
+ * box's minimum width. SNOW-1033 adds the leg picker's slots, the
+ * nearest-range pick (the leg picker's, and rail two's band and passage
+ * taps') and the opening motion's timeline.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -59,147 +62,6 @@ describe('bandRuns', () => {
   });
 });
 
-describe('sampledStrideM (SNOW-1032)', () => {
-  // 0.001° of latitude is 111.195 m on the mean-radius sphere.
-  const line = (count, stepDeg) => Array.from({ length: count }, (_, i) => [7.4, 46 + i * stepDeg]);
-
-  it('averages the segment lengths in the range', () => {
-    expect(core.sampledStrideM(line(11, 0.001), { from: 0, to: 9 })).toBeCloseTo(111.195, 2);
-    expect(core.sampledStrideM(line(11, 0.001), { from: 3, to: 4 })).toBeCloseTo(111.195, 2);
-  });
-
-  it('skips a segment with a missing end, and stops at the last point', () => {
-    const points = line(5, 0.001);
-    points[2] = null;
-    // Segments 1 and 2 touch the missing point; 0 and 3 remain.
-    expect(core.sampledStrideM(points, { from: 0, to: 9 })).toBeCloseTo(111.195, 2);
-  });
-
-  it('returns 0 with nothing to measure', () => {
-    expect(core.sampledStrideM(undefined, { from: 0, to: 3 })).toBe(0);
-    expect(core.sampledStrideM([[7.4, 46]], { from: 0, to: 3 })).toBe(0);
-  });
-});
-
-describe('mergeShortRuns (SNOW-1032)', () => {
-  // 20 m a sample and a 25 m threshold: a one-sample run is a sliver, a
-  // two-sample run is not.
-  const PER = 20;
-  const MIN = 25;
-  const run = (from, to, classIndex) => ({ from, to, classIndex });
-
-  it('folds a sliver into the steeper neighbour', () => {
-    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 8, 1)], PER, MIN))
-      .toEqual([run(0, 3, 0), run(4, 8, 1)]);
-    expect(core.mergeShortRuns([run(0, 3, 3), run(4, 4, 2), run(5, 8, 1)], PER, MIN))
-      .toEqual([run(0, 4, 3), run(5, 8, 1)]);
-  });
-
-  it('folds adjacent slivers one at a time, leftmost first', () => {
-    // The c2 sliver goes first, into the c3 sliver beside it, which is then
-    // 40 m and stays.
-    expect(core.mergeShortRuns(
-      [run(0, 3, 0), run(4, 4, 2), run(5, 5, 3), run(6, 9, 0)],
-      PER,
-      MIN,
-    )).toEqual([run(0, 3, 0), run(4, 5, 3), run(6, 9, 0)]);
-  });
-
-  it('folds an end sliver into its only neighbour', () => {
-    expect(core.mergeShortRuns([run(0, 0, 3), run(1, 4, 0)], PER, MIN))
-      .toEqual([run(0, 4, 0)]);
-    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 3)], PER, MIN))
-      .toEqual([run(0, 4, 0)]);
-  });
-
-  it('ends with one run when every run is a sliver', () => {
-    expect(core.mergeShortRuns([run(0, 0, 0), run(1, 1, 1), run(2, 2, 2)], PER, MIN))
-      .toEqual([run(0, 2, 1)]);
-  });
-
-  it('returns clean runs as they were, as new objects', () => {
-    const runs = [run(0, 1, 0), run(2, 3, 1)];
-    const merged = core.mergeShortRuns(runs, PER, MIN);
-    expect(merged).toEqual(runs);
-    expect(merged[0]).not.toBe(runs[0]);
-  });
-
-  it('measures to the nearest sample, so a real 25 m segment either side of 25 m merges', () => {
-    // Mont Fort - Col de la Chaux averages 25.003 m a sample, Hidden
-    // Valley 24.974 m: both fold every one-segment run and keep two.
-    [25.003, 24.974].forEach((per) => {
-      expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 6, 1)], per, 25))
-        .toEqual([run(0, 3, 0), run(4, 6, 1)]);
-    });
-  });
-
-  it('returns a single run or no runs unchanged', () => {
-    expect(core.mergeShortRuns([run(0, 0, 2)], PER, MIN)).toEqual([run(0, 0, 2)]);
-    expect(core.mergeShortRuns([], PER, MIN)).toEqual([]);
-  });
-
-  it('ranks unknown below every class', () => {
-    // An unknown sliver folds into the steeper known side …
-    expect(core.mergeShortRuns([run(0, 3, 1), run(4, 4, null), run(5, 8, 0)], PER, MIN))
-      .toEqual([run(0, 4, 1), run(5, 8, 0)]);
-    // … and a known sliver beside unknown ground folds into the known side.
-    expect(core.mergeShortRuns([run(0, 3, null), run(4, 4, 2), run(5, 8, 0)], PER, MIN))
-      .toEqual([run(0, 3, null), run(4, 8, 0)]);
-  });
-
-  it('joins the neighbours a merge leaves sharing a class', () => {
-    expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 8, 0)], PER, MIN))
-      .toEqual([run(0, 8, 0)]);
-  });
-
-  it('keeps the coverage whole and leaves no sliver', () => {
-    const angles = Array.from({ length: 200 }, (_, i) => [20, 32, 37, 20, 42, null][(i * 7) % 6]);
-    const merged = core.mergeShortRuns(core.bandRuns(angles, classify), PER, MIN);
-    expect(merged[0].from).toBe(0);
-    expect(merged[merged.length - 1].to).toBe(199);
-    for (let i = 1; i < merged.length; i += 1) {
-      expect(merged[i].from).toBe(merged[i - 1].to + 1);
-      expect(merged[i].classIndex).not.toBe(merged[i - 1].classIndex);
-    }
-    for (const r of merged) expect((r.to - r.from + 1) * PER).toBeGreaterThanOrEqual(MIN);
-  });
-});
-
-describe('nearestRange (SNOW-1032)', () => {
-  // 10 px a sample across a 100 px lane.
-  const VIEW = { from: 0, to: 10 };
-
-  it('picks the range a tap falls inside', () => {
-    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }, { from: 3, to: 9 }];
-    expect(core.nearestRange(ranges, 25, VIEW, 100, 22)).toBe(ranges[1]);
-  });
-
-  it('gives a shared edge to the range that starts there, as indexAt does', () => {
-    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }];
-    expect(core.nearestRange(ranges, 20, VIEW, 100, 22)).toBe(ranges[1]);
-  });
-
-  it('picks a range up to 22 px beside the tap', () => {
-    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
-    // 22 px right of the first, 18 px left of the second.
-    expect(core.nearestRange(ranges, 32, VIEW, 100, 22)).toBe(ranges[1]);
-    expect(core.nearestRange([ranges[0]], 32, VIEW, 100, 22)).toBe(ranges[0]);
-  });
-
-  it('picks nothing farther than 22 px away', () => {
-    expect(core.nearestRange([{ from: 0, to: 0 }], 33, VIEW, 100, 22)).toBeNull();
-  });
-
-  it('breaks a tie between two neighbours to the left', () => {
-    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
-    expect(core.nearestRange(ranges, 30, VIEW, 100, 22)).toBe(ranges[0]);
-  });
-
-  it('ignores a range outside the view', () => {
-    expect(core.nearestRange([{ from: 20, to: 30 }], 99, VIEW, 100, 22)).toBeNull();
-  });
-});
-
 describe('selectionBox (SNOW-1032)', () => {
   // 6 px a sample across a 600 px lane.
   const VIEW = { from: 0, to: 100 };
@@ -224,13 +86,10 @@ describe('selectionBox (SNOW-1032)', () => {
 });
 
 describe('openingSpan', () => {
-  it('opens a long leg at 2 km of ground', () => {
-    // 300 samples over 15 km: 50 m a sample, so 2 km is 40 samples.
-    expect(core.openingSpan(LEG, 300, 15000)).toBe(40);
-  });
-
-  it('opens a leg shorter than 2 km whole', () => {
-    expect(core.openingSpan({ from: 0, to: 9 }, 300, 15000)).toBe(10);
+  it('opens every leg fitted, however long', () => {
+    expect(core.openingSpan(LEG)).toBe(100);
+    expect(core.openingSpan({ from: 0, to: 9 })).toBe(10);
+    expect(core.openingSpan({ from: 0, to: 1999 })).toBe(2000);
   });
 });
 
@@ -322,7 +181,7 @@ describe('zoom', () => {
 
   it('makes a short fitted leg pannable once zoomed in', () => {
     const short = { from: 0, to: 9 };
-    const opened = core.placeView(short, core.openingSpan(short, 300, 15000), 0);
+    const opened = core.placeView(short, core.openingSpan(short), 0);
     expect(opened).toEqual({ from: 0, to: 10 });
     expect(core.placeView(short, 10, 3)).toEqual(opened);
 
@@ -351,89 +210,136 @@ describe('clip', () => {
   });
 });
 
-describe('tickPitch', () => {
-  it('keeps the base pitch at a wide view', () => {
-    expect(core.tickPitch(200, 600, 8)).toBe(8);
+describe('glyphGroup', () => {
+  it('groups twelve segments at Leg 7 fitted, 0.9 px a segment', () => {
+    // 390 px over 433 segments.
+    expect(core.glyphGroup(433, 390)).toBe(12);
   });
 
-  it('turns per-sample once a sample is wider than the base pitch', () => {
-    expect(core.tickPitch(20, 600, 8)).toBe(30);
+  it('groups three at Leg 7 ×4, 3.7 px a segment', () => {
+    expect(core.glyphGroup(390 / 3.7, 390)).toBe(3);
+  });
+
+  it('gives each segment its own glyph from 10 px up', () => {
+    expect(core.glyphGroup(60, 600)).toBe(1);
+    expect(core.glyphGroup(20, 600)).toBe(1);
+  });
+
+  it('holds an exact 10 / 3 px at three', () => {
+    expect(core.glyphGroup(180, 600)).toBe(3);
   });
 });
 
-describe('ribbonWedges', () => {
+describe('resolveSpan', () => {
+  it('is the widest span that draws, floor(width × 3 / 10)', () => {
+    expect(core.resolveSpan({ from: 0, to: 999 }, 390)).toBe(117);
+    expect(core.glyphGroup(core.resolveSpan({ from: 0, to: 999 }, 390), 390)).toBeLessThanOrEqual(3);
+    expect(core.glyphGroup(core.resolveSpan({ from: 0, to: 999 }, 390) + 1, 390)).toBeGreaterThan(3);
+  });
+
+  it('is clamped to the leg', () => {
+    expect(core.resolveSpan({ from: 0, to: 49 }, 390)).toBe(50);
+    expect(core.resolveSpan({ from: 0, to: 999 }, 10)).toBe(6);
+  });
+});
+
+describe('bankGlyphs', () => {
+  const { bankWedge } = self.pwaBankRibbonCore;
   const banks = Array.from({ length: 300 }, (_, i) => (i % 2 ? 30 : -30));
 
-  it('puts one glyph on each sample centre once zoomed in, however far panned', () => {
-    const view = { from: 120.4, to: 140.4 };
-    const wedges = core.ribbonWedges({
-      bankWedges: self.pwaBankRibbonCore.bankWedges,
-      banks,
-      leg: LEG,
-      view,
-      width: 600,
-    });
-    expect(wedges.length).toBeGreaterThanOrEqual(19);
-    for (const w of wedges) {
-      expect(w.x).toBeCloseTo(core.xOf(w.index + 0.5, view, 600));
-    }
-    expect(new Set(wedges.map((w) => w.index)).size).toBe(wedges.length);
+  /** The glyphs for a view, the rest defaulted. */
+  function glyphs(options) {
+    return core.bankGlyphs({ bankWedge, banks, leg: LEG, width: 600, y: 27, ...options });
+  }
+
+  it('shows the placeholder, and no glyphs, past three segments a glyph', () => {
+    // 200 segments over 600 px is 3 px each: N = 4.
+    expect(glyphs({ leg: { from: 0, to: 299 }, view: { from: 0, to: 200 } }))
+      .toEqual({ placeholder: true, glyphs: [] });
   });
 
-  it('shifts the ground line and both wedges by the same phase as the centre', () => {
-    const view = { from: 120.4, to: 140.4 };
-    const wedges = core.ribbonWedges({
-      bankWedges: self.pwaBankRibbonCore.bankWedges,
-      banks,
-      leg: LEG,
-      view,
-      width: 600,
-      y: 27,
-    });
-    for (const w of wedges) {
-      expect((w.ground.x1 + w.ground.x2) / 2).toBeCloseTo(w.x, 9);
-      expect(w.up[1]).toEqual([w.x, 27]);
-      expect(w.down[0]).toEqual([w.x, 27]);
-      // A positive roll falls away right: the pale wedge is right of centre.
-      const pale = w.down.map(([x]) => x);
-      if (w.roll > 0) expect(Math.min(...pale)).toBeGreaterThanOrEqual(w.x);
-      else expect(Math.max(...pale)).toBeLessThanOrEqual(w.x);
+  it('draws one glyph per segment from 10 px up, on its centre', () => {
+    const view = { from: 120, to: 140 };
+    const out = glyphs({ view });
+    expect(out.placeholder).toBe(false);
+    expect(out.glyphs.map((g) => g.index)).toEqual(Array.from({ length: 20 }, (_, i) => 120 + i));
+    for (const g of out.glyphs) {
+      expect(g.x).toBeCloseTo(core.xOf(g.index + 0.5, view, 600));
+      expect((g.ground.x1 + g.ground.x2) / 2).toBeCloseTo(g.x, 9);
+      expect(g.up[1]).toEqual([g.x, 27]);
     }
   });
 
-  it('keeps the 15 px glyph pitch at a wide view', () => {
-    const wedges = core.ribbonWedges({
-      bankWedges: self.pwaBankRibbonCore.bankWedges,
-      banks,
-      leg: LEG,
-      view: { from: 100, to: 200 },
-      width: 600,
-    });
-    expect(wedges[1].x - wedges[0].x).toBeCloseTo(15);
+  it('draws the largest |roll| in a group, with its side, never the mean', () => {
+    const zigzag = banks.slice();
+    // Group 103–105 at N = 3 (groups start at the leg's 100): +20, −35,
+    // +20 would average to level.
+    zigzag[103] = 20;
+    zigzag[104] = -35;
+    zigzag[105] = 20;
+    const out = glyphs({ banks: zigzag, view: { from: 100, to: 280 } });
+    const glyph = out.glyphs.find((g) => g.from === 103);
+    expect(glyph.to).toBe(105);
+    expect(glyph.index).toBe(104);
+    expect(glyph.roll).toBe(-35);
+    // Negative: the pale wedge is left of centre.
+    expect(Math.max(...glyph.down.map(([x]) => x))).toBeLessThanOrEqual(glyph.x);
   });
 
-  it('draws no glyph for a null bank', () => {
+  it('keeps its groups on the same segments as the view pans', () => {
+    const at = glyphs({ view: { from: 100, to: 280 } }).glyphs;
+    const panned = glyphs({ view: { from: 101.3, to: 281.3 } }).glyphs;
+    const bounds = (list) => new Set(list.map((g) => g.from));
+    for (const g of panned) expect((g.from - LEG.from) % 3).toBe(0);
+    expect([...bounds(panned)].filter((from) => bounds(at).has(from)).length)
+      .toBeGreaterThan(panned.length - 3);
+  });
+
+  it('sizes a glyph min(7, group px / 2 − 0.5)', () => {
+    // N = 3 at 10/3 px a segment: 10 px groups, half-width 4.5.
+    const grouped = glyphs({ view: { from: 100, to: 280 } }).glyphs[0];
+    expect(grouped.halfWidth).toBeCloseTo(4.5, 9);
+    expect(Math.abs(grouped.ground.x2 - grouped.ground.x1)).toBeCloseTo(9, 9);
+    // 30 px a segment caps at 7.
+    expect(glyphs({ view: { from: 120, to: 140 } }).glyphs[0].halfWidth).toBe(7);
+  });
+
+  it('draws nothing for a group whose banks are all unknown', () => {
     const gappy = banks.slice();
-    gappy[125] = null;
-    const wedges = core.ribbonWedges({
-      bankWedges: self.pwaBankRibbonCore.bankWedges,
-      banks: gappy,
-      leg: LEG,
-      view: { from: 120, to: 130 },
-      width: 600,
-    });
-    expect(wedges.map((w) => w.index)).toEqual([120, 121, 122, 123, 124, 126, 127, 128, 129]);
+    gappy[103] = null;
+    gappy[104] = null;
+    gappy[105] = null;
+    gappy[106] = null;
+    const out = glyphs({ banks: gappy, view: { from: 100, to: 280 } });
+    expect(out.glyphs.map((g) => g.from)).not.toContain(103);
+    // One null in the group 106–108 leaves the known ones to read.
+    expect(out.glyphs.find((g) => g.from === 106).index).toBe(107);
   });
 
   it('draws nothing outside the leg', () => {
-    const wedges = core.ribbonWedges({
-      bankWedges: self.pwaBankRibbonCore.bankWedges,
-      banks,
-      leg: { from: 0, to: 3 },
-      view: { from: 0, to: 4 },
-      width: 600,
-    });
-    expect(wedges.map((w) => w.index)).toEqual([0, 1, 2, 3]);
+    const out = glyphs({ leg: { from: 0, to: 3 }, view: { from: 0, to: 4 } });
+    expect(out.glyphs.map((g) => g.index)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe('passageBox', () => {
+  const view = { from: 0, to: 600 };
+
+  it('spans a wide passage\'s real extent', () => {
+    expect(core.passageBox({ from: 100, to: 120 }, view, 600)).toEqual({ x: 100, width: 20 });
+  });
+
+  it('widens a narrow one to 6 px about its centre', () => {
+    expect(core.passageBox({ from: 100, to: 102 }, view, 600)).toEqual({ x: 98, width: 6 });
+  });
+
+  it('keeps a widened bar inside the lane', () => {
+    expect(core.passageBox({ from: 0, to: 1 }, view, 600)).toEqual({ x: 0, width: 6 });
+    expect(core.passageBox({ from: 599, to: 600 }, view, 600)).toEqual({ x: 594, width: 6 });
+  });
+
+  it('answers null for no part', () => {
+    expect(core.passageBox(null, view, 600)).toBeNull();
   });
 });
 
@@ -603,5 +509,148 @@ describe('roundStretch', () => {
   it('never reads under 25 m', () => {
     expect(core.roundStretch(10)).toBe(25);
     expect(core.roundStretch(0)).toBe(25);
+  });
+});
+
+describe('nearestRange (SNOW-1032, SNOW-1033)', () => {
+  // 10 px a sample across a 100 px lane.
+  const VIEW = { from: 0, to: 10 };
+
+  it('picks the range a tap falls inside', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }, { from: 3, to: 9 }];
+    expect(core.nearestRange(ranges, 25, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('gives a shared edge to the range that starts there, as indexAt does', () => {
+    const ranges = [{ from: 0, to: 1 }, { from: 2, to: 2 }];
+    expect(core.nearestRange(ranges, 20, VIEW, 100, 22)).toBe(ranges[1]);
+  });
+
+  it('picks a range up to 22 px beside the tap', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    // 22 px right of the first, 18 px left of the second.
+    expect(core.nearestRange(ranges, 32, VIEW, 100, 22)).toBe(ranges[1]);
+    expect(core.nearestRange([ranges[0]], 32, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('picks nothing farther than 22 px away', () => {
+    expect(core.nearestRange([{ from: 0, to: 0 }], 33, VIEW, 100, 22)).toBeNull();
+  });
+
+  it('breaks a tie between two neighbours to the left', () => {
+    const ranges = [{ from: 0, to: 0 }, { from: 5, to: 9 }];
+    expect(core.nearestRange(ranges, 30, VIEW, 100, 22)).toBe(ranges[0]);
+  });
+
+  it('ignores a range outside the view', () => {
+    expect(core.nearestRange([{ from: 20, to: 30 }], 99, VIEW, 100, 22)).toBeNull();
+  });
+});
+
+
+describe('legSlots (SNOW-1033)', () => {
+  const LEGS = [
+    { i: 1, from: 0, to: 99, climbing: true },
+    { i: 2, from: 100, to: 102, climbing: false },
+    { i: 3, from: 103, to: 299, climbing: true },
+  ];
+
+  it('places each leg on rail one\'s scale, in true proportion', () => {
+    const slots = core.legSlots(LEGS, 300);
+
+    expect(slots.map((s) => s.leg.i)).toEqual([1, 2, 3]);
+    expect(slots[0].left).toBe(0);
+    expect(slots[0].width).toBeCloseTo(100 / 300);
+    // A three-sample leg keeps its three samples' width: no minimum.
+    expect(slots[1].left).toBeCloseTo(100 / 300);
+    expect(slots[1].width).toBeCloseTo(3 / 300);
+  });
+
+  it('is contiguous and fills the lane', () => {
+    const slots = core.legSlots(LEGS, 300);
+
+    for (let k = 1; k < slots.length; k += 1) {
+      expect(slots[k].left).toBeCloseTo(slots[k - 1].left + slots[k - 1].width);
+    }
+    const last = slots[slots.length - 1];
+    expect(last.left + last.width).toBeCloseTo(1);
+  });
+
+  it('comes back in route order whatever order the legs arrive in', () => {
+    const slots = core.legSlots([LEGS[2], LEGS[0], LEGS[1]], 300);
+
+    expect(slots.map((s) => s.leg.i)).toEqual([1, 2, 3]);
+  });
+
+  it('gives a single leg the whole lane', () => {
+    expect(core.legSlots([{ from: 0, to: 49 }], 50)).toEqual([
+      { leg: { from: 0, to: 49 }, left: 0, width: 1 },
+    ]);
+  });
+
+  it('drops malformed legs and returns none with no samples', () => {
+    expect(core.legSlots([{ from: 5, to: 2 }, null, { from: 0, to: 400 }], 300)).toEqual([]);
+    expect(core.legSlots(LEGS, 0)).toEqual([]);
+    expect(core.legSlots(null, 300)).toEqual([]);
+  });
+});
+
+describe('motionPlan (SNOW-1033)', () => {
+  it('opens as press 0–80, stretch 80–220 eased out, fill 220–340', () => {
+    const plan = core.motionPlan(false);
+
+    expect(plan.totalMs).toBe(340);
+    expect(plan.phases).toEqual([
+      { name: 'press', start: 0, end: 80, easing: 'linear' },
+      { name: 'stretch', start: 80, end: 220, easing: 'ease-out' },
+      { name: 'fill', start: 220, end: 340, easing: 'ease-in-out' },
+    ]);
+  });
+
+  it('closes as fill, stretch, press on the same total, the stretch eased in', () => {
+    const plan = core.motionPlan(true);
+
+    expect(plan.totalMs).toBe(340);
+    expect(plan.phases).toEqual([
+      { name: 'fill', start: 0, end: 120, easing: 'ease-in-out' },
+      { name: 'stretch', start: 120, end: 260, easing: 'ease-in' },
+      { name: 'press', start: 260, end: 340, easing: 'linear' },
+    ]);
+  });
+
+  it('matches MOTION', () => {
+    expect(core.MOTION.pressMs + core.MOTION.stretchMs + core.MOTION.fillMs)
+      .toBe(core.MOTION.totalMs);
+  });
+});
+
+describe('motionSlice (SNOW-1033)', () => {
+  it('times a whole phase and a part of one', () => {
+    const plan = core.motionPlan(false);
+
+    expect(core.motionSlice(plan, 'stretch', 0, 1)).toEqual({
+      delay: 80,
+      duration: 140,
+      easing: 'ease-out',
+    });
+    expect(core.motionSlice(plan, 'fill', 0.5, 1)).toEqual({
+      delay: 280,
+      duration: 60,
+      easing: 'ease-in-out',
+    });
+  });
+
+  it('clamps its fractions to the phase', () => {
+    const plan = core.motionPlan(true);
+
+    expect(core.motionSlice(plan, 'press', -1, 2)).toEqual({
+      delay: 260,
+      duration: 80,
+      easing: 'linear',
+    });
+  });
+
+  it('refuses a phase it does not have', () => {
+    expect(() => core.motionSlice(core.motionPlan(false), 'spin', 0, 1)).toThrow(RangeError);
   });
 });

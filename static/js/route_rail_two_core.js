@@ -38,38 +38,49 @@
  *
  * The span runs from `min(MIN_SPAN, legLength)` up to the whole leg, and
  * every view is clamped to the leg's ends, so a pan or a zoom can never
- * show ground outside the open leg.
+ * show ground outside the open leg; the next leg is reached on rail one.
+ * A leg always OPENS FITTED, however long it is (SNOW-1031's revision):
+ * fitted, rail two is an overview, and zooming is how it is read in
+ * detail. The rail is never widened to make something tappable.
+ *
+ * ## The bank row follows the zoom
+ *
+ * A glyph needs about `GLYPH_MIN_PX` (10 px) to read, and a segment at the
+ * fitted scale can be under 1 px, so each glyph covers N whole segments,
+ * N = ceil(10 px / segment width) (`glyphGroup`). Groups are aligned to
+ * the leg's start, so a group never splits a segment and never shifts as
+ * the view pans. A glyph draws the segment with the LARGEST |roll| in its
+ * group, with that segment's side — never the mean, which cancels a
+ * zig-zag out. Past `MAX_GROUP` (3 segments, 75 m) one glyph would
+ * summarise too much ground, so the row draws NO glyphs and the mount
+ * shows a placeholder that asks for a zoom instead. The scale is constant
+ * across the lane, so the row is either all drawn or all placeholder.
+ * `resolveSpan` is the widest span that draws, the target a double-tap
+ * zooms to. The band strip and the passages are drawn per segment at
+ * every zoom, however thin.
  *
  * ## Slope bands
  *
  * A band is a run of consecutive segments sharing one slope class
- * (`pwaRouteSlopeCore.classify`). `bandRuns` builds the runs UNMERGED:
- * consecutive unknown (null) angles make a run of their own, and a null
- * never joins a known class there — "not known" must not read as the
- * class beside it.
- *
- * Rail two then folds the slivers away (SNOW-1032). Most one-segment runs
- * are elevation-model noise, and each drew a band a few px wide that no
- * finger could select. `mergeShortRuns` folds every run shorter than
- * `ROUTE_BAND_MIN_RUN_M` (config/settings/base.py) into a neighbour — the
- * steeper one, so a merge never hides steeper ground under a gentler
- * colour — and the strip, the selection, the map's highlight and the
- * readout all read the merged runs. A null run counts as the gentlest
- * class there: a sliver of unknown folds into the ground beside it.
+ * (`pwaRouteSlopeCore.classify`), UNMERGED: a one-segment 35° band between
+ * two 30° ones is its own band, because that one segment is the reading.
+ * Consecutive unknown (null) angles make a run of their own, and a null
+ * never joins a known class — "not known" must not read as the class
+ * beside it. A band too thin to press at the fitted scale is reached by
+ * zooming, never by folding it into a neighbour (SNOW-1032's revision).
  *
  * Exports (frozen `self.pwaRouteRailTwoCore`):
  *
  *   MIN_SPAN                                  → the narrowest span, 6
- *   WINDOW_M                                  → the opening window, 2000 m
+ *   GLYPH_MIN_PX                              → the px a bank glyph needs, 10
+ *   MAX_GROUP                                 → most segments a glyph reads, 3
+ *   PASSAGE_MIN_PX                            → a passage bar's least width, 6
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
- *   mergeShortRuns(runs, perSampleM, minLengthM) → runs, slivers folded in
- *   sampledStrideM(points, range)              → mean sample length, metres
- *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
  *   selectionBox(part, view, width, minPx)    → {x, w} of the drawn box
  *   legLength(leg)                            → samples in the leg
  *   minSpan(leg)                              → the narrowest span it allows
- *   openingSpan(leg, sampleCount, spanM, windowM?) → the span it opens at
+ *   openingSpan(leg)                          → the span it opens at: all of it
  *   placeView(leg, span, from)                → a view clamped to the leg
  *   ensureVisible(leg, view, from, to)        → the view, scrolled the least
  *   followView(leg, view, from, to)           → the view, centred on a range
@@ -79,14 +90,35 @@
  *   sampleAt(x, view, width)                  → the axis coordinate at px
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
- *   tickPitch(span, width, basePitch)         → the wedges' pitch
- *   tickPhase(view, width, pitch)             → px the wedges scroll by
- *   ribbonWedges(options)                     → bankWedges, laid on the view
+ *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
+ *   glyphGroup(span, width)                   → segments per bank glyph, N
+ *   resolveSpan(leg, width)                   → the widest span whose row draws
+ *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
+ *   passageBox(part, view, width)             → a passage bar's {x, width} in px
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
  *   readoutAnchor(x, width)                   → {align, left} for the readout
  *   roundStretch(metres)                      → a length to the nearest 25 m
+ *   legSlots(legs, sampleCount)               → the leg picker's segments
+ *   MOTION                                    → the opening motion's phases, ms
+ *   motionPlan(reverse)                       → the phases on one timeline
+ *   motionSlice(plan, name, a, b)             → WAAPI timing for part of one
+ *
+ * ## The leg picker and the opening motion (SNOW-1033)
+ *
+ * With no leg open, rail two's lane shows the route's legs as buttons,
+ * one per leg, on rail one's scale: a leg's slot runs from `from / N` to
+ * `(to + 1) / N` of the lane, which is `legSpan`'s placing with the
+ * distance factor taken out, so each segment sits under its leg on the
+ * profile. True proportions: a short leg gets no minimum width, and a tap
+ * beside it is picked by `nearestRange` instead.
+ *
+ * Opening a leg is one motion of `MOTION.totalMs` (340 ms) in three
+ * phases — PRESS (the segment fills solid, the others fade), STRETCH (it
+ * widens to the lane while the card grows) and FILL (it becomes the band
+ * strip, then the bank row, the controls and the readout come in).
+ * Closing runs the same phases in reverse order on the same total.
  */
 
 // @ts-check
@@ -113,18 +145,31 @@
 
   /**
    * @typedef {{
-   *   x: number,
-   *   index: number,
-   *   roll: number,
    *   dy: number,
    *   ground: {x1: number, y1: number, x2: number, y2: number},
    *   up: ?Array<[number, number]>,
    *   down: ?Array<[number, number]>,
-   * }} RibbonWedge
-   *   One level-ski glyph, the shape `pwaBankRibbonCore.bankWedges`
-   *   returns: its centre `x`, the sample it reads, the signed roll, the
-   *   rise either side of the centre, the ground line and the uphill and
-   *   downhill triangles (null under the fill threshold).
+   * }} WedgeShape
+   *   One glyph's geometry, as `pwaBankRibbonCore.bankWedge` returns it.
+   */
+
+  /**
+   * @typedef {{
+   *   x: number,
+   *   index: number,
+   *   from: number,
+   *   to: number,
+   *   roll: number,
+   *   halfWidth: number,
+   *   dy: number,
+   *   ground: {x1: number, y1: number, x2: number, y2: number},
+   *   up: ?Array<[number, number]>,
+   *   down: ?Array<[number, number]>,
+   * }} BankGlyph
+   *   One level-ski glyph for a group of segments: its centre `x` (the
+   *   group's centre), the sample `index` it draws (the group's largest
+   *   |roll|), the group's first and last samples, that sample's signed
+   *   roll, the glyph's half-width, and `bankWedge`'s geometry.
    */
 
   /**
@@ -155,11 +200,20 @@
   /** The narrowest span, in samples, a zoom may reach. */
   var MIN_SPAN = 6;
 
-  /** How much ground rail two shows when a leg opens, in metres. */
-  var WINDOW_M = 2000;
+  /** The px a bank glyph needs to read; a group spans at least this. */
+  var GLYPH_MIN_PX = 10;
 
-  /** The mean Earth radius, metres — elevation_profile_core.js's figure. */
-  var EARTH_RADIUS_M = 6371008.8;
+  /**
+   * The most segments one bank glyph may stand for: 3 × 25 m. Past it the
+   * row shows the zoom placeholder instead of glyphs.
+   */
+  var MAX_GROUP = 3;
+
+  /** A glyph's largest half-width in px, bank_ribbon_core.js's. */
+  var GLYPH_HALF_WIDTH = 7;
+
+  /** A passage bar is never drawn narrower than this, in px. */
+  var PASSAGE_MIN_PX = 6;
 
   /** Two numbers closer than this are the same point on the axis. */
   var EPSILON = 1e-6;
@@ -170,13 +224,12 @@
    *
    * The band strip (0–10), a 4 px gap, the bank row (14–40: the wedges
    * centred on y 27, rising at most `ribbonHalf` — bank_ribbon_core.js's
-   * CAP_PX — either side), then the no-fall bars at 41–44 in the foot, so
-   * a capped wedge never covers a passage (SNOW-1031). SNOW-1024 took the
-   * distance ticks off the foot, so no dead space sits between the band,
-   * the bank row and the readout.
-   * SNOW-1019 took the leg's elevation profile off the top: at a 2 km
-   * window it drew near-flat and said nothing rail one's highlighted leg
-   * does not.
+   * CAP_PX — either side), then the no-fall bars 4 px tall at 40–44,
+   * directly under the bank row, so a capped wedge never covers a
+   * passage (SNOW-1031). SNOW-1024 took the distance ticks off the foot,
+   * so no dead space sits between the band, the bank row and the readout.
+   * SNOW-1019 took the leg's elevation profile off the top: it drew
+   * near-flat and said nothing rail one's highlighted leg does not.
    */
   var ROWS = Object.freeze({
     height: 44,
@@ -184,8 +237,8 @@
     bandHeight: 10,
     ribbonY: 27,
     ribbonHalf: 13,
-    passageTop: 41,
-    passageHeight: 3,
+    passageTop: 40,
+    passageHeight: 4,
   });
 
   /**
@@ -219,6 +272,27 @@
 
   /** A stretch's length is read to the nearest this many metres. */
   var STRETCH_STEP_M = 25;
+
+  /**
+   * The opening motion's phases, in ms (SNOW-1033): PRESS, STRETCH and
+   * FILL, 340 ms in all.
+   */
+  var MOTION = Object.freeze({
+    pressMs: 80,
+    stretchMs: 140,
+    fillMs: 120,
+    totalMs: 340,
+  });
+
+  /**
+   * Each phase's easing when opening; closing swaps `ease-out` for
+   * `ease-in`, so a reversed stretch starts where the opening one ended.
+   */
+  var PHASE_EASING = Object.freeze({
+    press: 'linear',
+    stretch: 'ease-out',
+    fill: 'ease-in-out',
+  });
 
   /**
    * Clamp a number into a closed range.
@@ -259,161 +333,6 @@
       }
     }
     return runs;
-  }
-
-  /**
-   * A class index ranked for a merge: null (unknown) below every class.
-   *
-   * @param {?number} classIndex
-   * @returns {number}
-   */
-  function steepness(classIndex) {
-    return typeof classIndex === 'number' ? classIndex : -1;
-  }
-
-  /**
-   * The mean length of the segments in `range`, measured on the slope
-   * record's own boundary points (SNOW-1032).
-   *
-   * The route's `distance_m` is measured on the full-resolution GPX, but
-   * the slope samples are laid along the SIMPLIFIED track, so dividing
-   * one by the other overstates a sample on a noisy track that simplifies
-   * hard — enough to lift a one-segment sliver past the merge threshold.
-   * Segment i runs from `points[i]` to `points[i + 1]`.
-   *
-   * @param {Array<?Array<number>>} points `slope.points`, [lon, lat, …]
-   *   per boundary; one more than the segments.
-   * @param {{from: number, to: number}} range Segment indices, inclusive.
-   * @returns {number} Metres, or 0 when no segment in the range can be
-   *   measured.
-   */
-  function sampledStrideM(points, range) {
-    if (!Array.isArray(points)) return 0;
-    var total = 0;
-    var count = 0;
-    for (var i = Math.max(0, range.from); i <= range.to && i + 1 < points.length; i += 1) {
-      var a = points[i];
-      var b = points[i + 1];
-      if (!Array.isArray(a) || !Array.isArray(b)) continue;
-      var rad = Math.PI / 180;
-      var dLat = (b[1] - a[1]) * rad;
-      var dLon = (b[0] - a[0]) * rad;
-      var h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-        + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      total += 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
-      count += 1;
-    }
-    return count ? total / count : 0;
-  }
-
-  /**
-   * Fold every run shorter than `minLengthM` into a neighbour (SNOW-1032).
-   *
-   * "Shorter" is measured to the nearest whole sample: a run is short when
-   * its length is under `minLengthM` plus half a sample. The samples are
-   * 25 m apart (SAMPLE_STRIDE_M in apps/routes/services/slope_segments.py),
-   * so a one-segment run on a real route measures 25.003 m or 24.97 m by
-   * rounding alone; compared strictly against 25 m it merged on some
-   * routes and not on others. With the tolerance the 25 m setting folds
-   * every one-segment run and keeps every run of two.
-   *
-   * While any run is too short, the shortest (the leftmost on a tie) is
-   * folded into the steeper of its two neighbours — a null run counting
-   * as gentler than every class — or into its only neighbour at either
-   * end. The neighbour's range grows and keeps its class, and neighbours
-   * left sharing one class are joined. Each pass removes a run, so it
-   * ends; the first `from` and the last `to` never move.
-   *
-   * @param {Array<BandRun>} runs A `bandRuns` result, left to right.
-   * @param {number} perSampleM The ground one sample covers, in metres.
-   * @param {number} minLengthM Runs shorter than this, to the nearest
-   *   whole sample, are folded in.
-   * @returns {Array<BandRun>} New runs; the input is not changed. A single
-   *   run or an empty list comes back as it was (copied).
-   */
-  function mergeShortRuns(runs, perSampleM, minLengthM) {
-    if (!Array.isArray(runs)) return [];
-    /** @type {Array<BandRun>} */
-    var out = runs.map(function (run) {
-      return { from: run.from, to: run.to, classIndex: run.classIndex };
-    });
-    if (out.length < 2 || !(perSampleM > 0) || !(minLengthM > 0)) return out;
-    while (out.length > 1) {
-      var shortest = -1;
-      var shortestM = Infinity;
-      for (var i = 0; i < out.length; i += 1) {
-        var metres = (out[i].to - out[i].from + 1) * perSampleM;
-        if (metres < minLengthM + perSampleM / 2 && metres < shortestM) {
-          shortest = i;
-          shortestM = metres;
-        }
-      }
-      if (shortest < 0) break;
-      var left = shortest > 0 ? out[shortest - 1] : null;
-      var right = shortest < out.length - 1 ? out[shortest + 1] : null;
-      var into = /** @type {BandRun} */ (
-        !left || (right && steepness(right.classIndex) > steepness(left.classIndex))
-          ? right
-          : left
-      );
-      into.from = Math.min(into.from, out[shortest].from);
-      into.to = Math.max(into.to, out[shortest].to);
-      out.splice(shortest, 1);
-      /** @type {Array<BandRun>} */
-      var joined = [];
-      out.forEach(function (run) {
-        var open = joined.length ? joined[joined.length - 1] : null;
-        if (open && open.classIndex === run.classIndex) {
-          open.to = run.to;
-        } else {
-          joined.push(run);
-        }
-      });
-      out = joined;
-    }
-    return out;
-  }
-
-  /**
-   * The range a tap at `x` picks: the one whose drawn extent is nearest
-   * (SNOW-1032).
-   *
-   * Each range is clipped to the view and measured on screen as
-   * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
-   * the nearer edge otherwise. So a band one sample wide is still picked
-   * by a tap `radiusPx` beside it. On a tie the range whose half-open
-   * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
-   * then the leftmost.
-   *
-   * @template {{from: number, to: number}} R
-   * @param {Array<R>} ranges Bands or passages, sample indices inclusive.
-   * @param {number} x The tap's px across the lane.
-   * @param {View} view
-   * @param {number} width The lane's width in px.
-   * @param {number} radiusPx Farther than this, nothing is picked.
-   * @returns {?R}
-   */
-  function nearestRange(ranges, x, view, width, radiusPx) {
-    if (!Array.isArray(ranges)) return null;
-    /** @type {?R} */
-    var best = null;
-    var bestDistance = Infinity;
-    var bestHolds = false;
-    ranges.forEach(function (range) {
-      var part = range ? clip(range, view) : null;
-      if (!part) return;
-      var x0 = xOf(part.from, view, width);
-      var x1 = xOf(part.to, view, width);
-      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
-      if (distance > radiusPx) return;
-      var holds = x >= x0 && x < x1;
-      if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
-        best = range;
-        bestDistance = distance;
-        bestHolds = holds;
-      }
-    });
-    return best;
   }
 
   /**
@@ -460,21 +379,14 @@
   }
 
   /**
-   * The span a leg opens at: `windowM` of ground, or the whole leg when
-   * it is shorter.
+   * The span a leg opens at: the whole leg, however long (SNOW-1031).
+   * Fitted, rail two is an overview; zooming is how it is read.
    *
    * @param {Leg} leg
-   * @param {number} sampleCount N, the length of `slope.angles`.
-   * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @param {number} [windowM] The ground to show. Defaults to `WINDOW_M`.
    * @returns {number}
    */
-  function openingSpan(leg, sampleCount, spanM, windowM) {
-    var length = legLength(leg);
-    if (!(sampleCount > 0) || !(spanM > 0)) return length;
-    var metres = windowM === undefined ? WINDOW_M : windowM;
-    var samples = Math.round((metres / spanM) * sampleCount);
-    return clamp(samples, minSpan(leg), length);
+  function openingSpan(leg) {
+    return legLength(leg);
   }
 
   /**
@@ -616,6 +528,49 @@
   }
 
   /**
+   * The range a tap at `x` picks: the one whose drawn extent is nearest
+   * (SNOW-1032, SNOW-1033).
+   *
+   * Each range is clipped to the view and measured on screen as
+   * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
+   * the nearer edge otherwise. So a leg, band or passage only a few px
+   * wide is still picked by a tap `radiusPx` beside it. On a tie the range whose half-open
+   * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
+   * then the leftmost.
+   *
+   * @template {{from: number, to: number}} R
+   * @param {Array<R>} ranges Leg slots, bands or passages, sample
+   *   indices inclusive.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, nothing is picked.
+   * @returns {?R}
+   */
+  function nearestRange(ranges, x, view, width, radiusPx) {
+    if (!Array.isArray(ranges)) return null;
+    /** @type {?R} */
+    var best = null;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    ranges.forEach(function (range) {
+      var part = range ? clip(range, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var holds = x >= x0 && x < x1;
+      if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
+        best = range;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
+  }
+
+  /**
    * The part of a band or passage inside the view.
    *
    * @param {{from: number, to: number}} range Sample indices, inclusive.
@@ -630,115 +585,130 @@
   }
 
   /**
-   * The wedges' pitch in px.
-   *
-   * `basePitch` until a sample is wider than that, then one sample's
-   * width, so `bankWedges` draws one glyph per sample once zoomed in.
+   * How many whole segments one bank glyph covers at this scale:
+   * N = ceil(`GLYPH_MIN_PX` / the width of one segment), never under 1.
    *
    * @param {number} span Samples across the lane.
    * @param {number} width The lane's width in px.
-   * @param {number} basePitch The pitch at a wide view.
+   * @returns {number} Infinity for a lane with no width.
+   */
+  function glyphGroup(span, width) {
+    if (!(width > 0) || !(span > 0)) return Infinity;
+    var segPx = width / span;
+    // The epsilon keeps an exact 10 / 3 px at N = 3 rather than 4.
+    return Math.max(1, Math.ceil(GLYPH_MIN_PX / segPx - EPSILON));
+  }
+
+  /**
+   * The widest span at which the bank row draws (N ≤ `MAX_GROUP`),
+   * clamped to the leg's limits: the span a double-tap zooms to.
+   *
+   * @param {Leg} leg
+   * @param {number} width The lane's width in px.
    * @returns {number}
    */
-  function tickPitch(span, width, basePitch) {
-    return Math.max(basePitch, span > 0 ? width / span : basePitch);
+  function resolveSpan(leg, width) {
+    var widest = Math.floor((width * MAX_GROUP) / GLYPH_MIN_PX);
+    return clamp(widest, minSpan(leg), legLength(leg));
   }
 
   /**
-   * How far the wedges are scrolled left, in px.
+   * The bank row for the view: one glyph per group of N whole segments,
+   * or the placeholder when N is past `MAX_GROUP` (SNOW-1031).
    *
-   * The glyphs are pinned to the GROUND, not to the lane: a glyph sits at
-   * whole multiples of `pitch` from the leg's axis origin, so a pan
-   * carries them along instead of making them shimmer between samples.
-   * At a per-sample pitch that puts each glyph on its sample's centre.
-   *
-   * @param {View} view
-   * @param {number} width
-   * @param {number} pitch
-   * @returns {number} In [0, pitch).
-   */
-  function tickPhase(view, width, pitch) {
-    var perSample = width / (view.to - view.from);
-    var offset = (view.from * perSample) % pitch;
-    return offset < 0 ? offset + pitch : offset;
-  }
-
-  /**
-   * The level-ski wedges for the view, pinned to the ground (SNOW-1031).
-   *
-   * `bankWedges` lays glyphs from the lane's left edge; this asks it for
-   * one pitch more than the lane and slides the row left by `tickPhase`,
-   * so each glyph stays on the same ground as the view pans. Glyphs whose
-   * centre is off either edge, and any reading a sample outside the leg,
-   * are dropped.
+   * Groups start at `leg.from` and step by N, so they hold still as the
+   * view pans. Each glyph draws the segment with the largest |roll| in its
+   * group, with its sign — never a mean, which would cancel a zig-zag to
+   * level. A group whose banks are all unknown draws nothing: a gap, not
+   * a level glyph. The glyph sits on the group's centre with half-width
+   * `min(7, group px / 2 − 0.5)`, so neighbours never touch.
    *
    * @param {{
-   *   bankWedges: function(Object): Array<RibbonWedge>,
+   *   bankWedge: function(number, number, Object): WedgeShape,
    *   banks: Array<?number>,
    *   leg: Leg,
    *   view: View,
    *   width: number,
-   *   basePitch?: number,
-   *   halfWidth?: number,
    *   exaggeration?: number,
    *   capPx?: number,
    *   minFillPx?: number,
    *   y?: number,
-   * }} options `bankWedges` is `pwaBankRibbonCore.bankWedges`; the rest
-   *   as that function and this module name them. `basePitch` defaults to
-   *   15, the core's `GLYPH_PITCH`.
-   * @returns {Array<RibbonWedge>} In lane px.
+   * }} options `bankWedge` is `pwaBankRibbonCore.bankWedge`; the rest as
+   *   that function and this module name them.
+   * @returns {{placeholder: boolean, glyphs: Array<BankGlyph>}} In lane px.
    */
-  function ribbonWedges(options) {
+  function bankGlyphs(options) {
     var view = options.view;
     var width = options.width;
     var leg = options.leg;
-    if (!Array.isArray(options.banks) || !(width > 0)) return [];
-    var span = view.to - view.from;
-    var pitch = tickPitch(span, width, options.basePitch === undefined ? 15 : options.basePitch);
-    var phase = tickPhase(view, width, pitch);
-    var wedges = options.bankWedges({
-      banks: options.banks,
-      width: width + pitch,
-      pitch: pitch,
-      halfWidth: options.halfWidth,
-      exaggeration: options.exaggeration,
-      capPx: options.capPx,
-      minFillPx: options.minFillPx,
-      y: options.y,
-      /** @param {number} x */
-      indexAt: function (x) {
-        var index = indexAt(x - phase, view, width);
-        return index >= leg.from && index <= leg.to ? index : -1;
-      },
-    });
-    /**
-     * @param {?Array<[number, number]>} points
-     * @returns {?Array<[number, number]>}
-     */
-    function shift(points) {
-      return points
-        ? points.map(function (p) { return /** @type {[number, number]} */ ([p[0] - phase, p[1]]); })
-        : null;
-    }
-    return wedges
-      .filter(function (w) { return w.x - phase >= 0 && w.x - phase <= width; })
-      .map(function (w) {
-        return {
-          x: w.x - phase,
-          index: w.index,
-          roll: w.roll,
-          dy: w.dy,
-          ground: {
-            x1: w.ground.x1 - phase,
-            y1: w.ground.y1,
-            x2: w.ground.x2 - phase,
-            y2: w.ground.y2,
-          },
-          up: shift(w.up),
-          down: shift(w.down),
-        };
+    var banks = options.banks;
+    /** @type {Array<BankGlyph>} */
+    var glyphs = [];
+    var n = glyphGroup(view.to - view.from, width);
+    if (n > MAX_GROUP) return { placeholder: true, glyphs: glyphs };
+    if (!Array.isArray(banks)) return { placeholder: false, glyphs: glyphs };
+    var firstGroup = Math.max(0, Math.floor((view.from - leg.from) / n));
+    for (var start = leg.from + firstGroup * n; start <= leg.to && start < view.to; start += n) {
+      var end = Math.min(leg.to, start + n - 1);
+      var index = -1;
+      var roll = 0;
+      for (var i = start; i <= end; i += 1) {
+        var value = banks[i];
+        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+        if (index < 0 || Math.abs(value) > Math.abs(roll)) {
+          index = i;
+          roll = value;
+        }
+      }
+      if (index < 0) continue;
+      var left = xOf(start, view, width);
+      var right = xOf(end + 1, view, width);
+      if (right <= 0 || left >= width) continue;
+      var halfWidth = Math.min(GLYPH_HALF_WIDTH, (right - left) / 2 - 0.5);
+      if (!(halfWidth > 0)) continue;
+      var x = (left + right) / 2;
+      var shape = options.bankWedge(x, roll, {
+        halfWidth: halfWidth,
+        exaggeration: options.exaggeration,
+        capPx: options.capPx,
+        minFillPx: options.minFillPx,
+        y: options.y,
       });
+      glyphs.push({
+        x: x,
+        index: index,
+        from: start,
+        to: end,
+        roll: roll,
+        halfWidth: halfWidth,
+        dy: shape.dy,
+        ground: shape.ground,
+        up: shape.up,
+        down: shape.down,
+      });
+    }
+    return { placeholder: false, glyphs: glyphs };
+  }
+
+  /**
+   * A passage bar's box across the lane: its real extent, widened to at
+   * least `PASSAGE_MIN_PX` about its centre and kept inside the lane, so a
+   * passage stays visible and tappable at the fitted scale (SNOW-1031).
+   *
+   * @param {?View} part The passage's part inside the view (`clip`).
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @returns {?{x: number, width: number}} Null for no part.
+   */
+  function passageBox(part, view, width) {
+    if (!part) return null;
+    var left = xOf(part.from, view, width);
+    var right = xOf(part.to, view, width);
+    var real = Math.max(0, right - left);
+    if (real >= PASSAGE_MIN_PX) return { x: left, width: real };
+    var boxWidth = Math.min(PASSAGE_MIN_PX, Math.max(0, width));
+    var x = clamp((left + right) / 2 - boxWidth / 2, 0, Math.max(0, width - boxWidth));
+    return { x: x, width: boxWidth };
   }
 
   /**
@@ -915,6 +885,93 @@
     return Math.max(STRETCH_STEP_M, Math.round(metres / STRETCH_STEP_M) * STRETCH_STEP_M);
   }
 
+  /**
+   * The leg picker's segments: one per leg, on rail one's scale
+   * (SNOW-1033).
+   *
+   * `left` and `width` are fractions of the lane, `from / N` and
+   * `(to + 1 − from) / N`, with no minimum width. The slots come back in
+   * route order; a leg that is malformed or outside the route is dropped.
+   *
+   * @template {{from: number, to: number}} L
+   * @param {Array<L>} legs The route's legs, sample indices inclusive.
+   * @param {number} sampleCount N, the segments the legs index.
+   * @returns {Array<{leg: L, left: number, width: number}>}
+   */
+  function legSlots(legs, sampleCount) {
+    if (!Array.isArray(legs) || !(sampleCount > 0)) return [];
+    return legs
+      .filter(function (leg) {
+        return !!leg && Number.isInteger(leg.from) && Number.isInteger(leg.to)
+          && leg.from >= 0 && leg.to >= leg.from && leg.to < sampleCount;
+      })
+      .slice()
+      .sort(function (a, b) { return a.from - b.from; })
+      .map(function (leg) {
+        return {
+          leg: leg,
+          left: leg.from / sampleCount,
+          width: (leg.to + 1 - leg.from) / sampleCount,
+        };
+      });
+  }
+
+  /**
+   * @typedef {{name: string, start: number, end: number, easing: string}} Phase
+   *   One phase of the motion, its start and end in ms from the first
+   *   frame.
+   */
+
+  /**
+   * The motion's phases laid on one timeline (SNOW-1033).
+   *
+   * Opening runs press (0–80), stretch (80–220) and fill (220–340);
+   * closing runs fill, stretch and press on the same 340 ms, with the
+   * stretch eased in rather than out.
+   *
+   * @param {boolean} reverse True for closing.
+   * @returns {{totalMs: number, phases: Array<Phase>}}
+   */
+  function motionPlan(reverse) {
+    var order = reverse
+      ? [['fill', MOTION.fillMs], ['stretch', MOTION.stretchMs], ['press', MOTION.pressMs]]
+      : [['press', MOTION.pressMs], ['stretch', MOTION.stretchMs], ['fill', MOTION.fillMs]];
+    var at = 0;
+    var phases = order.map(function (entry) {
+      var name = /** @type {string} */ (entry[0]);
+      /** @type {string} */
+      var easing = PHASE_EASING[/** @type {'press'|'stretch'|'fill'} */ (name)];
+      if (reverse && easing === 'ease-out') easing = 'ease-in';
+      var phase = { name: name, start: at, end: at + /** @type {number} */ (entry[1]), easing: easing };
+      at = phase.end;
+      return phase;
+    });
+    return { totalMs: at, phases: phases };
+  }
+
+  /**
+   * The WAAPI timing for the part of one phase between fractions `a` and
+   * `b` of it (SNOW-1033).
+   *
+   * @param {{phases: Array<Phase>}} plan A `motionPlan`.
+   * @param {string} name 'press', 'stretch' or 'fill'.
+   * @param {number} a Where the part starts, 0–1 of the phase.
+   * @param {number} b Where it ends, 0–1 of the phase, `b ≥ a`.
+   * @returns {{delay: number, duration: number, easing: string}}
+   */
+  function motionSlice(plan, name, a, b) {
+    var phase = plan.phases.find(function (p) { return p.name === name; });
+    if (!phase) throw new RangeError('no phase ' + name);
+    var length = phase.end - phase.start;
+    var from = clamp(a, 0, 1);
+    var to = clamp(b, from, 1);
+    return {
+      delay: phase.start + from * length,
+      duration: (to - from) * length,
+      easing: phase.easing,
+    };
+  }
+
   self.pwaRouteRailTwoCore = Object.freeze({
     FALL_LINE_TOLERANCE_DEG: FALL_LINE_TOLERANCE_DEG,
     FALL_LINE_DEG: FALL_LINE_DEG,
@@ -924,12 +981,11 @@
     readoutAnchor: readoutAnchor,
     roundStretch: roundStretch,
     MIN_SPAN: MIN_SPAN,
-    WINDOW_M: WINDOW_M,
+    GLYPH_MIN_PX: GLYPH_MIN_PX,
+    MAX_GROUP: MAX_GROUP,
+    PASSAGE_MIN_PX: PASSAGE_MIN_PX,
     ROWS: ROWS,
     bandRuns: bandRuns,
-    mergeShortRuns: mergeShortRuns,
-    sampledStrideM: sampledStrideM,
-    nearestRange: nearestRange,
     selectionBox: selectionBox,
     legLength: legLength,
     minSpan: minSpan,
@@ -943,10 +999,16 @@
     sampleAt: sampleAt,
     indexAt: indexAt,
     clip: clip,
-    tickPitch: tickPitch,
-    tickPhase: tickPhase,
-    ribbonWedges: ribbonWedges,
+    nearestRange: nearestRange,
+    glyphGroup: glyphGroup,
+    resolveSpan: resolveSpan,
+    bankGlyphs: bankGlyphs,
+    passageBox: passageBox,
     legProfile: legProfile,
     legFigures: legFigures,
+    legSlots: legSlots,
+    MOTION: MOTION,
+    motionPlan: motionPlan,
+    motionSlice: motionSlice,
   });
 })();

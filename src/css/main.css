@@ -1610,6 +1610,41 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .route-rail-two-passage[data-selected="false"] { opacity: 0.85; }
 .route-rail-two-passage[data-selected="false"]:hover { opacity: 0.65; }
 
+/* —— Rail two's leg picker (SNOW-1033) ——————————
+   static/js/route_rail_two.js lays one <button class="route-rail-two-leg">
+   per leg over the empty lane, marked `data-climbing` like rail one's leg
+   fills, with a 24 px `.route-rail-two-leg-fill` inside carrying the leg
+   number. A data-attribute selector picks the colour, which a utility
+   cannot: the fill is rail one's leg colour at a tint, the number the same
+   colour darkened towards the text ink. `.route-rail-two-leg-solid` is the
+   pressed segment's full colour, which the opening motion fades in. */
+.route-rail-two-leg {
+    --route-rail-two-leg-colour: var(--color-route-rail-descent);
+    --route-rail-two-leg-tint: 22%;
+    cursor: pointer;
+}
+.route-rail-two-leg[data-climbing="true"] {
+    --route-rail-two-leg-colour: var(--color-route-rail-climb);
+}
+.route-rail-two-leg-fill {
+    background-color: color-mix(
+        in srgb,
+        var(--route-rail-two-leg-colour) var(--route-rail-two-leg-tint),
+        transparent
+    );
+    color: color-mix(in srgb, var(--route-rail-two-leg-colour) 70%, var(--color-text-1));
+    transition: background-color 120ms ease-out;
+}
+.route-rail-two-leg-solid { background-color: var(--route-rail-two-leg-colour); }
+.route-rail-two-leg:hover { --route-rail-two-leg-tint: 36%; }
+/* The ring is for keyboard focus only, and goes round the coloured part
+   rather than the full-height tap area. */
+.route-rail-two-leg:focus { outline: none; }
+.route-rail-two-leg:focus-visible .route-rail-two-leg-fill {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 1px;
+}
+
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
    revealed while its associated hx-request is in flight.  Mirrors the

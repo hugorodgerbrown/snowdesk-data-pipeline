@@ -1162,19 +1162,6 @@ ROUTE_SHARE_MAX_AGE_DAYS = config("ROUTE_SHARE_MAX_AGE_DAYS", default=30, cast=i
 
 ROUTE_SHARE_MAX_PENDING = config("ROUTE_SHARE_MAX_PENDING", default=5, cast=int)
 
-# SNOW-1032 — rail two's slope bands.
-#
-# The shortest slope band rail two draws, in metres. A run of segments
-# sharing one slope class that is shorter than this is folded into its
-# steeper neighbour (mergeShortRuns in static/js/route_rail_two_core.js)
-# before the band strip, the selection, the map's highlight and the readout
-# read it. Most one-segment runs are elevation-model noise, and each drew a
-# band a few pixels wide that no finger could select. 25 is one sampler
-# stride (SAMPLE_STRIDE_M); the runs are built on the client, so the page
-# hands the value over on #route-rail rather than the server applying it.
-
-ROUTE_BAND_MIN_RUN_M = 25
-
 
 # ---------------------------------------------------------------------------
 # Trips (SNOW-819)
