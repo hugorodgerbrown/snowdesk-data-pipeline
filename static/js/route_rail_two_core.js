@@ -270,6 +270,14 @@
   /**
    * Fold every run shorter than `minLengthM` into a neighbour (SNOW-1032).
    *
+   * "Shorter" is measured to the nearest whole sample: a run is short when
+   * its length is under `minLengthM` plus half a sample. The samples are
+   * 25 m apart (SAMPLE_STRIDE_M in apps/routes/services/slope_segments.py),
+   * so a one-segment run on a real route measures 25.003 m or 24.97 m by
+   * rounding alone; compared strictly against 25 m it merged on some
+   * routes and not on others. With the tolerance the 25 m setting folds
+   * every one-segment run and keeps every run of two.
+   *
    * While any run is too short, the shortest (the leftmost on a tie) is
    * folded into the steeper of its two neighbours — a null run counting
    * as gentler than every class — or into its only neighbour at either
@@ -279,7 +287,8 @@
    *
    * @param {Array<BandRun>} runs A `bandRuns` result, left to right.
    * @param {number} perSampleM The ground one sample covers, in metres.
-   * @param {number} minLengthM Runs shorter than this are folded in.
+   * @param {number} minLengthM Runs shorter than this, to the nearest
+   *   whole sample, are folded in.
    * @returns {Array<BandRun>} New runs; the input is not changed. A single
    *   run or an empty list comes back as it was (copied).
    */
@@ -295,7 +304,7 @@
       var shortestM = Infinity;
       for (var i = 0; i < out.length; i += 1) {
         var metres = (out[i].to - out[i].from + 1) * perSampleM;
-        if (metres < minLengthM && metres < shortestM) {
+        if (metres < minLengthM + perSampleM / 2 && metres < shortestM) {
           shortest = i;
           shortestM = metres;
         }

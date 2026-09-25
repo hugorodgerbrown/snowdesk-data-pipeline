@@ -102,6 +102,15 @@ describe('mergeShortRuns (SNOW-1032)', () => {
     expect(merged[0]).not.toBe(runs[0]);
   });
 
+  it('measures to the nearest sample, so a real 25 m segment either side of 25 m merges', () => {
+    // Mont Fort - Col de la Chaux averages 25.003 m a sample, Hidden
+    // Valley 24.974 m: both fold every one-segment run and keep two.
+    [25.003, 24.974].forEach((per) => {
+      expect(core.mergeShortRuns([run(0, 3, 0), run(4, 4, 2), run(5, 6, 1)], per, 25))
+        .toEqual([run(0, 3, 0), run(4, 6, 1)]);
+    });
+  });
+
   it('returns a single run or no runs unchanged', () => {
     expect(core.mergeShortRuns([run(0, 0, 2)], PER, MIN)).toEqual([run(0, 0, 2)]);
     expect(core.mergeShortRuns([], PER, MIN)).toEqual([]);
