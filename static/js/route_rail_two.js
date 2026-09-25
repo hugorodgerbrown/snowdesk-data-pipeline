@@ -5,18 +5,28 @@
  *
  * Rail one (route_rail.js) ATTACHES this to each route it opens, handing
  * over the route's cursor, slope record, profile and legs. From then on
- * rail two follows the CURSOR: it shows when the cursor has an open leg and
- * hides when it has none, so a leg opened or closed from any surface opens
- * or closes it here without anyone telling it.
+ * rail two follows the CURSOR: it draws the leg when the cursor has an open
+ * leg and falls back to its EMPTY state when it has none, so a leg opened
+ * or closed from any surface opens or closes it here without anyone
+ * telling it.
+ *
+ * THE EMPTY STATE (SNOW-1024). While attached with no open leg the row
+ * still shows, marked `data-empty`: its TERRAIN eyebrow, the placeholder
+ * "Select a route leg to view terrain" in place of a leg's title, and an
+ * empty lane at its full 44 px. The zoom and close buttons are `hidden`,
+ * not disabled — there is nothing to zoom or close — and so is the
+ * readout, so the empty row reserves no space for it. `detach()` hides the
+ * row outright.
  *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
  * comment has the axis): the strip of slope bands, the track line drawn as
  * the bank ribbon (bank_ribbon_core.js), and one bar per no-fall passage;
- * then the cursor line, the selection's outline, edge fades where more leg
- * lies beyond the window, and distance ticks, labelled in HTML under the
- * lane as on rail one. The leg's elevation profile was a fourth row above
- * the bands until SNOW-1019 removed it: at a 2 km window it drew near-flat
- * and added nothing rail one's highlighted leg does not show.
+ * then the cursor line, the selection's outline, and edge fades where more
+ * leg lies beyond the window. The leg's elevation profile was a fourth row
+ * above the bands until SNOW-1019 removed it: at a 2 km window it drew
+ * near-flat and added nothing rail one's highlighted leg does not show.
+ * SNOW-1024 removed the distance ticks and their labels: rail one's
+ * bracket already says where the window sits on the route.
  *
  * REAL PIXELS. The svg's viewBox is the lane's measured width and never
  * stretched: the ribbon's tick lean IS the bank angle, and a lane squeezed
@@ -42,14 +52,20 @@
  * A second pointer starts a pinch and cancels the press in progress, so a
  * pinch never pans, scrubs or selects.
  *
- * THE READOUT. With a band or passage selected it gives the stretch's
- * length and class. Otherwise it reads the segment under the cursor as
- * what the TRACK is doing on the ground — fall line, downhill or uphill
- * traverse (by the leg's direction), traverse, flat (`trackAttitude` in
- * route_rail_two_core.js, from the slope angle and the signed bank) — and
- * how steep the ground is
- * and which side it falls away to. It names no slope class there: the
- * band under the cursor already shows it, as the map does.
+ * THE READOUT sits under the lane, ANCHORED to what it reads
+ * (SNOW-1024). Under the cursor it is two lines: a word for the terrain —
+ * Flat, Gentle descent / ascent (by the leg's direction), Fall line,
+ * Ground falls away left / right, Traverse · falls away left / right
+ * (`trackAttitude` in route_rail_two_core.js, from the slope angle and the
+ * signed bank) — then the figures, "37° slope · 36° bank". It names no
+ * slope class and no distance there: the band under the cursor already
+ * shows the class. A 1 px stem (`[data-route-rail-two-stem]`) carries the
+ * cursor line on below the lane and stops just above the text. With a
+ * band or passage selected it is one line under the selection box, the
+ * length to the nearest 25 m then the class ("600 m under 30°"). Either
+ * way it steps between left-aligned, centred and right-aligned by where
+ * its anchor sits across the lane (`readoutAnchor`), never clamping
+ * smoothly. With neither it offers a hint, left-aligned.
  *
  * KEYS. The lane is one `role="slider"` tab stop — leg 4 of the seed tour
  * alone has 59 bands, which would be 59 tab stops. ←/→ move the cursor
@@ -60,7 +76,7 @@
  *
  *   attach({cursor, slope, profile, legs, sampleCount, spanM, onView,
  *           onResize})  — follow one route's cursor
- *   detach()            — stop following it and hide
+ *   detach()            — stop following it and hide the row
  *   centreOn(index)     — centre the window on a sample
  *   cursorPoint()       — the cursor at the band strip's top, viewport px
  *   view()              — the window `{from, to}`, or null when hidden
@@ -85,23 +101,26 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
-  /** A distance label this close to an edge hangs inward, in px. */
-  var LABEL_EDGE_PX = 24;
+  /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
+  var ALIGN_CLASSES = Object.freeze({
+    left: 'text-left',
+    center: '-translate-x-1/2 text-center',
+    right: '-translate-x-full text-right',
+  });
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
   var STRINGS = self.pwaStrings.read('route-rail-two-strings-template', {
-    'unit-m': '%(value)s m',
-    'unit-km': '%(value)s km',
     'figure-distance': '%(km)s km',
-    'figure-ascent': '▲ %(m)sm',
-    'figure-descent': '▼ %(m)sm',
-    'figure-range': '%(start)s→%(end)sm',
+    'figure-ascent': '▲ %(m)s m',
+    'figure-descent': '▼ %(m)s m',
+    'figure-range': '%(start)s → %(end)s m',
     'leg-climb': 'Leg %(i)s — climb',
     'leg-descent': 'Leg %(i)s — descent',
     'two-lane-label': 'Slope and bank along %(leg)s',
     'two-value': '%(km)s km along the route',
-    'two-hint': 'Press a band or a passage to select it.',
+    'two-placeholder': 'Select a route leg to view terrain',
+    'two-hint': 'Drag to read a point. Tap a band or passage to select it.',
     'class-slope-gentle': 'under 30°',
     'class-slope-30': '30–35°',
     'class-slope-35': '35–40°',
@@ -109,26 +128,31 @@
     'class-slope-45': '45–50°',
     'class-slope-50': 'over 50°',
     'class-unknown': 'slope not known',
-    'attitude-fall-line': 'Fall line',
-    'attitude-downhill-traverse': 'Downhill traverse',
-    'attitude-uphill-traverse': 'Uphill traverse',
-    'attitude-traverse': 'Traverse',
     'attitude-flat': 'Flat',
+    'attitude-gentle-descent': 'Gentle descent',
+    'attitude-gentle-ascent': 'Gentle ascent',
+    'attitude-fall-line': 'Fall line',
+    'attitude-falls-away-left': 'Ground falls away left',
+    'attitude-falls-away-right': 'Ground falls away right',
+    'attitude-traverse-left': 'Traverse · falls away left',
+    'attitude-traverse-right': 'Traverse · falls away right',
+    'attitude-traverse': 'Traverse',
     'readout-slope': '%(angle)s° slope',
-    'readout-slope-left': '%(angle)s° slope · falls away to the left',
-    'readout-slope-right': '%(angle)s° slope · falls away to the right',
-    'readout-band': '%(length)s m at %(class)s',
-    'readout-passage': 'No-fall passage — %(length)s m',
+    'readout-slope-bank': '%(angle)s° slope · %(bank)s° bank',
+    'readout-band': '%(length)s m %(class)s',
+    'readout-passage': 'No-fall passage · %(length)s m',
   });
   var interpolate = self.pwaStrings.interpolate;
 
   var titleEl = row.querySelector('[data-route-rail-two-title]');
   var figuresEl = row.querySelector('[data-route-rail-two-figures]');
   var lane = row.querySelector('[data-route-rail-two-lane]');
-  var ticksEl = row.querySelector('[data-route-rail-two-ticks]');
+  var readoutBoxEl = row.querySelector('[data-route-rail-two-readout-box]');
   var readoutEl = row.querySelector('[data-route-rail-two-readout]');
+  var stemEl = row.querySelector('[data-route-rail-two-stem]');
   var zoomOutEl = row.querySelector('[data-route-rail-two-zoom="out"]');
   var zoomInEl = row.querySelector('[data-route-rail-two-zoom="in"]');
+  var closeEl = row.querySelector('[data-route-rail-two-close]');
 
   /**
    * What rail one attached: the route's cursor and the data drawn from.
@@ -361,13 +385,40 @@
     lane.setAttribute('aria-valuemin', String(leg.from));
     lane.setAttribute('aria-valuemax', String(leg.to));
 
-    var wasHidden = row.hidden;
+    var changed = row.hidden || row.hasAttribute('data-empty');
+    setEmpty(false);
     row.hidden = false;
-    if (wasHidden && ctx.onResize) ctx.onResize();
+    if (changed && ctx.onResize) ctx.onResize();
   }
 
-  /** Hide rail two and forget the leg. */
-  function hide() {
+  /**
+   * Mark the row empty or not: the placeholder title in the muted weight,
+   * the zoom and close buttons and the readout hidden, and the lane taken
+   * out of the tab order and the accessibility tree while it holds
+   * nothing.
+   *
+   * @param {boolean} empty
+   */
+  function setEmpty(empty) {
+    row.toggleAttribute('data-empty', empty);
+    titleEl.classList.toggle('font-semibold', !empty);
+    titleEl.classList.toggle('text-text-1', !empty);
+    titleEl.classList.toggle('font-normal', empty);
+    titleEl.classList.toggle('text-text-2', empty);
+    zoomOutEl.hidden = empty;
+    zoomInEl.hidden = empty;
+    closeEl.hidden = empty;
+    readoutBoxEl.hidden = empty;
+    lane.setAttribute('tabindex', empty ? '-1' : '0');
+    if (empty) {
+      lane.setAttribute('aria-hidden', 'true');
+    } else {
+      lane.removeAttribute('aria-hidden');
+    }
+  }
+
+  /** Forget the open leg and every press on it, and clear the drawing. */
+  function forgetLeg() {
     leg = null;
     legLine = null;
     bands = [];
@@ -376,8 +427,30 @@
     pinch = null;
     pointers.clear();
     lane.replaceChildren();
-    ticksEl.replaceChildren();
-    readoutEl.textContent = '';
+    readoutEl.replaceChildren();
+    stemEl.hidden = true;
+  }
+
+  /**
+   * Show the empty row: attached to a route, with no leg open. Rail one
+   * hears `onView(null, null)` and drops its bracket.
+   */
+  function showEmpty() {
+    forgetLeg();
+    var changed = row.hidden || !row.hasAttribute('data-empty');
+    titleEl.textContent = STRINGS['two-placeholder'];
+    figuresEl.textContent = '';
+    ['aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']
+      .forEach(function (name) { lane.removeAttribute(name); });
+    setEmpty(true);
+    row.hidden = false;
+    if (ctx && ctx.onView) ctx.onView(null, null);
+    if (changed && ctx && ctx.onResize) ctx.onResize();
+  }
+
+  /** Hide rail two outright and forget the leg, on detach. */
+  function hide() {
+    forgetLeg();
     var wasShown = !row.hidden;
     row.hidden = true;
     if (ctx && ctx.onView) ctx.onView(null, null);
@@ -398,7 +471,8 @@
   }
 
   /**
-   * Follow the cursor: show or hide, and scroll what changed into view.
+   * Follow the cursor: draw the open leg or show the empty row, and
+   * scroll what changed into view.
    *
    * @param {{index: ?number, openLeg: ?object, selection: ?object}} state
    */
@@ -407,7 +481,7 @@
     lastState = state;
     var open = state.openLeg;
     if (!open) {
-      if (leg || !row.hidden) hide();
+      if (leg || row.hidden || !row.hasAttribute('data-empty')) showEmpty();
       return;
     }
     var c = core();
@@ -618,45 +692,6 @@
     }
   }
 
-  /** Distance tick marks along the foot, and their labels under the lane. */
-  function drawTicks() {
-    var c = core();
-    var height = c.ROWS.height;
-    ticksEl.replaceChildren();
-    c.distanceTicks(
-      view,
-      ctx.sampleCount,
-      ctx.spanM,
-      self.pwaRouteRailCore,
-      { m: STRINGS['unit-m'], km: STRINGS['unit-km'] },
-      width,
-    ).forEach(function (tick) {
-      var x = tick.x.toFixed(2);
-      lane.appendChild(svgEl('line', {
-        x1: x,
-        x2: x,
-        y1: String(height - (tick.major ? 6 : 3)),
-        y2: String(height),
-        stroke: 'currentColor',
-        'stroke-opacity': tick.major ? '0.5' : '0.25',
-        'pointer-events': 'none',
-        class: 'text-text-3',
-      }));
-      if (!tick.label) return;
-      var label = document.createElement('span');
-      // A label near the left edge hangs right of its tick, and one near the
-      // right edge hangs left, so neither runs off the lane; none wraps.
-      var fraction = tick.x / width;
-      var shift = tick.x < LABEL_EDGE_PX
-        ? ''
-        : tick.x > width - LABEL_EDGE_PX ? ' -translate-x-full' : ' -translate-x-1/2';
-      label.className = 'absolute top-0 whitespace-nowrap' + shift;
-      label.style.left = (fraction * 100).toFixed(3) + '%';
-      label.textContent = tick.label;
-      ticksEl.appendChild(label);
-    });
-  }
-
   /**
    * One line of the readout.
    *
@@ -671,20 +706,51 @@
   }
 
   /**
-   * The readout: the selection's length and class; or what the track
-   * does on the ground under the cursor and how steep that ground is; or
-   * a hint. `aria-valuetext` carries the same lines.
+   * Place the readout under its anchor, stepped by `readoutAnchor`.
+   *
+   * @param {number} x The anchor's px across the lane.
+   */
+  function placeReadout(x) {
+    var anchor = core().readoutAnchor(x, width);
+    readoutEl.className = 'absolute top-1 whitespace-nowrap ' + ALIGN_CLASSES[anchor.align];
+    readoutEl.style.left = anchor.left.toFixed(2) + 'px';
+  }
+
+  /**
+   * The terrain word for one segment, or null when it cannot be said.
+   *
+   * @param {?{term: string, side: ?string}} attitude A `trackAttitude`.
+   * @returns {?string}
+   */
+  function attitudeLabel(attitude) {
+    if (!attitude) return null;
+    var sided = attitude.term === 'falls-away' || attitude.term === 'traverse';
+    var key = 'attitude-' + attitude.term + (sided && attitude.side ? '-' + attitude.side : '');
+    // 'falls-away' always has a side when the bank is known on ground of
+    // 10° or more (trackAttitude's docstring); the fall line stands in.
+    return STRINGS[key] || STRINGS['attitude-fall-line'];
+  }
+
+  /**
+   * The readout: the selection's length and class, under the selection;
+   * or the terrain and its figures, under the cursor; or a hint.
+   * `aria-valuetext` carries the same lines.
    */
   function paintReadout() {
+    var c = core();
     var state = ctx.cursor.state();
     var selected = inLeg(state.selection);
     var perSample = ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
     /** @type {Array<string>} */
     var lines = [];
+    /** The anchor's px, or null to sit left at 0. */
+    var anchorX = null;
+    var stem = false;
+    var cursorIn = state.index !== null && state.index + 1 > view.from && state.index < view.to;
     if (state.selection && selected) {
-      var length = String(
-        Math.round((state.selection.to - state.selection.from + 1) * perSample),
-      );
+      var length = String(c.roundStretch(
+        (state.selection.to - state.selection.from + 1) * perSample,
+      ));
       if (state.selection.kind === 'passage') {
         lines.push(interpolate(STRINGS['readout-passage'], { length: length }));
       } else {
@@ -693,28 +759,39 @@
           class: classLabel(classify(angles()[state.selection.from])),
         }));
       }
+      var part = c.clip(selected, view);
+      if (part) anchorX = (c.xOf(part.from, view, width) + c.xOf(part.to, view, width)) / 2;
     } else if (state.index !== null) {
-      // What the track is doing on the ground, and how steep the ground
-      // is. No class name: the band under the cursor already shows it.
+      // What the ground is doing under the track, then its figures. No
+      // class name and no distance: the band under the cursor shows the
+      // class, and rail one's bracket where the window sits.
       var angle = angles()[state.index];
-      var attitude = core().trackAttitude(angle, banks()[state.index], !!leg.climbing);
+      var roll = banks()[state.index];
       if (typeof angle !== 'number' || !isFinite(angle)) {
         lines.push(classLabel(null));
       } else {
-        var params = { angle: String(Math.round(angle)) };
-        // A known angle with an unknown bank still says how steep the
-        // ground is; only the track's attitude is left unsaid.
-        if (attitude) lines.push(STRINGS['attitude-' + attitude.term]);
-        var side = attitude && attitude.term !== 'flat' ? attitude.side : null;
+        var word = attitudeLabel(c.trackAttitude(angle, roll, !!leg.climbing));
+        if (word) lines.push(word);
+        var bankKnown = typeof roll === 'number' && isFinite(roll);
         lines.push(interpolate(
-          STRINGS[side ? 'readout-slope-' + side : 'readout-slope'],
-          params,
+          STRINGS[bankKnown ? 'readout-slope-bank' : 'readout-slope'],
+          {
+            angle: String(Math.round(angle)),
+            bank: bankKnown ? String(Math.round(Math.abs(roll))) : '',
+          },
         ));
+      }
+      if (cursorIn) {
+        anchorX = c.xOf(state.index + 0.5, view, width);
+        stem = true;
       }
     } else {
       lines.push(STRINGS['two-hint']);
     }
     readoutEl.replaceChildren.apply(readoutEl, lines.map(readoutLine));
+    placeReadout(anchorX === null ? 0 : anchorX);
+    stemEl.hidden = !stem;
+    if (stem && anchorX !== null) stemEl.style.left = (anchorX - 0.5).toFixed(2) + 'px';
 
     var index = state.index === null ? leg.from : state.index;
     lane.setAttribute('aria-valuenow', String(index));
@@ -737,7 +814,6 @@
     drawRibbon();
     drawPassages();
     drawMarks();
-    drawTicks();
     paintReadout();
 
     var eps = 1e-6;
@@ -1025,8 +1101,9 @@
    *   sampleCount: number, spanM: number,
    *   onView?: function(?{from: number, to: number}, ?object): void,
    *   onResize?: function(): void}} options `onView` hears the window
-   *   after every draw, and null when rail two hides; `onResize` hears
-   *   rail two show or hide, which changes the rail's height.
+   *   after every draw, and null when rail two empties or hides;
+   *   `onResize` hears rail two show, empty or hide, which changes the
+   *   rail's height.
    */
   function attach(options) {
     detach();
@@ -1045,7 +1122,7 @@
     onState(ctx.cursor.state());
   }
 
-  /** Stop following the cursor and hide. */
+  /** Stop following the cursor and hide the row. */
   function detach() {
     if (unsubscribe) unsubscribe();
     unsubscribe = null;

@@ -1592,6 +1592,8 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     user-select: none;
 }
 .route-rail-two-lane:active { cursor: grabbing; }
+/* The empty row (SNOW-1024) holds no leg, so there is nothing to grab. */
+[data-route-rail-two][data-empty] .route-rail-two-lane { cursor: default; }
 /* A press on the lane focuses it; the ring is for keyboard focus only. */
 .route-rail-two-lane:focus:not(:focus-visible) { outline: none; }
 .route-rail-two-lane:focus-visible {

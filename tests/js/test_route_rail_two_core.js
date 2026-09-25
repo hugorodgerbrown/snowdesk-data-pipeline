@@ -6,7 +6,9 @@
  * at, the view's clamps, scrolling a range into view by the least
  * distance, zoom about an anchor between its two limits, the ribbon's
  * pitch turning per-sample, and the leg's profile and figures on the
- * sample axis — the same axis rail one places its legs on.
+ * sample axis — the same axis rail one places its legs on — plus the
+ * readout: the track's attitude, where the readout sits, and a stretch's
+ * length to the nearest 25 m (SNOW-1024).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -310,45 +312,53 @@ describe('legProfile and legFigures', () => {
   });
 });
 
-describe('distanceTicks', () => {
-  it('labels the window in route metres, the numbers rail one prints', () => {
-    // 300 samples over 15 km: the view 100–140 is 5000–7000 m.
-    const ticks = core.distanceTicks({ from: 100, to: 140 }, 300, 15000, rail);
-    const labels = ticks.filter((t) => t.major).map((t) => t.label);
-    expect(labels).toEqual(['5 km', '6 km', '7 km']);
-    expect(ticks[0].x).toBeCloseTo(0);
-    expect(ticks[ticks.length - 1].x).toBeCloseTo(1);
-  });
-
-  it('starts at the first step inside a window that begins between steps', () => {
-    const ticks = core.distanceTicks({ from: 101, to: 111 }, 300, 15000, rail);
-    expect(ticks[0].d).toBeGreaterThanOrEqual(5050);
-  });
-});
+/**
+ * The bank a track δ degrees off the fall line has on ground `angle`
+ * steep: tan|roll| = tan(angle) · sin δ, unrounded.
+ *
+ * @param {number} angle
+ * @param {number} delta
+ * @returns {number}
+ */
+function bankFor(angle, delta) {
+  const rad = Math.PI / 180;
+  return Math.atan(Math.tan(angle * rad) * Math.sin(delta * rad)) / rad;
+}
 
 describe('trackAttitude', () => {
-  // On 40° ground, a bank of 22° is 28.8° off the fall line, 23° is 30.4°,
-  // 35° is 56.6° and 37° is 63.9°: either side of the 30° and 60° lines.
-  it('is the fall line within the passages tolerance, on either leg', () => {
+  it('keeps the passages tolerance for its cross-reference', () => {
     expect(core.FALL_LINE_TOLERANCE_DEG).toBe(30);
-    expect(core.trackAttitude(40, 22, false).term).toBe('fall-line');
-    expect(core.trackAttitude(40, 22, true).term).toBe('fall-line');
+    expect(core.FALL_LINE_DEG).toBe(20);
+    expect(core.TRAVERSE_DEG).toBe(65);
+    expect(core.GENTLE_DEG).toBe(10);
+  });
+
+  it('is flat under 5°, with no side', () => {
+    expect(core.trackAttitude(4.9, 4, false)).toEqual({ term: 'flat', side: null });
+    expect(core.trackAttitude(4.9, 4, true)).toEqual({ term: 'flat', side: null });
+    expect(core.trackAttitude(5, 4, false).term).not.toBe('flat');
+  });
+
+  it('is a gentle descent or ascent from 5° to under 10°, by the leg, with no side', () => {
+    expect(core.trackAttitude(5, 4, false)).toEqual({ term: 'gentle-descent', side: null });
+    expect(core.trackAttitude(5, -4, true)).toEqual({ term: 'gentle-ascent', side: null });
+    expect(core.trackAttitude(9.9, 9, false)).toEqual({ term: 'gentle-descent', side: null });
+    expect(core.trackAttitude(10, 0, false).term).toBe('fall-line');
+  });
+
+  it('is the fall line under 20° off it, on either leg', () => {
+    expect(core.trackAttitude(40, bankFor(40, 19), false).term).toBe('fall-line');
+    expect(core.trackAttitude(40, bankFor(40, 19), true).term).toBe('fall-line');
     expect(core.trackAttitude(40, 0, false)).toEqual({ term: 'fall-line', side: null });
   });
 
-  it('is a downhill traverse between 30° and 60° on a descending leg', () => {
-    expect(core.trackAttitude(40, 23, false).term).toBe('downhill-traverse');
-    expect(core.trackAttitude(40, 35, false).term).toBe('downhill-traverse');
+  it('falls away from 20° to 65° off the fall line', () => {
+    expect(core.trackAttitude(40, bankFor(40, 20), false).term).toBe('falls-away');
+    expect(core.trackAttitude(40, bankFor(40, 65), true).term).toBe('falls-away');
   });
 
-  it('is an uphill traverse between 30° and 60° on a climbing leg', () => {
-    expect(core.trackAttitude(40, 23, true).term).toBe('uphill-traverse');
-    expect(core.trackAttitude(40, 35, true).term).toBe('uphill-traverse');
-  });
-
-  it('is a traverse at 60° off the fall line and beyond, on either leg', () => {
-    expect(core.trackAttitude(40, 37, false).term).toBe('traverse');
-    expect(core.trackAttitude(40, 37, true).term).toBe('traverse');
+  it('is a traverse past 65° off the fall line', () => {
+    expect(core.trackAttitude(40, bankFor(40, 66), false).term).toBe('traverse');
     // A bank equal to the slope is straight across it.
     expect(core.trackAttitude(40, 40, true).term).toBe('traverse');
     // Rounding can push the bank past the slope; the ratio is clamped.
@@ -356,20 +366,56 @@ describe('trackAttitude', () => {
   });
 
   it('names the side the ground falls away to by the roll\'s sign', () => {
-    expect(core.trackAttitude(40, 37, false).side).toBe('right');
-    expect(core.trackAttitude(40, -37, false).side).toBe('left');
+    expect(core.trackAttitude(40, 30, false)).toEqual({ term: 'falls-away', side: 'right' });
+    expect(core.trackAttitude(40, -30, false)).toEqual({ term: 'falls-away', side: 'left' });
+    expect(core.trackAttitude(40, -39, true)).toEqual({ term: 'traverse', side: 'left' });
     expect(core.trackAttitude(40, 2.5, false).side).toBeNull();
     expect(core.trackAttitude(40, -3, false).side).toBe('left');
   });
 
-  it('is flat under 5°, with no side', () => {
-    expect(core.trackAttitude(4, 4, false)).toEqual({ term: 'flat', side: null });
-    expect(core.trackAttitude(5, 4, false).term).not.toBe('flat');
+  it('reads flat and gentle ground from the angle alone, with the bank unknown', () => {
+    expect(core.trackAttitude(4, null, false)).toEqual({ term: 'flat', side: null });
+    expect(core.trackAttitude(7, null, true)).toEqual({ term: 'gentle-ascent', side: null });
   });
 
-  it('is unknown with no angle or no bank', () => {
+  it('is unknown with no angle, or no bank on ground of 10° or more', () => {
     expect(core.trackAttitude(null, 10, false)).toBeNull();
     expect(core.trackAttitude(30, null, false)).toBeNull();
     expect(core.trackAttitude(undefined, undefined, true)).toBeNull();
+  });
+});
+
+describe('readoutAnchor', () => {
+  it('left-aligns in the left quarter, starting at the line', () => {
+    expect(core.readoutAnchor(0, 400)).toEqual({ align: 'left', left: 0 });
+    expect(core.readoutAnchor(99, 400)).toEqual({ align: 'left', left: 99 });
+  });
+
+  it('centres on the line in the middle half, stepping at a quarter', () => {
+    expect(core.readoutAnchor(100, 400)).toEqual({ align: 'center', left: 100 });
+    expect(core.readoutAnchor(200, 400)).toEqual({ align: 'center', left: 200 });
+    expect(core.readoutAnchor(300, 400)).toEqual({ align: 'center', left: 300 });
+  });
+
+  it('right-aligns in the right quarter, ending at the line', () => {
+    expect(core.readoutAnchor(301, 400)).toEqual({ align: 'right', left: 301 });
+    expect(core.readoutAnchor(400, 400)).toEqual({ align: 'right', left: 400 });
+  });
+
+  it('left-aligns for a lane with no width', () => {
+    expect(core.readoutAnchor(10, 0).align).toBe('left');
+  });
+});
+
+describe('roundStretch', () => {
+  it('rounds to the nearest 25 m', () => {
+    expect(core.roundStretch(602)).toBe(600);
+    expect(core.roundStretch(187)).toBe(175);
+    expect(core.roundStretch(188)).toBe(200);
+  });
+
+  it('never reads under 25 m', () => {
+    expect(core.roundStretch(10)).toBe(25);
+    expect(core.roundStretch(0)).toBe(25);
   });
 });

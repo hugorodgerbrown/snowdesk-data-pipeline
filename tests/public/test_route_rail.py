@@ -209,16 +209,50 @@ class TestRailTwoShipsInsideRailOne:
             "class-slope-45",
             "class-slope-50",
             "class-unknown",
-            "attitude-traverse",
+            "two-placeholder",
+            "attitude-flat",
+            "attitude-gentle-descent",
+            "attitude-gentle-ascent",
             "attitude-fall-line",
-            "attitude-downhill-traverse",
-            "attitude-uphill-traverse",
+            "attitude-falls-away-left",
+            "attitude-falls-away-right",
+            "attitude-traverse-left",
+            "attitude-traverse-right",
+            "attitude-traverse",
             "readout-slope",
-            "readout-slope-left",
-            "readout-slope-right",
+            "readout-slope-bank",
             "readout-band",
             "readout-passage",
         } <= keys
+        # SNOW-1024 retired the side-suffixed slope lines and the
+        # uphill / downhill traverse terms.
+        assert keys.isdisjoint(
+            {
+                "readout-slope-left",
+                "readout-slope-right",
+                "attitude-downhill-traverse",
+                "attitude-uphill-traverse",
+            }
+        )
+
+    def test_it_has_no_distance_scale(self, client: Client) -> None:
+        """SNOW-1024: rail two's ticks and km labels are gone."""
+        rail = _rail(_home(client))
+
+        assert "data-route-rail-two-ticks" not in rail
+
+    def test_its_readout_sits_in_the_lane_cell(self, client: Client) -> None:
+        """Two columns, and the readout with its stem under the lane."""
+        rail = _rail(_home(client))
+
+        assert "data-route-rail-readout" not in rail
+        assert "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]" in rail
+        assert "data-route-rail-two-readout-box" in rail
+        assert "data-route-rail-two-stem" in rail
+        # The 44 px lane.
+        lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
+        assert lane is not None
+        assert "h-11" in lane.group(0)
 
 
 @pytest.mark.django_db
