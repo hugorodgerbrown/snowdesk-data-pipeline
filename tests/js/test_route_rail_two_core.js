@@ -295,7 +295,7 @@ describe('legProfile and legFigures', () => {
     expect(figures.descent_m).toBeCloseTo(0);
     expect(figures.elevation_start).toBe(1500);
     expect(figures.elevation_end).toBeCloseTo(1700);
-    expect(rail.formatFigures(figures)).toBe('0.3 km · ▲ 200m · ▼ 0m · 1500→1700m');
+    expect(rail.formatFigures(figures)).toBe('0.3 km · ▲ 200 m · ▼ 0 m · 1500 → 1700 m');
   });
 
   it('knows the distance alone for a leg with no elevation', () => {
