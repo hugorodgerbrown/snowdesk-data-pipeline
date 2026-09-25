@@ -288,7 +288,7 @@ class TestMakemessages:
                 "Sign in to save a favourite.",  # favourites.js
                 "Play season timelapse",  # map.js
                 "Something went wrong — please try again.",  # report.js
-                "A newer version of Snowdesk is ready.",  # sw_register.js
+                "Snowdesk needs a refresh",  # sw_register.js
                 "No syncs yet.",  # sync_log.js
                 "No bulletin coverage for this location.",  # favourites_offline.js
                 "Show map controls",  # map_controls_collapse.js

@@ -2,7 +2,7 @@
 name: service-worker-updates-apply-silently
 description: Why a waiting SW is applied silently on hide and the banner is only for a stuck worker — applyWaitingWorker, workerIsStuck, shell-identity
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-25
 ---
 
 # Service-worker updates apply silently; the banner is for a stuck worker
@@ -90,6 +90,3 @@ when, and only when, the shell does.
   that worker never answers `shell-identity`, so gate one reads "unknown",
   which is stale. Gate two then finds the new worker installing or waiting,
   so no banner appears.
-* **The release label is still sent** (`release` on `/api/version`,
-  `<meta name="pwa-app-release">`) but has no client reader. Removing it is
-  follow-up work.

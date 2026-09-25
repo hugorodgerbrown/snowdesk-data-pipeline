@@ -61,13 +61,10 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     a machine, this names the release to a person ("v24"), and the site
     footer shows it. See ``apps.public.release``.
 
-    SNOW-869 gave that label a second reader. It is now also baked into
-    ``<meta name="pwa-app-release">`` beside the build tag, so the update
-    banner can name the release the SHELL was delivered on — which cannot
-    be recovered later, because the client announces itself to
-    ``/api/version`` with a SHA and no map runs from an arbitrary SHA back
-    to a release ordinal. Both tags stay pure functions of settings, so
-    neither adds a ``Vary`` to the page.
+    SNOW-869 gave that label a second reader, a
+    ``<meta name="pwa-app-release">`` tag the update banner printed from.
+    SNOW-1025 removed the banner's versioned copy and SNOW-1026 removed the
+    tag, so the footer is again the label's only reader.
 
     SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
     ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
