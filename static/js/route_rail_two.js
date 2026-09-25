@@ -106,10 +106,11 @@
  * beneath it, so moving both fingers moves the window. A tap selects a
  * band or passage (`cursor.select`) — tapping the same one again clears
  * it — and moves the cursor there. The tap target is not the drawn width
- * (SNOW-1032): a tap in the passage row's foot picks the passage,
- * anywhere else the band, whose on-screen extent is nearest the tap
- * within `TAP_RADIUS_PX` (`nearestRange`). The selection box is drawn at
- * least `MIN_BOX_PX` wide (`selectionBox`); the readout and the map read
+ * (SNOW-1032): a tap in the passage row's foot picks the passage whose
+ * extent is nearest within `TAP_RADIUS_PX` (`nearestRange`); anywhere
+ * else it picks the STEEPEST band within `TAP_RADIUS_PX`
+ * (`steepestBand`) — bands touch, so the nearest would always be the one
+ * under the finger. The selection box is drawn at least `MIN_BOX_PX` wide (`selectionBox`); the readout and the map read
  * the band's real extent. A band's selection carries its `classIndex`,
  * which the map draws the stretch in. A second pointer starts a pinch and
  * cancels the press in progress, so a pinch never scrubs or selects.
@@ -1701,13 +1702,16 @@
   }
 
   /**
-   * A tap: select the band or passage nearest it, and move the cursor there.
+   * A tap: select a band or passage near it, and move the cursor there.
    *
    * The row is read from the tap's y: from `PASSAGE_ROW_SLACK_PX` above the
-   * passage bars down, a passage; anywhere else in the lane, a band. In
-   * that row the pick is the nearest on-screen extent within
-   * `TAP_RADIUS_PX` (`nearestRange`), so a band one sample wide is not a
-   * target one sample wide (SNOW-1032).
+   * passage bars down, a passage — the nearest on-screen extent within
+   * `TAP_RADIUS_PX` (`nearestRange`); anywhere else in the lane, a band —
+   * the STEEPEST within `TAP_RADIUS_PX` (`steepestBand`), because bands
+   * touch and "nearest" would always be the one under the finger, leaving
+   * a one-segment band a one-segment target (SNOW-1032). The cursor moves
+   * to the tap, pulled inside the picked band so the readout and the
+   * leader line sit on what was selected.
    *
    * @param {number} x The lane x the press went down at.
    * @param {number} y The lane y it went down at, in `ROWS` units.
@@ -1721,8 +1725,13 @@
       if (passage) toggleSelection('passage', passage.from, passage.to);
       return;
     }
-    var band = c.nearestRange(bands, x, view, width, TAP_RADIUS_PX);
-    if (band) toggleSelection('band', band.from, band.to, band.classIndex);
+    var band = c.steepestBand(bands, x, view, width, TAP_RADIUS_PX);
+    if (!band) return;
+    var index = ctx.cursor.state().index;
+    if (index !== null && (index < band.from || index > band.to)) {
+      ctx.cursor.setIndex(clamp(index, band.from, band.to));
+    }
+    toggleSelection('band', band.from, band.to, band.classIndex);
   }
 
   /** Start a pinch from the two pointers down. */

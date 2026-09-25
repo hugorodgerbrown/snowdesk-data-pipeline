@@ -512,6 +512,39 @@ describe('roundStretch', () => {
   });
 });
 
+describe('steepestBand (SNOW-1032)', () => {
+  // 10 px a sample across a 100 px lane.
+  const VIEW = { from: 0, to: 10 };
+  const band = (from, to, classIndex) => ({ from, to, classIndex });
+
+  it('takes the steepest band within the radius, not the one under the tap', () => {
+    const bands = [band(0, 4, 0), band(5, 5, 3), band(6, 9, 0)];
+    // 15 px left of the one-segment 40–45° band, inside the gentle one.
+    expect(core.steepestBand(bands, 35, VIEW, 100, 22)).toBe(bands[1]);
+  });
+
+  it('ignores a steeper band beyond the radius', () => {
+    const bands = [band(0, 4, 0), band(5, 5, 3), band(6, 9, 0)];
+    expect(core.steepestBand(bands, 25, VIEW, 100, 22)).toBe(bands[0]);
+  });
+
+  it('breaks a tie of class by the nearer extent, then the one holding the tap', () => {
+    const bands = [band(0, 1, 2), band(2, 7, 0), band(8, 9, 2)];
+    expect(core.steepestBand(bands, 35, VIEW, 100, 22)).toBe(bands[0]);
+    expect(core.steepestBand(bands, 65, VIEW, 100, 22)).toBe(bands[2]);
+  });
+
+  it('ranks unknown below every class', () => {
+    const bands = [band(0, 4, null), band(5, 9, 0)];
+    expect(core.steepestBand(bands, 45, VIEW, 100, 22)).toBe(bands[1]);
+  });
+
+  it('picks nothing with nothing in view', () => {
+    expect(core.steepestBand([band(20, 30, 5)], 50, VIEW, 100, 22)).toBeNull();
+    expect(core.steepestBand(undefined, 50, VIEW, 100, 22)).toBeNull();
+  });
+});
+
 describe('nearestRange (SNOW-1032, SNOW-1033)', () => {
   // 10 px a sample across a 100 px lane.
   const VIEW = { from: 0, to: 10 };

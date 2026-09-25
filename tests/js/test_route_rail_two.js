@@ -344,6 +344,36 @@ describe('pressing a band or a passage', () => {
     expect(cursor.state().selection).toEqual({ kind: 'band', from: 105, to: 109, classIndex: 1 });
   });
 
+  it('gives a thin steep band a 44 px target: a tap picks the steepest band within 22 px', () => {
+    // Leg 3 fitted: 1.9 px a sample. A one-segment 42° band at 300 sits in
+    // 20° ground; a tap 15 px to its left, on the gentle band, takes it.
+    const angles = ANGLES.map((angle, i) => (i >= 290 && i <= 310 ? (i === 300 ? 42 : 20) : angle));
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[2]);
+    const steep = bandRects().find((rect) => rect.getAttribute('data-from') === '300');
+    const x = Number(steep.getAttribute('x')) - 15;
+
+    pointer(lane, 'pointerdown', { x, y: 5 });
+    pointer(lane, 'pointerup', { x, y: 5 });
+
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 300, to: 300, classIndex: 3 });
+    // The cursor is pulled onto what was selected.
+    expect(cursor.state().index).toBe(300);
+  });
+
+  it('keeps the band under the tap when nothing steeper is within 22 px', () => {
+    const angles = ANGLES.map((angle, i) => (i >= 280 && i <= 320 ? 20 : angle));
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[2]);
+    const x = (300.5 - 140) * (600 / 320);
+
+    pointer(lane, 'pointerdown', { x, y: 5 });
+    pointer(lane, 'pointerup', { x, y: 5 });
+
+    // 320–324 are 20° in the fixture too, so the gentle band runs to 324.
+    expect(cursor.state().selection).toEqual({ kind: 'band', from: 280, to: 324, classIndex: 0 });
+  });
+
   it('scales the tap\'s y to the lane\'s rows', () => {
     // A lane laid out twice as tall: client y 60 is lane y 30, the wedges.
     const { cursor } = attach();
@@ -1272,8 +1302,10 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
 
     doubleTap(x, 100, band);
 
+    // Fitted, the 32° band 295–299 ends within 22 px of the tap on the 20°
+    // band 300–304, and a tap takes the steepest band in reach.
     expect(cursor.state().selection)
-      .toEqual({ kind: 'band', from: 300, to: 304, classIndex: 0 });
+      .toEqual({ kind: 'band', from: 295, to: 299, classIndex: 1 });
     expect(two.view().to - two.view().from).toBe(180);
 
     now += 1000;

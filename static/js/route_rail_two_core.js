@@ -91,6 +91,7 @@
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
  *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
+ *   steepestBand(bands, x, view, width, radiusPx) → the band a tap picks
  *   glyphGroup(span, width)                   → segments per bank glyph, N
  *   resolveSpan(leg, width)                   → the widest span whose row draws
  *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
@@ -571,6 +572,56 @@
   }
 
   /**
+   * The band a tap at `x` picks: the STEEPEST within `radiusPx` (SNOW-1032).
+   *
+   * Bands tile the leg edge to edge, so "nearest extent" always answers
+   * with the band under the finger and never widens a thin one: a
+   * one-segment band on a fitted long leg stays about 2 px to a tap.
+   * Picking the steepest class among every band whose on-screen extent
+   * comes within `radiusPx` gives a thin steep band inside gentle ground a
+   * 44 px target — the band a reader is most likely hunting for — while a
+   * thin gentle band beside steep ground gets none, which errs to the
+   * conservative side. Unknown (null) ranks below every class. Ties go to
+   * the nearer extent, then the one holding `x`, then the leftmost.
+   *
+   * @template {{from: number, to: number, classIndex: ?number}} B
+   * @param {Array<B>} bands `bandRuns` for the open leg.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, a band is not considered.
+   * @returns {?B}
+   */
+  function steepestBand(bands, x, view, width, radiusPx) {
+    if (!Array.isArray(bands)) return null;
+    /** @type {?B} */
+    var best = null;
+    var bestRank = -Infinity;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    bands.forEach(function (band) {
+      var part = band ? clip(band, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var rank = typeof band.classIndex === 'number' ? band.classIndex : -1;
+      var holds = x >= x0 && x < x1;
+      var better = rank > bestRank
+        || (rank === bestRank && distance < bestDistance)
+        || (rank === bestRank && distance === bestDistance && holds && !bestHolds);
+      if (better) {
+        best = band;
+        bestRank = rank;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
+  }
+
+  /**
    * The part of a band or passage inside the view.
    *
    * @param {{from: number, to: number}} range Sample indices, inclusive.
@@ -1000,6 +1051,7 @@
     indexAt: indexAt,
     clip: clip,
     nearestRange: nearestRange,
+    steepestBand: steepestBand,
     glyphGroup: glyphGroup,
     resolveSpan: resolveSpan,
     bankGlyphs: bankGlyphs,
