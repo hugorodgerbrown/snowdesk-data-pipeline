@@ -173,19 +173,44 @@ class TestCacheVersion:
         assert before != after
         assert after.startswith("snowdesk-shell-v34-")
 
-    def test_strips_characters_that_could_break_the_js_literal(
+    def test_encodes_characters_that_could_break_the_js_literal(
         self, shell_tree: Path
     ) -> None:
         """The name is injected into a single-quoted JS string.
 
         A quote reaching it would end the literal, and serve_sw's rewrite
-        regex could no longer find the assignment.
+        regex could no longer find the assignment. Unsafe characters are
+        written as ``_`` plus their UTF-8 bytes in hex.
         """
         with override_settings(APP_RELEASE="3'4 <x>"):
             version = sw_shell.cache_version()
 
-        assert version.startswith("snowdesk-shell-v34x-")
+        assert version.startswith("snowdesk-shell-v3_274_20_3cx_3e-")
         assert "'" not in version
+        assert sw_shell._CACHE_VERSION_LINE_RE.fullmatch(
+            f"const CACHE_VERSION = '{version}';"
+        )
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [("1-2", "12"), ("1_2", "12"), ("1 2", "1_202"), ("é", "_c3_a9")],
+    )
+    def test_distinct_releases_never_share_a_name(
+        self, shell_tree: Path, first: str, second: str
+    ) -> None:
+        """Encoding, not dropping, keeps two releases apart (#980 review).
+
+        Dropping characters made ``1-2`` and ``12`` the same name, so the
+        second release would skip its reinstall and DevTools would show the
+        wrong label. ``_`` is itself encoded, so an encoded character can
+        never collide with a literal one.
+        """
+        with override_settings(APP_RELEASE=first):
+            a = sw_shell.cache_version()
+        with override_settings(APP_RELEASE=second):
+            b = sw_shell.cache_version()
+
+        assert a != b
 
     def test_changes_when_the_shell_changes(self, shell_tree: Path) -> None:
         """A shell edit yields a different cache name — the point of the whole change."""

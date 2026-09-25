@@ -87,10 +87,12 @@ SW_JS_PATH: Path = REPO_ROOT / "static" / "js" / "sw.js"
 _VERSION_PREFIX: str = "snowdesk-shell-"
 _HASH_SLICE: int = 12
 
-# SNOW-1029: what may pass from APP_RELEASE into the cache name. The name is
-# injected into a single-quoted JS literal that _CACHE_VERSION_LINE_RE
-# rewrites, so a quote or anything else surprising must never reach it.
-_RELEASE_UNSAFE_RE: re.Pattern[str] = re.compile(r"[^0-9A-Za-z.]")
+# SNOW-1029: which characters of APP_RELEASE pass into the cache name as
+# they are. The name is injected into a single-quoted JS literal that
+# _CACHE_VERSION_LINE_RE rewrites, so nothing else may reach it unencoded.
+_RELEASE_SAFE_CHARS: frozenset[str] = frozenset(
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-"
+)
 
 # Matches the whole assignment statement regardless of its value, so the
 # committed placeholder and any previously-shipped literal are both
@@ -190,13 +192,22 @@ def _release_segment() -> str:
 
     Mirrors ``apps.public.release.release_label`` (the footer's ``v34``) but
     reads ``settings.APP_RELEASE`` itself, so ``apps.core`` does not import
-    from ``apps.public``. Characters outside ``[0-9A-Za-z.]`` are dropped,
-    because the name ends up inside a JS string literal.
+    from ``apps.public``. Any character outside ``[0-9A-Za-z.-]`` is written
+    as ``_`` plus the hex of each of its UTF-8 bytes, because the name ends
+    up inside a JS string literal. Encoding rather than dropping keeps
+    distinct releases distinct: ``1-2`` and ``12`` must not share a name, or
+    the once-per-release reinstall would skip one. ``_`` itself is encoded,
+    so a bare ``_`` never appears and no two releases can produce the same
+    segment.
     """
-    release = _RELEASE_UNSAFE_RE.sub(
-        "", str(getattr(settings, "APP_RELEASE", "") or "")
+    release = str(getattr(settings, "APP_RELEASE", "") or "")
+    encoded = "".join(
+        char
+        if char in _RELEASE_SAFE_CHARS
+        else "".join(f"_{byte:02x}" for byte in char.encode("utf-8"))
+        for char in release
     )
-    return f"v{release}-" if release else ""
+    return f"v{encoded}-" if encoded else ""
 
 
 def cache_version() -> str:
