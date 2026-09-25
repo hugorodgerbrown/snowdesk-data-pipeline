@@ -1,6 +1,6 @@
 ---
 name: service-worker-updates-apply-silently
-description: Why a waiting SW is applied silently on hide and the banner is only for a stuck worker — applyWaitingWorker, workerIsStuck, shell-identity
+description: Why a waiting SW applies silently (at once on a fresh tab, else on hide) and the banner is only for a stuck worker — pwa-shell
 status: current
 last-reviewed: 2026-09-25
 ---
@@ -11,10 +11,20 @@ last-reviewed: 2026-09-25
 
 * **Routine update: silent.** `sw.js` still never calls `skipWaiting()`
   on install. Instead, `sw_register.js` records the waiting worker
-  (`queueSilentUpdate`) and posts `SKIP_WAITING` the next time
-  `document.visibilityState` becomes `hidden` (`applyWaitingWorker`). It
-  holds back while any `warmCache` run is queued or in flight. The
-  `controllerchange` that follows does **not** reload the page.
+  (`queueSilentUpdate`) and posts `SKIP_WAITING` to it
+  (`applyWaitingWorker`):
+  * **at once** if the waiting worker reports, over `shell-identity`, the
+    same shell as the page's `<meta name="pwa-shell">` (SNOW-1027). The page
+    came off the network as that worker's build. This is the fresh-tab
+    case: opening the tab is what installed the new worker;
+  * otherwise the next time `document.visibilityState` becomes `hidden`.
+
+  Either way it holds back while any `warmCache` run is queued or in
+  flight, **in any window**, and while any other window is on screen. The
+  controlling worker answers that (`activation-check`), because it runs
+  every window's downloads and can list every window. The last window to
+  go quiet applies the update. The `controllerchange` that follows does
+  **not** reload the page.
 * **Stuck worker: the banner.** `window.pwaUpdateBanner.reveal()` shows
   the banner only when both gates agree. Two things ask it: an installing
   worker that goes `redundant` without ever reaching `installed`
@@ -56,12 +66,36 @@ A routine update needs no one. HTML is network-first and static assets are
 hashed, so an online page is already current. The only thing the waiting
 worker changes is the offline shell, and it can swap that in unseen.
 
-**Why hidden, not immediately.** Activating under a visible page swaps
-the worker that page is talking to, and the activate sweep deletes the old
-shell cache the page may still read from. Hidden means the user has
-switched away (tab, app, screen lock), which on an installed PWA happens
-many times a day. Waiting for every tab to close, the browser's default,
-can take days on an installed app.
+**Why hidden, when the page is not the new build.** Activating swaps the
+worker that page is talking to, and the activate sweep deletes the old shell
+cache. A page the old worker served (offline, typically) may still read
+from that cache. Hidden means the user has switched away (tab, app, screen
+lock), which on an installed PWA happens many times a day. Waiting for every
+tab to close, the browser's default, can take days on an installed app.
+
+**Why immediately, when it is (SNOW-1027).** SNOW-1025 applied every
+waiting worker on hide, which was wrong for a fresh tab. The navigation is
+network-first, so a fresh page is already the new build, and the waiting
+worker is the one the page belongs with. Holding it back left the page on
+the old worker until the user switched away, which in an app kept in front
+can be a whole session. On staging, a fresh tab showed one worker running
+and one waiting from the moment it opened. The page names its shell in
+`<meta name="pwa-shell">` through the same `served_cache_version()` that
+`serve_sw` and `/api/version` use, so a match is exact. A worker that does
+not answer, or a newer worker that has replaced the one checked, falls back
+to the hide rule.
+
+**Why every window is asked (SNOW-1027 review).** `SKIP_WAITING` is not a
+per-page action. Activation claims every window on the origin and sweeps
+the old shell cache, so one page's view of itself ("I match", "I am
+hidden", "I have no download running") is not enough. Another window can
+be on screen on the old shell, or mid-download on the worker being retired.
+The controlling worker sees every window (`clients.matchAll`) and runs
+every download (`_warmCacheActiveIds`), so it answers `activation-check`
+and the page holds back unless no other window is visible and no download
+runs anywhere. A worker that cannot answer (one deploy, while the old worker
+predates the message) is treated as safe, because holding back until it
+could answer would hold back forever.
 
 **Why not reload after the silent activation.** A reload in a background
 tab still loses whatever the user left there: a half-written trip or field

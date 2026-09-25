@@ -15,6 +15,7 @@ import waffle
 from django.conf import settings
 from django.utils.functional import SimpleLazyObject
 
+from apps.core.sw_shell import served_cache_version
 from apps.public.banners import banners_for_request, dismiss_url_for, kind_for
 from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
@@ -66,6 +67,14 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     SNOW-1025 removed the banner's versioned copy and SNOW-1026 removed the
     tag, so the footer is again the label's only reader.
 
+    ``PWA_SHELL`` (SNOW-1027) is the shell cache name this page was built
+    against: the same ``CACHE_VERSION`` ``serve_sw`` injects into ``sw.js``,
+    through the same ``served_cache_version``. ``sw_register.js`` compares
+    it with a waiting worker's own ``CACHE_VERSION``. A match means the page
+    came off the network as the build that worker holds, so the worker can
+    take over at once rather than waiting for the page to be hidden. Like
+    the two above it is a per-process constant, so it adds no ``Vary``.
+
     SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
     ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
     a server decision (``update_required`` in the ``/api/version`` body),
@@ -75,9 +84,10 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
         request: The incoming HTTP request (unused — value comes from settings).
 
     Returns:
-        ``{"APP_VERSION": str, "APP_RELEASE_LABEL": str}``. An empty
-        ``APP_VERSION`` is passed through unchanged — the client treats it
-        as "no build declared" and makes the whole version check a no-op.
+        ``{"APP_VERSION": str, "APP_RELEASE_LABEL": str, "PWA_SHELL": str}``.
+        An empty ``APP_VERSION`` is passed through unchanged — the client
+        treats it as "no build declared" and makes the whole version check a
+        no-op.
         An empty label means no release number is configured, and the
         footer omits it rather than rendering a blank.
 
@@ -85,6 +95,7 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     return {
         "APP_VERSION": str(getattr(settings, "APP_VERSION", "")),
         "APP_RELEASE_LABEL": release_label(),
+        "PWA_SHELL": served_cache_version(),
     }
 
 

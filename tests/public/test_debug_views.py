@@ -531,6 +531,19 @@ class TestSwVersionPage:
         assert "pwa_sw_version_probe.js" in body
         assert 'data-testid="sw-live-version"' in body
 
+    def test_staff_user_sees_the_worker_list(self, staff_client: Client) -> None:
+        """The page carries the list every worker is drawn into (SNOW-1027).
+
+        After a deploy a browser often holds a running and a waiting worker,
+        and DevTools names them only by Chrome's own counter. The list and
+        its row template are what ``pwa_sw_version_probe.js`` fills in with
+        the version each one holds.
+        """
+        body = staff_client.get(_sw_version_url()).content.decode()
+        assert 'data-testid="sw-workers"' in body
+        assert "data-sw-workers-body" in body
+        assert 'id="sw-worker-row-template"' in body
+
     @override_settings(SW_DEV_SHELL_BYPASS=True)
     def test_dev_shell_bypass_toggle_renders_when_setting_is_on(
         self, staff_client: Client

@@ -110,11 +110,7 @@ from apps.bulletins.services.selection import (
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
-from apps.core.sw_shell import (
-    cache_version,
-    cached_cache_version,
-    inject_cache_version,
-)
+from apps.core.sw_shell import inject_cache_version, served_cache_version
 from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
@@ -2192,7 +2188,7 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     response = _serve_sw_file("js/sw.js")
     body = response.content.decode("utf-8")
 
-    version = cache_version() if settings.DEBUG else cached_cache_version()
+    version = served_cache_version()
     body = inject_cache_version(body, version=version)
 
     if settings.SW_DEV_SHELL_BYPASS:

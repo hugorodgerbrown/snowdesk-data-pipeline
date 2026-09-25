@@ -285,6 +285,22 @@ def test_sw_js_answers_the_shell_identity_message() -> None:
     assert "{ type: 'shell-identity', cache: CACHE_VERSION }" in content
 
 
+def test_sw_js_answers_the_activation_check() -> None:
+    """The worker reports other windows and running downloads (SNOW-1027).
+
+    Activation is origin-wide, so ``sw_register.js`` asks the controlling
+    worker whether any other window is on screen or downloading before it
+    posts SKIP_WAITING. A worker that cannot answer is treated as "safe", so
+    a handler deleted by a refactor would fail silently, putting back the
+    bug where one window retires another's download.
+    """
+    path = Path(settings.BASE_DIR) / "static" / "js" / "sw.js"
+    content = path.read_text(encoding="utf-8")
+    assert "event.data.type === 'activation-check'" in content
+    assert "warming: _warmCacheActiveIds.size > 0" in content
+    assert "client.visibilityState === 'visible'" in content
+
+
 # ---------------------------------------------------------------------------
 # Dev shell-cache bypass (SNOW-585)
 # ---------------------------------------------------------------------------

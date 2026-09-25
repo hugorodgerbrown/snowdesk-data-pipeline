@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from django.test import override_settings
 
 from apps.core import sw_shell
 
@@ -145,6 +146,26 @@ class TestCacheVersion:
         )
 
         assert sw_shell.cache_version() != before
+
+
+class TestServedCacheVersion:
+    """Tests for the one rule every reader of the served name shares (SNOW-1027)."""
+
+    def test_recomputes_under_debug(
+        self, shell_tree: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Under DEBUG a shell edit shows up without a process restart."""
+        monkeypatch.setattr(sw_shell, "cached_cache_version", lambda: "cached")
+        with override_settings(DEBUG=True):
+            assert sw_shell.served_cache_version() == sw_shell.cache_version()
+
+    def test_uses_the_process_cache_otherwise(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In production the tree cannot change, so the cached value is served."""
+        monkeypatch.setattr(sw_shell, "cached_cache_version", lambda: "cached")
+        with override_settings(DEBUG=False):
+            assert sw_shell.served_cache_version() == "cached"
 
 
 class TestInjectCacheVersion:

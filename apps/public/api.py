@@ -119,7 +119,7 @@ from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
-from apps.core.sw_shell import cache_version, cached_cache_version
+from apps.core.sw_shell import served_cache_version
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
@@ -3654,7 +3654,7 @@ def version(request: HttpRequest) -> JsonResponse:
     ``shell`` (SNOW-952) is the third identifier, and the one the update
     banner is actually gated on: the shell cache name this build would
     serve, derived from the shell content hash
-    (``apps.core.sw_shell.cached_cache_version``). The controlling service
+    (``apps.core.sw_shell.served_cache_version``). The controlling service
     worker reports its own ``CACHE_VERSION`` to the page, and the two
     differ exactly when the device is holding a stale offline shell.
 
@@ -3717,7 +3717,7 @@ def version(request: HttpRequest) -> JsonResponse:
             # exactly — this value is compared against the one that view
             # baked into the worker, so the two must be read the same way
             # or local development shows a permanent phantom update.
-            "shell": cache_version() if settings.DEBUG else cached_cache_version(),
+            "shell": served_cache_version(),
             "update_required": update_required,
             "update_available": update_available,
             "released_at": settings.APP_RELEASED_AT,

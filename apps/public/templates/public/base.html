@@ -114,6 +114,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# pwa-app-min-version tag: the forced-update verdict is a server    #}
         {# decision (update_required), never a client-side comparison.       #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
+        {# SNOW-1027: the shell cache name this page was built against, the  #}
+        {# same CACHE_VERSION serve_sw injects into sw.js. sw_register.js     #}
+        {# compares it with a waiting worker's: a match means this page came  #}
+        {# off the network as that worker's build, so it takes over at once.  #}
+        <meta name="pwa-shell" content="{{ PWA_SHELL }}">
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
         {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
         {# PK leaks user count and growth rate and is trivially guessable. #}

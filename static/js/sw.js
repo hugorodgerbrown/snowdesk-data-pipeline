@@ -3980,6 +3980,35 @@ self.addEventListener('message', (event) => {
     const port = event.ports && event.ports[0];
     port?.postMessage({ type: 'shell-identity', cache: CACHE_VERSION });
   }
+  // SNOW-1027: "is it safe to replace you?", asked by sw_register.js before
+  // it posts SKIP_WAITING to a waiting worker. Activation is origin-wide: it
+  // claims every window and sweeps the old shell cache, so one page deciding
+  // alone could pull the worker out from under another. Only this worker can
+  // see the whole picture. It serves every window's basemap downloads
+  // (_warmCacheActiveIds), and clients.matchAll sees every window, visible or
+  // not. The asker's own window is left out: it already knows about itself.
+  // Replies down the transferred port, like shell-identity above.
+  if (event.data && event.data.type === 'activation-check') {
+    const port = event.ports && event.ports[0];
+    const askerId = event.source && event.source.id;
+    const replied = self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((windows) => {
+        const othersVisible = windows.some(
+          (client) => client.id !== askerId && client.visibilityState === 'visible',
+        );
+        port?.postMessage({
+          type: 'activation-check',
+          othersVisible: othersVisible,
+          warming: _warmCacheActiveIds.size > 0,
+        });
+      })
+      .catch(() => {
+        // Could not look: say so, and the page treats that as "not safe".
+        port?.postMessage({ type: 'activation-check', othersVisible: true, warming: false });
+      });
+    if (typeof event.waitUntil === 'function') event.waitUntil(replied);
+  }
   if (event.data && event.data.type === 'can-open-offline') {
     const port = event.ports && event.ports[0];
     const replied = _canOpenOffline()
