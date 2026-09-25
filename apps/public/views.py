@@ -2159,7 +2159,8 @@ def serve_sw(request: HttpRequest) -> HttpResponse:
     build identity used to be (SNOW-933), so the update banner could name
     builds; it made the worker's bytes differ on every deploy, which
     installed a replacement worker even when no shell source had changed.
-    The worker's bytes now change when, and only when, the shell does.
+    The worker's bytes now change when the shell does, and (SNOW-1029, whose
+    cache name carries the release label) once per production release.
 
     SNOW-585: when ``settings.SW_DEV_SHELL_BYPASS`` is on, the on-disk
     ``const DEV_SHELL_BYPASS = false;`` literal is rewritten to ``true`` in

@@ -129,13 +129,63 @@ class TestCacheVersion:
     """Tests for the derived cache name."""
 
     def test_uses_the_shell_prefix_and_a_hash_slice(self, shell_tree: Path) -> None:
-        """The name is the fixed prefix plus a slice of the digest."""
-        version = sw_shell.cache_version()
+        """An unnumbered build is the fixed prefix plus a slice of the digest."""
+        with override_settings(APP_RELEASE=""):
+            version = sw_shell.cache_version()
 
         assert version.startswith("snowdesk-shell-")
         suffix = version.removeprefix("snowdesk-shell-")
         assert suffix == sw_shell.compute_shell_hash()[: sw_shell._HASH_SLICE]
         assert len(suffix) == sw_shell._HASH_SLICE
+
+    def test_carries_the_release_label(self, shell_tree: Path) -> None:
+        """A numbered build reads ``snowdesk-shell-v34-<hash>`` (SNOW-1029).
+
+        The hash is what makes the name correct; the label is what lets a
+        person tell a running worker from a waiting one.
+        """
+        with override_settings(APP_RELEASE="34"):
+            version = sw_shell.cache_version()
+
+        digest = sw_shell.compute_shell_hash()[: sw_shell._HASH_SLICE]
+        assert version == f"snowdesk-shell-v34-{digest}"
+
+    def test_a_new_release_alone_changes_the_name(self, shell_tree: Path) -> None:
+        """The accepted cost: one silent reinstall per production release."""
+        with override_settings(APP_RELEASE="34"):
+            before = sw_shell.cache_version()
+        with override_settings(APP_RELEASE="35"):
+            after = sw_shell.cache_version()
+
+        assert before != after
+
+    def test_a_shell_change_alone_still_changes_the_name(
+        self, shell_tree: Path
+    ) -> None:
+        """Staging deploys every merge under one label; the hash still moves."""
+        with override_settings(APP_RELEASE="34"):
+            before = sw_shell.cache_version()
+            (shell_tree / "src" / "css" / "main.css").write_text(
+                "body { color: teal; }\n", encoding="utf-8"
+            )
+            after = sw_shell.cache_version()
+
+        assert before != after
+        assert after.startswith("snowdesk-shell-v34-")
+
+    def test_strips_characters_that_could_break_the_js_literal(
+        self, shell_tree: Path
+    ) -> None:
+        """The name is injected into a single-quoted JS string.
+
+        A quote reaching it would end the literal, and serve_sw's rewrite
+        regex could no longer find the assignment.
+        """
+        with override_settings(APP_RELEASE="3'4 <x>"):
+            version = sw_shell.cache_version()
+
+        assert version.startswith("snowdesk-shell-v34x-")
+        assert "'" not in version
 
     def test_changes_when_the_shell_changes(self, shell_tree: Path) -> None:
         """A shell edit yields a different cache name — the point of the whole change."""

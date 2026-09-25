@@ -251,18 +251,19 @@ def test_sw_kill_file_exists_on_disk() -> None:
 
 
 def test_serve_sw_bytes_do_not_depend_on_the_deploy() -> None:
-    """Two deploys with the same shell serve byte-identical workers.
+    """Two deploys with the same shell and release serve byte-identical workers.
 
-    SNOW-933 baked the git SHA and release label into ``/sw.js`` so the
-    update banner could name builds. That made the worker's bytes differ on
-    every deploy, so the browser installed a replacement even when no shell
-    source had changed. SNOW-1025 removed it: the worker now changes when,
-    and only when, the shell does.
+    SNOW-933 baked the git SHA into ``/sw.js`` so the update banner could
+    name builds. That made the worker's bytes differ on every deploy, so the
+    browser installed a replacement even when no shell source had changed.
+    SNOW-1025 removed it. The release label is part of the cache name since
+    SNOW-1029, so the release is held fixed here: this is the staging case,
+    every merge deployed under one label.
     """
     client = Client()
     with override_settings(APP_VERSION="073ee8c68d7465e9", APP_RELEASE="34"):
         first = client.get("/sw.js")
-    with override_settings(APP_VERSION="9f21ab4c0de1f2a3", APP_RELEASE="35"):
+    with override_settings(APP_VERSION="9f21ab4c0de1f2a3", APP_RELEASE="34"):
         second = client.get("/sw.js")
 
     assert first.content == second.content
@@ -372,7 +373,7 @@ def test_serve_sw_substitutes_the_derived_cache_version() -> None:
     assert "UNSUBSTITUTED" not in body
 
 
-@override_settings(DEBUG=True)
+@override_settings(DEBUG=True, APP_RELEASE="")
 def test_serve_sw_recomputes_the_cache_version_under_debug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -392,7 +393,7 @@ def test_serve_sw_recomputes_the_cache_version_under_debug(
     assert "const CACHE_VERSION = 'snowdesk-shell-111111111111';" in second
 
 
-@override_settings(DEBUG=False)
+@override_settings(DEBUG=False, APP_RELEASE="")
 def test_serve_sw_caches_the_cache_version_when_not_debug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

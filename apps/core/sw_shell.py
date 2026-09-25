@@ -1,5 +1,5 @@
 """
-apps/core/sw_shell.py — SW serve-time substitution (SNOW-517, SNOW-590).
+apps/core/sw_shell.py — SW serve-time substitution (SNOW-517, SNOW-590, SNOW-1029).
 
 ``CACHE_VERSION`` in ``static/js/sw.js`` is a placeholder on disk and is
 rewritten per response by ``apps.public.views.serve_sw`` with the derived
@@ -10,7 +10,18 @@ It is the ONLY per-deploy value written into the worker. SNOW-933 added a
 second, ``BUILD_IDENTITY``, so the update banner could name builds;
 SNOW-1025 removed it, because it made the worker's bytes differ on every
 deploy and so installed a replacement worker even when no shell source had
-changed. The worker's bytes now change when, and only when, the shell does.
+changed.
+
+The name is ``snowdesk-shell-v34-a1b2c3d4e5f6`` (SNOW-1029): the release
+label and a slice of the shell content hash. The hash is what makes it
+correct, since it changes whenever a shell source does. The label is what
+makes it readable: after a deploy a browser often holds a running and a
+waiting worker, and ``/_sw-version/`` and DevTools → Cache Storage now say
+which release each one is. The label alone could not do the job, because
+staging deploys every merge under one label and an unnumbered build has
+none. So the worker's bytes change when the shell changes, and once per
+production release. The second is a silent reinstall that SNOW-1025 made
+invisible.
 
 The service worker names its shell cache with a ``CACHE_VERSION`` string. A
 returning client keeps serving the old shell until that name changes, so the
@@ -75,6 +86,11 @@ SW_JS_PATH: Path = REPO_ROOT / "static" / "js" / "sw.js"
 # only job is to differ from the previous one.
 _VERSION_PREFIX: str = "snowdesk-shell-"
 _HASH_SLICE: int = 12
+
+# SNOW-1029: what may pass from APP_RELEASE into the cache name. The name is
+# injected into a single-quoted JS literal that _CACHE_VERSION_LINE_RE
+# rewrites, so a quote or anything else surprising must never reach it.
+_RELEASE_UNSAFE_RE: re.Pattern[str] = re.compile(r"[^0-9A-Za-z.]")
 
 # Matches the whole assignment statement regardless of its value, so the
 # committed placeholder and any previously-shipped literal are both
@@ -168,15 +184,34 @@ def compute_shell_hash() -> str:
     return digest.hexdigest()
 
 
+def _release_segment() -> str:
+    """
+    Return the ``v34-`` part of the cache name, or ``""`` on an unnumbered build.
+
+    Mirrors ``apps.public.release.release_label`` (the footer's ``v34``) but
+    reads ``settings.APP_RELEASE`` itself, so ``apps.core`` does not import
+    from ``apps.public``. Characters outside ``[0-9A-Za-z.]`` are dropped,
+    because the name ends up inside a JS string literal.
+    """
+    release = _RELEASE_UNSAFE_RE.sub(
+        "", str(getattr(settings, "APP_RELEASE", "") or "")
+    )
+    return f"v{release}-" if release else ""
+
+
 def cache_version() -> str:
     """
-    Return the derived shell cache name, e.g. ``"snowdesk-shell-a1b2c3d4e5f6"``.
+    Return the derived shell cache name, e.g. ``"snowdesk-shell-v34-a1b2c3d4e5f6"``.
+
+    The release label for a person, the content hash for correctness
+    (SNOW-1029). An unnumbered build has no label and keeps the
+    ``"snowdesk-shell-a1b2c3d4e5f6"`` form.
 
     Not cached here: ``cached_cache_version()`` is the request-path entry
     point. Call this one when a fresh read of the tree is wanted (tests,
     the staff debug page).
     """
-    return f"{_VERSION_PREFIX}{compute_shell_hash()[:_HASH_SLICE]}"
+    return f"{_VERSION_PREFIX}{_release_segment()}{compute_shell_hash()[:_HASH_SLICE]}"
 
 
 @cache
