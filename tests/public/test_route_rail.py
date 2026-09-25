@@ -210,6 +210,7 @@ class TestRailTwoShipsInsideRailOne:
             "class-slope-50",
             "class-unknown",
             "two-placeholder",
+            "two-bank-zoom",
             "attitude-flat",
             "attitude-gentle-descent",
             "attitude-gentle-ascent",

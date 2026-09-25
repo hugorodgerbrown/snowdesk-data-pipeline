@@ -19,25 +19,38 @@
  * row outright.
  *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
- * comment has the axis): the strip of slope bands, the track line drawn as
- * the bank ribbon (bank_ribbon_core.js), and one bar per no-fall passage;
+ * comment has the axis): the strip of slope bands, the track drawn as a
+ * row of level-ski wedges showing its bank (bank_ribbon_core.js,
+ * SNOW-1031), and one bar per no-fall passage;
  * then the cursor line, the selection's outline, and edge fades where more
  * leg lies beyond the window. The leg's elevation profile was a fourth row
- * above the bands until SNOW-1019 removed it: at a 2 km window it drew
- * near-flat and added nothing rail one's highlighted leg does not show.
- * SNOW-1024 removed the distance ticks and their labels: rail one's
- * bracket already says where the window sits on the route.
+ * above the bands until SNOW-1019 removed it: it drew near-flat and added
+ * nothing rail one's highlighted leg does not show. SNOW-1024 removed the
+ * distance ticks and their labels: rail one's bracket already says where
+ * the window sits on the route.
+ *
+ * THE BANK ROW FOLLOWS THE ZOOM (SNOW-1031's revision). Each glyph covers
+ * N whole segments, N = ceil(10 px / segment width), and draws the one
+ * with the largest |roll| (`bankGlyphs` in route_rail_two_core.js). Past
+ * three segments a glyph the row draws no glyphs at all: a dashed centre
+ * line and "Zoom in to see the bank" stand in, plain text and not a
+ * button — pinch, wheel and −/+ zoom. The band strip is drawn per segment
+ * at every zoom, sub-pixel if need be, and each no-fall passage keeps its
+ * own bar, 4 px tall under the bank row and never under 6 px wide
+ * (`passageBox`), so passages are marked at every zoom.
  *
  * REAL PIXELS. The svg's viewBox is the lane's measured width and never
- * stretched: the ribbon's tick lean IS the bank angle, and a lane squeezed
- * to 0.6× would draw a 45° bank at about 31°. Zoom and pan are therefore a
- * re-projection of every mark, not a transform, so strokes, ticks and bars
+ * stretched: a wedge's ground line is the bank angle (exaggerated by a
+ * fixed factor), and a lane squeezed to 0.6× would flatten every one of
+ * them. Zoom and pan are therefore a
+ * re-projection of every mark, not a transform, so strokes, wedges and bars
  * stay in screen units at any zoom. A `ResizeObserver` redraws on resize.
  *
  * THE WINDOW IS RAIL TWO'S OWN. The view and the span live here, never on
- * the cursor. Rail two opens on 2 km of ground (or the whole leg), pans by
- * drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
- * the −/+ buttons and the −/+ keys. An index or a selection published from
+ * the cursor. Rail two opens FITTED — the whole leg, however long — pans
+ * by drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
+ * the −/+ buttons, the −/+ keys and a double-tap. Panning stops at the
+ * leg's ends; the next leg is opened on rail one. An index or a selection published from
  * elsewhere that lands outside the window CENTRES it there (a range wider
  * than the window aligns its start), so the cursor line and the leader
  * line ending on it sit mid-lane; rail two's own writes — its keys and
@@ -56,6 +69,13 @@
  * passage under it (`cursor.select`) — tapping the same one again clears
  * it — and moves the cursor there. A second pointer starts a pinch and
  * cancels the press in progress, so a pinch never scrubs or selects.
+ *
+ * DOUBLE-TAP. A double-click, or two touch or pen lifts within
+ * `DOUBLE_TAP_MS` and `DOUBLE_TAP_PX` with no drag between, zooms straight
+ * to the widest span whose bank row draws (`resolveSpan`), centred on the
+ * tap; the same on a view already at or inside it returns to the fitted
+ * leg. The first tap's selection stands: the second tap of a pair does
+ * not toggle it.
  *
  * THE READOUT sits under the lane, ANCHORED to what it reads
  * (SNOW-1024). Under the cursor it is two lines: a word for the terrain —
@@ -98,14 +118,20 @@
 
   /** The lane's width when it has not been laid out (jsdom, a hidden rail). */
   var FALLBACK_WIDTH = 600;
-  /** The ribbon's tick pitch at a wide view, in px. */
-  var BASE_PITCH = 8;
   /** How far a press moves before it is a pan, in px. */
   var DRAG_PX = 4;
   /** Ctrl/⌘-wheel zoom rate: the span scales by exp(deltaY × this). */
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
+  /** Two lifts closer than this in time are a double-tap, in ms. */
+  var DOUBLE_TAP_MS = 300;
+  /** Two lifts closer than this across the lane are a double-tap, in px. */
+  var DOUBLE_TAP_PX = 24;
+  /** The zoom placeholder's padding either side of its text, in px. */
+  var PLACEHOLDER_PAD_PX = 6;
+  /** A placeholder character's width when the text cannot be measured. */
+  var PLACEHOLDER_CHAR_PX = 6;
   /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
   var ALIGN_CLASSES = Object.freeze({
     left: 'text-left',
@@ -126,6 +152,7 @@
     'two-value': '%(km)s km along the route',
     'two-placeholder': 'Select a route leg to view terrain',
     'two-hint': 'Drag to read a point. Tap a band or passage to select it.',
+    'two-bank-zoom': 'Zoom in to see the bank',
     'class-slope-gentle': 'under 30°',
     'class-slope-30': '30–35°',
     'class-slope-35': '35–40°',
@@ -195,6 +222,13 @@
   var pinch = null;
   /** The pending animation-frame redraw, or 0. */
   var frame = 0;
+  /**
+   * The last tap's lift, `{time, x}`, to tell the second tap of a pair;
+   * null once a pair is used or a drag intervenes.
+   */
+  var lastTap = null;
+  /** The pointer type of the last press, so `dblclick` acts for a mouse only. */
+  var lastPointerType = '';
   /**
    * True while rail two itself writes to the cursor (its pointer, keys,
    * or the clamp after a pan), so `onState` scrolls the least distance
@@ -379,7 +413,7 @@
           && p.to >= leg.from && p.from <= leg.to;
       },
     );
-    setView(c.placeView(leg, c.openingSpan(leg, ctx.sampleCount, ctx.spanM), leg.from));
+    setView(c.placeView(leg, c.openingSpan(leg), leg.from));
 
     titleEl.textContent = legLabel(leg);
     figuresEl.textContent = railCore.formatFigures(
@@ -430,6 +464,7 @@
     passages = [];
     press = null;
     pinch = null;
+    lastTap = null;
     pointers.clear();
     lane.replaceChildren();
     readoutEl.replaceChildren();
@@ -582,50 +617,137 @@
     });
   }
 
-  /** The track line, drawn as the bank ribbon. */
+  /**
+   * The track, drawn as level-ski wedges (SNOW-1031): per glyph the
+   * uphill triangle solid, the downhill one pale, then the ground line
+   * over both. Each glyph stands for a group of whole segments and draws
+   * the largest |roll| in it (`bankGlyphs`); when a group would cover more
+   * than three segments the row shows the zoom placeholder instead.
+   * Colours are tokens; bank_ribbon_core.js owns the geometry.
+   */
   function drawRibbon() {
     var c = core();
-    if (!self.pwaBankRibbonCore) return;
-    c.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
+    var ribbon = self.pwaBankRibbonCore;
+    if (!ribbon) return;
+    /**
+     * @param {Array<[number, number]>} points
+     * @returns {string}
+     */
+    function pointsAttr(points) {
+      return points.map(function (p) { return p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+    }
+    var bankRow = c.bankGlyphs({
+      bankWedge: ribbon.bankWedge,
       banks: banks(),
       leg: leg,
       view: view,
       width: width,
-      basePitch: BASE_PITCH,
-      halfLength: c.ROWS.ribbonHalf,
+      capPx: c.ROWS.ribbonHalf,
       y: c.ROWS.ribbonY,
-    }).forEach(function (tick) {
+    });
+    if (bankRow.placeholder) {
+      drawBankPlaceholder();
+      return;
+    }
+    bankRow.glyphs.forEach(function (wedge) {
+      var index = String(wedge.index);
+      if (wedge.up) {
+        lane.appendChild(svgEl('polygon', {
+          points: pointsAttr(wedge.up),
+          fill: 'var(--color-text-2)',
+          class: 'route-rail-two-wedge',
+          'data-wedge': 'up',
+          'data-index': index,
+          'pointer-events': 'none',
+        }));
+      }
+      if (wedge.down) {
+        lane.appendChild(svgEl('polygon', {
+          points: pointsAttr(wedge.down),
+          fill: 'var(--color-text-2)',
+          'fill-opacity': '0.3',
+          class: 'route-rail-two-wedge',
+          'data-wedge': 'down',
+          'data-index': index,
+          'pointer-events': 'none',
+        }));
+      }
       lane.appendChild(svgEl('line', {
-        x1: tick.x1.toFixed(2),
-        y1: tick.y1.toFixed(2),
-        x2: tick.x2.toFixed(2),
-        y2: tick.y2.toFixed(2),
-        // Muted by default and inked where the bank reaches `strongDeg`, so
-        // the eye goes to the lean that matters rather than to a solid
-        // hatch of equal ticks — bank_ribbon_core.js leaves this to the mount.
-        stroke: tick.strong ? 'var(--color-text-1)' : 'var(--color-text-3)',
-        'stroke-width': tick.strong ? '2' : '1.25',
+        x1: wedge.ground.x1.toFixed(2),
+        y1: wedge.ground.y1.toFixed(2),
+        x2: wedge.ground.x2.toFixed(2),
+        y2: wedge.ground.y2.toFixed(2),
+        stroke: 'var(--color-text-1)',
+        'stroke-width': '1.25',
         'stroke-linecap': 'round',
-        class: 'route-rail-two-tick',
-        'data-strong': tick.strong ? 'true' : 'false',
-        'data-index': String(tick.index),
+        class: 'route-rail-two-wedge',
+        'data-wedge': 'ground',
+        'data-index': index,
         'pointer-events': 'none',
       }));
     });
   }
 
-  /** One bar per no-fall passage, under the ribbon. */
+  /**
+   * The bank row's placeholder when a glyph would summarise more than
+   * three segments: a dashed centre line and "Zoom in to see the bank" on
+   * a card-coloured backing, so the dashes do not run through the words.
+   * Plain text, not a button: pinch, wheel and −/+ do the zooming.
+   */
+  function drawBankPlaceholder() {
+    var c = core();
+    var y = String(c.ROWS.ribbonY);
+    var group = svgEl('g', {
+      'pointer-events': 'none',
+      'data-route-rail-two-bank-placeholder': '',
+    });
+    group.appendChild(svgEl('line', {
+      x1: '0',
+      y1: y,
+      x2: String(width),
+      y2: y,
+      stroke: 'var(--color-text-3)',
+      'stroke-dasharray': '3 3',
+    }));
+    var backing = svgEl('rect', { y: String(c.ROWS.ribbonY - 7), height: '14', fill: 'var(--color-card)' });
+    group.appendChild(backing);
+    var text = svgEl('text', {
+      x: (width / 2).toFixed(2),
+      y: y,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+      fill: 'var(--color-text-3)',
+      class: 'text-meta',
+    });
+    text.textContent = STRINGS['two-bank-zoom'];
+    group.appendChild(text);
+    lane.appendChild(group);
+    var textWidth = 0;
+    try {
+      textWidth = /** @type {SVGTextElement} */ (text).getComputedTextLength();
+    } catch (_err) {
+      // jsdom and a hidden lane lay nothing out; estimate below.
+    }
+    if (!(textWidth > 0)) textWidth = text.textContent.length * PLACEHOLDER_CHAR_PX;
+    var backingWidth = Math.min(width, textWidth + 2 * PLACEHOLDER_PAD_PX);
+    backing.setAttribute('x', (width / 2 - backingWidth / 2).toFixed(2));
+    backing.setAttribute('width', backingWidth.toFixed(2));
+  }
+
+  /**
+   * One bar per no-fall passage, 4 px tall directly under the bank row,
+   * spanning its real extent but never under 6 px wide (`passageBox`), so
+   * it is marked at every zoom.
+   */
   function drawPassages() {
     var c = core();
     passages.forEach(function (passage) {
-      var part = c.clip(inLeg(passage) || passage, view);
-      if (!part) return;
-      var x = c.xOf(part.from, view, width);
+      var box = c.passageBox(c.clip(inLeg(passage) || passage, view), view, width);
+      if (!box) return;
       lane.appendChild(svgEl('rect', {
-        x: x.toFixed(2),
+        x: box.x.toFixed(2),
         y: String(c.ROWS.passageTop),
-        width: Math.max(0, c.xOf(part.to, view, width) - x).toFixed(2),
+        width: box.width.toFixed(2),
         height: String(c.ROWS.passageHeight),
         rx: '1',
         fill: 'var(--color-text-1)',
@@ -885,6 +1007,26 @@
   }
 
   /**
+   * A double-tap or double-click at `x`: zoom straight to the widest span
+   * whose bank row draws, centred on `x`, or — on a view already at or
+   * inside that span — back out to the fitted leg.
+   *
+   * @param {number} x The lane x of the tap.
+   */
+  function doubleTap(x) {
+    if (!ctx || !leg) return;
+    var c = core();
+    var target = c.resolveSpan(leg, width);
+    if (span <= target + 1e-6) {
+      setView(c.placeView(leg, c.openingSpan(leg), leg.from));
+    } else {
+      setView(c.placeView(leg, target, c.sampleAt(x, view, width) - target / 2));
+    }
+    clampIndex();
+    draw();
+  }
+
+  /**
    * Select a band or passage, or clear it when it is already selected.
    *
    * @param {string} kind
@@ -936,6 +1078,7 @@
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     var id = pointerIdOf(event);
     var x = laneX(event);
+    lastPointerType = event.pointerType || '';
     pointers.set(id, { x: x, y: event.clientY });
     if (pointers.size === 1) {
       press = {
@@ -943,6 +1086,7 @@
         x0: x,
         from0: view.from,
         moved: false,
+        pointerType: event.pointerType || '',
         target: event.target,
         // A mouse drag pans; a finger or a pen drag scrubs the cursor.
         scrubs: event.pointerType !== 'mouse',
@@ -958,6 +1102,7 @@
       // A second finger: this is a pinch, and the press that started it
       // must not end as a pan, a scrub or a selection.
       press = null;
+      lastTap = null;
       startPinch();
     }
   });
@@ -1018,11 +1163,34 @@
     }
     if (!ended) return;
     if (ended.moved) {
+      lastTap = null;
       clampIndex();
       draw();
     } else if (lifted) {
-      tap(ended.x0, ended.target);
+      liftTap(ended);
     }
+  }
+
+  /**
+   * A press lifted without a drag: a tap, or the second tap of a pair.
+   * The second tap never toggles the selection the first one made; for a
+   * finger or a pen it zooms (`doubleTap`), and for a mouse the browser's
+   * own `dblclick` does.
+   *
+   * @param {{x0: number, pointerType: string, target: ?Element}} ended
+   */
+  function liftTap(ended) {
+    var now = Date.now();
+    var pair = lastTap
+      && now - lastTap.time <= DOUBLE_TAP_MS
+      && Math.abs(ended.x0 - lastTap.x) <= DOUBLE_TAP_PX;
+    if (pair) {
+      lastTap = null;
+      if (ended.pointerType !== 'mouse') doubleTap(ended.x0);
+      return;
+    }
+    lastTap = { time: now, x: ended.x0 };
+    tap(ended.x0, ended.target);
   }
 
   lane.addEventListener('pointerup', asOwnWrite(function (event) {
@@ -1031,6 +1199,14 @@
   lane.addEventListener('pointercancel', function (event) {
     release(/** @type {PointerEvent} */ (event), false);
   });
+
+  lane.addEventListener('dblclick', asOwnWrite(function (event) {
+    // A touch double-tap is handled on its lifts; a browser that also
+    // synthesises a dblclick for it must not zoom twice.
+    if (!ctx || !leg || lastPointerType !== 'mouse') return;
+    event.preventDefault();
+    doubleTap(laneX(/** @type {MouseEvent} */ (event)));
+  }));
 
   lane.addEventListener('wheel', function (event) {
     if (!ctx || !leg) return;

@@ -2,10 +2,11 @@
  * tests/js/test_route_rail_two_core.js — rail two's pure half
  * (static/js/route_rail_two_core.js, SNOW-1019).
  *
- * The band runs (unmerged, unknowns kept apart), the window a leg opens
- * at, the view's clamps, scrolling a range into view by the least
- * distance, zoom about an anchor between its two limits, the ribbon's
- * pitch turning per-sample, and the leg's profile and figures on the
+ * The band runs (unmerged, unknowns kept apart), a leg opening fitted,
+ * the view's clamps, scrolling a range into view by the least distance,
+ * zoom about an anchor between its two limits, the bank row's grouping of
+ * whole segments and its placeholder, the passage bars' least width
+ * (SNOW-1031), and the leg's profile and figures on the
  * sample axis — the same axis rail one places its legs on — plus the
  * readout: the track's attitude, where the readout sits, and a stretch's
  * length to the nearest 25 m (SNOW-1024).
@@ -59,13 +60,10 @@ describe('bandRuns', () => {
 });
 
 describe('openingSpan', () => {
-  it('opens a long leg at 2 km of ground', () => {
-    // 300 samples over 15 km: 50 m a sample, so 2 km is 40 samples.
-    expect(core.openingSpan(LEG, 300, 15000)).toBe(40);
-  });
-
-  it('opens a leg shorter than 2 km whole', () => {
-    expect(core.openingSpan({ from: 0, to: 9 }, 300, 15000)).toBe(10);
+  it('opens every leg fitted, however long', () => {
+    expect(core.openingSpan(LEG)).toBe(100);
+    expect(core.openingSpan({ from: 0, to: 9 })).toBe(10);
+    expect(core.openingSpan({ from: 0, to: 1999 })).toBe(2000);
   });
 });
 
@@ -157,7 +155,7 @@ describe('zoom', () => {
 
   it('makes a short fitted leg pannable once zoomed in', () => {
     const short = { from: 0, to: 9 };
-    const opened = core.placeView(short, core.openingSpan(short, 300, 15000), 0);
+    const opened = core.placeView(short, core.openingSpan(short), 0);
     expect(opened).toEqual({ from: 0, to: 10 });
     expect(core.placeView(short, 10, 3)).toEqual(opened);
 
@@ -186,68 +184,136 @@ describe('clip', () => {
   });
 });
 
-describe('tickPitch', () => {
-  it('keeps the base pitch at a wide view', () => {
-    expect(core.tickPitch(200, 600, 8)).toBe(8);
+describe('glyphGroup', () => {
+  it('groups twelve segments at Leg 7 fitted, 0.9 px a segment', () => {
+    // 390 px over 433 segments.
+    expect(core.glyphGroup(433, 390)).toBe(12);
   });
 
-  it('turns per-sample once a sample is wider than the base pitch', () => {
-    expect(core.tickPitch(20, 600, 8)).toBe(30);
+  it('groups three at Leg 7 ×4, 3.7 px a segment', () => {
+    expect(core.glyphGroup(390 / 3.7, 390)).toBe(3);
+  });
+
+  it('gives each segment its own glyph from 10 px up', () => {
+    expect(core.glyphGroup(60, 600)).toBe(1);
+    expect(core.glyphGroup(20, 600)).toBe(1);
+  });
+
+  it('holds an exact 10 / 3 px at three', () => {
+    expect(core.glyphGroup(180, 600)).toBe(3);
   });
 });
 
-describe('ribbonTicks', () => {
+describe('resolveSpan', () => {
+  it('is the widest span that draws, floor(width × 3 / 10)', () => {
+    expect(core.resolveSpan({ from: 0, to: 999 }, 390)).toBe(117);
+    expect(core.glyphGroup(core.resolveSpan({ from: 0, to: 999 }, 390), 390)).toBeLessThanOrEqual(3);
+    expect(core.glyphGroup(core.resolveSpan({ from: 0, to: 999 }, 390) + 1, 390)).toBeGreaterThan(3);
+  });
+
+  it('is clamped to the leg', () => {
+    expect(core.resolveSpan({ from: 0, to: 49 }, 390)).toBe(50);
+    expect(core.resolveSpan({ from: 0, to: 999 }, 10)).toBe(6);
+  });
+});
+
+describe('bankGlyphs', () => {
+  const { bankWedge } = self.pwaBankRibbonCore;
   const banks = Array.from({ length: 300 }, (_, i) => (i % 2 ? 30 : -30));
 
-  it('puts one tick on each sample centre once zoomed in, however far panned', () => {
-    const view = { from: 120.4, to: 140.4 };
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
-      banks,
-      leg: LEG,
-      view,
-      width: 600,
-    });
-    expect(ticks.length).toBeGreaterThanOrEqual(19);
-    for (const tick of ticks) {
-      expect(tick.x).toBeCloseTo(core.xOf(tick.index + 0.5, view, 600));
+  /** The glyphs for a view, the rest defaulted. */
+  function glyphs(options) {
+    return core.bankGlyphs({ bankWedge, banks, leg: LEG, width: 600, y: 27, ...options });
+  }
+
+  it('shows the placeholder, and no glyphs, past three segments a glyph', () => {
+    // 200 segments over 600 px is 3 px each: N = 4.
+    expect(glyphs({ leg: { from: 0, to: 299 }, view: { from: 0, to: 200 } }))
+      .toEqual({ placeholder: true, glyphs: [] });
+  });
+
+  it('draws one glyph per segment from 10 px up, on its centre', () => {
+    const view = { from: 120, to: 140 };
+    const out = glyphs({ view });
+    expect(out.placeholder).toBe(false);
+    expect(out.glyphs.map((g) => g.index)).toEqual(Array.from({ length: 20 }, (_, i) => 120 + i));
+    for (const g of out.glyphs) {
+      expect(g.x).toBeCloseTo(core.xOf(g.index + 0.5, view, 600));
+      expect((g.ground.x1 + g.ground.x2) / 2).toBeCloseTo(g.x, 9);
+      expect(g.up[1]).toEqual([g.x, 27]);
     }
-    expect(new Set(ticks.map((t) => t.index)).size).toBe(ticks.length);
   });
 
-  it('keeps the base pitch at a wide view', () => {
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
-      banks,
-      leg: LEG,
-      view: { from: 100, to: 200 },
-      width: 400,
-    });
-    expect(ticks[1].x - ticks[0].x).toBeCloseTo(8);
+  it('draws the largest |roll| in a group, with its side, never the mean', () => {
+    const zigzag = banks.slice();
+    // Group 103–105 at N = 3 (groups start at the leg's 100): +20, −35,
+    // +20 would average to level.
+    zigzag[103] = 20;
+    zigzag[104] = -35;
+    zigzag[105] = 20;
+    const out = glyphs({ banks: zigzag, view: { from: 100, to: 280 } });
+    const glyph = out.glyphs.find((g) => g.from === 103);
+    expect(glyph.to).toBe(105);
+    expect(glyph.index).toBe(104);
+    expect(glyph.roll).toBe(-35);
+    // Negative: the pale wedge is left of centre.
+    expect(Math.max(...glyph.down.map(([x]) => x))).toBeLessThanOrEqual(glyph.x);
   });
 
-  it('draws no tick for a null bank', () => {
+  it('keeps its groups on the same segments as the view pans', () => {
+    const at = glyphs({ view: { from: 100, to: 280 } }).glyphs;
+    const panned = glyphs({ view: { from: 101.3, to: 281.3 } }).glyphs;
+    const bounds = (list) => new Set(list.map((g) => g.from));
+    for (const g of panned) expect((g.from - LEG.from) % 3).toBe(0);
+    expect([...bounds(panned)].filter((from) => bounds(at).has(from)).length)
+      .toBeGreaterThan(panned.length - 3);
+  });
+
+  it('sizes a glyph min(7, group px / 2 − 0.5)', () => {
+    // N = 3 at 10/3 px a segment: 10 px groups, half-width 4.5.
+    const grouped = glyphs({ view: { from: 100, to: 280 } }).glyphs[0];
+    expect(grouped.halfWidth).toBeCloseTo(4.5, 9);
+    expect(Math.abs(grouped.ground.x2 - grouped.ground.x1)).toBeCloseTo(9, 9);
+    // 30 px a segment caps at 7.
+    expect(glyphs({ view: { from: 120, to: 140 } }).glyphs[0].halfWidth).toBe(7);
+  });
+
+  it('draws nothing for a group whose banks are all unknown', () => {
     const gappy = banks.slice();
-    gappy[125] = null;
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
-      banks: gappy,
-      leg: LEG,
-      view: { from: 120, to: 130 },
-      width: 600,
-    });
-    expect(ticks.map((t) => t.index)).toEqual([120, 121, 122, 123, 124, 126, 127, 128, 129]);
+    gappy[103] = null;
+    gappy[104] = null;
+    gappy[105] = null;
+    gappy[106] = null;
+    const out = glyphs({ banks: gappy, view: { from: 100, to: 280 } });
+    expect(out.glyphs.map((g) => g.from)).not.toContain(103);
+    // One null in the group 106–108 leaves the known ones to read.
+    expect(out.glyphs.find((g) => g.from === 106).index).toBe(107);
   });
 
   it('draws nothing outside the leg', () => {
-    const ticks = core.ribbonTicks({
-      bankTicks: self.pwaBankRibbonCore.bankTicks,
-      banks,
-      leg: { from: 0, to: 3 },
-      view: { from: 0, to: 4 },
-      width: 600,
-    });
-    expect(ticks.map((t) => t.index)).toEqual([0, 1, 2, 3]);
+    const out = glyphs({ leg: { from: 0, to: 3 }, view: { from: 0, to: 4 } });
+    expect(out.glyphs.map((g) => g.index)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe('passageBox', () => {
+  const view = { from: 0, to: 600 };
+
+  it('spans a wide passage\'s real extent', () => {
+    expect(core.passageBox({ from: 100, to: 120 }, view, 600)).toEqual({ x: 100, width: 20 });
+  });
+
+  it('widens a narrow one to 6 px about its centre', () => {
+    expect(core.passageBox({ from: 100, to: 102 }, view, 600)).toEqual({ x: 98, width: 6 });
+  });
+
+  it('keeps a widened bar inside the lane', () => {
+    expect(core.passageBox({ from: 0, to: 1 }, view, 600)).toEqual({ x: 0, width: 6 });
+    expect(core.passageBox({ from: 599, to: 600 }, view, 600)).toEqual({ x: 594, width: 6 });
+  });
+
+  it('answers null for no part', () => {
+    expect(core.passageBox(null, view, 600)).toBeNull();
   });
 });
 

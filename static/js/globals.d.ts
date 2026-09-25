@@ -72,7 +72,7 @@ interface Window {
   pwaRouteRailCore: any;
   /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, readout. */
   pwaRouteRailTwoCore: any;
-  /** static/js/bank_ribbon_core.js — the bank ribbon's tick geometry. */
+  /** static/js/bank_ribbon_core.js — the bank's level-ski wedge geometry. */
   pwaBankRibbonCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;

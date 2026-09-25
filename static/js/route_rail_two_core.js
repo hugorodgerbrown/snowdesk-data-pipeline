@@ -4,8 +4,8 @@
  *
  * Rail two opens under rail one when a leg is pressed. It draws the open
  * leg on three rows sharing one x-axis — a strip of slope bands, the track
- * line drawn as the bank ribbon (bank_ribbon_core.js), and one bar per
- * no-fall passage — and it pans and zooms within the leg. (It drew the
+ * drawn as a row of level-ski wedges showing its bank (bank_ribbon_core.js,
+ * SNOW-1031), and one bar per no-fall passage — and it pans and zooms within the leg. (It drew the
  * leg's elevation profile above them until SNOW-1019 took the row out;
  * the leg's profile is still read here, for the identity cell's figures.
  * Its distance scale went in SNOW-1024: rail one already prints where
@@ -38,7 +38,26 @@
  *
  * The span runs from `min(MIN_SPAN, legLength)` up to the whole leg, and
  * every view is clamped to the leg's ends, so a pan or a zoom can never
- * show ground outside the open leg.
+ * show ground outside the open leg; the next leg is reached on rail one.
+ * A leg always OPENS FITTED, however long it is (SNOW-1031's revision):
+ * fitted, rail two is an overview, and zooming is how it is read in
+ * detail. The rail is never widened to make something tappable.
+ *
+ * ## The bank row follows the zoom
+ *
+ * A glyph needs about `GLYPH_MIN_PX` (10 px) to read, and a segment at the
+ * fitted scale can be under 1 px, so each glyph covers N whole segments,
+ * N = ceil(10 px / segment width) (`glyphGroup`). Groups are aligned to
+ * the leg's start, so a group never splits a segment and never shifts as
+ * the view pans. A glyph draws the segment with the LARGEST |roll| in its
+ * group, with that segment's side — never the mean, which cancels a
+ * zig-zag out. Past `MAX_GROUP` (3 segments, 75 m) one glyph would
+ * summarise too much ground, so the row draws NO glyphs and the mount
+ * shows a placeholder that asks for a zoom instead. The scale is constant
+ * across the lane, so the row is either all drawn or all placeholder.
+ * `resolveSpan` is the widest span that draws, the target a double-tap
+ * zooms to. The band strip and the passages are drawn per segment at
+ * every zoom, however thin.
  *
  * ## Slope bands
  *
@@ -52,12 +71,14 @@
  * Exports (frozen `self.pwaRouteRailTwoCore`):
  *
  *   MIN_SPAN                                  → the narrowest span, 6
- *   WINDOW_M                                  → the opening window, 2000 m
+ *   GLYPH_MIN_PX                              → the px a bank glyph needs, 10
+ *   MAX_GROUP                                 → most segments a glyph reads, 3
+ *   PASSAGE_MIN_PX                            → a passage bar's least width, 6
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
  *   legLength(leg)                            → samples in the leg
  *   minSpan(leg)                              → the narrowest span it allows
- *   openingSpan(leg, sampleCount, spanM, windowM?) → the span it opens at
+ *   openingSpan(leg)                          → the span it opens at: all of it
  *   placeView(leg, span, from)                → a view clamped to the leg
  *   ensureVisible(leg, view, from, to)        → the view, scrolled the least
  *   followView(leg, view, from, to)           → the view, centred on a range
@@ -67,9 +88,10 @@
  *   sampleAt(x, view, width)                  → the axis coordinate at px
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
- *   tickPitch(span, width, basePitch)         → the ribbon's tick pitch
- *   tickPhase(view, width, pitch)             → px the ticks scroll by
- *   ribbonTicks(options)                      → bankTicks, laid on the view
+ *   glyphGroup(span, width)                   → segments per bank glyph, N
+ *   resolveSpan(leg, width)                   → the widest span whose row draws
+ *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
+ *   passageBox(part, view, width)             → a passage bar's {x, width} in px
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
  *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
  *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
@@ -100,6 +122,35 @@
    */
 
   /**
+   * @typedef {{
+   *   dy: number,
+   *   ground: {x1: number, y1: number, x2: number, y2: number},
+   *   up: ?Array<[number, number]>,
+   *   down: ?Array<[number, number]>,
+   * }} WedgeShape
+   *   One glyph's geometry, as `pwaBankRibbonCore.bankWedge` returns it.
+   */
+
+  /**
+   * @typedef {{
+   *   x: number,
+   *   index: number,
+   *   from: number,
+   *   to: number,
+   *   roll: number,
+   *   halfWidth: number,
+   *   dy: number,
+   *   ground: {x1: number, y1: number, x2: number, y2: number},
+   *   up: ?Array<[number, number]>,
+   *   down: ?Array<[number, number]>,
+   * }} BankGlyph
+   *   One level-ski glyph for a group of segments: its centre `x` (the
+   *   group's centre), the sample `index` it draws (the group's largest
+   *   |roll|), the group's first and last samples, that sample's signed
+   *   roll, the glyph's half-width, and `bankWedge`'s geometry.
+   */
+
+  /**
    * @typedef {{s: number, e: number}} LegPoint
    *   A profile point: `s` on the sample axis, `e` its elevation.
    */
@@ -127,8 +178,20 @@
   /** The narrowest span, in samples, a zoom may reach. */
   var MIN_SPAN = 6;
 
-  /** How much ground rail two shows when a leg opens, in metres. */
-  var WINDOW_M = 2000;
+  /** The px a bank glyph needs to read; a group spans at least this. */
+  var GLYPH_MIN_PX = 10;
+
+  /**
+   * The most segments one bank glyph may stand for: 3 × 25 m. Past it the
+   * row shows the zoom placeholder instead of glyphs.
+   */
+  var MAX_GROUP = 3;
+
+  /** A glyph's largest half-width in px, bank_ribbon_core.js's. */
+  var GLYPH_HALF_WIDTH = 7;
+
+  /** A passage bar is never drawn narrower than this, in px. */
+  var PASSAGE_MIN_PX = 6;
 
   /** Two numbers closer than this are the same point on the axis. */
   var EPSILON = 1e-6;
@@ -137,22 +200,23 @@
    * The lane's vertical layout, in px. The svg is drawn at this height in
    * real pixels (the partial's `h-11`, 44 px), so these are screen units.
    *
-   * The band strip (0–10), a 4 px gap, the bank row (14–40: the ribbon
-   * about y 23 and the no-fall bars at 34–40 under it), then 4 px at the
-   * foot, and nothing else: SNOW-1024 took the distance ticks off the foot,
+   * The band strip (0–10), a 4 px gap, the bank row (14–40: the wedges
+   * centred on y 27, rising at most `ribbonHalf` — bank_ribbon_core.js's
+   * CAP_PX — either side), then the no-fall bars 4 px tall at 40–44,
+   * directly under the bank row, so a capped wedge never covers a
+   * passage (SNOW-1031). SNOW-1024 took the distance ticks off the foot,
    * so no dead space sits between the band, the bank row and the readout.
-   * SNOW-1019 took the leg's elevation profile off the top: at a 2 km
-   * window it drew near-flat and said nothing rail one's highlighted leg
-   * does not.
+   * SNOW-1019 took the leg's elevation profile off the top: it drew
+   * near-flat and said nothing rail one's highlighted leg does not.
    */
   var ROWS = Object.freeze({
     height: 44,
     bandTop: 0,
     bandHeight: 10,
-    ribbonY: 23,
-    ribbonHalf: 8,
-    passageTop: 34,
-    passageHeight: 6,
+    ribbonY: 27,
+    ribbonHalf: 13,
+    passageTop: 40,
+    passageHeight: 4,
   });
 
   /**
@@ -250,21 +314,14 @@
   }
 
   /**
-   * The span a leg opens at: `windowM` of ground, or the whole leg when
-   * it is shorter.
+   * The span a leg opens at: the whole leg, however long (SNOW-1031).
+   * Fitted, rail two is an overview; zooming is how it is read.
    *
    * @param {Leg} leg
-   * @param {number} sampleCount N, the length of `slope.angles`.
-   * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @param {number} [windowM] The ground to show. Defaults to `WINDOW_M`.
    * @returns {number}
    */
-  function openingSpan(leg, sampleCount, spanM, windowM) {
-    var length = legLength(leg);
-    if (!(sampleCount > 0) || !(spanM > 0)) return length;
-    var metres = windowM === undefined ? WINDOW_M : windowM;
-    var samples = Math.round((metres / spanM) * sampleCount);
-    return clamp(samples, minSpan(leg), length);
+  function openingSpan(leg) {
+    return legLength(leg);
   }
 
   /**
@@ -420,99 +477,130 @@
   }
 
   /**
-   * The ribbon's tick pitch in px.
-   *
-   * `basePitch` until a sample is wider than that, then one sample's
-   * width, so `bankTicks` draws one tick per sample once zoomed in.
+   * How many whole segments one bank glyph covers at this scale:
+   * N = ceil(`GLYPH_MIN_PX` / the width of one segment), never under 1.
    *
    * @param {number} span Samples across the lane.
    * @param {number} width The lane's width in px.
-   * @param {number} basePitch The pitch at a wide view.
+   * @returns {number} Infinity for a lane with no width.
+   */
+  function glyphGroup(span, width) {
+    if (!(width > 0) || !(span > 0)) return Infinity;
+    var segPx = width / span;
+    // The epsilon keeps an exact 10 / 3 px at N = 3 rather than 4.
+    return Math.max(1, Math.ceil(GLYPH_MIN_PX / segPx - EPSILON));
+  }
+
+  /**
+   * The widest span at which the bank row draws (N ≤ `MAX_GROUP`),
+   * clamped to the leg's limits: the span a double-tap zooms to.
+   *
+   * @param {Leg} leg
+   * @param {number} width The lane's width in px.
    * @returns {number}
    */
-  function tickPitch(span, width, basePitch) {
-    return Math.max(basePitch, span > 0 ? width / span : basePitch);
+  function resolveSpan(leg, width) {
+    var widest = Math.floor((width * MAX_GROUP) / GLYPH_MIN_PX);
+    return clamp(widest, minSpan(leg), legLength(leg));
   }
 
   /**
-   * How far the ribbon's ticks are scrolled left, in px.
+   * The bank row for the view: one glyph per group of N whole segments,
+   * or the placeholder when N is past `MAX_GROUP` (SNOW-1031).
    *
-   * The ticks are pinned to the GROUND, not to the lane: a tick sits at
-   * whole multiples of `pitch` from the leg's axis origin, so a pan
-   * carries them along instead of making them shimmer between samples.
-   * At a per-sample pitch that puts each tick on its sample's centre.
-   *
-   * @param {View} view
-   * @param {number} width
-   * @param {number} pitch
-   * @returns {number} In [0, pitch).
-   */
-  function tickPhase(view, width, pitch) {
-    var perSample = width / (view.to - view.from);
-    var offset = (view.from * perSample) % pitch;
-    return offset < 0 ? offset + pitch : offset;
-  }
-
-  /**
-   * The bank ribbon's ticks for the view, pinned to the ground.
-   *
-   * `bankTicks` lays ticks from the lane's left edge; this asks it for one
-   * pitch more than the lane and slides the row left by `tickPhase`, so
-   * each tick stays on the same ground as the view pans. Ticks off either
-   * edge, and any reading a sample outside the leg, are dropped.
+   * Groups start at `leg.from` and step by N, so they hold still as the
+   * view pans. Each glyph draws the segment with the largest |roll| in its
+   * group, with its sign — never a mean, which would cancel a zig-zag to
+   * level. A group whose banks are all unknown draws nothing: a gap, not
+   * a level glyph. The glyph sits on the group's centre with half-width
+   * `min(7, group px / 2 − 0.5)`, so neighbours never touch.
    *
    * @param {{
-   *   bankTicks: function(Object): Array<{x: number, index: number,
-   *     roll: number, x1: number, y1: number, x2: number, y2: number,
-   *     strong: boolean}>,
+   *   bankWedge: function(number, number, Object): WedgeShape,
    *   banks: Array<?number>,
    *   leg: Leg,
    *   view: View,
    *   width: number,
-   *   basePitch?: number,
-   *   halfLength?: number,
-   *   strongDeg?: number,
+   *   exaggeration?: number,
+   *   capPx?: number,
+   *   minFillPx?: number,
    *   y?: number,
-   * }} options `bankTicks` is `pwaBankRibbonCore.bankTicks`; the rest as
+   * }} options `bankWedge` is `pwaBankRibbonCore.bankWedge`; the rest as
    *   that function and this module name them.
-   * @returns {Array<{x: number, index: number, roll: number, x1: number,
-   *   y1: number, x2: number, y2: number, strong: boolean}>} In lane px.
+   * @returns {{placeholder: boolean, glyphs: Array<BankGlyph>}} In lane px.
    */
-  function ribbonTicks(options) {
+  function bankGlyphs(options) {
     var view = options.view;
     var width = options.width;
     var leg = options.leg;
-    if (!Array.isArray(options.banks) || !(width > 0)) return [];
-    var span = view.to - view.from;
-    var pitch = tickPitch(span, width, options.basePitch === undefined ? 8 : options.basePitch);
-    var phase = tickPhase(view, width, pitch);
-    var ticks = options.bankTicks({
-      banks: options.banks,
-      width: width + pitch,
-      pitch: pitch,
-      halfLength: options.halfLength,
-      strongDeg: options.strongDeg,
-      y: options.y,
-      /** @param {number} x */
-      indexAt: function (x) {
-        var index = indexAt(x - phase, view, width);
-        return index >= leg.from && index <= leg.to ? index : -1;
-      },
-    });
-    return ticks
-      .filter(function (tick) { return tick.x - phase >= 0 && tick.x - phase <= width; })
-      .map(function (tick) {
-        return {
-          x: tick.x - phase,
-          index: tick.index,
-          roll: tick.roll,
-          x1: tick.x1 - phase,
-          y1: tick.y1,
-          x2: tick.x2 - phase,
-          y2: tick.y2,
-          strong: tick.strong,
-        };
+    var banks = options.banks;
+    /** @type {Array<BankGlyph>} */
+    var glyphs = [];
+    var n = glyphGroup(view.to - view.from, width);
+    if (n > MAX_GROUP) return { placeholder: true, glyphs: glyphs };
+    if (!Array.isArray(banks)) return { placeholder: false, glyphs: glyphs };
+    var firstGroup = Math.max(0, Math.floor((view.from - leg.from) / n));
+    for (var start = leg.from + firstGroup * n; start <= leg.to && start < view.to; start += n) {
+      var end = Math.min(leg.to, start + n - 1);
+      var index = -1;
+      var roll = 0;
+      for (var i = start; i <= end; i += 1) {
+        var value = banks[i];
+        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+        if (index < 0 || Math.abs(value) > Math.abs(roll)) {
+          index = i;
+          roll = value;
+        }
+      }
+      if (index < 0) continue;
+      var left = xOf(start, view, width);
+      var right = xOf(end + 1, view, width);
+      if (right <= 0 || left >= width) continue;
+      var halfWidth = Math.min(GLYPH_HALF_WIDTH, (right - left) / 2 - 0.5);
+      if (!(halfWidth > 0)) continue;
+      var x = (left + right) / 2;
+      var shape = options.bankWedge(x, roll, {
+        halfWidth: halfWidth,
+        exaggeration: options.exaggeration,
+        capPx: options.capPx,
+        minFillPx: options.minFillPx,
+        y: options.y,
       });
+      glyphs.push({
+        x: x,
+        index: index,
+        from: start,
+        to: end,
+        roll: roll,
+        halfWidth: halfWidth,
+        dy: shape.dy,
+        ground: shape.ground,
+        up: shape.up,
+        down: shape.down,
+      });
+    }
+    return { placeholder: false, glyphs: glyphs };
+  }
+
+  /**
+   * A passage bar's box across the lane: its real extent, widened to at
+   * least `PASSAGE_MIN_PX` about its centre and kept inside the lane, so a
+   * passage stays visible and tappable at the fitted scale (SNOW-1031).
+   *
+   * @param {?View} part The passage's part inside the view (`clip`).
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @returns {?{x: number, width: number}} Null for no part.
+   */
+  function passageBox(part, view, width) {
+    if (!part) return null;
+    var left = xOf(part.from, view, width);
+    var right = xOf(part.to, view, width);
+    var real = Math.max(0, right - left);
+    if (real >= PASSAGE_MIN_PX) return { x: left, width: real };
+    var boxWidth = Math.min(PASSAGE_MIN_PX, Math.max(0, width));
+    var x = clamp((left + right) / 2 - boxWidth / 2, 0, Math.max(0, width - boxWidth));
+    return { x: x, width: boxWidth };
   }
 
   /**
@@ -698,7 +786,9 @@
     readoutAnchor: readoutAnchor,
     roundStretch: roundStretch,
     MIN_SPAN: MIN_SPAN,
-    WINDOW_M: WINDOW_M,
+    GLYPH_MIN_PX: GLYPH_MIN_PX,
+    MAX_GROUP: MAX_GROUP,
+    PASSAGE_MIN_PX: PASSAGE_MIN_PX,
     ROWS: ROWS,
     bandRuns: bandRuns,
     legLength: legLength,
@@ -713,9 +803,10 @@
     sampleAt: sampleAt,
     indexAt: indexAt,
     clip: clip,
-    tickPitch: tickPitch,
-    tickPhase: tickPhase,
-    ribbonTicks: ribbonTicks,
+    glyphGroup: glyphGroup,
+    resolveSpan: resolveSpan,
+    bankGlyphs: bankGlyphs,
+    passageBox: passageBox,
     legProfile: legProfile,
     legFigures: legFigures,
   });
