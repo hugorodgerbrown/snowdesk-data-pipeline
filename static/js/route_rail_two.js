@@ -53,17 +53,22 @@
  * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
- * PRESSES. A press that moves past `DRAG_PX` pans; a tap selects a band
- * or passage (`cursor.select`) — tapping the same one again clears it —
- * and moves the cursor there; a mouse hover moves the cursor. The tap
- * target is not the drawn width (SNOW-1032): a tap in the passage row's
- * foot picks the passage, anywhere else the band, whose on-screen extent
- * is nearest the tap within `TAP_RADIUS_PX` (`nearestRange`). The
- * selection box is drawn at least `MIN_BOX_PX` wide (`selectionBox`); the
- * readout and the map read the band's real extent. A band's selection
- * carries its `classIndex`, which the map draws the stretch in.
- * A second pointer starts a pinch and cancels the press in progress, so a
- * pinch never pans, scrubs or selects.
+ * PRESSES. A one-finger (or pen) press that moves past `DRAG_PX` SCRUBS:
+ * the cursor follows it, which is what the idle hint "Drag to read a
+ * point" promises. A touch drag used to pan, so the hint pointed at a
+ * gesture that never read anything (SNOW-1024). Two fingers pan and zoom
+ * together — the pinch keeps the sample under their midpoint beneath it,
+ * so moving both fingers moves the window. A mouse drag still pans, since
+ * a mouse already reads a point by hovering. A tap selects a band or
+ * passage (`cursor.select`) — tapping the same one again clears it — and
+ * moves the cursor there. The tap target is not the drawn width
+ * (SNOW-1032): a tap in the passage row's foot picks the passage,
+ * anywhere else the band, whose on-screen extent is nearest the tap
+ * within `TAP_RADIUS_PX` (`nearestRange`). The selection box is drawn at
+ * least `MIN_BOX_PX` wide (`selectionBox`); the readout and the map read
+ * the band's real extent. A band's selection carries its `classIndex`,
+ * which the map draws the stretch in. A second pointer starts a pinch and
+ * cancels the press in progress, so a pinch never scrubs or selects.
  *
  * THE READOUT sits under the lane, ANCHORED to what it reads
  * (SNOW-1024). Under the cursor it is two lines: a word for the terrain —
@@ -1064,7 +1069,15 @@
     var x = laneX(event);
     pointers.set(id, { x: x, y: event.clientY });
     if (pointers.size === 1) {
-      press = { id: id, x0: x, y0: laneY(event), from0: view.from, moved: false };
+      press = {
+        id: id,
+        x0: x,
+        y0: laneY(event),
+        from0: view.from,
+        moved: false,
+        // A mouse drag pans; a finger or a pen drag scrubs the cursor.
+        scrubs: event.pointerType !== 'mouse',
+      };
       if (lane.setPointerCapture) {
         try {
           lane.setPointerCapture(id);
@@ -1099,7 +1112,9 @@
     if (press && press.id === id) {
       var dx = x - press.x0;
       if (!press.moved && Math.abs(dx) > DRAG_PX) press.moved = true;
-      if (press.moved) {
+      if (press.moved && press.scrubs) {
+        ctx.cursor.setIndex(clamp(c.indexAt(clamp(x, 0, width), view, width), leg.from, leg.to));
+      } else if (press.moved) {
         setView(c.placeView(leg, span, press.from0 - (dx / width) * span));
         scheduleDraw();
       }
