@@ -169,6 +169,22 @@ class TestRailTwoShipsInsideRailOne:
         # Real pixels: a stretched lane would misdraw the bank ribbon's lean.
         assert "preserveAspectRatio" not in lane.group(0)
 
+    def test_the_empty_lane_carries_the_leg_picker_layer(self, client: Client) -> None:
+        """SNOW-1033: a hidden layer over the lane, in a positioned cell."""
+        rail = _rail(_home(client))
+
+        layer = re.search(r"<div[^>]*data-route-rail-two-legs[^>]*>", rail)
+        assert layer is not None
+        assert re.search(r"\shidden\s", layer.group(0))
+        assert "absolute" in layer.group(0)
+        assert "h-11" in layer.group(0)
+        # The cell holding the lane and the layer is the layer's anchor.
+        cell = re.search(
+            r'<div class="([^"]*)">\s*<svg[^>]*data-route-rail-two-lane', rail
+        )
+        assert cell is not None
+        assert "relative" in cell.group(1).split()
+
     def test_its_eyebrow_names_the_terrain(self, client: Client) -> None:
         """Rail two is headed "Terrain"; the leg's own name is its title."""
         rail = _rail(_home(client))

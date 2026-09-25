@@ -18,6 +18,36 @@
  * readout, so the empty row reserves no space for it. `detach()` hides the
  * row outright.
  *
+ * THE LEG PICKER (SNOW-1033). The empty lane holds the route's legs, one
+ * `<button class="route-rail-two-leg">` per leg in `[data-route-rail-two-legs]`,
+ * laid on rail one's scale (`legSlots`) so each sits under its leg on the
+ * profile: a descent in the fuchsia tint, a climb in the slate, the leg
+ * number in a darker ink of the same colour, its accessible name rail
+ * one's "Leg 4 — climb". The coloured part is 24 px tall; the button is
+ * the lane's full 44 px. A short leg keeps its true width, and a press in
+ * a gap between buttons picks the leg nearest it within `TAP_RADIUS_PX`
+ * (`nearestRange`). Pressing one calls `cursor.openLeg`, as rail one does.
+ * A leg closed while focus is inside the row (its ×, the lane, a zoom
+ * button) hands focus to that leg's segment, or to the first segment; a
+ * close from the map or rail one leaves focus where it is.
+ *
+ * THE OPENING MOTION (SNOW-1033). Going from empty to a leg, from any
+ * surface, is one motion of about 340 ms (`motionPlan`), drawn the FLIP
+ * way: the end state is rendered first, then a ghost of the leg's segment
+ * and a few veils play from where the empty row was. PRESS (0–80 ms) —
+ * the segment fills solid and the others fade; STRETCH (80–220 ms, eased
+ * out) — it widens to the lane while the placeholder crossfades to the
+ * leg's title and figures and the row's height animates, so the card,
+ * anchored by its bottom edge (static/css/map.css `.route-rail`), grows
+ * upwards; FILL (220–340 ms) — it shrinks onto the band strip and fades
+ * into the bands, the bank row comes in, then the controls and the
+ * readout. Closing plays the phases in reverse. It is `Element.animate`
+ * (WAAPI) and CSS only; where `animate` is missing (jsdom) or the reader
+ * prefers reduced motion there is no motion, only the end state. A change
+ * of open leg mid-motion cancels it and cleans up before rendering, and
+ * `onResize` fires once the motion is over, so the map's bottom chrome is
+ * measured against the finished card.
+ *
  * WHAT IT DRAWS. Three rows on one x-axis (route_rail_two_core.js's module
  * comment has the axis): the strip of slope bands, the track drawn as a
  * row of level-ski wedges showing its bank (bank_ribbon_core.js,
@@ -75,7 +105,9 @@
  * to the widest span whose bank row draws (`resolveSpan`), centred on the
  * tap; the same on a view already at or inside it returns to the fitted
  * leg. The first tap's selection stands: the second tap of a pair does
- * not toggle it.
+ * not toggle it. A pair whose first press was on the leg picker, or
+ * within `DOUBLE_TAP_MS` of one, does not zoom: a double-click on a
+ * picker segment opens the leg, fitted, and nothing more (SNOW-1033).
  *
  * THE READOUT sits under the lane, ANCHORED to what it reads
  * (SNOW-1024). Under the cursor it is two lines: a word for the terrain —
@@ -124,6 +156,13 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
+  /** How far beside a leg's segment a tap on the picker still picks it, px. */
+  var TAP_RADIUS_PX = 22;
+  /**
+   * The leg picker's coloured part inside its 44 px button, in px: the
+   * `top-2.5 h-6` of `legButton`, which the motion shrinks onto the band.
+   */
+  var PICKER_FILL = Object.freeze({ top: 10, height: 24 });
   /** Two lifts closer than this in time are a double-tap, in ms. */
   var DOUBLE_TAP_MS = 300;
   /** Two lifts closer than this across the lane are a double-tap, in px. */
@@ -185,6 +224,7 @@
   var zoomOutEl = row.querySelector('[data-route-rail-two-zoom="out"]');
   var zoomInEl = row.querySelector('[data-route-rail-two-zoom="in"]');
   var closeEl = row.querySelector('[data-route-rail-two-close]');
+  var legsEl = row.querySelector('[data-route-rail-two-legs]');
 
   /**
    * What rail one attached: the route's cursor and the data drawn from.
@@ -230,11 +270,28 @@
   /** The pointer type of the last press, so `dblclick` acts for a mouse only. */
   var lastPointerType = '';
   /**
+   * When the leg picker was last pressed, in ms (`Date.now`), so the lane
+   * does not read a press that opened a leg as the first of a double-tap.
+   */
+  var pickerPressAt = -Infinity;
+  /** When the lane was pressed before its last press, in ms. */
+  var prevLanePressAt = -Infinity;
+  /** When the lane was last pressed, in ms. */
+  var lanePressAt = -Infinity;
+  /**
    * True while rail two itself writes to the cursor (its pointer, keys,
    * or the clamp after a pan), so `onState` scrolls the least distance
    * for its own writes and centres for everyone else's (`followView`).
    */
   var ownWrite = false;
+  /**
+   * The opening or closing motion in progress (SNOW-1033): its running
+   * animations, how many are yet to finish, and the clean-up that restores
+   * the end state. Null when nothing moves.
+   *
+   * @type {?{animations: Array<Animation>, pending: number, cleanup: function(): void}}
+   */
+  var motion = null;
 
   /**
    * Wrap a handler so every cursor write inside it counts as rail two's.
@@ -399,8 +456,9 @@
    * it opens at.
    *
    * @param {{i: number, from: number, to: number, climbing: boolean}} openLeg
+   * @param {boolean} [quiet] Leave `onResize` to the motion about to run.
    */
-  function showLeg(openLeg) {
+  function showLeg(openLeg, quiet) {
     var c = core();
     var railCore = self.pwaRouteRailCore;
     leg = openLeg;
@@ -426,8 +484,14 @@
 
     var changed = row.hidden || row.hasAttribute('data-empty');
     setEmpty(false);
+    // A leg opened from the keyboard on the picker keeps the keyboard in
+    // rail two: the segment that held focus is about to go.
+    if (legsEl && legsEl.contains(document.activeElement) && lane.focus) {
+      lane.focus({ preventScroll: true });
+    }
+    if (legsEl) legsEl.hidden = true;
     row.hidden = false;
-    if (changed && ctx.onResize) ctx.onResize();
+    if (changed && !quiet && ctx.onResize) ctx.onResize();
   }
 
   /**
@@ -456,6 +520,95 @@
     }
   }
 
+  /**
+   * A fraction of the lane as a CSS percentage.
+   *
+   * @param {number} fraction
+   * @returns {string}
+   */
+  function percent(fraction) {
+    return (fraction * 100).toFixed(4) + '%';
+  }
+
+  /**
+   * One leg picker segment: a lane-high button with its 24 px fill and
+   * the leg number, inset 1 px each side so neighbours part by 2 px.
+   *
+   * @param {{leg: {i: number, from: number, to: number, climbing: boolean},
+   *   left: number, width: number}} slot A `legSlots` entry.
+   * @returns {HTMLButtonElement}
+   */
+  function legButton(slot) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'route-rail-two-leg absolute top-0 h-11';
+    button.setAttribute('data-climbing', slot.leg.climbing ? 'true' : 'false');
+    button.setAttribute('data-leg-from', String(slot.leg.from));
+    button.setAttribute('data-leg-to', String(slot.leg.to));
+    button.setAttribute('aria-label', legLabel(slot.leg));
+    button.style.left = 'calc(' + percent(slot.left) + ' + 1px)';
+    button.style.width = 'calc(' + percent(slot.width) + ' - 2px)';
+    var fill = document.createElement('span');
+    fill.className = 'route-rail-two-leg-fill absolute inset-x-0 top-2.5 flex h-6 items-center '
+      + 'justify-center overflow-hidden rounded-sm font-mono text-meta';
+    fill.setAttribute('data-route-rail-two-leg-fill', '');
+    fill.setAttribute('aria-hidden', 'true');
+    var number = document.createElement('span');
+    number.className = 'relative';
+    number.setAttribute('data-route-rail-two-leg-number', '');
+    number.textContent = String(slot.leg.i);
+    fill.appendChild(number);
+    button.appendChild(fill);
+    return button;
+  }
+
+  /** The legs the picker offers, in route order. */
+  function pickerLegs() {
+    return ctx ? core().legSlots(ctx.legs, ctx.sampleCount).map(function (slot) {
+      return slot.leg;
+    }) : [];
+  }
+
+  /** Lay the leg picker over the empty lane: one button per leg. */
+  function renderPicker() {
+    if (!legsEl) return;
+    var slots = ctx ? core().legSlots(ctx.legs, ctx.sampleCount) : [];
+    legsEl.replaceChildren.apply(legsEl, slots.map(legButton));
+    legsEl.hidden = slots.length === 0;
+  }
+
+  /** Take the leg picker away, with a leg open or the row hidden. */
+  function clearPicker() {
+    if (!legsEl) return;
+    legsEl.replaceChildren();
+    legsEl.hidden = true;
+  }
+
+  /**
+   * The picker's button for a leg, matched by its ends, or null.
+   *
+   * @param {{from: number, to: number}} target
+   * @returns {?HTMLElement}
+   */
+  function legButtonFor(target) {
+    if (!legsEl) return null;
+    return /** @type {?HTMLElement} */ (legsEl.querySelector(
+      '.route-rail-two-leg[data-leg-from="' + target.from + '"][data-leg-to="' + target.to + '"]',
+    ));
+  }
+
+  /**
+   * Put keyboard focus on a leg's picker segment, or on the first segment
+   * when that leg has none.
+   *
+   * @param {{from: number, to: number}} target
+   */
+  function focusPicker(target) {
+    var button = legButtonFor(target)
+      || (legsEl ? /** @type {?HTMLElement} */ (legsEl.querySelector('.route-rail-two-leg')) : null);
+    if (button) button.focus({ preventScroll: true });
+  }
+
   /** Forget the open leg and every press on it, and clear the drawing. */
   function forgetLeg() {
     leg = null;
@@ -474,8 +627,10 @@
   /**
    * Show the empty row: attached to a route, with no leg open. Rail one
    * hears `onView(null, null)` and drops its bracket.
+   *
+   * @param {boolean} [quiet] Leave `onResize` to the motion about to run.
    */
-  function showEmpty() {
+  function showEmpty(quiet) {
     forgetLeg();
     var changed = row.hidden || !row.hasAttribute('data-empty');
     titleEl.textContent = STRINGS['two-placeholder'];
@@ -483,14 +638,16 @@
     ['aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']
       .forEach(function (name) { lane.removeAttribute(name); });
     setEmpty(true);
+    renderPicker();
     row.hidden = false;
     if (ctx && ctx.onView) ctx.onView(null, null);
-    if (changed && ctx && ctx.onResize) ctx.onResize();
+    if (changed && !quiet && ctx && ctx.onResize) ctx.onResize();
   }
 
   /** Hide rail two outright and forget the leg, on detach. */
   function hide() {
     forgetLeg();
+    clearPicker();
     var wasShown = !row.hidden;
     row.hidden = true;
     if (ctx && ctx.onView) ctx.onView(null, null);
@@ -520,13 +677,42 @@
     var previous = lastState;
     lastState = state;
     var open = state.openLeg;
+    var shown = !row.hidden;
     if (!open) {
-      if (leg || row.hidden || !row.hasAttribute('data-empty')) showEmpty();
+      if (leg || row.hidden || !row.hasAttribute('data-empty')) {
+        stopMotion();
+        var closing = leg;
+        // Focus inside the row (the ×, the lane, a zoom button) would be
+        // left on a control about to hide; it goes to the closed leg's
+        // segment instead. A close from the map or rail one leaves focus be.
+        var hadFocus = !!closing && row.contains(document.activeElement);
+        var animate = !!closing && shown && canAnimate();
+        var before = animate ? captureClose() : null;
+        showEmpty(animate);
+        if (hadFocus && closing) focusPicker(closing);
+        var slot = closing && animate ? legButtonFor(closing) : null;
+        if (slot && before) {
+          animateClose(slot, before);
+        } else if (animate && ctx && ctx.onResize) {
+          ctx.onResize();
+        }
+      }
       return;
     }
     var c = core();
     var fresh = !leg || leg.from !== open.from || leg.to !== open.to;
-    if (fresh) showLeg(open);
+    /** The picker's segment the open plays from, or null for no motion. */
+    var opening = null;
+    /** @type {?{height: number, header: Array<HTMLElement>}} */
+    var from = null;
+    if (fresh) {
+      stopMotion();
+      if (!leg && shown && row.hasAttribute('data-empty') && canAnimate()) {
+        opening = legButtonFor(open);
+        if (opening) from = captureOpen();
+      }
+      showLeg(open, !!opening);
+    }
 
     // Least distance for rail two's own writes; centred for a write from
     // the map or rail one, so its cursor is mid-lane rather than on the
@@ -540,6 +726,381 @@
       setView(bring(leg, view, selected.from, selected.to));
     }
     draw();
+    if (opening && from) animateOpen(opening, from);
+  }
+
+  // ---- the opening motion (SNOW-1033) -------------------------------------
+
+  /**
+   * Whether to animate: WAAPI is there and the reader has not asked for
+   * reduced motion.
+   *
+   * @returns {boolean}
+   */
+  function canAnimate() {
+    if (typeof Element === 'undefined' || typeof Element.prototype.animate !== 'function') {
+      return false;
+    }
+    if (typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * End a motion: cancel what is still running — and what has finished,
+   * whose `fill: both` would otherwise hold its last frame — then restore
+   * the end state.
+   *
+   * @param {{animations: Array<Animation>, cleanup: function(): void}} ending
+   */
+  function endMotion(ending) {
+    if (motion === ending) motion = null;
+    ending.animations.forEach(function (animation) {
+      try {
+        animation.cancel();
+      } catch (_err) {
+        // An animation already gone has nothing to cancel.
+      }
+    });
+    ending.cleanup();
+  }
+
+  /** Cancel the motion in progress, if any, leaving the end state. */
+  function stopMotion() {
+    if (motion) endMotion(motion);
+  }
+
+  /**
+   * Start a motion that `cleanup` ends.
+   *
+   * @param {function(): void} cleanup
+   */
+  function startMotion(cleanup) {
+    stopMotion();
+    motion = { animations: [], pending: 0, cleanup: cleanup };
+  }
+
+  /**
+   * Play one animation in the current motion; the motion ends when the
+   * last of its animations finishes.
+   *
+   * @param {Element} el
+   * @param {Array<Object<string, string|number>>} keyframes
+   * @param {{delay: number, duration: number, easing: string}} timing A
+   *   `motionSlice`.
+   */
+  function play(el, keyframes, timing) {
+    var running = motion;
+    if (!running) return;
+    var animation = el.animate(keyframes, {
+      delay: timing.delay,
+      duration: timing.duration,
+      easing: timing.easing,
+      fill: 'both',
+    });
+    running.animations.push(animation);
+    running.pending += 1;
+    animation.onfinish = function () {
+      if (motion !== running) return;
+      running.pending -= 1;
+      if (running.pending === 0) endMotion(running);
+    };
+  }
+
+  /**
+   * Strip a clone of the hooks, ids and live regions that would make it
+   * read as the real thing — to the script, the tests or a screen reader.
+   *
+   * @param {Element} el
+   * @returns {Element} el
+   */
+  function inert(el) {
+    [el].concat(Array.from(el.querySelectorAll('*'))).forEach(function (node) {
+      Array.from(node.attributes).forEach(function (attr) {
+        if (attr.name.indexOf('data-route-rail-two') === 0 || attr.name === 'id'
+          || attr.name === 'aria-live' || attr.name === 'role' || attr.name === 'tabindex'
+          || attr.name === 'aria-label' || attr.name === 'aria-labelledby') {
+          node.removeAttribute(attr.name);
+        }
+      });
+    });
+    el.setAttribute('aria-hidden', 'true');
+    // Out of the tab order as well as the accessibility tree: a copy of a
+    // button is still a button, and a Tab during the motion must not land
+    // on something the clean-up is about to remove.
+    el.setAttribute('inert', '');
+    el.setAttribute('data-route-rail-two-snapshot', '');
+    return el;
+  }
+
+  /**
+   * A still copy of an element, laid absolutely over where it is now in
+   * `container`, to fade out while the real one changes under it.
+   *
+   * @param {HTMLElement} el
+   * @param {HTMLElement} container A positioned ancestor.
+   * @returns {HTMLElement}
+   */
+  function snapshotOver(el, container) {
+    var rect = el.getBoundingClientRect();
+    var box = container.getBoundingClientRect();
+    var copy = /** @type {HTMLElement} */ (inert(el.cloneNode(true)));
+    copy.style.position = 'absolute';
+    copy.style.margin = '0';
+    copy.style.left = (rect.left - box.left) + 'px';
+    copy.style.top = (rect.top - box.top) + 'px';
+    copy.style.width = rect.width + 'px';
+    copy.style.pointerEvents = 'none';
+    return copy;
+  }
+
+  /** @returns {number} The row's height now, in px. */
+  function rowHeight() {
+    return row.getBoundingClientRect().height;
+  }
+
+  /**
+   * What the empty row looked like, taken before a leg is drawn over it.
+   *
+   * @returns {{height: number, header: Array<HTMLElement>}}
+   */
+  function captureOpen() {
+    return {
+      height: rowHeight(),
+      header: [snapshotOver(titleEl, row), snapshotOver(figuresEl, row)],
+    };
+  }
+
+  /**
+   * What the open leg looked like, taken before the row empties.
+   *
+   * @returns {{height: number, header: Array<HTMLElement>, controls: HTMLElement,
+   *   lane: HTMLElement, readout: HTMLElement}}
+   */
+  function captureClose() {
+    var cell = /** @type {HTMLElement} */ (lane.parentElement);
+    var controls = /** @type {HTMLElement} */ (closeEl.parentElement);
+    return {
+      height: rowHeight(),
+      header: [snapshotOver(titleEl, row), snapshotOver(figuresEl, row)],
+      controls: snapshotOver(controls, row),
+      lane: snapshotOver(/** @type {HTMLElement} */ (/** @type {unknown} */ (lane)), cell),
+      readout: snapshotOver(readoutBoxEl, cell),
+    };
+  }
+
+  /**
+   * The ghost the motion plays on: a copy of a picker segment, with its
+   * leg's full colour laid in its fill to fade in or out.
+   *
+   * @param {HTMLElement} button The segment.
+   * @returns {{ghost: HTMLElement, fill: HTMLElement, solid: HTMLElement,
+   *   number: HTMLElement}}
+   */
+  function ghostOf(button) {
+    var ghost = /** @type {HTMLElement} */ (inert(button.cloneNode(true)));
+    ghost.setAttribute('data-route-rail-two-ghost', '');
+    ghost.removeAttribute('data-leg-from');
+    ghost.removeAttribute('data-leg-to');
+    var fill = /** @type {HTMLElement} */ (ghost.firstElementChild);
+    var number = /** @type {HTMLElement} */ (fill.firstElementChild);
+    var solid = document.createElement('span');
+    solid.className = 'route-rail-two-leg-solid absolute inset-0';
+    solid.setAttribute('aria-hidden', 'true');
+    fill.insertBefore(solid, number);
+    return { ghost: ghost, fill: fill, solid: solid, number: number };
+  }
+
+  /**
+   * A card-coloured veil over rows of the lane, hiding what the motion has
+   * not brought in yet.
+   *
+   * @param {number} top px from the lane's top.
+   * @param {number} height px.
+   * @returns {HTMLElement}
+   */
+  function veil(top, height) {
+    var el = document.createElement('div');
+    el.className = 'absolute inset-x-0 bg-card';
+    el.style.top = top + 'px';
+    el.style.height = height + 'px';
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-route-rail-two-veil', '');
+    return el;
+  }
+
+  /**
+   * The row's height from `before` to what it is now, over the stretch.
+   *
+   * @param {number} before px.
+   * @param {{delay: number, duration: number, easing: string}} timing
+   */
+  function playHeight(before, timing) {
+    var after = rowHeight();
+    if (!(before > 0) || !(after > 0) || before === after) return;
+    row.style.overflow = 'hidden';
+    play(row, [{ height: before + 'px' }, { height: after + 'px' }], timing);
+  }
+
+  /**
+   * The segment stretched into the leg (SNOW-1033): press, stretch, fill.
+   * The leg is already drawn; everything here plays over it and is
+   * removed when the motion ends.
+   *
+   * @param {HTMLElement} button The pressed leg's picker segment.
+   * @param {{height: number, header: Array<HTMLElement>}} before The empty
+   *   row, from `captureOpen`.
+   */
+  function animateOpen(button, before) {
+    if (!legsEl) return;
+    var c = core();
+    var plan = c.motionPlan(false);
+    /**
+     * @param {string} name
+     * @param {number} a
+     * @param {number} b
+     */
+    function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
+    var rows = c.ROWS;
+    var parts = ghostOf(button);
+    var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
+      return b !== button;
+    });
+    var veils = [veil(0, rows.bandHeight), veil(rows.bandHeight, rows.height - rows.bandHeight)];
+    var controls = [zoomOutEl, zoomInEl, closeEl, readoutBoxEl];
+
+    startMotion(function () {
+      parts.ghost.remove();
+      veils.forEach(function (v) { v.remove(); });
+      before.header.forEach(function (copy) { copy.remove(); });
+      button.style.opacity = '';
+      legsEl.style.pointerEvents = '';
+      legsEl.toggleAttribute('inert', false);
+      row.style.overflow = '';
+      if (leg) {
+        clearPicker();
+      } else {
+        legsEl.hidden = false;
+      }
+      if (ctx && ctx.onResize) ctx.onResize();
+    });
+
+    legsEl.hidden = false;
+    legsEl.style.pointerEvents = 'none';
+    // The picker is shown only to be played out, and its buttons are
+    // cleared at the end: keep them out of the tab order until then. (A
+    // close leaves it live — its buttons are the real ones the row returns
+    // to, and focus goes back onto one of them.)
+    legsEl.toggleAttribute('inert', true);
+    veils.forEach(function (v) { legsEl.insertBefore(v, legsEl.firstChild); });
+    button.style.opacity = '0';
+    legsEl.appendChild(parts.ghost);
+    before.header.forEach(function (copy) { row.appendChild(copy); });
+
+    // PRESS: the segment fills solid; the others fade.
+    var press = slice('press', 0, 1);
+    play(parts.solid, [{ opacity: 0 }, { opacity: 1 }], press);
+    play(parts.number, [{ opacity: 1 }, { opacity: 0 }], press);
+    others.forEach(function (other) { play(other, [{ opacity: 1 }, { opacity: 0 }], press); });
+
+    // STRETCH: to the lane's width, the header crossfading, the card growing.
+    var stretch = slice('stretch', 0, 1);
+    play(parts.ghost, [
+      { left: button.style.left, width: button.style.width },
+      { left: '0px', width: '100%' },
+    ], stretch);
+    before.header.forEach(function (copy) { play(copy, [{ opacity: 1 }, { opacity: 0 }], stretch); });
+    [titleEl, figuresEl].forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], stretch); });
+    playHeight(before.height, stretch);
+
+    // FILL: onto the band strip and into the bands; the bank row, then
+    // the controls and the readout.
+    play(parts.fill, [
+      { top: PICKER_FILL.top + 'px', height: PICKER_FILL.height + 'px' },
+      { top: rows.bandTop + 'px', height: rows.bandHeight + 'px' },
+    ], slice('fill', 0, 0.5));
+    play(veils[0], [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.5));
+    play(parts.ghost, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.4, 0.9));
+    play(veils[1], [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.3, 0.8));
+    controls.forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], slice('fill', 0.7, 1)); });
+  }
+
+  /**
+   * The leg folded back into its segment (SNOW-1033): fill, stretch and
+   * press in reverse. The empty row is already rendered; the old lane,
+   * readout and header play out over it from their snapshots.
+   *
+   * @param {HTMLElement} button The closed leg's picker segment.
+   * @param {{height: number, header: Array<HTMLElement>, controls: HTMLElement,
+   *   lane: HTMLElement, readout: HTMLElement}} before The open row, from
+   *   `captureClose`.
+   */
+  function animateClose(button, before) {
+    if (!legsEl) return;
+    var c = core();
+    var plan = c.motionPlan(true);
+    /**
+     * @param {string} name
+     * @param {number} a
+     * @param {number} b
+     */
+    function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
+    var rows = c.ROWS;
+    var parts = ghostOf(button);
+    var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
+      return b !== button;
+    });
+    var cell = /** @type {HTMLElement} */ (lane.parentElement);
+
+    startMotion(function () {
+      parts.ghost.remove();
+      before.lane.remove();
+      before.readout.remove();
+      before.controls.remove();
+      before.header.forEach(function (copy) { copy.remove(); });
+      button.style.opacity = '';
+      legsEl.style.pointerEvents = '';
+      row.style.overflow = '';
+      if (ctx && ctx.onResize) ctx.onResize();
+    });
+
+    legsEl.style.pointerEvents = 'none';
+    button.style.opacity = '0';
+    legsEl.appendChild(before.lane);
+    legsEl.appendChild(parts.ghost);
+    cell.appendChild(before.readout);
+    before.header.concat([before.controls]).forEach(function (copy) { row.appendChild(copy); });
+
+    // FILL, reversed: the controls, the readout and the lane go; the band
+    // gathers into the segment's solid colour and grows back to the
+    // segment's height.
+    play(before.controls, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.3));
+    play(before.readout, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0, 0.3));
+    play(before.lane, [{ opacity: 1 }, { opacity: 0 }], slice('fill', 0.2, 0.7));
+    play(parts.ghost, [{ opacity: 0 }, { opacity: 1 }], slice('fill', 0.1, 0.6));
+    play(parts.fill, [
+      { top: rows.bandTop + 'px', height: rows.bandHeight + 'px' },
+      { top: PICKER_FILL.top + 'px', height: PICKER_FILL.height + 'px' },
+    ], slice('fill', 0.5, 1));
+
+    // STRETCH, reversed: back to the segment's slot, the header
+    // crossfading to the placeholder, the card shrinking.
+    var stretch = slice('stretch', 0, 1);
+    play(parts.ghost, [
+      { left: '0px', width: '100%' },
+      { left: button.style.left, width: button.style.width },
+    ], stretch);
+    before.header.forEach(function (copy) { play(copy, [{ opacity: 1 }, { opacity: 0 }], stretch); });
+    [titleEl, figuresEl].forEach(function (el) { play(el, [{ opacity: 0 }, { opacity: 1 }], stretch); });
+    playHeight(before.height, stretch);
+
+    // PRESS, reversed: the tint returns and the other segments come back.
+    var press = slice('press', 0, 1);
+    play(parts.solid, [{ opacity: 1 }, { opacity: 0 }], press);
+    play(parts.number, [{ opacity: 0 }, { opacity: 1 }], press);
+    others.forEach(function (other) { play(other, [{ opacity: 0 }, { opacity: 1 }], press); });
   }
 
   // ---- drawing ------------------------------------------------------------
@@ -1079,6 +1640,8 @@
     var id = pointerIdOf(event);
     var x = laneX(event);
     lastPointerType = event.pointerType || '';
+    prevLanePressAt = lanePressAt;
+    lanePressAt = Date.now();
     pointers.set(id, { x: x, y: event.clientY });
     if (pointers.size === 1) {
       press = {
@@ -1172,6 +1735,20 @@
   }
 
   /**
+   * Whether a double-tap whose first press was at `firstPressAt` began on
+   * the leg picker: that press was before the picker's, or within
+   * `DOUBLE_TAP_MS` of it. A double-click on a picker segment opens the
+   * leg and nothing more; its second click, landing on the lane the
+   * picker has just uncovered, must not zoom it (SNOW-1033).
+   *
+   * @param {number} firstPressAt ms, `Date.now`.
+   * @returns {boolean}
+   */
+  function startsOnPicker(firstPressAt) {
+    return firstPressAt < pickerPressAt || firstPressAt - pickerPressAt <= DOUBLE_TAP_MS;
+  }
+
+  /**
    * A press lifted without a drag: a tap, or the second tap of a pair.
    * The second tap never toggles the selection the first one made; for a
    * finger or a pen it zooms (`doubleTap`), and for a mouse the browser's
@@ -1185,8 +1762,9 @@
       && now - lastTap.time <= DOUBLE_TAP_MS
       && Math.abs(ended.x0 - lastTap.x) <= DOUBLE_TAP_PX;
     if (pair) {
+      var firstAt = lastTap.time;
       lastTap = null;
-      if (ended.pointerType !== 'mouse') doubleTap(ended.x0);
+      if (ended.pointerType !== 'mouse' && !startsOnPicker(firstAt)) doubleTap(ended.x0);
       return;
     }
     lastTap = { time: now, x: ended.x0 };
@@ -1204,6 +1782,9 @@
     // A touch double-tap is handled on its lifts; a browser that also
     // synthesises a dblclick for it must not zoom twice.
     if (!ctx || !leg || lastPointerType !== 'mouse') return;
+    // The pair's first press: the lane's press before its last one, or the
+    // picker's when that came later (a double-click that opened the leg).
+    if (startsOnPicker(prevLanePressAt)) return;
     event.preventDefault();
     doubleTap(laneX(/** @type {MouseEvent} */ (event)));
   }));
@@ -1285,6 +1866,33 @@
     }
   });
 
+  // The leg picker (SNOW-1033): a press on a segment opens its leg; one in
+  // a gap between segments opens the nearest within TAP_RADIUS_PX, since a
+  // short leg keeps its true, narrow width.
+  if (legsEl) {
+    legsEl.addEventListener('click', function (event) {
+      if (!ctx || leg) return;
+      pickerPressAt = Date.now();
+      var target = /** @type {Element} */ (event.target);
+      var button = target && target.closest ? target.closest('.route-rail-two-leg') : null;
+      var legs = pickerLegs();
+      var picked = null;
+      if (button && legsEl.contains(button)) {
+        var from = Number(button.getAttribute('data-leg-from'));
+        var to = Number(button.getAttribute('data-leg-to'));
+        picked = legs.find(function (l) { return l.from === from && l.to === to; }) || null;
+      } else {
+        var measured = legsEl.clientWidth || legsEl.getBoundingClientRect().width;
+        var layerWidth = measured > 0 ? measured : FALLBACK_WIDTH;
+        var x = /** @type {MouseEvent} */ (event).clientX - legsEl.getBoundingClientRect().left;
+        picked = core().nearestRange(
+          legs, x, { from: 0, to: ctx.sampleCount }, layerWidth, TAP_RADIUS_PX,
+        );
+      }
+      if (picked) ctx.cursor.openLeg(picked);
+    });
+  }
+
   if (typeof window.ResizeObserver === 'function') {
     new window.ResizeObserver(function () {
       if (leg && measure() !== width) scheduleDraw();
@@ -1327,6 +1935,10 @@
 
   /** Stop following the cursor and hide the row. */
   function detach() {
+    stopMotion();
+    pickerPressAt = -Infinity;
+    prevLanePressAt = -Infinity;
+    lanePressAt = -Infinity;
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     if (frame && typeof window.cancelAnimationFrame === 'function') {

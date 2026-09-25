@@ -88,6 +88,7 @@
  *   sampleAt(x, view, width)                  → the axis coordinate at px
  *   indexAt(x, view, width)                   → the sample index at px
  *   clip(range, view)                         → visible part, or null
+ *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
  *   glyphGroup(span, width)                   → segments per bank glyph, N
  *   resolveSpan(leg, width)                   → the widest span whose row draws
  *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
@@ -97,6 +98,25 @@
  *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
  *   readoutAnchor(x, width)                   → {align, left} for the readout
  *   roundStretch(metres)                      → a length to the nearest 25 m
+ *   legSlots(legs, sampleCount)               → the leg picker's segments
+ *   MOTION                                    → the opening motion's phases, ms
+ *   motionPlan(reverse)                       → the phases on one timeline
+ *   motionSlice(plan, name, a, b)             → WAAPI timing for part of one
+ *
+ * ## The leg picker and the opening motion (SNOW-1033)
+ *
+ * With no leg open, rail two's lane shows the route's legs as buttons,
+ * one per leg, on rail one's scale: a leg's slot runs from `from / N` to
+ * `(to + 1) / N` of the lane, which is `legSpan`'s placing with the
+ * distance factor taken out, so each segment sits under its leg on the
+ * profile. True proportions: a short leg gets no minimum width, and a tap
+ * beside it is picked by `nearestRange` instead.
+ *
+ * Opening a leg is one motion of `MOTION.totalMs` (340 ms) in three
+ * phases — PRESS (the segment fills solid, the others fade), STRETCH (it
+ * widens to the lane while the card grows) and FILL (it becomes the band
+ * strip, then the bank row, the controls and the readout come in).
+ * Closing runs the same phases in reverse order on the same total.
  */
 
 // @ts-check
@@ -250,6 +270,27 @@
 
   /** A stretch's length is read to the nearest this many metres. */
   var STRETCH_STEP_M = 25;
+
+  /**
+   * The opening motion's phases, in ms (SNOW-1033): PRESS, STRETCH and
+   * FILL, 340 ms in all.
+   */
+  var MOTION = Object.freeze({
+    pressMs: 80,
+    stretchMs: 140,
+    fillMs: 120,
+    totalMs: 340,
+  });
+
+  /**
+   * Each phase's easing when opening; closing swaps `ease-out` for
+   * `ease-in`, so a reversed stretch starts where the opening one ended.
+   */
+  var PHASE_EASING = Object.freeze({
+    press: 'linear',
+    stretch: 'ease-out',
+    fill: 'ease-in-out',
+  });
 
   /**
    * Clamp a number into a closed range.
@@ -460,6 +501,49 @@
    */
   function indexAt(x, view, width) {
     return Math.floor(sampleAt(x, view, width) + EPSILON);
+  }
+
+  /**
+   * The range a tap at `x` picks: the one whose drawn extent is nearest
+   * (SNOW-1033).
+   *
+   * Each range is clipped to the view and measured on screen as
+   * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
+   * the nearer edge otherwise. So a leg only a few px wide is still picked
+   * by a tap `radiusPx` beside it. On a tie the range whose half-open
+   * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
+   * then the leftmost.
+   *
+   * @template {{from: number, to: number}} R
+   * @param {Array<R>} ranges Leg slots (or any ranges), sample indices
+   *   inclusive.
+   * @param {number} x The tap's px across the lane.
+   * @param {View} view
+   * @param {number} width The lane's width in px.
+   * @param {number} radiusPx Farther than this, nothing is picked.
+   * @returns {?R}
+   */
+  function nearestRange(ranges, x, view, width, radiusPx) {
+    if (!Array.isArray(ranges)) return null;
+    /** @type {?R} */
+    var best = null;
+    var bestDistance = Infinity;
+    var bestHolds = false;
+    ranges.forEach(function (range) {
+      var part = range ? clip(range, view) : null;
+      if (!part) return;
+      var x0 = xOf(part.from, view, width);
+      var x1 = xOf(part.to, view, width);
+      var distance = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+      if (distance > radiusPx) return;
+      var holds = x >= x0 && x < x1;
+      if (distance < bestDistance || (distance === bestDistance && holds && !bestHolds)) {
+        best = range;
+        bestDistance = distance;
+        bestHolds = holds;
+      }
+    });
+    return best;
   }
 
   /**
@@ -777,6 +861,93 @@
     return Math.max(STRETCH_STEP_M, Math.round(metres / STRETCH_STEP_M) * STRETCH_STEP_M);
   }
 
+  /**
+   * The leg picker's segments: one per leg, on rail one's scale
+   * (SNOW-1033).
+   *
+   * `left` and `width` are fractions of the lane, `from / N` and
+   * `(to + 1 − from) / N`, with no minimum width. The slots come back in
+   * route order; a leg that is malformed or outside the route is dropped.
+   *
+   * @template {{from: number, to: number}} L
+   * @param {Array<L>} legs The route's legs, sample indices inclusive.
+   * @param {number} sampleCount N, the segments the legs index.
+   * @returns {Array<{leg: L, left: number, width: number}>}
+   */
+  function legSlots(legs, sampleCount) {
+    if (!Array.isArray(legs) || !(sampleCount > 0)) return [];
+    return legs
+      .filter(function (leg) {
+        return !!leg && Number.isInteger(leg.from) && Number.isInteger(leg.to)
+          && leg.from >= 0 && leg.to >= leg.from && leg.to < sampleCount;
+      })
+      .slice()
+      .sort(function (a, b) { return a.from - b.from; })
+      .map(function (leg) {
+        return {
+          leg: leg,
+          left: leg.from / sampleCount,
+          width: (leg.to + 1 - leg.from) / sampleCount,
+        };
+      });
+  }
+
+  /**
+   * @typedef {{name: string, start: number, end: number, easing: string}} Phase
+   *   One phase of the motion, its start and end in ms from the first
+   *   frame.
+   */
+
+  /**
+   * The motion's phases laid on one timeline (SNOW-1033).
+   *
+   * Opening runs press (0–80), stretch (80–220) and fill (220–340);
+   * closing runs fill, stretch and press on the same 340 ms, with the
+   * stretch eased in rather than out.
+   *
+   * @param {boolean} reverse True for closing.
+   * @returns {{totalMs: number, phases: Array<Phase>}}
+   */
+  function motionPlan(reverse) {
+    var order = reverse
+      ? [['fill', MOTION.fillMs], ['stretch', MOTION.stretchMs], ['press', MOTION.pressMs]]
+      : [['press', MOTION.pressMs], ['stretch', MOTION.stretchMs], ['fill', MOTION.fillMs]];
+    var at = 0;
+    var phases = order.map(function (entry) {
+      var name = /** @type {string} */ (entry[0]);
+      /** @type {string} */
+      var easing = PHASE_EASING[/** @type {'press'|'stretch'|'fill'} */ (name)];
+      if (reverse && easing === 'ease-out') easing = 'ease-in';
+      var phase = { name: name, start: at, end: at + /** @type {number} */ (entry[1]), easing: easing };
+      at = phase.end;
+      return phase;
+    });
+    return { totalMs: at, phases: phases };
+  }
+
+  /**
+   * The WAAPI timing for the part of one phase between fractions `a` and
+   * `b` of it (SNOW-1033).
+   *
+   * @param {{phases: Array<Phase>}} plan A `motionPlan`.
+   * @param {string} name 'press', 'stretch' or 'fill'.
+   * @param {number} a Where the part starts, 0–1 of the phase.
+   * @param {number} b Where it ends, 0–1 of the phase, `b ≥ a`.
+   * @returns {{delay: number, duration: number, easing: string}}
+   */
+  function motionSlice(plan, name, a, b) {
+    var phase = plan.phases.find(function (p) { return p.name === name; });
+    if (!phase) throw new RangeError('no phase ' + name);
+    var length = phase.end - phase.start;
+    var from = clamp(a, 0, 1);
+    var to = clamp(b, from, 1);
+    return {
+      delay: phase.start + from * length,
+      duration: (to - from) * length,
+      easing: phase.easing,
+    };
+  }
+
   self.pwaRouteRailTwoCore = Object.freeze({
     FALL_LINE_TOLERANCE_DEG: FALL_LINE_TOLERANCE_DEG,
     FALL_LINE_DEG: FALL_LINE_DEG,
@@ -803,11 +974,16 @@
     sampleAt: sampleAt,
     indexAt: indexAt,
     clip: clip,
+    nearestRange: nearestRange,
     glyphGroup: glyphGroup,
     resolveSpan: resolveSpan,
     bankGlyphs: bankGlyphs,
     passageBox: passageBox,
     legProfile: legProfile,
     legFigures: legFigures,
+    legSlots: legSlots,
+    MOTION: MOTION,
+    motionPlan: motionPlan,
+    motionSlice: motionSlice,
   });
 })();

@@ -23,8 +23,15 @@ no-fall passage — and the readout under it, anchored to the cursor or the
 selection (the leg's elevation profile was a fourth row until it was
 taken out: it drew near-flat and said nothing rail one does not;
 SNOW-1024 took out its distance ticks). With no leg open it shows EMPTY
-(`data-empty`): the eyebrow, "Select a route leg to view terrain", an
-empty lane, and no zoom, close or readout. It opens FITTED, the whole leg
+(`data-empty`): the eyebrow, "Select a route leg to view terrain", and no
+zoom, close or readout; its lane holds the LEG PICKER (SNOW-1033),
+`[data-route-rail-two-legs]` — one button per leg on rail one's scale, so
+each sits under its leg on the profile, tinted by direction and numbered,
+which opens its leg through the cursor as a press on rail one does.
+Opening a leg from the empty row, from any surface, is one ~340 ms
+motion: the segment fills, stretches to the lane and becomes the band
+strip while the card, anchored by its bottom edge, grows upward; closing
+reverses it, and reduced motion skips it. It opens FITTED, the whole leg
 however long (SNOW-1031), pans and zooms within the leg, and its bands
 and passages are pressable selections. Fitted, the bank row may be too
 coarse to draw: it then shows "Zoom in to see the bank", and a double-tap
@@ -169,7 +176,7 @@ Context:
         hidden
         role="group"
         aria-labelledby="route-rail-two-eyebrow"
-        class="col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
+        class="relative col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
     >
         <div class="min-w-0">
             <div class="flex items-start justify-between gap-2">
@@ -207,7 +214,7 @@ Context:
             <p data-route-rail-two-figures class="mt-1 font-mono text-meta text-text-2"></p>
         </div>
         {# The lane, drawn in real pixels by static/js/route_rail_two.js.   #}
-        <div class="min-w-0">
+        <div class="relative min-w-0">
             <svg
                 data-route-rail-two-lane
                 role="slider"
@@ -216,6 +223,10 @@ Context:
                 class="route-rail-two-lane block h-11 w-full text-route-line"
             >
             </svg>
+            {# The leg picker (SNOW-1033): one button per leg over the empty  #}
+            {# lane, filled by static/js/route_rail_two.js; hidden with a leg #}
+            {# open.                                                          #}
+            <div data-route-rail-two-legs hidden class="absolute inset-x-0 top-0 h-11"></div>
             {# The readout, anchored under the cursor or the selection by     #}
             {# static/js/route_rail_two.js; the stem carries the cursor line  #}
             {# on from the lane's foot to just above the text.                #}
