@@ -1,8 +1,8 @@
 ---
 name: the-bank-angle-is-drawn-signed
-description: bank.py, bank_angles, roll_deg, `banks` on the wire, bankTicks — the signed roll across a route track, kept signed and sent flat
+description: bank.py, bank_angles, roll_deg, `banks` on the wire, bankWedges level-ski wedges — the signed roll across a track, kept signed, sent flat
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-25
 ---
 
 # The bank angle is drawn signed
@@ -18,8 +18,9 @@ tan²(slope)`.
 
 - **Signed.** Positive where the ground falls away on the skier's right,
   negative on the left. `apps/routes/services/bank.py` never takes the
-  absolute value, and the drawing (`static/js/bank_ribbon_core.js`) leans
-  each tick's top toward the downhill shoulder.
+  absolute value, and the drawing (`static/js/bank_ribbon_core.js`) puts
+  each level-ski wedge's pale half on the downhill side (SNOW-1031; until
+  then it leaned each tick's top toward the downhill shoulder).
 - **Derived at read time**, like `fall_line.py` and `passages.py`; nothing
   is stored. `roll_deg` is a column of the staff terrain table
   (`terrain_detail`), and `compact_slope` sends `banks`.
@@ -102,3 +103,33 @@ beside the 13 kB the boundary coordinates already take.
   conversion, the rule `route_cursor_core.js` set, so it does not depend
   on how that rail lays out its axis.
 - **About 2 kB more per sampled route** in the offline-cached routes feed.
+
+## Superseded drawing (SNOW-1031)
+
+The leaning ticks described above were replaced by **level-ski wedges**
+after the 25 Sep design review: a tick's lean had to be decoded, and a
+30° tick read much like a 60° one. The data, the sign and every reason
+above for keeping the sign stand; only the mark changed.
+
+- **The glyph.** `bankWedges` in `static/js/bank_ribbon_core.js` draws
+  one 14 px glyph every 15 px (`GLYPH_PITCH`, `GLYPH_HALF_WIDTH`). The
+  level line through its centre is the skis; the ground line runs through
+  the same pivot from the uphill end `(−7, −dy)` to the downhill end
+  `(+7, +dy)`, mirrored by the sign, with
+  `dy = min(13, 7 × 1.5 × tan|roll|)` (`EXAGGERATION`, `CAP_PX`).
+- **The side is the fill.** The uphill triangle is filled solid
+  (`--color-text-2`) and the downhill one at 30% of the same token, so the
+  pale half is the side the ground falls away to. A positive roll puts it
+  on the right. The ground line is `--color-text-1`.
+- **The fall line is a flat line, not a gap.** Under `MIN_FILL_PX`
+  (0.6 px, about 3°) the fills are dropped and only the ground line is
+  drawn. A null bank still draws nothing.
+- **The ×1.5 exaggeration** lets a 10° bank read at the glyph's width;
+  the 13 px cap (reached at about 51°) keeps the row at 26 px, and
+  rail two moved its passage bars into the lane's foot so a capped wedge
+  never covers one.
+- **The `strong` threshold is gone.** The wedge's size carries the
+  magnitude, so no second ink is needed.
+- **The pitch widened from 8 px to 15 px**, so the "flat array" argument
+  above now reads a value about every fourth segment on a zoomed leg
+  rather than every other; the cost comparison is unchanged.
