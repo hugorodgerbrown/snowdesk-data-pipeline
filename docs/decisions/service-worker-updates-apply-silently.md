@@ -106,9 +106,18 @@ anyway.
 what a stuck person needs is the action. Naming builds also cost a
 per-deploy value baked into `sw.js`, which made the worker's bytes differ on
 every deploy, Python-only ones included. Without it, the worker changes
-when, and only when, the shell does.
+when the shell does, and once per production release (below).
 
 ## Consequences
+
+* **The cache name carries the release label (SNOW-1029):**
+  `snowdesk-shell-v34-a1b2c3d4e5f6`. The hash keeps it correct; the label
+  makes a running and a waiting worker tell-apart-able on `/_sw-version/`
+  and in DevTools → Cache Storage. The price is one silent reinstall per
+  production release even when no shell source changed, which after this
+  decision nobody sees. The label alone could not replace the hash: staging
+  deploys every merge under one label, and an unnumbered build has none
+  (it keeps `snowdesk-shell-<hash>`).
 
 * **`pwa.sw.update_available` now counts stuck-worker banners**, once per
   page. `pwa.sw.update_applied` fires for silent activations too.

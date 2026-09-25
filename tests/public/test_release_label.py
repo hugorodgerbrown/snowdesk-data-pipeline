@@ -137,13 +137,16 @@ class TestSiteFooterVersion:
     def test_the_account_menu_no_longer_carries_it(self) -> None:
         """SNOW-769 moved the row, it did not copy it.
 
-        The account menu is scoped to everything before the footer, so a
-        version string found there would be a genuine duplicate. That scope
-        includes the head again since SNOW-1026 removed
-        <meta name="pwa-app-release">.
+        The account menu is scoped to everything the reader sees before the
+        footer, so a version string found there would be a genuine duplicate.
+        The head is left out: SNOW-1029 puts the release inside the shell
+        cache name (``<meta name="pwa-shell" content="snowdesk-shell-v24-…">``),
+        which is machine-readable metadata, not a second thing on screen.
         """
         body = self._signed_in_client().get("/").content.decode("utf-8")
-        before_footer = body[: body.index('data-testid="site-footer"')]
+        before_footer = body[
+            body.index("</head>") : body.index('data-testid="site-footer"')
+        ]
 
         assert "v24" not in before_footer
 

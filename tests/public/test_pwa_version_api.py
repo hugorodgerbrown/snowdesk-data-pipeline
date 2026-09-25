@@ -31,7 +31,7 @@ import json
 import pytest
 from django.test import Client, override_settings
 
-from apps.core.sw_shell import cached_cache_version
+from apps.core.sw_shell import served_cache_version
 from config.settings.base import comma_separated_frozenset
 
 
@@ -55,7 +55,9 @@ def test_version_endpoint_returns_expected_shape() -> None:
     body = json.loads(response.content)
     assert body == {
         "current": "2026.07.15.testabc",
-        "shell": cached_cache_version(),
+        # Computed the same way the view does: the name carries APP_RELEASE
+        # since SNOW-1029.
+        "shell": served_cache_version(),
         "update_required": False,
         "update_available": False,
         "released_at": "2026-07-15T09:00:00+00:00",
@@ -92,7 +94,9 @@ def test_version_endpoint_shell_does_not_move_with_the_build() -> None:
     body = json.loads(Client().get("/api/version").content)
 
     assert body["current"] == "a-different-build-entirely"
-    assert body["shell"] == cached_cache_version()
+    # SNOW-1029: the release label is part of the name, so the release is
+    # left at its real value here; only the build moves.
+    assert body["shell"] == served_cache_version()
 
 
 @pytest.mark.django_db

@@ -27,7 +27,7 @@ import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
 
-from apps.core.sw_shell import cached_cache_version
+from apps.core.sw_shell import cached_cache_version, served_cache_version
 from apps.public.context_processors import pwa_version
 
 
@@ -43,12 +43,16 @@ def test_context_processor_returns_configured_values() -> None:
         SITE_ENVIRONMENT="production",
     ):
         result = pwa_version(HttpRequest())
+        # Under the same settings: since SNOW-1029 the name carries the
+        # release, so v24 here, not the real VERSION file's.
+        shell = served_cache_version()
 
     assert result == {
         "APP_VERSION": "2026.07.15.abcdef",
         "APP_RELEASE_LABEL": "v24",
-        "PWA_SHELL": cached_cache_version(),
+        "PWA_SHELL": shell,
     }
+    assert "-v24-" in shell
 
 
 def test_context_processor_defaults_to_empty_string() -> None:
@@ -59,11 +63,12 @@ def test_context_processor_defaults_to_empty_string() -> None:
     """
     with override_settings(APP_VERSION="", APP_RELEASE=""):
         result = pwa_version(HttpRequest())
+        shell = served_cache_version()
 
     assert result == {
         "APP_VERSION": "",
         "APP_RELEASE_LABEL": "",
-        "PWA_SHELL": cached_cache_version(),
+        "PWA_SHELL": shell,
     }
 
 
