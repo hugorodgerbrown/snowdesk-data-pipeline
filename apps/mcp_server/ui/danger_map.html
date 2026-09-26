@@ -13,10 +13,14 @@
     tools/call get_danger_map_geometry | show_danger_map  (proxied by the host)
     ui/open-link, ui/message, ui/update-model-context   region actions
 
-  MapLibre and the OpenFreeMap basemap are the only external origins, both
-  declared in the resource's CSP. If the host's sandbox stops MapLibre
-  (its worker is a blob: URL, which a strict CSP can refuse), the view
-  falls back to a plain SVG choropleth drawn from the same GeoJSON.
+  MapLibre and the OpenFreeMap basemap are the main external origins, both
+  declared in the resource's CSP. The view first draws an SVG choropleth
+  from the same GeoJSON, then swaps in MapLibre once its style loads. If
+  the host's sandbox stops MapLibre (its worker is a blob: URL, which a
+  strict CSP can refuse), the SVG stays, drawn over raster
+  tiles — swisstopo's winter map for a Swiss scope, OpenStreetMap
+  elsewhere. A raster tile is an <image>, loaded under img-src, so the
+  fallback needs no worker to show a basemap.
 -->
 <html lang="en">
     <head>
@@ -102,21 +106,40 @@
                 position: absolute;
                 inset: 0;
             }
-            #svg {
-                display: none;
+            #map {
+                visibility: hidden;
             }
             #svg svg {
                 width: 100%;
                 height: 100%;
             }
             #svg path {
+                fill-opacity: 0.6;
                 stroke: var(--bg);
                 stroke-width: 0.6;
                 cursor: pointer;
             }
             #svg path:hover {
+                fill-opacity: 0.85;
                 stroke: var(--text);
                 stroke-width: 1.5;
+            }
+            #svg image {
+                pointer-events: none;
+            }
+            .attribution {
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                padding: 1px 5px;
+                border-top-left-radius: 4px;
+                background: var(--bg);
+                color: var(--text-2);
+                font-size: 10px;
+                opacity: 0.85;
+            }
+            .attribution a {
+                color: inherit;
             }
             .status {
                 display: grid;
@@ -207,6 +230,7 @@
                 <button id="prev" type="button" aria-label="Previous day" disabled>‹</button>
                 <span class="date" id="date">—</span>
                 <button id="next" type="button" aria-label="Next day" disabled>›</button>
+                <button id="open-map" type="button" hidden>Open map</button>
                 <button id="fullscreen" type="button" hidden>⤢</button>
             </header>
             <div class="stage">
@@ -214,6 +238,7 @@
                 <div id="svg"></div>
                 <div class="status" id="status">Loading…</div>
                 <div class="legend" id="legend"></div>
+                <div class="attribution" id="attribution" hidden></div>
                 <div class="panel" id="panel" role="dialog" aria-live="polite">
                     <button class="close" id="panel-close" type="button" aria-label="Close">×</button>
                     <h2 id="panel-name"></h2>
@@ -223,6 +248,7 @@
                     </div>
                     <div class="actions">
                         <button id="open-bulletin" type="button">Open bulletin</button>
+                        <button id="show-on-map" type="button">Show on map</button>
                         <button id="ask" type="button">Ask about this region</button>
                     </div>
                 </div>
@@ -246,6 +272,24 @@
 
             const BASEMAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
             const MAPLIBRE_TIMEOUT_MS = 8000;
+
+            // Raster basemaps for the SVG fallback, both cut in Web Mercator
+            // 256 px tiles. swisstopo covers Switzerland only, so it is used
+            // when every region in scope is Swiss.
+            const TILE_SIZE = 256;
+            const MAX_TILE_ZOOM = 16;
+            const RASTER_BASEMAPS = {
+              swisstopo: {
+                url: (z, x, y) =>
+                  `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe-winter/default/current/3857/${z}/${x}/${y}.jpeg`,
+                attribution: { label: "© swisstopo", url: "https://www.swisstopo.admin.ch/" },
+              },
+              osm: {
+                url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+                // OSM's tile policy asks for the credit to link to its copyright page.
+                attribution: { label: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
+              },
+            };
 
             // —— JSON-RPC over postMessage (the host is the peer) ——————————————
             let nextId = 1;
@@ -303,7 +347,10 @@
               geometry: null,
               geometryPromise: null,
               selected: null,
-              renderer: null, // "maplibre" | "svg"
+              // "svg" until MapLibre loads; the SVG is drawn at once, so the
+              // view is never blank while MapLibre starts or fails.
+              renderer: "svg", // "svg" | "maplibre"
+              mapFailed: false,
             };
             const $ = (id) => document.getElementById(id);
 
@@ -366,6 +413,7 @@
               $("title").textContent = `Avalanche danger · ${state.snapshot.scope_label || ""}`;
               $("date").textContent = state.snapshot.date;
               $("prev").disabled = $("next").disabled = false;
+              $("open-map").hidden = !state.snapshot.map_url || !state.hostCapabilities.openLinks;
               loadGeometry(state.scope)
                 .then(render)
                 .catch((err) => setStatus(`Could not load region boundaries: ${err.message}`));
@@ -393,15 +441,18 @@
                 setStatus("No region boundaries in this scope.");
                 return;
               }
-              if (state.renderer === "svg") return renderSvg();
               if (state.renderer === "maplibre") return updateMapLibre();
-              startMapLibre();
+              renderSvg();
+              if (!state.map && !state.mapFailed) startMapLibre();
             }
 
+            // MapLibre starts behind the SVG and replaces it only once its
+            // style has loaded. A refused worker is reported as a CSP
+            // violation, which ends the attempt at once; the timeout is the
+            // backstop for any other way it can stall.
             function startMapLibre() {
-              if (typeof maplibregl === "undefined") return fallBackToSvg("MapLibre did not load");
-              state.renderer = "maplibre";
-              const timer = setTimeout(() => fallBackToSvg("MapLibre timed out"), MAPLIBRE_TIMEOUT_MS);
+              if (typeof maplibregl === "undefined") return abandonMapLibre("MapLibre did not load");
+              state.mapTimer = setTimeout(() => abandonMapLibre("MapLibre timed out"), MAPLIBRE_TIMEOUT_MS);
               try {
                 const [w, s, e, n] = state.geometry.bbox;
                 state.map = new maplibregl.Map({
@@ -413,12 +464,12 @@
                   cooperativeGestures: true,
                 });
               } catch (err) {
-                clearTimeout(timer);
-                return fallBackToSvg(err.message);
+                return abandonMapLibre(err.message);
               }
               state.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
               state.map.on("load", () => {
-                clearTimeout(timer);
+                if (state.mapFailed) return;
+                clearTimeout(state.mapTimer);
                 state.map.addSource("regions", { type: "geojson", data: joinedFeatures(), promoteId: "region_id" });
                 state.map.addLayer({
                   id: "regions-fill",
@@ -441,9 +492,19 @@
                 state.map.on("click", "regions-fill", (e) => select(e.features[0].properties.region_id));
                 state.map.on("mouseenter", "regions-fill", () => (state.map.getCanvas().style.cursor = "pointer"));
                 state.map.on("mouseleave", "regions-fill", () => (state.map.getCanvas().style.cursor = ""));
-                setStatus("");
+                if (state.selected) state.map.setFeatureState({ source: "regions", id: state.selected }, { selected: true });
+                state.renderer = "maplibre";
+                $("map").style.visibility = "visible";
+                $("svg").style.display = "none";
+                $("attribution").hidden = true;
               });
             }
+
+            document.addEventListener("securitypolicyviolation", (event) => {
+              if (state.map && state.renderer !== "maplibre" && event.blockedURI.startsWith("blob")) {
+                abandonMapLibre(`CSP refused ${event.effectiveDirective}`);
+              }
+            });
 
             function updateMapLibre() {
               const source = state.map && state.map.getSource("regions");
@@ -451,31 +512,96 @@
               if (state.selected) showPanel(state.selected);
             }
 
-            function fallBackToSvg(reason) {
+            function abandonMapLibre(reason) {
+              if (state.mapFailed) return;
               console.warn(`danger map: SVG fallback (${reason})`);
+              clearTimeout(state.mapTimer);
+              state.mapFailed = true;
               if (state.map) {
                 try { state.map.remove(); } catch (_) { /* already torn down */ }
                 state.map = null;
               }
-              state.renderer = "svg";
-              $("map").style.display = "none";
-              $("svg").style.display = "block";
-              renderSvg();
+            }
+
+            // Web Mercator, in world units: the whole map is 0..1 on each axis.
+            const mercatorX = (lon) => (lon + 180) / 360;
+            function mercatorY(lat) {
+              const r = (lat * Math.PI) / 180;
+              return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2;
+            }
+
+            function rasterBasemap() {
+              const swiss = state.geometry.features.every((f) => f.properties.region_id.startsWith("CH-"));
+              return swiss ? RASTER_BASEMAPS.swisstopo : RASTER_BASEMAPS.osm;
             }
 
             function renderSvg() {
               const [w, s, e, n] = state.geometry.bbox;
-              const kx = Math.cos(((s + n) / 2) * (Math.PI / 180));
-              const width = (e - w) * kx;
-              const height = n - s;
-              const project = ([lon, lat]) => `${((lon - w) * kx).toFixed(5)},${(n - lat).toFixed(5)}`;
+              const stage = $("svg").getBoundingClientRect();
+              const vw = stage.width || 600;
+              const vh = stage.height || 400;
+              const x0 = mercatorX(w);
+              const x1 = mercatorX(e);
+              const y0 = mercatorY(n);
+              const y1 = mercatorY(s);
+              // The whole-number zoom at which the regions fill the stage, so
+              // the tiles are drawn close to their native size.
+              const fit = Math.min(vw / ((x1 - x0) * TILE_SIZE), vh / ((y1 - y0) * TILE_SIZE));
+              const z = Math.max(1, Math.min(MAX_TILE_ZOOM, Math.round(Math.log2(fit * 0.94))));
+              const size = TILE_SIZE * 2 ** z;
+              const project = ([lon, lat]) => `${(mercatorX(lon) * size).toFixed(1)},${(mercatorY(lat) * size).toFixed(1)}`;
               const ringPath = (ring) => `M${ring.map(project).join("L")}Z`;
               const polygons = (g) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates);
+
+              // The regions' extent plus a margin, widened to the stage's
+              // shape so the tiles cover everything the SVG shows.
+              let bw = (x1 - x0) * size;
+              let bh = (y1 - y0) * size;
+              const pad = Math.max(bw, bh) * 0.03;
+              let bx = x0 * size - pad;
+              let by = y0 * size - pad;
+              bw += 2 * pad;
+              bh += 2 * pad;
+              if (bw / bh < vw / vh) {
+                const wider = (bh * vw) / vh;
+                bx -= (wider - bw) / 2;
+                bw = wider;
+              } else {
+                const taller = (bw * vh) / vw;
+                by -= (taller - bh) / 2;
+                bh = taller;
+              }
+
               const ns = "http://www.w3.org/2000/svg";
               const svg = document.createElementNS(ns, "svg");
-              const pad = Math.max(width, height) * 0.03;
-              svg.setAttribute("viewBox", `${-pad} ${-pad} ${width + 2 * pad} ${height + 2 * pad}`);
+              svg.setAttribute("viewBox", `${bx} ${by} ${bw} ${bh}`);
               svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+              const basemap = rasterBasemap();
+              const last = 2 ** z - 1;
+              const tx0 = Math.max(0, Math.floor(bx / TILE_SIZE));
+              const tx1 = Math.min(last, Math.floor((bx + bw) / TILE_SIZE));
+              const ty0 = Math.max(0, Math.floor(by / TILE_SIZE));
+              const ty1 = Math.min(last, Math.floor((by + bh) / TILE_SIZE));
+              for (let tx = tx0; tx <= tx1; tx++) {
+                for (let ty = ty0; ty <= ty1; ty++) {
+                  const img = document.createElementNS(ns, "image");
+                  img.setAttribute("href", basemap.url(z, tx, ty));
+                  img.setAttribute("x", tx * TILE_SIZE);
+                  img.setAttribute("y", ty * TILE_SIZE);
+                  // Half a pixel of overlap hides the seam between tiles.
+                  img.setAttribute("width", TILE_SIZE + 0.5);
+                  img.setAttribute("height", TILE_SIZE + 0.5);
+                  img.addEventListener("error", () => img.remove());
+                  svg.appendChild(img);
+                }
+              }
+              const credit = document.createElement("a");
+              credit.href = basemap.attribution.url;
+              credit.textContent = basemap.attribution.label;
+              $("attribution").replaceChildren(credit);
+              $("attribution").hidden = false;
+
               for (const f of joinedFeatures().features) {
                 const path = document.createElementNS(ns, "path");
                 path.setAttribute("d", polygons(f.geometry).map((p) => p.map(ringPath).join("")).join(""));
@@ -493,17 +619,26 @@
               if (state.selected) showPanel(state.selected);
             }
 
+            // The tile zoom and the SVG's shape follow the stage, so redraw
+            // when it changes size (fullscreen, a resized chat column).
+            let svgResizeFrame = 0;
+            new ResizeObserver(() => {
+              if (state.renderer !== "svg" || !state.snapshot || !state.geometry) return;
+              cancelAnimationFrame(svgResizeFrame);
+              svgResizeFrame = requestAnimationFrame(renderSvg);
+            }).observe($("svg"));
+
             // —— Selection and host actions ———————————————————————————————————————
             function regionEntry(regionId) {
               return (state.snapshot.regions || []).find((r) => r.region_id === regionId);
             }
 
             function select(regionId) {
-              if (state.map && state.selected) {
+              if (state.renderer === "maplibre" && state.selected) {
                 state.map.setFeatureState({ source: "regions", id: state.selected }, { selected: false });
               }
               state.selected = regionId;
-              if (state.map) state.map.setFeatureState({ source: "regions", id: regionId }, { selected: true });
+              if (state.renderer === "maplibre") state.map.setFeatureState({ source: "regions", id: regionId }, { selected: true });
               showPanel(regionId);
               const entry = regionEntry(regionId);
               if (entry) {
@@ -529,11 +664,12 @@
                   ? `${rating.label} (min ${ratingFor(entry.min_rating).label})`
                   : rating.label;
               $("open-bulletin").disabled = !entry.url || !state.hostCapabilities.openLinks;
+              $("show-on-map").disabled = !state.snapshot.map_url || !state.hostCapabilities.openLinks;
               $("panel").classList.add("open");
             }
 
             function closePanel() {
-              if (state.map && state.selected) {
+              if (state.renderer === "maplibre" && state.selected) {
                 state.map.setFeatureState({ source: "regions", id: state.selected }, { selected: false });
               }
               state.selected = null;
@@ -545,6 +681,24 @@
               const entry = regionEntry(state.selected);
               if (entry && entry.url) request("ui/open-link", { url: entry.url }).catch(() => {});
             });
+            // The Snowdesk map is the place to zoom and pan; this view is a
+            // fixed overview. A region id in the fragment frames and selects
+            // that region there.
+            function openMap(regionId) {
+              const url = state.snapshot && state.snapshot.map_url;
+              if (!url) return;
+              request("ui/open-link", { url: regionId ? `${url}#${regionId}` : url }).catch(() => {});
+            }
+            $("open-map").addEventListener("click", () => openMap(null));
+            // A sandboxed view cannot navigate on its own, so the credit
+            // link opens through the host like every other link here.
+            $("attribution").addEventListener("click", (event) => {
+              const link = event.target.closest("a");
+              if (!link) return;
+              event.preventDefault();
+              request("ui/open-link", { url: link.href }).catch(() => {});
+            });
+            $("show-on-map").addEventListener("click", () => openMap(state.selected));
             $("ask").addEventListener("click", () => {
               const entry = regionEntry(state.selected);
               if (!entry) return;

@@ -36,7 +36,8 @@ the codebase (``apps.mcp_server.resolvers``, ``apps.public.views``,
   mid-stations, peaks) within one region, with the ``short_id`` each
   weather page and ``get_location_weather`` are keyed on (SNOW-799).
 * ``show_danger_map`` — ``get_regional_snapshot`` with a bulletin URL per
-  region, opening the MCP Apps danger-map view in a host that supports it.
+  region and the Snowdesk map URL for the day, opening the MCP Apps
+  danger-map view in a host that supports it.
 * ``get_danger_map_geometry`` — region boundaries for that view; app-only
   (``visibility: ["app"]``), so the model never pays for the coordinates.
 * ``get_location_weather`` — one location's daily weather row for one day:
@@ -70,6 +71,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db.models import Max, Min
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionDayRating
@@ -2108,7 +2110,9 @@ def show_danger_map(
 
     Returns:
         The :func:`get_regional_snapshot` result with ``url`` on every
-        region entry and ``scope_label`` beside ``scope``.
+        region entry, ``scope_label`` beside ``scope``, and ``map_url`` —
+        the Snowdesk map for the day, which the view links to because its
+        own map cannot be zoomed or panned when it falls back to SVG.
 
     Raises:
         ToolError: as for :func:`get_regional_snapshot`.
@@ -2124,6 +2128,8 @@ def show_danger_map(
     for entry in snapshot["regions"]:
         region = regions_by_id[entry["region_id"]]
         entry["url"] = f"{base_url}{region.get_absolute_url(target_date)}"
+    map_path = reverse("public:home")
+    snapshot["map_url"] = f"{base_url}{map_path}?d={target_date.isoformat()}"
     snapshot["scope_label"] = _scope_label(
         snapshot["scope"]["country"], snapshot["scope"]["major_region_id"]
     )
