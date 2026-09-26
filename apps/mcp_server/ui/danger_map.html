@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<!--
+  apps/mcp_server/ui/danger_map.html — MCP Apps view for show_danger_map.
+
+  Served as ui://snowdesk/danger-map.html by resources/read
+  (apps/mcp_server/ui_resources.py) and rendered by the host in a sandboxed
+  iframe. Speaks the MCP Apps postMessage dialect (spec 2026-01-26) directly,
+  without the @modelcontextprotocol/ext-apps SDK:
+
+    ui/initialize → ui/notifications/initialized       handshake
+    ui/notifications/tool-input                         scope args → fetch geometry
+    ui/notifications/tool-result                        ratings snapshot
+    tools/call get_danger_map_geometry | show_danger_map  (proxied by the host)
+    ui/open-link, ui/message, ui/update-model-context   region actions
+
+  MapLibre and the OpenFreeMap basemap are the only external origins, both
+  declared in the resource's CSP. If the host's sandbox stops MapLibre
+  (its worker is a blob: URL, which a strict CSP can refuse), the view
+  falls back to a plain SVG choropleth drawn from the same GeoJSON.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Avalanche danger map</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+        <style>
+            :root {
+                --bg: var(--color-background-primary, #ffffff);
+                --bg-2: var(--color-background-secondary, #f4f4f5);
+                --text: var(--color-text-primary, #18181b);
+                --text-2: var(--color-text-secondary, #52525b);
+                --border: var(--color-border-primary, #e4e4e7);
+                --radius: var(--border-radius-md, 8px);
+                --font: var(--font-sans, system-ui, -apple-system, sans-serif);
+                color-scheme: light dark;
+            }
+            :root[data-theme='dark'] {
+                --bg: var(--color-background-primary, #18181b);
+                --bg-2: var(--color-background-secondary, #27272a);
+                --text: var(--color-text-primary, #fafafa);
+                --text-2: var(--color-text-secondary, #a1a1aa);
+                --border: var(--color-border-primary, #3f3f46);
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html, body {
+                margin: 0;
+                background: var(--bg);
+                color: var(--text);
+                font: 14px/1.4 var(--font);
+            }
+            .app {
+                display: flex;
+                flex-direction: column;
+                height: 460px;
+            }
+            :root[data-display='fullscreen'] .app {
+                height: 100vh;
+            }
+            header {
+                display: flex;
+                align-items: center;
+                padding: 8px 12px;
+                gap: 8px;
+                border-bottom: 1px solid var(--border);
+            }
+            header h1 {
+                flex: 1;
+                min-width: 0;
+                margin: 0;
+                overflow: hidden;
+                font-weight: 600;
+                font-size: 14px;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            header .date {
+                color: var(--text-2);
+                font-variant-numeric: tabular-nums;
+            }
+            button {
+                padding: 3px 9px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                background: var(--bg-2);
+                color: var(--text);
+                font: inherit;
+                cursor: pointer;
+            }
+            button:disabled {
+                cursor: default;
+                opacity: 0.5;
+            }
+            .stage {
+                position: relative;
+                flex: 1;
+                min-height: 0;
+            }
+            #map, #svg {
+                position: absolute;
+                inset: 0;
+            }
+            #svg {
+                display: none;
+            }
+            #svg svg {
+                width: 100%;
+                height: 100%;
+            }
+            #svg path {
+                stroke: var(--bg);
+                stroke-width: 0.6;
+                cursor: pointer;
+            }
+            #svg path:hover {
+                stroke: var(--text);
+                stroke-width: 1.5;
+            }
+            .status {
+                display: grid;
+                position: absolute;
+                place-items: center;
+                inset: 0;
+                color: var(--text-2);
+                pointer-events: none;
+            }
+            .legend {
+                display: flex;
+                position: absolute;
+                bottom: 8px;
+                left: 8px;
+                padding: 4px;
+                gap: 2px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                background: var(--bg);
+                font-size: 11px;
+            }
+            .legend span {
+                display: grid;
+                place-items: center;
+                width: 22px;
+                height: 18px;
+                border-radius: 3px;
+                color: #000;
+            }
+            .legend span.l5 {
+                color: #fff;
+            }
+            .panel {
+                display: none;
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                width: min(260px, calc(100% - 16px));
+                padding: 10px 12px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                background: var(--bg);
+                box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+            }
+            .panel.open {
+                display: block;
+            }
+            .panel h2 {
+                margin: 0 0 2px;
+                font-size: 14px;
+            }
+            .panel .rating {
+                display: flex;
+                align-items: center;
+                margin: 6px 0 10px;
+                gap: 6px;
+            }
+            .panel .swatch {
+                width: 14px;
+                height: 14px;
+                border: 1px solid var(--border);
+                border-radius: 3px;
+            }
+            .panel .actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .panel .close {
+                position: absolute;
+                top: 4px;
+                right: 6px;
+                padding: 0 4px;
+                border: 0;
+                background: none;
+                font-size: 16px;
+            }
+            .muted {
+                color: var(--text-2);
+                font-size: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <header>
+                <h1 id="title">Avalanche danger</h1>
+                <button id="prev" type="button" aria-label="Previous day" disabled>‹</button>
+                <span class="date" id="date">—</span>
+                <button id="next" type="button" aria-label="Next day" disabled>›</button>
+                <button id="fullscreen" type="button" hidden>⤢</button>
+            </header>
+            <div class="stage">
+                <div id="map"></div>
+                <div id="svg"></div>
+                <div class="status" id="status">Loading…</div>
+                <div class="legend" id="legend"></div>
+                <div class="panel" id="panel" role="dialog" aria-live="polite">
+                    <button class="close" id="panel-close" type="button" aria-label="Close">×</button>
+                    <h2 id="panel-name"></h2>
+                    <div class="muted" id="panel-id"></div>
+                    <div class="rating">
+                        <span class="swatch" id="panel-swatch"></span><span id="panel-rating"></span>
+                    </div>
+                    <div class="actions">
+                        <button id="open-bulletin" type="button">Open bulletin</button>
+                        <button id="ask" type="button">Ask about this region</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+        <script>
+            "use strict";
+
+            // —— EAWS danger scale (exact standard colours; level 5 per SLF) ——
+            const RATINGS = [
+              { key: "low", level: 1, label: "1 Low", colour: "#ccff66" },
+              { key: "moderate", level: 2, label: "2 Moderate", colour: "#ffff00" },
+              { key: "considerable", level: 3, label: "3 Considerable", colour: "#ff9900" },
+              { key: "high", level: 4, label: "4 High", colour: "#ff0000" },
+              { key: "very_high", level: 5, label: "5 Very high", colour: "#820100" },
+            ];
+            const NO_RATING = { key: null, level: 0, label: "No bulletin", colour: "#9ca3af" };
+            const ratingFor = (key) => RATINGS.find((r) => r.key === key) || NO_RATING;
+
+            const BASEMAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+            const MAPLIBRE_TIMEOUT_MS = 8000;
+
+            // —— JSON-RPC over postMessage (the host is the peer) ——————————————
+            let nextId = 1;
+            const pending = new Map();
+            const notificationHandlers = {};
+            const requestHandlers = {
+              ping: () => ({}),
+              "ui/resource-teardown": () => ({}),
+            };
+
+            function send(message) {
+              window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+            }
+            function request(method, params) {
+              const id = nextId++;
+              send({ id, method, params });
+              return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+            }
+            function notify(method, params) {
+              send({ method, params });
+            }
+
+            window.addEventListener("message", (event) => {
+              if (event.source !== window.parent) return;
+              const msg = event.data;
+              if (!msg || msg.jsonrpc !== "2.0") return;
+              if (msg.method && "id" in msg) {
+                const handler = requestHandlers[msg.method];
+                if (handler) send({ id: msg.id, result: handler(msg.params || {}) });
+                else send({ id: msg.id, error: { code: -32601, message: `Unknown method: ${msg.method}` } });
+                return;
+              }
+              if (msg.method) {
+                const handler = notificationHandlers[msg.method];
+                if (handler) handler(msg.params || {});
+                return;
+              }
+              const entry = pending.get(msg.id);
+              if (!entry) return;
+              pending.delete(msg.id);
+              if (msg.error) entry.reject(new Error(msg.error.message || "Request failed"));
+              else entry.resolve(msg.result);
+            });
+
+            // —— State —————————————————————————————————————————————————————————
+            const state = {
+              hostContext: {},
+              hostCapabilities: {},
+              scope: null, // { country } or { major_region_id }
+              snapshot: null,
+              geometry: null,
+              geometryPromise: null,
+              selected: null,
+              renderer: null, // "maplibre" | "svg"
+            };
+            const $ = (id) => document.getElementById(id);
+
+            function setStatus(text) {
+              $("status").textContent = text || "";
+              $("status").style.display = text ? "grid" : "none";
+            }
+
+            function applyHostContext(ctx) {
+              Object.assign(state.hostContext, ctx);
+              const c = state.hostContext;
+              if (c.theme) document.documentElement.dataset.theme = c.theme;
+              if (c.displayMode) document.documentElement.dataset.display = c.displayMode;
+              const vars = c.styles && c.styles.variables;
+              if (vars) {
+                for (const [name, value] of Object.entries(vars)) {
+                  if (value) document.documentElement.style.setProperty(name, value);
+                }
+              }
+              const modes = c.availableDisplayModes || [];
+              $("fullscreen").hidden = !modes.includes("fullscreen");
+              $("fullscreen").textContent = c.displayMode === "fullscreen" ? "⤡" : "⤢";
+              if (state.map) state.map.resize();
+            }
+
+            // —— Data ——————————————————————————————————————————————————————————
+            function scopeFrom(args) {
+              if (args.major_region_id) return { major_region_id: args.major_region_id };
+              if (args.country) return { country: args.country };
+              return null;
+            }
+
+            function loadGeometry(scope) {
+              const key = JSON.stringify(scope);
+              if (state.geometryPromise && state.geometryKey === key) return state.geometryPromise;
+              state.geometryKey = key;
+              state.geometryPromise = request("tools/call", {
+                name: "get_danger_map_geometry",
+                arguments: scope,
+              }).then((result) => {
+                if (result.isError) throw new Error(textOf(result));
+                state.geometry = result.structuredContent;
+                return state.geometry;
+              });
+              return state.geometryPromise;
+            }
+
+            function textOf(result) {
+              const block = (result.content || []).find((c) => c.type === "text");
+              return block ? block.text : "Unknown error";
+            }
+
+            function receiveSnapshot(result) {
+              if (result.isError) {
+                setStatus(textOf(result));
+                return;
+              }
+              state.snapshot = result.structuredContent;
+              if (!state.scope) state.scope = scopeFrom(state.snapshot.scope || {});
+              $("title").textContent = `Avalanche danger · ${state.snapshot.scope_label || ""}`;
+              $("date").textContent = state.snapshot.date;
+              $("prev").disabled = $("next").disabled = false;
+              loadGeometry(state.scope)
+                .then(render)
+                .catch((err) => setStatus(`Could not load region boundaries: ${err.message}`));
+            }
+
+            function joinedFeatures() {
+              const byId = new Map((state.snapshot.regions || []).map((r) => [r.region_id, r]));
+              return {
+                type: "FeatureCollection",
+                features: state.geometry.features.map((f) => {
+                  const entry = byId.get(f.properties.region_id) || {};
+                  const rating = ratingFor(entry.danger_level);
+                  return {
+                    ...f,
+                    properties: { ...f.properties, level: rating.level, colour: rating.colour },
+                  };
+                }),
+              };
+            }
+
+            // —— Rendering —————————————————————————————————————————————————————
+            function render() {
+              if (!state.snapshot || !state.geometry) return;
+              if (!state.geometry.features.length) {
+                setStatus("No region boundaries in this scope.");
+                return;
+              }
+              if (state.renderer === "svg") return renderSvg();
+              if (state.renderer === "maplibre") return updateMapLibre();
+              startMapLibre();
+            }
+
+            function startMapLibre() {
+              if (typeof maplibregl === "undefined") return fallBackToSvg("MapLibre did not load");
+              state.renderer = "maplibre";
+              const timer = setTimeout(() => fallBackToSvg("MapLibre timed out"), MAPLIBRE_TIMEOUT_MS);
+              try {
+                const [w, s, e, n] = state.geometry.bbox;
+                state.map = new maplibregl.Map({
+                  container: "map",
+                  style: BASEMAP_STYLE,
+                  bounds: [[w, s], [e, n]],
+                  fitBoundsOptions: { padding: 24 },
+                  attributionControl: { compact: true },
+                  cooperativeGestures: true,
+                });
+              } catch (err) {
+                clearTimeout(timer);
+                return fallBackToSvg(err.message);
+              }
+              state.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+              state.map.on("load", () => {
+                clearTimeout(timer);
+                state.map.addSource("regions", { type: "geojson", data: joinedFeatures(), promoteId: "region_id" });
+                state.map.addLayer({
+                  id: "regions-fill",
+                  type: "fill",
+                  source: "regions",
+                  paint: {
+                    "fill-color": ["get", "colour"],
+                    "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.85, 0.6],
+                  },
+                });
+                state.map.addLayer({
+                  id: "regions-line",
+                  type: "line",
+                  source: "regions",
+                  paint: {
+                    "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#000000", "#ffffff"],
+                    "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 2, 0.5],
+                  },
+                });
+                state.map.on("click", "regions-fill", (e) => select(e.features[0].properties.region_id));
+                state.map.on("mouseenter", "regions-fill", () => (state.map.getCanvas().style.cursor = "pointer"));
+                state.map.on("mouseleave", "regions-fill", () => (state.map.getCanvas().style.cursor = ""));
+                setStatus("");
+              });
+            }
+
+            function updateMapLibre() {
+              const source = state.map && state.map.getSource("regions");
+              if (source) source.setData(joinedFeatures());
+              if (state.selected) showPanel(state.selected);
+            }
+
+            function fallBackToSvg(reason) {
+              console.warn(`danger map: SVG fallback (${reason})`);
+              if (state.map) {
+                try { state.map.remove(); } catch (_) { /* already torn down */ }
+                state.map = null;
+              }
+              state.renderer = "svg";
+              $("map").style.display = "none";
+              $("svg").style.display = "block";
+              renderSvg();
+            }
+
+            function renderSvg() {
+              const [w, s, e, n] = state.geometry.bbox;
+              const kx = Math.cos(((s + n) / 2) * (Math.PI / 180));
+              const width = (e - w) * kx;
+              const height = n - s;
+              const project = ([lon, lat]) => `${((lon - w) * kx).toFixed(5)},${(n - lat).toFixed(5)}`;
+              const ringPath = (ring) => `M${ring.map(project).join("L")}Z`;
+              const polygons = (g) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates);
+              const ns = "http://www.w3.org/2000/svg";
+              const svg = document.createElementNS(ns, "svg");
+              const pad = Math.max(width, height) * 0.03;
+              svg.setAttribute("viewBox", `${-pad} ${-pad} ${width + 2 * pad} ${height + 2 * pad}`);
+              svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+              for (const f of joinedFeatures().features) {
+                const path = document.createElementNS(ns, "path");
+                path.setAttribute("d", polygons(f.geometry).map((p) => p.map(ringPath).join("")).join(""));
+                path.setAttribute("fill", f.properties.colour);
+                path.setAttribute("fill-rule", "evenodd");
+                path.setAttribute("vector-effect", "non-scaling-stroke");
+                path.addEventListener("click", () => select(f.properties.region_id));
+                const title = document.createElementNS(ns, "title");
+                title.textContent = f.properties.name;
+                path.appendChild(title);
+                svg.appendChild(path);
+              }
+              $("svg").replaceChildren(svg);
+              setStatus("");
+              if (state.selected) showPanel(state.selected);
+            }
+
+            // —— Selection and host actions ———————————————————————————————————————
+            function regionEntry(regionId) {
+              return (state.snapshot.regions || []).find((r) => r.region_id === regionId);
+            }
+
+            function select(regionId) {
+              if (state.map && state.selected) {
+                state.map.setFeatureState({ source: "regions", id: state.selected }, { selected: false });
+              }
+              state.selected = regionId;
+              if (state.map) state.map.setFeatureState({ source: "regions", id: regionId }, { selected: true });
+              showPanel(regionId);
+              const entry = regionEntry(regionId);
+              if (entry) {
+                // Tell the model what the user is looking at, without starting a turn.
+                request("ui/update-model-context", {
+                  content: [{
+                    type: "text",
+                    text: `The user selected ${entry.name} (${entry.region_id}) on the danger map for ${state.snapshot.date}: ${ratingFor(entry.danger_level).label}.`,
+                  }],
+                }).catch(() => {});
+              }
+            }
+
+            function showPanel(regionId) {
+              const entry = regionEntry(regionId);
+              if (!entry) return closePanel();
+              const rating = ratingFor(entry.danger_level);
+              $("panel-name").textContent = entry.name;
+              $("panel-id").textContent = entry.region_id;
+              $("panel-swatch").style.background = rating.colour;
+              $("panel-rating").textContent =
+                entry.min_rating && entry.min_rating !== entry.danger_level
+                  ? `${rating.label} (min ${ratingFor(entry.min_rating).label})`
+                  : rating.label;
+              $("open-bulletin").disabled = !entry.url || !state.hostCapabilities.openLinks;
+              $("panel").classList.add("open");
+            }
+
+            function closePanel() {
+              if (state.map && state.selected) {
+                state.map.setFeatureState({ source: "regions", id: state.selected }, { selected: false });
+              }
+              state.selected = null;
+              $("panel").classList.remove("open");
+            }
+
+            $("panel-close").addEventListener("click", closePanel);
+            $("open-bulletin").addEventListener("click", () => {
+              const entry = regionEntry(state.selected);
+              if (entry && entry.url) request("ui/open-link", { url: entry.url }).catch(() => {});
+            });
+            $("ask").addEventListener("click", () => {
+              const entry = regionEntry(state.selected);
+              if (!entry) return;
+              request("ui/message", {
+                role: "user",
+                content: [{
+                  type: "text",
+                  text: `What are the avalanche problems in ${entry.name} (${entry.region_id}) on ${state.snapshot.date}?`,
+                }],
+              }).catch(() => {});
+            });
+
+            function shiftDay(days) {
+              if (!state.snapshot || !state.scope) return;
+              const d = new Date(`${state.snapshot.date}T12:00:00Z`);
+              d.setUTCDate(d.getUTCDate() + days);
+              $("prev").disabled = $("next").disabled = true;
+              request("tools/call", {
+                name: "show_danger_map",
+                arguments: { ...state.scope, date: d.toISOString().slice(0, 10) },
+              })
+                .then(receiveSnapshot)
+                .catch((err) => setStatus(err.message));
+            }
+            $("prev").addEventListener("click", () => shiftDay(-1));
+            $("next").addEventListener("click", () => shiftDay(1));
+            $("fullscreen").addEventListener("click", () => {
+              const mode = state.hostContext.displayMode === "fullscreen" ? "inline" : "fullscreen";
+              request("ui/request-display-mode", { mode })
+                .then((result) => applyHostContext({ displayMode: result.mode }))
+                .catch(() => {});
+            });
+
+            // —— Legend ————————————————————————————————————————————————————————
+            for (const r of RATINGS) {
+              const chip = document.createElement("span");
+              chip.textContent = r.level;
+              chip.title = r.label;
+              chip.style.background = r.colour;
+              if (r.level === 5) chip.className = "l5";
+              $("legend").appendChild(chip);
+            }
+
+            // —— Host notifications and handshake ————————————————————————————————
+            notificationHandlers["ui/notifications/tool-input"] = ({ arguments: args }) => {
+              state.scope = scopeFrom(args || {});
+              if (state.scope) loadGeometry(state.scope).catch(() => {}); // start early; the result reuses it
+            };
+            notificationHandlers["ui/notifications/tool-result"] = receiveSnapshot;
+            notificationHandlers["ui/notifications/tool-cancelled"] = () => setStatus("Cancelled.");
+            notificationHandlers["ui/notifications/host-context-changed"] = applyHostContext;
+
+            new ResizeObserver(() => {
+              const box = document.documentElement.getBoundingClientRect();
+              notify("ui/notifications/size-changed", { width: Math.ceil(box.width), height: Math.ceil(box.height) });
+            }).observe(document.documentElement);
+
+            request("ui/initialize", {
+              protocolVersion: "2026-01-26",
+              appInfo: { name: "snowdesk-danger-map", version: "0.1.0" },
+              appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+            })
+              .then((result) => {
+                state.hostCapabilities = result.hostCapabilities || {};
+                applyHostContext(result.hostContext || {});
+                notify("ui/notifications/initialized", {});
+                setStatus("Waiting for data…");
+              })
+              .catch((err) => setStatus(`Host handshake failed: ${err.message}`));
+        </script>
+    </body>
+</html>

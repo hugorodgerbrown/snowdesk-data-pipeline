@@ -18,6 +18,15 @@
         "DANGEROUSLY_OMIT_AUTH=true MCP_AUTO_OPEN_ENABLED=false exec npx @modelcontextprotocol/inspector"
       ],
       "port": 6274
+    },
+    {
+      "name": "MCP App host",
+      "runtimeExecutable": "sh",
+      "autoPort": true,
+      "runtimeArgs": [
+        "-c",
+        "exec .venv/bin/python bin/mcp-app-host --port \"$PORT\""
+      ]
     }
   ]
 }

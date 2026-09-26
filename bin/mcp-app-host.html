@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>MCP App host</title>
+        <style>
+            body {
+                max-width: 980px;
+                margin: 16px;
+                font: 13px/1.4 system-ui, sans-serif;
+            }
+            fieldset {
+                margin: 0 0 12px;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+            }
+            input, select, button {
+                font: inherit;
+            }
+            input[type='text'] {
+                width: 22em;
+            }
+            #frame-wrap {
+                overflow: hidden;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+            }
+            #frame-wrap.fullscreen {
+                z-index: 10;
+                position: fixed;
+                inset: 0;
+                border-radius: 0;
+                background: #fff;
+            }
+            iframe {
+                display: block;
+                width: 100%;
+                height: 480px;
+                border: 0;
+            }
+            #frame-wrap.fullscreen iframe {
+                height: 100vh;
+            }
+            #log {
+                max-height: 320px;
+                margin-top: 12px;
+                padding: 8px;
+                overflow: auto;
+                border-radius: 6px;
+                background: #f6f6f6;
+                font: 11px/1.35 ui-monospace, monospace;
+                white-space: pre-wrap;
+            }
+            .out {
+                color: #0550ae;
+            }
+            .in {
+                color: #116329;
+            }
+            .note {
+                color: #6e7781;
+            }
+        </style>
+    </head>
+    <body>
+        <fieldset>
+            <legend>Tool call</legend>
+            <label>Tool <select id="tool"></select></label>
+            <label>Arguments <input type="text" id="args" value='{"country": "CH"}'></label>
+            <label>Token <input
+                    type="password"
+                    id="token"
+                    autocomplete="off"
+                    placeholder="mint_mcp_token --commit"
+                ></label>
+            <label>Theme <select id="theme">
+                    <option>light</option>
+                    <option>dark</option>
+                </select></label>
+            <button id="run">Call tool</button>
+            <span id="csp" class="note"></span>
+        </fieldset>
+        <div id="frame-wrap"></div>
+        <div id="log"></div>
+        <script>
+            "use strict";
+            const params = new URLSearchParams(location.search);
+            const MCP_TARGET = params.get("mcp") || "http://localhost:8000/api/mcp/";
+            const BLOB_WORKER = params.get("worker") === "blob";
+            const $ = (id) => document.getElementById(id);
+            const log = (cls, text) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; $("log").prepend(d); };
+            const short = (v) => { const s = JSON.stringify(v); return s.length > 400 ? s.slice(0, 400) + "…" : s; };
+
+            // The endpoint needs a bearer token (SNOW-1035). Kept in
+            // sessionStorage so a reload keeps it; never put in the URL.
+            try { $("token").value = sessionStorage.getItem("mcp-app-host:token") || ""; } catch (e) {}
+            $("token").addEventListener("change", () => {
+              try { sessionStorage.setItem("mcp-app-host:token", $("token").value.trim()); } catch (e) {}
+              connect();
+            });
+
+            let rpcId = 1, tools = [];
+            async function server(method, params) {
+              const headers = { "Content-Type": "application/json" };
+              const token = $("token").value.trim();
+              if (token) headers.Authorization = "Bearer " + token;
+              const res = await fetch("/mcp?target=" + encodeURIComponent(MCP_TARGET), {
+                method: "POST", headers,
+                body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method, params }),
+              });
+              if (res.status === 401) {
+                log("note", "401 from the MCP endpoint — mint a token with `manage.py mint_mcp_token --email <you> --commit` and paste it into Token.");
+                throw new Error("401 Unauthorized");
+              }
+              const body = await res.json();
+              if (body.error) throw Object.assign(new Error(body.error.message), { rpc: body.error });
+              return body.result;
+            }
+
+            function buildCsp(csp = {}) {
+              const res = (csp.resourceDomains || []).join(" ");
+              const conn = (csp.connectDomains || []).join(" ");
+              return [
+                "default-src 'none'",
+                `script-src 'self' 'unsafe-inline' ${res}`,
+                `style-src 'self' 'unsafe-inline' ${res}`,
+                `img-src 'self' data: blob: ${res}`,
+                `font-src 'self' ${res}`,
+                `media-src 'self' data: ${res}`,
+                `connect-src ${conn || "'none'"}`,
+                (csp.frameDomains || []).length ? `frame-src ${csp.frameDomains.join(" ")}` : "frame-src 'none'",
+                "object-src 'none'",
+                BLOB_WORKER ? "worker-src blob:" : null,
+              ].filter(Boolean).join("; ");
+            }
+
+            let view = null; // { frame, tool, args, initialized }
+            const hostContext = () => ({
+              theme: $("theme").value, displayMode: $("frame-wrap").classList.contains("fullscreen") ? "fullscreen" : "inline",
+              availableDisplayModes: ["inline", "fullscreen"], platform: "web", locale: navigator.language,
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, containerDimensions: { maxHeight: 800 },
+            });
+            const toView = (msg) => { log("out", "host → view  " + short(msg)); view.frame.contentWindow.postMessage({ jsonrpc: "2.0", ...msg }, "*"); };
+
+            async function onViewRequest(msg) {
+              const reply = (result) => toView({ id: msg.id, result });
+              const fail = (code, message) => toView({ id: msg.id, error: { code, message } });
+              switch (msg.method) {
+                case "ui/initialize":
+                  return reply({ protocolVersion: "2026-01-26", hostInfo: { name: "snowdesk-mcp-app-host", version: "0.1.0" },
+                    hostCapabilities: { openLinks: {}, serverTools: {}, logging: {} }, hostContext: hostContext() });
+                case "tools/call": {
+                  const spec = tools.find((t) => t.name === msg.params.name);
+                  const vis = spec?._meta?.ui?.visibility || ["model", "app"];
+                  if (!spec || !vis.includes("app")) return fail(-32602, "Tool not callable by app: " + msg.params.name);
+                  try { return reply(await server("tools/call", msg.params)); } catch (e) { return fail(e.rpc?.code || -32603, e.message); }
+                }
+                case "resources/read":
+                  try { return reply(await server("resources/read", msg.params)); } catch (e) { return fail(-32603, e.message); }
+                case "ui/open-link": window.open(msg.params.url, "_blank", "noopener"); return reply({});
+                case "ui/message": log("note", "[ui/message → chat] " + msg.params.content.map((c) => c.text).join(" ")); return reply({});
+                case "ui/update-model-context": log("note", "[model context] " + short(msg.params)); return reply({});
+                case "ui/request-display-mode":
+                  $("frame-wrap").classList.toggle("fullscreen", msg.params.mode === "fullscreen");
+                  return reply({ mode: hostContext().displayMode });
+                case "ping": return reply({});
+                default: return fail(-32601, "Unknown method: " + msg.method);
+              }
+            }
+
+            async function onViewNotification(msg) {
+              if (msg.method === "ui/notifications/initialized") {
+                toView({ method: "ui/notifications/tool-input", params: { arguments: view.args } });
+                const result = await server("tools/call", { name: view.tool.name, arguments: view.args });
+                toView({ method: "ui/notifications/tool-result", params: result });
+              } else if (msg.method === "ui/notifications/size-changed" && !hostContext().displayMode.includes("full")) {
+                view.frame.style.height = Math.min(msg.params.height, 800) + "px";
+              }
+            }
+
+            window.addEventListener("message", (event) => {
+              if (!view || event.source !== view.frame.contentWindow) return;
+              const msg = event.data;
+              if (!msg || msg.jsonrpc !== "2.0") return;
+              log("in", "view → host  " + short(msg));
+              if (msg.method && "id" in msg) onViewRequest(msg);
+              else if (msg.method) onViewNotification(msg);
+            });
+
+            $("theme").addEventListener("change", () => view && toView({ method: "ui/notifications/host-context-changed", params: { theme: $("theme").value } }));
+
+            $("run").addEventListener("click", async () => {
+              const tool = tools.find((t) => t.name === $("tool").value);
+              const args = JSON.parse($("args").value || "{}");
+              const uri = tool?._meta?.ui?.resourceUri;
+              if (!uri) { log("note", "Tool has no _meta.ui.resourceUri: " + short(await server("tools/call", { name: tool.name, arguments: args }))); return; }
+              const { contents: [content] } = await server("resources/read", { uri });
+              const csp = buildCsp(content._meta?.ui?.csp);
+              $("csp").textContent = "CSP: " + csp;
+              const html = content.text.replace(/<head>/i, `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`);
+              const frame = document.createElement("iframe");
+              frame.setAttribute("sandbox", "allow-scripts");
+              frame.srcdoc = html;
+              $("frame-wrap").replaceChildren(frame);
+              view = { frame, tool, args };
+              log("note", `rendered ${uri} for ${tool.name}(${short(args)})`);
+            });
+
+            function connect() {
+              $("tool").replaceChildren();
+              return server("initialize", { protocolVersion: "2025-06-18", clientInfo: { name: "mcp-app-host", version: "0.1.0" },
+              capabilities: { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } } })
+              .then(() => server("tools/list"))
+              .then((r) => {
+                tools = r.tools;
+                for (const t of tools.filter((t) => (t._meta?.ui?.visibility || ["model"]).includes("model"))) {
+                  const o = document.createElement("option"); o.textContent = t.name; o.selected = !!t._meta?.ui?.resourceUri && !$("tool").value.includes("show");
+                  $("tool").appendChild(o);
+                }
+                log("note", `connected to ${MCP_TARGET}: ${tools.length} tools`);
+              })
+              .catch((e) => log("note", "connect failed: " + e.message));
+            }
+            connect();
+        </script>
+    </body>
+</html>

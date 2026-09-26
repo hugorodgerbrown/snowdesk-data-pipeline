@@ -3,8 +3,8 @@ tests/mcp_server/test_protocol.py — Tests for apps.mcp_server.protocol.
 
 Covers the JSON-RPC 2.0 envelope (every reserved error code), the MCP
 handshake methods (``initialize``, ``notifications/initialized``,
-``ping``), and the tool-invocation methods (``tools/list``,
-``tools/call``).
+``ping``), the tool-invocation methods (``tools/list``, ``tools/call``),
+and the MCP Apps resource methods (``resources/list``, ``resources/read``).
 
 The ``tools/call`` section also exercises every ``_handle_*`` adapter in
 ``apps.mcp_server.tools`` end-to-end (the dispatcher entry point a real MCP
@@ -28,6 +28,11 @@ from freezegun import freeze_time
 from apps.bulletins.models import RegionDayRating
 from apps.mcp_server import protocol
 from apps.mcp_server.tools import TOOLS
+from apps.mcp_server.ui_resources import (
+    DANGER_MAP_URI,
+    RESOURCE_MIME_TYPE,
+    UI_RESOURCES,
+)
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -90,7 +95,7 @@ def test_non_object_params_is_invalid_params() -> None:
 
 def test_unknown_method_is_method_not_found() -> None:
     """An unrecognised method is -32601 Method Not Found."""
-    response = protocol.dispatch(_request("resources/list"))
+    response = protocol.dispatch(_request("prompts/list"))
     assert response is not None
     assert response["error"]["code"] == protocol.METHOD_NOT_FOUND
 
@@ -209,10 +214,77 @@ def test_tools_list_returns_all_registered_tools() -> None:
         "region_info",
         "list_locations_in_region",
         "get_location_weather",
+        "show_danger_map",
+        "get_danger_map_geometry",
     }
     for tool in response["result"]["tools"]:
         assert tool["description"]
         assert tool["inputSchema"]["type"] == "object"
+
+
+def test_tools_list_carries_meta_only_for_app_tools() -> None:
+    """Only the MCP Apps tools carry ``_meta.ui``; the rest have no ``_meta``."""
+    response = protocol.dispatch(_request("tools/list"))
+    assert response is not None
+    by_name = {t["name"]: t for t in response["result"]["tools"]}
+    assert by_name["show_danger_map"]["_meta"] == {
+        "ui": {"resourceUri": DANGER_MAP_URI}
+    }
+    assert by_name["get_danger_map_geometry"]["_meta"]["ui"]["visibility"] == ["app"]
+    assert "_meta" not in by_name["search_regions"]
+
+
+# ---------------------------------------------------------------------------
+# resources/list, resources/read (MCP Apps)
+# ---------------------------------------------------------------------------
+
+
+def test_initialize_advertises_resources_capability() -> None:
+    """``initialize`` advertises ``resources`` beside ``tools``."""
+    response = protocol.dispatch(_request("initialize", {}))
+    assert response is not None
+    assert response["result"]["capabilities"] == {"tools": {}, "resources": {}}
+
+
+def test_resources_list_returns_the_danger_map_view() -> None:
+    """``resources/list`` lists the ui:// view with the Apps MIME type."""
+    response = protocol.dispatch(_request("resources/list"))
+    assert response is not None
+    assert response["result"]["resources"] == [
+        {
+            "uri": DANGER_MAP_URI,
+            "name": "Avalanche danger map",
+            "description": UI_RESOURCES[DANGER_MAP_URI].description,
+            "mimeType": RESOURCE_MIME_TYPE,
+        }
+    ]
+
+
+def test_resources_read_returns_html_and_csp() -> None:
+    """``resources/read`` returns the view's HTML with its CSP in ``_meta.ui``."""
+    response = protocol.dispatch(_request("resources/read", {"uri": DANGER_MAP_URI}))
+    assert response is not None
+    [content] = response["result"]["contents"]
+    assert content["uri"] == DANGER_MAP_URI
+    assert content["mimeType"] == RESOURCE_MIME_TYPE
+    assert content["text"].startswith("<!DOCTYPE html>")
+    assert content["_meta"]["ui"]["csp"]["connectDomains"] == [
+        "https://tiles.openfreemap.org"
+    ]
+
+
+def test_resources_read_unknown_uri_is_resource_not_found() -> None:
+    """An unknown URI is MCP's -32002 resource-not-found error."""
+    response = protocol.dispatch(_request("resources/read", {"uri": "ui://nope"}))
+    assert response is not None
+    assert response["error"]["code"] == protocol.RESOURCE_NOT_FOUND
+
+
+def test_resources_read_missing_uri_is_invalid_params() -> None:
+    """A missing ``uri`` is -32602 Invalid Params."""
+    response = protocol.dispatch(_request("resources/read", {}))
+    assert response is not None
+    assert response["error"]["code"] == protocol.INVALID_PARAMS
 
 
 # ---------------------------------------------------------------------------

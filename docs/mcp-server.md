@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, fifteen read-only tools over regions, bulletins, weather
+description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, seventeen read-only tools, resources/read, MCP Apps show_danger_map view
 status: current
 last-reviewed: 2026-09-26
 ---
@@ -88,15 +88,17 @@ token model are in [`docs/oauth.md`](oauth.md). What the MCP endpoint does:
 
 | Method | Notes |
 |--------|-------|
-| `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
+| `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}, "resources": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all fifteen tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all seventeen tools below with `name`, `description`, `inputSchema`, and `_meta` for the two MCP Apps tools. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
+| `resources/list` | Lists the MCP Apps `ui://` views (see [MCP Apps](#mcp-apps-danger-map-view)). |
+| `resources/read` | `{"uri": "ui://…"}` → the view's HTML plus `_meta.ui.csp`; an unknown URI is `-32002`. |
 
 ## Tools
 
-All fifteen are implemented in `apps/mcp_server/tools.py`, composed from
+All seventeen are implemented in `apps/mcp_server/tools.py`, composed from
 services that already exist elsewhere in the codebase — no new query
 logic.
 
@@ -479,6 +481,89 @@ wants visibility into.
   `bulk_current_conditions` are the exceptions — they cover a scope or a
   batch in one call.
 
+## MCP Apps: danger-map view
+
+A spike of the [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
+(`io.modelcontextprotocol/ui`, spec revision `2026-01-26`): a tool whose
+`tools/list` entry carries `_meta.ui.resourceUri` is rendered by an
+Apps-capable host (Claude, Claude Desktop) as an interactive HTML view in
+the conversation. A host without Apps support ignores `_meta` and shows
+the text result, so nothing is negotiated per client — the server is
+stateless and always advertises the metadata.
+
+### `show_danger_map`
+
+`get_regional_snapshot` plus a dated bulletin page `url` per region and a
+`scope_label`, with `_meta.ui.resourceUri = "ui://snowdesk/danger-map.html"`.
+
+* **Params:** as `get_regional_snapshot` — exactly one of `country` /
+  `major_region_id`, optional `date`.
+
+### `get_danger_map_geometry`
+
+The region boundaries in the same scope as a GeoJSON FeatureCollection
+(`features[].properties = {region_id, name}`, `bbox`). Carries
+`_meta.ui.visibility = ["app"]`: the host keeps it out of the model's tool
+list and only the view calls it, so ~150 KB of Swiss coordinates never
+reach the model's context. A generic MCP client with no Apps support still
+sees it in `tools/list`.
+
+### The view
+
+`apps/mcp_server/ui/danger_map.html`, registered in
+`apps/mcp_server/ui_resources.py`. It speaks the postMessage JSON-RPC
+dialect directly, without the `@modelcontextprotocol/ext-apps` SDK:
+
+1. `ui/initialize` → `ui/notifications/initialized`.
+2. `ui/notifications/tool-input` gives the scope; the view starts the
+   `get_danger_map_geometry` call at once, before the result arrives.
+3. `ui/notifications/tool-result` gives the snapshot; the view joins the
+   ratings onto the boundaries and draws them in the EAWS colours.
+4. The ‹ › buttons call `show_danger_map` for the neighbouring day through
+   the host's `tools/call` proxy. Clicking a region sends
+   `ui/update-model-context` (the model learns the selection without a new
+   turn); the panel's buttons send `ui/open-link` (bulletin page) and
+   `ui/message` (a follow-up question in the chat).
+
+The view loads MapLibre 4.7.1 from `cdn.jsdelivr.net` and the OpenFreeMap
+Liberty basemap from `tiles.openfreemap.org`; both origins are declared in
+the resource's `_meta.ui.csp`. MapLibre starts its worker from a `blob:`
+URL, and the spec's CSP has no `worker-src` directive, so a host that
+builds its policy strictly from the spec refuses the worker. The view
+detects that (no `load` within 8 s, or no `maplibregl` global) and falls
+back to an SVG choropleth drawn from the same GeoJSON, with no basemap.
+Which path Claude's sandbox takes is not yet measured.
+
+### Testing locally
+
+Claude cannot reach a localhost server as a connector. `bin/mcp-app-host`
+is a minimal host for the Browser pane (launch config "MCP App host"): it
+calls a tool, fetches the view with `resources/read`, renders it in a
+`sandbox="allow-scripts"` iframe under a CSP built from `_meta.ui.csp`,
+answers the view's `ui/*` requests, proxies its `tools/call` (refusing a
+tool whose visibility excludes `"app"`), and logs every message.
+
+```text
+http://localhost:<host port>/?mcp=http://localhost:<django port>/api/mcp/
+```
+
+The endpoint needs a bearer token, so mint one and paste it into the
+page's **Token** field (kept in `sessionStorage`; the host forwards it as
+`Authorization: Bearer …` and reconnects):
+
+```bash
+uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0
+```
+
+The token's audience defaults to `SITE_BASE_URL` + `/api/mcp/`; if Django
+runs on a different port, pass `--resource http://localhost:<port>/api/mcp/`.
+With no token, or a rejected one, the host logs the `401`.
+
+Add `&worker=blob` to allow `worker-src blob:` and see the MapLibre path.
+To test inside Claude itself, expose the dev server through a tunnel and
+add the tunnel's `/api/mcp/` URL as a custom connector; Claude runs the
+OAuth flow in [Authentication](#authentication) to connect.
+
 ## Error codes
 
 Standard JSON-RPC 2.0 reserved codes (`apps/mcp_server/protocol.py`):
@@ -487,7 +572,8 @@ Standard JSON-RPC 2.0 reserved codes (`apps/mcp_server/protocol.py`):
 |------|---------|------|
 | `-32700` | Parse error | Request body isn't valid JSON. |
 | `-32600` | Invalid Request | Not a JSON object, wrong/missing `jsonrpc`, missing `method`. |
-| `-32601` | Method not found | Unrecognised top-level JSON-RPC method (e.g. `resources/list`). |
+| `-32601` | Method not found | Unrecognised top-level JSON-RPC method (e.g. `prompts/list`). |
+| `-32002` | Resource not found | `resources/read` of a URI no view holds (MCP's code, not a JSON-RPC reserved one). |
 | `-32602` | Invalid params | `params`/`arguments` not an object, or `tools/call` names an unregistered tool. |
 | `-32603` | Internal error | An unhandled exception in a method handler — logged server-side, generic message to the client. |
 
@@ -560,11 +646,9 @@ challenge.
   alphabetically-first child `MicroRegion`'s `region_id` — a best-effort
   representative for major regions with multiple children, since a major
   region has no bulletin page of its own.
-* **No `resources/*` capability.** Reference data (`list_regions`,
-  `region_info`) is exposed as `tools/call` methods, not as MCP
-  `resources/list` / `resources/read` — `initialize` advertises only
-  `capabilities: {"tools": {}}`. A `resources/*` request is unrecognised
-  (`-32601`), same as any other unimplemented top-level method.
+* **Resources are views only.** Reference data (`list_regions`,
+  `region_info`) is exposed as `tools/call` methods, not as MCP resources;
+  `resources/list` holds only the MCP Apps `ui://` views.
 
 ## See also
 

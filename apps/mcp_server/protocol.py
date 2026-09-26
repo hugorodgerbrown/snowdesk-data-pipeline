@@ -4,7 +4,9 @@ apps/mcp_server/protocol.py — JSON-RPC 2.0 envelope + MCP method router.
 Implements just enough of JSON-RPC 2.0 (https://www.jsonrpc.org/specification)
 and the MCP method set (https://modelcontextprotocol.io) for a stateless,
 POST-only tool server: ``initialize``, ``notifications/initialized``,
-``ping``, ``tools/list``, and ``tools/call``. No session state, no
+``ping``, ``tools/list``, ``tools/call``, and — for the MCP Apps views in
+``apps.mcp_server.ui_resources`` — ``resources/list`` and
+``resources/read``. No session state, no
 server-initiated messages, no batching — every call is a single request in,
 a single response (or, for a notification, no response at all) out.
 
@@ -20,6 +22,7 @@ from typing import Any, NamedTuple
 from django.conf import settings
 
 from apps.mcp_server.tools import TOOLS, ToolError
+from apps.mcp_server.ui_resources import UI_RESOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,8 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+#: MCP's code for a ``resources/read`` of a URI the server does not hold.
+RESOURCE_NOT_FOUND = -32002
 
 
 class ProtocolError(Exception):
@@ -248,7 +253,7 @@ def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "protocolVersion": negotiated,
-        "capabilities": {"tools": {}},
+        "capabilities": {"tools": {}, "resources": {}},
         "serverInfo": {"name": "snowdesk", "version": settings.APP_VERSION},
     }
 
@@ -279,16 +284,61 @@ def _handle_tools_list(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG00
         ``name``, ``description``, and ``inputSchema``.
 
     """
-    return {
-        "tools": [
-            {
-                "name": spec.name,
-                "description": spec.description,
-                "inputSchema": spec.input_schema,
-            }
-            for spec in TOOLS.values()
-        ]
+    return {"tools": [_tool_listing(spec) for spec in TOOLS.values()]}
+
+
+def _tool_listing(spec: Any) -> dict[str, Any]:
+    """Return one ``tools/list`` entry, with ``_meta`` only when the tool has any.
+
+    Args:
+        spec: A :class:`apps.mcp_server.tools.ToolSpec`.
+
+    Returns:
+        ``name``, ``description``, ``inputSchema`` and, for a tool that
+        opens an MCP Apps view, ``_meta.ui``.
+
+    """
+    entry = {
+        "name": spec.name,
+        "description": spec.description,
+        "inputSchema": spec.input_schema,
     }
+    if spec.meta:
+        entry["_meta"] = spec.meta
+    return entry
+
+
+def _handle_resources_list(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001 — no pagination, so no params
+    """Handle ``resources/list`` — advertise the MCP Apps ``ui://`` views.
+
+    Returns:
+        ``{"resources": [...]}`` — one entry per view.
+
+    """
+    return {"resources": [resource.listing() for resource in UI_RESOURCES.values()]}
+
+
+def _handle_resources_read(params: dict[str, Any]) -> dict[str, Any]:
+    """Handle ``resources/read`` — return one view's HTML and CSP metadata.
+
+    Args:
+        params: ``{"uri": <ui:// uri>}``.
+
+    Returns:
+        ``{"contents": [...]}`` with the single matching content item.
+
+    Raises:
+        ProtocolError: ``INVALID_PARAMS`` when ``uri`` is missing, or
+            ``RESOURCE_NOT_FOUND`` when no view has that URI.
+
+    """
+    uri = params.get("uri")
+    if not isinstance(uri, str) or not uri:
+        raise ProtocolError(INVALID_PARAMS, "Missing or invalid 'uri'")
+    resource = UI_RESOURCES.get(uri)
+    if resource is None:
+        raise ProtocolError(RESOURCE_NOT_FOUND, f"Resource not found: {uri}")
+    return {"contents": [resource.contents()]}
 
 
 def _handle_tools_call(params: dict[str, Any]) -> dict[str, Any]:
@@ -340,4 +390,6 @@ _METHOD_HANDLERS: dict[str, Any] = {
     "ping": _handle_ping,
     "tools/list": _handle_tools_list,
     "tools/call": _handle_tools_call,
+    "resources/list": _handle_resources_list,
+    "resources/read": _handle_resources_read,
 }

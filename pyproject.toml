@@ -265,6 +265,7 @@ extend-include = [
     "bin/fidelity-lint",
     "bin/i18n-lint",
     "bin/js-globals-lint",
+    "bin/mcp-app-host",
     "bin/migrations-lint",
     "bin/render-churn",
     "bin/render-day-summary-matrix",
