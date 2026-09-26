@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from unittest import mock
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 import pytest
@@ -23,6 +24,7 @@ from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 
 from apps.oauth.models import OAuthClient, OAuthGrant
+from apps.oauth.services import clients
 from apps.oauth.services.pkce import s256_challenge
 from apps.oauth.services.tokens import hash_secret, issue_code, issue_token_pair
 from tests.factories import (
@@ -394,6 +396,7 @@ class TestAuthorizeGet:
         self, client: Client
     ) -> None:
         """An unknown client_id gets the error page, never a redirect."""
+        client.force_login(_verified_user())
         response = client.get(
             f"{reverse('oauth:authorize')}?"
             + urlencode({"client_id": "nope", "redirect_uri": "https://evil.test/"})
@@ -405,8 +408,37 @@ class TestAuthorizeGet:
         assert b'href="https://evil.test' not in response.content
         assert b"url=https://evil.test" not in response.content
 
+    def test_anonymous_request_never_fetches_client_metadata(
+        self, client: Client
+    ) -> None:
+        """An anonymous visitor goes to sign-in before any CIMD fetch."""
+        with mock.patch.object(clients, "fetch_client_metadata") as fetch:
+            response = client.get(
+                f"{reverse('oauth:authorize')}?"
+                + urlencode(
+                    {
+                        "client_id": "https://attacker.test/meta.json",
+                        "redirect_uri": "https://attacker.test/cb",
+                    }
+                )
+            )
+        fetch.assert_not_called()
+        assert response.status_code == 302
+        assert response["Location"].startswith(reverse("accounts:sign_in"))
+
+    def test_rate_limit(self, client: Client, settings: Settings) -> None:
+        """The 31st authorize request in a minute from one IP is 429."""
+        settings.RATELIMIT_ENABLE = True
+        url = reverse("oauth:authorize")
+        with freeze_time("2026-09-26 10:05:00"):
+            for _ in range(30):
+                client.get(url)
+            limited = client.get(url)
+        assert limited.status_code == 429
+
     def test_unregistered_redirect_renders_error(self, client: Client) -> None:
         """A redirect_uri the client never registered is not followed."""
+        client.force_login(_verified_user())
         oauth_client = OAuthClientFactory.create()
         response = client.get(
             _authorize_url(oauth_client, redirect_uri="https://evil.test/cb")

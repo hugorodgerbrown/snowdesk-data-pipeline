@@ -318,13 +318,12 @@ def _rotate(token: OAuthToken, *, resource: str | None, scope: str | None) -> To
     pair, new_refresh = issue_token_pair(
         token.grant, resource=token.resource, scope=new_scope
     )
-    if new_refresh is not None:
-        token.replaced_by = new_refresh
-        token.save(update_fields=["replaced_by", "updated_at"])
-    else:
-        # Narrowed to no offline_access: nothing replaces it, so retire it.
-        token.revoked_at = timezone.now()
-        token.save(update_fields=["revoked_at", "updated_at"])
+    # Mark the token spent whether or not a successor exists: a refresh that
+    # narrows away offline_access issues no new refresh token, and a replay
+    # of this one must still count as reuse.
+    token.consumed_at = timezone.now()
+    token.replaced_by = new_refresh
+    token.save(update_fields=["consumed_at", "replaced_by", "updated_at"])
     return pair
 
 
@@ -366,7 +365,7 @@ def refresh(
         )
         if token is None or token.grant.client_id != client.pk:
             raise OAuthError("invalid_grant", "Unknown refresh token.")
-        if token.replaced_by_id is not None:
+        if token.consumed_at is not None:
             reused_grant = token.grant
         elif token.revoked_at is not None or token.grant.revoked_at is not None:
             raise OAuthError("invalid_grant", "The refresh token has been revoked.")

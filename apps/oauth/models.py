@@ -388,7 +388,8 @@ class OAuthToken(BaseModel):
     """An access token (one hour) or a refresh token (thirty days).
 
     A refresh token is rotated on every use: the old row gains
-    ``replaced_by`` pointing at its successor and is never accepted again.
+    ``consumed_at`` (and ``replaced_by``, when a successor is issued) and is
+    never accepted again.
     Presenting a rotated token is reuse, which revokes the whole grant
     (``apps.oauth.services.tokens.refresh``).
     """
@@ -437,6 +438,14 @@ class OAuthToken(BaseModel):
         blank=True,
         related_name="+",
         help_text="For a rotated refresh token, the token that replaced it.",
+    )
+    consumed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "For a refresh token, when it was spent on a refresh. Presenting it "
+            "again is reuse, whether or not a successor was issued."
+        ),
     )
 
     objects = OAuthTokenQuerySet.as_manager()

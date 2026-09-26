@@ -195,6 +195,27 @@ class TestRefresh:
         new = OAuthToken.objects.get(token_hash=hash_secret(_rt(second)))
         assert old.replaced_by == new
 
+    def test_replay_after_narrowing_still_revokes_the_grant(self) -> None:
+        """A token spent on a narrowing refresh (no successor) is still reuse."""
+        grant = OAuthGrantFactory.create()
+        first = _exchange(grant, _code(grant))
+        narrowed = refresh(
+            raw_refresh=_rt(first), client=grant.client, resource=RESOURCE, scope="mcp"
+        )
+        with pytest.raises(OAuthError, match="already used"):
+            refresh(
+                raw_refresh=_rt(first),
+                client=grant.client,
+                resource=RESOURCE,
+                scope=None,
+            )
+        grant.refresh_from_db()
+        assert grant.revoked_at is not None
+        new_access = OAuthToken.objects.get(
+            token_hash=hash_secret(narrowed.access_token)
+        )
+        assert new_access.revoked_at is not None
+
     def test_reuse_revokes_the_grant(self) -> None:
         """Presenting a rotated token revokes the grant and every token."""
         grant, first = self._pair()
@@ -274,7 +295,7 @@ class TestRefresh:
         )
         assert narrowed.refresh_token is None
         assert narrowed.scope == "mcp"
-        assert OAuthToken.objects.get(token_hash=hash_secret(_rt(first))).revoked_at
+        assert OAuthToken.objects.get(token_hash=hash_secret(_rt(first))).consumed_at
 
         other = OAuthGrantFactory.create()
         pair, _ = issue_token_pair(other, resource=RESOURCE, scope="mcp offline_access")

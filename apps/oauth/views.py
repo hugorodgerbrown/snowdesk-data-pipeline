@@ -381,15 +381,42 @@ def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+def _anonymous_authorize(request: HttpRequest) -> HttpResponse:
+    """Answer an authorize request from a visitor who is not signed in.
+
+    Called before anything reads the ``client_id``, so an anonymous request
+    can never make the server fetch a client metadata document.
+
+    Args:
+        request: The authorize request.
+
+    Returns:
+        A redirect to sign-in with this URL as ``next`` for a GET, or the
+        error page for a POST whose session has ended.
+
+    """
+    if request.method == "POST":
+        return _error_page(
+            request, _("Your session ended. Start again from the app."), 403
+        )
+    sign_in = reverse("accounts:sign_in")
+    return HttpResponseRedirect(
+        f"{sign_in}?next={quote(request.get_full_path(), safe='/')}"
+    )
+
+
 @require_http_methods(["GET", "POST"])
+@ratelimit(key="ip", rate="30/m", block=False)
 def authorize(request: HttpRequest) -> HttpResponse:
     """Show the consent page (GET) or record the user's decision (POST).
 
-    GET, in order:
+    Rate-limited to thirty requests a minute per IP. GET, in order:
 
-    1. Resolve the client and redirect URI; if either fails, render the
+    1. Send an anonymous visitor to sign-in with this URL as ``next``. This
+       comes first so an anonymous request can never make the server fetch
+       a client metadata document (CIMD) from a URL it chose.
+    2. Resolve the client and redirect URI; if either fails, render the
        error page and never redirect.
-    2. Send an anonymous visitor to sign-in with this URL as ``next``.
     3. Check ``response_type``, the S256 challenge, ``scope`` and
        ``resource``; a failure redirects back to the client with ``error``.
     4. An unverified account sees a "verify your email first" state.
@@ -406,6 +433,13 @@ def authorize(request: HttpRequest) -> HttpResponse:
         The consent page, the error page, a redirect, or the returning page.
 
     """
+    if getattr(request, "limited", False):
+        return _error_page(
+            request, _("Too many requests. Wait a minute and try again."), 429
+        )
+    if not request.user.is_authenticated:
+        return _anonymous_authorize(request)
+
     source = request.POST if request.method == "POST" else request.GET
     params = _authorize_params(source)
 
@@ -413,16 +447,6 @@ def authorize(request: HttpRequest) -> HttpResponse:
     if isinstance(resolved, HttpResponse):
         return resolved
     client, redirect_uri = resolved
-
-    if not request.user.is_authenticated:
-        if request.method == "POST":
-            return _error_page(
-                request, _("Your session ended. Start again from the app."), 403
-            )
-        sign_in = reverse("accounts:sign_in")
-        return HttpResponseRedirect(
-            f"{sign_in}?next={quote(request.get_full_path(), safe='/')}"
-        )
 
     try:
         scope, resource = _validate_authorize(request, params)

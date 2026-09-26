@@ -11,6 +11,7 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.oauth.models import OAuthClient
@@ -142,6 +143,17 @@ class TestResolveClient:
             clients, "fetch_client_metadata", side_effect=CimdError("no")
         ):
             assert resolve_client(URL) is None
+
+    def test_failed_fetch_is_not_retried_for_five_minutes(self) -> None:
+        """A failed fetch is remembered, so repeating the request fetches nothing."""
+        cache.clear()
+        with mock.patch.object(
+            clients, "fetch_client_metadata", side_effect=CimdError("no")
+        ) as fetch:
+            assert resolve_client(URL) is None
+            assert resolve_client(URL) is None
+        fetch.assert_called_once_with(URL)
+        cache.clear()
 
     def test_https_id_never_resolves_a_non_cimd_row(self) -> None:
         """A DCR row cannot be claimed by an https client_id, nor the reverse."""

@@ -22,6 +22,7 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.oauth.models import OAuthClient
@@ -31,6 +32,7 @@ from apps.oauth.services.cimd import (
     trimmed_client_name,
 )
 from apps.oauth.services.redirects import is_registrable
+from apps.oauth.services.tokens import hash_secret
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +134,16 @@ def registration_response(client: OAuthClient) -> dict[str, Any]:
     }
 
 
+#: How long a failed CIMD fetch is remembered, so repeating one authorize
+#: request cannot make the server fetch the same URL again and again.
+CIMD_FAILURE_TTL_SECONDS = 300
+
+
+def _cimd_failure_key(client_id: str) -> str:
+    """Return the cache key recording a failed fetch of ``client_id``."""
+    return f"oauth:cimd-failed:{hash_secret(client_id)}"
+
+
 def _resolve_cimd(client_id: str) -> OAuthClient | None:
     """Return the cached CIMD client, refetching once it is 24 hours old.
 
@@ -153,10 +165,13 @@ def _resolve_cimd(client_id: str) -> OAuthClient | None:
     ):
         return existing
 
+    if cache.get(_cimd_failure_key(client_id)):
+        return None
     try:
         metadata = fetch_client_metadata(client_id)
     except CimdError as exc:
         logger.info("oauth: CIMD fetch refused for %s: %s", client_id, exc)
+        cache.set(_cimd_failure_key(client_id), True, CIMD_FAILURE_TTL_SECONDS)
         return None
 
     client, _ = OAuthClient.objects.update_or_create(

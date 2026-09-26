@@ -73,7 +73,8 @@ set; `ALLOWED_HOSTS` bounds which hosts that can be, and
 - **`AuthorizationCode`** — five minutes, single use, stores the redirect
   URI, PKCE challenge, resource and scope the user approved.
 - **`OAuthToken`** — `ACCESS` (one hour) or `REFRESH` (thirty days), with
-  `resource` as the audience and `replaced_by` on a rotated refresh token.
+  `resource` as the audience; a spent refresh token carries `consumed_at`,
+  and `replaced_by` when a successor was issued.
 
 Codes and tokens are `sd_ac_` / `sd_at_` / `sd_rt_` + `secrets.token_urlsafe(32)`.
 Only the SHA-256 hex digest is stored; the plaintext is returned once.
@@ -85,8 +86,9 @@ Rules in `apps/oauth/services/tokens.py`:
   authorize request's, the PKCE verifier matches, and any `resource`
   re-sent matches. Failures are `invalid_grant` (`invalid_target` for the
   resource).
-- **Refresh rotates.** Presenting a refresh token that was already rotated
-  is reuse: the whole grant is revoked, and both the attacker and the
+- **Refresh rotates.** Presenting a refresh token that was already spent
+  (`consumed_at` set — including a refresh that narrowed away
+  `offline_access` and so issued no successor) is reuse: the whole grant is revoked, and both the attacker and the
   legitimate client must reconnect. An unknown, expired or revoked refresh
   token is `invalid_grant`, which is what tells Claude to start over.
 - **Bearer auth** (`authenticate_bearer`) rejects an unknown, expired or
@@ -105,8 +107,12 @@ Matching is exact, except that a loopback URI matches a registered loopback
 URI on any port (RFC 8252 §7.3) — Claude Code binds a fresh port each run.
 Claude's hosted apps use `https://claude.ai/api/mcp/auth_callback`.
 
-An unknown client or an unregistered redirect URI renders an error page and
-never redirects, so `/oauth/authorize/` cannot be used as an open
+`/oauth/authorize/` sends an anonymous visitor to sign-in before it reads
+the `client_id`, so no anonymous request can make the server fetch a client
+metadata document; it is also rate-limited to thirty requests a minute per
+IP, and a failed metadata fetch is remembered for five minutes. An unknown
+client or an unregistered redirect URI renders an error page and never
+redirects, so `/oauth/authorize/` cannot be used as an open
 redirector. The consent page adds a warning when every redirect URI is
 loopback: the code goes to a program on the user's machine, not a named
 site.
