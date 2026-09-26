@@ -37,7 +37,7 @@ def test_contents_carries_html_csp_and_border() -> None:
     assert "<title>Avalanche danger map</title>" in contents["text"]
     ui = contents["_meta"]["ui"]
     assert ui["prefersBorder"] is True
-    assert "https://cdn.jsdelivr.net" in ui["csp"]["resourceDomains"]
+    assert {"https://cdn.jsdelivr.net"} <= set(ui["csp"]["resourceDomains"])
 
 
 def test_view_loads_only_origins_its_csp_declares() -> None:

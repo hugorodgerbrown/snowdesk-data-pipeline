@@ -18,16 +18,16 @@ It is a test fixture, not a reference host — see the ext-apps repo's
 Usage::
 
     uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0
-    bin/mcp-app-host --port 8765
-    # open http://localhost:8765/?mcp=http://localhost:8000/api/mcp/
-    # and paste the token into the page's Token field
+    bin/mcp-app-host --port 8765 --mcp http://localhost:8000/api/mcp/
+    # open http://localhost:8765/ and paste the token into the Token field
 
 The endpoint requires a bearer token (SNOW-1035). The page sends it in an
 ``Authorization`` header and this script forwards that header upstream.
 
 The page's POSTs go to this script's ``/mcp`` path, which forwards them to
-the ``?mcp=`` URL — the browser cannot POST cross-origin to Django without
-CORS headers Snowdesk does not send. Only localhost targets are forwarded.
+the ``--mcp`` URL — the browser cannot POST cross-origin to Django without
+CORS headers Snowdesk does not send. The target is fixed at startup and
+must be an http://localhost URL; nothing in a request can change it.
 
 ``?worker=blob`` adds ``worker-src blob:`` to the view's CSP. The spec's
 default policy has no worker-src, so MapLibre's blob: worker is refused and
@@ -61,28 +61,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    target: str = ""
+
     def do_POST(self) -> None:
-        """Forward a JSON-RPC body to the ``target`` query parameter."""
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        target = (query.get("target") or [""])[0]
-        parsed = urllib.parse.urlsplit(target)
-        host = parsed.hostname or ""
-        if parsed.scheme != "http" or (
-            host not in _ALLOWED_HOSTS and f"[{host}]" not in _ALLOWED_HOSTS
-        ):
-            self.send_error(400, "target must be an http://localhost URL")
-            return
+        """Forward a JSON-RPC body to the ``--mcp`` URL fixed at startup."""
         payload = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         headers = {"Content-Type": "application/json"}
         if authorization := self.headers.get("Authorization"):
             headers["Authorization"] = authorization
-        upstream = urllib.request.Request(  # noqa: S310 — http://localhost only, checked above
-            target, data=payload, headers=headers
+        upstream = urllib.request.Request(  # noqa: S310 — http://localhost only, checked in main()
+            self.target, data=payload, headers=headers
         )
         try:
-            # semgrep dynamic-urllib-use: scheme and host are checked above.
+            # semgrep dynamic-urllib-use: the URL is --mcp, checked in main().
             # nosemgrep
-            with urllib.request.urlopen(upstream, timeout=30) as response:  # noqa: S310 — localhost-only, checked above
+            with urllib.request.urlopen(upstream, timeout=30) as response:  # noqa: S310 — localhost-only, checked in main()
                 status, body = response.status, response.read()
         except urllib.error.HTTPError as exc:
             status, body = exc.code, exc.read()
@@ -93,12 +86,25 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def _is_local_http(url: str) -> bool:
+    """Return whether ``url`` is an http:// URL on a loopback host."""
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    return parsed.scheme == "http" and (
+        host in _ALLOWED_HOSTS or f"[{host}]" in _ALLOWED_HOSTS
+    )
+
+
 def main() -> None:
-    """Parse ``--port`` and serve until interrupted."""
+    """Parse ``--port`` and ``--mcp``, then serve until interrupted."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--mcp", default="http://localhost:8000/api/mcp/")
     args = parser.parse_args()
-    sys.stdout.write(f"mcp-app-host on http://localhost:{args.port}/\n")
+    if not _is_local_http(args.mcp):
+        parser.error("--mcp must be an http://localhost URL")
+    Handler.target = args.mcp
+    sys.stdout.write(f"mcp-app-host on http://localhost:{args.port}/ → {args.mcp}\n")
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 

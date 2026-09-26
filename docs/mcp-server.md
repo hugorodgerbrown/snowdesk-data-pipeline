@@ -543,9 +543,13 @@ calls a tool, fetches the view with `resources/read`, renders it in a
 answers the view's `ui/*` requests, proxies its `tools/call` (refusing a
 tool whose visibility excludes `"app"`), and logs every message.
 
-```text
-http://localhost:<host port>/?mcp=http://localhost:<django port>/api/mcp/
+```bash
+bin/mcp-app-host --port 8765 --mcp http://localhost:8000/api/mcp/
 ```
+
+The upstream URL is fixed at startup (`--mcp`, default
+`http://localhost:8000/api/mcp/`) and must be `http://localhost`; the page
+cannot redirect the proxy. Open `http://localhost:8765/`.
 
 The endpoint needs a bearer token, so mint one and paste it into the
 page's **Token** field (kept in `sessionStorage`; the host forwards it as
@@ -559,7 +563,7 @@ The token's audience defaults to `SITE_BASE_URL` + `/api/mcp/`; if Django
 runs on a different port, pass `--resource http://localhost:<port>/api/mcp/`.
 With no token, or a rejected one, the host logs the `401`.
 
-Add `&worker=blob` to allow `worker-src blob:` and see the MapLibre path.
+Add `?worker=blob` to allow `worker-src blob:` and see the MapLibre path.
 To test inside Claude itself, expose the dev server through a tunnel and
 add the tunnel's `/api/mcp/` URL as a custom connector; Claude runs the
 OAuth flow in [Authentication](#authentication) to connect.
