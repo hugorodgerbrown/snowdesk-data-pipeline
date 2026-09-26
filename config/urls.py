@@ -12,9 +12,10 @@ to the ``<region_id:region_id>/`` catch-all. ``/livez`` is the path wired to
 Render's ``healthCheckPath``; see ``apps/core/views.py`` for why the two are
 separate.
 
-The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``
-and ``/favicon.ico`` routes are registered before ``apps.public.urls`` so the
-generic ``<str:region_id>/`` pattern in apps.public.urls does not swallow them.
+The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``,
+``/favicon.ico``, ``/.well-known/oauth-*`` and ``/oauth/`` routes are
+registered before ``apps.public.urls`` so the generic ``<str:region_id>/``
+pattern in apps.public.urls does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 
@@ -37,6 +38,10 @@ from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from apps.core.views import healthz, livez
+from apps.oauth.views import (
+    authorization_server_metadata,
+    protected_resource_metadata,
+)
 from apps.public.sitemaps import SITEMAPS
 from apps.public.views import (
     serve_favicon,
@@ -98,6 +103,27 @@ urlpatterns = [
     path("llms-full.txt", serve_llms_full_txt, name="llms_full_txt"),
     path("favicon.ico", serve_favicon, name="favicon_ico"),
     path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
+    # SNOW-1035: OAuth 2.1 for the MCP endpoint. The discovery documents sit
+    # at the root, where RFC 8414 / RFC 9728 put them; the protected-resource
+    # document also answers with a path suffix, because Claude asks for
+    # ``/.well-known/oauth-protected-resource/api/mcp/`` and requires the
+    # ``resource`` in it to match the URL the user typed.
+    path(
+        ".well-known/oauth-protected-resource",
+        protected_resource_metadata,
+        name="oauth_protected_resource",
+    ),
+    path(
+        ".well-known/oauth-protected-resource/<path:suffix>",
+        protected_resource_metadata,
+        name="oauth_protected_resource_suffix",
+    ),
+    path(
+        ".well-known/oauth-authorization-server",
+        authorization_server_metadata,
+        name="oauth_authorization_server",
+    ),
+    path("oauth/", include("apps.oauth.urls")),
 ]
 
 # Dev-only routes must register BEFORE ``apps.public.urls`` because that

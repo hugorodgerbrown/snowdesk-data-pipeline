@@ -1,0 +1,23 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/oauth/templates/oauth/error.html — OAuth authorize error page (SNOW-1035).
+
+Shown when the authorize request cannot safely send the browser back to the
+app: an unknown client, a redirect URI the client never registered, or a
+session that ended between the consent page and its submission. Redirecting
+in those cases would make /oauth/authorize/ an open redirector, so the
+explanation stays here. ``message`` is chosen and translated by the view.
+{% endcomment %}
+{% load i18n %}
+
+{# sharing=False: an error state inside an OAuth handshake. Not a page anyone #}
+{# means to share, and it has nothing to say to a link preview.              #}
+{% block page_meta %}
+    {% trans "Connection failed — Snowdesk" as page_title %}
+    {% trans "An app's request to connect to Snowdesk could not be completed." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{% trans "This connection cannot continue" %}{% endblock %}
+
+{% block status_body %}{{ message }}{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/oauth/templates/oauth/consent.html — OAuth consent page (SNOW-1035).
+
+Rendered by apps.oauth.views.authorize for a signed-in user once the client,
+its redirect URI and every authorize parameter have been checked. Names the
+app, the host a code will be sent to (the fact a user can verify — the name
+is whatever the app called itself), and what access means: reading
+avalanche data as this user, and nothing else.
+
+``loopback_only`` adds a warning: the code goes to a program on this
+computer (Claude Code and similar), not to a named web service, so the
+host line alone proves nothing.
+
+``verified`` false renders the "verify your email first" state instead of
+the Approve / Deny form.
+
+Approve and Deny are one CSRF-protected POST back to the same URL. The
+authorize parameters ride along as hidden fields so the POST can re-run
+every check rather than trusting the GET.
+{% endcomment %}
+{% load i18n components %}
+
+{# sharing=False: a one-off consent step inside an OAuth handshake, carrying #}
+{# a client's parameters in its URL. Nobody means to share it, and an unfurl #}
+{# card for it would describe somebody else's pending authorisation.         #}
+{% block page_meta %}
+    {% trans "Connect an app — Snowdesk" as page_title %}
+    {% trans "Allow an app to read Snowdesk avalanche data on your behalf." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}
+    {% if verified %}
+        {% blocktrans trimmed with name=client.display_name %}
+            Connect {{ name }} to Snowdesk?
+        {% endblocktrans %}
+    {% else %}
+        {% trans "Verify your email first" %}
+    {% endif %}
+{% endblock %}
+
+{% block status_body %}
+    {% if verified %}
+        {% blocktrans trimmed with name=client.display_name email=request.user.email %}
+            {{ name }} will be able to read avalanche bulletins, danger ratings and resort information as
+            {{ email }}. It cannot change anything in your account.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with name=client.display_name %}
+            {{ name }} can connect once your email address is verified. Open the link we emailed you, then start the
+            connection again from the app.
+        {% endblocktrans %}
+    {% endif %}
+{% endblock %}
+
+{% block status_cta %}
+    {% if verified %}
+        <p class="mt-4 text-sm text-text-2" data-testid="oauth-redirect-host">
+            {% trans "You will be sent back to" %}
+            <span class="font-mono text-text-1">{{ redirect_host }}</span>
+        </p>
+        {% if loopback_only %}
+            <div class="mt-4 text-left" data-testid="oauth-loopback-warning">
+                {% trans "This app runs on your computer" as loopback_heading %}
+                {% trans "It will receive access through a local address, not a website. Only continue if you started this connection yourself, from a program you trust." as loopback_body %}
+                {% include "includes/_callout.html" with kind="warning" heading=loopback_heading body=loopback_body %}
+            </div>
+        {% endif %}
+        <form
+            method="post"
+            action="{% url 'oauth:authorize' %}"
+            class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center"
+        >
+            {% csrf_token %}
+            {% for name, value in params.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+            {% comment %}
+                button_classes rather than includes/_button.html: both buttons
+                submit the same form and are told apart by name/value, which
+                the partial cannot carry (see the sign-out row in
+                accounts/settings.html for the same trade).
+            {% endcomment %}
+            <button
+                type="submit"
+                name="decision"
+                value="approve"
+                data-testid="oauth-approve"
+                class="{% button_classes variant='primary' %}"
+            >
+                {% trans "Allow" %}
+            </button>
+            <button
+                type="submit"
+                name="decision"
+                value="deny"
+                data-testid="oauth-deny"
+                class="{% button_classes variant='ghost' %}"
+            >
+                {% trans "Deny" %}
+            </button>
+        </form>
+    {% else %}
+        <div class="mt-6">
+            {% url 'accounts:settings' as settings_url %}
+            {% trans "Go to your account" as label %}
+            {% include "includes/_button.html" with label=label href=settings_url variant="primary" %}
+        </div>
+    {% endif %}
+{% endblock %}
