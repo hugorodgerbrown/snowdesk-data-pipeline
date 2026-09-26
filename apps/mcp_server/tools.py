@@ -35,6 +35,10 @@ the codebase (``apps.mcp_server.resolvers``, ``apps.public.views``,
 * ``list_locations_in_region`` — the named public locations (villages,
   mid-stations, peaks) within one region, with the ``short_id`` each
   weather page and ``get_location_weather`` are keyed on (SNOW-799).
+* ``show_danger_map`` — ``get_regional_snapshot`` with a bulletin URL per
+  region, opening the MCP Apps danger-map view in a host that supports it.
+* ``get_danger_map_geometry`` — region boundaries for that view; app-only
+  (``visibility: ["app"]``), so the model never pays for the coordinates.
 * ``get_location_weather`` — one location's daily weather row for one day:
   the weather page as data. The one location-scoped tool, and the reason
   ``list_locations_in_region`` exists: an LLM client cannot guess an
@@ -73,6 +77,7 @@ from apps.bulletins.schema import AvalancheProblem
 from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
+from apps.mcp_server.ui_resources import DANGER_MAP_URI
 from apps.public.api import COUNTRY_NAMES
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
@@ -120,6 +125,8 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     handler: Callable[[dict[str, Any]], dict[str, Any]]
+    #: Tool ``_meta`` — for an MCP Apps tool, ``{"ui": {"resourceUri": ...}}``.
+    meta: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -2050,6 +2057,170 @@ def _handle_get_location_weather(arguments: dict[str, Any]) -> dict[str, Any]:
 # Tool registry
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# show_danger_map / get_danger_map_geometry (MCP Apps spike)
+# ---------------------------------------------------------------------------
+
+
+def _scope_arguments(arguments: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Unpack and type-check the ``country`` / ``major_region_id`` pair.
+
+    Args:
+        arguments: The JSON-RPC ``arguments`` dict.
+
+    Returns:
+        ``(country, major_region_id)``, either of which may be ``None``.
+
+    Raises:
+        ToolError: either value is present but not a string.
+
+    """
+    country = arguments.get("country")
+    if country is not None and not isinstance(country, str):
+        raise ToolError("'country' must be a string when supplied.")
+    major_region_id = arguments.get("major_region_id")
+    if major_region_id is not None and not isinstance(major_region_id, str):
+        raise ToolError("'major_region_id' must be a string when supplied.")
+    return country, major_region_id
+
+
+def show_danger_map(
+    country: str | None = None,
+    major_region_id: str | None = None,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return the regional snapshot the danger-map view draws.
+
+    The ratings half of the view's data: :func:`get_regional_snapshot`
+    plus each region's bulletin page URL for the day. The boundaries come
+    separately from :func:`get_danger_map_geometry`, so the tool result
+    the model reads stays the size of the snapshot.
+
+    Args:
+        country: ISO-3166-1 alpha-2 country code. Mutually exclusive with
+            ``major_region_id``.
+        major_region_id: A ``MajorRegion.prefix``. Mutually exclusive with
+            ``country``.
+        date: The day to show. Defaults to today.
+        today: Overrides "today" — a test seam.
+
+    Returns:
+        The :func:`get_regional_snapshot` result with ``url`` on every
+        region entry and ``scope_label`` beside ``scope``.
+
+    Raises:
+        ToolError: as for :func:`get_regional_snapshot`.
+
+    """
+    snapshot = get_regional_snapshot(country, major_region_id, date, today=today)
+    target_date = dt.date.fromisoformat(snapshot["date"])
+    regions_by_id = {
+        region.region_id: region
+        for region in resolvers.regions_for_scope(country, major_region_id)
+    }
+    base_url = settings.SITE_BASE_URL.rstrip("/")
+    for entry in snapshot["regions"]:
+        region = regions_by_id[entry["region_id"]]
+        entry["url"] = f"{base_url}{region.get_absolute_url(target_date)}"
+    snapshot["scope_label"] = _scope_label(
+        snapshot["scope"]["country"], snapshot["scope"]["major_region_id"]
+    )
+    return snapshot
+
+
+def _handle_show_danger_map(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``show_danger_map`` JSON-RPC arguments to the tool function."""
+    country, major_region_id = _scope_arguments(arguments)
+    return show_danger_map(
+        country, major_region_id, _optional_iso_date(arguments, "date")
+    )
+
+
+def get_danger_map_geometry(
+    country: str | None = None, major_region_id: str | None = None
+) -> dict[str, Any]:
+    """Return the micro-region boundaries in scope as a GeoJSON FeatureCollection.
+
+    Args:
+        country: ISO-3166-1 alpha-2 country code. Mutually exclusive with
+            ``major_region_id``.
+        major_region_id: A ``MajorRegion.prefix``. Mutually exclusive with
+            ``country``.
+
+    Returns:
+        ``{type, features, bbox, count, summary}``. Each feature carries
+        ``region_id`` and ``name`` properties; a region with no stored
+        boundary is omitted. ``bbox`` is ``[min_lon, min_lat, max_lon,
+        max_lat]`` over every feature, or ``None`` when there are none.
+
+    Raises:
+        ToolError: the scope is invalid, as for :func:`get_regional_snapshot`.
+
+    """
+    try:
+        regions = resolvers.regions_for_scope(country, major_region_id)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+
+    features: list[dict[str, Any]] = []
+    boxes: list[dict[str, float]] = []
+    for region in regions:
+        box = _boundary_bbox(region.boundary)
+        if box is None:
+            continue
+        boxes.append(box)
+        features.append(
+            {
+                "type": "Feature",
+                "id": region.region_id,
+                "properties": {"region_id": region.region_id, "name": region.name},
+                "geometry": region.boundary,
+            }
+        )
+
+    bbox = (
+        [
+            min(box["min_lon"] for box in boxes),
+            min(box["min_lat"] for box in boxes),
+            max(box["max_lon"] for box in boxes),
+            max(box["max_lat"] for box in boxes),
+        ]
+        if boxes
+        else None
+    )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "bbox": bbox,
+        "count": len(features),
+        "summary": f"{len(features)} region boundaries.",
+    }
+
+
+def _handle_get_danger_map_geometry(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_danger_map_geometry`` JSON-RPC arguments to the tool function."""
+    return get_danger_map_geometry(*_scope_arguments(arguments))
+
+
+_SCOPE_PROPERTIES: dict[str, Any] = {
+    "country": {
+        "type": "string",
+        "description": (
+            "ISO-3166-1 alpha-2 country code, e.g. 'CH'. Mutually exclusive "
+            "with major_region_id."
+        ),
+    },
+    "major_region_id": {
+        "type": "string",
+        "description": (
+            "A MajorRegion prefix, e.g. 'CH-4'. Mutually exclusive with country."
+        ),
+    },
+}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "search_regions": ToolSpec(
         name="search_regions",
@@ -2472,5 +2643,41 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_region_info,
+    ),
+    "show_danger_map": ToolSpec(
+        name="show_danger_map",
+        description=(
+            "Show an interactive map of the day's peak avalanche danger "
+            "rating for every warning region in a country or major region. "
+            "Use when the user wants to see conditions on a map. Exactly one "
+            "of 'country' or 'major_region_id' is required. Returns the same "
+            "per-region snapshot as get_regional_snapshot, with a bulletin "
+            "page URL per region."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                **_SCOPE_PROPERTIES,
+                "date": {
+                    "type": "string",
+                    "description": "ISO date YYYY-MM-DD. Defaults to today.",
+                },
+            },
+        },
+        handler=_handle_show_danger_map,
+        meta={"ui": {"resourceUri": DANGER_MAP_URI}},
+    ),
+    "get_danger_map_geometry": ToolSpec(
+        name="get_danger_map_geometry",
+        description=(
+            "Return the warning-region boundaries for a country or major "
+            "region as GeoJSON. Called by the danger-map view, not the model."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": _SCOPE_PROPERTIES,
+        },
+        handler=_handle_get_danger_map_geometry,
+        meta={"ui": {"resourceUri": DANGER_MAP_URI, "visibility": ["app"]}},
     ),
 }

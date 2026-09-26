@@ -142,7 +142,7 @@ def test_malformed_json_body_returns_parse_error(client: Client, token: str) -> 
 def test_unknown_method_returns_method_not_found(client: Client, token: str) -> None:
     """An unrecognised JSON-RPC method gets a -32601 error envelope."""
     response = _post(
-        client, {"jsonrpc": "2.0", "id": 1, "method": "resources/list"}, token
+        client, {"jsonrpc": "2.0", "id": 1, "method": "prompts/list"}, token
     )
     body = json.loads(response.content)
     assert body["error"]["code"] == -32601

@@ -1980,3 +1980,103 @@ class TestGetLocationWeather:
             tools.TOOLS["get_location_weather"].handler(
                 {"short_id": location.short_id, "date": "not-a-date"}
             )
+
+
+# ---------------------------------------------------------------------------
+# show_danger_map / get_danger_map_geometry (MCP Apps spike)
+# ---------------------------------------------------------------------------
+
+_SQUARE = {
+    "type": "Polygon",
+    "coordinates": [[[7.0, 46.0], [7.2, 46.0], [7.2, 46.2], [7.0, 46.2], [7.0, 46.0]]],
+}
+
+
+@pytest.mark.django_db
+class TestDangerMapTools:
+    """Tests for tools.show_danger_map and tools.get_danger_map_geometry."""
+
+    @pytest.fixture
+    def valais(self) -> dict[str, MicroRegion]:
+        """CH-4 with one bounded region and one region with no boundary."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        return {
+            "verbier": MicroRegionFactory.create(
+                region_id="CH-4115", name="Verbier", subregion=sub, boundary=_SQUARE
+            ),
+            "zermatt": MicroRegionFactory.create(
+                region_id="CH-4116", name="Zermatt", subregion=sub, boundary=None
+            ),
+        }
+
+    def test_show_danger_map_adds_a_dated_bulletin_url_per_region(
+        self, valais: dict[str, MicroRegion]
+    ) -> None:
+        """Each region entry carries its bulletin page URL for the day."""
+        target_date = datetime.date(2026, 1, 15)
+        RegionDayRatingFactory.create(region=valais["verbier"], date=target_date)
+
+        result = tools.show_danger_map(major_region_id="CH-4", date=target_date)
+
+        verbier = next(r for r in result["regions"] if r["region_id"] == "CH-4115")
+        assert verbier["url"].endswith("/ch-4115/verbier/2026-01-15/")
+        assert result["scope_label"] == "CH-4"
+        assert result["count"] == 2
+
+    def test_show_danger_map_invalid_scope_is_a_tool_error(self) -> None:
+        """Neither scope argument is the snapshot's ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.show_danger_map()
+
+    def test_geometry_skips_regions_without_a_boundary(
+        self, valais: dict[str, MicroRegion]
+    ) -> None:
+        """Only bounded regions become features; bbox spans them."""
+        result = tools.get_danger_map_geometry(major_region_id="CH-4")
+
+        assert result["type"] == "FeatureCollection"
+        assert [f["id"] for f in result["features"]] == ["CH-4115"]
+        assert result["features"][0]["properties"] == {
+            "region_id": "CH-4115",
+            "name": "Verbier",
+        }
+        assert result["bbox"] == [7.0, 46.0, 7.2, 46.2]
+
+    def test_geometry_with_no_boundaries_has_no_bbox(
+        self, valais: dict[str, MicroRegion]
+    ) -> None:
+        """A scope with no bounded region returns no features and a null bbox."""
+        valais["verbier"].boundary = None
+        valais["verbier"].save()
+
+        result = tools.get_danger_map_geometry(major_region_id="CH-4")
+
+        assert result["features"] == []
+        assert result["bbox"] is None
+
+    def test_geometry_invalid_scope_is_a_tool_error(self) -> None:
+        """Both scope arguments together are a ToolError."""
+        with pytest.raises(tools.ToolError):
+            tools.get_danger_map_geometry(country="CH", major_region_id="CH-4")
+
+    def test_handlers_reject_non_string_scope(self) -> None:
+        """A non-string country or major_region_id is a ToolError in both adapters."""
+        for name in ("show_danger_map", "get_danger_map_geometry"):
+            with pytest.raises(tools.ToolError):
+                tools.TOOLS[name].handler({"country": 7})
+            with pytest.raises(tools.ToolError):
+                tools.TOOLS[name].handler({"major_region_id": ["CH-4"]})
+
+    def test_handlers_pass_arguments_through(
+        self, valais: dict[str, MicroRegion]
+    ) -> None:
+        """The adapters unpack scope and date into the tool functions."""
+        shown = tools.TOOLS["show_danger_map"].handler(
+            {"major_region_id": "CH-4", "date": "2026-01-15"}
+        )
+        geometry = tools.TOOLS["get_danger_map_geometry"].handler(
+            {"major_region_id": "CH-4"}
+        )
+        assert shown["date"] == "2026-01-15"
+        assert geometry["count"] == 1
