@@ -622,6 +622,8 @@ Read these when working in the relevant area:
 
 | Area | Doc |
 |------|-----|
+| What Snowdesk is — mission and full feature inventory | [`docs/definition.md`](docs/definition.md) |
+| Alerting roadmap (phase A daily bulletin notification, phase B trip-aware) | [`docs/roadmap.md`](docs/roadmap.md) |
 | Domain term → code symbol map | [`docs/glossary.md`](docs/glossary.md) |
 | Accepted architectural decisions | [`docs/decisions/`](docs/decisions/) |
 | Coding standards (repo layout, style, model/service/view/test conventions) | [`docs/coding-standards.md`](docs/coding-standards.md) |
