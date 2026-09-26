@@ -48,9 +48,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_five_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly five registered jobs."""
-    assert len(scheduler.get_jobs()) == 5
+def test_scheduler_has_exactly_six_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly six registered jobs."""
+    assert len(scheduler.get_jobs()) == 6
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -61,7 +61,22 @@ def test_job_ids(jobs: dict) -> None:
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",
+        "purge_expired_oauth_tokens",
     }
+
+
+def test_purge_expired_oauth_tokens_runs_daily_off_the_fetch_hours(jobs: dict) -> None:
+    """03:45 UTC — once a day, beside the other retention sweep (SNOW-1035)."""
+    trigger = jobs["purge_expired_oauth_tokens"].trigger
+    assert str(_get_field(trigger, "hour")) == "3"
+    assert str(_get_field(trigger, "minute")) == "45"
+
+
+def test_purge_expired_oauth_tokens_commits() -> None:
+    """The scheduled run passes --commit; a dry run would delete nothing."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_purge_expired_oauth_tokens()
+    mock_cc.assert_called_once_with("purge_expired_oauth_tokens", "--commit")
 
 
 def test_check_resort_locations_runs_off_the_fetch_hours(jobs: dict) -> None:
