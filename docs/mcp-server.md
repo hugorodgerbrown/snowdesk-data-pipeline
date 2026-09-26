@@ -582,10 +582,13 @@ OAuth flow in [Authentication](#authentication) to connect.
 ### When the view will not load
 
 Claude renders the view inside a sandbox page on its own host,
-`<hash>.claudemcpcontent.com/mcp_apps?…` (the query string carries the
-resource's CSP). That page loads **before** the host asks this server for
-the HTML, so a failure to load it cannot come from `danger_map.html` or
-`_meta.ui.csp`, and leaves no `resources/read` in Snowdesk's logs.
+`<hash>.claudemcpcontent.com/mcp_apps?…`. The host builds that URL from
+the resource's `_meta.ui.csp`, so it has already read the resource (or
+holds a cached copy — a missing `resources/read` in Snowdesk's logs does
+not mean the read never happened). The page itself is served by
+Anthropic, and the HTML is handed to it only once it has loaded, so a
+connection error on that URL cannot come from `danger_map.html`; the CSP
+only shapes the page's headers, not whether the connection succeeds.
 
 The known case (2026-09-26, Android, staging): the Claude app showed
 "Web page not available … `net::ERR_CONNECTION_ABORTED`" in place of the
