@@ -14,11 +14,17 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.oauth.models import OAuthClient
 from tests.factories import AccountFactory, OAuthClientFactory, OAuthGrantFactory
 
 pytestmark = pytest.mark.django_db
 
 URL = reverse("accounts:settings")
+
+
+def _text(html: str) -> str:
+    """Collapse the template's whitespace so row text reads as one line."""
+    return " ".join(html.split())
 
 
 def test_active_grants_are_listed_with_a_disconnect(client: Client) -> None:
@@ -31,7 +37,7 @@ def test_active_grants_are_listed_with_a_disconnect(client: Client) -> None:
     html = client.get(URL).content.decode()
     assert 'data-testid="connected-apps"' in html
     assert "Claude" in html
-    assert "claude.ai · connected" in html
+    assert "claude.ai · connected" in _text(html)
     assert reverse("oauth:grant_revoke", kwargs={"grant_uuid": grant.uuid}) in html
     assert 'aria-label="Disconnect Claude"' in html
 
@@ -42,6 +48,22 @@ def test_last_used_date_is_shown(client: Client) -> None:
     OAuthGrantFactory.create(user=user, last_used_at=timezone.now())
     client.force_login(user)
     assert "last used" in client.get(URL).content.decode()
+
+
+def test_a_local_token_row_has_no_leading_separator(client: Client) -> None:
+    """A mint_mcp_token grant has no redirect host, so the line starts at 'connected'."""
+    user = AccountFactory.create().user
+    OAuthGrantFactory.create(
+        user=user,
+        client=OAuthClientFactory.create(
+            kind=OAuthClient.KIND.LOCAL, client_name="Local token", redirect_uris=[]
+        ),
+    )
+    client.force_login(user)
+    text = _text(client.get(URL).content.decode())
+    assert "Local token" in text
+    assert "· connected" not in text
+    assert "connected" in text
 
 
 def test_revoked_and_foreign_grants_are_not_listed(client: Client) -> None:

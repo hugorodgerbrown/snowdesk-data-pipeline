@@ -3,9 +3,9 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    three jobs.
-  - The jobs have the expected IDs: ``fetch_bulletins``, ``fetch_weather``
-    and ``purge_request_logs``.
+    six jobs.
+  - The jobs have the expected IDs, one per wrapped command in
+    ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
   - Firing each job's callable invokes ``call_command`` with the expected
     arguments.

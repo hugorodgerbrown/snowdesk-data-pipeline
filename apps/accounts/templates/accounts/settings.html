@@ -315,13 +315,16 @@ because the repository is the authority and the mock is a drawing:
                                             {{ grant.client.display_name }}
                                         </p>
                                         <p class="font-mono text-xs text-text-3 mt-0.5">
+                                            {# A local token (mint_mcp_token) has no redirect URI, so no host and no leading separator. #}
+                                            {% if grant.client.redirect_host %}{{ grant.client.redirect_host }}
+                                                ·{% endif %}
                                             {% if grant.last_used_at %}
-                                                {% blocktrans trimmed with host=grant.client.redirect_host added=grant.created_at|date:"j M Y" used=grant.last_used_at|date:"j M Y" %}
-                                                    {{ host }} · connected {{ added }} · last used {{ used }}
+                                                {% blocktrans trimmed with added=grant.created_at|date:"j M Y" used=grant.last_used_at|date:"j M Y" %}
+                                                    connected {{ added }} · last used {{ used }}
                                                 {% endblocktrans %}
                                             {% else %}
-                                                {% blocktrans trimmed with host=grant.client.redirect_host added=grant.created_at|date:"j M Y" %}
-                                                    {{ host }} · connected {{ added }} · never used
+                                                {% blocktrans trimmed with added=grant.created_at|date:"j M Y" %}
+                                                    connected {{ added }} · never used
                                                 {% endblocktrans %}
                                             {% endif %}
                                         </p>

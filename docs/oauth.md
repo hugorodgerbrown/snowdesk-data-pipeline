@@ -160,9 +160,11 @@ account's settings page as "Local token (mint_mcp_token)" and Disconnect
 revokes it.
 
 **Claude.** Claude's hosted apps cannot reach `localhost`. Run
-`ngrok http 8000`, add the tunnel host to `ALLOWED_HOSTS` (and
-`CSRF_TRUSTED_ORIGINS`, for the consent POST) in your `.env`, and add
-`https://<tunnel>/api/mcp/` as a custom connector. Claude should find the
+`ngrok http 8000` and add `https://<tunnel>/api/mcp/` as a custom
+connector. The development settings already allow ngrok hosts in
+`ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` (`config/settings/development.py`),
+so the consent POST works over the tunnel with no `.env` change; another
+tunnel provider needs its host added to both. Claude should find the
 metadata, register, send you to sign-in and consent, and return. Disconnect
 on `/account/settings/` and the next tool call is a 401 that makes Claude
 ask you to reconnect. The ngrok inspector shows the exact request sequence.
