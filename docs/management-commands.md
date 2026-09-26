@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, fill_what3words, import_resorts, seed_canonical_routes, backfill_*
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, purge_expired_oauth_tokens, mint_mcp_token, backfill_*
 status: current
 last-reviewed: 2026-09-24
 ---
@@ -103,16 +103,16 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 
 ## Operational requirements
 
-Five scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, one enforces a data-retention window, one fills a
-derived column, and one is a read-only detector. All five
+Six scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, two delete rows past their useful life, one fills a
+derived column, and one is a read-only detector. All six
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The four writing jobs run
-with `--commit` so they actually persist; the fifth runs `--check` and writes
-nothing. All five exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The five writing jobs run
+with `--commit` so they actually persist; the sixth runs `--check` and writes
+nothing. All six exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
@@ -120,6 +120,7 @@ worker logs.
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
+| OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes MCP OAuth tokens and authorization codes dead for more than a week (SNOW-1035). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports geocoded resorts carrying no `ResortLocation` — each one a resort page rendering no Forecasts section with nothing anywhere saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. The response is an operator running `link_resort_locations --commit` by hand; PR #758 took that write out of the deploy on purpose. |
 
@@ -161,6 +162,38 @@ aborted the whole nightly run on the first aged click.
 Reported counts distinguish request rows from cascaded rows — `delete()`
 returns a total that includes both, and reporting that total would overstate
 the purge in the one log line an auditor would read.
+
+### `purge_expired_oauth_tokens` — delete dead OAuth tokens and codes
+
+Deletes `OAuthToken` rows that expired or were revoked, and
+`AuthorizationCode` rows that expired, more than `--days` (default 7) days
+ago (SNOW-1035, [`docs/oauth.md`](oauth.md)). A dead row is never accepted
+again; the week of grace keeps recent ones visible in the admin. A rotated
+refresh token is neither expired nor revoked until its thirty days run out,
+so it survives — presenting it again is how reuse is detected. Grants are
+not touched: a revoked grant records that a user disconnected an app.
+Streams each set newest-first through `iterate_rows`.
+
+```bash
+uv run python manage.py purge_expired_oauth_tokens            # report only
+uv run python manage.py purge_expired_oauth_tokens --commit   # delete
+```
+
+### `mint_mcp_token` — an MCP access token for local testing
+
+Mints a one-hour access token for one account under a `LOCAL` client, so
+the MCP endpoint can be exercised with curl without the browser OAuth flow
+(SNOW-1035). `--email` is **required** — the documented exception to rule
+1, because the command's purpose is a token acting as one named account.
+The token is printed once (at every verbosity: it is the output); the
+grant shows on the account's settings page and Disconnect revokes it.
+`--resource` sets the audience when calling a host other than
+`SITE_BASE_URL` (a tunnel).
+
+```bash
+uv run python manage.py mint_mcp_token --email you@example.com            # report only
+TOKEN=$(uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0)
+```
 
 ### `seed_test_data` — build the navigable test dataset (local dev and CI)
 

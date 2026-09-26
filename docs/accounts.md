@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-09-26
 ---
 
 # Accounts
@@ -19,7 +19,7 @@ An account is an email address proven reachable — via a signed-token flow (no 
 | `/account/favourites/` | `favourites` | GET | Permanent 301 to `/?panel=favourites` (SNOW-803) |
 | `/account/observations/` | `observations` | GET | Permanent 301 to `/?panel=reports` (SNOW-803) |
 | `/account/routes/` | `routes` | GET | Permanent 301 to `/?panel=routes` (SNOW-803) |
-| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, theme, sign out, delete account (SNOW-667) — the one account page. SNOW-930 took the offline-content report, the reset-local-data control and the sync log off it to the public `/offline/`: none of them touched the account, and gating them put the page you need with no signal behind a login |
+| `/account/settings/` | `settings` | GET | Email, passkeys, connected apps (SNOW-1035), telemetry, theme, sign out, delete account (SNOW-667) — the one account page. SNOW-930 took the offline-content report, the reset-local-data control and the sync log off it to the public `/offline/`: none of them touched the account, and gating them put the page you need with no signal behind a login |
 | `/account/register/` | `register` | GET + POST | Standalone registration (email required, name optional); sends a verification link |
 | `/account/verify/<token>/` | `verify` | GET + POST | GET shows a confirm button (no state change); POST marks the `Account` verified, logs in, redirects to setup |
 | `/account/setup/` | `setup` | GET | Post-verification credential-setup landing (extended by SNOW-431/434) |
@@ -32,6 +32,9 @@ An account is an email address proven reachable — via a signed-token flow (no 
 | `/account/manage/` | `manage` | GET | Permanent 301 to `/?panel=favourites` (SNOW-667 sent it to the hub; SNOW-802 sent the hub to the map) |
 | `/account/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated account (User) and everything it owns |
 | `/account/deleted/` | `account_deleted` | GET | Post-deletion confirmation page — where `delete_account` HX-Redirects (SNOW-875) |
+| `/oauth/grants/<uuid>/revoke/` | `oauth:grant_revoke` | POST | HTMX — Disconnect one connected app from the settings page (SNOW-1035; lives in `apps/oauth`, see [`docs/oauth.md`](oauth.md)) |
+
+**Connected apps (SNOW-1035)** — `/account/settings/` lists, under Account, every client the user has allowed to call the MCP server: each active `OAuthGrant` with the app's name, the host its codes go to, when it was connected and when it was last used. The row's one control is a bare trash icon (design rule 5) with `hx-confirm`; it POSTs to `oauth:grant_revoke` (owner-only, `require_htmx`, 10/min), which revokes the grant and every token under it, so the app's next call is a 401. The section is absent when nothing is connected. `settings_view` passes the grants as `connected_apps`. The consent page that creates a grant is `/oauth/authorize/`; a signed-out user reaches it through `/account/sign-in/?next=`, and an unverified account is asked to verify before it can approve.
 
 **Account area layout (SNOW-667 → SNOW-668 → SNOW-802/803)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. SNOW-667 split it into a hub, favourites and settings; SNOW-668 gave every list its own page. Then the two-documents IA (SNOW-795) recognised each of those lists as a second rendering of a map sheet, and sent them there: the account area is `/account/settings/` alone, and every other account URL is a permanent redirect into the map so old bookmarks and in-flight email links still land.
 

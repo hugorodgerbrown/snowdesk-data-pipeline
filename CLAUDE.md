@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the fourteen Django apps (SNOW-557 — moved
+apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -106,7 +106,16 @@ apps/            Parent package for the fourteen Django apps (SNOW-557 — moved
                  *telemetry* signals, not django.db.models.signals — it does
                  not contradict the no-signals-for-side-effects rule below
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
-                 no models of its own — it reads the bulletins/regions tables
+                 no models of its own — it reads the bulletins/regions tables.
+                 Every call needs a bearer token from oauth/ (SNOW-1035)
+  oauth/         Snowdesk's own OAuth 2.1 authorization server for the MCP
+                 endpoint (SNOW-1035, docs/oauth.md) — ``OAuthClient``,
+                 ``OAuthGrant`` (a "connected app", listed and disconnected
+                 on /account/settings/), ``AuthorizationCode``,
+                 ``OAuthToken``; the /.well-known/ discovery documents, the
+                 consent page at /oauth/authorize/, token/register/revoke.
+                 Hand-written, no OAuth library — read
+                 docs/decisions/snowdesk-is-its-own-oauth-server.md first
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
     api.py       Plain JsonResponse endpoints consumed by the map page
     api_urls.py  URL routing for /api/ (namespace: api:)
@@ -698,6 +707,8 @@ Read these when working in the relevant area:
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
 | MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
+| OAuth for the MCP server (/.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; OAuthGrant = connected app; CIMD SSRF guard; mint_mcp_token; Claude connector requirements) | [`docs/oauth.md`](docs/oauth.md) |
+| Why Snowdesk is its own hand-written OAuth server (no library, no anonymous MCP tier, public clients + PKCE) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
