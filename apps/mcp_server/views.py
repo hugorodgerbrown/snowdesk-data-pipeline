@@ -139,14 +139,17 @@ def mcp_endpoint(request: HttpRequest) -> HttpResponse:
       ``Cache-Control: no-store`` and ``Content-Type: application/json``.
     * A JSON-RPC *notification* (a request object with no ``id`` key,
       e.g. ``notifications/initialized``) is accepted and processed but
-      gets no response body — returns ``204 No Content``.
+      gets no response body — returns ``202 Accepted``, which the MCP
+      Streamable HTTP transport requires ("the server MUST return HTTP
+      status code 202 Accepted with no body"). A ``204`` here left
+      Claude's connector stuck after the handshake, never listing tools.
 
     Args:
         request: The incoming POST request.
 
     Returns:
         A JSON HttpResponse carrying the JSON-RPC result or error
-        envelope, a bare 204 for notifications, 401 without a valid
+        envelope, a bare 202 for notifications, 401 without a valid
         token, or 429 over the per-user limit.
 
     """
@@ -172,7 +175,8 @@ def mcp_endpoint(request: HttpRequest) -> HttpResponse:
 
     response_body = protocol.dispatch(payload)
     if response_body is None:
-        # Notification — MCP/JSON-RPC forbids a response body.
-        return _no_store(HttpResponse(status=204))
+        # Notification — MCP/JSON-RPC forbids a response body, and the
+        # Streamable HTTP transport requires 202, not 204 (see docstring).
+        return _no_store(HttpResponse(status=202))
 
     return _no_store(JsonResponse(response_body))
