@@ -1,0 +1,44 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/oauth/templates/oauth/returning.html — hand-off back to the app (SNOW-1035).
+
+Rendered by the consent POST in place of a 302. The site CSP's
+``form-action 'self'`` covers the redirects that follow a form submission,
+so a 302 from the POST to the app's redirect URI would be blocked once the
+CSP is enforced; a meta refresh is an ordinary navigation and is not. The
+link is the fallback for a browser that ignores the refresh.
+
+``target`` is the app's registered redirect URI (https, or http on a
+loopback host — apps.oauth.services.redirects) plus ``code``/``error`` and
+``state``. It is autoescaped in both attributes.
+{% endcomment %}
+{% load i18n %}
+
+{# sharing=False: a transient hand-off page whose URL is the consent POST. #}
+{% block page_meta %}
+    {% trans "Returning to the app — Snowdesk" as page_title %}
+    {% trans "Sending you back to the app you connected." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block extra_head %}
+    <meta http-equiv="refresh" content="0;url={{ target }}">
+    <meta name="referrer" content="no-referrer">
+{% endblock %}
+
+{% block status_heading %}
+    {% blocktrans trimmed with host=host %}
+        Returning to {{ host }}
+    {% endblocktrans %}
+{% endblock %}
+
+{% block status_body %}
+    {% trans "If nothing happens, use the link below." %}
+{% endblock %}
+
+{% block status_cta %}
+    <div class="mt-6">
+        {% trans "Continue" as label %}
+        {% include "includes/_button.html" with label=label href=target variant="primary" %}
+    </div>
+{% endblock %}

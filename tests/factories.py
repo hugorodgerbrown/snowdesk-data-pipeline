@@ -35,6 +35,7 @@ from apps.core.models import RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
+from apps.oauth.models import AuthorizationCode, OAuthClient, OAuthGrant, OAuthToken
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
@@ -831,6 +832,92 @@ class DownloadAreaFactory(factory.django.DjangoModelFactory[DownloadArea]):
     bbox = None
     basemap_key = "outdoor"
     name = ""
+
+
+class OAuthClientFactory(factory.django.DjangoModelFactory[OAuthClient]):
+    """Factory for OAuthClient instances (SNOW-1035).
+
+    Defaults to a DCR client whose one redirect URI is Claude's hosted
+    callback — the common case the consent page and the settings page render.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = OAuthClient
+
+    client_id = factory.Sequence(lambda n: f"sd_client_test{n}")
+    kind = OAuthClient.KIND.DCR
+    client_name = "Claude"
+    redirect_uris = factory.LazyFunction(
+        lambda: ["https://claude.ai/api/mcp/auth_callback"]
+    )
+    metadata_fetched_at = None
+
+
+class OAuthGrantFactory(factory.django.DjangoModelFactory[OAuthGrant]):
+    """Factory for OAuthGrant instances — an active "connected app"."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = OAuthGrant
+
+    user = factory.SubFactory(UserFactory, is_staff=False)
+    client = factory.SubFactory(OAuthClientFactory)
+    scope = "mcp offline_access"
+    resource = "http://testserver/api/mcp/"
+    last_used_at = None
+    revoked_at = None
+
+
+class AuthorizationCodeFactory(factory.django.DjangoModelFactory[AuthorizationCode]):
+    """Factory for AuthorizationCode instances.
+
+    ``code_hash`` is a unique placeholder: a test that exchanges a code mints
+    it through ``apps.oauth.services.tokens.issue_code`` instead, which is
+    the only path that returns the plaintext.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = AuthorizationCode
+
+    grant = factory.SubFactory(OAuthGrantFactory)
+    code_hash = factory.Sequence(lambda n: f"{n:064x}")
+    redirect_uri = "https://claude.ai/api/mcp/auth_callback"
+    code_challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    resource = "http://testserver/api/mcp/"
+    scope = "mcp offline_access"
+    expires_at = factory.LazyFunction(
+        lambda: django_timezone.now() + datetime.timedelta(minutes=5)
+    )
+    used_at = None
+
+
+class OAuthTokenFactory(factory.django.DjangoModelFactory[OAuthToken]):
+    """Factory for OAuthToken instances — a live access token by default.
+
+    As with ``AuthorizationCodeFactory``, ``token_hash`` is a placeholder; a
+    test that presents a token mints it through the tokens service.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = OAuthToken
+
+    grant = factory.SubFactory(OAuthGrantFactory)
+    kind = OAuthToken.KIND.ACCESS
+    token_hash = factory.Sequence(lambda n: f"{n + 10**6:064x}")
+    resource = "http://testserver/api/mcp/"
+    scope = "mcp offline_access"
+    expires_at = factory.LazyFunction(
+        lambda: django_timezone.now() + datetime.timedelta(hours=1)
+    )
+    revoked_at = None
+    replaced_by = None
 
 
 class WeatherFactory(factory.django.DjangoModelFactory[Weather]):

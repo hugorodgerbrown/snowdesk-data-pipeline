@@ -29,6 +29,10 @@ pre-loaded with the recurring data-pipeline job:
   that resort's page renders no Forecasts section while nothing anywhere
   says so (SNOW-885). It raises on a non-empty answer, so the failure shows
   in the worker log rather than needing somebody to read a count.
+- **purge_expired_oauth_tokens** — fires at 03:45 UTC, running
+  ``purge_expired_oauth_tokens --commit``. Deletes MCP OAuth tokens and
+  codes that have been dead for a week (SNOW-1035); nothing else removes
+  them, and a Claude connector refreshing hourly writes two rows an hour.
 
 Every job carries guard settings (``coalesce=True``, ``max_instances=1``,
 ``misfire_grace_time=300``) so a slow run does not stack up duplicate
@@ -133,6 +137,16 @@ def _run_check_resort_locations() -> None:
     call_command("link_resort_locations", "--check")
 
 
+def _run_purge_expired_oauth_tokens() -> None:
+    """Invoke ``purge_expired_oauth_tokens`` to delete long-dead OAuth tokens."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing purge_expired_oauth_tokens")
+    call_command("purge_expired_oauth_tokens", "--commit")
+
+
 def build_scheduler() -> BlockingScheduler:
     """Build and return a configured :class:`BlockingScheduler`.
 
@@ -142,7 +156,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with five jobs pre-registered:
+        A scheduler with six jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -154,6 +168,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=4`` (once a day, off the fetch hours).
         ``check_resort_locations``
             Cron: ``hour=5`` (once a day; read-only detector, SNOW-885).
+        ``purge_expired_oauth_tokens``
+            Cron: ``hour=3, minute=45`` (once a day, SNOW-1035).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -202,6 +218,13 @@ def build_scheduler() -> BlockingScheduler:
     # the same quiet stretch as the other two daily jobs, after them, because
     # `link_resort_locations` is what an operator runs in response and there
     # is no reason for the answer to be fresher than daily.
+    scheduler.add_job(
+        _run_purge_expired_oauth_tokens,
+        trigger=CronTrigger(hour=3, minute=45, timezone="UTC"),
+        id="purge_expired_oauth_tokens",
+        **_common,
+    )
+
     scheduler.add_job(
         _run_check_resort_locations,
         trigger=CronTrigger(hour=5, minute=0, timezone="UTC"),

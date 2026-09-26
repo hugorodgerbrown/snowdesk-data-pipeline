@@ -82,6 +82,7 @@ from django_ratelimit.decorators import ratelimit
 from apps import analytics
 from apps.core.decorators import require_htmx
 from apps.core.services.request_log import capture as capture_request_log
+from apps.oauth.models import OAuthGrant
 
 from .forms import (
     ChangeEmailForm,
@@ -1126,6 +1127,11 @@ def settings_view(request: HttpRequest) -> HttpResponse:
 
     Context keys:
         account          — authenticated Account instance.
+        connected_apps   — the user's active ``OAuthGrant`` rows with their
+                           clients (SNOW-1035), listed under Account with a
+                           Disconnect control each. Passed from here rather
+                           than read in the template so the query is one,
+                           and visible.
 
     Args:
         request: Incoming HTTP request.
@@ -1142,6 +1148,11 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         "accounts/settings.html",
         {
             "account": _get_account(request),
+            "connected_apps": list(
+                OAuthGrant.objects.for_user(request.user)
+                .active()
+                .select_related("client")
+            ),
         },
     )
 

@@ -289,6 +289,66 @@ because the repository is the authority and the mock is a drawing:
                     {% endwith %}
 
                     {% comment %}
+                        SNOW-1035: Connected apps — every client this account
+                        has allowed to call the MCP server (an active
+                        OAuthGrant), passed in by settings_view. The row
+                        names the app, the host its codes go to (the fact
+                        the consent page showed), and when it was connected
+                        and last used. Absent entirely when there are none:
+                        most accounts will never connect one, and an empty
+                        section would be a heading explaining a feature
+                        from inside the settings page.
+
+                        Disconnect is the row's one action, so it is a bare
+                        icon (design rule 5) in the passkey row's shape,
+                        with hx-confirm because it signs the app out. It
+                        revokes the grant and every token under it; the row
+                        goes, and the app's next call is a 401.
+                    {% endcomment %}
+                    {% if connected_apps %}
+                        <div class="flex flex-col gap-3 p-4" data-testid="connected-apps">
+                            <h3 class="text-sm font-semibold text-text-1">{% trans "Connected apps" %}</h3>
+                            {% for grant in connected_apps %}
+                                <div class="connected-app-row flex items-center justify-between gap-3 rounded-tag bg-tag p-3">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium text-text-1 truncate">
+                                            {{ grant.client.display_name }}
+                                        </p>
+                                        <p class="font-mono text-xs text-text-3 mt-0.5">
+                                            {# A local token (mint_mcp_token) has no redirect URI, so no host and no leading separator. #}
+                                            {% if grant.client.redirect_host %}{{ grant.client.redirect_host }}
+                                                ·{% endif %}
+                                            {% if grant.last_used_at %}
+                                                {% blocktrans trimmed with added=grant.created_at|date:"j M Y" used=grant.last_used_at|date:"j M Y" %}
+                                                    connected {{ added }} · last used {{ used }}
+                                                {% endblocktrans %}
+                                            {% else %}
+                                                {% blocktrans trimmed with added=grant.created_at|date:"j M Y" %}
+                                                    connected {{ added }} · never used
+                                                {% endblocktrans %}
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    {% blocktrans trimmed with name=grant.client.display_name asvar disconnect_aria_label %}
+                                        Disconnect {{ name }}
+                                    {% endblocktrans %}
+                                    <button
+                                        hx-post="{% url 'oauth:grant_revoke' grant_uuid=grant.uuid %}"
+                                        hx-target="closest .connected-app-row"
+                                        hx-swap="outerHTML"
+                                        hx-confirm='{% trans "Disconnect this app? It will need to connect again to read Snowdesk data." %}'
+                                        aria-label="{{ disconnect_aria_label }}"
+                                        data-testid="connected-app-disconnect"
+                                        class="{% icon_button_classes variant='destructive' %}"
+                                    >
+                                        {% include "includes/_icon_trash.html" only %}
+                                    </button>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% comment %}
                         SNOW-616: sign out, on the page as well as in the nav
                         disclosure. The nav control is the primary one and now
                         works without JavaScript too

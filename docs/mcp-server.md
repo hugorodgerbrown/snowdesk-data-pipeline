@@ -1,8 +1,8 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — fifteen read-only tools over regions, bulletins, danger trend, geolocation, location weather
+description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, fifteen read-only tools over regions, bulletins, weather
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-26
 ---
 
 # MCP server
@@ -18,6 +18,7 @@ advertises the endpoint under its own "MCP server" section.
 ```
 POST /api/mcp/
 Content-Type: application/json
+Authorization: Bearer <access token>
 ```
 
 The endpoint speaks plain **JSON-RPC 2.0 over a single Django POST view**
@@ -36,12 +37,16 @@ sidesteps standing up an ASGI stack for this one surface.
   405 below), so a URL pasted without the slash would otherwise fail to
   connect. See `apps/mcp_server/urls.py`.
 * **`GET /api/mcp/`** → `405` with `Allow: POST`.
-* **CSRF-exempt** — JSON-RPC clients cannot mint CSRF tokens, and every
-  tool is read-only, so the CSRF risk surface is empty. Same rationale as
+* **Requires a Snowdesk account (SNOW-1035).** Every request carries an
+  OAuth access token — see [Authentication](#authentication) below.
+* **CSRF-exempt** — JSON-RPC clients cannot mint CSRF tokens, the endpoint
+  reads no session cookie (the bearer token is the only credential), and
+  every tool is read-only. Same rationale as
   `apps.analytics.views.telemetry_receive` (`docs/telemetry-pipeline.md`).
-* **Rate-limited** to 60 requests/minute per source IP
-  (`django-ratelimit`, `block=True`) — an over-limit request is rejected
-  automatically with a bare `403`, before the view body runs.
+* **Rate-limited** twice: 120 requests/minute per source IP
+  (`django-ratelimit`, `block=True` — an over-limit request is rejected
+  with a bare `403` before the view body runs, which also throttles token
+  guessing), and 60 requests/minute per authenticated user (`429`).
 * **`Cache-Control: no-store`** on every response — every reply is
   per-request JSON-RPC state, never safe to cache.
 * **Stateless** — no `Mcp-Session-Id` handling; each request is
@@ -54,6 +59,30 @@ sidesteps standing up an ASGI stack for this one surface.
   echoes it back; otherwise it returns its preferred version
   (`"2025-06-18"`, `PROTOCOL_VERSION`) and lets the client decide whether
   to disconnect, per spec.
+
+## Authentication
+
+Snowdesk is its own OAuth 2.1 authorization server; the flow, endpoints and
+token model are in [`docs/oauth.md`](oauth.md). What the MCP endpoint does:
+
+* It reads `Authorization: Bearer <token>` **before** parsing the body and
+  hands the token to `apps.oauth.services.tokens.authenticate_bearer`,
+  which checks it is a live access token, its grant has not been
+  disconnected, and its audience (`resource`) is this origin's MCP URL.
+* No token, or a rejected one, is a `401` with a JSON body (not a JSON-RPC
+  envelope) and:
+
+  ```
+  WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource<path>", scope="mcp"
+  ```
+
+  plus `, error="invalid_token"` when a token was sent. `<path>` is the
+  path called — `/api/mcp/` or `/api/mcp` — so the metadata document's
+  `resource` equals the URL the user typed, which Claude requires. Claude
+  ignores this header on any status but 401.
+* Access tokens live one hour; a connector refreshes them with its
+  thirty-day rotating refresh token. Disconnecting the app on
+  `/account/settings/` makes the next call a 401.
 
 ## Methods
 
@@ -470,33 +499,46 @@ successfully-routed call the tool couldn't satisfy.
 
 ## Pointing a client at it
 
-**MCP Inspector** (local smoke test):
+**Claude.ai / Claude Desktop / Claude Code:** add the deployed
+`https://<host>/api/mcp/` URL as a custom connector. Claude's first call
+gets the 401 above, follows `resource_metadata` to the discovery
+documents, registers (CIMD, or DCR as the fallback), and opens Snowdesk's
+sign-in and consent page in the browser. After Allow, tools work. Locally,
+put the dev server behind a tunnel (`ngrok http 8000`) and add the tunnel
+URL — Claude's hosted apps cannot reach `localhost`. Details in
+[`docs/oauth.md`](oauth.md#testing-locally).
+
+**MCP Inspector** (local smoke test) runs the same OAuth flow:
 
 ```bash
 npx @modelcontextprotocol/inspector
 # Transport: Streamable HTTP: http://localhost:8000/api/mcp/
 ```
 
-**Claude.ai / Claude Desktop remote MCP:** paste the deployed
-`https://<host>/api/mcp/` URL into the client's "add a remote MCP server"
-UI — no manifest or `.well-known` discovery is implemented in v1 (the
-`/llms.txt` link is the discovery path).
-
-**curl**, three-request smoke test:
+**curl**, three-request smoke test. Mint a token first — the command
+prints it once:
 
 ```bash
+TOKEN=$(uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0)
+
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.1"}}}'
 
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_regions","arguments":{"query":"Verbier"}}}'
 ```
+
+Without the header each call is a `401` carrying the `WWW-Authenticate`
+challenge.
 
 ## Known v1 limitations
 
@@ -518,8 +560,6 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
   alphabetically-first child `MicroRegion`'s `region_id` — a best-effort
   representative for major regions with multiple children, since a major
   region has no bulletin page of its own.
-* **Auth.** Public/anonymous, IP-rate-limited — matches the rest of
-  `/api/`. No token auth in v1.
 * **No `resources/*` capability.** Reference data (`list_regions`,
   `region_info`) is exposed as `tools/call` methods, not as MCP
   `resources/list` / `resources/read` — `initialize` advertises only
@@ -528,6 +568,8 @@ curl -s -X POST http://localhost:8000/api/mcp/ \
 
 ## See also
 
+* [`docs/oauth.md`](oauth.md) — the OAuth 2.1 authorization server the
+  endpoint's bearer tokens come from.
 * [`docs/telemetry-pipeline.md`](telemetry-pipeline.md) — the other
   CSRF-exempt, rate-limited, stateless JSON POST endpoint in this
   codebase; `mcp_endpoint` mirrors its shape.
