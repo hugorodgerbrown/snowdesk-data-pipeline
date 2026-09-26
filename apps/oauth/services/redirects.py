@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 if TYPE_CHECKING:
     from apps.oauth.models import OAuthClient
@@ -77,11 +77,68 @@ def _without_port(uri: str) -> tuple[str, str, str, str]:
     return (parts.scheme, parts.hostname or "", parts.path, parts.query)
 
 
+def registered_redirect_uri(client: "OAuthClient", uri: str) -> str | None:
+    """Return the redirect URI to send a browser to, taken from ``client``'s record.
+
+    The authorize endpoint never redirects to the string it was given: it
+    redirects to the matching entry in the client's registered list, so the
+    target's scheme, host, path and query always come from registration.
+    For a loopback match (RFC 8252 §7.3, any port) the only part taken from
+    the request is the port, parsed as an integer.
+
+    Args:
+        client: The client the authorize request names.
+        uri: The ``redirect_uri`` from the request.
+
+    Returns:
+        The URI to redirect to, which equals ``uri`` for every URI a client
+        can legitimately send, or ``None`` when ``uri`` is not registered.
+
+    """
+    if not uri:
+        return None
+    registered = [str(u) for u in client.redirect_uris or []]
+    for candidate in registered:
+        if candidate == uri:
+            return candidate
+    return _registered_loopback_uri(registered, uri)
+
+
+def _registered_loopback_uri(registered: list[str], uri: str) -> str | None:
+    """Return the loopback URI registered for ``uri``, with the request's port.
+
+    Args:
+        registered: The client's registered redirect URIs.
+        uri: The ``redirect_uri`` from the request.
+
+    Returns:
+        The registered URI with the request's port (an integer) put in, or
+        ``None`` when ``uri`` is not loopback or matches no registered one.
+
+    """
+    if not is_loopback(uri):
+        return None
+    try:
+        wanted = _without_port(uri)
+        port = urlsplit(uri).port
+    except ValueError:
+        return None
+    for candidate in registered:
+        if is_loopback(candidate) and _without_port(candidate) == wanted:
+            parts = urlsplit(candidate)
+            netloc = parts.hostname or ""
+            if port is not None:
+                netloc = f"{netloc}:{int(port)}"
+            return urlunsplit(parts._replace(netloc=netloc))
+    return None
+
+
 def redirect_uri_allowed(client: "OAuthClient", uri: str) -> bool:
     """Return True when ``uri`` is one of ``client``'s redirect URIs.
 
     Exact match, except that a loopback ``uri`` matches a registered
-    loopback URI whatever either's port.
+    loopback URI whatever either's port. See :func:`registered_redirect_uri`
+    for the value to actually redirect to.
 
     Args:
         client: The client the authorize request names.
@@ -91,18 +148,7 @@ def redirect_uri_allowed(client: "OAuthClient", uri: str) -> bool:
         True when the authorize endpoint may send a code to ``uri``.
 
     """
-    if not uri:
-        return False
-    registered = [str(u) for u in client.redirect_uris or []]
-    if uri in registered:
-        return True
-    if not is_loopback(uri):
-        return False
-    try:
-        wanted = _without_port(uri)
-    except ValueError:
-        return False
-    return any(is_loopback(r) and _without_port(r) == wanted for r in registered)
+    return registered_redirect_uri(client, uri) is not None
 
 
 def only_loopback(client: "OAuthClient") -> bool:

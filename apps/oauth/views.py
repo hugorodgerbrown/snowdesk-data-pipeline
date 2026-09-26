@@ -60,7 +60,7 @@ from apps.oauth.services.clients import (
     resolve_client,
 )
 from apps.oauth.services.pkce import is_valid_challenge
-from apps.oauth.services.redirects import only_loopback, redirect_uri_allowed
+from apps.oauth.services.redirects import only_loopback, registered_redirect_uri
 from apps.oauth.services.resource import (
     is_mcp_resource,
     mcp_resource_url,
@@ -242,12 +242,15 @@ def _resolve_client_and_redirect(
         return _error_page(
             request, _("The app asking to connect is not one Snowdesk recognises.")
         )
-    if not redirect_uri_allowed(client, params["redirect_uri"]):
+    # Every redirect from here on goes to the client's registered URI, never
+    # to the request's string (only a loopback port is taken from it).
+    redirect_uri = registered_redirect_uri(client, params["redirect_uri"])
+    if redirect_uri is None:
         return _error_page(
             request,
             _("The app asked to send you back to an address it has not registered."),
         )
-    return client, params["redirect_uri"]
+    return client, redirect_uri
 
 
 class _AuthorizeError(Exception):

@@ -14,6 +14,7 @@ from apps.oauth.services.redirects import (
     is_registrable,
     only_loopback,
     redirect_uri_allowed,
+    registered_redirect_uri,
 )
 from tests.factories import OAuthClientFactory
 
@@ -88,3 +89,28 @@ def test_only_loopback() -> None:
         OAuthClientFactory.create(redirect_uris=["http://127.0.0.1/cb", CLAUDE])
     )
     assert not only_loopback(OAuthClientFactory.create(redirect_uris=[]))
+
+
+@pytest.mark.django_db
+def test_registered_redirect_uri_returns_the_stored_value() -> None:
+    """An exact match returns the client's registered string."""
+    client = OAuthClientFactory.create(redirect_uris=[CLAUDE])
+    assert registered_redirect_uri(client, CLAUDE) == CLAUDE
+    assert registered_redirect_uri(client, CLAUDE + "/") is None
+    assert registered_redirect_uri(client, "") is None
+
+
+@pytest.mark.django_db
+def test_registered_redirect_uri_takes_only_the_port_from_a_loopback_request() -> None:
+    """A loopback match is rebuilt from the registered URI plus the requested port."""
+    client = OAuthClientFactory.create(redirect_uris=["http://localhost/callback"])
+    assert (
+        registered_redirect_uri(client, "http://localhost:55555/callback")
+        == "http://localhost:55555/callback"
+    )
+    assert (
+        registered_redirect_uri(client, "http://localhost/callback")
+        == "http://localhost/callback"
+    )
+    assert registered_redirect_uri(client, "http://localhost:55555/other") is None
+    assert registered_redirect_uri(client, "http://localhost:99999/callback") is None
