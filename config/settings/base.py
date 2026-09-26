@@ -220,6 +220,8 @@ INSTALLED_APPS = [
     "apps.trips",
     "apps.downloads",
     "apps.mcp_server",
+    # SNOW-1035: the OAuth 2.1 authorization server that gates /api/mcp/.
+    "apps.oauth",
 ]
 
 MIDDLEWARE = [
