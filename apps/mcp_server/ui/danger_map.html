@@ -138,6 +138,9 @@
                 font-size: 10px;
                 opacity: 0.85;
             }
+            .attribution a {
+                color: inherit;
+            }
             .status {
                 display: grid;
                 position: absolute;
@@ -279,11 +282,12 @@
               swisstopo: {
                 url: (z, x, y) =>
                   `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe-winter/default/current/3857/${z}/${x}/${y}.jpeg`,
-                attribution: "© swisstopo",
+                attribution: { label: "© swisstopo", url: "https://www.swisstopo.admin.ch/" },
               },
               osm: {
                 url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
-                attribution: "© OpenStreetMap contributors",
+                // OSM's tile policy asks for the credit to link to its copyright page.
+                attribution: { label: "© OpenStreetMap contributors", url: "https://www.openstreetmap.org/copyright" },
               },
             };
 
@@ -592,7 +596,10 @@
                   svg.appendChild(img);
                 }
               }
-              $("attribution").textContent = basemap.attribution;
+              const credit = document.createElement("a");
+              credit.href = basemap.attribution.url;
+              credit.textContent = basemap.attribution.label;
+              $("attribution").replaceChildren(credit);
               $("attribution").hidden = false;
 
               for (const f of joinedFeatures().features) {
@@ -683,6 +690,14 @@
               request("ui/open-link", { url: regionId ? `${url}#${regionId}` : url }).catch(() => {});
             }
             $("open-map").addEventListener("click", () => openMap(null));
+            // A sandboxed view cannot navigate on its own, so the credit
+            // link opens through the host like every other link here.
+            $("attribution").addEventListener("click", (event) => {
+              const link = event.target.closest("a");
+              if (!link) return;
+              event.preventDefault();
+              request("ui/open-link", { url: link.href }).catch(() => {});
+            });
             $("show-on-map").addEventListener("click", () => openMap(state.selected));
             $("ask").addEventListener("click", () => {
               const entry = regionEntry(state.selected);

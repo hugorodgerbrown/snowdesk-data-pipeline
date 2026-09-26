@@ -39,7 +39,7 @@ Two rules for editing this file:
         {% trans "Privacy Policy" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="privacy-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 8 September 2026 &middot; Version 1.2" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 26 September 2026 &middot; Version 1.3" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
@@ -290,9 +290,18 @@ Two rules for editing this file:
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>swisstopo</strong> (geo.admin.ch) — supplies the slope-angle overlay. As with the
-                        basemap, your browser requests those tiles directly, so swisstopo receives your IP address and
-                        the area you are viewing while the overlay is switched on.
+                        <strong>swisstopo</strong> (geo.admin.ch) — supplies the slope-angle overlay, and the Swiss
+                        basemap of the danger map shown inside AI assistants such as Claude. As with the basemap, your
+                        browser requests those tiles directly, so swisstopo receives your IP address and the area you
+                        are viewing while the overlay or that map is showing.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>OpenStreetMap</strong> (tile.openstreetmap.org) — supplies the basemap of the danger
+                        map shown inside AI assistants such as Claude, for areas outside Switzerland, when the assistant
+                        cannot run our usual map. Your browser requests those tiles directly, so the OpenStreetMap
+                        Foundation receives your IP address and the area you are viewing.
                     {% endblocktrans %}
                 </li>
                 <li>
