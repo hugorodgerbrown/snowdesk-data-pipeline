@@ -49,3 +49,18 @@ def test_view_loads_only_origins_its_csp_declares() -> None:
         for chunk in html.split(marker)[1:]:
             origin = "https://" + chunk.split("/", 1)[0]
             assert origin in declared
+
+
+def test_fallback_tile_origins_are_declared() -> None:
+    """Every raster tile template the SVG fallback builds is in the CSP.
+
+    The templates are JavaScript template literals, not ``src`` attributes,
+    so the attribute scan above does not see them.
+    """
+    resource = UI_RESOURCES[DANGER_MAP_URI]
+    html = resource.contents()["text"]
+    declared = set(resource.csp["resourceDomains"])
+    templates = html.split("`https://")[1:]
+    assert len(templates) == 2
+    for chunk in templates:
+        assert "https://" + chunk.split("/", 1)[0] in declared

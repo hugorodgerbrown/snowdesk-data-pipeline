@@ -493,8 +493,9 @@ stateless and always advertises the metadata.
 
 ### `show_danger_map`
 
-`get_regional_snapshot` plus a dated bulletin page `url` per region and a
-`scope_label`, with `_meta.ui.resourceUri = "ui://snowdesk/danger-map.html"`.
+`get_regional_snapshot` plus a dated bulletin page `url` per region, a
+`scope_label`, and `map_url` (the Snowdesk map for the day, `/?d=<date>`),
+with `_meta.ui.resourceUri = "ui://snowdesk/danger-map.html"`.
 
 * **Params:** as `get_regional_snapshot` — exactly one of `country` /
   `major_region_id`, optional `date`.
@@ -522,17 +523,27 @@ dialect directly, without the `@modelcontextprotocol/ext-apps` SDK:
 4. The ‹ › buttons call `show_danger_map` for the neighbouring day through
    the host's `tools/call` proxy. Clicking a region sends
    `ui/update-model-context` (the model learns the selection without a new
-   turn); the panel's buttons send `ui/open-link` (bulletin page) and
-   `ui/message` (a follow-up question in the chat).
+   turn); the panel's buttons send `ui/open-link` (bulletin page, or the
+   Snowdesk map framed on the region as `map_url#<region_id>`) and
+   `ui/message` (a follow-up question in the chat). **Open map** in the
+   header sends `ui/open-link` with `map_url`: the view is a fixed
+   overview, and zooming or panning happens on the Snowdesk map.
 
 The view loads MapLibre 4.7.1 from `cdn.jsdelivr.net` and the OpenFreeMap
 Liberty basemap from `tiles.openfreemap.org`; both origins are declared in
 the resource's `_meta.ui.csp`. MapLibre starts its worker from a `blob:`
 URL, and the spec's CSP has no `worker-src` directive, so a host that
 builds its policy strictly from the spec refuses the worker. The view
-detects that (no `load` within 8 s, or no `maplibregl` global) and falls
-back to an SVG choropleth drawn from the same GeoJSON, with no basemap.
-Which path Claude's sandbox takes is not yet measured.
+draws an SVG choropleth from the same GeoJSON straight away and swaps in
+MapLibre only once its style loads. A refused worker raises a
+`securitypolicyviolation` event, which abandons MapLibre at once; no
+`load` within 8 s, or no `maplibregl` global, abandons it too, and the SVG
+stays. MCP Explorer takes this path. The SVG lays the regions over raster tiles —
+swisstopo's winter map (`wmts.geo.admin.ch`) when every region in scope is
+Swiss, OpenStreetMap (`tile.openstreetmap.org`) otherwise. A raster tile is
+an `<image>`, loaded under `img-src`, so it needs no worker; both origins
+are in `resourceDomains`. Which path Claude's sandbox takes is not yet
+measured.
 
 ### Testing locally
 

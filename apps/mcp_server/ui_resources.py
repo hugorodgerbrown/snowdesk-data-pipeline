@@ -40,6 +40,12 @@ _MAPLIBRE_ORIGIN = "https://cdn.jsdelivr.net"
 #: OpenFreeMap's Liberty style — the one basemap in ``static/js`` that needs
 #: no key and covers every provider's country.
 _BASEMAP_ORIGIN = "https://tiles.openfreemap.org"
+#: Raster tiles for the SVG fallback, drawn when the host's CSP stops
+#: MapLibre's blob: worker. An <image> tile loads under img-src, which
+#: ``resourceDomains`` covers, so the fallback still shows a basemap:
+#: swisstopo's winter map for a Swiss scope, OpenStreetMap elsewhere.
+_SWISSTOPO_RASTER_ORIGIN = "https://wmts.geo.admin.ch"
+_OSM_RASTER_ORIGIN = "https://tile.openstreetmap.org"
 
 
 @dataclass(frozen=True)
@@ -97,7 +103,12 @@ UI_RESOURCES: dict[str, UiResource] = {
         filename="danger_map.html",
         csp={
             "connectDomains": [_BASEMAP_ORIGIN],
-            "resourceDomains": [_MAPLIBRE_ORIGIN, _BASEMAP_ORIGIN],
+            "resourceDomains": [
+                _MAPLIBRE_ORIGIN,
+                _BASEMAP_ORIGIN,
+                _SWISSTOPO_RASTER_ORIGIN,
+                _OSM_RASTER_ORIGIN,
+            ],
         },
     ),
 }

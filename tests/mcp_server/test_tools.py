@@ -2024,6 +2024,16 @@ class TestDangerMapTools:
         assert result["scope_label"] == "CH-4"
         assert result["count"] == 2
 
+    def test_show_danger_map_links_the_snowdesk_map_for_the_day(
+        self, valais: dict[str, MicroRegion]
+    ) -> None:
+        """``map_url`` opens the full map on the same day (``?d=``)."""
+        result = tools.show_danger_map(
+            major_region_id="CH-4", date=datetime.date(2026, 1, 15)
+        )
+
+        assert result["map_url"].endswith("/?d=2026-01-15")
+
     def test_show_danger_map_invalid_scope_is_a_tool_error(self) -> None:
         """Neither scope argument is the snapshot's ToolError."""
         with pytest.raises(tools.ToolError):
