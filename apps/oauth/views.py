@@ -45,6 +45,7 @@ from django.http import (
 )
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -400,9 +401,14 @@ def _anonymous_authorize(request: HttpRequest) -> HttpResponse:
             request, _("Your session ended. Start again from the app."), 403
         )
     sign_in = reverse("accounts:sign_in")
-    return HttpResponseRedirect(
-        f"{sign_in}?next={quote(request.get_full_path(), safe='/')}"
-    )
+    next_path = request.get_full_path()
+    # Always a same-host relative path; checked anyway so the only thing that
+    # can ride along to sign-in is a URL on this host.
+    if not url_has_allowed_host_and_scheme(
+        next_path, allowed_hosts={request.get_host()}, require_https=False
+    ):
+        return HttpResponseRedirect(sign_in)
+    return HttpResponseRedirect(f"{sign_in}?next={quote(next_path, safe='/')}")
 
 
 @require_http_methods(["GET", "POST"])
