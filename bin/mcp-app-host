@@ -80,6 +80,8 @@ class Handler(BaseHTTPRequestHandler):
             target, data=payload, headers=headers
         )
         try:
+            # semgrep dynamic-urllib-use: scheme and host are checked above.
+            # nosemgrep
             with urllib.request.urlopen(upstream, timeout=30) as response:  # noqa: S310 — localhost-only, checked above
                 status, body = response.status, response.read()
         except urllib.error.HTTPError as exc:

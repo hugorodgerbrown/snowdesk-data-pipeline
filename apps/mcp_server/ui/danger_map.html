@@ -256,6 +256,8 @@
               "ui/resource-teardown": () => ({}),
             };
 
+            // The host's origin is unknowable from inside the sandbox, so the
+            // target is "*"; the payload carries nothing the host did not send.
             function send(message) {
               window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
             }
@@ -268,6 +270,8 @@
               send({ method, params });
             }
 
+            // Filter on source, not origin: in a sandbox without
+            // allow-same-origin every sender, the host included, reads "null".
             window.addEventListener("message", (event) => {
               if (event.source !== window.parent) return;
               const msg = event.data;
