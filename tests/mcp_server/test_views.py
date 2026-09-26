@@ -149,12 +149,12 @@ def test_unknown_method_returns_method_not_found(client: Client, token: str) -> 
 
 
 @pytest.mark.django_db
-def test_notification_returns_204_with_no_body(client: Client, token: str) -> None:
-    """A JSON-RPC notification (no 'id') gets a bare 204, no JSON body."""
+def test_notification_returns_202_with_no_body(client: Client, token: str) -> None:
+    """A JSON-RPC notification (no 'id') gets a bare 202, as MCP requires."""
     response = _post(
         client, {"jsonrpc": "2.0", "method": "notifications/initialized"}, token
     )
-    assert response.status_code == 204
+    assert response.status_code == 202
     assert response.content == b""
 
 

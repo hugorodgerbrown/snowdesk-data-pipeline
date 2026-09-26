@@ -89,7 +89,7 @@ token model are in [`docs/oauth.md`](oauth.md). What the MCP endpoint does:
 | Method | Notes |
 |--------|-------|
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}, "resources": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
-| `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
+| `notifications/initialized` | A notification (no `id`) — accepted, no response body (`202 Accepted` — the Streamable HTTP transport requires 202; a `204` stalled Claude's connector after the handshake). |
 | `ping` | Liveness check; empty result `{}`. |
 | `tools/list` | Returns all seventeen tools below with `name`, `description`, `inputSchema`, and `_meta` for the two MCP Apps tools. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
