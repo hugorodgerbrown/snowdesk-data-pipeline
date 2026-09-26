@@ -623,3 +623,66 @@ class TestGrantRevoke:
         grant = OAuthGrantFactory.create()
         response = client.post(self._url(grant), HTTP_HX_REQUEST="true")
         assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Round trip
+# ---------------------------------------------------------------------------
+
+
+def _mcp_ping(client: Client, token: str) -> _Response:
+    """POST a JSON-RPC ping to the MCP endpoint with ``token``."""
+    return client.post(
+        reverse("api:mcp:endpoint"),
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+
+
+def test_full_round_trip(client: Client) -> None:
+    """register → authorize → token → MCP → refresh → revoke → 401."""
+    machine = Client()
+    registered = machine.post(
+        reverse("oauth:register"),
+        data=json.dumps({"client_name": "Claude", "redirect_uris": [CALLBACK]}),
+        content_type="application/json",
+    ).json()
+    oauth_client = OAuthClient.objects.get(client_id=registered["client_id"])
+
+    client.force_login(_verified_user())
+    assert client.get(_authorize_url(oauth_client)).status_code == 200
+    approved = client.post(
+        reverse("oauth:authorize"),
+        _authorize_query(oauth_client) | {"decision": "approve"},
+    )
+    code = parse_qs(urlsplit(_meta_refresh_target(approved)).query)["code"][0]
+
+    tokens = _post_token(
+        machine,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": oauth_client.client_id,
+            "redirect_uri": CALLBACK,
+            "code_verifier": VERIFIER,
+            "resource": RESOURCE,
+        },
+    ).json()
+    assert _mcp_ping(machine, tokens["access_token"]).status_code == 200
+
+    refreshed = _post_token(
+        machine,
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": tokens["refresh_token"],
+            "client_id": oauth_client.client_id,
+        },
+    ).json()
+    assert _mcp_ping(machine, refreshed["access_token"]).status_code == 200
+
+    machine.post(
+        reverse("oauth:revoke"),
+        {"token": refreshed["refresh_token"], "client_id": oauth_client.client_id},
+    )
+    assert _mcp_ping(machine, refreshed["access_token"]).status_code == 401
