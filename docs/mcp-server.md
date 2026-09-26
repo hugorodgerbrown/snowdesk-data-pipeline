@@ -579,6 +579,39 @@ To test inside Claude itself, expose the dev server through a tunnel and
 add the tunnel's `/api/mcp/` URL as a custom connector; Claude runs the
 OAuth flow in [Authentication](#authentication) to connect.
 
+### When the view will not load
+
+Claude renders the view inside a sandbox page on its own host,
+`<hash>.claudemcpcontent.com/mcp_apps?…` (the query string carries the
+resource's CSP). That page loads **before** the host asks this server for
+the HTML, so a failure to load it cannot come from `danger_map.html` or
+`_meta.ui.csp`, and leaves no `resources/read` in Snowdesk's logs.
+
+The known case (2026-09-26, Android, staging): the Claude app showed
+"Web page not available … `net::ERR_CONNECTION_ABORTED`" in place of the
+map. The cause was the mobile carrier's content filter, Vodafone UK
+**Secure Net**, which blocks `claudemcpcontent.com` and intercepts its TLS
+with its own certificate. The app's WebView drops the connection; Chrome
+on the same phone shows `ERR_CERT_AUTHORITY_INVALID`, and proceeding past
+the warning reveals Vodafone's "The page is blocked" page. Turning off the
+parental-control profile alone did not clear it; on wifi the map rendered.
+
+To triage a view that will not open:
+
+1. Open the failing `claudemcpcontent.com` URL in the device's browser. A
+   certificate error there means something on the network is intercepting
+   it.
+2. Retry on a different network (wifi rather than mobile data, VPN and
+   Private DNS off). If it renders there, nothing in Snowdesk needs to
+   change: the fix is the network's filter setting (for Vodafone, Secure
+   Net itself, not only its parental profile).
+3. If it fails on every network, check the same conversation on desktop
+   or web before suspecting the view.
+
+A user behind such a filter still gets the tool's text result; only the
+map is lost. The blocked host is Anthropic's, so it cannot be worked
+around from this server.
+
 ## Error codes
 
 Standard JSON-RPC 2.0 reserved codes (`apps/mcp_server/protocol.py`):
