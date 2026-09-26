@@ -2501,7 +2501,12 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         f"- [MCP JSON-RPC endpoint]({link('api:mcp:endpoint')}): POST-only "
         "Model Context Protocol server (JSON-RPC 2.0) with tools to search "
         "regions and resorts, read current conditions, query danger-rating "
-        "history, and list resorts in a region.",
+        "history, and list resorts in a region. Requires a Snowdesk account: "
+        "clients connect with OAuth 2.1 (authorization code + PKCE) and send "
+        "an `Authorization: Bearer` token (SNOW-1035).",
+        f"- [Protected-resource metadata]({base}/.well-known/"
+        "oauth-protected-resource/api/mcp/): RFC 9728 discovery document "
+        "naming the authorization server for the MCP endpoint.",
         "",
         "## Legal",
         "",

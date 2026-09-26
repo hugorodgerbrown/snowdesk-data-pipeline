@@ -117,6 +117,14 @@ def test_llms_lists_mcp_endpoint() -> None:
     assert "Model Context Protocol" in body
 
 
+def test_llms_says_mcp_requires_an_account() -> None:
+    """SNOW-1035: the MCP entry says OAuth is required and links discovery."""
+    body = _body()
+    assert "Requires a Snowdesk account" in body
+    assert "OAuth 2.1" in body
+    assert "/.well-known/oauth-protected-resource/api/mcp/" in body
+
+
 def test_llms_links_are_absolute_and_host_pinned() -> None:
     """Every Markdown link uses an absolute URL built from SITE_BASE_URL.
 
