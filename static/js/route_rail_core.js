@@ -239,6 +239,14 @@
   }
 
   /**
+   * @param {*} value
+   * @returns {value is number}
+   */
+  function isKnown(value) {
+    return typeof value === 'number' && isFinite(value);
+  }
+
+  /**
    * The figures line for a route or a leg.
    *
    * @param {{
@@ -255,40 +263,25 @@
   function formatFigures(figures, strings) {
     var t = { ...DEFAULT_FIGURES, ...(strings || {}) };
     var f = figures || {};
-    /**
-     * @param {*} value
-     * @returns {value is number}
-     */
-    var known = function (value) {
-      return typeof value === 'number' && isFinite(value);
-    };
 
     /** @type {Array<string>} */
     var parts = [];
-    if (known(f.distance_m)) {
+    if (isKnown(f.distance_m)) {
       parts.push(interpolate(t['figure-distance'], { km: (f.distance_m / 1000).toFixed(1) }));
     }
-    if (known(f.ascent_m)) {
+    if (isKnown(f.ascent_m)) {
       parts.push(interpolate(t['figure-ascent'], { m: String(Math.round(f.ascent_m)) }));
     }
-    if (known(f.descent_m)) {
+    if (isKnown(f.descent_m)) {
       parts.push(interpolate(t['figure-descent'], { m: String(Math.round(f.descent_m)) }));
     }
-    if (known(f.elevation_start) && known(f.elevation_end)) {
+    if (isKnown(f.elevation_start) && isKnown(f.elevation_end)) {
       parts.push(interpolate(t['figure-range'], {
         start: String(Math.round(f.elevation_start)),
         end: String(Math.round(f.elevation_end)),
       }));
     }
     return parts.join(t['figure-separator']);
-  }
-
-  /**
-   * @param {*} value
-   * @returns {value is number}
-   */
-  function isKnown(value) {
-    return typeof value === 'number' && isFinite(value);
   }
 
   /**
