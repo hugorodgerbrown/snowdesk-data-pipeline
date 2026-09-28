@@ -255,31 +255,74 @@ class TestRailTwoShipsInsideRailOne:
             "class-slope-50",
             "class-unknown",
             "two-placeholder",
-            "two-bank-zoom",
-            "attitude-flat",
-            "attitude-gentle-descent",
-            "attitude-gentle-ascent",
-            "attitude-fall-line",
-            "attitude-falls-away-left",
-            "attitude-falls-away-right",
-            "attitude-traverse-left",
-            "attitude-traverse-right",
-            "attitude-traverse",
+            "leg-climb",
+            "leg-descent",
+            "leg-ascend",
+            "leg-descend",
+            "leg-length",
+            "leg-length-steep",
+            "track-gentle",
+            "track-skin",
+            "track-traverse",
+            "track-steep",
+            "track-bootpack",
             "readout-slope",
             "readout-slope-bank",
+            "readout-slope-bank-left",
+            "readout-slope-bank-right",
             "readout-band",
             "readout-passage",
         } <= keys
         # SNOW-1024 retired the side-suffixed slope lines and the
-        # uphill / downhill traverse terms.
+        # uphill / downhill traverse terms; SNOW-1044 the attitude words,
+        # the zoom placeholder and the ▲/▼ figures line.
         assert keys.isdisjoint(
             {
                 "readout-slope-left",
                 "readout-slope-right",
                 "attitude-downhill-traverse",
                 "attitude-uphill-traverse",
+                "attitude-flat",
+                "attitude-fall-line",
+                "attitude-traverse",
+                "two-bank-zoom",
+                "figure-distance",
+                "figure-ascent",
+                "figure-descent",
+                "figure-range",
             }
         )
+
+    def test_its_card_strings_read_as_the_ticket_words_them(
+        self, client: Client
+    ) -> None:
+        """SNOW-1044: the title's vertical, the subtitle and the readout."""
+        rail = _rail(_home(client))
+        block = re.search(
+            r'<template id="route-rail-two-strings-template">(.*?)</template>',
+            rail,
+            re.S,
+        )
+        assert block is not None
+        strings = {
+            key: " ".join(value.split())
+            for key, value in re.findall(
+                r'data-string="([^"]+)">(.*?)</span>', block.group(1), re.S
+            )
+        }
+
+        assert strings["leg-ascend"] == "Leg %(i)s — ascend %(m)s m"
+        assert strings["leg-descend"] == "Leg %(i)s — descend %(m)s m"
+        assert strings["leg-length-steep"] == (
+            "%(length)s m · %(steep)s m steep terrain"
+        )
+        assert strings["readout-slope-bank-right"] == (
+            "%(angle)s° slope · %(bank)s° bank, falls away right"
+        )
+        assert [strings[f"track-{word}"] for word in ("gentle", "skin")] == [
+            "Gentle",
+            "Skin",
+        ]
 
     def test_it_has_no_distance_scale(self, client: Client) -> None:
         """SNOW-1024: rail two's ticks and km labels are gone."""

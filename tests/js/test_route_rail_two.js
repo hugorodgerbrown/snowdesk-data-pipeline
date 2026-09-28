@@ -11,9 +11,13 @@
  * one-finger drag scrubs the cursor while two fingers pan it, a null bank
  * draws no tick, and the readout reads the terrain under the cursor or the stretch selected, stepped left, centred
  * or right under its anchor (SNOW-1024). SNOW-1031's revision: a leg opens
- * fitted, a long one shows the bank placeholder, a double-click or a touch
- * double-tap zooms to where the bank row draws and back, and passage bars
- * are 4 px tall and never under 6 px wide. SNOW-1032: a tap picks by row
+ * fitted, a double-click or a touch double-tap zooms to where the wedges
+ * draw and back, and passage bars
+ * are 4 px tall and never under 6 px wide. SNOW-1044: the track row is
+ * labelled stretch blocks fitted and wedges with stretch ticks from 10 px
+ * a segment, a chevron marks each kick turn on a climb, the card's title
+ * carries the leg's vertical and its subtitle the horizontal, and the
+ * readout reads the slope, the bank and its side. SNOW-1032: a tap picks by row
  * and by nearest extent, the selection box is at least 12 px with the
  * rest of the lane dimmed, a band's selection carries its class, and a
  * touch or mouse drag scrubs and on release selects the band holding the
@@ -214,7 +218,7 @@ describe('following the cursor', () => {
     cursor.openLeg(LEGS[1]);
     expect(row.hasAttribute('data-empty')).toBe(false);
     expect(two.view()).toEqual({ from: 100, to: 140 });
-    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m');
     expect(onView).toHaveBeenLastCalledWith({ from: 100, to: 140 }, expect.anything());
     expect(onResize).toHaveBeenCalledTimes(2);
 
@@ -722,6 +726,57 @@ describe('the rows (SNOW-1019, SNOW-1024)', () => {
   });
 });
 
+describe('the card (SNOW-1044)', () => {
+  const subtitle = () => row.querySelector('[data-route-rail-two-figures]').textContent;
+
+  it('titles a descent with its descent and a climb with its ascent', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+
+    cursor.openLeg(LEGS[2]);
+    expect(title.textContent).toMatch(/^Leg 3 — ascend \d{1,3}(,\d{3})* m$/);
+  });
+
+  it('subtitles the leg with its length and its ground of 30° or more', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[1]);
+    // 40 samples of 50 m; half of them 32° ground.
+    expect(subtitle()).toBe('2,000 m · 1,000 m steep terrain');
+
+    cursor.openLeg(LEGS[2]);
+    expect(subtitle()).toBe('16,000 m · 8,000 m steep terrain');
+  });
+
+  it('keeps a steep figure of zero, and leaves it out with no slope record', () => {
+    const { cursor } = attach({ angles: ANGLES.map(() => 12) });
+    cursor.openLeg(LEGS[1]);
+    expect(subtitle()).toBe('2,000 m · 0 m steep terrain');
+
+    const bare = attach({ angles: [], banks: [] });
+    bare.cursor.openLeg(LEGS[1]);
+    expect(subtitle()).toBe('2,000 m');
+  });
+
+  it('falls back to the leg\'s direction with no heights to read', () => {
+    const cursor = self.pwaRouteCursorCore.createRouteCursor(N);
+    two.attach({
+      cursor,
+      slope: { angles: ANGLES, banks: BANKS, passages: [] },
+      profile: self.pwaElevationProfileCore.readProfile(track(200).map(([x, y]) => [x, y, null])),
+      legs: LEGS,
+      sampleCount: N,
+      spanM: SPAN_M,
+      onView: vi.fn(),
+      onResize: vi.fn(),
+    });
+    cursor.openLeg(LEGS[1]);
+
+    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(subtitle()).toBe('2,000 m · 1,000 m steep terrain');
+  });
+});
+
 describe('the empty state (SNOW-1024)', () => {
   it('shows the placeholder with zoom, close and the readout hidden', () => {
     attach();
@@ -743,7 +798,7 @@ describe('the empty state (SNOW-1024)', () => {
 
     cursor.openLeg(LEGS[1]);
 
-    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m');
     expect(title.classList.contains('text-text-1')).toBe(true);
     expect(title.classList.contains('text-text-2')).toBe(false);
     expect(zoomOutButton.hidden).toBe(false);
@@ -807,7 +862,7 @@ describe('the leg picker (SNOW-1033)', () => {
 
     expect(openLeg).toHaveBeenCalledWith(LEGS[1]);
     expect(cursor.state().openLeg).toMatchObject({ from: 100, to: 139 });
-    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m');
     // It opens fitted, as a leg opened anywhere else does (SNOW-1031).
     expect(two.view()).toEqual({ from: 100, to: 140 });
   });
@@ -996,7 +1051,7 @@ describe('the opening motion (SNOW-1033)', () => {
       { left: '0px', width: '100%' },
     ]);
     // The leg is drawn under it already; the map hears the height at the end.
-    expect(title.textContent).toBe('Leg 2 — descent');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m');
     expect(legsLayer.hidden).toBe(false);
     expect(onResize).toHaveBeenCalledTimes(1);
 
@@ -1224,9 +1279,9 @@ describe('the wedges (SNOW-1031)', () => {
   });
 });
 
-describe('the bank row follows the zoom (SNOW-1031)', () => {
-  /** @returns {?Element} The placeholder group, or null. */
-  const placeholder = () => lane.querySelector('[data-route-rail-two-bank-placeholder]');
+describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
+  /** @returns {Array<Element>} The stretch blocks drawn. */
+  const blocks = () => Array.from(lane.querySelectorAll('.route-rail-two-track-block'));
   /** @returns {number} Glyph ground lines drawn. */
   const glyphCount = () => lane.querySelectorAll('.route-rail-two-wedge[data-wedge="ground"]').length;
 
@@ -1247,31 +1302,122 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
     pointer(lane, 'pointerup', { x: x + 10 });
   }
 
-  it('opens a long leg fitted, with the placeholder in place of glyphs', () => {
+  it('opens a long leg fitted, with stretch blocks in place of wedges', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[2]);
 
     expect(two.view()).toEqual({ from: 140, to: 460 });
     expect(glyphCount()).toBe(0);
-    const group = placeholder();
-    expect(group).not.toBeNull();
-    expect(group.getAttribute('pointer-events')).toBe('none');
-    expect(group.querySelector('text').textContent).toBe('Zoom in to see the bank');
-    expect(group.querySelector('text').getAttribute('fill')).toBe('var(--color-text-3)');
-    const line = group.querySelector('line');
-    expect(line.getAttribute('stroke-dasharray')).toBe('3 3');
-    expect(line.getAttribute('y1')).toBe(String(self.pwaRouteRailTwoCore.ROWS.ribbonY));
-    expect(group.querySelector('rect').getAttribute('fill')).toBe('var(--color-card)');
+    expect(lane.querySelector('[data-route-rail-two-bank-placeholder]')).toBeNull();
+    // Five-sample runs of 20° and 32° ground banked ±20°: on a climb that
+    // is Skin and Traverse, each run under six samples, so the merge
+    // leaves one stretch.
+    const drawn = blocks();
+    expect(drawn.map((b) => b.getAttribute('data-word'))).toEqual(['traverse']);
+    expect(drawn[0].getAttribute('fill')).toBe('var(--color-track-block)');
+    expect(drawn[0].getAttribute('pointer-events')).toBe('none');
+    expect(drawn[0].getAttribute('y')).toBe(String(self.pwaRouteRailTwoCore.ROWS.blockTop));
+    const label = lane.querySelector('.route-rail-two-track-label');
+    expect(label.textContent).toBe('Traverse');
+    // No ticks in words: the blocks are the stretches.
+    expect(lane.querySelector('.route-rail-two-track-tick')).toBeNull();
     // The bands are still drawn per segment, and the passages marked.
     expect(bandRects().length).toBeGreaterThan(0);
   });
 
-  it('draws glyphs, not the placeholder, on a leg that resolves fitted', () => {
+  it('labels each stretch with its word, and drops a label that does not fit', () => {
+    // Leg 3 (140–459) fitted at 1.875 px a sample: 30 samples of gentle
+    // climbing then steep ground with the fall line, then 12 steep and
+    // banked, the rest gentle.
+    const angles = ANGLES.slice();
+    const banks = BANKS.slice();
+    for (let i = 140; i <= 459; i += 1) {
+      angles[i] = i < 170 ? 10 : i < 200 ? 35 : i < 212 ? 35 : 10;
+      banks[i] = i >= 200 && i < 212 ? 25 : 0;
+    }
+    const { cursor } = attach({ angles, banks });
+    cursor.openLeg(LEGS[2]);
+
+    expect(blocks().map((b) => [b.getAttribute('data-word'), b.getAttribute('data-from')])).toEqual([
+      ['skin', '140'],
+      ['steep', '170'],
+      ['traverse', '200'],
+      ['skin', '212'],
+    ]);
+    const labels = Array.from(lane.querySelectorAll('.route-rail-two-track-label'));
+    // The 12-sample traverse is 22.5 px − 2: too narrow for "Traverse".
+    expect(labels.map((l) => l.textContent)).toEqual(['Skin', 'Steep', 'Skin']);
+  });
+
+  it('switches to wedges at 10 px a segment, with a dashed tick at each stretch boundary', () => {
+    const angles = ANGLES.slice();
+    const banks = BANKS.slice();
+    for (let i = 140; i <= 459; i += 1) {
+      angles[i] = i < 300 ? 10 : 35;
+      banks[i] = 0;
+    }
+    const { cursor } = attach({ angles, banks });
+    cursor.openLeg(LEGS[2]);
+    cursor.setIndex(300);
+    // 320 → 160 → 80 → 40 samples: 15 px a segment.
+    zoomInButton.click();
+    zoomInButton.click();
+    expect(blocks().length).toBeGreaterThan(0);
+    zoomInButton.click();
+
+    expect(blocks()).toHaveLength(0);
+    // A 40-sample window about the cursor: the segments it cuts draw too.
+    expect(glyphCount()).toBeGreaterThanOrEqual(40);
+    const ticks = Array.from(lane.querySelectorAll('.route-rail-two-track-tick'));
+    expect(ticks.map((t) => t.getAttribute('data-at'))).toEqual(['300']);
+    expect(ticks[0].getAttribute('stroke-dasharray')).toBe('2 2');
+    expect(ticks[0].getAttribute('stroke')).toBe('var(--color-track-tick)');
+  });
+
+  it('draws wedges fitted on a leg short enough', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
-    expect(placeholder()).toBeNull();
+    expect(blocks()).toHaveLength(0);
     expect(glyphCount()).toBe(40);
+  });
+
+  it('marks each kick turn with a chevron at every zoom, on a climb only', () => {
+    const banks = BANKS.map(() => 20);
+    banks[300] = -20;
+    banks[301] = -20;
+    banks[302] = 10;
+    banks[303] = -20;
+    banks[120] = -20;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[2]);
+
+    /** @returns {Array<string>} The chevrons' segment indices. */
+    const chevrons = () => Array.from(lane.querySelectorAll('.route-rail-two-kick-turn'))
+      .map((el) => el.getAttribute('data-index'));
+    // 299 → 300 changes side at 20°; 301 → 302 is under 15°; 302 → 303
+    // too; 303 → 304 changes side again.
+    expect(chevrons()).toEqual(['300', '304']);
+
+    cursor.setIndex(300);
+    zoomInButton.click();
+    zoomInButton.click();
+    zoomInButton.click();
+    expect(glyphCount()).toBeGreaterThan(0);
+    expect(chevrons()).toEqual(['300', '304']);
+
+    // Leg 2 descends: its side-changes at 120 and 121 are no kick turns.
+    cursor.openLeg(LEGS[1]);
+    expect(chevrons()).toEqual([]);
+  });
+
+  it('draws no chevron where a bank is unknown', () => {
+    const banks = BANKS.slice();
+    for (let i = 140; i <= 459; i += 1) banks[i] = null;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[2]);
+
+    expect(lane.querySelectorAll('.route-rail-two-kick-turn')).toHaveLength(0);
   });
 
   it('zooms to the resolved span on a double-click, and back on another', () => {
@@ -1283,15 +1429,15 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
 
     lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
 
-    // resolveSpan at 600 px is 180, centred on sample 300.
-    expect(two.view()).toEqual({ from: 210, to: 390 });
-    expect(placeholder()).toBeNull();
+    // resolveSpan at 600 px is 60, centred on sample 300.
+    expect(two.view()).toEqual({ from: 270, to: 330 });
+    expect(blocks()).toHaveLength(0);
     expect(glyphCount()).toBeGreaterThan(0);
 
     lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
 
     expect(two.view()).toEqual({ from: 140, to: 460 });
-    expect(placeholder()).not.toBeNull();
+    expect(blocks().length).toBeGreaterThan(0);
   });
 
   it('zooms on a touch double-tap without toggling the selection', () => {
@@ -1306,7 +1452,7 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
     // band 300–304, and a tap takes the steepest band in reach.
     expect(cursor.state().selection)
       .toEqual({ kind: 'band', from: 295, to: 299, classIndex: 1 });
-    expect(two.view().to - two.view().from).toBe(180);
+    expect(two.view().to - two.view().from).toBe(60);
 
     now += 1000;
     doubleTap(300);
@@ -1342,69 +1488,40 @@ describe('the bank row follows the zoom (SNOW-1031)', () => {
 });
 
 describe('the readout (SNOW-1024)', () => {
-  it('reads the terrain, then the slope and the bank', () => {
-    // Sample 101: 20° ground banked 20° to the right, so the track runs
-    // straight across it.
+  it('reads the slope, the bank and the side the ground falls away to', () => {
+    // Sample 101: 20° ground banked 20° to the right.
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     cursor.setIndex(101);
 
-    expect(readoutLines()).toEqual(['Traverse · falls away right', '20° slope · 20° bank']);
+    expect(readoutLines()).toEqual(['20° slope · 20° bank, falls away right']);
     expect(lane.getAttribute('aria-valuetext')).toContain(
-      'Traverse · falls away right. 20° slope · 20° bank',
+      '20° slope · 20° bank, falls away right',
     );
+
+    cursor.setIndex(102);
+    expect(readoutLines()).toEqual(['20° slope · 20° bank, falls away left']);
   });
 
-  it('reads the fall line on either leg', () => {
+  it('says no side for a bank under 3°', () => {
     const banks = BANKS.slice();
-    banks[101] = 0;
-    banks[5] = 0;
+    banks[101] = 2;
     const { cursor } = attach({ banks });
     cursor.openLeg(LEGS[1]);
-    cursor.setIndex(101);
-    expect(readoutLines()).toEqual(['Fall line', '20° slope · 0° bank']);
 
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['20° slope · 2° bank']);
+  });
+
+  it('names no track word and no gradient', () => {
+    const { cursor } = attach();
     cursor.openLeg(LEGS[0]);
     cursor.setIndex(5);
-    expect(readoutLines()).toEqual(['Fall line', '32° slope · 0° bank']);
-  });
 
-  it('says which way the ground falls away, with the bank unsigned', () => {
-    // 20° ground banked 12° is 35.7° off the fall line.
-    const banks = BANKS.slice();
-    banks[101] = -12;
-    const { cursor } = attach({ banks });
-    cursor.openLeg(LEGS[1]);
-
-    cursor.setIndex(101);
-
-    expect(readoutLines()).toEqual(['Ground falls away left', '20° slope · 12° bank']);
-  });
-
-  it('reads gentle ground by the leg\'s direction', () => {
-    const angles = ANGLES.slice();
-    angles[101] = 7;
-    angles[1] = 7;
-    const { cursor } = attach({ angles });
-    cursor.openLeg(LEGS[1]);
-    cursor.setIndex(101);
-    expect(readoutLines()).toEqual(['Gentle descent', '7° slope · 20° bank']);
-
-    cursor.openLeg(LEGS[0]);
-    cursor.setIndex(1);
-    expect(readoutLines()).toEqual(['Gentle ascent', '7° slope · 20° bank']);
-  });
-
-  it('reads flat ground as flat', () => {
-    const angles = ANGLES.slice();
-    angles[101] = 3;
-    const { cursor } = attach({ angles });
-    cursor.openLeg(LEGS[1]);
-
-    cursor.setIndex(101);
-
-    expect(readoutLines()).toEqual(['Flat', '3° slope']);
+    expect(readoutLines()).toEqual(['32° slope · 20° bank, falls away right']);
+    expect(readout.textContent).not.toMatch(/Skin|Traverse|Steep|Gentle|gradient/);
   });
 
   it('says the slope is not known where the angle is unknown', () => {
@@ -1418,7 +1535,7 @@ describe('the readout (SNOW-1024)', () => {
     expect(readoutLines()).toEqual(['slope not known']);
   });
 
-  it('keeps the slope but not the terrain where only the bank is unknown', () => {
+  it('keeps the slope alone where only the bank is unknown', () => {
     const banks = BANKS.slice();
     banks[101] = null;
     const { cursor } = attach({ banks });
