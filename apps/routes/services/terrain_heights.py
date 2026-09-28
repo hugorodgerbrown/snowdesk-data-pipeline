@@ -21,6 +21,10 @@ puts those heights back onto the track:
   feeds call on the result of ``terrain_points``.
 * ``has_terrain_heights`` — whether a record carries any model height at
   all, which is what decides between those totals and the stored columns.
+* ``climb_figures`` — THE rule for which ascent and descent a surface
+  shows, applied by the feeds and, through ``Route.climb`` / ``Trip.climb``,
+  by every template. One place, so the map, the route row and the trip
+  card can never quote two different figures for one track.
 
 **THE DEVICE HEIGHT IS THE FALLBACK, NOT DISCARDED.** Where the model has
 no answer — outside its coverage, a hole inside it, or a record written
@@ -38,7 +42,7 @@ there for the day someone wants to compare the two.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 
@@ -48,6 +52,50 @@ _HEIGHT_PRECISION = 1
 
 # Decimal places kept on an ascent or descent total.
 _TOTAL_PRECISION = 1
+
+
+class ClimbFigures(NamedTuple):
+    """A track's ascent and descent as shown, in metres.
+
+    Attributes:
+        ascent_m: Total climb, or None when unknown.
+        descent_m: Total drop as a positive magnitude, or None when
+            unknown.
+
+    """
+
+    ascent_m: float | None
+    descent_m: float | None
+
+
+def climb_figures(
+    points: list[list[float | None]],
+    samples: dict[str, Any] | None,
+    stored_ascent_m: float | None,
+    stored_descent_m: float | None,
+) -> ClimbFigures:
+    """Return the ascent and descent every surface shows for one track.
+
+    Summed over ``terrain_points`` when the slope record carries model
+    heights, and the stored columns otherwise — which keeps a route
+    nothing has sampled, or one sampled before SNOW-1043, showing what
+    the parser measured on its full-resolution track. A null stored figure
+    passes through: "unknown", not zero.
+
+    Args:
+        points: The stored track, ``[lon, lat, ele]`` triples.
+        samples: Its slope record, or None.
+        stored_ascent_m: The row's ``ascent_m``.
+        stored_descent_m: The row's ``descent_m``.
+
+    Returns:
+        The two figures.
+
+    """
+    if not has_terrain_heights(samples):
+        return ClimbFigures(stored_ascent_m, stored_descent_m)
+    ascent_m, descent_m = climb_totals(terrain_points(points, samples))
+    return ClimbFigures(ascent_m, descent_m)
 
 
 def has_terrain_heights(samples: dict[str, Any] | None) -> bool:

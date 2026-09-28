@@ -10,6 +10,8 @@ Covers ``apps.routes.services.terrain_heights``:
     mutated;
   - ``climb_totals``: the ingest rule for ascent and descent, on any track;
   - ``has_terrain_heights``: a list of nulls is not a record with heights;
+  - ``climb_figures``: the one rule every surface shows ascent and descent
+    by — the model's totals with heights, the stored columns without;
   - the reason for all of it, on real data: the Mont Fort – Backside tour
     read on its drifting altimeter has a climb at the start that the
     terrain model does not, and loses it on model heights.
@@ -33,10 +35,13 @@ from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.legs import detect_legs
 from apps.routes.services.slope_segments import SAMPLE_STRIDE_M
 from apps.routes.services.terrain_heights import (
+    ClimbFigures,
+    climb_figures,
     climb_totals,
     has_terrain_heights,
     terrain_points,
 )
+from tests.factories import DRIFTING_TRACK, drifting_track_record
 
 _RECORDS = Path(__file__).parent / "fixtures" / "slope_records"
 
@@ -157,6 +162,28 @@ class TestClimbTotals:
     def test_no_elevation_is_unknown_not_zero(self) -> None:
         """A track without heights supports no figure."""
         assert climb_totals([[7.0, 46.0, None], [7.0, 46.001, None]]) == (None, None)
+
+
+class TestClimbFigures:
+    """The ascent and descent every surface shows."""
+
+    def test_model_heights_give_the_model_totals(self) -> None:
+        """The drifting track climbs 40 m on the model, not 200 m."""
+        figures = climb_figures(DRIFTING_TRACK, drifting_track_record(), 200.0, 0.0)
+
+        assert figures == ClimbFigures(40.0, 0.0)
+
+    def test_no_heights_give_the_stored_columns(self) -> None:
+        """A record sampled before SNOW-1043 changes nothing."""
+        record = drifting_track_record()
+        del record["heights"]
+
+        assert climb_figures(DRIFTING_TRACK, record, 850.0, 1100.0) == (850.0, 1100.0)
+        assert climb_figures(DRIFTING_TRACK, None, 850.0, 1100.0) == (850.0, 1100.0)
+
+    def test_a_stored_null_passes_through(self) -> None:
+        """Unknown stays unknown, never zero."""
+        assert climb_figures(DRIFTING_TRACK, None, None, None) == (None, None)
 
 
 class TestHasTerrainHeights:

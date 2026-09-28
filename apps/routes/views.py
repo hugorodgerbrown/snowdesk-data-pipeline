@@ -119,11 +119,7 @@ from apps.routes.services.shares import (
 )
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_heights import (
-    climb_totals,
-    has_terrain_heights,
-    terrain_points,
-)
+from apps.routes.services.terrain_heights import terrain_points
 
 logger = logging.getLogger(__name__)
 
@@ -273,11 +269,10 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
     # profile, the legs and the totals below all read THESE points, so
     # the three cannot disagree about which series they describe.
     points = terrain_points(route.points, route.slope_samples)
-    if has_terrain_heights(route.slope_samples):
-        ascent_m, descent_m = climb_totals(points)
-    else:
-        # None passes straight through: "unknown", not zero.
-        ascent_m, descent_m = route.ascent_m, route.descent_m
+    # The one rule every surface quotes ascent and descent by — the route
+    # row's template reads the same property. None passes straight
+    # through: "unknown", not zero.
+    ascent_m, descent_m = route.climb
     return {
         "type": "Feature",
         "geometry": {

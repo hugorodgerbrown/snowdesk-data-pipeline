@@ -97,11 +97,7 @@ from apps.routes.services.route_bulletin import display_readings
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_heights import (
-    climb_totals,
-    has_terrain_heights,
-    terrain_points,
-)
+from apps.routes.services.terrain_heights import terrain_points
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services.participants import (
@@ -262,9 +258,8 @@ def _trip_heights(
     SNOW-1043. The snapshot's third ordinate is the recording device's
     altimeter, which drifts; ``terrain_points`` puts the terrain model's
     height in its place wherever the snapshot's slope record has one. The
-    totals are summed over the same points so the figures and the profile
-    describe one series — and are the snapshot's stored columns when the
-    record has no model heights, None passing through as "unknown".
+    totals are ``Trip.climb`` — the rule the trip templates read too — so
+    the figures, the profile and the cards describe one series.
 
     Args:
         trip: The trip to describe.
@@ -273,11 +268,8 @@ def _trip_heights(
         ``(points, ascent_m, descent_m)``.
 
     """
-    points = terrain_points(trip.points, trip.slope_samples)
-    if has_terrain_heights(trip.slope_samples):
-        ascent_m, descent_m = climb_totals(points)
-        return points, ascent_m, descent_m
-    return points, trip.ascent_m, trip.descent_m
+    ascent_m, descent_m = trip.climb
+    return terrain_points(trip.points, trip.slope_samples), ascent_m, descent_m
 
 
 def _bulletin_readings(trip: Trip) -> list[dict[str, Any]]:

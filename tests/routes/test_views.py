@@ -70,11 +70,13 @@ from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from tests.factories import (
+    DRIFTING_TRACK,
     BulletinFactory,
     MicroRegionFactory,
     RouteFactory,
     RouteShareFactory,
     UserFactory,
+    drifting_track_record,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -940,6 +942,32 @@ class TestRouteListFigures:
 
         assert "12.4km" in body
         assert "850m ↑" in body
+
+    def test_the_row_shows_the_model_figures_when_heights_exist(
+        self, client: Client
+    ) -> None:
+        """SNOW-1043: the row quotes what the map feed sends, not the column.
+
+        The drifting track records 200 m of climb; the terrain model has
+        40 m. The feed sends 40, so the row must too.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            points=DRIFTING_TRACK,
+            distance_m=111.2,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        feed = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "40m ↑" in body
+        assert "200m ↑" not in body
+        assert feed["ascent_m"] == 40.0
 
     def test_descent_is_rendered_beside_ascent(self, client: Client) -> None:
         """Both vertical figures, not one netted against the other.
