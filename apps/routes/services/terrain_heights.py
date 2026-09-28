@@ -147,7 +147,7 @@ def _repeat_walk(
 
     """
     stride_m = samples.get("stride_m")
-    if not _is_number(stride_m) or stride_m <= 0:
+    if not isinstance(stride_m, int | float) or stride_m <= 0:
         return None
     stored = samples.get("points")
     if isinstance(stored, list) and len(stored) != boundary_count:
