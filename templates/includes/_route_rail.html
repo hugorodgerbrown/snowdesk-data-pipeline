@@ -97,7 +97,7 @@ Context:
                                 normal flow, for the component library,
                                 which runs no JS to reveal it.
 {% endcomment %}
-{% trans "Route profile" as route_rail_eyebrow %}
+{% trans "Route" as route_rail_eyebrow %}
 {% trans "Route actions" as route_rail_menu_label %}
 {% trans "Close the route profile" as route_rail_close_label %}
 {% trans "Terrain" as route_rail_two_eyebrow %}
@@ -148,7 +148,11 @@ Context:
                 </button>
             </div>
         </div>
-        <p data-route-rail-figures class="mt-1 font-mono text-meta text-text-2"></p>
+        {# Two figure lines, read as rail two's card (SNOW-1045): the      #}
+        {# vertical (ascend · descend) and the horizontal (length · steep  #}
+        {# terrain). Filled by static/js/route_rail.js.                   #}
+        <p data-route-rail-vertical class="mt-1 font-mono text-meta text-text-2"></p>
+        <p data-route-rail-horizontal class="mt-1 font-mono text-meta text-text-2"></p>
         {# A pending share's Save — filled by static/js/route_rail.js with   #}
         {# the control map.js builds, and hidden for an owned route.         #}
         <div data-route-rail-claim hidden></div>
@@ -251,10 +255,10 @@ Context:
     <template id="route-rail-strings-template">
         <span data-string="unit-m">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
         <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
-        <span data-string="figure-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
-        <span data-string="figure-ascent">{% blocktrans %}▲ %(m)s m{% endblocktrans %}</span>
-        <span data-string="figure-descent">{% blocktrans %}▼ %(m)s m{% endblocktrans %}</span>
-        <span data-string="figure-range">{% blocktrans %}%(start)s → %(end)s m{% endblocktrans %}</span>
+        <span data-string="route-ascend">{% blocktrans %}Ascend %(m)s m{% endblocktrans %}</span>
+        <span data-string="route-descend">{% blocktrans %}descend %(m)s m{% endblocktrans %}</span>
+        <span data-string="route-length">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
+        <span data-string="route-steep">{% blocktrans %}%(km)s km steep terrain{% endblocktrans %}</span>
         <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
         <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
         <span data-string="lane-label">{% blocktrans %}Elevation profile of %(name)s{% endblocktrans %}</span>
@@ -268,8 +272,8 @@ Context:
     </template>
     {# Rail two's copy, for static/js/route_rail_two.js. Its own template #}
     {# because each strings template has one reader                      #}
-    {# (tests/test_js_strings_are_translatable.py); the units, figures    #}
-    {# and leg names repeat rail one's msgids, so they translate once.    #}
+    {# (tests/test_js_strings_are_translatable.py); the distance and leg  #}
+    {# names repeat rail one's msgids, so they translate once.            #}
     <template id="route-rail-two-strings-template">
         <span data-string="figure-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
         <span data-string="figure-ascent">{% blocktrans %}▲ %(m)s m{% endblocktrans %}</span>

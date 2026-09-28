@@ -52,7 +52,8 @@ document.body.innerHTML = `
           </div>
         </div>
         <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
-        <p data-route-rail-figures></p>
+        <p data-route-rail-vertical></p>
+        <p data-route-rail-horizontal></p>
         <div data-route-rail-claim hidden></div>
       </div>
       <svg data-route-rail-lane></svg>
@@ -189,12 +190,17 @@ describe('open', () => {
     ]);
   });
 
-  it('writes the name and the figures line', () => {
-    window.pwaRouteRail.open(feature());
+  it('writes the name, the vertical line and the horizontal line', () => {
+    window.pwaRouteRail.open(
+      feature({ ascent_m: 366, descent_m: 1934, distance_m: 12900, terrain: { steep_m: 3460 } }),
+    );
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
-    expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲ 200 m · ▼ 200 m · 1500 → 1500 m',
+    expect(rail.querySelector('[data-route-rail-vertical]').textContent).toBe(
+      'Ascend 366 m · descend 1,934 m',
+    );
+    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe(
+      '12.9 km · 3.5 km steep terrain',
     );
   });
 
@@ -298,35 +304,27 @@ describe('open', () => {
     expect(slot.children).toHaveLength(0);
   });
 
-  it('omits the range when the GPX\'s first or last point has no elevation', () => {
-    // readProfile's first run then starts inside the route, and its last
-    // stops short of the finish: those readings are heights the route
-    // passes, not the ones it starts and finishes at.
-    const gappy = feature();
-    const coordinates = gappy.geometry.coordinates;
-    coordinates[0] = [coordinates[0][0], coordinates[0][1], null];
-    coordinates[coordinates.length - 1] = [
-      coordinates[coordinates.length - 1][0],
-      coordinates[coordinates.length - 1][1],
-      null,
-    ];
+  it('reads the steep terrain from a stringified terrain summary', () => {
+    // A feature MapLibre hands back carries its nested properties as JSON.
+    window.pwaRouteRail.open(feature({ terrain: JSON.stringify({ steep_m: 0 }) }));
 
-    window.pwaRouteRail.open(gappy);
-
-    expect(rail.querySelector('[data-route-rail-figures]').textContent).toBe(
-      '0.6 km · ▲ 200 m · ▼ 200 m',
+    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe(
+      '0.6 km · 0.0 km steep terrain',
     );
   });
 
-  it('omits the range when only the finish is missing its elevation', () => {
-    const gappy = feature();
-    const coordinates = gappy.geometry.coordinates;
-    const last = coordinates.length - 1;
-    coordinates[last] = [coordinates[last][0], coordinates[last][1], null];
+  it('omits the steep terrain for an unsampled route', () => {
+    window.pwaRouteRail.open(feature({ terrain: undefined }));
 
-    window.pwaRouteRail.open(gappy);
+    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe('0.6 km');
+  });
 
-    expect(rail.querySelector('[data-route-rail-figures]').textContent).not.toContain('→');
+  it('omits an unknown ascent rather than showing zero', () => {
+    window.pwaRouteRail.open(feature({ ascent_m: null }));
+
+    expect(rail.querySelector('[data-route-rail-vertical]').textContent).toBe(
+      'descend 200 m',
+    );
   });
 });
 

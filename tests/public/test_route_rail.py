@@ -93,18 +93,47 @@ class TestTheRailShipsWithTheMap:
         )
 
     def test_it_carries_the_eyebrow(self, client: Client) -> None:
-        """The identity block opens with the ``Route profile`` eyebrow."""
+        """The identity block opens with the ``Route`` eyebrow (SNOW-1045)."""
         rail = _rail(_home(client))
 
-        assert re.search(r'id="route-rail-eyebrow"\s*>\s*Route profile\s*<', rail)
+        assert re.search(r'id="route-rail-eyebrow"\s*>\s*Route\s*<', rail)
+
+    def test_it_carries_the_vertical_and_horizontal_lines(self, client: Client) -> None:
+        """SNOW-1045: two figure lines, vertical first, in place of one."""
+        rail = _rail(_home(client))
+
+        assert "data-route-rail-figures" not in rail
+        assert rail.index("data-route-rail-vertical") < rail.index(
+            "data-route-rail-horizontal"
+        )
 
     def test_it_carries_its_strings_template(self, client: Client) -> None:
         """Every user-facing string route_rail.js writes comes from here."""
         rail = _rail(_home(client))
+        block = re.search(
+            r'<template id="route-rail-strings-template">(.*?)</template>',
+            rail,
+            re.S,
+        )
+        assert block is not None
+        keys = set(re.findall(r'data-string="([^"]+)"', block.group(1)))
 
-        assert '<template id="route-rail-strings-template">' in rail
-        keys = set(re.findall(r'data-string="([^"]+)"', rail))
-        assert {"leg-climb", "leg-descent", "figure-distance", "unit-km"} <= keys
+        assert {
+            "leg-climb",
+            "leg-descent",
+            "unit-km",
+            "route-ascend",
+            "route-descend",
+            "route-length",
+            "route-steep",
+        } <= keys
+        # SNOW-1045: rail one's header no longer writes the ▲/▼ figures line.
+        assert keys.isdisjoint(
+            {"figure-distance", "figure-ascent", "figure-descent", "figure-range"}
+        )
+        assert "Ascend %(m)s m" in block.group(1)
+        assert "descend %(m)s m" in block.group(1)
+        assert "%(km)s km steep terrain" in block.group(1)
 
     def test_the_endpoints_are_templated_on_the_uuid(self, client: Client) -> None:
         """The script addresses whichever route is open by substitution."""
