@@ -266,6 +266,7 @@ class TestRailTwoShipsInsideRailOne:
             "track-traverse",
             "track-steep",
             "track-bootpack",
+            "track-kick-turn",
             "readout-slope",
             "readout-slope-bank",
             "readout-slope-bank-left",

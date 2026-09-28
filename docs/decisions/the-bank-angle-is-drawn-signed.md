@@ -224,3 +224,8 @@ heights since SNOW-1043). Nothing new travels on the wire.
   no bank clause for an unknown bank). The attitude word (`trackAttitude`)
   and its δ-from-fall-line bands went: the track row above now names the
   stretch, and two vocabularies for one segment would disagree.
+- **The track row is drawn for the eye; the words are spoken.** The row's
+  SVG group is `aria-hidden`. The lane's `aria-valuetext` carries the
+  readout's line and then, under the cursor, the stretch's word and "Kick
+  turn" where one lands, so nothing the row shows is lost to assistive
+  tech.

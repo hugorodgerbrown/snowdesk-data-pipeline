@@ -144,7 +144,10 @@
  * length to the nearest 25 m then the class ("600 m under 30°"). Either
  * way it steps between left-aligned, centred and right-aligned by where
  * its anchor sits across the lane (`readoutAnchor`), never clamping
- * smoothly. With neither it offers a hint, left-aligned.
+ * smoothly. With neither it offers a hint, left-aligned. The track row is
+ * drawn `aria-hidden`; the lane's `aria-valuetext` carries the readout's
+ * line and then, under the cursor, the stretch's track word and "Kick
+ * turn" where one lands, so what the row shows reaches assistive tech.
  *
  * KEYS. The lane is one `role="slider"` tab stop — leg 4 of the seed tour
  * alone has 59 bands, which would be 59 tab stops. ←/→ move the cursor
@@ -236,6 +239,7 @@
     'track-traverse': 'Traverse',
     'track-steep': 'Steep',
     'track-bootpack': 'Bootpack',
+    'track-kick-turn': 'Kick turn',
     'readout-slope': '%(angle)s° slope',
     'readout-slope-bank': '%(angle)s° slope · %(bank)s° bank',
     'readout-slope-bank-left': '%(angle)s° slope · %(bank)s° bank, falls away left',
@@ -279,6 +283,13 @@
   var legStretches = [];
   /** The segments a kick turn lands on in the open leg (SNOW-1044). */
   var kicks = [];
+  /**
+   * The track row's `<g aria-hidden="true">` at the last draw: blocks,
+   * labels, wedges, ticks and chevrons are drawn into it.
+   *
+   * @type {SVGElement}
+   */
+  var trackEl = svgEl('g', {});
   /** The no-fall passages touching the open leg. */
   var passages = [];
   /** The window, continuous sample units, `to` exclusive. */
@@ -1285,6 +1296,10 @@
    * in both.
    */
   function drawTrack() {
+    // Drawn for the eye only: the words and kick turns reach assistive
+    // tech through the lane's aria-valuetext (paintReadout).
+    trackEl = svgEl('g', { 'aria-hidden': 'true', 'data-route-rail-two-track': '' });
+    lane.appendChild(trackEl);
     if (core().trackMode(view, width) === 'wedges') {
       drawWedges();
       drawStretchTicks();
@@ -1327,7 +1342,7 @@
         attrs.stroke = 'var(--color-slope-unknown)';
         attrs['stroke-dasharray'] = '3 2';
       }
-      lane.appendChild(svgEl('rect', attrs));
+      trackEl.appendChild(svgEl('rect', attrs));
       var words = STRINGS['track-' + stretch.word];
       if (!words) return;
       var text = svgEl('text', {
@@ -1341,7 +1356,7 @@
         'pointer-events': 'none',
       });
       text.textContent = words;
-      lane.appendChild(text);
+      trackEl.appendChild(text);
       var textWidth = 0;
       try {
         textWidth = /** @type {SVGTextElement} */ (text).getComputedTextLength();
@@ -1381,7 +1396,7 @@
     }).forEach(function (wedge) {
       var index = String(wedge.index);
       if (wedge.up) {
-        lane.appendChild(svgEl('polygon', {
+        trackEl.appendChild(svgEl('polygon', {
           points: pointsAttr(wedge.up),
           fill: 'var(--color-text-2)',
           class: 'route-rail-two-wedge',
@@ -1391,7 +1406,7 @@
         }));
       }
       if (wedge.down) {
-        lane.appendChild(svgEl('polygon', {
+        trackEl.appendChild(svgEl('polygon', {
           points: pointsAttr(wedge.down),
           fill: 'var(--color-text-2)',
           'fill-opacity': '0.3',
@@ -1401,7 +1416,7 @@
           'pointer-events': 'none',
         }));
       }
-      lane.appendChild(svgEl('line', {
+      trackEl.appendChild(svgEl('line', {
         x1: wedge.ground.x1.toFixed(2),
         y1: wedge.ground.y1.toFixed(2),
         x2: wedge.ground.x2.toFixed(2),
@@ -1428,7 +1443,7 @@
       var s = legStretches[k].from;
       if (s <= view.from || s >= view.to) continue;
       var x = c.xOf(s, view, width).toFixed(2);
-      lane.appendChild(svgEl('line', {
+      trackEl.appendChild(svgEl('line', {
         x1: x,
         x2: x,
         y1: String(rows.ribbonY - rows.ribbonHalf),
@@ -1452,7 +1467,7 @@
     kicks.forEach(function (index) {
       if (index <= view.from || index >= view.to) return;
       var x = c.xOf(index, view, width);
-      lane.appendChild(svgEl('polyline', {
+      trackEl.appendChild(svgEl('polyline', {
         points: [
           (x - CHEVRON.half).toFixed(2) + ',' + base,
           x.toFixed(2) + ',' + (base - CHEVRON.height),
@@ -1644,6 +1659,14 @@
     var perSample = ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
     /** @type {Array<string>} */
     var lines = [];
+    /**
+     * What only assistive tech hears, after the lines: the track row's
+     * word and kick turn under the cursor, which the eye reads off the
+     * row itself (SNOW-1044).
+     *
+     * @type {Array<string>}
+     */
+    var spoken = [];
     /** The anchor's px, or null to sit left at 0. */
     var anchorX = null;
     var stem = false;
@@ -1665,7 +1688,8 @@
     } else if (state.index !== null) {
       // The ground's figures under the cursor and the side it falls away
       // to (SNOW-1044): "24° slope · 15° bank, falls away right". No word
-      // and no gradient — the track row above already names the stretch.
+      // and no gradient on screen — the track row above already names the
+      // stretch; aria-valuetext adds the word for assistive tech.
       var angle = angles()[state.index];
       var roll = banks()[state.index];
       if (typeof angle !== 'number' || !isFinite(angle)) {
@@ -1679,6 +1703,7 @@
           { angle: String(Math.round(angle)), bank: String(Math.round(Math.abs(roll))) },
         ));
       }
+      spoken = trackSpoken(state.index);
       if (cursorIn) {
         anchorX = c.xOf(state.index + 0.5, view, width);
         stem = true;
@@ -1697,7 +1722,25 @@
       interpolate(STRINGS['two-value'], {
         km: (((index + 0.5) * perSample) / 1000).toFixed(2),
       }),
-    ].concat(lines).join('. '));
+    ].concat(lines, spoken).join('. '));
+  }
+
+  /**
+   * The track row read aloud at one segment: its stretch's word, then
+   * "Kick turn" when one lands there. Empty where the stretch's ground is
+   * not known and no kick turn lands.
+   *
+   * @param {number} index
+   * @returns {Array<string>}
+   */
+  function trackSpoken(index) {
+    /** @type {Array<string>} */
+    var out = [];
+    var stretch = legStretches.find(function (s) { return index >= s.from && index <= s.to; });
+    var word = stretch ? STRINGS['track-' + stretch.word] : null;
+    if (word) out.push(word);
+    if (kicks.indexOf(index) >= 0) out.push(STRINGS['track-kick-turn']);
+    return out;
   }
 
   /** Draw the whole lane for the current window. */

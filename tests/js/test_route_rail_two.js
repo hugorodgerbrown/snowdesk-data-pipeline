@@ -1515,13 +1515,60 @@ describe('the readout (SNOW-1024)', () => {
     expect(readoutLines()).toEqual(['20° slope · 2° bank']);
   });
 
-  it('names no track word and no gradient', () => {
+  it('shows no track word and no gradient on screen', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[0]);
     cursor.setIndex(5);
 
     expect(readoutLines()).toEqual(['32° slope · 20° bank, falls away right']);
-    expect(readout.textContent).not.toMatch(/Skin|Traverse|Steep|Gentle|gradient/);
+    expect(readout.textContent).not.toMatch(/Skin|Traverse|Steep|Gentle|Kick|gradient/);
+  });
+
+  it('speaks the stretch\'s track word and a kick turn in aria-valuetext only', () => {
+    // Leg 1 climbs 35° ground banked 20° right, then left from sample 50:
+    // one Traverse stretch, and a kick turn landing on 50.
+    const angles = ANGLES.map((a, i) => (i < 100 ? 35 : a));
+    const banks = BANKS.map((b, i) => (i < 50 ? 20 : i < 100 ? -20 : b));
+    const { cursor } = attach({ angles, banks });
+    cursor.openLeg(LEGS[0]);
+
+    cursor.setIndex(50);
+    expect(readoutLines()).toEqual(['35° slope · 20° bank, falls away left']);
+    expect(lane.getAttribute('aria-valuetext')).toBe(
+      '2.52 km along the route. 35° slope · 20° bank, falls away left. Traverse. Kick turn',
+    );
+
+    cursor.setIndex(10);
+    expect(lane.getAttribute('aria-valuetext')).toBe(
+      '0.53 km along the route. 35° slope · 20° bank, falls away right. Traverse',
+    );
+  });
+
+  it('hides the track row from assistive tech', () => {
+    const banks = BANKS.map(() => 20);
+    banks[300] = -20;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[2]);
+
+    const group = lane.querySelector('[data-route-rail-two-track]');
+    expect(group.getAttribute('aria-hidden')).toBe('true');
+    for (const selector of [
+      '.route-rail-two-track-block',
+      '.route-rail-two-track-label',
+      '.route-rail-two-kick-turn',
+    ]) {
+      const drawn = lane.querySelectorAll(selector);
+      expect(drawn.length).toBeGreaterThan(0);
+      drawn.forEach((el) => expect(group.contains(el)).toBe(true));
+    }
+    cursor.setIndex(300);
+    zoomInButton.click();
+    zoomInButton.click();
+    zoomInButton.click();
+    const wedges = lane.querySelectorAll('.route-rail-two-wedge');
+    expect(wedges.length).toBeGreaterThan(0);
+    const now = lane.querySelector('[data-route-rail-two-track]');
+    wedges.forEach((el) => expect(now.contains(el)).toBe(true));
   });
 
   it('says the slope is not known where the angle is unknown', () => {
