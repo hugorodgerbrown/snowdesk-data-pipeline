@@ -1,7 +1,9 @@
 """
 tests/routes/test_terrain_detail.py — one row per segment, four figures.
 
-Covers ``apps.routes.services.terrain_detail`` (SNOW-1020).
+Covers ``apps.routes.services.terrain_detail`` (SNOW-1020), including the
+record's own model ``heights`` being read before the track's elevations
+(SNOW-1043).
 
 The tracks are straight lines across a synthetic PLANE: a face of known
 angle and aspect, and a track whose elevation is exactly what that plane
@@ -396,3 +398,45 @@ class TestMissing:
         rows = terrain_detail(_record(points, 30.0, 0.0, stride_m=None), points)
         assert rows is not None
         assert all(row["track_gradient_deg"] is None for row in rows)
+
+
+class TestModelHeights:
+    """SNOW-1043: the record's ``heights`` are read before the track's."""
+
+    def test_the_gradient_reads_the_model_heights(self) -> None:
+        """A flat recording on a sloping model reads as the model."""
+        points = _plane_track(0.0, 30.0, 180.0)
+        record = _record(points, 30.0, 180.0)
+        # The model's heights: the plane itself, climbing due north.
+        model = [
+            point[2]
+            for point in _plane_track(0.0, 30.0, 180.0, length_m=300.0, step_m=25.0)
+        ]
+        record["heights"] = model
+        # The recording: flat throughout, a drifting altimeter's answer.
+        for point in points:
+            point[2] = 2000.0
+        rows = terrain_detail(record, points, gradient_window=0)
+        assert rows is not None
+        for row in rows:
+            assert row["track_gradient_deg"] == pytest.approx(30.0, abs=0.2)
+
+    def test_a_null_height_falls_back_to_the_track(self) -> None:
+        """Where the model has no ground, the recorded elevation stands."""
+        points = _plane_track(0.0, 20.0, 180.0)
+        record = _record(points, 20.0, 180.0)
+        record["heights"] = [None] * len(record["points"])
+        rows = terrain_detail(record, points, gradient_window=0)
+        assert rows is not None
+        for row in rows:
+            assert row["track_gradient_deg"] == pytest.approx(20.0, abs=0.2)
+
+    def test_heights_that_do_not_pair_are_ignored(self) -> None:
+        """A heights list of the wrong length is not the record's."""
+        points = _plane_track(0.0, 20.0, 180.0)
+        record = _record(points, 20.0, 180.0)
+        record["heights"] = [5000.0, 0.0]
+        rows = terrain_detail(record, points, gradient_window=0)
+        assert rows is not None
+        for row in rows:
+            assert row["track_gradient_deg"] == pytest.approx(20.0, abs=0.2)
