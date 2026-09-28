@@ -134,6 +134,73 @@ describe('formatFigures', () => {
   });
 });
 
+describe('formatRouteVertical', () => {
+  it('writes ascend · descend with a thousands separator', () => {
+    expect(core.formatRouteVertical({ ascent_m: 365.6, descent_m: 1934.2 })).toBe(
+      'Ascend 366 m · descend 1,934 m',
+    );
+  });
+
+  it('omits a null side rather than showing zero', () => {
+    expect(core.formatRouteVertical({ ascent_m: null, descent_m: 1934 })).toBe(
+      'descend 1,934 m',
+    );
+    expect(core.formatRouteVertical({ ascent_m: 366 })).toBe('Ascend 366 m');
+  });
+
+  it('is empty when both sides are unknown', () => {
+    expect(core.formatRouteVertical({ ascent_m: null, descent_m: null })).toBe('');
+    expect(core.formatRouteVertical(undefined)).toBe('');
+  });
+
+  it('keeps a genuine zero', () => {
+    expect(core.formatRouteVertical({ ascent_m: 0, descent_m: 0 })).toBe(
+      'Ascend 0 m · descend 0 m',
+    );
+  });
+
+  it('takes the templates it is given', () => {
+    expect(
+      core.formatRouteVertical(
+        { ascent_m: 366, descent_m: 12 },
+        { 'route-ascend': 'Up %(m)s m', 'route-descend': 'down %(m)s m' },
+      ),
+    ).toBe('Up 366 m · down 12 m');
+  });
+});
+
+describe('formatRouteHorizontal', () => {
+  it('writes the length and the steep terrain to one decimal', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: 3460 })).toBe(
+      '12.9 km · 3.5 km steep terrain',
+    );
+  });
+
+  it('omits the steep part for an unsampled route', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: null })).toBe('12.9 km');
+    expect(core.formatRouteHorizontal({ distance_m: 12900 })).toBe('12.9 km');
+  });
+
+  it('keeps zero steep terrain', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 5000, steep_m: 0 })).toBe(
+      '5.0 km · 0.0 km steep terrain',
+    );
+  });
+
+  it('is empty when nothing is known', () => {
+    expect(core.formatRouteHorizontal({})).toBe('');
+  });
+
+  it('takes the templates it is given', () => {
+    expect(
+      core.formatRouteHorizontal(
+        { distance_m: 1000, steep_m: 500 },
+        { 'route-steep': '%(km)s km raide' },
+      ),
+    ).toBe('1.0 km · 0.5 km raide');
+  });
+});
+
 describe('legPaths', () => {
   const profile = readProfile(track(81));
   const legs = [

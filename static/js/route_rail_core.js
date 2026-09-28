@@ -40,6 +40,11 @@
  * OMITTED, never shown as zero: a route whose GPX carried no elevation has
  * an unknown ascent, not a flat one (Route.ascent_m's docstring).
  *
+ * Rail one's own header (SNOW-1045) reads as rail two's card: one line for
+ * the vertical (`formatRouteVertical`, "Ascend 366 m · descend 1,934 m")
+ * and one for the horizontal (`formatRouteHorizontal`, "12.9 km · 3.5 km
+ * steep terrain"). The same omission rule holds on both.
+ *
  * Exports (frozen `self.pwaRouteRailCore`):
  *
  *   niceStep(spanM)                          → metres between minor ticks
@@ -47,6 +52,8 @@
  *   tickUnit(spanM)                          → 'm' or 'km', once per strip
  *   ticks(spanM, units?)                     → [{d, major, label}]
  *   formatFigures(figures, strings?)         → the figures line
+ *   formatRouteVertical(figures, strings?)   → rail one's ascend/descend line
+ *   formatRouteHorizontal(figures, strings?) → rail one's length/steep line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
  *   clipRun(run, start, end)                 → a run clipped to [start, end],
  *                                              its ends interpolated (rail
@@ -130,6 +137,15 @@
     'figure-ascent': '▲ %(m)s m',
     'figure-descent': '▼ %(m)s m',
     'figure-range': '%(start)s → %(end)s m',
+    'figure-separator': ' · ',
+  });
+
+  /** The English templates for rail one's two lines (SNOW-1045). */
+  var DEFAULT_ROUTE_LINES = Object.freeze({
+    'route-ascend': 'Ascend %(m)s m',
+    'route-descend': 'descend %(m)s m',
+    'route-length': '%(km)s km',
+    'route-steep': '%(km)s km steep terrain',
     'figure-separator': ' · ',
   });
 
@@ -264,6 +280,75 @@
         start: String(Math.round(f.elevation_start)),
         end: String(Math.round(f.elevation_end)),
       }));
+    }
+    return parts.join(t['figure-separator']);
+  }
+
+  /**
+   * @param {*} value
+   * @returns {value is number}
+   */
+  function isKnown(value) {
+    return typeof value === 'number' && isFinite(value);
+  }
+
+  /**
+   * Whole metres with a thousands separator: 1934 → "1,934".
+   *
+   * @param {number} metres
+   * @returns {string}
+   */
+  function wholeMetres(metres) {
+    return Math.round(metres).toLocaleString('en-GB');
+  }
+
+  /**
+   * Rail one's vertical line: `Ascend 366 m · descend 1,934 m`.
+   *
+   * A null side is omitted, never shown as zero; both null gives ''.
+   *
+   * @param {{ascent_m?: ?number, descent_m?: ?number}} figures
+   * @param {Object<string, string>} [strings] Templates keyed as
+   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
+   * @returns {string}
+   */
+  function formatRouteVertical(figures, strings) {
+    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
+    var f = figures || {};
+    /** @type {Array<string>} */
+    var parts = [];
+    if (isKnown(f.ascent_m)) {
+      parts.push(interpolate(t['route-ascend'], { m: wholeMetres(f.ascent_m) }));
+    }
+    if (isKnown(f.descent_m)) {
+      parts.push(interpolate(t['route-descend'], { m: wholeMetres(f.descent_m) }));
+    }
+    return parts.join(t['figure-separator']);
+  }
+
+  /**
+   * Rail one's horizontal line: `12.9 km · 3.5 km steep terrain`.
+   *
+   * `steep_m` is the ground of 30° or more summed over the whole route
+   * (the feed's `terrain.steep_m`). An unsampled route has none, and the
+   * steep part is then omitted rather than read as zero; a sampled route
+   * with no steep ground keeps `0.0 km steep terrain`.
+   *
+   * @param {{distance_m?: ?number, steep_m?: ?number}} figures
+   * @param {Object<string, string>} [strings] Templates keyed as
+   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
+   * @returns {string}
+   */
+  function formatRouteHorizontal(figures, strings) {
+    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
+    var f = figures || {};
+    /** @type {Array<string>} */
+    var parts = [];
+    if (isKnown(f.distance_m)) {
+      parts.push(interpolate(t['route-length'], { km: (f.distance_m / 1000).toFixed(1) }));
+    }
+    if (isKnown(f.steep_m)) {
+      parts.push(interpolate(t['route-steep'], { km: (f.steep_m / 1000).toFixed(1) }));
     }
     return parts.join(t['figure-separator']);
   }
@@ -440,6 +525,8 @@
     tickUnit: tickUnit,
     ticks: ticks,
     formatFigures: formatFigures,
+    formatRouteVertical: formatRouteVertical,
+    formatRouteHorizontal: formatRouteHorizontal,
     legSpan: legSpan,
     clipRun: clipRun,
     legPaths: legPaths,
