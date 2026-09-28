@@ -19,8 +19,11 @@ read off those heights:
   slope_samples)` as the geometry, so the elevation profile draws the
   model's series;
 - the legs on the wire (`wire_legs`) are cut from the same points;
-- `ascent_m` / `descent_m` on the wire are `climb_totals` of those points
-  when the record has heights, and the stored columns when it has not;
+- the ascent and descent every surface shows — the feed, both trip
+  payloads, the route row, the trip page's figures line and stats row, and
+  the past-trip row — come from one rule, `climb_figures`, read through
+  `Route.climb` / `Trip.climb`: `climb_totals` of those points when the
+  record has heights, the stored columns when it has not;
 - the along-track gradient in `terrain_detail` reads `heights` directly;
 - the bulletin panels match elevation bands on the same points.
 
@@ -70,9 +73,9 @@ model's.
 - Ground outside the model's coverage keeps the device's heights, and a
   drifting altimeter there is still read as recorded (100 of the Chamonix
   track's 1,134 points).
-- Stored `ascent_m` / `descent_m` and the figures on the wire can
-  disagree. Surfaces that render the stored columns directly (the route
-  row and trip summaries in templates) were not changed by SNOW-1043.
+- Stored `ascent_m` / `descent_m` and the shown figures can disagree. The
+  Django admin's list and detail views still show the stored columns — they
+  are the parser's record of the upload, which is what staff are auditing.
 - `bin/record-slope-fixtures` captures the canonical tracks' records from
   the live tile origin into `tests/routes/fixtures/slope_records/`, so
   tests pin real-data behaviour without reaching the network.
