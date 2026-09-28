@@ -1038,29 +1038,20 @@
    *
    * The distance is the leg's share of the route's length, so it agrees
    * with rail one's ticks. Ascent and descent sum the profile's own
-   * steps. The start and end elevations are only given when the profile
-   * reaches the leg's ends — a reading inside the leg is a height the leg
-   * passes, not the one it starts or finishes at.
+   * steps; both are null for a leg with no elevation.
    *
    * @param {LegProfile} lp A `legProfile` result.
    * @param {Leg} leg
    * @param {number} sampleCount N.
    * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number,
-   *   elevation_start: ?number, elevation_end: ?number}}
+   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number}}
    */
   function legFigures(lp, leg, sampleCount, spanM) {
     var distance = sampleCount > 0 && spanM > 0
       ? (legLength(leg) / sampleCount) * spanM
       : null;
     if (!lp.runs.length) {
-      return {
-        distance_m: distance,
-        ascent_m: null,
-        descent_m: null,
-        elevation_start: null,
-        elevation_end: null,
-      };
+      return { distance_m: distance, ascent_m: null, descent_m: null };
     }
     var ascent = 0;
     var descent = 0;
@@ -1071,16 +1062,7 @@
         else descent -= step;
       }
     });
-    var first = lp.runs[0][0];
-    var lastRun = lp.runs[lp.runs.length - 1];
-    var last = lastRun[lastRun.length - 1];
-    return {
-      distance_m: distance,
-      ascent_m: ascent,
-      descent_m: descent,
-      elevation_start: Math.abs(first.s - lp.from) < EPSILON ? first.e : null,
-      elevation_end: Math.abs(last.s - lp.to) < EPSILON ? last.e : null,
-    };
+    return { distance_m: distance, ascent_m: ascent, descent_m: descent };
   }
 
   /**

@@ -591,8 +591,7 @@ describe('legProfile and legFigures', () => {
     expect(figures.distance_m).toBeCloseTo(310);
     expect(figures.ascent_m).toBeCloseTo(200);
     expect(figures.descent_m).toBeCloseTo(0);
-    expect(figures.elevation_start).toBe(1500);
-    expect(figures.elevation_end).toBeCloseTo(1700);
+    expect(Object.keys(figures).sort()).toEqual(['ascent_m', 'descent_m', 'distance_m']);
   });
 
   it('knows the distance alone for a leg with no elevation', () => {
@@ -601,8 +600,6 @@ describe('legProfile and legFigures', () => {
       distance_m: 310,
       ascent_m: null,
       descent_m: null,
-      elevation_start: null,
-      elevation_end: null,
     });
   });
 });
