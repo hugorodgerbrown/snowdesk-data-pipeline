@@ -2263,6 +2263,22 @@
   };
 
   /**
+   * The steep-ground shadows for a routes payload (SNOW-1046).
+   *
+   * Guarded like the legs above, and for the same reason: a missing core
+   * costs the shadows, not the routes overlay.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A line
+   *   FeatureCollection, empty when there is no steep ground to mark.
+   */
+  const routeSteepFor = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    if (!core || !core.steepShadowCollection) return { type: 'FeatureCollection', features: [] };
+    return core.steepShadowCollection(geojson);
+  };
+
+  /**
    * The two leg colours, read off the core with a literal fallback.
    *
    * The literals mirror `--color-route-rail-climb` and
@@ -2467,10 +2483,10 @@
         map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
       }
     }
-    if (map.getLayer('routes-leg-casing')) {
-      map.setPaintProperty(
-        'routes-leg-casing', 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15),
-      );
+    for (const id of ['routes-leg-casing', 'routes-steep-shadow']) {
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15));
+      }
     }
   };
 
@@ -2879,6 +2895,38 @@
     map.addSource('route-legs', {
       type: 'geojson',
       data: routeLegsFor(geojson),
+    });
+    // SNOW-1046: the steep-ground shadow — a darker line beside the route
+    // on its downhill side wherever the ground under it is 40° or steeper,
+    // one feature per run (route_legs_core.js's steepShadowCollection).
+    // The one terrain mark back on the line after SNOW-1019; the amendment
+    // in docs/decisions/legs-not-slope-classes-on-the-map.md says why.
+    //
+    // The side is the sign of the bank, which is positive where the ground
+    // falls away on the skier's right. MapLibre's `line-offset` is positive
+    // to the RIGHT of the line's drawing direction, and a run is drawn in
+    // track order, so `side` times a pixel distance puts the shadow on the
+    // downhill side at every zoom. Under the leg casing, so the route line
+    // stays on top where the two meet; not tappable and no legend row.
+    map.addSource('routes-steep', {
+      type: 'geojson',
+      data: routeSteepFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-steep-shadow',
+      type: 'line',
+      source: 'routes-steep',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ROUTE_CASING_COLOUR,
+        'line-opacity': legOpacity(0.55, 0.15),
+        'line-width': 3,
+        'line-offset': ['*', ['get', 'side'], 4.5],
+      },
     });
     map.addLayer({
       id: 'routes-leg-casing',
@@ -6153,14 +6201,16 @@
         window.pwaMapOverlayCache?.putOverlay(key, data);
         if (key === 'routes') {
           routesGeojsonCache = data;
-          // FOUR sources, not one: the lines, the derived start/finish
-          // points, the legs and the transitions (see installRoutesLayer).
+          // FIVE sources, not one: the lines, the derived start/finish
+          // points, the legs, the steep-ground shadows and the transitions
+          // (see installRoutesLayer).
           // Refreshing only the first would leave a deleted route's flag
           // standing on the map, its legs drawn along a track that is no
           // longer there, and its marks on ground nothing is drawn across.
           map.getSource('routes')?.setData(routesSourceData(data));
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-legs')?.setData(routeLegsFor(data));
+          map.getSource('routes-steep')?.setData(routeSteepFor(data));
           map.getSource('route-transitions')?.setData(routeTransitionsFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and

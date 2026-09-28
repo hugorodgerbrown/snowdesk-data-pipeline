@@ -56,6 +56,9 @@ const SLOPE = {
   // The same steep segment carries a fall-line mark (the ground faces
   // 205°). Since SNOW-1019 the map draws none; the record keeps it.
   fall_lines: [{ i: 1, deg: 205 }],
+  // SNOW-1046: the steep segment banks 40° to the left, so it carries the
+  // one steep-ground shadow, on the left of the line.
+  banks: [2, -40, null],
 };
 
 /** Two legs over the sampled route: up the first segment, down the rest. */
@@ -641,6 +644,33 @@ describe('tapping a legged route', () => {
   });
 });
 
+describe('the steep-ground shadow (SNOW-1046)', () => {
+  it('holds one run for the owned route and none for the pending share', () => {
+    const data = sources.get('routes-steep').data;
+
+    expect(data.features.map((f) => f.properties)).toEqual([
+      { uuid: 'sampled-route', i: 2, side: -1 },
+    ]);
+    expect(data.features[0].geometry.coordinates).toEqual(SLOPE.points.slice(1, 3));
+  });
+
+  it('offsets to the downhill side by the sign of the bank', () => {
+    const shadow = layers.get('routes-steep-shadow');
+
+    expect(shadow.source).toBe('routes-steep');
+    expect(shadow.paint['line-offset']).toEqual(['*', ['get', 'side'], 4.5]);
+    expect(shadow.paint['line-width']).toBe(3);
+  });
+
+  it('sits under the leg casing and is reached by the overlay switch', () => {
+    const ids = [...layers.keys()];
+
+    expect(ids.indexOf('routes-steep-shadow')).toBeLessThan(ids.indexOf('routes-leg-casing'));
+    expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-steep-shadow');
+    expect(layers.get('routes-steep-shadow').layout.visibility).toBe('visible');
+  });
+});
+
 describe('opening a leg on the rail', () => {
   /** The newest opacity set on one layer. */
   const opacityOf = (id) => layers.get(id).paint['line-opacity'];
@@ -656,11 +686,14 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
+    expect(opacityOf('routes-steep-shadow'))
+      .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
 
     cursor.closeLeg();
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
+    expect(opacityOf('routes-steep-shadow')).toBe(0.55);
     rail.state.cursor = null;
   });
 
@@ -697,8 +730,11 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
+    expect(opacityOf('routes-steep-shadow')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
-    expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
+    expect(paintCalls.filter(
+      ([id]) => id.startsWith('routes-leg-') || id === 'routes-steep-shadow',
+    )).toEqual([]);
 
     cursor.closeLeg();
     rail.state.cursor = null;
