@@ -11,8 +11,10 @@
  * THE GEOMETRY IS THE ROUTE'S OWN. Each wire leg (apps/routes/services/
  * leg_wire.py) carries two index pairs: `from`/`to` into the slope
  * record's segments, which the cursor and the rails are keyed on, and
- * `point_from`/`point_to` into the route's stored coordinates, which is
- * what a leg is sliced out of here. The stored coordinates rather than the
+ * `point_from`/`point_to` into the feature's own coordinates — the stored
+ * vertices, merged with the slope record's boundaries when the server has
+ * terrain heights for them (SNOW-1043) — which is what a leg is sliced out
+ * of here. The feature's coordinates rather than the
  * slope record's 25 m points, because an unsampled route has no slope
  * record and still has legs — a leg is a fact about the geometry. Adjacent
  * legs SHARE their seam point, so the lines meet with no gap.

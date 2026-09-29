@@ -16,9 +16,13 @@ the model has no ground. Every figure read off a track's elevation is then
 read off those heights:
 
 - the routes feed and both trip payloads send `terrain_points(points,
-  slope_samples)` as the geometry, so the elevation profile draws the
-  model's series;
-- the legs on the wire (`wire_legs`) are cut from the same points;
+  slope_samples)` as the geometry: the stored vertices **merged with the
+  record's boundary points** in along-track order, every point on the
+  model's height (a boundary within 0.5 m of a vertex is dropped). A
+  straight line stored as its two ends that crosses a hill therefore
+  climbs the hill;
+- the legs on the wire (`wire_legs`) are cut from the same list, and their
+  `point_from` / `point_to` index it — the list the client slices;
 - the ascent and descent every surface shows — the feed, both trip
   payloads, the route row, the trip page's figures line and stats row, and
   the past-trip row — come from one rule, `climb_figures`, read through
@@ -27,8 +31,12 @@ read off those heights:
 - the along-track gradient in `terrain_detail` reads `heights` directly;
 - the bulletin panels match elevation bands on the same points.
 
-The device's own elevation stays the fallback wherever a height is `null`
-or the record has no `heights` key. Nothing stored is rewritten:
+The device's own elevation is the fallback where a height is `null`, but
+**rebased onto the model's datum**: each run of uncovered points is shifted
+by the offset (model − device) measured at the known point either side of
+it, blended linearly by distance along the run, or the one offset it has
+when the run touches an end of the track. A record with no `heights` key
+leaves the stored track exactly as it is. Nothing stored is rewritten:
 `Route.points`, `ascent_m` and `descent_m` stay what `parse_gpx` produced.
 
 ## Why
@@ -38,15 +46,24 @@ and an altimeter drifts with the weather over the hours of a tour. On the
 Mont Fort – Backside canonical track the recorded height starts 139 m
 above the terrain model and is 744 m above it 1.5 km later, while the
 skier is descending. `detect_legs` read that as a 215 m climb followed by
-an 874 m drop; on the model's heights it is one descent of 548 m (570 m of
-gross descent). The stored ascent was 478.8 m; on the model it is 320.9 m.
+an 874 m drop; on the model's heights it is one descent with 574 m of
+gross descent. The stored ascent was 478.8 m; on the model it is 337.2 m.
 
 The heights cost nothing extra to obtain. The sampler already visits the
 terrain grid at each boundary for the angle, so the tiles are in the
-process cache and the height is one cell read. The per-point elevation is
-interpolated between boundaries along the track, so a 25 m resolution is
-what the profile gets — finer than the eye separates on a line a few
+process cache and the height is one cell read. The boundaries are merged
+into the track rather than only used to interpolate at the stored
+vertices, because a planned route carries a vertex only where its line
+turns: read at the vertices alone, a 1 km straight over a hill reports no
+climb. A 25 m spacing is finer than the eye separates on a line a few
 pixels wide, and coarser than the altimeter's noise.
+
+A raw device height beside a model height is a cliff wherever coverage
+ends — a drifting altimeter 600 m off the ground puts a 600 m step at the
+edge, which the totals count and the leg detector can cut on. Rebasing the
+uncovered run keeps the shape the device recorded, which is what an
+altimeter gets right over a short span, and discards its datum, which is
+what it gets wrong.
 
 The heights are applied at read time rather than written into
 `Route.points` for three reasons: the device series is the user's upload
@@ -70,9 +87,14 @@ model's.
 - An outage during the height pass omits the key entirely, as the crux
   pass does, so the row stays a backfill candidate. A `null` is only ever
   a permanent "no ground here".
-- Ground outside the model's coverage keeps the device's heights, and a
-  drifting altimeter there is still read as recorded (100 of the Chamonix
-  track's 1,134 points).
+- Ground outside the model's coverage keeps the device's height SHAPE on
+  the model's datum (the Chamonix track's 11 uncovered boundaries). The
+  served geometry has more points than `Route.points` — 1,187 against 694
+  on the Backside — and nothing may assume the two lengths are equal;
+  the GPX export and route/trip copies keep reading the stored points.
+- Canonical figures on the terrain track (ascent / descent, m): Chamonix
+  165.4 / 715.5, Hidden Valley 269.2 / 1,194.5, Backside 337.2 / 1,905.5,
+  Col de la Chaux 765.0 / 1,936.0.
 - Stored `ascent_m` / `descent_m` and the shown figures can disagree. The
   Django admin's list and detail views still show the stored columns — they
   are the parser's record of the upload, which is what staff are auditing.
