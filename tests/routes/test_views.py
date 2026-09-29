@@ -47,6 +47,7 @@ there is nothing browser-shaped in this ticket, and a 404 needs no browser.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -64,13 +65,18 @@ from django.utils import timezone
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.models import Route
+from apps.routes.services.canonical import CANONICAL_DIR
+from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.leg_wire import wire_legs
+from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from tests.factories import (
+    DRIFTING_TRACK,
     BulletinFactory,
     MicroRegionFactory,
     RouteFactory,
     RouteShareFactory,
     UserFactory,
+    drifting_track_record,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -937,6 +943,32 @@ class TestRouteListFigures:
         assert "12.4km" in body
         assert "850m ↑" in body
 
+    def test_the_row_shows_the_model_figures_when_heights_exist(
+        self, client: Client
+    ) -> None:
+        """SNOW-1043: the row quotes what the map feed sends, not the column.
+
+        The drifting track records 200 m of climb; the terrain model has
+        40 m. The feed sends 40, so the row must too.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            points=DRIFTING_TRACK,
+            distance_m=111.2,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        feed = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert "40m ↑" in body
+        assert "200m ↑" not in body
+        assert feed["ascent_m"] == 40.0
+
     def test_descent_is_rendered_beside_ascent(self, client: Client) -> None:
         """Both vertical figures, not one netted against the other.
 
@@ -1426,6 +1458,124 @@ class TestRoutesGeojsonSlope:
         properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
 
         assert "slope" not in properties
+
+
+def _backside() -> tuple[Any, dict[str, Any]]:
+    """Return the Mont Fort – Backside canonical track and its slope record.
+
+    The record was captured from the live tile origin by
+    ``bin/record-slope-fixtures`` and carries the model's ``heights``.
+
+    Returns:
+        ``(parsed, record)`` — the ``ParsedRoute`` and the stored record.
+
+    """
+    parsed = parse_gpx((CANONICAL_DIR / "mont-fort-backside.gpx").read_bytes())
+    record = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "slope_records"
+            / "mont-fort-backside.json"
+        ).read_text()
+    )
+    return parsed, record
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonModelHeights:
+    """SNOW-1043: the heights on the wire are the terrain model's.
+
+    The Backside's altimeter drifts 600 m upward over its first descent;
+    the feed must send the model's series, and every figure read off it —
+    the legs, the ascent, the descent — must follow the same series.
+    """
+
+    def _feature(
+        self, client: Client, record: dict[str, Any]
+    ) -> tuple[Route, dict[str, Any]]:
+        """Store the Backside with ``record`` and return its feature."""
+        parsed, _ = _backside()
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(
+            user=user,
+            points=parsed.points,
+            bounds=parsed.bounds,
+            ascent_m=parsed.ascent_m,
+            descent_m=parsed.descent_m,
+            slope_samples=record,
+        )
+        return route, client.get(GEOJSON_URL).json()["features"][0]
+
+    def test_the_coordinates_carry_the_model_heights(self, client: Client) -> None:
+        """The terrain track: every stored vertex, in order, plus boundaries.
+
+        The boundary points lie on the stored line, so the drawn line is
+        the same one; the stored vertices appear in it in their own order.
+        """
+        _, record = _backside()
+        route, feature = self._feature(client, record)
+
+        coordinates = feature["geometry"]["coordinates"]
+
+        assert coordinates == terrain_points(route.points, record)
+        assert len(coordinates) > len(route.points)
+        served = iter(point[:2] for point in coordinates)
+        assert all(point[:2] in served for point in route.points)
+        assert coordinates[0][2] != route.points[0][2]
+
+    def test_the_leg_indices_slice_the_served_coordinates(self, client: Client) -> None:
+        """``point_to`` of the last leg is the last served coordinate."""
+        _, record = _backside()
+        _, feature = self._feature(client, record)
+
+        legs = feature["properties"]["legs"]
+        coordinates = feature["geometry"]["coordinates"]
+
+        assert legs[-1]["point_to"] == len(coordinates) - 1
+        for leg, following in zip(legs, legs[1:], strict=False):
+            assert leg["point_to"] == following["point_from"]
+
+    def test_the_legs_follow_the_model_heights(self, client: Client) -> None:
+        """Down, up, down — not the recording's phantom opening climb."""
+        _, record = _backside()
+        route, feature = self._feature(client, record)
+
+        legs = feature["properties"]["legs"]
+
+        assert legs == wire_legs(terrain_points(route.points, record), record)
+        assert [leg["climbing"] for leg in legs] == [False, True, False]
+
+    def test_ascent_and_descent_follow_the_model_heights(self, client: Client) -> None:
+        """Summed over the served coordinates, not the stored columns."""
+        _, record = _backside()
+        route, feature = self._feature(client, record)
+
+        properties = feature["properties"]
+
+        ascent_m, descent_m = climb_totals(terrain_points(route.points, record))
+        assert properties["ascent_m"] == ascent_m
+        assert properties["descent_m"] == descent_m
+        assert properties["ascent_m"] < route.ascent_m
+
+    def test_a_record_without_heights_serves_the_stored_figures(
+        self, client: Client
+    ) -> None:
+        """A record sampled before SNOW-1043 changes nothing on the wire."""
+        _, record = _backside()
+        del record["heights"]
+        route, feature = self._feature(client, record)
+
+        assert feature["geometry"]["coordinates"] == route.points
+        assert feature["properties"]["ascent_m"] == route.ascent_m
+        assert feature["properties"]["descent_m"] == route.descent_m
+        assert [leg["climbing"] for leg in feature["properties"]["legs"]] == [
+            True,
+            False,
+            True,
+            False,
+        ]
 
 
 @pytest.mark.django_db
@@ -2523,3 +2673,27 @@ class TestRouteBulletinFragment:
         # for a user-initiated fetch and is exactly what must not grow
         # into something per-SEGMENT unnoticed.
         assert len(ctx.captured_queries) <= 8
+
+
+@pytest.mark.django_db
+class TestRouteBulletinFragmentHeights:
+    """SNOW-1043: the elevation band is read on the model's heights."""
+
+    def test_the_panel_reads_the_track_on_model_heights(self, client: Client) -> None:
+        """``display_readings`` is handed ``terrain_points``, not the stored track."""
+        parsed, record = _backside()
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(
+            user=user, points=parsed.points, bounds=parsed.bounds, slope_samples=record
+        )
+
+        with patch(
+            "apps.routes.views.display_readings", return_value=[]
+        ) as display_readings:
+            response = client.get(_bulletin_url(route.uuid, _BULLETIN_DAY))
+
+        assert response.status_code == 200
+        points = display_readings.call_args.args[0]
+        assert points == terrain_points(route.points, record)
+        assert points != route.points

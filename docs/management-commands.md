@@ -894,6 +894,14 @@ nothing, so a later run picks it up again. That is not counted as a
 failure and does not make the command exit non-zero; only a raised error
 does. Idempotent: a sampled row is not a candidate.
 
+A sampled row becomes a candidate again when its record lacks a key a later
+ticket added: `cruxes` (SNOW-911) or `heights` (SNOW-1043, the terrain
+model's height at each boundary — without it the route's profile, legs and
+totals are read off the recording device's altimeter). A key holding an
+empty list or nulls is an answer and does not make the row a candidate.
+`backfill_trip_slope_samples` selects on the same two keys, and will not
+copy a source route's record that lacks either.
+
 `--delay` defaults to a second between routes (politeness towards the tile
 origin, not a limit it imposes); `--limit` takes a first batch so an
 operator can watch one before committing to the whole table. Expect a long

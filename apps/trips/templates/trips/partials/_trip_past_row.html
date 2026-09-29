@@ -31,15 +31,18 @@ Context:
             <span class="block text-label font-medium text-text-1">{{ past_label }}</span>
         </span>
         <span class="shrink-0 text-xs whitespace-nowrap text-text-3">
-            {% if trip.ascent_m is not None %}
-                {% blocktrans trimmed with km=trip.distance_km|floatformat:1 metres=trip.ascent_m|floatformat:0 %}
-                    {{ km }}km · {{ metres }}m
-                {% endblocktrans %}
-            {% else %}
-                {% blocktrans trimmed with km=trip.distance_km|floatformat:1 %}
-                    {{ km }}km
-                {% endblocktrans %}
-            {% endif %}
+            {# ``trip.climb``: the rule the map payload applies (SNOW-1043). #}
+            {% with ascent_m=trip.climb.ascent_m %}
+                {% if ascent_m is not None %}
+                    {% blocktrans trimmed with km=trip.distance_km|floatformat:1 metres=ascent_m|floatformat:0 %}
+                        {{ km }}km · {{ metres }}m
+                    {% endblocktrans %}
+                {% else %}
+                    {% blocktrans trimmed with km=trip.distance_km|floatformat:1 %}
+                        {{ km }}km
+                    {% endblocktrans %}
+                {% endif %}
+            {% endwith %}
         </span>
     </a>
 </li>

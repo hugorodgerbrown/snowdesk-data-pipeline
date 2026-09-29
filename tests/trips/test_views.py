@@ -51,7 +51,14 @@ from waffle.testutils import override_flag
 
 from apps.locations.models import Location
 from apps.trips.models import Trip
-from tests.factories import LocationFactory, RouteFactory, TripFactory, UserFactory
+from tests.factories import (
+    DRIFTING_TRACK,
+    LocationFactory,
+    RouteFactory,
+    TripFactory,
+    UserFactory,
+    drifting_track_record,
+)
 
 # The element the meeting point renders into, tag and contents. Matched
 # rather than searched for whole-page so "the address replaced the
@@ -731,6 +738,32 @@ class TestTripSummaryFigures:
 
         assert figures is not None
         assert figures.group(1).strip() == "12.4km"
+
+    def test_the_model_figures_are_shown_when_heights_exist(
+        self, client: Client
+    ) -> None:
+        """SNOW-1043: the figures line and the stats row quote the model.
+
+        The drifting track records 200 m of climb and the terrain model
+        40 m; the page's map payload sends 40, so both text surfaces on
+        the page must say 40 as well.
+        """
+        trip = TripFactory.create(
+            points=DRIFTING_TRACK,
+            distance_m=111.2,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        stat = re.search(r'data-testid="trip-stat-ascent"[^>]*>(.*?)</p>', html, re.S)
+
+        assert "0.1km · 40m ↑ · 0m ↓" in html
+        assert stat is not None
+        assert stat.group(1).strip() == "40m"
+        assert "200m" not in html
 
     def test_a_zero_ascent_is_still_stated(self, client: Client) -> None:
         """A measured zero is a fact, and is not the same as unknown."""

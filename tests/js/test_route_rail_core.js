@@ -4,8 +4,8 @@
  *
  * The tick step at the three spans the ticket names (500 m, 12.9 km,
  * 80 km), one unit per strip, one fill per leg carrying the leg's own
- * direction, and the figures formatter giving a route and a leg the same
- * shape — the property that lets rail two (SNOW-1017) reuse it unchanged.
+ * direction, and rail one's vertical and horizontal figure lines
+ * (SNOW-1045).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -93,44 +93,70 @@ describe('ticks', () => {
   });
 });
 
-describe('formatFigures', () => {
-  const full = {
-    distance_m: 12900,
-    ascent_m: 1234.4,
-    descent_m: 1100,
-    elevation_start: 1820,
-    elevation_end: 2410,
-  };
-
-  it('writes distance · ascent · descent · start→end', () => {
-    expect(core.formatFigures(full)).toBe('12.9 km · ▲ 1234 m · ▼ 1100 m · 1820 → 2410 m');
+describe('formatRouteVertical', () => {
+  it('writes ascend · descend with a thousands separator', () => {
+    expect(core.formatRouteVertical({ ascent_m: 365.6, descent_m: 1934.2 })).toBe(
+      'Ascend 366 m · descend 1,934 m',
+    );
   });
 
-  it('gives a route and a leg the identical shape', () => {
-    const route = core.formatFigures(full);
-    const leg = core.formatFigures({
-      distance_m: 3200,
-      ascent_m: 640,
-      descent_m: 12,
-      elevation_start: 1820,
-      elevation_end: 2448,
-    });
-    const shape = (line) => line.replace(/[\d.]+/g, '#');
-    expect(shape(leg)).toBe(shape(route));
+  it('omits a null side rather than showing zero', () => {
+    expect(core.formatRouteVertical({ ascent_m: null, descent_m: 1934 })).toBe(
+      'descend 1,934 m',
+    );
+    expect(core.formatRouteVertical({ ascent_m: 366 })).toBe('Ascend 366 m');
   });
 
-  it('omits a null figure rather than showing zero', () => {
-    expect(
-      core.formatFigures({ distance_m: 5000, ascent_m: null, descent_m: null }),
-    ).toBe('5.0 km');
+  it('is empty when both sides are unknown', () => {
+    expect(core.formatRouteVertical({ ascent_m: null, descent_m: null })).toBe('');
+    expect(core.formatRouteVertical(undefined)).toBe('');
   });
 
   it('keeps a genuine zero', () => {
-    expect(core.formatFigures({ distance_m: 1000, ascent_m: 0 })).toBe('1.0 km · ▲ 0 m');
+    expect(core.formatRouteVertical({ ascent_m: 0, descent_m: 0 })).toBe(
+      'Ascend 0 m · descend 0 m',
+    );
   });
 
-  it('drops the range when either end is unknown', () => {
-    expect(core.formatFigures({ elevation_start: 1800, elevation_end: null })).toBe('');
+  it('takes the templates it is given', () => {
+    expect(
+      core.formatRouteVertical(
+        { ascent_m: 366, descent_m: 12 },
+        { 'route-ascend': 'Up %(m)s m', 'route-descend': 'down %(m)s m' },
+      ),
+    ).toBe('Up 366 m · down 12 m');
+  });
+});
+
+describe('formatRouteHorizontal', () => {
+  it('writes the length and the steep terrain to one decimal', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: 3460 })).toBe(
+      '12.9 km · 3.5 km steep terrain',
+    );
+  });
+
+  it('omits the steep part for an unsampled route', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: null })).toBe('12.9 km');
+    expect(core.formatRouteHorizontal({ distance_m: 12900 })).toBe('12.9 km');
+  });
+
+  it('keeps zero steep terrain', () => {
+    expect(core.formatRouteHorizontal({ distance_m: 5000, steep_m: 0 })).toBe(
+      '5.0 km · 0.0 km steep terrain',
+    );
+  });
+
+  it('is empty when nothing is known', () => {
+    expect(core.formatRouteHorizontal({})).toBe('');
+  });
+
+  it('takes the templates it is given', () => {
+    expect(
+      core.formatRouteHorizontal(
+        { distance_m: 1000, steep_m: 500 },
+        { 'route-steep': '%(km)s km raide' },
+      ),
+    ).toBe('1.0 km · 0.5 km raide');
   });
 });
 
