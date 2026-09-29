@@ -97,6 +97,11 @@ what it meant. The meta line is one opaque string in a slot four panels
 share, so labelling a segment of it means giving that slot markup it does
 not have. Worth revisiting if this line ever stops being a plain string.
 
+The figures are ``route.climb`` (SNOW-1043): the terrain model's ascent
+and descent when the slope record carries heights, the stored columns
+otherwise — the same rule the map feed applies, so the row and the map
+never quote two figures for one track.
+
 ``ascent_m`` and ``descent_m`` are nullable and the null is MEANINGFUL: a
 GPX with no <ele> data anywhere yields null, and Route's own docstring is
 explicit that "we don't know" and "flat" are different facts — rendering
@@ -130,67 +135,68 @@ Context:
                     frames this route on the map. Passed by
                     _route_list_map.html; see above.
 {% endcomment %}
-{% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
-    {% trans "Untitled route" as untitled_route %}
-    {% firstof route.name route.source_filename untitled_route as row_label %}
-    {% blocktrans trimmed with km=km asvar row_meta %}{{ km }}km{% endblocktrans %}
-    {% if route.ascent_m is not None and route.descent_m is not None %}
-        {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar row_meta %}
-            {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
-        {% endblocktrans %}
-    {% elif route.ascent_m is not None %}
-        {% blocktrans trimmed with km=km ascent=ascent asvar row_meta %}
-            {{ km }}km · {{ ascent }}m ↑
-        {% endblocktrans %}
-    {% elif route.descent_m is not None %}
-        {% blocktrans trimmed with km=km descent=descent asvar row_meta %}
-            {{ km }}km · {{ descent }}m ↓
-        {% endblocktrans %}
-    {% endif %}
-    {# THE ELAPSED TIME, appended to whichever branch above ran (SNOW-830).  #}
-    {#                                                                       #}
-    {# ONE WRAPPER msgid rather than eight branches. Doubling the four above  #}
-    {# to cover "with duration" and "without" would put eight near-identical #}
-    {# strings in the catalogue for one added segment; a locale that needs   #}
-    {# to reorder the halves still can, because the wrapper interpolates     #}
-    {# both. Same pattern the "Shared with you · {{ meta }}" prefix below     #}
-    {# already uses, for the same reason.                                    #}
-    {#                                                                       #}
-    {# The duration phrase itself renders to the msgids                      #}
-    {# `%(hours)sh%(minutes)sm` and `%(minutes)sm` — byte-identical to the    #}
-    {# map popup's own two strings (public/partials/_map_embed.html), so the #}
-    {# catalogue gains no duplicate and one route reads the same figure in    #}
-    {# both places. Route.duration_hm owns the split and the padding.        #}
-    {#                                                                       #}
-    {# ELAPSED, not moving: the span includes every stop the recording sat    #}
-    {# through. And nullable — a planned <rte>, or a track exported without  #}
-    {# timestamps, carries no timing at all, so the segment is OMITTED       #}
-    {# rather than rendered as a zero. Same unknown-is-not-a-measurement     #}
-    {# rule the ascent branches above follow.                                #}
-    {% if route.duration_hm %}
-        {% if route.duration_hm.hours %}
-            {% blocktrans trimmed with hours=route.duration_hm.hours minutes=route.duration_hm.minutes asvar row_duration %}
-                {{ hours }}h{{ minutes }}m
+{% with climb=route.climb %}
+    {% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=climb.ascent_m|floatformat:0 descent=climb.descent_m|floatformat:0 %}
+        {% trans "Untitled route" as untitled_route %}
+        {% firstof route.name route.source_filename untitled_route as row_label %}
+        {% blocktrans trimmed with km=km asvar row_meta %}{{ km }}km{% endblocktrans %}
+        {% if climb.ascent_m is not None and climb.descent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar row_meta %}
+                {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
             {% endblocktrans %}
-        {% else %}
-            {% blocktrans trimmed with minutes=route.duration_hm.minutes asvar row_duration %}
-                {{ minutes }}m
+        {% elif climb.ascent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent asvar row_meta %}
+                {{ km }}km · {{ ascent }}m ↑
+            {% endblocktrans %}
+        {% elif climb.descent_m is not None %}
+            {% blocktrans trimmed with km=km descent=descent asvar row_meta %}
+                {{ km }}km · {{ descent }}m ↓
             {% endblocktrans %}
         {% endif %}
-        {% blocktrans trimmed with figures=row_meta duration=row_duration asvar row_meta %}
-            {{ figures }} · {{ duration }}
-        {% endblocktrans %}
-    {% endif %}
-    {% trans "Route name" as rename_label %}
-    {# The bbox, only on the map variant. Four indexes off the JSON field    #}
-    {# rather than the field itself: the tag formats each ordinate through   #}
-    {# %f, which is what keeps a decimal comma out of the attribute under a  #}
-    {# non-English locale (see apps/public/templatetags/map_focus.py).       #}
-    {% if map_focus %}
-        {% focus_target route.bounds.0 route.bounds.1 route.bounds.2 route.bounds.3 as row_focus_target %}
-        {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
-    {% endif %}
-    {% comment %}
+        {# THE ELAPSED TIME, appended to whichever branch above ran (SNOW-830).  #}
+        {#                                                                       #}
+        {# ONE WRAPPER msgid rather than eight branches. Doubling the four above  #}
+        {# to cover "with duration" and "without" would put eight near-identical #}
+        {# strings in the catalogue for one added segment; a locale that needs   #}
+        {# to reorder the halves still can, because the wrapper interpolates     #}
+        {# both. Same pattern the "Shared with you · {{ meta }}" prefix below     #}
+        {# already uses, for the same reason.                                    #}
+        {#                                                                       #}
+        {# The duration phrase itself renders to the msgids                      #}
+        {# `%(hours)sh%(minutes)sm` and `%(minutes)sm` — byte-identical to the    #}
+        {# map popup's own two strings (public/partials/_map_embed.html), so the #}
+        {# catalogue gains no duplicate and one route reads the same figure in    #}
+        {# both places. Route.duration_hm owns the split and the padding.        #}
+        {#                                                                       #}
+        {# ELAPSED, not moving: the span includes every stop the recording sat    #}
+        {# through. And nullable — a planned <rte>, or a track exported without  #}
+        {# timestamps, carries no timing at all, so the segment is OMITTED       #}
+        {# rather than rendered as a zero. Same unknown-is-not-a-measurement     #}
+        {# rule the ascent branches above follow.                                #}
+        {% if route.duration_hm %}
+            {% if route.duration_hm.hours %}
+                {% blocktrans trimmed with hours=route.duration_hm.hours minutes=route.duration_hm.minutes asvar row_duration %}
+                    {{ hours }}h{{ minutes }}m
+                {% endblocktrans %}
+            {% else %}
+                {% blocktrans trimmed with minutes=route.duration_hm.minutes asvar row_duration %}
+                    {{ minutes }}m
+                {% endblocktrans %}
+            {% endif %}
+            {% blocktrans trimmed with figures=row_meta duration=row_duration asvar row_meta %}
+                {{ figures }} · {{ duration }}
+            {% endblocktrans %}
+        {% endif %}
+        {% trans "Route name" as rename_label %}
+        {# The bbox, only on the map variant. Four indexes off the JSON field    #}
+        {# rather than the field itself: the tag formats each ordinate through   #}
+        {# %f, which is what keeps a decimal comma out of the attribute under a  #}
+        {# non-English locale (see apps/public/templatetags/map_focus.py).       #}
+        {% if map_focus %}
+            {% focus_target route.bounds.0 route.bounds.1 route.bounds.2 route.bounds.3 as row_focus_target %}
+            {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
+        {% endif %}
+        {% comment %}
         The row's identity, and the two things that follow from it.
 
         A pending row is keyed on the SHARE's token, not the route's uuid —
@@ -203,10 +209,12 @@ Context:
         the template, so a locale can put the qualifier wherever its own
         grammar wants it — including after the figures.
     {% endcomment %}
-    {% if pending_share %}
-        {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you · {{ meta }}{% endblocktrans %}
-        {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
-    {% else %}
-        {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
-    {% endif %}
+        {% if pending_share %}
+            {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you ·
+                {{ meta }}{% endblocktrans %}
+            {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+        {% else %}
+            {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+        {% endif %}
+    {% endwith %}
 {% endwith %}

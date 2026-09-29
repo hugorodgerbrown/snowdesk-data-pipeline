@@ -2,7 +2,7 @@
 name: a-slope-segment-is-the-shared-record
 description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-29
 ---
 
 # A slope segment is the shared record, and it samples the ground
@@ -23,7 +23,11 @@ each stride.
 Five rules go with it:
 
 - **The terrain, never the track.** Nothing reads the third ordinate of
-  `Route.points`.
+  `Route.points` for an angle. Since SNOW-1043 the record also carries the
+  terrain model's `heights` at each boundary, and the profile, legs,
+  ascent/descent and track gradient read those in place of the device's
+  elevations — see
+  [route-heights-come-from-the-terrain-model.md](route-heights-come-from-the-terrain-model.md).
 - **`null` on the field means NEVER SAMPLED**, which is not the same fact as
   a segment carrying an `unknown` reason.
 - **All three `TerrainUnknown` reasons are kept**, though the map collapses

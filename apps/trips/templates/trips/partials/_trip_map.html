@@ -130,30 +130,32 @@ Context:
         is not this ticket's to make. _trip_stats.html carries the same
         note from the other side.
     {% endcomment %}
-    {% with km=trip.distance_km|floatformat:1 ascent=trip.ascent_m|floatformat:0 descent=trip.descent_m|floatformat:0 %}
-        <p class="text-sm text-text-2" data-testid="trip-figures">
-            {% if trip.ascent_m is not None and trip.descent_m is not None %}
-                {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
-                    {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
-                {% endblocktrans %}
-            {% elif trip.ascent_m is not None %}
-                {% blocktrans trimmed with km=km ascent=ascent %}
-                    {{ km }}km · {{ ascent }}m ↑
-                {% endblocktrans %}
-            {% elif trip.descent_m is not None %}
-                {% blocktrans trimmed with km=km descent=descent %}
-                    {{ km }}km · {{ descent }}m ↓
-                {% endblocktrans %}
-            {% else %}
-                {% blocktrans trimmed with km=km %}{{ km }}km{% endblocktrans %}
-            {% endif %}
-        </p>
-        <div id="trip-profile" data-trip-profile class="mt-2 text-route-line"></div>
-        {# The profile's own scale, written by trip_map.js when it draws — the   #}
-        {# y-axis is fitted to THIS track's highest and lowest point, so the     #}
-        {# curve's shape means nothing without the pair that bounds it. Empty    #}
-        {# until then, and left empty for a track with no elevation at all.      #}
-        <p class="mt-2 font-mono text-meta text-text-3" data-trip-profile-range></p>
+    {% with climb=trip.climb %}
+        {% with km=trip.distance_km|floatformat:1 ascent=climb.ascent_m|floatformat:0 descent=climb.descent_m|floatformat:0 %}
+            <p class="text-sm text-text-2" data-testid="trip-figures">
+                {% if climb.ascent_m is not None and climb.descent_m is not None %}
+                    {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
+                        {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
+                    {% endblocktrans %}
+                {% elif climb.ascent_m is not None %}
+                    {% blocktrans trimmed with km=km ascent=ascent %}
+                        {{ km }}km · {{ ascent }}m ↑
+                    {% endblocktrans %}
+                {% elif climb.descent_m is not None %}
+                    {% blocktrans trimmed with km=km descent=descent %}
+                        {{ km }}km · {{ descent }}m ↓
+                    {% endblocktrans %}
+                {% else %}
+                    {% blocktrans trimmed with km=km %}{{ km }}km{% endblocktrans %}
+                {% endif %}
+            </p>
+            <div id="trip-profile" data-trip-profile class="mt-2 text-route-line"></div>
+            {# The profile's own scale, written by trip_map.js when it draws — the   #}
+            {# y-axis is fitted to THIS track's highest and lowest point, so the     #}
+            {# curve's shape means nothing without the pair that bounds it. Empty    #}
+            {# until then, and left empty for a track with no elevation at all.      #}
+            <p class="mt-2 font-mono text-meta text-text-3" data-trip-profile-range></p>
+        {% endwith %}
     {% endwith %}
 </div>
 {# SNOW-828: the way out of this canvas, in the card's footer strip. A    #}
