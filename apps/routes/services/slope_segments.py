@@ -13,6 +13,18 @@ the same face rises near zero. Colouring either of those as gentle ground
 is precisely the "the map said it was fine" failure the feature exists to
 prevent, so nothing here reads the third ordinate of a point.
 
+**AND THE HEIGHTS COME FROM THE MODEL TOO** (SNOW-1043). The record carries
+the terrain model's height at every boundary, read with ``sample_height``
+over the same coordinates the walk already placed. That is not the track's
+third ordinate either: a stored elevation is whatever the recording
+device's barometric altimeter said, and an altimeter drifts. On the Mont
+Fort – Backside canonical tour the recorded height starts 139 m above the
+ground and is 744 m above it 1.5 km later, while the skier is descending,
+so every figure read off the device series — the profile, the legs, the
+ascent and descent totals, the along-track gradient — inherits a climb
+that never happened. ``apps.routes.services.terrain_heights`` is where the
+readers put these heights back onto the track.
+
 The record written to ``Route.slope_samples``::
 
     {
@@ -23,8 +35,18 @@ The record written to ``Route.slope_samples``::
       "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3},
                    {"unknown": "outside_coverage"}, …],    # N
       "summary":  {"sampled_m": …, "surveyed_m": …, …},    # SNOW-961
-      "cruxes":   [[lon, lat], …]                          # SNOW-911
+      "cruxes":   [[lon, lat], …],                         # SNOW-911
+      "heights":  [2834.6, null, …]                        # N + 1, SNOW-1043
     }
+
+``heights`` pairs with ``points``: one terrain height per boundary, in
+metres to one decimal, and ``null`` where the model has no answer — outside
+its coverage, or a hole inside it. A null is per boundary and is permanent;
+a reader falls back to the device's own elevation there. An OUTAGE during
+the height pass is different, and omits the key entirely, on the rule
+``cruxes`` follows below: a missing key says "we could not look", which
+keeps the row a backfill candidate, where a list of nulls would say "there
+is no ground here" for good.
 
 ``cruxes`` are the passages where the ground AROUND the skier can
 release — one coordinate per run of flagged segments, never one per
@@ -90,7 +112,12 @@ from typing import Any
 from django_tasks import task
 
 from apps.core.geo import haversine_m
-from apps.locations.services.terrain import TerrainSlope, TerrainUnknown, sample_slope
+from apps.locations.services.terrain import (
+    TerrainSlope,
+    TerrainUnknown,
+    sample_height,
+    sample_slope,
+)
 from apps.locations.services.terrain_grid import load_grid
 from apps.routes.models import Route
 from apps.routes.services.cruxes import crux_points, is_crux, uphill_max_angle
@@ -114,6 +141,11 @@ SAMPLE_STRIDE_M = 25.0
 # the tenth of a degree is already past what the source can support and the
 # second would be noise with a byte cost on every segment of every route.
 _ANGLE_PRECISION = 1
+
+# Decimal places kept on a stored terrain height. One: the grid stores
+# heights in whole decimetres at best, and the cell is 5 m across, so a
+# finer figure would be precision the source never had.
+_HEIGHT_PRECISION = 1
 
 # Decimal places kept on a stored sample coordinate. Six is about 0.1 m at
 # these latitudes — far finer than the 5 m cell the sample came from, and
@@ -268,8 +300,68 @@ def build_slope_samples(
             label,
         )
     )
+    # SNOW-1043: the model's height at every boundary. After the crux
+    # pass for the same reason that pass follows the walk — an aborted
+    # walk pays for none of it — and with the same omitted-key rule on an
+    # outage. The tiles are the ones the walk has just read, so this is
+    # mostly cache hits rather than a second pass over the origin.
+    record.update(_height_record(coordinates, label))
     record["summary"] = _walk_summary(boundaries, segments)
     return record
+
+
+def _height_record(
+    coordinates: list[tuple[float, float]], label: str
+) -> dict[str, Any]:
+    """Return the ``heights`` key for a walked track, or no key at all.
+
+    **ONE UNAVAILABLE ANSWER VOIDS THE PASS**, as one voids the crux pass:
+    a ``null`` in the list is a permanent statement that the model has no
+    ground there, and filing an outage under it would keep the device's
+    drifting elevation at that boundary for good. Three in a row end the
+    pass early, on ``_UNAVAILABLE_RUN_LIMIT``'s arithmetic.
+
+    Args:
+        coordinates: Every segment boundary, as ``(longitude, latitude)``.
+        label: How the caller names this track in a log line.
+
+    Returns:
+        ``{"heights": [...]}`` — one entry per boundary, metres or None —
+        when every boundary was answered, and an EMPTY DICT when the
+        origin could not be reached for any of them.
+
+    """
+    heights: list[float | None] = []
+    unavailable_run = 0
+    complete = True
+    for longitude, latitude in coordinates:
+        answer = sample_height(latitude, longitude)
+        if answer.unknown == TerrainUnknown.UNAVAILABLE:
+            complete = False
+            unavailable_run += 1
+            if unavailable_run >= _UNAVAILABLE_RUN_LIMIT:
+                logger.warning(
+                    "height sampling: %d consecutive unavailable samples, "
+                    "%s left without terrain heights",
+                    unavailable_run,
+                    label,
+                )
+                return {}
+            heights.append(None)
+            continue
+        unavailable_run = 0
+        heights.append(
+            None
+            if answer.height_m is None
+            else round(answer.height_m, _HEIGHT_PRECISION)
+        )
+    if not complete:
+        logger.warning(
+            "height sampling: an unavailable sample, %s left without terrain heights",
+            label,
+        )
+        return {}
+    return {"heights": heights}
 
 
 def _crux_record(

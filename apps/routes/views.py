@@ -119,6 +119,7 @@ from apps.routes.services.shares import (
 )
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
+from apps.routes.services.terrain_heights import terrain_points
 
 logger = logging.getLogger(__name__)
 
@@ -263,21 +264,29 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
 
     """
     slope = compact_slope(route.slope_samples)
+    # SNOW-1043: the heights are the terrain model's wherever the record
+    # has them, and the device's elsewhere — see terrain_heights. The
+    # profile, the legs and the totals below all read THESE points, so
+    # the three cannot disagree about which series they describe.
+    points = terrain_points(route.points, route.slope_samples)
+    # The one rule every surface quotes ascent and descent by — the route
+    # row's template reads the same property. None passes straight
+    # through: "unknown", not zero.
+    ascent_m, descent_m = route.climb
     return {
         "type": "Feature",
         "geometry": {
             # Stored in GeoJSON axis order already — see routes_geojson's
             # own note and Route.points' help_text.
             "type": "LineString",
-            "coordinates": route.points,
+            "coordinates": points,
         },
         "properties": {
             **identity,
             "name": route.name,
             "distance_m": route.distance_m,
-            # None passes straight through: "unknown", not zero.
-            "ascent_m": route.ascent_m,
-            "descent_m": route.descent_m,
+            "ascent_m": ascent_m,
+            "descent_m": descent_m,
             # int, not float: a GPX records whole seconds, and the popup
             # renders hours and minutes off this.
             "duration_s": (
@@ -311,7 +320,7 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
                 {"legs": legs}
                 if (
                     legs := wire_legs(
-                        route.points,
+                        points,
                         route.slope_samples if slope is not None else None,
                     )
                 )
@@ -578,19 +587,25 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     """Return a FeatureCollection of the requesting user's own routes.
 
     Backs the map's routes line layer (SNOW-687). One ``LineString``
-    Feature per route, whose ``coordinates`` are ``Route.points``
-    **verbatim** — the model already stores ``[lon, lat, ele]`` in GeoJSON
-    axis order (RFC 7946), already simplified at ingest, so there is no
-    per-render transform and no chance of an axis swap creeping in between
-    the two representations.
+    Feature per route, whose ``coordinates`` are the terrain track —
+    ``Route.points`` (``[lon, lat, ele]`` in GeoJSON axis order, RFC 7946,
+    already simplified at ingest, so no axis swap can creep in) merged with
+    the slope record's 25 m boundary points when the record carries model
+    heights, every point on the terrain model's height and any run the
+    model does not cover rebased onto its datum (SNOW-1043,
+    ``apps.routes.services.terrain_heights``). A barometric altimeter
+    drifts, and the profile drawn from it drew climbs that never happened.
+    The boundary points lie on the stored line, so the drawn line does
+    not change, and the legs' ``point_from``/``point_to`` index this list.
 
     Properties per feature: ``uuid``, ``name``, ``distance_m``,
     ``ascent_m``, ``descent_m``, ``duration_s`` and ``bounds``.
-    ``ascent_m`` and ``descent_m`` are passed through **as stored**,
-    including ``None`` — ``Route``'s own docstring is explicit that null
-    means "the source file carried no elevation data", not "flat", and the
-    client omits those figures entirely rather than rendering a zero for an
-    unknown.
+    ``ascent_m`` and ``descent_m`` are summed over those same coordinates
+    when the record has model heights, and passed through **as stored**
+    otherwise, including ``None`` — ``Route``'s own docstring is explicit
+    that null means "the source file carried no elevation data", not
+    "flat", and the client omits those figures entirely rather than
+    rendering a zero for an unknown.
 
     ``duration_s`` is DERIVED here rather than sending ``started_at`` and
     ``finished_at`` as a pair (SNOW-750). The popup renders one elapsed
@@ -782,7 +797,11 @@ def route_bulletin_fragment(request: HttpRequest, uuid: UUID) -> HttpResponse:
     except Route.DoesNotExist:
         return JsonResponse({"error": "not_found"}, status=404)
 
-    readings = display_readings(route.points, route.slope_samples, target_date)
+    readings = display_readings(
+        terrain_points(route.points, route.slope_samples),
+        route.slope_samples,
+        target_date,
+    )
 
     issued = [
         reading["bulletin"].issued_at

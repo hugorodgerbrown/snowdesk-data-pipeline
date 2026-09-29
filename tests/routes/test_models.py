@@ -27,7 +27,13 @@ import pytest
 from django.utils import timezone
 
 from apps.routes.models import Route, RouteShare
-from tests.factories import RouteFactory, RouteShareFactory, UserFactory
+from tests.factories import (
+    DRIFTING_TRACK,
+    RouteFactory,
+    RouteShareFactory,
+    UserFactory,
+    drifting_track_record,
+)
 
 
 class TestRouteToString:
@@ -382,3 +388,27 @@ class TestRouteShareDefaults:
         share = RouteShareFactory.create()
         assert share.claim_count == 0
         assert share.last_claimed_at is None
+
+
+@pytest.mark.django_db
+class TestRouteClimb:
+    """``Route.climb`` — the figures every surface shows (SNOW-1043)."""
+
+    def test_model_heights_replace_the_stored_figures(self) -> None:
+        """With heights, the terrain model's totals."""
+        route = RouteFactory.create(
+            points=DRIFTING_TRACK,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+
+        assert route.climb == (40.0, 0.0)
+
+    def test_without_heights_the_stored_figures_stand(self) -> None:
+        """An unsampled route shows what the parser measured."""
+        route = RouteFactory.create(
+            ascent_m=850.0, descent_m=1100.0, slope_samples=None
+        )
+
+        assert route.climb == (850.0, 1100.0)
