@@ -395,7 +395,7 @@ footer {
     <div class="fig"><span class="n">42</span><span class="l">map layers<br>20 data sources</span></div>
     <div class="fig"><span class="n">6</span><span class="l">SQL queries<br>to render</span></div>
     <div class="fig"><span class="n">~48 ms</span><span class="l">server render<br>time, warm</span></div>
-    <div class="fig"><span class="n">371.7 KB</span><span class="l">JS over the<br>wire, gzipped</span></div>
+    <div class="fig"><span class="n">372.4 KiB</span><span class="l">JS over the<br>wire, gzipped</span></div>
   </div>
 </div>
 
@@ -762,7 +762,7 @@ footer {
         <li><span class="tick">✓</span><p><strong>All seven new <code>*_core.js</code> modules are pure, typed and independently tested.</strong> The typed-JS rollout grew from 13/22 to 19/29 in one cycle without losing ground on any pre-existing file.</p></li>
         <li><span class="tick">✓</span><p><strong>No new endpoints, no new unsanitised <code>innerHTML</code>/<code>outerHTML</code>.</strong> <code>js-globals-lint</code>, <code>ds-lint</code> and <code>i18n-lint</code> were re-run against this checkout for this review (not assumed from CI) and pass clean, including against the two new design tokens this cycle's bank-angle work introduces.</p></li>
         <li><span class="tick">✓</span><p><strong>The comment-ratio climb flagged for two consecutive cycles reversed.</strong> 60.5% this cycle against 62.3% last cycle, even as the file count grew from 82 to 92 — the first drop in four cycles of measurement.</p></li>
-        <li><span class="tick">✓</span><p><strong>The review caught its own near-miss.</strong> A first-party-only re-measurement of wire cost read as 151 KB, a 57% improvement that would have been the headline of this cycle. It was wrong — it silently dropped the two vendored scripts (<code>htmx.min.js</code>, <code>maplibre-gl.min.js</code>, ~227 KB gzipped) that last cycle's comparable figure included. The reconciled total, 371.7 KB, is a modest, proportional increase. See §09's measurement note.</p></li>
+        <li><span class="tick">✓</span><p><strong>The review caught its own near-miss.</strong> A first-party-only re-measurement of wire cost read as 150 KiB, a 57% improvement that would have been the headline of this cycle. It was wrong — it silently dropped the two vendored scripts (<code>htmx.min.js</code>, <code>maplibre-gl.min.js</code>, 222.5 KiB gzipped) that last cycle's comparable figure included. The reconciled total, 372.4 KiB, is a modest, proportional increase. See §09's measurement note.</p></li>
       </ul>
     </div>
   </div>
@@ -884,7 +884,7 @@ footer {
 
       <div class="note" style="max-width:none;margin-top:30px;">
         <div class="t">A measurement near-miss, not a finding — recorded for the audit trail</div>
-        <p>A first-party-only re-measurement of wire cost this cycle read as 151.4 KB gzipped, against last cycle's reported 352.5 KB — a 57% improvement that would have been this cycle's headline. That comparison was invalid: last cycle's figure included the two vendored scripts, <code>htmx.min.js</code> and <code>maplibre-gl.min.js</code> (227 KB gzipped together, confirmed unchanged versions), which a first-party-only pass silently drops. Recomputing the same 94-script total this cycle's methodology should have used gives <strong>371.7 KB</strong> — a 5.4% increase, proportional to the 17% growth in first-party code lines. Caught by cross-checking the vendor file sizes directly before publishing, exactly the "prove it twice" discipline this series' own README asks for. The figures strip above reports the corrected, comparable number.</p>
+        <p>A first-party-only re-measurement of wire cost this cycle read as 150.0 KiB gzipped, against last cycle's reported 352.5 KB — a 57% improvement that would have been this cycle's headline. That comparison was invalid: last cycle's figure included the two vendored scripts, <code>htmx.min.js</code> and <code>maplibre-gl.min.js</code> (222.5 KiB gzipped together — 227.8 kB in decimal units — confirmed unchanged versions), which a first-party-only pass silently drops. Recomputing the same 94-script total this cycle's methodology should have used gives <strong>372.4 KiB</strong> (150.0 + 222.5, rounding) — a 5.6% increase, proportional to the 17% growth in first-party code lines. Caught by cross-checking the vendor file sizes directly before publishing, exactly the "prove it twice" discipline this series' own README asks for. The figures strip above reports the corrected, comparable number.</p>
       </div>
 
       <div class="note" style="max-width:none;margin-top:20px;">
