@@ -49,8 +49,11 @@ segment is a stretch of ground and belongs to one leg, where a point is a
 boundary and belongs to both.
 
 Each leg also carries ``point_from`` and ``point_to`` (SNOW-1017): the
-same leg in ``Route.points`` indices, so the map can slice the route's
-own geometry into one line per leg — the slope record's 25 m points are
+same leg in indices into the ``points`` this function was given, so the
+map can slice the feature's own geometry into one line per leg. The routes
+feed passes the terrain track (``terrain_heights.terrain_points``,
+SNOW-1043), which is the list it also sends as the geometry, so the two
+index spaces are one — the slope record's 25 m points are
 absent on an unsampled route, and the stored points are what the flat
 line has always drawn. These DO share a boundary, as ``Leg.start`` and
 ``Leg.end`` do: each leg's ``point_to`` is the next leg's ``point_from``,
@@ -150,7 +153,9 @@ def wire_legs(
     no two adjacent legs are both climbs or both descents.
 
     Args:
-        points: ``Route.points`` — ``[lon, lat, ele]`` in stored order.
+        points: The track the legs are cut from and indexed into —
+            ``Route.points``, or the terrain track the feed sends as the
+            geometry — ``[lon, lat, ele]`` in track order.
         samples: The row's ``slope_samples``, or None if never sampled.
             When None (or segment-less) the boundaries are the stride
             walk the sampler would take at ``SAMPLE_STRIDE_M``.

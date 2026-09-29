@@ -1509,17 +1509,33 @@ class TestRoutesGeojsonModelHeights:
         return route, client.get(GEOJSON_URL).json()["features"][0]
 
     def test_the_coordinates_carry_the_model_heights(self, client: Client) -> None:
-        """Longitude and latitude as stored; the third ordinate replaced."""
+        """The terrain track: every stored vertex, in order, plus boundaries.
+
+        The boundary points lie on the stored line, so the drawn line is
+        the same one; the stored vertices appear in it in their own order.
+        """
         _, record = _backside()
         route, feature = self._feature(client, record)
 
         coordinates = feature["geometry"]["coordinates"]
 
         assert coordinates == terrain_points(route.points, record)
-        assert [point[:2] for point in coordinates] == [
-            point[:2] for point in route.points
-        ]
+        assert len(coordinates) > len(route.points)
+        served = iter(point[:2] for point in coordinates)
+        assert all(point[:2] in served for point in route.points)
         assert coordinates[0][2] != route.points[0][2]
+
+    def test_the_leg_indices_slice_the_served_coordinates(self, client: Client) -> None:
+        """``point_to`` of the last leg is the last served coordinate."""
+        _, record = _backside()
+        _, feature = self._feature(client, record)
+
+        legs = feature["properties"]["legs"]
+        coordinates = feature["geometry"]["coordinates"]
+
+        assert legs[-1]["point_to"] == len(coordinates) - 1
+        for leg, following in zip(legs, legs[1:], strict=False):
+            assert leg["point_to"] == following["point_from"]
 
     def test_the_legs_follow_the_model_heights(self, client: Client) -> None:
         """Down, up, down — not the recording's phantom opening climb."""

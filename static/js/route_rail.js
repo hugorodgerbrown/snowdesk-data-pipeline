@@ -544,8 +544,15 @@
     var profile = profileCore.readProfile(Array.isArray(coordinates) ? coordinates : []);
     var spanM = typeof props.distance_m === 'number' ? props.distance_m : profile.distanceM;
     // `terrain` is absent for an unsampled route, and the steep part of
-    // the horizontal line is then left out rather than read as zero.
+    // the horizontal line is then left out rather than read as zero. A
+    // route wholly outside the terrain coverage carries `surveyed_m: 0`
+    // and `steep_m: 0`; "0.0 km steep terrain" would state the ground is
+    // gentle on the strength of never having looked at it, so the steep
+    // figure is only shown once some ground was surveyed — the rule
+    // `summaryLines` in route_slope_core.js follows.
     var terrain = readJson(props.terrain);
+    var surveyed = !!terrain && typeof terrain === 'object'
+      && typeof terrain.surveyed_m === 'number' && terrain.surveyed_m > 0;
 
     nameEl.textContent = current.name;
     verticalEl.textContent = railCore.formatRouteVertical(
@@ -555,7 +562,7 @@
     horizontalEl.textContent = railCore.formatRouteHorizontal(
       {
         distance_m: props.distance_m,
-        steep_m: terrain && typeof terrain === 'object' ? terrain.steep_m : null,
+        steep_m: surveyed ? terrain.steep_m : null,
       },
       STRINGS,
     );
