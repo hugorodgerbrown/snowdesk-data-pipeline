@@ -36,6 +36,7 @@ from typing import Any
 from django.utils.translation import gettext_lazy as _
 
 from apps.public.season_calendar import SeasonCell, SeasonGrid
+from apps.weather.services.weather_display import weather_icon_filename
 
 # The illustrated grid's own calendar. Fixed dates rather than something
 # derived from today: the point of the picture is the SHAPE of a season —
@@ -299,7 +300,10 @@ _WEATHER_PANEL: dict[str, Any] = {
         "sunset_local": "17:12",
         "icon_bucket": "moderate_snow",
         "condition_label": "Snow",
-        "icon_filename": "moderate_snow-day.svg",
+        # Derived, not written out: only clear and partly_cloudy ship a
+        # day/night pair, and a name not on disk raises under production's
+        # manifest storage.
+        "icon_filename": weather_icon_filename("moderate_snow", "day"),
         "temp_max": -4.0,
         "temp_min": -11.0,
         "snowfall_sum": 18.0,

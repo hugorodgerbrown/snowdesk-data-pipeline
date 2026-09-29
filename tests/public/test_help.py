@@ -571,3 +571,16 @@ class TestBulletinIllustrationsMatchTheirCopy:
         aspects = help_illustrations()["card"]["aspects"]
         positions = [compass.index(a) for a in aspects]
         assert positions == list(range(positions[0], positions[0] + len(positions)))
+
+    def test_weather_panel_icon_exists_on_disk(self) -> None:
+        """Production's manifest storage raises on a name it never collected."""
+        from django.conf import settings
+        from django.contrib.staticfiles import finders
+
+        from apps.public.component_previews import help_illustrations
+        from apps.weather.icon_sets import icon_set_dir
+
+        filename = help_illustrations()["weather_panel"]["weather_display"][
+            "icon_filename"
+        ]
+        assert finders.find(icon_set_dir(settings.WEATHER_ICON_SET) + filename)
