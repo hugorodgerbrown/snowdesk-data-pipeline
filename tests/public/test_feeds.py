@@ -23,7 +23,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 from tests.factories import (
     BulletinFactory,
@@ -85,6 +85,17 @@ class TestCountryFeedEndpoint:
         assert response.status_code == 200
         # And path-case variance survives, too — URL-level `ch` and `CH`
         # both resolve to the same canonical feed body.
+
+    def test_channel_link_is_the_map(self, client: Client) -> None:
+        """The channel's own <link> opens the map, not the homepage (SNOW-1047)."""
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            body = client.get("/ch/feed.rss").content.decode()
+
+        # Atom: the feed-level alternate link, before the first <entry>.
+        channel = body.split("<entry>", 1)[0]
+        assert re.search(
+            r'<link href="https://snowdesk\.info/map/" rel="alternate"', channel
+        )
 
     def test_unknown_country_returns_404(self, client: Client) -> None:
         """A country outside the covered ISO-3166 set 404s."""
