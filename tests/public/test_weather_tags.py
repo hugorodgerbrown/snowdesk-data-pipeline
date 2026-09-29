@@ -115,7 +115,7 @@ class TestPanelAndChartAgree:
     """The two wind arrows on the forecast page point the same way.
 
     ``_weather_panel.html`` rotates its glyph with ``wind_arrow_rotation``;
-    the hourly chart builds its own ``transform`` in
+    the hourly chart emits its own ``rotation`` in
     ``apps.weather.services.hourly_chart``. Both are on
     ``/weather/<short_id>/`` (SNOW-786), and SNOW-785 exists because they
     used to disagree by half a turn. Two implementations reached by two
@@ -128,7 +128,7 @@ class TestPanelAndChartAgree:
         arrows = _direction_arrows([bearing])
 
         assert len(arrows) == 1
-        chart_rotation = float(arrows[0]["transform"].split("(")[1].split(" ")[0])
+        chart_rotation = float(arrows[0]["rotation"])
         panel_rotation = wind_arrow_rotation(bearing)
 
         assert panel_rotation is not None

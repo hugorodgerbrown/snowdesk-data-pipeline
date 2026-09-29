@@ -138,6 +138,23 @@ with ("arrows point where the wind comes from"). ``tests/public/
 test_weather_tags.py`` asserts the two agree for the same bearing, so they
 cannot drift apart again.
 
+The drawing stretches sideways, never taller
+--------------------------------------------
+The geometry is authored against a 606-unit content box, which is about one
+pixel per unit in the 640px column the chart was first drawn for. Since
+SNOW-1049 the chart spans the page's content column, so it lines up with the
+day picker above it, and the three plots stretch **horizontally only**: each
+SVG renders with ``preserveAspectRatio="none"``, keeps the drawing's aspect
+ratio below the authored width, and is capped at its authored height above
+it. Extra width spreads the hours; it never makes a plot taller.
+
+Two consequences follow. Every stroke is drawn with
+``vector-effect="non-scaling-stroke"``, so a stretched line keeps its weight
+and a vertical tick does not widen. And anything whose shape carries
+meaning cannot live inside a stretched viewBox — a wind arrow squashed
+sideways points the wrong way — so the direction arrows are small fixed-size
+HTML glyphs, placed by percentage and rotated by CSS (``ChartArrow``).
+
 Labels are HTML, positioned by percentage
 -----------------------------------------
 Every number, unit and axis label is HTML positioned over the SVG, not
@@ -170,8 +187,9 @@ from typing import Any, TypedDict
 logger = logging.getLogger(__name__)
 
 # ── Geometry, in viewBox units ───────────────────────────────────────────
-# The drawing is authored against a 606-unit content box and scaled to its
-# container by the viewBox, so these are ratios rather than pixels.
+# The drawing is authored against a 606-unit content box. Past that width it
+# stretches horizontally only and is capped at its authored height (SNOW-1049),
+# so these are ratios along x and roughly pixels along y.
 
 CHART_WIDTH = 606
 PAD_LEFT = 40  # left gutter: unit and axis labels
@@ -218,8 +236,9 @@ GUST_ROW_Y = 4
 WIND_TOP = 28
 WIND_BOTTOM = 66
 SPEED_ROW_Y = 72
+# The arrow row is HTML, not SVG: a fixed-height strip of fixed-size glyphs,
+# so an arrow keeps its shape however far the plots above it stretch.
 DIRECTION_HEIGHT = 30
-ARROW_LENGTH = 14
 
 # Headroom above the tallest bar, so a value label never touches the series
 # above it. The design's own figures: snow 1.25, precipitation 1.2.
@@ -284,10 +303,17 @@ class ChartBand(TypedDict):
 
 
 class ChartArrow(TypedDict):
-    """One wind-direction arrow: a path plus its rotation about its centre."""
+    """
+    One wind-direction arrow, drawn as a fixed-size HTML glyph.
 
-    d: str
-    transform: str
+    ``left`` is a per-cent of the drawing's width, on the same x-scale as the
+    wind figures above it. ``rotation`` is the bearing in degrees, applied by
+    CSS about the glyph's centre. Both are strings, like every other
+    coordinate here, so a comma-decimal locale cannot reach them.
+    """
+
+    left: str
+    rotation: str
     label: str
 
 
@@ -298,9 +324,25 @@ class HourlyChart(TypedDict):
     view_box_temp: str
     view_box_precip: str
     view_box_wind: str
-    view_box_direction: str
     temp_height: str
     precip_height: str
+    wind_height: str
+
+    # Sizing — each plot keeps the drawing's aspect ratio below its authored
+    # width and is capped at its authored height above it (SNOW-1049), so a
+    # wide column stretches the hours rather than the plot's height.
+    aspect_temp: str
+    aspect_precip: str
+    aspect_wind: str
+    max_h_temp: str
+    max_h_precip: str
+    max_h_wind: str
+    direction_height: str
+
+    # Where the gutter labels anchor: the left gutter's by its right edge,
+    # the right gutter's by its left, each at the outer end of its tick.
+    left_gutter_right: str
+    right_gutter_left: str
 
     # Headers — one per chart
     temp_summary: str
@@ -397,6 +439,20 @@ def _pct(value: float, extent: float) -> str:
 
     """
     return f"{(value / extent) * 100:.2f}%"
+
+
+def _aspect(height: int) -> str:
+    """
+    Return a plot's CSS ``aspect-ratio``: the drawing's width over ``height``.
+
+    Args:
+        height: The plot's authored height, in viewBox units.
+
+    Returns:
+        The ratio, e.g. ``"606 / 200"``.
+
+    """
+    return f"{CHART_WIDTH} / {height}"
 
 
 def _hour_x(hour: float) -> float:
@@ -640,31 +696,6 @@ def _line(
     if len(run) > 1:
         out.append(" ".join(run))
     return out
-
-
-def _arrow_path(x: float, y: float, length: float) -> str:
-    """
-    Return the path for an upward arrow centred on a point.
-
-    The glyph points north at zero rotation — a shaft with a chevron head at
-    its top — so rotating it by a bearing points it at that bearing.
-
-    Args:
-        x: The centre's x, in viewBox units.
-        y: Its y.
-        length: The shaft's full length.
-
-    Returns:
-        The SVG path data.
-
-    """
-    half = length / 2
-    head = y - half
-    return (
-        f"M {_num(x)} {_num(y + half)} L {_num(x)} {_num(head)} "
-        f"M {_num(x - 3.5)} {_num(head + 4)} L {_num(x)} {_num(head)} "
-        f"L {_num(x + 3.5)} {_num(head + 4)}"
-    )
 
 
 # ── Time ─────────────────────────────────────────────────────────────────
@@ -1162,7 +1193,11 @@ def _direction_arrows(bearings: Sequence[float | None]) -> list[ChartArrow]:
     The rotation is the bearing itself, which points the arrowhead at the
     weather's source — the same convention the ``wind_arrow_rotation``
     filter uses since SNOW-785, and ``tests/public/test_weather_tags.py``
-    asserts the two agree.
+    asserts the two agree. The glyph points north at zero rotation.
+
+    Each arrow is placed at its block's centre on the drawing's x-scale,
+    the same ``left`` its wind figures carry, so the arrows stay under the
+    numbers they belong to at every width.
 
     Args:
         bearings: The per-block mean bearings, ``None`` where there is none.
@@ -1171,13 +1206,10 @@ def _direction_arrows(bearings: Sequence[float | None]) -> list[ChartArrow]:
         The arrows, one per block that has a bearing.
 
     """
-    centre_y = DIRECTION_HEIGHT / 2
     return [
         {
-            "d": _arrow_path(_block_x(index), centre_y, ARROW_LENGTH),
-            "transform": (
-                f"rotate({_num(bearing)} {_num(_block_x(index))} {_num(centre_y)})"
-            ),
+            "left": _pct(_block_x(index), CHART_WIDTH),
+            "rotation": _num(bearing),
             "label": _compass(bearing),
         }
         for index, bearing in enumerate(bearings)
@@ -1254,9 +1286,22 @@ def build_hourly_chart(
         "view_box_temp": f"0 0 {CHART_WIDTH} {TEMP_HEIGHT}",
         "view_box_precip": f"0 0 {CHART_WIDTH} {PRECIP_HEIGHT}",
         "view_box_wind": f"0 0 {CHART_WIDTH} {WIND_HEIGHT}",
-        "view_box_direction": f"0 0 {CHART_WIDTH} {DIRECTION_HEIGHT}",
         "temp_height": str(TEMP_HEIGHT),
         "precip_height": str(PRECIP_HEIGHT),
+        "wind_height": str(WIND_HEIGHT),
+        "aspect_temp": _aspect(TEMP_HEIGHT),
+        "aspect_precip": _aspect(PRECIP_HEIGHT),
+        "aspect_wind": _aspect(WIND_HEIGHT),
+        "max_h_temp": f"{TEMP_HEIGHT}px",
+        "max_h_precip": f"{PRECIP_HEIGHT}px",
+        "max_h_wind": f"{WIND_HEIGHT}px",
+        "direction_height": f"{DIRECTION_HEIGHT}px",
+        # A CSS ``right`` is measured from the drawing's right edge, so the
+        # left gutter's anchor is the distance from there to its tick's end.
+        "left_gutter_right": _pct(
+            CHART_WIDTH - (PAD_LEFT - AXIS_TICK_LENGTH), CHART_WIDTH
+        ),
+        "right_gutter_left": _pct(PLOT_RIGHT + AXIS_TICK_LENGTH, CHART_WIDTH),
         "temp_summary": _temp_summary(known_temps, freezing),
         "snow_total": wet["snow_total"],
         "precip_total": wet["precip_total"],
