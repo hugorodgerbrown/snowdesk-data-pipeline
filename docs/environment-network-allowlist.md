@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-22
+last-reviewed: 2026-09-27
 ---
 
 # Environment network allow-list
@@ -202,6 +202,32 @@ this session changed the egress policy, so either a human updated the
 allowlist between passes or the blocks were intermittent — this doc still
 can't tell which.
 
+## Requested — 2026-09-27 (competitor-scan routine)
+
+New domains that returned `EGRESS_BLOCKED` on direct `WebFetch` during the
+[2026-09-27 competitor scan](competitors.md), not already covered by the
+tables above.
+
+| Domain | Why it matters |
+|---|---|
+| `www.sportstartups.org` | "Top 16 Skiing Tech Startups 2026" listing — the fullest single source found this pass for scanning new ski-tech entrants beyond the named competitors |
+| `www.swissinfo.ch` | Coverage of SLF/ETH Zürich's seismic and satellite/ML avalanche-detection research — background on WhiteRisk's parent institute's R&D pipeline, see [`competitors.md`](competitors.md#whiterisk) |
+
+**Reconfirmed blocks.** `granitealpinelab.com` (blocked since the 2026-09-20
+pass) and `skida.app` / `www.skida.app` (blocked since 2026-08-30/2026-09-06)
+remain blocked this pass — a fifth consecutive pass for the Skida pair.
+
+**Clearances this pass.** `www.slf.ch` was reachable by direct `WebFetch` for
+the first time (two pages: the White Risk redesign news article and the
+avalanche-bulletin overview page), clearing a block that held as of the
+2026-09-13 pass — see [`competitors.md`](competitors.md#whiterisk).
+`opensnow.com` was also reachable for the first time across eight scan
+passes (blocked since 2026-08-19), confirming the Base/Premium pricing tiers
+and PEAKS-model claim already recorded in the OpenSnow profile. As with the
+earlier clearances recorded in this doc, nothing in this session changed the
+egress policy, so either a human updated the allowlist between passes or the
+blocks were intermittent — this doc still can't tell which.
+
 ## Requested — 2026-09-20 (competitor-scan routine)
 
 New domain that returned `EGRESS_BLOCKED` on direct `WebFetch` during the
@@ -345,5 +371,5 @@ them. Say so explicitly when handing one over.
   was requested; see the section of the same date above for what still
   blocks a large attachment even with the domain open.
 
-The 2026-08-30, 2026-09-05, 2026-09-06, 2026-09-09, 2026-09-13, 2026-09-19
-and 2026-09-20 competitor-scan requests are all still outstanding.
+The 2026-08-30, 2026-09-05, 2026-09-06, 2026-09-09, 2026-09-13, 2026-09-19,
+2026-09-20 and 2026-09-27 competitor-scan requests are all still outstanding.
