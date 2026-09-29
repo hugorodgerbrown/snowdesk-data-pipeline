@@ -517,7 +517,10 @@ def display_readings(
     scrubber is showing, and the panel names that day.
 
     Args:
-        points: The stored track, ``[lon, lat, ele]`` triples.
+        points: The track, ``[lon, lat, ele]`` triples — from the view
+            callers, ``terrain_points`` over the stored track, so the
+            elevation band is read on the model's height where the record
+            has one (SNOW-1043; see ``bulletin_join``).
         slope_samples: The terrain record, or None for a track nothing
             has sampled.
         target_date: The day to ask about. A trip has one of its own; a

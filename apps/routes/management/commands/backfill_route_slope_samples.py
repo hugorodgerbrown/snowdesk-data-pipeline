@@ -1,7 +1,8 @@
 """backfill_route_slope_samples — sample the terrain under existing routes.
 
 Backfill for SNOW-910, and for every later ticket that adds a key to the
-record — SNOW-911's ``cruxes`` is the first.
+record — SNOW-911's ``cruxes`` is the first, SNOW-1043's ``heights`` the
+second.
 
 Every ``Route`` uploaded before SNOW-910 has a null ``slope_samples``,
 which means NEVER SAMPLED and draws as a flat line; this walks each of
@@ -15,11 +16,14 @@ on a table making network calls. Migration ``0005`` adds the column and
 nothing else.
 
 **Two kinds of candidate.** The queryset selects rows whose
-``slope_samples`` is null — never sampled — and rows whose record has no
-``cruxes`` key, which is one sampled before SNOW-911 and so drawing its
-colours but none of its markers. A record carrying the key is current
-even when the list inside is empty, because that is "nothing was
-flagged".
+``slope_samples`` is null — never sampled — and rows whose record is
+missing a key a later ticket added: no ``cruxes`` is one sampled before
+SNOW-911 and so drawing its colours but none of its markers, and no
+``heights`` is one sampled before SNOW-1043 and so drawing its profile,
+legs and totals off the recording device's drifting altimeter. A record
+carrying both keys is current even when the lists inside are empty or
+hold nulls, because those are answers ("nothing was flagged", "no ground
+there").
 
 **Null stays honest.** A row that comes back with nothing
 learnable — the origin unreachable for the whole of it — is left null
@@ -142,9 +146,13 @@ class Command(BaseCommand):
         # else would ever add them, because the sampler runs at upload.
         # A record IS current when it carries the key, even if the list
         # inside is empty: that is "nothing was flagged", which is an
-        # answer.
+        # answer. SNOW-1043's ``heights`` is the same shape of candidate
+        # for the same reason — a record without it serves the device's
+        # heights, and only a re-walk adds the model's.
         candidates = Route.objects.filter(
-            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="cruxes")
+            Q(slope_samples__isnull=True)
+            | ~Q(slope_samples__has_key="cruxes")
+            | ~Q(slope_samples__has_key="heights")
         )
         total = candidates.count()
 

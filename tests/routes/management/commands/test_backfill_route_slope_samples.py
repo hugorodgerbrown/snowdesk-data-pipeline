@@ -47,6 +47,8 @@ RECORD: dict[str, Any] = {
     # (SNOW-911): the key's presence is what the candidate queryset reads
     # as "this row is up to date", and an empty list is an answer.
     "cruxes": [],
+    # And ``heights`` since SNOW-1043, one per boundary, on the same rule.
+    "heights": [2000.0, 2010.0],
 }
 
 
@@ -146,6 +148,24 @@ class TestCommit:
         route.refresh_from_db()
         assert route.slope_samples is not None
         assert "cruxes" in route.slope_samples
+
+    def test_a_record_written_before_heights_is_a_candidate_again(self) -> None:
+        """SNOW-1043 added a key; a record without it serves device heights.
+
+        Only a re-walk adds the model's heights, so a route sampled before
+        that ticket keeps its altimeter's drift for good unless this
+        command selects it.
+        """
+        legacy = {k: v for k, v in RECORD.items() if k != "heights"}
+        route = RouteFactory.create(slope_samples=legacy)
+
+        with patch(_BUILDER, return_value=RECORD) as builder:
+            _run("--commit")
+
+        builder.assert_called_once()
+        route.refresh_from_db()
+        assert route.slope_samples is not None
+        assert "heights" in route.slope_samples
 
     def test_a_route_the_sampler_could_not_answer_for_stays_null(self) -> None:
         """Null keeps meaning NEVER SAMPLED, so a later run picks it up again."""
