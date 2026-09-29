@@ -111,7 +111,20 @@ class TestLegacyMapLinksOnRoot:
 
         assert "location.hash.length > 1" in content
         assert 'location.replace("/map/" + location.search + location.hash)' in content
-        assert 'addEventListener("hashchange", toMap)' in content
+        assert 'addEventListener("hashchange"' in content
+
+    def test_installed_app_launches_are_forwarded(self, client: Client) -> None:
+        """An app installed before the move launches /; it must open the map.
+
+        The manifest's ``start_url`` is /map/ now, but an existing install
+        keeps launching / until the browser refreshes its metadata, and an
+        iOS home-screen icon may never. The head script forwards when the
+        page runs standalone.
+        """
+        content = client.get("/").content.decode()
+
+        assert 'matchMedia("(display-mode: standalone)")' in content
+        assert "navigator.standalone === true" in content
 
     def test_redirect_preserves_the_query_string_verbatim(self, client: Client) -> None:
         """Encoded values survive the redirect unchanged."""

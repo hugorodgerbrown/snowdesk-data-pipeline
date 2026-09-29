@@ -677,7 +677,7 @@ describe('_networkFirst principal partitioning (C1)', () => {
     // mutations.principal, so the read side falls back to anonymous —
     // which is what a public page stamps.
     const caches = makeCaches();
-    const request = navRequest('/');
+    const request = navRequest('/map/');
     let online = basicResponse(pageHtml('', 'season scrubber'));
     const sw = loadSw({
       caches,
@@ -3764,5 +3764,28 @@ describe('legacy root map links (SNOW-1047)', () => {
     const response = await responded;
     expect(response.status).toBe(301);
     expect(response.headers.get('Location')).toBe(ORIGIN + '/map/?d=2026-02-16');
+  });
+});
+
+describe('an offline navigation to the root (SNOW-1047)', () => {
+  // An app installed before the move launches `/`, and a legacy
+  // `/#CH-4115` bookmark requests `/` with the fragment withheld from the
+  // worker. Offline, both must reach the map, not offline.html.
+  it('redirects to /map/ with a 302 when the network fails', async () => {
+    const sw = loadSw();
+
+    const response = await sw._networkFirst(navRequest('/'));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(ORIGIN + '/map/');
+  });
+
+  it('leaves an online root navigation to the network (the homepage)', async () => {
+    const homepage = basicResponse(pageHtml('', 'the homepage'));
+    const sw = loadSw({ fetch: () => Promise.resolve(homepage) });
+
+    const response = await sw._networkFirst(navRequest('/'));
+
+    expect(await response.text()).toContain('the homepage');
   });
 });

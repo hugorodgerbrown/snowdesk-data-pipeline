@@ -23,7 +23,13 @@ sections on what a reader gets, and a link into the app. The map lives at
 - A fragment (`/#CH-4115`, the old bulletin back-link) never reaches the
   server, so a nonce'd script in the homepage head replaces the location
   with `/map/` plus the search and fragment.
-- The manifest's `start_url` is `/map/`; its `id` and `scope` stay `/`.
+- The manifest's `start_url` is `/map/`; its `id` and `scope` stay `/`. An
+  app installed before the move keeps launching `/` until the browser
+  refreshes the installed metadata (an iOS home-screen icon may never), so
+  the homepage forwards to `/map/` when it runs standalone, and the worker
+  answers an offline navigation to `/` with a 302 to `/map/`. The browser
+  carries a request's fragment across that redirect, so an offline
+  `/#CH-4115` still opens the region.
 - The service worker's `SHELL_PAGE` is `/map/`. The homepage is not warmed.
 
 ## Why

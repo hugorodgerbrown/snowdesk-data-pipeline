@@ -3679,6 +3679,21 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * @returns {Promise<Response|null>}
  */
 async function _networkFirstFallback(request, cache, startedAt) {
+  // SNOW-1047: offline, `/` is the homepage — nothing to use without a
+  // connection, and not warmed — while every reason a device navigates
+  // there offline is the map: an app installed before the move launches
+  // `/`, and a legacy `/#CH-4115` bookmark requests `/` with the fragment
+  // withheld from this worker. A 302 with no fragment of its own keeps the
+  // request's (the browser carries it across the redirect), so the region
+  // survives. Temporary, not 301: online, `/` is the homepage.
+  if (
+    (request.mode === 'navigate' || request.destination === 'document') &&
+    new URL(request.url).pathname === '/'
+  ) {
+    const toMap = Response.redirect(new URL(SHELL_PAGE, self.location.origin).toString(), 302);
+    _debugServe(request, 'navigate', 'root-to-map', toMap, startedAt);
+    return toMap;
+  }
   const current = await _currentPrincipal();
   const cached = await cache.match(request);
   // SNOW-846: this function, not its caller, is where the shell page and

@@ -31,14 +31,23 @@ parameters never reaches this template — views.home 301s it to /map/.
     fragment to /map/ before the homepage paints, and on a later hashchange
     (a same-page edit does not reload). The homepage has no
     in-page anchors of its own, so a fragment here is always a map link.
+
+    It also forwards when the page runs as the installed app (display-mode
+    standalone, or iOS's navigator.standalone). An app installed before the
+    move launches /, and the manifest's new start_url reaches it only when
+    the browser refreshes the installed metadata, which iOS home-screen
+    icons may never do. Inside the app, the map is the only destination.
     {% endcomment %}
     <script nonce="{{ request.csp_nonce }}">
         (function() {
             function toMap() {
-                if (location.hash.length > 1) location.replace("{% url 'public:map' %}" + location.search + location.hash);
+                location.replace("{% url 'public:map' %}" + location.search + location.hash);
             }
-            toMap();
-            window.addEventListener("hashchange", toMap);
+            var installed = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+            if (installed || location.hash.length > 1) toMap();
+            window.addEventListener("hashchange", function() {
+                if (location.hash.length > 1) toMap();
+            });
         })();
     </script>
 {% endblock extra_head %}
