@@ -760,6 +760,24 @@
   }
 
   /**
+   * The index of the profile run holding a distance, or -1 when the
+   * distance falls in a gap or off either end.
+   *
+   * @param {Array<Array<{d: number, e: number}>>} runs
+   * @param {number} d
+   * @returns {number}
+   */
+  function runAt(runs, d) {
+    for (var r = 0; r < runs.length; r += 1) {
+      var run = runs[r];
+      if (run.length && d >= run[0].d - EPSILON && d <= run[run.length - 1].d + EPSILON) {
+        return r;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * A profile's height at a distance, linear between its points; null
    * outside every run.
    *
@@ -768,23 +786,21 @@
    * @returns {?number}
    */
   function heightAt(runs, d) {
-    for (var r = 0; r < runs.length; r += 1) {
-      var run = runs[r];
-      if (!run.length || d < run[0].d - EPSILON || d > run[run.length - 1].d + EPSILON) continue;
-      if (run.length === 1) return run[0].e;
-      var lo = 0;
-      var hi = run.length - 1;
-      while (hi - lo > 1) {
-        var mid = (lo + hi) >> 1;
-        if (run[mid].d <= d) lo = mid;
-        else hi = mid;
-      }
-      var a = run[lo];
-      var b = run[hi];
-      var gap = b.d - a.d;
-      return gap > 0 ? a.e + (b.e - a.e) * clamp((d - a.d) / gap, 0, 1) : a.e;
+    var r = runAt(runs, d);
+    if (r < 0) return null;
+    var run = runs[r];
+    if (run.length === 1) return run[0].e;
+    var lo = 0;
+    var hi = run.length - 1;
+    while (hi - lo > 1) {
+      var mid = (lo + hi) >> 1;
+      if (run[mid].d <= d) lo = mid;
+      else hi = mid;
     }
-    return null;
+    var a = run[lo];
+    var b = run[hi];
+    var gap = b.d - a.d;
+    return gap > 0 ? a.e + (b.e - a.e) * clamp((d - a.d) / gap, 0, 1) : a.e;
   }
 
   /**
@@ -815,6 +831,12 @@
       var a = Math.max(0, mid - half);
       var b = Math.min(distanceM, mid + half);
       if (!(b - a > EPSILON)) continue;
+      // Both ends in ONE run: `readProfile` keeps an elevation gap as a
+      // gap rather than interpolating across it, so a window that spans
+      // one would measure a rise nothing recorded — and could call it a
+      // Bootpack.
+      var run = runAt(profile.runs, a);
+      if (run < 0 || run !== runAt(profile.runs, b)) continue;
       var ea = heightAt(profile.runs, a);
       var eb = heightAt(profile.runs, b);
       if (ea === null || eb === null) continue;
@@ -947,17 +969,23 @@
    * @param {Array<?number>} angles `slope.angles`.
    * @param {number} sampleCount N.
    * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @returns {?number} Null with no slope record or no length to share.
+   * @returns {?number} Null with no slope record, no length to share, or
+   *   no known angle on the leg: ground nobody surveyed is not "0 m
+   *   steep", the rule rail one follows on `surveyed_m`.
    */
   function steepLength(leg, angles, sampleCount, spanM) {
     if (!Array.isArray(angles) || !angles.length || !(sampleCount > 0) || !(spanM > 0)) {
       return null;
     }
     var count = 0;
+    var surveyed = 0;
     for (var i = leg.from; i <= leg.to; i += 1) {
       var angle = angles[i];
-      if (isKnown(angle) && angle >= STEEP_TERRAIN_DEG) count += 1;
+      if (!isKnown(angle)) continue;
+      surveyed += 1;
+      if (angle >= STEEP_TERRAIN_DEG) count += 1;
     }
+    if (!surveyed) return null;
     return (count / sampleCount) * spanM;
   }
 

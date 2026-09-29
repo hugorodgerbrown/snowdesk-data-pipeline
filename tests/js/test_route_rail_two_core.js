@@ -502,6 +502,19 @@ describe('segmentGradients (SNOW-1044)', () => {
     expect(out[12]).toBeNull();
     expect(out[2]).not.toBeNull();
   });
+
+  it('never measures across a gap narrower than its window', () => {
+    // One missing height (point 20, ~154 m in) leaves a ~15 m gap between
+    // two runs: segment 5's ±25 m window has a height at both ends, one in
+    // each run, and must still read null rather than a rise nothing recorded.
+    const coordinates = track(81).map((p, i) => (i === 20 ? [p[0], p[1], null] : p));
+    const profile = readProfile(coordinates);
+    expect(profile.runs).toHaveLength(2);
+    const out = core.segmentGradients(profile, 24, profile.distanceM);
+    expect(out[5]).toBeNull();
+    expect(out[2]).not.toBeNull();
+    expect(out[9]).not.toBeNull();
+  });
 });
 
 describe('steepLength (SNOW-1044)', () => {
@@ -514,6 +527,13 @@ describe('steepLength (SNOW-1044)', () => {
   it('is null with no slope record', () => {
     expect(core.steepLength({ from: 0, to: 5 }, [], 6, 150)).toBeNull();
     expect(core.steepLength({ from: 0, to: 5 }, null, 6, 150)).toBeNull();
+  });
+
+  it('is null when no angle on the leg is known, and zero when surveyed and gentle', () => {
+    // A route wholly outside terrain coverage sends angles that are all null.
+    expect(core.steepLength({ from: 0, to: 3 }, [null, null, null, null], 4, 100)).toBeNull();
+    expect(core.steepLength({ from: 0, to: 1 }, [10, null, 45, 50], 4, 100)).toBe(0);
+    expect(core.steepLength({ from: 1, to: 1 }, [10, null, 45, 50], 4, 100)).toBeNull();
   });
 });
 
