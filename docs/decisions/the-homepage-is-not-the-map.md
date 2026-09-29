@@ -45,8 +45,12 @@ every existing install a different app, so only `start_url` moves.
 ## Consequences
 
 - A new attribution parameter a campaign uses must be added to
-  `_ATTRIBUTION_PARAMS` in `apps/public/views.py`, or campaign links to `/`
-  land on the map.
+  `_ATTRIBUTION_PARAMS` in `apps/public/views.py` **and** `ATTRIBUTION_PARAMS`
+  in `static/js/sw.js`, or campaign links to `/` land on the map.
+  `tests/public/test_homepage.py` fails when the two lists differ.
+- The service worker answers the `/?<map state>` 301 itself (`_legacyRootMapUrl`),
+  so a legacy link opened offline reaches the cached `/map/` shell rather
+  than the offline fallback.
 - A cached `/` shell from before the move is the old map page; the next
   activation's `_rewarmShell` warms `/map/` instead, and the old entry is
   dropped with its cache generation.

@@ -719,6 +719,9 @@ def _edit_target(request: HttpRequest) -> str:
 # asked to see. A bare ``/`` with only these renders the homepage; any other
 # parameter was meant for the map, which lived at ``/`` until the homepage
 # took it, so the request is sent on to ``/map/`` with its query intact.
+# static/js/sw.js carries the same two lists (ATTRIBUTION_PARAMS /
+# ATTRIBUTION_PARAM_PREFIXES) so the worker can answer the same redirect
+# offline; keep them equal (tests/public/test_homepage.py checks).
 _ATTRIBUTION_PARAM_PREFIXES = ("utm_",)
 _ATTRIBUTION_PARAMS = frozenset({"ref", "fbclid", "gclid", "mc_cid", "mc_eid"})
 

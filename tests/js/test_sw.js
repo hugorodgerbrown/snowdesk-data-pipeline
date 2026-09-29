@@ -82,6 +82,8 @@ const SW_EXPORTS = [
   '_warmShellSubresources',
   '_rewarmShell',
   'SHELL_PAGE',
+  // SNOW-1047: the legacy `/?<map state>` redirect the worker answers itself.
+  '_legacyRootMapUrl',
   'SHELL_SUBRESOURCE_LIMIT',
   // SNOW-930: the shell pages the activation walks.
   'SHELL_PAGES',
@@ -3722,5 +3724,45 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
       sw.__listeners.message({ data: { type: 'can-open-offline' }, waitUntil: () => {} }),
     ).not.toThrow();
     await flush();
+  });
+});
+
+describe('legacy root map links (SNOW-1047)', () => {
+  // The map moved from `/` to `/map/`. Online, the server 301s `/?d=…`;
+  // offline that request never reaches it, so the worker must answer the
+  // same redirect or the link opens the offline fallback.
+  it.each([
+    ['/?d=2026-02-16', '/map/?d=2026-02-16'],
+    ['/?panel=reports', '/map/?panel=reports'],
+    ['/?utm_source=x&route_share=abc', '/map/?utm_source=x&route_share=abc'],
+  ])('sends %s to %s', (path, target) => {
+    const sw = loadSw();
+    expect(sw._legacyRootMapUrl(new URL(ORIGIN + path))).toBe(ORIGIN + target);
+  });
+
+  it.each(['/', '/?utm_source=newsletter', '/?ref=producthunt', '/map/?d=2026-02-16', '/help/?d=1'])(
+    'leaves %s alone',
+    (path) => {
+      const sw = loadSw();
+      expect(sw._legacyRootMapUrl(new URL(ORIGIN + path))).toBeNull();
+    },
+  );
+
+  it('answers a legacy navigation with a 301 before touching the network', async () => {
+    // The default fetch stub rejects, as it would with no connection: the
+    // redirect has to come from the worker, not from views.home.
+    const sw = loadSw();
+    let responded;
+    sw.__listeners.fetch({
+      request: navRequest('/?d=2026-02-16'),
+      clientId: '',
+      respondWith(value) {
+        responded = value;
+      },
+    });
+
+    const response = await responded;
+    expect(response.status).toBe(301);
+    expect(response.headers.get('Location')).toBe(ORIGIN + '/map/?d=2026-02-16');
   });
 });

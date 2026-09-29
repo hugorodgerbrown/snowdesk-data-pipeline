@@ -16,6 +16,8 @@ Covers:
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 from django.test import Client
@@ -158,3 +160,29 @@ class TestManifest:
         assert manifest["id"].endswith("/")
         assert not manifest["id"].endswith("/map/")
         assert manifest["scope"].endswith("/")
+
+
+class TestAttributionListsMatchTheWorker:
+    """views.home and static/js/sw.js apply the same attribution rule."""
+
+    def test_worker_lists_equal_the_view_lists(self) -> None:
+        """The worker answers the legacy redirect offline; the rule must match.
+
+        A parameter treated as attribution on one side and map state on the
+        other would send the same link to the homepage online and to the map
+        offline.
+        """
+        from apps.public import views
+
+        source = (Path(__file__).resolve().parents[2] / "static/js/sw.js").read_text()
+        prefixes = re.search(r"const ATTRIBUTION_PARAM_PREFIXES = \[([^\]]*)\]", source)
+        params = re.search(
+            r"const ATTRIBUTION_PARAMS = new Set\(\[([^\]]*)\]\)", source
+        )
+        assert prefixes and params
+
+        def names(group: str) -> set[str]:
+            return set(re.findall(r"'([^']+)'", group))
+
+        assert names(prefixes.group(1)) == set(views._ATTRIBUTION_PARAM_PREFIXES)
+        assert names(params.group(1)) == set(views._ATTRIBUTION_PARAMS)

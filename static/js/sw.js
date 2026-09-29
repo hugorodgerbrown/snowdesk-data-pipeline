@@ -958,6 +958,36 @@ const SHELL_PAGE = '/map/';
 // app open" — and the app is the map.
 const SHELL_PAGES = [SHELL_PAGE, '/offline/'];
 
+// SNOW-1047: the map lived at `/` until the homepage took the root, so
+// bookmarks, shared links and home-screen shortcuts carry map state there
+// (`/?d=…`, `/?panel=…`, `/?route_share=…`). Online, `views.home` 301s them
+// to `/map/`; offline that request never reaches it, and the fallback below
+// matches on pathname, so `/` could never find the cached `/map/` shell. The
+// worker answers the same 301 itself, on both paths.
+//
+// The rule mirrors `apps/public/views.py` `_carries_map_state`: any
+// parameter that is not attribution is map state. Keep the two lists equal.
+const ATTRIBUTION_PARAM_PREFIXES = ['utm_'];
+const ATTRIBUTION_PARAMS = new Set(['ref', 'fbclid', 'gclid', 'mc_cid', 'mc_eid']);
+
+/**
+ * The `/map/` URL a legacy root navigation should be redirected to.
+ *
+ * @param {URL} url The navigation's URL.
+ * @returns {string|null} The absolute redirect target, or null when the
+ *     request is not a root navigation carrying map state.
+ */
+function _legacyRootMapUrl(url) {
+  if (url.origin !== self.location.origin || url.pathname !== '/') return null;
+  for (const key of url.searchParams.keys()) {
+    const attribution =
+      ATTRIBUTION_PARAMS.has(key) ||
+      ATTRIBUTION_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+    if (!attribution) return new URL(SHELL_PAGE + url.search, url.origin).toString();
+  }
+  return null;
+}
+
 // The subresources of a warmed page: same-origin scripts and stylesheets,
 // by attribute. A page whose HTML is saved and whose JavaScript is not
 // does not open — it paints a blank frame — so warming one without the
@@ -3811,6 +3841,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (sync === 'navigate') {
+    // SNOW-1047: answered before any network, so it works offline too.
+    const legacyMapUrl = _legacyRootMapUrl(url);
+    if (legacyMapUrl) {
+      event.respondWith(Response.redirect(legacyMapUrl, 301));
+      return;
+    }
     event.respondWith(_guardedRespond(_networkFirst(request), request, event.clientId));
     return;
   }
