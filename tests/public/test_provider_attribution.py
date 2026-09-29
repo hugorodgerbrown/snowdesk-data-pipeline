@@ -376,7 +376,7 @@ class TestGlobalSiteFooter:
     """
 
     def test_home_renders_footer(self, client: Client) -> None:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
@@ -386,7 +386,7 @@ class TestGlobalSiteFooter:
 
     def test_map_renders_footer(self, client: Client) -> None:
         """The canonical map page (/) carries the site footer (SNOW-344: was /map/)."""
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
@@ -400,13 +400,13 @@ class TestGlobalSiteFooter:
         assert b'data-testid="site-footer"' in response.content
 
     def test_footer_links_to_the_terms_of_service(self, client: Client) -> None:
-        footer = _footer_of(client, reverse("public:home"))
+        footer = _footer_of(client, reverse("public:map"))
 
         assert reverse("public:terms_of_service") in footer
 
     def test_footer_links_to_privacy_and_colophon(self, client: Client) -> None:
         """The other two legal destinations, on every page (SNOW-769)."""
-        footer = _footer_of(client, reverse("public:home"))
+        footer = _footer_of(client, reverse("public:map"))
 
         assert reverse("public:privacy") in footer
         assert reverse("public:colophon") in footer
@@ -418,7 +418,7 @@ class TestGlobalSiteFooter:
         turned that URL into a redirect, so leaving the link alone would
         have cost every reader an extra round trip to reach the same page.
         """
-        footer = _footer_of(client, reverse("public:home"))
+        footer = _footer_of(client, reverse("public:map"))
 
         assert reverse("public:terms") not in footer
 
@@ -429,7 +429,7 @@ class TestGlobalSiteFooter:
         legend supplies these same three links and a page-wide assertion
         would pass whether the footer had been changed or not.
         """
-        footer = _footer_of(client, reverse("public:home"))
+        footer = _footer_of(client, reverse("public:map"))
 
         assert "slf.ch" not in footer
         assert "avalanche.report" not in footer
@@ -492,7 +492,7 @@ class TestRegionExpandedAttribution:
         SNOW-769: this asserts the footer is present, not that it names a
         provider — that moved to the legend, one class down.
         """
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
@@ -535,7 +535,7 @@ class TestMapLegendAttribution:
 
         SNOW-344: /map/ is now a 301 redirect; the live map page is /.
         """
-        legend = _legend_of(client, reverse("public:home"))
+        legend = _legend_of(client, reverse("public:map"))
 
         assert "slf.ch" in legend
         assert "avalanche.report" in legend
@@ -543,6 +543,6 @@ class TestMapLegendAttribution:
 
     def test_map_legend_links_to_colophon(self, client: Client) -> None:
         """The legend section links to /colophon/ for full attribution."""
-        legend = _legend_of(client, reverse("public:home"))
+        legend = _legend_of(client, reverse("public:map"))
 
         assert reverse("public:colophon") in legend

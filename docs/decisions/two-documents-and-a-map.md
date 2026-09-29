@@ -14,7 +14,7 @@ last-reviewed: 2026-09-04
 - **The bulletin** — `/<region_id>/<slug>/<date>/`. The provider's CAAML
   document for one region on one day.
 - **The weather page** — `/weather/<short_id>/`. One location, one day.
-- **The map** — `/`. Everything else.
+- **The map** — `/map/` (at `/` until the marketing homepage took the root; see [`the-homepage-is-not-the-map`](the-homepage-is-not-the-map.md)). Everything else.
 
 A thing gets a page when it is *read at length* and is *dated with an
 issuer*. Nothing else qualifies. Regions, resorts, locations, observations

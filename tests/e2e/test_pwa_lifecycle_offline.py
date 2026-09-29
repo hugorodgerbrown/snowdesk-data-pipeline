@@ -26,7 +26,7 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
     including its query string.
     """
     page = pwa_page.page
-    dated_url = pwa_page.live_server_url + "/?d=2026-04-08"
+    dated_url = pwa_page.live_server_url + "/map/?d=2026-04-08"
     page.goto(dated_url)
     page.wait_for_load_state("load")
     page.wait_for_selector("#season-scrubber")

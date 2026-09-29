@@ -930,7 +930,7 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // live, which is the whole point of it — stale HTML pointing at hashed
 // assets that no longer exist is worse than no HTML at all. What nothing
 // did afterwards was put the map page BACK, so from the moment a deploy
-// activated until the user next opened ``/`` while connected, the app
+// activated until the user next opened the map while connected, the app
 // could not open offline at all. It was silent, it happened on every
 // deploy, and the only surface that ever said so was SNOW-907's report —
 // which is how it was found: a device nine minutes past a deploy, on a
@@ -941,7 +941,7 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // would have to be re-fetched here anyway; and ``_warmCache`` already
 // knows how to stamp a same-origin HTML response with the principal its
 // body declares (SNOW-624), which is what makes the entry servable at all.
-const SHELL_PAGE = '/';
+const SHELL_PAGE = '/map/';
 
 // SNOW-930: every page the activation re-warms, of which SHELL_PAGE is the
 // first and the one ``_canOpenOffline`` asks about. ``/offline/`` joins it
@@ -4569,7 +4569,7 @@ self.addEventListener('sync', (event) => {
 // payload URL if one is already open, otherwise open a new window.
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Snowdesk', body: '', url: '/' };
+  let payload = { title: 'Snowdesk', body: '', url: '/map/' };
   if (event.data) {
     try {
       payload = { ...payload, ...event.data.json() };
@@ -4613,7 +4613,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = event.notification.data?.url || '/';
+  const target = event.notification.data?.url || '/map/';
   // SNOW-384: one click = one occurrence. Emitted unconditionally on
   // click, ahead of the focus/openWindow race below, so the signal
   // isn't lost if the focus/navigate branch throws.

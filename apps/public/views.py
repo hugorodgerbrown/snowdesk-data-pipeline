@@ -2,7 +2,8 @@
 apps/public/views.py — Views for the public-facing bulletin site.
 
 URL structure:
-  /                                          Interactive map homepage (canonical).
+  /                                          Marketing homepage (static; no map JS).
+  /map/                                      Interactive map (the app).
   /examples/random/                          Random bulletin (rendered inline).
   /examples/category/<danger_level>/         Random bulletin by danger level.
   /random/                                   Deprecated → /examples/random/.
@@ -52,6 +53,7 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
+    HttpResponseBase,
     HttpResponseGone,
     HttpResponseNotModified,
     HttpResponseRedirect,
@@ -76,6 +78,7 @@ from django.views.decorators.http import (
     condition,
     require_http_methods,
 )
+from django.views.generic import RedirectView
 from django_ratelimit.decorators import ratelimit
 
 from apps import analytics
@@ -712,13 +715,77 @@ def _edit_target(request: HttpRequest) -> str:
     return ""
 
 
-def home(request: HttpRequest) -> HttpResponse:
-    """
-    Render the canonical interactive map page.
+# Query parameters that say where a visitor came from rather than what they
+# asked to see. A bare ``/`` with only these renders the homepage; any other
+# parameter was meant for the map, which lived at ``/`` until the homepage
+# took it, so the request is sent on to ``/map/`` with its query intact.
+_ATTRIBUTION_PARAM_PREFIXES = ("utm_",)
+_ATTRIBUTION_PARAMS = frozenset({"ref", "fbclid", "gclid", "mc_cid", "mc_eid"})
 
-    SNOW-314: the homepage is the full-frame map with a dismissable landing
-    overlay (``#home-intro``). SNOW-344: ``/map/`` now permanently redirects
-    here, so this view handles all map-page traffic.
+
+def _carries_map_state(request: HttpRequest) -> bool:
+    """Return True when the query string holds anything but attribution.
+
+    Every parameter the map reads (``?d=``, ``?panel=``, ``?favourite=``,
+    ``?route_share=``, ``?trip=``, ``?edit=``, ``?layers=``, …) was minted
+    against ``/`` while the map lived there. Listing them here would be a
+    second copy that drifts the next time the map gains one, so the test is
+    the other way round: anything that is not attribution is map state.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        True when at least one non-attribution parameter is present.
+
+    """
+    return any(
+        key not in _ATTRIBUTION_PARAMS
+        and not key.startswith(_ATTRIBUTION_PARAM_PREFIXES)
+        for key in request.GET
+    )
+
+
+# The same shape as the /observations/ redirect in urls.py: Django appends
+# the incoming query string unchanged to a target it resolves itself.
+_MAP_REDIRECT = RedirectView.as_view(
+    pattern_name="public:map", permanent=True, query_string=True
+)
+
+
+def home(request: HttpRequest) -> HttpResponseBase:
+    """
+    Render the marketing homepage at ``/``.
+
+    A static page — a screenshot of the map, a pitch, and short sections on
+    what Snowdesk gives a reader — with a link into the app at ``/map/``. It
+    loads no map JavaScript.
+
+    The map was served here until the homepage took ``/``, so bookmarks and
+    shared links carry map state on ``/`` (``/?d=…``, ``/?panel=reports``).
+    Any request whose query string holds more than attribution parameters is
+    permanently redirected to ``/map/`` with the query string preserved.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered homepage, or a 301 to ``/map/`` for map-state requests.
+
+    """
+    if _carries_map_state(request):
+        return _MAP_REDIRECT(request)
+    return render(request, "public/home.html")
+
+
+def map_page(request: HttpRequest) -> HttpResponse:
+    """
+    Render the interactive map at ``/map/``.
+
+    SNOW-314: the full-frame map with a dismissable landing overlay
+    (``#home-intro``). The map lived at ``/`` from SNOW-344 until the
+    marketing homepage took the root; ``/`` now 301s here when it carries
+    map query parameters.
 
     Edit mode: when ``?edit=`` names an editable estate **and** the request
     user is a superuser, the page renders that estate's edit panel —
@@ -766,7 +833,7 @@ def home(request: HttpRequest) -> HttpResponse:
         request: The incoming HTTP request.
 
     Returns:
-        The rendered homepage embedding the map surface.
+        The rendered map page.
 
     """
     today = datetime.date.today()
@@ -843,7 +910,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
     return render(
         request,
-        "public/home.html",
+        "public/map.html",
         {
             **base_ctx,
             **edit_context,
@@ -2278,7 +2345,10 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "lang": "en",
         "description": "Daily Swiss avalanche bulletins for the alpine region.",
         "categories": ["weather", "sports", "travel"],
-        "start_url": f"{base}/",
+        # The installed app opens on the map, not the marketing homepage at
+        # ``/``. ``id`` stays ``/`` — it is the installed app's identity, and
+        # changing it would make every existing install a different app.
+        "start_url": f"{base}/map/",
         "scope": f"{base}/",
         "display": "standalone",
         # SNOW-878: --color-bg from src/css/main.css, the colour the page
@@ -2447,8 +2517,10 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         "## Pages",
         "",
-        f"- [Avalanche map]({link('public:home')}): interactive choropleth of "
-        "current danger ratings by region; also the site entry point.",
+        f"- [Home]({link('public:home')}): what Snowdesk is and what it "
+        "covers; the site entry point.",
+        f"- [Avalanche map]({link('public:map')}): interactive choropleth of "
+        "current danger ratings by region.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
         "reference guide to the EAWS danger scale, avalanche problems, and "
         "the aspect/elevation rose.",
@@ -3401,10 +3473,8 @@ def _build_map_url(
     today so the query string would be redundant. The URL fragment always
     carries the region ID so the map opens the region sheet at peek (SNOW-183).
 
-    SNOW-344: resolves to ``/`` (the canonical map page) because
-    ``public:map`` now redirects there. The back-link URL is used only for
-    display and navigation, not for server round-trips, so the redirect is
-    transparent.
+    Resolves to ``/map/``, where the map has lived since the marketing
+    homepage took ``/``.
 
     Args:
         region_id: The canonical EAWS region identifier (e.g. ``"CH-4115"``).
@@ -3412,11 +3482,11 @@ def _build_map_url(
         today: Current date; used to decide whether to include ``?d=``.
 
     Returns:
-        A relative URL string such as ``"/#CH-4115"`` or
-        ``"/?d=2025-01-20#CH-4115"``.
+        A relative URL string such as ``"/map/#CH-4115"`` or
+        ``"/map/?d=2025-01-20#CH-4115"``.
 
     """
-    base = reverse("public:home")
+    base = reverse("public:map")
     if target_date == today:
         return f"{base}#{region_id}"
     return f"{base}?d={target_date.isoformat()}#{region_id}"
@@ -4574,7 +4644,7 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # SNOW-807: the map with the reports sheet open, flown to this resort
         # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
         "observations_map_url": (
-            f"{reverse('public:home')}?panel=reports&resort={resort.slug}"
+            f"{reverse('public:map')}?panel=reports&resort={resort.slug}"
         ),
     }
     return render(request, "public/resort.html", context)

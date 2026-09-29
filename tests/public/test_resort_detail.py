@@ -422,7 +422,7 @@ class TestResortObservationsLink:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert 'data-testid="resort-observations"' in content
-        assert f'href="/?panel=reports&amp;resort={resort.slug}"' in content
+        assert f'href="/map/?panel=reports&amp;resort={resort.slug}"' in content
         assert "Reported nearby" not in content
         assert "Reported in this region" not in content
 

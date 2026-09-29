@@ -50,7 +50,7 @@ def _navigate_home_with_sw_stripped(
         "Object.defineProperty(navigator, 'serviceWorker', "
         "{ value: undefined, configurable: true });"
     )
-    page.goto(f"{live_server_url}/{query}")
+    page.goto(f"{live_server_url}/map/{query}")
     page.wait_for_load_state("domcontentloaded")
 
 

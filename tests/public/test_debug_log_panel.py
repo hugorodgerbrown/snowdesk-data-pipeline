@@ -67,7 +67,7 @@ def test_panel_is_absent_without_the_flag(client: Client) -> None:
     makes the instrumentation scattered across the map free for everyone
     who is not debugging it.
     """
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
 
     assert response.status_code == 200
     body = response.content.decode()
@@ -79,7 +79,7 @@ def test_panel_is_absent_without_the_flag(client: Client) -> None:
 @override_flag("debug_log", active=True)
 def test_panel_and_recorder_ship_together_with_the_flag(signed_in: Client) -> None:
     """With the flag on, the panel, the recorder and the reader all arrive."""
-    response = signed_in.get(reverse("public:home"))
+    response = signed_in.get(reverse("public:map"))
 
     assert response.status_code == 200
     body = response.content.decode()
@@ -113,7 +113,7 @@ def test_recording_is_not_switched_on_by_the_flag(signed_in: Client) -> None:
     in the panel (persisted client-side). If the server could pre-check it,
     every GRP_DEBUG member would silently pay for a trace on every page.
     """
-    response = signed_in.get(reverse("public:home"))
+    response = signed_in.get(reverse("public:map"))
 
     body = response.content.decode()
     assert 'id="debug-log-enabled"' in body
@@ -146,7 +146,7 @@ def test_anonymous_visitors_pay_no_query_for_the_gate(client: Client) -> None:
     _install_group_scoped_flag()
 
     with CaptureQueriesContext(connection) as ctx:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
 
     assert response.status_code == 200
     waffle_queries = [q for q in ctx.captured_queries if "waffle" in q["sql"]]
@@ -168,7 +168,7 @@ def test_everyone_yes_does_not_reach_an_anonymous_visitor(client: Client) -> Non
     flag.everyone = True
     flag.save()
 
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
 
     assert response.status_code == 200
     assert 'data-testid="debug-log-panel"' not in response.content.decode()
@@ -199,9 +199,9 @@ def test_signed_in_cost_is_one_query(client: Client) -> None:
     # Warmed on purpose here, unlike the anonymous test above: this
     # assertion is about the ONE query that survives a warm cache — the
     # group join nothing caches — rather than about the cold-start cost.
-    client.get(reverse("public:home"))
+    client.get(reverse("public:map"))
     with CaptureQueriesContext(connection) as ctx:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
 
     assert response.status_code == 200
     assert 'data-testid="debug-log-panel"' in response.content.decode()

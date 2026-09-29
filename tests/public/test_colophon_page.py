@@ -96,7 +96,7 @@ class TestColophonPage:
         assert b'data-testid="site-footer"' in response.content
 
     def test_footer_links_to_colophon(self, client: Client) -> None:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert reverse("public:colophon").encode() in response.content
 
     def test_albina_link_present(self, client: Client) -> None:

@@ -144,7 +144,7 @@ _REFERRER_CONFIRM_PAGE = "same-origin"
 # the hub; pointing at the redirect would cost a needless hop and drop
 # nothing but time.
 # SNOW-802: where a just-verified account lands — the map, pins sheet open.
-_VERIFIED_LANDING_URL = "/?panel=favourites"
+_VERIFIED_LANDING_URL = "/map/?panel=favourites"
 
 # URL for the account-deleted page — used in the HX-Redirect header sent by
 # delete_account once the row is gone and the session has been dropped.
@@ -215,7 +215,7 @@ def _password_sign_in(
         )
         if user is not None:
             login(request, user)
-            return redirect(next_url or reverse("public:home"))
+            return redirect(next_url or reverse("public:map"))
 
     return render(
         request,
@@ -295,7 +295,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         next_url = None
 
     if request.user.is_authenticated:
-        return redirect(next_url or reverse("public:home"))
+        return redirect(next_url or reverse("public:map"))
 
     if request.method == "GET":
         return render(
@@ -383,7 +383,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
 
     """
     if request.user.is_authenticated:
-        return redirect("public:home")
+        return redirect("public:map")
 
     if request.method == "GET":
         return render(request, "accounts/register.html", {"form": RegisterForm()})
@@ -587,7 +587,7 @@ def set_password_view(request: HttpRequest) -> HttpResponse:
     # session is not invalidated by SessionAuthenticationMiddleware.
     update_session_auth_hash(request, request.user)
     logger.info("Password set for user pk=%s via setup page", request.user.pk)
-    return redirect("public:home")
+    return redirect("public:map")
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +704,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
         account.mark_verified(now)
         account.save(update_fields=["is_verified", "verified_at", "updated_at"])
 
-    response = redirect("public:home")
+    response = redirect("public:map")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 

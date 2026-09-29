@@ -263,7 +263,7 @@ class TestOfflineFallbackPage:
         """
         html = OFFLINE_PAGE.read_text()
         assert 'id="open-map-link"' in html
-        assert re.search(r'id="open-map-link"[^>]*href="/"', html)
+        assert re.search(r'id="open-map-link"[^>]*href="/map/"', html)
 
     def test_the_map_link_ships_hidden_behind_the_probe(self) -> None:
         """A link back to this very page is worse than no link at all.

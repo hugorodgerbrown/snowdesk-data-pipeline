@@ -197,16 +197,16 @@ def test_llms_txt_references_all_four_feeds(client: Client) -> None:
 
 
 @pytest.mark.django_db
-def test_home_page_advertises_country_feeds_via_rel_alternate(
+def test_map_page_advertises_country_feeds_via_rel_alternate(
     client: Client,
 ) -> None:
-    """SNOW-396: home carries rel=alternate for each country feed.
+    """SNOW-396: the map carries rel=alternate for each country feed.
 
-    A feed reader (or an LLM crawler) that lands on ``/`` and inspects the
+    A feed reader (or an LLM crawler) that lands on the map and inspects the
     head should discover every country's RSS/Atom feed without needing to
     walk ``/llms.txt``.
     """
-    body = client.get("/").content.decode()
+    body = client.get("/map/").content.decode()
     for country in ("ch", "at", "it", "fr"):
         pattern = re.compile(
             r'<link[^>]*rel="alternate"[^>]*type="application/rss\+xml"[^>]*'
@@ -214,5 +214,5 @@ def test_home_page_advertises_country_feeds_via_rel_alternate(
             re.DOTALL,
         )
         assert pattern.search(body), (
-            f"expected rel=alternate RSS link for /{country}/feed.rss on home"
+            f"expected rel=alternate RSS link for /{country}/feed.rss on the map"
         )

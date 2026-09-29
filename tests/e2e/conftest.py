@@ -365,7 +365,7 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
             };
           })();"""
     )
-    page.goto(live_server.url + "/")
+    page.goto(live_server.url + "/map/")
     page.wait_for_load_state("load")
     _wait_for_sw_control(page)
     # Guarantee 2 above — both SW lifecycle rows must be in queue:events

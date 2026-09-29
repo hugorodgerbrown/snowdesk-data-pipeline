@@ -304,7 +304,7 @@ class TestStaticViewSitemap:
 
     @pytest.mark.parametrize(
         "excluded",
-        ["/account/", "/favourites/", "/observations/", "/examples/", "/map/"],
+        ["/account/", "/favourites/", "/observations/", "/examples/"],
     )
     def test_private_and_unstable_urls_are_absent(
         self, client: Client, excluded: str
@@ -315,8 +315,7 @@ class TestStaticViewSitemap:
         listing them would contradict it. ``/observations/`` shows an
         anonymous visitor a sign-in CTA rather than the stream.
         ``/examples/`` serves a *random* bulletin per request, which would
-        collide with the real bulletin pages it samples. ``/map/`` is a
-        permanent redirect.
+        collide with the real bulletin pages it samples.
         """
         body = client.get(reverse("sitemap")).content.decode()
 
@@ -338,6 +337,7 @@ def test_sitemap_is_not_empty_out_of_season(client: Client) -> None:
 
     assert "<url>" in body
     assert reverse("public:home") in body
+    assert reverse("public:map") in body
     assert reverse("public:how_to_read_bulletin") in body
 
 

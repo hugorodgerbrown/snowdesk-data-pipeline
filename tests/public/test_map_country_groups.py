@@ -81,7 +81,7 @@ def _rendered_rows(client: Client) -> dict[str, list[str]]:
     """
     # ``public:map`` 301s to the homepage, which is where the map (and its
     # layers menu) actually renders.
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     assert response.status_code == 200
     return {
         key: codes.split() for key, codes in _ROW_RE.findall(response.content.decode())

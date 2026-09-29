@@ -245,7 +245,7 @@ def home_html(db: None) -> str:
 
     """
     client = Client(SERVER_NAME="localhost")
-    return client.get(reverse("public:home")).content.decode()
+    return client.get(reverse("public:map")).content.decode()
 
 
 class TestUgcPanelSkeleton:

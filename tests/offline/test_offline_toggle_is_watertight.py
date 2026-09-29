@@ -131,7 +131,7 @@ def test_offline_mode_stops_all_traffic_while_the_network_is_available(
     offline_map_page.jump_to(7.6, 46.1, offline_map_page.subject.inside_zoom)
 
     # 3. A date change — the scrubber's own fetch path.
-    page.goto(f"{offline_map_page.live_server_url}/?d=2026-04-08")
+    page.goto(f"{offline_map_page.live_server_url}/map/?d=2026-04-08")
     page.wait_for_load_state("load")
 
     # 4. Time for anything on a timer — telemetry's 30s flush is the one

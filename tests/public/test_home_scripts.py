@@ -31,14 +31,14 @@ class TestHomeScriptTags:
     def test_place_picker_loaded_once(self) -> None:
         """``place_picker.js`` appears in exactly one <script> src on ``/``."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert content.count("js/place_picker.js") == 1
 
     def test_htmx_loaded_once(self) -> None:
         """``htmx.min.js`` — the other module shared by both surfaces — stays single."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert content.count("js/htmx.min.js") == 1
 
@@ -50,7 +50,7 @@ class TestHomeScriptTags:
         hoisting the tag must not move it past the surfaces that use it.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         picker = content.index("js/place_picker.js")
         assert picker < content.index("js/report.js")
@@ -157,7 +157,7 @@ class TestMapCoreModulesLoaded:
         to another page, and this test only speaks for ``/``.
         """
         client = Client()
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
 
         for consumer, core_filename, global_name in self._dependencies():
             if f"js/{consumer}" not in content:

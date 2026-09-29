@@ -65,7 +65,7 @@ class TestRegisterView:
         client.force_login(account.user)
         response = client.get(self.URL)
         assert response.status_code == 302
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
 
     def test_post_new_email_creates_user_and_account(self, client: Client) -> None:
         response = client.post(self.URL, {"email": "new@example.com"})

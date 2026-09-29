@@ -39,7 +39,7 @@ def _write_shell_tree(root: Path) -> None:
     partials_dir = templates_dir / "partials"
     partials_dir.mkdir(parents=True, exist_ok=True)
     (templates_dir / "base.html").write_text("<html></html>\n", encoding="utf-8")
-    (templates_dir / "home.html").write_text("<div>home</div>\n", encoding="utf-8")
+    (templates_dir / "map.html").write_text("<div>map page</div>\n", encoding="utf-8")
     # SNOW-930: the public offline-content page, warmed into the shell
     # alongside the map (``SHELL_PAGES``) and therefore hashed with it.
     (templates_dir / "offline.html").write_text(
@@ -75,7 +75,7 @@ class TestComputeShellHash:
             "static/js/other.js",
             "src/css/main.css",
             "apps/public/templates/public/base.html",
-            "apps/public/templates/public/home.html",
+            "apps/public/templates/public/map.html",
             "apps/public/templates/public/offline.html",
             "apps/public/templates/public/partials/_map_embed.html",
             "static/offline.html",

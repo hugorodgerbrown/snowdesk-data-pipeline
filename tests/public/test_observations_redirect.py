@@ -27,25 +27,25 @@ class TestObservationsRedirect:
         """No sign-in wall: the redirect is the same for everyone."""
         response = client.get(reverse("public:observations"))
         assert response.status_code == 301
-        assert response["Location"] == "/?panel=reports"
+        assert response["Location"] == "/map/?panel=reports"
 
     def test_signed_in_gets_the_same_redirect(self, client: Client) -> None:
         """A signed-in user is sent to the same place."""
         client.force_login(UserFactory.create())
         response = client.get("/observations/")
         assert response.status_code == 301
-        assert response["Location"] == "/?panel=reports"
+        assert response["Location"] == "/map/?panel=reports"
 
     def test_query_string_is_forwarded(self, client: Client) -> None:
         """``?d=`` survives the hop, so a dated link still opens on its day."""
         response = client.get("/observations/?d=2026-02-16")
         assert response.status_code == 301
-        assert response["Location"] == "/?panel=reports&d=2026-02-16"
+        assert response["Location"] == "/map/?panel=reports&d=2026-02-16"
 
     def test_following_the_redirect_lands_on_the_map(self, client: Client) -> None:
         """The target renders the map page."""
         response = client.get("/observations/", follow=True)
-        assert response.redirect_chain == [("/?panel=reports", 301)]
+        assert response.redirect_chain == [("/map/?panel=reports", 301)]
         assert response.status_code == 200
         assert 'id="map"' in response.content.decode()
 

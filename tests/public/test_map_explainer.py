@@ -12,18 +12,18 @@ class TestMapExplainerIntegration:
     """The legend launches the demo without adding weight to normal map visits."""
 
     def test_normal_map_links_to_demo_without_loading_demo_assets(self) -> None:
-        response = Client(SERVER_NAME="localhost").get(reverse("public:home"))
+        response = Client(SERVER_NAME="localhost").get(reverse("public:map"))
         content = response.content.decode()
 
         assert response.status_code == 200
         assert 'id="map-explainer-link"' in content
-        assert 'href="/?layers=exploded"' in content
+        assert 'href="/map/?layers=exploded"' in content
         assert "/static/css/map_exploded.css" not in content
         assert "/static/js/map_exploded.js" not in content
 
     def test_demo_loads_packaged_assets_without_manual_cache_keys(self) -> None:
         response = Client(SERVER_NAME="localhost").get(
-            reverse("public:home"),
+            reverse("public:map"),
             {"layers": "exploded", "d": "2026-03-12"},
         )
         content = response.content.decode()
@@ -32,12 +32,12 @@ class TestMapExplainerIntegration:
         assert content.count('/static/css/map_exploded.css"') == 1
         assert content.count('/static/js/map_exploded.js"') == 1
         assert 'id="map-explainer-strings"' in content
-        assert 'href="/?layers=exploded&amp;d=2026-03-12"' in content
+        assert 'href="/map/?layers=exploded&amp;d=2026-03-12"' in content
         assert "panel-redesign" not in content
 
     def test_other_layers_query_does_not_load_demo_assets(self) -> None:
         response = Client(SERVER_NAME="localhost").get(
-            reverse("public:home"), {"layers": "other"}
+            reverse("public:map"), {"layers": "other"}
         )
         content = response.content.decode()
 

@@ -648,7 +648,7 @@
     // ``history.replaceState`` while the user scrubs, those URLs are never
     // fetched and never cached, and ``_networkFirstFallback`` does the same
     // ``ignoreSearch`` lookup before giving up.
-    var wanted = r.mapPath || '/';
+    var wanted = r.mapPath || '/map/';
     var mapEntry = /** @type {ShellEntry|null} */ (null);
     entries.forEach(function (entry) {
       if (!mapEntry && pathOf(entry.url) === wanted) mapEntry = entry;

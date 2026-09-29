@@ -24,7 +24,7 @@ The feed is discoverable via three paths:
 
 1. ``robots.txt`` allows the RSS endpoints under ``Allow: /``.
 2. ``/llms.txt`` lists each country's feed under ``## Data``.
-3. The homepage carries ``<link rel="alternate" type="application/rss+xml">``
+3. The map page carries ``<link rel="alternate" type="application/rss+xml">``
    for each active country so browsers and feed readers can pick them up
    from the page head.
 """

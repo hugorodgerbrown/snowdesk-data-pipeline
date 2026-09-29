@@ -63,14 +63,14 @@ class TestAccountRouting:
         """Signed in, both land on the map with the pins sheet open."""
         response = _client_for(AccountFactory.create()).get(path)
         assert response.status_code == 301
-        assert response["Location"] == "/?panel=favourites"
+        assert response["Location"] == "/map/?panel=favourites"
 
     @pytest.mark.parametrize("path", ["/account/", "/account/manage/"])
     def test_anonymous_gets_the_same_redirect(self, path: str) -> None:
         """A redirect renders nothing per-user, so there is no sign-in wall."""
         response = Client().get(path)
         assert response.status_code == 301
-        assert response["Location"] == "/?panel=favourites"
+        assert response["Location"] == "/map/?panel=favourites"
 
     def test_manage_url_name_still_resolves(self) -> None:
         """``reverse("accounts:manage")`` keeps working after the split."""

@@ -1630,10 +1630,10 @@
       : names.filter(function (name) {
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
-    // The map is the site root. Hard-coded rather than derived from the
-    // current location, because this panel is reached from two pages and
-    // neither of them is the one being asked about.
-    var mapPath = '/';
+    // The map is /map/ (the site root is the marketing homepage). Hard-coded
+    // rather than derived from the current location, because this panel is
+    // reached from two pages and neither of them is the one being asked about.
+    var mapPath = '/map/';
     var shell = shellNames.length
       ? await readShellEntries(shellNames, mapPath, budget)
       : {
@@ -1872,7 +1872,7 @@
     }
     var currentPrincipal = typeof stored === 'string' ? stored : null;
 
-    var mapUrl = self.location.origin + '/';
+    var mapUrl = self.location.origin + '/map/';
     for (var i = 0; i < shellNames.length; i += 1) {
       var cache = await bounded(
         budget,

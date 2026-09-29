@@ -84,6 +84,7 @@ def sharing_pages(db: None) -> dict[str, str]:
     resort = ResortFactory.create(name="Verbier", region=region)
     return {
         "home": reverse("public:home"),
+        "map": reverse("public:map"),
         "help": reverse("public:help"),
         "colophon": reverse("public:colophon"),
         # SNOW-836. Built to be shared — it is the page a link to Snowdesk

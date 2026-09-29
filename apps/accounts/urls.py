@@ -43,7 +43,7 @@ urlpatterns = [
     # bookmarks reverse it, and a redirect is the sensible place to land.
     path(
         "",
-        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        RedirectView.as_view(url="/map/?panel=favourites", permanent=True),
         name="hub",
     ),
     path("settings/", views.settings_view, name="settings"),
@@ -55,17 +55,17 @@ urlpatterns = [
     # redirect below; the names are kept so an old reverse still resolves.
     path(
         "favourites/",
-        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        RedirectView.as_view(url="/map/?panel=favourites", permanent=True),
         name="favourites",
     ),
     path(
         "observations/",
-        RedirectView.as_view(url="/?panel=reports", permanent=True),
+        RedirectView.as_view(url="/map/?panel=reports", permanent=True),
         name="observations",
     ),
     path(
         "routes/",
-        RedirectView.as_view(url="/?panel=routes", permanent=True),
+        RedirectView.as_view(url="/map/?panel=routes", permanent=True),
         name="routes",
     ),
     path("register/", views.register_view, name="register"),
@@ -96,7 +96,7 @@ urlpatterns = [
     # /subscribe/ -> /account/ precedent in config/urls.py (SNOW-430).
     path(
         "manage/",
-        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        RedirectView.as_view(url="/map/?panel=favourites", permanent=True),
         name="manage",
     ),
     path("manage/delete/", views.delete_account, name="delete_account"),

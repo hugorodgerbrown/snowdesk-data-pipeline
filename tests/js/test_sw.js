@@ -3330,7 +3330,7 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
   // about the two halves of the repair: what a page needs in order to be
   // more than a blank frame, and the activation-time call that fetches it.
   const SHELL_CACHE = 'snowdesk-shell-UNSUBSTITUTED';
-  const MAP_URL = `${ORIGIN}/`;
+  const MAP_URL = `${ORIGIN}/map/`;
   const SCRIPT_URL = `${ORIGIN}/static/js/map.abc123.js`;
   const STYLE_URL = `${ORIGIN}/static/css/output.def456.css`;
   const PAGE_DAY = '2026-09-11';
@@ -3627,7 +3627,7 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
     const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/'));
+    await sw._networkFirst(navRequest('/map/'));
     await flush();
     await setStoredPrincipal('acct-uuid-a');
 
@@ -3641,7 +3641,7 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
     const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/'));
+    await sw._networkFirst(navRequest('/map/'));
     await flush();
     await setStoredPrincipal('acct-uuid-b');
 
@@ -3671,14 +3671,14 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
   });
 
   it('accepts a shell cached under a dated URL, as the fallback does', async () => {
-    // `/?d=2026-01-23` and `/` share one cached shell — the date is read
+    // `/map/?d=2026-01-23` and `/map/` share one cached shell — the date is read
     // back off location.search by page JS. A searchless match is what
     // `_networkFirstFallback` uses, so this has to agree.
     const caches = makeCaches();
     const online = basicResponse(pageHtml('anonymous', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/?d=2026-01-23'));
+    await sw._networkFirst(navRequest('/map/?d=2026-01-23'));
     await flush();
 
     expect(await sw._canOpenOffline()).toBe(true);

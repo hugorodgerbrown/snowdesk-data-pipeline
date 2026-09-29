@@ -82,7 +82,7 @@ def _htmx_pages() -> dict[str, tuple[Client, str]]:
     return {
         # The map, which carries the routes / favourites / observations
         # panels and their partials.
-        "home": (organiser_client, reverse("public:home")),
+        "home": (organiser_client, reverse("public:map")),
         "sign_in": (Client(), reverse("accounts:sign_in")),
         "account_settings": (organiser_client, reverse("accounts:settings")),
         # SNOW-834's four. Every one of these rendered hx-post with no htmx.

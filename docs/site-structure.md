@@ -24,7 +24,7 @@ map of them, not a second source of truth.
 [`docs/decisions/two-documents-and-a-map.md`](decisions/two-documents-and-a-map.md)).
 Snowdesk has two document pages — the bulletin at
 `/<region_id>/<slug>/<date>/` and the weather page at `/weather/<short_id>/`
-— and one application, the map at `/`. Everything else a visitor might
+— and one application, the map at `/map/`. `/` is a static homepage that describes Snowdesk and links into the map ([`the-homepage-is-not-the-map`](decisions/the-homepage-is-not-the-map.md)). Everything else a visitor might
 read at length lives on the map as a layer, a pin or a sheet, and the
 routes that used to render those things as pages are permanent redirects
 into the map (`?panel=favourites|routes|reports` opens a sheet,
@@ -41,7 +41,7 @@ no sequential primary key appears in a URL or a public feed.
 `apps.public.urls` is included at the project root (`""`), and its last three
 patterns match `<region_id:region_id>/…`. That generic pattern would swallow
 any single-segment path registered after it, so **every literal public route
-must be registered before it**. The `/map/` redirect and the `partials/…`
+must be registered before it**. The `/map/` route and the `partials/…`
 prefixes depend on this ordering — don't reorder
 (see [`docs/calendar.md`](calendar.md) and [`docs/map-and-api.md`](map-and-api.md)).
 
@@ -49,8 +49,8 @@ prefixes depend on this ordering — don't reorder
 
 | Route | View | Notes |
 |-------|------|-------|
-| `/` | `public.views.home` | **The interactive map.** Not a marketing landing — the map is the homepage (SNOW-314), with a dismissable `#home-intro` overlay on first visit. CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` opens the resort-coordinate editor for a superuser (SNOW-74/86; SNOW-724 replaced its waffle flag with the equivalent Django check). |
-| `/map/` | redirect | Permanent 301 to `/`, query string forwarded, kept for old bookmarks (SNOW-344). |
+| `/` | `public.views.home` | **The homepage.** A static page — a still of the map, a pitch, short sections on what a reader gets, and links to `/map/`, `/help/`, `/compare/` and the build blog. Loads no map JavaScript. A request carrying any parameter other than attribution (`utm_*`, `ref`, …) is a map link from before the move and 301s to `/map/` with the query string intact. |
+| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. A dismissable `#home-intro` overlay on first visit (SNOW-314). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |

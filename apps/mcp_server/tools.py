@@ -2128,7 +2128,7 @@ def show_danger_map(
     for entry in snapshot["regions"]:
         region = regions_by_id[entry["region_id"]]
         entry["url"] = f"{base_url}{region.get_absolute_url(target_date)}"
-    map_path = reverse("public:home")
+    map_path = reverse("public:map")
     snapshot["map_url"] = f"{base_url}{map_path}?d={target_date.isoformat()}"
     snapshot["scope_label"] = _scope_label(
         snapshot["scope"]["country"], snapshot["scope"]["major_region_id"]

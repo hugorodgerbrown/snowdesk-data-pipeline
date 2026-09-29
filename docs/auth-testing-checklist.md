@@ -38,11 +38,11 @@ the scenario doc does not.
 
 ## 2. Password sign-in
 
-- [ ] Correct email + correct password (account A) → signed in, redirected to the validated `?next=` if one was supplied, otherwise the map at `/`.
+- [ ] Correct email + correct password (account A) → signed in, redirected to the validated `?next=` if one was supplied, otherwise the map at `/map/`.
 - [ ] Correct email + **wrong** password → generic error, stays on page (status 200).
 - [ ] **Unknown** email + any password → same generic error (indistinguishable).
 - [ ] Passwordless account (B) + any password → same generic error.
-- [ ] Already signed in, visit `/account/sign-in/` → redirect to `?next=` or the map at `/`.
+- [ ] Already signed in, visit `/account/sign-in/` → redirect to `?next=` or the map at `/map/`.
 
 ## 3. Passkey sign-in (WebAuthn)
 
@@ -114,5 +114,5 @@ the scenario doc does not.
       passkey delete 5/min, delete-account 3/min.
 - [ ] **Token TTLs**: account-access / verification / reset / change-email all expire after 24h → `link_expired`.
 - [ ] **Cross-salt replay** is blocked — e.g. using an access token on the verify route → `link_expired`.
-- [ ] **Post-login redirects**: verify → setup; logout → sign-in. Every other path honours a same-site `?next=` (SNOW-825/826), validated through `apps.accounts.redirects.safe_next`, and falls back to the map at `/` when it is absent, off-site, or names an auth-entry page.
+- [ ] **Post-login redirects**: verify → setup; logout → sign-in. Every other path honours a same-site `?next=` (SNOW-825/826), validated through `apps.accounts.redirects.safe_next`, and falls back to the map at `/map/` when it is absent, off-site, or names an auth-entry page.
 - [ ] **Legacy redirects**: old `/subscribe/…` links 301 to `/account/…`; `/subscribe/account/<token>/` → `/account/access/<token>/`.

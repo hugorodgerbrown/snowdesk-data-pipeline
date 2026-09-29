@@ -21,7 +21,7 @@ _LON = 7.10
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
     """Navigate to / and wait for the map to finish its boot fetch."""
-    page.goto(f"{live_server_url}/")
+    page.goto(f"{live_server_url}/map/")
     page.wait_for_load_state("domcontentloaded")
     # SNOW-794: `state="attached"`, not the default "visible". The scrubber
     # is a SEASON scrubber and is not rendered at all while the day the map

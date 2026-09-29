@@ -55,7 +55,7 @@ _ROUNDEL_RE = re.compile(r'<button[^>]*id="map-custom-download-control"[^>]*>')
 
 def _roundel(client: Client) -> str:
     """Render the homepage and return the downloads roundel's opening tag."""
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     assert response.status_code == 200
     match = _ROUNDEL_RE.search(response.content.decode())
     assert match is not None, "#map-custom-download-control is not on the page"

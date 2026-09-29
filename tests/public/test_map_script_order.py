@@ -81,7 +81,7 @@ def _rendered_script_filenames() -> list[str]:
 
     @returns Bare filenames, e.g. ``["htmx.min.js", "map_state.js", …]``.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     assert response.status_code == 200
     return _SCRIPT_SRC_RE.findall(response.content.decode())
 
@@ -206,7 +206,7 @@ def test_error_reporter_loads_before_the_map_bundle() -> None:
     one: the ordering is invisible in either file on its own, and only the
     rendered page shows it.
     """
-    html = Client().get(reverse("public:home")).content.decode()
+    html = Client().get(reverse("public:map")).content.decode()
 
     reporter = html.index("js/error_reporting")
     first_map_script = min(

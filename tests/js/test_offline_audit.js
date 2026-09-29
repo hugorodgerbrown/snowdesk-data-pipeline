@@ -126,7 +126,7 @@ describe('the shell-cache reading', () => {
     installCachesStub({
       'snowdesk-shell-abc': [
         {
-          url: 'https://snowdesk.info/',
+          url: 'https://snowdesk.info/map/',
           headers: { 'X-SW-Principal': 'acct-1' },
         },
         { url: 'https://snowdesk.info/static/js/map.abc.js', headers: {} },
@@ -153,7 +153,7 @@ describe('the shell-cache reading', () => {
     installCachesStub({
       'snowdesk-shell-abc': [
         {
-          url: `${origin}/`,
+          url: `${origin}/map/`,
           headers: { 'X-SW-Principal': 'anonymous' },
           body: '<link rel="stylesheet" href="/static/css/o.css"><script src="/static/js/map.js"></script>',
         },
@@ -174,7 +174,7 @@ describe('the shell-cache reading', () => {
     const read = [];
     installCachesStub({
       'snowdesk-shell-abc': [
-        { url: 'https://snowdesk.info/', headers: {}, body: '', onText: () => read.push('/') },
+        { url: 'https://snowdesk.info/map/', headers: {}, body: '', onText: () => read.push('/map/') },
         {
           url: 'https://snowdesk.info/ch-4115/verbier/2026-02-16/',
           headers: {},
@@ -186,7 +186,7 @@ describe('the shell-cache reading', () => {
 
     await audit.collect();
 
-    expect(read).toEqual(['/']);
+    expect(read).toEqual(['/map/']);
   });
 
   it('keeps the stamp when the body cannot be read', async () => {
@@ -197,7 +197,7 @@ describe('the shell-cache reading', () => {
     installCachesStub({
       'snowdesk-shell-abc': [
         {
-          url: 'https://snowdesk.info/',
+          url: 'https://snowdesk.info/map/',
           headers: { 'X-SW-Principal': 'acct-1' },
           onText: () => {
             throw new Error('unreadable');
@@ -248,7 +248,7 @@ describe('the shell-cache reading', () => {
     installCachesStub({
       'snowdesk-shell-abc': [
         {
-          url: `${origin}/`,
+          url: `${origin}/map/`,
           headers: { 'X-SW-Principal': 'anonymous' },
           body:
             '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>' +
@@ -275,7 +275,7 @@ describe('the shell-cache reading', () => {
 
   it('reports an unstamped page as unstamped rather than guessing', async () => {
     installCachesStub({
-      'snowdesk-shell-abc': [{ url: 'https://snowdesk.info/', headers: {} }],
+      'snowdesk-shell-abc': [{ url: 'https://snowdesk.info/map/', headers: {} }],
     });
 
     const readings = await audit.collect();
@@ -520,7 +520,7 @@ describe('rendering', () => {
         dbAvailable: true,
         serviceWorker: { supported: true, registered: true, controlled: true },
         shellEntries: [
-          { url: 'https://x/', isPage: true, principal: 'anonymous' },
+          { url: 'https://x/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://x/a.js', isPage: false },
           { url: 'https://x/a.css', isPage: false },
         ],
@@ -671,7 +671,7 @@ describe('the Save control (SNOW-912)', () => {
     '<link rel="stylesheet" href="/static/css/output.abc.css">' +
     '<script src="/static/js/map.abc.js"></script>';
   const mapPage = (principal) => ({
-    url: `${ORIGIN}/`,
+    url: `${ORIGIN}/map/`,
     headers: { 'X-SW-Principal': principal },
     body: MAP_HTML,
   });
@@ -773,7 +773,7 @@ describe('the Save control (SNOW-912)', () => {
   });
 
   it('is offered when the page is saved but its scripts are not', async () => {
-    // The state the repair was built for. `_warmCache(['/'])` re-fetches
+    // The state the repair was built for. `_warmCache(['/map/'])` re-fetches
     // the page and `_warmShellSubresources` then fetches the modules it
     // names and the cache is missing — so hiding the control here left the
     // one failure warming can definitely fix with no way to reach it.
@@ -902,7 +902,7 @@ describe('a device whose storage stops answering', () => {
         keys: async () => ['snowdesk-shell-abc'],
         has: async () => false,
         open: async () => ({
-          keys: async () => [{ url: `${window.location.origin}/` }],
+          keys: async () => [{ url: `${window.location.origin}/map/` }],
           match: never,
         }),
       },
@@ -1043,7 +1043,7 @@ describe('canOpenMap — the offline page’s one way forward', () => {
   it('says yes when the map page is saved for whoever is signed in', async () => {
     installCachesStub({
       'snowdesk-shell-abc': [
-        { url: `${ORIGIN}/`, headers: { 'X-SW-Principal': 'anonymous' } },
+        { url: `${ORIGIN}/map/`, headers: { 'X-SW-Principal': 'anonymous' } },
       ],
     });
 
@@ -1055,7 +1055,7 @@ describe('canOpenMap — the offline page’s one way forward', () => {
     // the reader straight back on the offline page.
     installCachesStub({
       'snowdesk-shell-abc': [
-        { url: `${ORIGIN}/`, headers: { 'X-SW-Principal': 'acct-99' } },
+        { url: `${ORIGIN}/map/`, headers: { 'X-SW-Principal': 'acct-99' } },
       ],
     });
 

@@ -1,8 +1,8 @@
 """
-tests/public/test_home_page.py — Tests for the canonical map homepage (SNOW-344).
+tests/public/test_home_page.py — Tests for the interactive map page at /map/.
 
 Covers:
-  - GET / returns 200 with the map container (#map).
+  - GET /map/ returns 200 with the map container (#map).
   - The intro overlay (#home-intro) is rendered (show_intro=True).
   - The season ribbon (#season-ribbon) is present when data exists.
   - Off-season note present in #home-intro when is_offseason is True, and
@@ -15,8 +15,8 @@ Covers:
   - The offmap-banner (#offmap-banner) is present on / (moved from map.html).
   - The locate-failed banner (#locate-failed-banner) and its #locate-retry CTA
     are present on / (SNOW-682).
-  - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
-  - Edit-mode: /?edit=resorts renders the edit panel for a superuser (SNOW-344).
+  - GET /?d=… returns 301 to /map/?d=… (the map moved off the root).
+  - Edit-mode: /map/?edit=resorts renders the edit panel for a superuser (SNOW-344).
   - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
   - The meta description names all five territories and stays inside the
     ~155-character budget search results render (SNOW-535).
@@ -73,29 +73,29 @@ class TestHomePageBasic:
     def test_home_returns_200(self) -> None:
         """GET / returns HTTP 200."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert response.status_code == 200
 
     def test_home_renders_map_container(self) -> None:
         """The #map element is present — the map surface is embedded."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="map"' in content
 
     def test_home_renders_intro_overlay(self) -> None:
         """The #home-intro overlay is rendered (show_intro=True on home)."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="home-intro"' in content
 
     def test_title_and_og_title_are_alps_wide(self) -> None:
-        """Title/og:title name the Alps, not just Switzerland."""
+        """Title/og:title name the map; the description names the Alps."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
-        assert "Alpine Avalanche Bulletins · Snowdesk" in content
+        assert "Avalanche map · Snowdesk" in content
         assert "Swiss avalanche bulletins" not in content
 
     def test_meta_description_names_non_swiss_territories(self) -> None:
@@ -107,7 +107,7 @@ class TestHomePageBasic:
         the old Swiss-only description too.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         match = re.search(
             r'<meta name="description" content="([^"]*)"', content, re.IGNORECASE
@@ -130,7 +130,7 @@ class TestHomePageBasic:
         registration paragraph.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert (
             "sourced daily from SLF (Switzerland), ALBINA (Austria, Italy)" in content
@@ -144,7 +144,7 @@ class TestHomePageBasic:
         map, so the word itself has to carry them there.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert (
             f'<a href="{reverse("accounts:register")}" '
@@ -160,7 +160,7 @@ class TestHomePageBasic:
         actions row rather than the whole page.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         actions = re.search(
             r'<div class="home-intro-actions">(.*?)</div>', content, re.DOTALL
@@ -175,7 +175,7 @@ class TestHomePageBasic:
         opens the map-help tour — the "×" only closes the card.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="home-intro-close"' in content
         assert content.count('data-action="dismiss"') >= 2, (
@@ -191,7 +191,7 @@ class TestHomePageBasic:
         visitor dismisses the intro card.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "data-map-help-no-autostart" in content
 
@@ -205,7 +205,7 @@ class TestHomePageBasic:
         shared dismiss.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="offmap-banner"' in content
         # The element opts into the shared dismiss handler.
@@ -224,30 +224,16 @@ class TestHomePageBasic:
         would take the feedback away without failing anything else.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="locate-failed-banner"' in content
         assert 'id="locate-retry"' in content
         assert "Can't find your location" in content
 
-    def test_map_redirect_returns_301_to_home(self) -> None:
-        """/map/ returns a 301 to / (SNOW-344)."""
-        client = Client()
-        response = client.get("/map/")
-        assert response.status_code == 301
-        assert response["Location"] == "/"
-
-    def test_map_redirect_forwards_query_string(self) -> None:
-        """/map/?d=2026-01-15 redirects to /?d=2026-01-15 (query_string=True)."""
-        client = Client()
-        response = client.get("/map/?d=2026-01-15")
-        assert response.status_code == 301
-        assert response["Location"] == "/?d=2026-01-15"
-
     def test_home_loads_map_assets(self) -> None:
         """The homepage loads maplibre, map.css, map.js, and home_intro.js."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "maplibre-gl" in content
         assert "/static/css/map.css" in content
@@ -264,7 +250,7 @@ class TestHomePageOffseason:
     def test_offseason_note_present_when_past_season_end(self) -> None:
         """Off-season note (.home-intro-offseason-ref) appears in the intro after season end."""
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" in content
 
@@ -280,7 +266,7 @@ class TestHomePageOffseason:
         old bottom-left chip it had itself replaced stays gone too.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="map-offseason-bar"' not in content
         assert 'id="map-offseason-note"' not in content
@@ -305,7 +291,7 @@ class TestHomePageOffseason:
                 region=region, date=day, source_bulletin=bulletin
             )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" in content
         assert "Map shows 2025/26 season" in content
@@ -333,7 +319,7 @@ class TestHomePageOffseason:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "home-intro-offseason-ref" not in content
 
@@ -355,7 +341,7 @@ class TestHomePageRibbon:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="season-ribbon"' in content
 
@@ -398,7 +384,7 @@ class TestHomePageRibbon:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'id="season-ribbon"' in content
 
@@ -426,7 +412,7 @@ class TestHomePageReadoutData:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'data-default-region-name="Martigny Verbier"' in content
         assert 'data-default-region-slug="martigny-verbier"' in content
@@ -453,7 +439,7 @@ class TestHomePageReadoutData:
             source_bulletin=bulletin,
         )
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "<button" in content
         assert 'id="region-readout"' in content
@@ -500,7 +486,7 @@ class TestHomePageBreadcrumbData:
         """#season-ribbon has data-default-subregion-name on the homepage."""
         self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'data-default-subregion-name="Lower Valais"' in content
 
@@ -510,7 +496,7 @@ class TestHomePageBreadcrumbData:
         """#season-ribbon has data-default-major-name on the homepage."""
         self._make_ch4115(subregion_name_en="Lower Valais", major_name_en="Wallis")
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert 'data-default-major-name="Wallis"' in content
 
@@ -612,32 +598,18 @@ class TestDefaultRegionLabel:
 
 
 @pytest.mark.django_db
-class TestMapRedirect:
-    """SNOW-344: /map/ is now a permanent 301 redirect to /."""
+class TestLegacyRootRedirect:
+    """The map moved from / to /map/; / with map state 301s there."""
 
-    def test_map_redirect_is_permanent(self) -> None:
-        """GET /map/ returns 301 (permanent redirect)."""
-        client = Client()
-        response = client.get("/map/")
+    def test_root_with_a_date_redirects_permanently_to_the_map(self) -> None:
+        """/?d=2026-01-15 redirects to /map/?d=2026-01-15."""
+        response = Client().get("/?d=2026-01-15")
         assert response.status_code == 301
+        assert response["Location"] == "/map/?d=2026-01-15"
 
-    def test_map_redirect_target_is_home(self) -> None:
-        """/map/ redirects to / (the canonical map page)."""
-        client = Client()
-        response = client.get("/map/")
-        assert response["Location"] == "/"
-
-    def test_map_redirect_forwards_query_string(self) -> None:
-        """/map/?d=2026-01-15 redirects to /?d=2026-01-15."""
-        client = Client()
-        response = client.get("/map/?d=2026-01-15")
-        assert response.status_code == 301
-        assert response["Location"] == "/?d=2026-01-15"
-
-    def test_map_redirect_followed_renders_map(self) -> None:
-        """Following the /map/ redirect lands on the live map page."""
-        client = Client()
-        response = client.get("/map/", follow=True)
+    def test_redirect_followed_renders_map(self) -> None:
+        """Following the redirect lands on the live map page."""
+        response = Client().get("/?d=2026-01-15", follow=True)
         assert response.status_code == 200
         content = response.content.decode()
         assert 'id="map"' in content
@@ -686,7 +658,7 @@ class TestHomeEditMode:
         """/?edit=resorts as a superuser shows the edit-resorts panel."""
         client = Client()
         client.force_login(UserFactory.create(is_superuser=True))
-        response = client.get(reverse("public:home") + "?edit=resorts")
+        response = client.get(reverse("public:map") + "?edit=resorts")
         assert response.status_code == 200
         assert b"edit-resorts-panel" in response.content
 
@@ -694,14 +666,14 @@ class TestHomeEditMode:
         """/?edit=resorts for a non-superuser renders the normal map."""
         client = Client()
         client.force_login(UserFactory.create(is_staff=False))
-        response = client.get(reverse("public:home") + "?edit=resorts")
+        response = client.get(reverse("public:map") + "?edit=resorts")
         assert response.status_code == 200
         assert b"edit-resorts-panel" not in response.content
 
     def test_query_string_as_anonymous_silent_fallback(self) -> None:
         """/?edit=resorts for an anonymous visitor renders the normal map."""
         client = Client()
-        response = client.get(reverse("public:home") + "?edit=resorts")
+        response = client.get(reverse("public:map") + "?edit=resorts")
         assert response.status_code == 200
         assert b"edit-resorts-panel" not in response.content
 
@@ -709,7 +681,7 @@ class TestHomeEditMode:
         """Without ?edit=resorts the panel is absent even for a superuser."""
         client = Client()
         client.force_login(UserFactory.create(is_superuser=True))
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         assert response.status_code == 200
         assert b"edit-resorts-panel" not in response.content
 
@@ -724,7 +696,7 @@ class TestHomePageReportButtonParity:
     def test_report_button_shown_for_anonymous(self) -> None:
         """Homepage shows the report button for anonymous users (parity with /map/)."""
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="false"' in content
         # Anonymous users are not "unverified" — they get the sign-in CTA, not
@@ -743,7 +715,7 @@ class TestHomePageReportButtonParity:
         account = AccountFactory.create(is_verified=True)
         client = Client(SERVER_NAME="localhost")
         client.force_login(account.user)
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="true"' in content
         assert 'data-report-unverified="false"' in content
@@ -758,7 +730,7 @@ class TestHomePageReportButtonParity:
         account = AccountFactory.create(is_verified=False)
         client = Client(SERVER_NAME="localhost")
         client.force_login(account.user)
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "report-btn" in content
         assert 'data-report-eligible="false"' in content
         assert 'data-report-unverified="true"' in content
@@ -810,7 +782,7 @@ class TestHomePageFavouritesParity:
         own sign-in sheet rather than ticking a box over an empty layer.
         """
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "favourite-add-btn" in content
         assert 'data-favourites-eligible="false"' in content
         assert "data-signin-url" in content
@@ -826,7 +798,7 @@ class TestHomePageFavouritesParity:
         account = AccountFactory.create()
         client = Client(SERVER_NAME="localhost")
         client.force_login(account.user)
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "favourite-add-btn" in content
         assert 'data-favourites-eligible="true"' in content
         # SNOW-904: the panel's switch became a layers-menu row again.
@@ -883,7 +855,7 @@ class TestHomePageCommunityReportsParity:
         user-data rows needs no sign-in hand-off.
         """
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert 'data-overlay-key="community_reports"' in content
         assert 'id="map-community-reports-overlay-toggle"' not in content
         assert 'data-community-reports-eligible="true"' in content
@@ -903,7 +875,7 @@ class TestHomePageBasemapPreconnect:
     def test_preconnect_to_basemap_origin_is_rendered(self) -> None:
         """A crossorigin preconnect names the active basemap's origin."""
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert (
             f'<link rel="preconnect" href="{settings.BASEMAP_ORIGIN}" crossorigin>'
             in content
@@ -926,7 +898,7 @@ class TestHomePageBasemapPreconnect:
         openfreemap's host appears in the markup whichever basemap is active.
         """
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         preconnects = re.findall(r'<link[^>]*rel="preconnect"[^>]*>', content)
         assert preconnects == [
             '<link rel="preconnect" href="https://vectortiles.geo.admin.ch" '
@@ -948,7 +920,7 @@ class TestFontPreloads:
     def test_latin_subset_is_preloaded(self) -> None:
         """The Latin subset — the one every page renders from — is preloaded."""
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         preloads = re.findall(r'<link[^>]*rel="preload"[^>]*as="font"[^>]*>', content)
         assert len(preloads) == 1
         assert "dm-sans-latin.woff2" in preloads[0]
@@ -959,7 +931,7 @@ class TestFontPreloads:
     def test_latin_ext_subset_is_not_preloaded(self) -> None:
         """The Latin-ext subset is left to unicode-range to fetch on demand."""
         client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         assert "dm-sans-latin-ext.woff2" not in content
 
     def test_rule_holds_off_the_map_page(self) -> None:

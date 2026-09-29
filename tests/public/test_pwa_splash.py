@@ -46,7 +46,7 @@ def _manifest() -> dict:
 
 def _home_body() -> str:
     """Render the home page and return its HTML."""
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     assert response.status_code == 200
     return response.content.decode("utf-8")
 

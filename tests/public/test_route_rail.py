@@ -39,7 +39,7 @@ def _home(client: Client) -> str:
         The page's HTML.
 
     """
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     assert response.status_code == 200
     return response.content.decode()
 

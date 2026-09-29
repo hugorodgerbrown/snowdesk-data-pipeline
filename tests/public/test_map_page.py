@@ -2,7 +2,7 @@
 tests/public/test_map_page.py — Tests for the canonical map page (/).
 
 SNOW-344: /map/ is now a 301 redirect to /; all tests that previously
-targeted /map/ now target / (via reverse("public:home")).
+targeted /map/ now target / (via reverse("public:map")).
 
 Narrow scope: the page resolves, the three API endpoint URLs are baked
 into the markup via data-* attributes, and the static JS/CSS links are
@@ -36,7 +36,7 @@ from tests.factories import (
 def test_map_page_renders() -> None:
     """GET / returns 200 and contains the map container."""
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
@@ -61,7 +61,7 @@ def test_map_page_injects_api_urls() -> None:
     data-ratings-url pointing at the unified /api/ratings/ endpoint.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert f'data-regions-url="{reverse("api:regions_geojson")}"' in content
     assert f'data-ratings-url="{reverse("api:ratings")}"' in content
@@ -91,7 +91,7 @@ def test_map_element_carries_no_season_end_attribute() -> None:
     RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
 
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     map_div_start = content.index('id="map"')
@@ -109,7 +109,7 @@ def test_map_page_renders_resorts_overlay_toggle() -> None:
     Default is ``aria-checked="false"`` — the layer opens hidden.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'data-overlay-key="resorts"' in content
     assert "Resorts" in content
@@ -133,7 +133,7 @@ def test_map_page_renders_micro_regions_overlay_toggle() -> None:
     used to drive alongside the boundary is the separate Bulletins row below.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'data-overlay-key="l4"' in content
     l4_btn_idx = content.index('data-overlay-key="l4"')
@@ -160,7 +160,7 @@ def test_map_page_renders_bulletin_fill_control() -> None:
     nothing stored.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     assert 'id="map-fill-toggle"' in content
@@ -192,7 +192,7 @@ def test_bulletin_fill_control_is_inside_the_collapsible_group() -> None:
     a panel opening leftward out of it would be cut off.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     collapsible_idx = content.index('id="map-controls-collapsible"')
@@ -227,7 +227,7 @@ def test_locate_is_the_only_roundel_outside_the_collapsible_group() -> None:
     and FIRST there so it lands directly under locate when the group is open.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     stack_idx = content.index('id="map-controls-br"')
@@ -264,7 +264,7 @@ def test_layers_menu_is_outside_the_collapsible_group() -> None:
     symptom. Same move, same reason, as ``#map-fill-flyout`` (SNOW-656).
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     pill_idx = content.index('id="basemap-pill"')
@@ -290,7 +290,7 @@ def test_bulletin_fill_control_is_in_the_help_tour() -> None:
     custom-area download — the roundel's own position in the stack.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     steps = re.findall(r'data-help-target="([^"]+)"', content)
@@ -310,7 +310,7 @@ def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
     down again.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     steps = re.findall(r'data-help-target="([^"]+)"', content)
@@ -322,7 +322,7 @@ def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
 def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'data-testid="map-legend-resorts"' in content
     assert "map-legend-pin" in content
@@ -340,7 +340,7 @@ def test_map_data_attribution_section_ships_hidden() -> None:
     this ticket was raised for.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     section_idx = content.index('id="map-attribution-section"')
@@ -362,7 +362,7 @@ def test_map_page_omits_zoom_indicator() -> None:
     The live zoom is exposed on the console instead (window.snowdeskMap).
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="map-zoom-indicator"' not in content
     assert 'id="map-zoom-indicator-value"' not in content
@@ -372,7 +372,7 @@ def test_map_page_omits_zoom_indicator() -> None:
 def test_map_page_loads_assets() -> None:
     """The page references the MapLibre library, the map CSS, and map JS."""
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "maplibre-gl" in content
     assert "/static/css/map.css" in content
@@ -389,7 +389,7 @@ def test_map_page_injects_default_basemap_key() -> None:
     that has since been removed from the catalogue.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'data-default-basemap-key="swisstopo_winter"' in content
 
@@ -404,7 +404,7 @@ def test_map_page_renders_basemap_picker() -> None:
     pin the contract — JS resolves the active option at runtime.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="basemap-pill"' in content
     assert 'id="basemap-menu"' in content
@@ -424,7 +424,7 @@ def test_map_view_passes_basemap_catalogue() -> None:
     the catalogue from settings inline.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     ctx = response.context
     assert "basemaps" in ctx
     assert "default_basemap_key" in ctx
@@ -471,7 +471,7 @@ def test_map_page_renders_basemap_countries_on_every_picker_row() -> None:
     sync-status module loads before the map bundle.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     for key in ("openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"):
         codes = " ".join(settings.BASEMAP_COUNTRIES[key])
@@ -486,7 +486,7 @@ def test_map_view_passes_basemap_countries_in_context() -> None:
     provider rows already use.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     by_key = {bm["key"]: bm for bm in response.context["basemaps"]}
     assert by_key["openfreemap_liberty"]["countries"] == "ch fr at it"
     assert by_key["swisstopo_winter"]["countries"] == "ch"
@@ -517,7 +517,7 @@ def test_map_page_accepts_date_query_param() -> None:
     present in the rendered markup.
     """
     client = Client()
-    response = client.get(reverse("public:home") + "?d=2026-02-15")
+    response = client.get(reverse("public:map") + "?d=2026-02-15")
     assert response.status_code == 200
     content = response.content.decode()
     assert "data-season-start=" in content
@@ -535,7 +535,7 @@ def test_map_page_renders_the_area_content_endpoint_and_its_day_reach() -> None:
     plan reaches — the client cannot derive either, and a missing
     attribute silently narrows a download rather than failing it.
     """
-    content = Client().get(reverse("public:home")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
 
     assert f'data-area-content-url="{reverse("api:area_content")}"' in content
     assert f'data-content-past-days="{settings.OFFLINE_CONTENT_PAST_DAYS}"' in content
@@ -552,7 +552,7 @@ def test_map_page_renders_unified_time_controls() -> None:
     (#region-readout) which is part of the season ribbon.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="scrubber-play"' in content
     assert 'id="map-date-pill"' not in content
@@ -570,7 +570,7 @@ def test_map_page_renders_timelapse_transport_buttons() -> None:
     are absent.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="scrubber-skip-start"' in content
     assert 'id="scrubber-reverse"' in content
@@ -594,7 +594,7 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
     stale data" reports that motivated this rewrite.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'id="offline-toggle"' not in content
     assert "data-offline-manifest-url" not in content
@@ -610,7 +610,7 @@ def test_map_page_no_offline_toggle_or_precache_url() -> None:
 def test_map_page_inherits_pwa_manifest_link() -> None:
     """SNOW-79: every public page (incl. /) links the manifest from base.html."""
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'rel="manifest"' in content
     assert "manifest.webmanifest" in content
@@ -625,7 +625,7 @@ def test_map_page_loads_vendored_maplibre_assets() -> None:
     no longer depends on an external CDN at runtime or in the CSP allow-list.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "maplibre-gl.min" in content
     assert "maplibre-gl.css" in content
@@ -642,7 +642,7 @@ def test_map_page_renders_scrubber_loading_state() -> None:
     pre-existing nodes regardless of fetch timing.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert 'data-state="loading"' in content
     assert "season-scrubber-loading" in content
@@ -671,7 +671,7 @@ def test_map_layer_menu_section_order() -> None:
     stale heading beside a new one is exactly the drift this pins.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     # Each label is unique in the rendered output; assert relative order.
@@ -712,7 +712,7 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
     "bulletins", and only the two Basemap overlay rows carry "Display ".
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     start = content.index('id="basemap-menu"')
     rows = [
@@ -769,7 +769,7 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
     ``test_the_two_dotless_rows_carry_no_dot``.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     for key in (
@@ -806,7 +806,7 @@ def test_the_two_dotless_rows_carry_no_dot() -> None:
     that question gets no dot rather than a permanently blank one.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     for key in ("slope", "downloads"):
         key_idx = content.index(f'data-overlay-key="{key}"')
@@ -835,7 +835,7 @@ def test_map_layer_menu_holds_every_user_data_row() -> None:
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     for key in ("favourites", "community_reports", "routes", "downloads"):
@@ -858,7 +858,7 @@ def test_basemap_menu_omits_sync_status_caption() -> None:
     ``#region-readout``, not a basemap-wide caption.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     assert 'id="basemap-sync-status"' not in content
@@ -887,7 +887,7 @@ class TestMapPageDataDrivenSeasonBounds:
         RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
 
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
 
         assert 'data-season-start="2025-12-10"' in content
@@ -900,7 +900,7 @@ class TestMapPageDataDrivenSeasonBounds:
         and data-season-end fall back to the calendar Nov 1 / May 31 window.
         """
         client = Client()
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content.decode()
 
         # Calendar fallback for the 2025/2026 season
@@ -922,7 +922,7 @@ def test_report_button_shown_for_anonymous_with_signin_cta() -> None:
     of the geolocation flow.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     # Button must be present so anonymous users can tap and see the sign-in CTA.
     assert "report-btn" in content
@@ -941,7 +941,7 @@ def test_report_button_shown_for_account() -> None:
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "report-btn" in content
     assert "report-sheet" in content
@@ -960,7 +960,7 @@ def test_report_eligible_true_for_verified_user() -> None:
     AccountFactory.create(user=user, is_verified=True)
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "report-btn" in content
     assert 'data-report-eligible="true"' in content
@@ -981,7 +981,7 @@ def test_report_list_url_is_the_bare_list_endpoint() -> None:
     AccountFactory.create(user=user, is_verified=True)
     client = Client()
     client.force_login(user)
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     assert f'data-report-list-url="{reverse("observations:list")}"' in content
     assert "?variant=" not in content
@@ -1000,7 +1000,7 @@ def test_report_unverified_for_authenticated_unverified_user() -> None:
     AccountFactory.create(user=user, is_verified=False)
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
     assert "report-btn" in content
     assert 'data-report-eligible="false"' in content
@@ -1043,7 +1043,7 @@ def test_every_map_control_carries_the_shared_hover_affordance(
     copy of an existing one — shipping without it.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     occurrences = [
         classes
@@ -1142,7 +1142,7 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
     than left to the comment above the rule.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     counter = _CollapsibleChildCounter()
     counter.feed(content)
@@ -1175,7 +1175,7 @@ def test_slope_row_renders_when_tile_url_configured() -> None:
     verb is what separates "additionally draw this" from "choose this".
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     assert 'data-overlay-key="slope"' in content
     assert "Display slope angles" in content
@@ -1203,7 +1203,7 @@ def test_terrain_row_absent_without_tile_url() -> None:
     is no longer a section's only row.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     assert 'data-overlay-key="slope"' not in content
     assert "Display slope angles" not in content
@@ -1226,7 +1226,7 @@ def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
     not govern.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     start = content.index('id="basemap-menu-group-basemap"')
     group = content[start : content.index("</ul>", start)]
@@ -1250,7 +1250,7 @@ def test_slope_legend_section_renders_with_its_caveat() -> None:
     so the heading being a link is the load-bearing part.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     assert 'data-testid="map-legend-slope"' in content
     for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
@@ -1389,7 +1389,7 @@ def test_map_calendar_toggle_is_the_date_control() -> None:
     date at all.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     toggle = _one(
@@ -1412,7 +1412,7 @@ def test_map_calendar_toggle_points_at_the_popup() -> None:
     only ever flips it.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     toggle = _one(
@@ -1434,7 +1434,7 @@ def test_map_calendar_ships_hidden() -> None:
     is deferred.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
@@ -1453,7 +1453,7 @@ def test_map_calendar_carries_the_season_window() -> None:
     band the calendar draws sits somewhere the scrubber's track does not.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
@@ -1475,7 +1475,7 @@ def test_map_calendar_carries_translated_labels() -> None:
     row the only route those words have onto the page.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
@@ -1511,7 +1511,7 @@ def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
         RegionDayRatingFactory.create(region=region, date=day)
 
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     scrubber = _one(
         r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the season scrubber"
@@ -1552,7 +1552,7 @@ def test_scrubber_is_revealed_only_for_a_day_inside_the_season() -> None:
         )
         return _one(r'data-in-season="(\w+)"', scrubber, "the in-season flag")
 
-    home = reverse("public:home")
+    home = reverse("public:map")
     # No ?d= — today stands in, and today is inside this season.
     assert in_season(home) == "true"
     assert in_season(f"{home}?d=2026-02-14") == "true"
@@ -1582,7 +1582,7 @@ def test_help_roundel_moved_out_of_the_overlay_column() -> None:
     which is what catches the two going out of step.
     """
     client = Client()
-    content = client.get(reverse("public:home")).content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
     ancestors = _ancestor_ids(content, "map-help-toggle")
     assert "map-legend" in ancestors, (
@@ -1611,7 +1611,7 @@ def test_map_calendar_panel_lives_in_the_bottom_left_stack() -> None:
     trap it — which is the half of the old contract that survives.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
 
     ancestors = _ancestor_ids(response.content.decode(), "map-calendar")
     assert "map-legend" in ancestors, (
@@ -1636,7 +1636,7 @@ def test_map_calendar_toggle_sits_on_the_bottom_row_beside_the_scrubber() -> Non
     control there is — so it cannot live inside the thing that disappears.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     assert "map-date-row" in _ancestor_ids(content, "map-calendar-toggle")
@@ -1659,7 +1659,7 @@ def test_map_calendar_is_in_the_help_tour() -> None:
     the top down — help, legend, and the date control on the bottom line.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     steps = re.findall(r'data-help-target="([^"]+)"', content)
@@ -1688,7 +1688,7 @@ def test_downloads_row_template_renders_a_pressable_name() -> None:
     exactly what a server-side assertion catches.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     row_template = content.split('id="map-downloads-row-template"', 1)[1].split(
@@ -1711,7 +1711,7 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     and read back through ``window.pwaStrings``.
     """
     client = Client()
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     content = response.content.decode()
 
     strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
@@ -1746,7 +1746,7 @@ def test_the_no_fall_passage_strings_are_rendered_and_mirrored() -> None:
     English literal to a translated page and nothing fails. This
     assertion is the only guard there is.
     """
-    content = Client().get(reverse("public:home")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
     template = content.split('id="map-strings-template"', 1)[1]
     strings = template.split("</template>", 1)[0]
     fallbacks = _MAP_STATE_JS.read_text(encoding="utf-8")
@@ -1764,7 +1764,7 @@ def test_the_passage_wording_separates_the_split_from_the_ring() -> None:
     nearly every passage carries a ring as well. The ring's words say the
     terrain AROUND you can release; the passage's say you are ON it.
     """
-    content = Client().get(reverse("public:home")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
     template = content.split('id="map-strings-template"', 1)[1]
     strings = template.split("</template>", 1)[0]
 
@@ -1782,7 +1782,7 @@ def test_the_route_key_names_the_two_kinds_of_leg() -> None:
     SNOW-1017 redrew a saved route as its legs, so the key that explained
     six slope colours would now explain a line nobody can see.
     """
-    content = Client().get(reverse("public:home")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
     section = content.split('id="map-route-legs-section"', 1)[1]
     key = section.split("</section>", 1)[0]
 
@@ -1801,7 +1801,7 @@ def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
     A key row for a mark that is not on the map sends the reader looking
     for something that is not there.
     """
-    content = Client().get(reverse("public:home")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
     section = content.split('id="map-route-legs-section"', 1)[1]
     key = section.split("</section>", 1)[0]
 
@@ -1826,7 +1826,7 @@ class TestFakeLocationGate:
     """
 
     def _flag(self, client: Client) -> str:
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
         marker = 'data-fake-location-allowed="'
         return content.split(marker, 1)[1].split('"', 1)[0]
 
