@@ -362,3 +362,83 @@ class TestAriaLabel:
         chart = build_hourly_chart(_day())
         assert chart is not None
         assert "daylight" not in chart["aria_label"]
+
+
+class TestFullWidthLayout:
+    """What the chart emits so it can span the column (SNOW-1049)."""
+
+    def test_arrows_carry_a_position_and_the_bearing_as_rotation(self) -> None:
+        """
+        An arrow is an HTML glyph, so it needs a place and an angle.
+
+        The series blows from 270° all day, so every block's arrow is
+        rotated by 270 — the bearing itself, pointing at the source.
+        """
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+
+        assert len(chart["arrows"]) == 8
+        for arrow in chart["arrows"]:
+            assert set(arrow) == {"left", "rotation", "label"}
+            assert isinstance(arrow["rotation"], str)
+            assert float(arrow["rotation"]) == pytest.approx(270)
+            assert arrow["label"] == "W"
+
+    def test_arrows_sit_under_their_wind_figures(self) -> None:
+        """
+        Arrows and figures share one x-scale, so they stay aligned.
+
+        Both are placed at the block centre as a per-cent of the drawing;
+        a different denominator for either would slide the arrows out from
+        under their numbers as the chart widens.
+        """
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+
+        assert [a["left"] for a in chart["arrows"]] == [
+            label["left"] for label in chart["wind_labels"]
+        ]
+
+    def test_the_plots_are_sized_from_their_authored_geometry(self) -> None:
+        """
+        Each plot keeps the drawing's ratio and stops at its authored height.
+
+        606 units wide, and 200, 110 and 92 tall; the direction row is a
+        fixed 30px strip.
+        """
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+
+        assert chart["aspect_temp"] == "606 / 200"
+        assert chart["aspect_precip"] == "606 / 110"
+        assert chart["aspect_wind"] == "606 / 92"
+        assert chart["max_h_temp"] == "200px"
+        assert chart["max_h_precip"] == "110px"
+        assert chart["max_h_wind"] == "92px"
+        assert chart["wind_height"] == "92"
+        assert chart["direction_height"] == "30px"
+
+    def test_the_gutter_labels_anchor_at_their_ticks(self) -> None:
+        """
+        Each gutter's labels anchor at the outer end of its ticks.
+
+        The left ticks start at 35 units, which is 571 units from the
+        drawing's right edge (a CSS ``right``); the right ticks end at 565.
+        """
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+
+        assert chart["left_gutter_right"] == "94.22%"
+        assert chart["right_gutter_left"] == "93.23%"
+
+    def test_the_new_fields_are_dot_decimal_strings(self) -> None:
+        """A comma-decimal locale must not reach any of them."""
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+
+        for value in (chart["left_gutter_right"], chart["right_gutter_left"]):
+            assert isinstance(value, str)
+            assert "," not in value
+        for arrow in chart["arrows"]:
+            assert "," not in arrow["left"]
+            assert "," not in arrow["rotation"]
