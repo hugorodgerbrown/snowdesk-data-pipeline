@@ -15,7 +15,9 @@ trip_share_route_geojson (GET /trips/s/<token>/route.geojson):
   429 past the (token, IP) rate limit.
 
 Plus what both answer with: geometry from the SNAPSHOT, surviving the
-source route's deletion; a ``page_url`` addressed the way its own caller
+source route's deletion, carrying the terrain model's heights where the
+snapshot's slope record has them (SNOW-1043) — as does the trip page's own
+inline payload and its bulletin panel; a ``page_url`` addressed the way its own caller
 may address the trip (uuid for a participant, token for a link-holder);
 and ``Cache-Control: no-store``.
 
@@ -27,6 +29,8 @@ is False under the development settings this suite runs on.
 from __future__ import annotations
 
 import datetime
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -35,8 +39,13 @@ from django.test import Client
 from django.urls import reverse
 from freezegun import freeze_time
 
+from apps.routes.services.canonical import CANONICAL_DIR
+from apps.routes.services.gpx import parse_gpx
+from apps.routes.services.terrain_heights import climb_totals, terrain_points
+from apps.trips.models import Trip
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
+from apps.trips.views import _bulletin_readings, _trip_map_payload
 from tests.factories import TripFactory, UserFactory
 
 # Well before TripFactory's default date, so a minted link is live.
@@ -259,3 +268,93 @@ class TestTheControlOnThePage:
         body = response.content.decode()
         assert f"?trip_share={trip.share_token}" in body
         assert str(trip.uuid) not in body
+
+
+_SLOPE_RECORD = (
+    Path(__file__).parent.parent
+    / "routes"
+    / "fixtures"
+    / "slope_records"
+    / "mont-fort-backside.json"
+)
+
+
+def _backside_trip(*, with_heights: bool = True) -> Trip:
+    """Return a trip whose snapshot is the Mont Fort – Backside tour.
+
+    Args:
+        with_heights: Whether the snapshot's slope record keeps its
+            ``heights`` — False is a record sampled before SNOW-1043.
+
+    Returns:
+        The trip, with the recorded ascent and descent in its columns.
+
+    """
+    parsed = parse_gpx((CANONICAL_DIR / "mont-fort-backside.gpx").read_bytes())
+    record = json.loads(_SLOPE_RECORD.read_text())
+    if not with_heights:
+        del record["heights"]
+    return TripFactory.create(
+        points=parsed.points,
+        bounds=parsed.bounds,
+        ascent_m=parsed.ascent_m,
+        descent_m=parsed.descent_m,
+        slope_samples=record,
+    )
+
+
+@freeze_time(_NOW)
+@pytest.mark.django_db
+class TestTheHeightsAreTheModels:
+    """SNOW-1043: a trip's heights on the wire come from the terrain model."""
+
+    def test_the_map_endpoint_serves_model_heights(self, client: Client) -> None:
+        """Coordinates and totals follow the model, not the altimeter."""
+        trip = _backside_trip()
+        client.force_login(trip.created_by)
+
+        response = client.get(reverse("trips:route_geojson", args=[trip.uuid]))
+
+        feature = _route_feature(response.json())
+        points = terrain_points(trip.points, trip.slope_samples)
+        ascent_m, descent_m = climb_totals(points)
+        assert feature["geometry"]["coordinates"] == points
+        assert feature["properties"]["ascent_m"] == ascent_m
+        assert feature["properties"]["descent_m"] == descent_m
+        assert ascent_m is not None and trip.ascent_m is not None
+        assert ascent_m < trip.ascent_m
+
+    def test_the_inline_payload_serves_model_heights(self) -> None:
+        """The trip page's own map reads the same series as the map's."""
+        trip = _backside_trip()
+
+        route = _trip_map_payload(trip)["route"]
+
+        points = terrain_points(trip.points, trip.slope_samples)
+        assert route["geometry"]["coordinates"] == points
+        assert (route["properties"]["ascent_m"], route["properties"]["descent_m"]) == (
+            climb_totals(points)
+        )
+
+    def test_a_record_without_heights_serves_the_snapshot(self) -> None:
+        """A record sampled before SNOW-1043 changes nothing."""
+        trip = _backside_trip(with_heights=False)
+
+        route = _trip_map_payload(trip)["route"]
+
+        assert route["geometry"]["coordinates"] == trip.points
+        assert route["properties"]["ascent_m"] == trip.ascent_m
+        assert route["properties"]["descent_m"] == trip.descent_m
+
+    def test_the_bulletin_panel_reads_model_heights(self) -> None:
+        """The elevation band is matched on the model's height."""
+        trip = _backside_trip()
+
+        with patch(
+            "apps.trips.views.display_readings", return_value=[]
+        ) as display_readings:
+            _bulletin_readings(trip)
+
+        assert display_readings.call_args.args[0] == terrain_points(
+            trip.points, trip.slope_samples
+        )

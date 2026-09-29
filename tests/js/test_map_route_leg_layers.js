@@ -56,6 +56,9 @@ const SLOPE = {
   // The same steep segment carries a fall-line mark (the ground faces
   // 205°). Since SNOW-1019 the map draws none; the record keeps it.
   fall_lines: [{ i: 1, deg: 205 }],
+  // SNOW-1046: the steep segment banks 40° to the left, so it carries the
+  // one steep-ground shadow, on the left of the line.
+  banks: [2, -40, null],
 };
 
 /** Two legs over the sampled route: up the first segment, down the rest. */
@@ -241,7 +244,20 @@ function stubMapLibre() {
         setData: (data) => { sources.get(id).data = data; },
       });
     },
-    addLayer: (def) => { layers.set(def.id, def); },
+    // Honours MapLibre's `beforeId`, so the Map's insertion order is the
+    // paint order and a layer-order assertion means what it says.
+    addLayer: (def, beforeId) => {
+      if (!beforeId || !layers.has(beforeId)) {
+        layers.set(def.id, def);
+        return;
+      }
+      const entries = [...layers.entries()];
+      layers.clear();
+      for (const [id, layer] of entries) {
+        if (id === beforeId) layers.set(def.id, def);
+        layers.set(id, layer);
+      }
+    },
     removeLayer: (id) => layers.delete(id),
     removeSource: (id) => sources.delete(id),
     moveLayer: () => {},
@@ -641,6 +657,38 @@ describe('tapping a legged route', () => {
   });
 });
 
+describe('the steep-ground shadow (SNOW-1046)', () => {
+  it('holds one run for the owned route and none for the pending share', () => {
+    const data = sources.get('routes-steep').data;
+
+    expect(data.features.map((f) => f.properties)).toEqual([
+      { uuid: 'sampled-route', i: 2, side: -1 },
+    ]);
+    expect(data.features[0].geometry.coordinates).toEqual(SLOPE.points.slice(1, 3));
+  });
+
+  it('offsets to the downhill side by the sign of the bank', () => {
+    const shadow = layers.get('routes-steep-shadow');
+
+    expect(shadow.source).toBe('routes-steep');
+    expect(shadow.paint['line-offset']).toEqual(['*', ['get', 'side'], 4.5]);
+    expect(shadow.paint['line-width']).toBe(3);
+  });
+
+  it('sits under every route stroke and is reached by the overlay switch', () => {
+    const ids = [...layers.keys()];
+    const shadow = ids.indexOf('routes-steep-shadow');
+
+    // Under the flat line's casing as well as the legs': a sampled route
+    // with no drawable legs is drawn by `routes-line` and still has runs.
+    expect(shadow).toBeLessThan(ids.indexOf('routes-line-casing'));
+    expect(shadow).toBeLessThan(ids.indexOf('routes-line'));
+    expect(shadow).toBeLessThan(ids.indexOf('routes-leg-casing'));
+    expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-steep-shadow');
+    expect(layers.get('routes-steep-shadow').layout.visibility).toBe('visible');
+  });
+});
+
 describe('opening a leg on the rail', () => {
   /** The newest opacity set on one layer. */
   const opacityOf = (id) => layers.get(id).paint['line-opacity'];
@@ -656,11 +704,14 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
+    expect(opacityOf('routes-steep-shadow'))
+      .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
 
     cursor.closeLeg();
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
+    expect(opacityOf('routes-steep-shadow')).toBe(0.55);
     rail.state.cursor = null;
   });
 
@@ -697,8 +748,11 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
+    expect(opacityOf('routes-steep-shadow')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
-    expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
+    expect(paintCalls.filter(
+      ([id]) => id.startsWith('routes-leg-') || id === 'routes-steep-shadow',
+    )).toEqual([]);
 
     cursor.closeLeg();
     rail.state.cursor = null;

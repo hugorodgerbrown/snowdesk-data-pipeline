@@ -46,6 +46,7 @@ from apps.regions.models import (
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route, RouteShare
+from apps.routes.services.slope_segments import stride_coordinates
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
 
@@ -956,3 +957,41 @@ class WeatherFactory(factory.django.DjangoModelFactory[Weather]):
     # LazyFunction, not a bare [] — a mutable class attribute would be the
     # same list object on every row the factory builds.
     forecast = factory.LazyFunction(list)
+
+
+# SNOW-1043: a short track and a slope record whose model heights disagree
+# with it — the shape of a drifting altimeter, small enough to work by
+# hand. The track is 0.001° of meridian (about 111 m) recorded from 2100 m
+# to 2300 m; the model puts the same ground at 2000 m rising to 2040 m.
+# The stride walk lands five boundaries on it (0, 25, 50, 75 and the end,
+# which absorbs the stub), so the model's figures are 40.0 m of ascent and
+# 0.0 m of descent where the recording says 200.0 m and 0.0 m.
+DRIFTING_TRACK: list[list[float | None]] = [
+    [7.0, 46.0, 2100.0],
+    [7.0, 46.0005, 2200.0],
+    [7.0, 46.001, 2300.0],
+]
+
+
+def drifting_track_record() -> dict[str, object]:
+    """Return a slope record for ``DRIFTING_TRACK`` carrying model heights.
+
+    Returns:
+        A record of the shape ``build_slope_samples`` writes: five
+        boundaries, four gentle segments, an empty crux list, a summary
+        and the model's ``heights``.
+
+    """
+    boundaries = [
+        [round(lon, 6), round(lat, 6)]
+        for lon, lat in stride_coordinates(DRIFTING_TRACK, 25.0)
+    ]
+    return {
+        "window_m": 10.0,
+        "stride_m": 25.0,
+        "grid": "snowdesk-terrain-5m-3035",
+        "points": boundaries,
+        "segments": [{"angle_deg": 12.0, "aspect_deg": 180.0}] * 4,
+        "cruxes": [],
+        "heights": [2000.0, 2010.0, 2020.0, 2030.0, 2040.0],
+    }

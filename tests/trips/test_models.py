@@ -32,10 +32,12 @@ from freezegun import freeze_time
 
 from apps.trips.models import Trip, TripParticipant
 from tests.factories import (
+    DRIFTING_TRACK,
     RouteFactory,
     TripFactory,
     TripParticipantFactory,
     UserFactory,
+    drifting_track_record,
 )
 
 
@@ -279,3 +281,25 @@ class TestTripDuration:
         trip = TripFactory.create(duration=datetime.timedelta(0))
 
         assert trip.duration_hm is None
+
+
+@pytest.mark.django_db
+class TestTripClimb:
+    """``Trip.climb`` — the figures every surface shows (SNOW-1043)."""
+
+    def test_model_heights_replace_the_stored_figures(self) -> None:
+        """With heights, the terrain model's totals."""
+        trip = TripFactory.create(
+            points=DRIFTING_TRACK,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+
+        assert trip.climb == (40.0, 0.0)
+
+    def test_without_heights_the_stored_figures_stand(self) -> None:
+        """An unsampled trip shows what the parser measured."""
+        trip = TripFactory.create(ascent_m=850.0, descent_m=1100.0, slope_samples=None)
+
+        assert trip.climb == (850.0, 1100.0)

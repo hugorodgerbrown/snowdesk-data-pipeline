@@ -97,6 +97,7 @@ from apps.routes.services.route_bulletin import display_readings
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
+from apps.routes.services.terrain_heights import terrain_points
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services.participants import (
@@ -195,9 +196,11 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     authenticated-looking request to draw its own map would be a page that
     shows nothing to the person it was sent to.
 
-    ``points`` is emitted verbatim — the snapshot stores ``[lon, lat,
-    ele]`` in GeoJSON axis order already, so there is no transform here
-    and no chance of an axis swap creeping in.
+    ``points`` is emitted in the snapshot's own GeoJSON axis order, so
+    there is no axis transform here. When the snapshot's slope record has
+    model heights it is the terrain track instead — the snapshot merged
+    with the record's boundary points, on the model's heights (SNOW-1043,
+    see ``_trip_heights``) — and the ascent and descent are summed over it.
 
     Args:
         trip: The trip to describe.
@@ -209,15 +212,15 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     """
     meeting = trip.meeting_point
     slope = compact_slope(trip.slope_samples)
+    points, ascent_m, descent_m = _trip_heights(trip)
     return {
         "route": {
             "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": trip.points},
+            "geometry": {"type": "LineString", "coordinates": points},
             "properties": {
                 "distance_m": trip.distance_m,
-                # None passes straight through: "unknown", not zero.
-                "ascent_m": trip.ascent_m,
-                "descent_m": trip.descent_m,
+                "ascent_m": ascent_m,
+                "descent_m": descent_m,
                 # SNOW-962: the same two keys the routes feed carries, on
                 # the snapshot's own record. OMITTED ENTIRELY rather than
                 # nulled when the trip has never been sampled — the map
@@ -247,6 +250,28 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     }
 
 
+def _trip_heights(
+    trip: Trip,
+) -> tuple[list[list[float | None]], float | None, float | None]:
+    """Return the trip's track on model heights, with its climb totals.
+
+    SNOW-1043. The snapshot's third ordinate is the recording device's
+    altimeter, which drifts; ``terrain_points`` puts the terrain model's
+    height in its place wherever the snapshot's slope record has one. The
+    totals are ``Trip.climb`` — the rule the trip templates read too — so
+    the figures, the profile and the cards describe one series.
+
+    Args:
+        trip: The trip to describe.
+
+    Returns:
+        ``(points, ascent_m, descent_m)``.
+
+    """
+    ascent_m, descent_m = trip.climb
+    return terrain_points(trip.points, trip.slope_samples), ascent_m, descent_m
+
+
 def _bulletin_readings(trip: Trip) -> list[dict[str, Any]]:
     """Return what each region's bulletin says about this trip's line.
 
@@ -268,7 +293,11 @@ def _bulletin_readings(trip: Trip) -> list[dict[str, Any]]:
         line meets nothing.
 
     """
-    return display_readings(trip.points, trip.slope_samples, trip.date)
+    return display_readings(
+        terrain_points(trip.points, trip.slope_samples),
+        trip.slope_samples,
+        trip.date,
+    )
 
 
 def _basemap_context() -> dict[str, Any]:
@@ -381,6 +410,7 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
+    points, ascent_m, descent_m = _trip_heights(trip)
     return {
         "type": "FeatureCollection",
         "features": [
@@ -390,7 +420,7 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
                     # Stored in GeoJSON axis order already — see
                     # ``_trip_map_payload`` and ``Trip.points``' help_text.
                     "type": "LineString",
-                    "coordinates": trip.points,
+                    "coordinates": points,
                 },
                 "properties": {
                     "kind": "route",
@@ -398,9 +428,8 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
                     "page_url": page_url,
                     "bounds": trip.bounds,
                     "distance_m": trip.distance_m,
-                    # None passes straight through: "unknown", not zero.
-                    "ascent_m": trip.ascent_m,
-                    "descent_m": trip.descent_m,
+                    "ascent_m": ascent_m,
+                    "descent_m": descent_m,
                 },
             },
             {

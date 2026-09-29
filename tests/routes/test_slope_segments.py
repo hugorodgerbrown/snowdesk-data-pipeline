@@ -12,6 +12,8 @@ Covers ``apps.routes.services.slope_segments``:
     N segments, a mixed known/unknown track keeping the reason it was given,
     an all-unavailable run storing NOTHING rather than a record of
     nothing, and an outage ENDING the walk rather than being waited out;
+    and the SNOW-1043 ``heights`` list — one model height per boundary, a
+    null where the model has no ground, no key at all over an outage;
   - ``_worker_sample_route_slopes``: the write, the one-column save, and a
     route deleted between the enqueue and the run being an expected race;
   - ``create_route``: the enqueue happens exactly once, and OUTSIDE the
@@ -41,7 +43,7 @@ from unittest.mock import patch
 import pytest
 from django.db import connection
 
-from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
+from apps.locations.services.terrain import TerrainHeight, TerrainSlope, TerrainUnknown
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.routes.models import Route
 from apps.routes.services.routes import create_route
@@ -88,6 +90,37 @@ def _silent_crux_probes() -> Any:
         return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _flat_terrain_heights() -> Any:
+    """Answer every SNOW-1043 height sample with one fixed height.
+
+    ``sample_height`` is imported into ``slope_segments`` by name, so this
+    patches that copy. Unpatched it would reach the closed port the
+    ``_no_live_terrain_origin`` fixture installs and answer UNAVAILABLE,
+    which omits ``heights`` — harmless to the tests that do not read it,
+    but a fixed answer keeps every record here the same shape.
+    """
+    with patch(
+        "apps.routes.services.slope_segments.sample_height",
+        return_value=_height(2000.04),
+    ):
+        yield
+
+
+def _height(height_m: float | None, reason: TerrainUnknown | None = None) -> Any:
+    """Return a TerrainHeight carrying a height or a reason.
+
+    Args:
+        height_m: The height the sampler should report, or None.
+        reason: Why there is none, when ``height_m`` is None.
+
+    Returns:
+        A height sample.
+
+    """
+    return TerrainHeight(height_m=height_m, unknown=reason, source=None)
 
 
 def _grid() -> TerrainGrid:
@@ -373,6 +406,134 @@ class TestBuildSlopeSamples:
         # after three segments' worth, which is a small multiple of six.
         assert probes <= 6 * _UNAVAILABLE_RUN_LIMIT
         assert "cruxes" not in record
+
+    def test_the_record_carries_one_height_per_boundary(self) -> None:
+        """SNOW-1043: N + 1 heights, rounded to the decimetre."""
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert len(record["heights"]) == len(record["points"])
+        assert set(record["heights"]) == {2000.0}
+
+    def test_heights_are_sampled_at_the_boundaries(self) -> None:
+        """The coordinates asked about are the record's own ``points``."""
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_height",
+                return_value=_height(1500.0),
+            ) as sampler,
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        asked = [
+            [round(call.args[1], 6), round(call.args[0], 6)]
+            for call in sampler.call_args_list
+        ]
+        assert asked == record["points"]
+
+    def test_ground_the_model_does_not_cover_is_a_null_height(self) -> None:
+        """A permanent unknown is a per-boundary null, and the key stays."""
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        answers = iter(
+            [
+                _height(None, TerrainUnknown.OUTSIDE_COVERAGE),
+                _height(None, TerrainUnknown.NO_DATA),
+            ]
+        )
+
+        def _answer(*args: Any, **kwargs: Any) -> Any:
+            return next(answers, _height(1800.0))
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_height",
+                side_effect=_answer,
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert record["heights"][:3] == [None, None, 1800.0]
+
+    def test_an_outage_during_the_height_pass_stores_no_heights_key(self) -> None:
+        """An outage is no key at all, never a list of nulls.
+
+        A single unavailable answer is enough: a null would be filed as
+        "no ground here" and the device's drifting height kept for good,
+        where the missing key leaves the row a backfill candidate.
+        """
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        answers = iter([_height(None, TerrainUnknown.UNAVAILABLE)])
+
+        def _answer(*args: Any, **kwargs: Any) -> Any:
+            return next(answers, _height(1800.0))
+
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_height",
+                side_effect=_answer,
+            ),
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert "heights" not in record
+        assert record["segments"][0]["angle_deg"] == 12.0
+
+    def test_the_height_pass_gives_up_on_a_sustained_outage(self) -> None:
+        """Three unavailable answers in a row end the pass."""
+        route = RouteFactory.create(points=MERIDIAN_TRACK)
+        with (
+            patch(
+                "apps.routes.services.slope_segments.load_grid", return_value=_grid()
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_slope",
+                return_value=_known(12.0),
+            ),
+            patch(
+                "apps.routes.services.slope_segments.sample_height",
+                return_value=_height(None, TerrainUnknown.UNAVAILABLE),
+            ) as sampler,
+        ):
+            record = build_slope_samples(route.points, f"route pk={route.pk}")
+
+        assert record is not None
+        assert "heights" not in record
+        assert sampler.call_count == _UNAVAILABLE_RUN_LIMIT
 
     def test_the_record_carries_its_summary(self) -> None:
         """SNOW-961: written here, where the exact segment lengths exist.

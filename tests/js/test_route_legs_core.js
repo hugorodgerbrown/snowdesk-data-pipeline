@@ -8,6 +8,9 @@
  * numbered markers in track order; a passage takes the direction of the
  * leg it lies in; and the selection's opacity expression matches one leg
  * of one route, falling back to a plain number when nothing is open.
+ * SNOW-1046 adds the steep-ground shadow: a run is consecutive segments
+ * at 40° or more on one side, ended by a side change, an unknown side or
+ * a leg boundary.
  *
  * map.js's wiring of these — the layers, the filters, the dimming — is
  * tests/js/test_map_route_leg_layers.js.
@@ -277,6 +280,116 @@ describe('withDrawableLegs', () => {
 
   it('passes a missing payload straight through', () => {
     expect(core.withDrawableLegs(null)).toBeNull();
+  });
+});
+
+/** Five 25 m points and four segments, in the legs' segment index space. */
+const SLOPE_POINTS = [
+  [7.0, 46.0],
+  [7.0, 46.0002],
+  [7.0, 46.0004],
+  [7.0, 46.0006],
+  [7.0, 46.0008],
+];
+
+describe('steepRuns', () => {
+  it('starts at 40° inclusive, not at 39.9°', () => {
+    const slope = { angles: [39.9, 40, 12, 12], banks: [20, 20, 5, 5] };
+
+    expect(core.steepRuns(slope, null)).toEqual([{ from: 1, to: 1, side: 1, i: null }]);
+    expect(core.STEEP_MIN_DEG).toBe(40);
+  });
+
+  it('counts a single steep segment as a run', () => {
+    const slope = { angles: [12, 12, 45, 12], banks: [3, 3, -30, 3] };
+
+    expect(core.steepRuns(slope, null)).toEqual([{ from: 2, to: 2, side: -1, i: null }]);
+  });
+
+  it('joins consecutive steep segments on one side', () => {
+    const slope = { angles: [42, 44, 41, 10], banks: [-30, -35, -20, 2] };
+
+    expect(core.steepRuns(slope, null)).toEqual([{ from: 0, to: 2, side: -1, i: null }]);
+  });
+
+  it('splits where the side changes, so a shadow never crosses the line', () => {
+    const slope = { angles: [42, 44, 41, 45], banks: [30, 25, -20, -40] };
+
+    expect(core.steepRuns(slope, null)).toEqual([
+      { from: 0, to: 1, side: 1, i: null },
+      { from: 2, to: 3, side: -1, i: null },
+    ]);
+  });
+
+  it('ends a run at a null or zero bank, whose side is unknown', () => {
+    const slope = { angles: [42, 44, 41, 45], banks: [30, null, 30, 0] };
+
+    expect(core.steepRuns(slope, null)).toEqual([
+      { from: 0, to: 0, side: 1, i: null },
+      { from: 2, to: 2, side: 1, i: null },
+    ]);
+  });
+
+  it('splits at a leg boundary and tags each run with its leg', () => {
+    const slope = { angles: [42, 44, 41, 45], banks: [30, 30, 30, 30] };
+
+    expect(core.steepRuns(slope, LEGS)).toEqual([
+      { from: 0, to: 1, side: 1, i: 1 },
+      { from: 2, to: 3, side: 1, i: 2 },
+    ]);
+  });
+
+  it('takes its threshold from opts', () => {
+    const slope = { angles: [35, 30], banks: [10, 10] };
+
+    expect(core.steepRuns(slope, null, { minDeg: 35 }))
+      .toEqual([{ from: 0, to: 0, side: 1, i: null }]);
+  });
+
+  it('is empty for an unknown angle, and for a record with no banks', () => {
+    expect(core.steepRuns({ angles: [null, 50], banks: [30, null] }, null)).toEqual([]);
+    expect(core.steepRuns({ angles: [50, 50] }, null)).toEqual([]);
+    expect(core.steepRuns(null, null)).toEqual([]);
+  });
+});
+
+describe('steepShadowCollection', () => {
+  const slope = {
+    points: SLOPE_POINTS,
+    angles: [45, 41, 12, 48],
+    banks: [-30, -25, 4, 35],
+  };
+
+  it('draws one line per run from the slope points, signed by the bank', () => {
+    const features = core.steepShadowCollection(routes({ slope })).features;
+
+    expect(features.map((f) => f.properties)).toEqual([
+      { uuid: 'r-1', i: 1, side: -1 },
+      { uuid: 'r-1', i: 2, side: 1 },
+    ]);
+    // Segment k runs points[k] to points[k + 1], so a run of 0-1 is three
+    // points and a single segment two.
+    expect(features[0].geometry).toEqual({
+      type: 'LineString', coordinates: SLOPE_POINTS.slice(0, 3),
+    });
+    expect(features[1].geometry.coordinates).toEqual(SLOPE_POINTS.slice(3, 5));
+  });
+
+  it('leaves a run on a route drawn flat without a leg', () => {
+    const features = core.steepShadowCollection(routes({ slope, legs: undefined })).features;
+
+    expect(features.map((f) => f.properties.i)).toEqual([null, null]);
+  });
+
+  it('draws nothing for a pending share', () => {
+    expect(core.steepShadowCollection(routes({ slope, pending: true })).features).toEqual([]);
+  });
+
+  it('draws nothing for an unsampled route, or halves that do not pair', () => {
+    expect(core.steepShadowCollection(routes()).features).toEqual([]);
+    const broken = { ...slope, points: SLOPE_POINTS.slice(0, 3) };
+    expect(core.steepShadowCollection(routes({ slope: broken })).features).toEqual([]);
+    expect(core.steepShadowCollection(null).features).toEqual([]);
   });
 });
 

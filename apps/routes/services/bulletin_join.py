@@ -26,16 +26,24 @@ stretches of a track fall inside a problem's own stated aspects and
 elevations, and stops there. The reader does the deciding, with the
 bulletin they were going to read anyway.
 
-**ELEVATION COMES FROM THE TRACK, AND THAT IS THE EXACT INVERSE OF
+**ELEVATION IS WHERE THE SKIER STOOD, AND THAT IS THE EXACT INVERSE OF
 SNOW-910'S RULE.** Steepness must never be read off the track's own
 elevation series, because a skin track zigzagging up a 38 degree face
 rises about 15 degrees along its own length. Where the skier IS, however,
-is precisely the track — a GPX's ``<ele>`` is a measurement of where the
-recorder stood — so the third ordinate of ``Route.points`` is the right
-and only source for the elevation band. Both rules follow from one
-principle: take each figure from the thing that actually carries it. They
-look contradictory side by side, which is why they are written down
-together here and in ``slope_segments``.
+is precisely the track, so the elevation band is read at the recorder's
+own coordinates. Both rules follow from one principle: take each figure
+from the thing that actually carries it. They look contradictory side by
+side, which is why they are written down together here and in
+``slope_segments``.
+
+**THE HEIGHT AT THAT COORDINATE IS THE MODEL'S** where the slope record
+has one, and the recorder's own ``<ele>`` only where it does not
+(SNOW-1043). The callers pass ``terrain_points`` rather than the stored
+track. A GPX's elevation is a barometric altimeter's reading, and an
+altimeter drifts: on the Mont Fort – Backside tour it reads 744 m above
+the ground 1.5 km in, which is enough to put a stretch of the route in
+the wrong elevation band and match it to the wrong problem. The
+coordinate is still the recorder's — only the height is replaced.
 
 **ASPECT COMES FROM THE GROUND**, and was stored for this by SNOW-910 —
 ``sample_slope`` computes it from the same kernel as the angle, so it

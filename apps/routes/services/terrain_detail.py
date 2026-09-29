@@ -29,18 +29,42 @@ points. Nothing is re-sampled either.
   unrounded chord bearing, so it is the figure ``compact_slope`` sends as
   ``banks`` before that rounds it to a whole degree.
 
-## The track gradient needs the route's points, not just the record
+## The track gradient reads the model's heights, the track's as fallback
 
-The record's boundaries are ``[lon, lat]`` only — the sampler reads the
-terrain and deliberately never the track's own elevation
-(``slope_segments``' module docstring). So each boundary's elevation is
-recovered by walking ``Route.points`` again with the sampler's own
-functions (``cumulative_distances``, ``stride_distances``) at the record's
-own ``stride_m``, and interpolating the third ordinate at each boundary
-distance. Using the same walk is what makes the recovered boundaries the
-stored ones; when the count does not match — the points are not the ones
-the record was sampled from — the gradient is None throughout rather than
-a figure placed against the wrong ground.
+Since SNOW-1043 the record carries ``heights``: the terrain model's height
+at every boundary, sampled by the same walk that placed the boundary. That
+is what the gradient is measured on. The track's own third ordinate is a
+barometric altimeter's reading, and an altimeter drifts — on the Mont Fort
+– Backside tour the recorded height starts 139 m above the ground and is
+744 m above it 1.5 km later, while the skier descends — so a gradient read
+from it measures the instrument as much as the track.
+
+The device series is still read, and for two reasons. A boundary the model
+has no height for (outside its coverage, or a hole in it) takes the
+track's elevation there, REBASED onto the model's datum by the offset
+measured either side of the uncovered run (``terrain_heights``), so a
+coverage edge is not a vertical cliff; and a record written before
+SNOW-1043 has no ``heights`` at all and is read from the track throughout,
+as before. The
+track's elevation at a boundary is recovered by walking ``Route.points``
+again with the sampler's own functions (``cumulative_distances``,
+``stride_distances``) at the record's own ``stride_m``, and interpolating
+the third ordinate at each boundary distance. Using the same walk is what
+makes the recovered boundaries the stored ones; when the count does not
+match — the points are not the ones the record was sampled from — the
+track contributes nothing rather than a figure placed against the wrong
+ground.
+
+**THE REJECTION BELOW IS NOW MOSTLY A DEVICE-HEIGHT CHECK.** A model
+height and the ground angle beside it come from the same grid, so a
+segment read on model heights can only outrun its ground by the
+difference between a 5 m cell's height and a 10 m window's gradient.
+Measured on the four canonical tracks, the device series rejects 4, 9, 29
+and 17 segments (Chamonix, Hidden Valley, Backside, Col de la Chaux) and
+the model heights reject 0, 0, 1 and 0 — the one being that cell-versus-
+window difference on steep ground, not a recording fault. What the check
+still catches in earnest is a device height standing in where the model
+has none.
 
 ## A segment steeper than its ground is rejected, then the rest smoothed
 
@@ -104,6 +128,7 @@ from apps.routes.services.bank import bank_angle_deg
 from apps.routes.services.passages import fall_line_alignment
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 from apps.routes.services.slope_summary import segment_lengths_m
+from apps.routes.services.terrain_heights import boundary_heights
 
 # Half-width of the track-gradient smoothing window, in segments either
 # side. Two: five segments, about 125 m on a 25 m stride — enough to take
@@ -160,7 +185,8 @@ def terrain_detail(
         record: A ``Route.slope_samples`` (or ``Trip.slope_samples``)
             value, or None for a track that has never been sampled.
         points: The track the record was sampled from, as
-            ``[[lon, lat, ele], …]``. Read only for its elevations.
+            ``[[lon, lat, ele], …]``. Read only for its elevations, and
+            only where the record carries no model height.
         gradient_window: Half-width of the track-gradient smoothing, in
             segments. 0 gives each accepted segment's raw gradient.
         tolerance_deg: How far a segment's raw gradient may exceed its
@@ -244,7 +270,41 @@ def _boundary_elevations(
     points: list[list[float | None]],
     boundary_count: int,
 ) -> list[float | None]:
-    """Return the track's elevation at each of the record's boundaries.
+    """Return the elevation at each of the record's boundaries.
+
+    ``terrain_heights.boundary_heights`` when the record carries model
+    heights for these points (SNOW-1043) — the model's height at each
+    boundary, with a run the model does not cover read from the track and
+    rebased onto the model's datum, so a coverage edge is not a cliff. The
+    track's own elevation throughout otherwise.
+
+    Args:
+        record: The stored record, read for its ``heights`` and
+            ``stride_m``.
+        points: The route's ``[lon, lat, ele]`` track.
+        boundary_count: How many boundaries the record stores.
+
+    Returns:
+        One elevation per boundary. From the track, it is None where
+        either stored point around it has no elevation, and None
+        throughout when the walk cannot be repeated — no stride on the
+        record (one written before the sampler stored it), or a re-walk
+        that lands a different number of boundaries, which means these
+        are not the points the record came from.
+
+    """
+    model = boundary_heights(points, record)
+    if model is not None and len(model) == boundary_count:
+        return model
+    return _device_elevations(record, points, boundary_count)
+
+
+def _device_elevations(
+    record: dict[str, Any],
+    points: list[list[float | None]],
+    boundary_count: int,
+) -> list[float | None]:
+    """Return the TRACK's elevation at each of the record's boundaries.
 
     Args:
         record: The stored record, read for its ``stride_m``.
@@ -253,10 +313,8 @@ def _boundary_elevations(
 
     Returns:
         One elevation per boundary, None where either stored point around
-        it has no elevation. All None when the walk cannot be repeated —
-        no stride on the record (one written before the sampler stored
-        it), or a re-walk that lands a different number of boundaries,
-        which means these are not the points the record came from.
+        it has no elevation, and all None when the walk cannot be
+        repeated — see ``_boundary_elevations``.
 
     """
     missing: list[float | None] = [None] * boundary_count

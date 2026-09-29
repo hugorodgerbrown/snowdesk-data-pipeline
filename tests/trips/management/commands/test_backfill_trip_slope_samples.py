@@ -45,6 +45,8 @@ RECORD: dict[str, Any] = {
     # A CURRENT record carries ``cruxes`` even when nothing was flagged
     # (SNOW-911) — the key's presence is what marks the row up to date.
     "cruxes": [],
+    # And ``heights`` since SNOW-1043, one per boundary, on the same rule.
+    "heights": [2000.0, 2010.0],
 }
 
 
@@ -227,6 +229,41 @@ class TestReadOnlyByDefault:
         output = _run()
 
         assert "1 trip(s)" in output
+
+    def test_a_record_written_before_heights_is_a_candidate_again(self) -> None:
+        """SNOW-1043 added a key, selected on exactly as ``cruxes`` is."""
+        legacy = {k: v for k, v in RECORD.items() if k != "heights"}
+        TripFactory.create(
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=legacy, route=None
+        )
+
+        output = _run()
+
+        assert "1 trip(s)" in output
+
+    def test_a_route_record_without_heights_is_not_inherited(self) -> None:
+        """The same convergence rule as a record without ``cruxes``."""
+        organiser = UserFactory.create()
+        route = RouteFactory.create(
+            user=organiser,
+            points=MERIDIAN_TRACK,
+            slope_samples={k: v for k, v in RECORD.items() if k != "heights"},
+        )
+        trip = TripFactory.create(
+            created_by=organiser,
+            route=route,
+            points=MERIDIAN_TRACK,
+            point_count=2,
+            slope_samples=None,
+        )
+
+        with patch(_BUILDER, return_value=RECORD) as builder:
+            _run("--commit")
+
+        builder.assert_called_once()
+        trip.refresh_from_db()
+        assert trip.slope_samples is not None
+        assert "heights" in trip.slope_samples
 
     def test_a_stale_route_record_is_not_inherited(self) -> None:
         """Inheriting one would never converge.
