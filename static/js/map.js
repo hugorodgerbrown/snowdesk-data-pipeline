@@ -2906,8 +2906,12 @@
     // falls away on the skier's right. MapLibre's `line-offset` is positive
     // to the RIGHT of the line's drawing direction, and a run is drawn in
     // track order, so `side` times a pixel distance puts the shadow on the
-    // downhill side at every zoom. Under the leg casing, so the route line
-    // stays on top where the two meet; not tappable and no legend row.
+    // downhill side at every zoom. Inserted beneath `routes-line-casing`,
+    // the lowest route stroke, so it sits under the flat line as well as
+    // the legs: a sampled route with no drawable legs is still drawn by
+    // `routes-line` and still gets a shadow, and without the `beforeId`
+    // this layer would paint over it wherever the two meet. Not tappable
+    // and no legend row.
     map.addSource('routes-steep', {
       type: 'geojson',
       data: routeSteepFor(geojson),
@@ -2927,7 +2931,7 @@
         'line-width': 3,
         'line-offset': ['*', ['get', 'side'], 4.5],
       },
-    });
+    }, 'routes-line-casing');
     map.addLayer({
       id: 'routes-leg-casing',
       type: 'line',

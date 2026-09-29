@@ -244,7 +244,20 @@ function stubMapLibre() {
         setData: (data) => { sources.get(id).data = data; },
       });
     },
-    addLayer: (def) => { layers.set(def.id, def); },
+    // Honours MapLibre's `beforeId`, so the Map's insertion order is the
+    // paint order and a layer-order assertion means what it says.
+    addLayer: (def, beforeId) => {
+      if (!beforeId || !layers.has(beforeId)) {
+        layers.set(def.id, def);
+        return;
+      }
+      const entries = [...layers.entries()];
+      layers.clear();
+      for (const [id, layer] of entries) {
+        if (id === beforeId) layers.set(def.id, def);
+        layers.set(id, layer);
+      }
+    },
     removeLayer: (id) => layers.delete(id),
     removeSource: (id) => sources.delete(id),
     moveLayer: () => {},
@@ -662,10 +675,15 @@ describe('the steep-ground shadow (SNOW-1046)', () => {
     expect(shadow.paint['line-width']).toBe(3);
   });
 
-  it('sits under the leg casing and is reached by the overlay switch', () => {
+  it('sits under every route stroke and is reached by the overlay switch', () => {
     const ids = [...layers.keys()];
+    const shadow = ids.indexOf('routes-steep-shadow');
 
-    expect(ids.indexOf('routes-steep-shadow')).toBeLessThan(ids.indexOf('routes-leg-casing'));
+    // Under the flat line's casing as well as the legs': a sampled route
+    // with no drawable legs is drawn by `routes-line` and still has runs.
+    expect(shadow).toBeLessThan(ids.indexOf('routes-line-casing'));
+    expect(shadow).toBeLessThan(ids.indexOf('routes-line'));
+    expect(shadow).toBeLessThan(ids.indexOf('routes-leg-casing'));
     expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-steep-shadow');
     expect(layers.get('routes-steep-shadow').layout.visibility).toBe('visible');
   });
