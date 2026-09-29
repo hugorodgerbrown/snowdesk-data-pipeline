@@ -1,205 +1,212 @@
 ---
 name: release
 description: |
-  Cut a Snowdesk production release: fast-forward `release` to `main` so
-  Render redeploys the three production services, then make sure the CalVer
-  tag and GitHub Release exist — creating them as a fallback if the
-  release.yml workflow did not. Use when the user says "/release", "cut a
-  release", "ship to production", "do a release", or "release to prod". Do
-  NOT use for a normal feature PR onto main (that is the `implement` skill),
-  or for scoping/implementing a ticket.
+  Cut a Snowdesk production release: run `bin/cut-release --commit` to open
+  the release PR (one commit bumping `VERSION`, the ticket list and any
+  post-deploy commands in its description), and after the human merges it,
+  confirm release-sync fast-forwarded `release` and the CalVer tag and GitHub
+  Release exist. Use when the user says "/release", "cut a release", "ship to
+  production", "do a release", or "release to prod". Do NOT use for a normal
+  feature PR onto main (that is the `implement` skill), or for
+  scoping/implementing a ticket.
 allowed-tools: Bash, Read
-# Advancing `release` deploys production. Only a human may start this.
+# Merging the release PR deploys production. Only a human may start this.
 disable-model-invocation: true
 ---
 
 # Cut a Snowdesk release
 
-Drive a production release end to end. `release` behaves like a tag that
-moves with `main`: advancing it is a **fast-forward** to the current `main`
-tip, so the production commit is byte-identical to the `main` commit already
-verified on staging — no merge commit, no divergence, no release PR. The
-deploy is the side effect of that fast-forward; tagging and the GitHub
-Release are retrospective housekeeping. Read
-[`docs/deployment.md`](../../docs/deployment.md) for the full path-to-live
-model before changing anything here.
+A release is one pull request. `bin/cut-release --commit` opens it against
+`main`: a single signed commit bumping `VERSION` to the next ordinal, on a
+`release-vNN` branch, with every `SNOW-xx` ticket production has not yet seen
+in the description. **Merging that PR is the release.**
+[`release-sync.yml`](../../../.github/workflows/release-sync.yml) sees
+`VERSION` change on `main`, waits for that commit's required checks,
+fast-forwards `release` to it (Render deploys production), and dispatches
+[`release.yml`](../../../.github/workflows/release.yml) to tag the commit
+CalVer and create the GitHub Release. Read
+[`docs/deployment.md`](../../../docs/deployment.md) before changing anything
+here.
 
 ## What this skill owns vs. what CI owns
 
-- Advancing `release` (a fast-forward push to `origin/main`'s SHA) is
-  **yours** — that push triggers the Render production deploy.
-- Tagging (CalVer `YYYY.MM.DD[.N]`) and the GitHub Release are **meant to be
-  CI's** — [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
-  fires on the push to `release`. This skill **verifies** that happened and
-  **creates the tag + Release as a fallback** when it did not. Never create a
-  second Release if CI already made one for the deployed commit.
-
-> Note: a `push`-triggered workflow runs from the workflow file **in the
-> pushed commit**. `release.yml` must therefore be present on the `release`
-> tip after the fast-forward for CI to fire. The first release after the
-> workflow was introduced is the untested path — expect to use the fallback
-> and confirm CI takes over on the next one.
+- **Yours:** preflight, the release preview, the post-deploy command audit,
+  opening the PR with `bin/cut-release --commit`, and — once the human has
+  merged — confirming the sync, tag and Release happened.
+- **Never yours:** merging the release PR, or pushing `release`. The merge is
+  the production deploy and the human's call. `release-sync.yml` advances
+  `release`; nothing in this skill pushes it.
+- **CI's:** the fast-forward, the CalVer tag, the GitHub Release.
 
 ## Steps
 
 ### 1. Preflight
 
-Run these and stop with a clear message if any fails:
+Stop with a clear message if any of these fails. `bin/cut-release` repeats
+the ref checks and refuses on its own, but surface them before the preview.
 
-- On the primary worktree, working tree clean (`git status --porcelain`).
 - `git fetch origin --tags --quiet`.
-- `origin/main` is **ahead of** `origin/release`
+- `origin/main` is ahead of `origin/release`
   (`git rev-list --count origin/release..origin/main` > 0). If 0, there is
-  nothing to release — stop.
-- The advance is a genuine fast-forward: `origin/release` is an ancestor of
-  `origin/main` (`git merge-base --is-ancestor origin/release origin/main`).
-  If not, `release` was advanced out of band — stop and investigate rather
-  than forcing anything.
-- `main` CI is green: check the latest run on `main`
-  (`gh run list --branch main --limit 1`). If the head commit's checks are
-  failing or pending, surface it and ask before continuing. The "Release
-  branch" ruleset will reject the fast-forward push unless those checks are
-  green on the target commit, so a red `main` cannot ship.
+  nothing to release.
+- `origin/release` is an ancestor of `origin/main`
+  (`git merge-base --is-ancestor origin/release origin/main`). If not,
+  `release` was moved out of band — investigate, never force.
+- `VERSION` matches on both refs (`git show origin/main:VERSION` vs
+  `git show origin/release:VERSION`). A mismatch means a release PR merged
+  and the sync has not finished — check
+  `gh run list --workflow release-sync.yml`.
+- No `release-vNN` branch or open release PR already exists
+  (`gh pr list --search "Release v" --state open`).
+- `main`'s head commit passes the checks that gate a release. The "Release
+  branch" ruleset (id `19141574`) is the source of truth for which those
+  are — read its required contexts, then their conclusions on the commit:
 
-### 2. Build the release preview
+  ```bash
+  gh api repos/{owner}/{repo}/rulesets/19141574 \
+      --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
+  gh api repos/{owner}/{repo}/commits/<sha>/check-runs --paginate \
+      --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
+  ```
 
-Show the user what this release ships so they can confirm before production
-moves. This is a preview for the human, **not** a PR body (there is no PR)
-and **not** the GitHub Release notes (release.yml generates those from the
-merged PRs). Present it in your chat message, not the plan pane.
+  Every required context must be `success`. A failing check outside that
+  list (e.g. `Dependency audit (dev + npm)`, detection-only) does not block
+  the release — mention it, do not stop on it. `gh run list --branch main`
+  can miss the head SHA; read the check runs on the commit itself.
 
-1. Collect the commits this release ships. Use the same comparison base
-   `bin/cut-release` uses — `origin/release` when it exists (the normal
-   case), else the most recent CalVer tag, else all of `origin/main`:
+### 2. Dry run and release preview
 
-   ```bash
-   git log origin/release..origin/main --format='%s'
-   ```
+```bash
+bin/cut-release
+```
 
-2. Render the tickets as a **table** — one row per `SNOW-xx` ticket, the
-   **Change** column taken from the commit subject with the `SNOW-NN:`
-   prefix stripped. Fold commits that share a ticket into one row (cite each
-   PR number, e.g. `(#309, #315)`); put any ticketless commits in a final
-   row with an em-dash (`—`) ticket. Shape:
+The dry run prints the next version (`vNN → vNN+1`), the target SHA, the
+ticket list, the PR body, and a stderr warning for any newly added one-shot
+data command with no `Deploy-Step:` trailer. It pushes nothing.
 
-   ```markdown
-   ## Shipping to production
+Present the preview in chat as a table, one row per `SNOW-xx` ticket, the
+**Change** column from the commit subject with the `SNOW-NN:` prefix
+stripped. Fold commits sharing a ticket into one row (cite each PR number);
+put ticketless commits in a final `—` row:
 
-   | Ticket | Change |
-   |--------|--------|
-   | SNOW-54 | Distinguish permanently-uncovered regions from no_rating tiles (#310) |
-   | SNOW-298 | Day Risk Profile elevation glyph (#309, #315) |
-   | — | chore: add /release skill (#316) |
-   ```
+```markdown
+| Ticket | Change |
+|--------|--------|
+| SNOW-54 | Distinguish permanently-uncovered regions from no_rating tiles (#310) |
+| — | Bump djangofmt; patch npm audit (#999, #1004) |
+```
 
-3. State the target SHA (`origin/main`'s short SHA), the computed CalVer tag
-   (step 4 algorithm), and that fast-forwarding `release` **redeploys
-   production on Render**. Ask the user to confirm before advancing.
+State the version, the target SHA, and that **merging** the PR (not opening
+it) redeploys production.
 
-### 3. Advance `release` (fast-forward)
+### 3. Audit post-deploy commands
 
-Once the user confirms, fast-forward `release` to `main`:
+The PR's "Run after this deploys" section comes only from `Deploy-Step:`
+commit trailers. The script's backstop only warns on *newly added*
+`backfill_|fill_|link_|import_` commands, so a ticket that widens an
+existing backfill's candidate set (SNOW-1043 did, for
+`backfill_route_slope_samples` and `backfill_trip_slope_samples`) slips
+through both. Check the range yourself:
+
+```bash
+git log origin/release..origin/main --format='%B' | grep '^Deploy-Step:'
+git diff --name-status origin/release origin/main -- 'apps/*/management/commands/*.py' 'apps/*/migrations/*.py' schedule.py config/
+```
+
+- An added or **modified** one-shot data command: read its diff and the
+  ticket's commit body to decide whether production needs a run.
+- Migrations run on deploy (`build.sh`); flag only a data migration that
+  says it needs a follow-up command.
+- A new scheduled command wired into `schedule.py` needs no manual run.
+- A new setting read from the environment needs the Render env var set
+  **before** the merge.
+
+List what production needs in the preview. If the script's body will not
+carry it, add a `## Run after this deploys` section to the PR description
+after step 4 (`gh pr edit <n> --body-file …`), before the
+`🤖 Generated with` line, commands in the form the Render shell takes
+(`python manage.py …`, no `uv run`).
+
+Ask the user to confirm before opening the PR.
+
+### 4. Open the release PR
 
 ```bash
 bin/cut-release --commit
 ```
 
-This pushes `origin/main`'s exact SHA to `refs/heads/release`. The ruleset
-allows it only as a fast-forward whose target commit's required checks are
-already green. There is no PR and no merge commit — `origin/release` now
-equals `origin/main`. Confirm that:
+It builds the bump commit with git plumbing (the working tree and checked-out
+branch are untouched, so any worktree works), signs it with `-S`, pushes
+`release-vNN`, and opens the PR with `gh pr create`.
+
+Two things can stop it:
+
+- **Auto mode's permission check** classifies it as a production deploy.
+  Stop and tell the user; they approve the prompt or run the command in
+  their own terminal.
+- **The sandbox.** The script needs `mktemp -d` (the macOS temp directory),
+  GPG signing (`~/.gnupg` and the agent socket), and git over HTTPS. On a
+  sandbox refusal, stop, name what was refused and the setting that would
+  allow it, and wait — do not re-run outside the sandbox. `mktemp` fails
+  before the push, so a refusal there leaves nothing pushed.
+
+Then bind the PR to the session (`ccd_pr` `get_status`, `bind_pr` if
+unbound) and turn Auto-fix on with `set_monitor`. Apply step 3's
+description edit if one is needed.
+
+Stop here. Report the PR URL, the version, any post-deploy commands, and
+that merging deploys production.
+
+### 5. After the merge — verify, fall back only if needed
+
+Only when the user says the PR is merged (or asks you to check).
+
+Verify against the release PR's **merge commit**, not `main`'s tip:
+`release-sync.yml` advances `release` to the fixed SHA of the push that
+changed `VERSION`, and another PR may have landed on `main` since.
 
 ```bash
+sha=$(gh pr view <n> --json mergeCommit --jq .mergeCommit.oid)
+gh run list --workflow release-sync.yml --commit "$sha"
+gh run list --workflow release.yml --limit 3
 git fetch origin --tags --quiet
-test "$(git rev-parse origin/release)" = "$(git rev-parse origin/main)" \
-    && echo "release == main ✓"
+test "$(git rev-parse origin/release)" = "$sha" && echo "release == release PR merge ✓"
+git tag --points-at "$sha"
+gh release list --limit 5
 ```
 
-The push triggers the Render production deploy and (should) fire
-`release.yml`.
+The expected tag is today's CalVer, matching `release.yml`:
+`date=$(date -u +'%Y.%m.%d')`; with no `$date` / `$date.*` tag yet it is
+`$date`, otherwise the next free `.N` (the bare date counts as `.1`).
 
-### 4. Verify the tag + GitHub Release — fall back if missing
-
-Compute today's expected CalVer tag, matching `release.yml` exactly:
-
-- `date=$(date -u +'%Y.%m.%d')`.
-- Existing tags for today: `git tag --list "$date" "$date.*"`.
-- None → tag is `$date`. Otherwise the next free `.N` suffix (the bare date
-  counts as `.1`, so a second release the same day is `$date.2`).
-
-Watch for the workflow, then check:
-
-```bash
-gh run list --workflow=release.yml --limit 3      # did it fire?
-gh release list --limit 5                          # did a Release appear?
-```
-
-- **CI created the Release** for the deployed commit → report the tag, the
-  Release URL, and stop. Do not create anything.
-- **CI did not** (no run, failed run, or no Release) → create them yourself,
-  targeting the deployed `release` tip, using auto-generated notes (same as
-  CI):
+- **A tag and Release exist** on `$sha` → report the tag and URL. Create
+  nothing.
+- **release-sync failed or is still waiting** (`release` is not yet `$sha`)
+  → report the run and its failing step. Do not push `release` yourself.
+- **`release` is `$sha` but no tag/Release** (release.yml did not run or
+  failed) → create them against `$sha`, the same way CI does:
 
   ```bash
   gh release create "<tag>" \
-      --target "$(git rev-parse origin/release)" \
+      --target "$sha" \
       --title "<tag>" \
       --generate-notes
   ```
 
-  This both creates the tag and the Release in one call.
+### 6. Report
 
-> The Release **title** is the bare tag (`2026.06.22`), matching
-> `release.yml`.
-
-### 5. Report
-
-Tell the user:
-
-- the CalVer tag and the Release URL;
-- whether CI produced it or the fallback did (if the fallback ran, note that
-  `release.yml` did not fire and why, so the automation can be fixed);
-- a reminder that the production deploy is running on Render — point them at
-  the dashboard to confirm the three services came up.
+- the CalVer tag and Release URL, and whether CI or the fallback made it;
+- the post-deploy commands to run on the production web service's Render
+  shell once it is up;
+- that the deploy runs on Render — point at the dashboard to confirm the
+  three services (web, scheduler, task worker) came up.
 
 ## Stop and ask if
 
-- `main` CI is red or the latest `main` deploy was not verified on staging.
-- The advance would not be a fast-forward (`release` is not an ancestor of
-  `main`) — someone moved `release` out of band; investigate first.
-- The fast-forward push is rejected (e.g. the target commit's required
-  checks are not green) — surface the rejection rather than retrying.
+- A required check on `main`'s head is failing or pending, or its staging
+  deploy was not verified.
+- `release` is not an ancestor of `main`, or `VERSION` differs between them.
+- A release PR or `release-vNN` branch already exists.
+- The sandbox or the permission check refuses a step.
 - A Release already exists for the deployed commit under an unexpected tag
-  (do not create a duplicate — investigate first).
-
-## Path to live
-
-Deploys are split across two branches (hosted on Render):
-
-- **`main` → Staging** — every merge auto-deploys one web dyno.
-- **`release` → Production** — three services (web + scheduler + task
-  worker, one shared DB) deploy when `release` is **fast-forwarded** to
-  `main` (`release` behaves like a tag that moves with `main`; no merge
-  commit). The ruleset allows the advance only as a fast-forward whose
-  target commit's checks are already green.
-
-A release is one pull request. `bin/cut-release --commit` opens it against
-`main`: a single commit bumping `VERSION`, with the release note — every
-`SNOW-xx` ticket production has not yet seen — in the description. **Merging
-it is the release**, squashed or not. [`release-sync.yml`](.github/workflows/release-sync.yml)
-sees `VERSION` change on `main`, waits for that commit's required checks,
-fast-forwards `release`, and dispatches
-[`release.yml`](.github/workflows/release.yml) to tag the commit **CalVer**
-(`YYYY.MM.DD`, `.N` for a second release the same day) and create a GitHub
-Release. It dispatches rather than leaning on `release.yml`'s `push:`
-trigger because a `GITHUB_TOKEN` push fires no workflows, which would ship
-production untagged.
-
-The Release's auto-generated notes list the merged PRs — `SNOW-xx:` titles
-make it the record of which tickets reached production. Linear `Done` still
-fires on merge to `main` (work complete, on staging); production shipment is
-the GitHub Release.
-
-Staging and production use **separate databases** — `build.sh` migrates on
-every deploy, so staging must never point at the production DB. Full flow,
-Render topology, and one-time setup: [`docs/deployment.md`](docs/deployment.md).
+  — do not create a duplicate.
