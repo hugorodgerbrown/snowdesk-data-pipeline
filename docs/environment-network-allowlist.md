@@ -122,7 +122,7 @@ cannot run an ALBINA or Météo-France ingest end to end.
 | `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_URL`), the docs and terms | blocked |
 | `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
 | `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
-| `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open (not in the policy — reachable by a platform default, so listed to stop depending on it) |
+| `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open, and in the policy since 2026-09-29 (before that it was reachable only through a platform default) |
 | `i.posthog.com`, `*.i.posthog.com` | `eu.i.posthog.com` (`POSTHOG_HOST`), `eu-assets.i.posthog.com` | blocked |
 
 ### Basemaps and map overlays
@@ -186,9 +186,9 @@ listings for version history instead.
 
 ### Paste-ready
 
-The 81 entries above, one per line, in the same group order. The MaxMind
-R2 host was added after the 2026-09-29 application — **add it to the
-policy if it isn't there yet**:
+The 81 entries above, one per line, in the same group order — all applied
+on 2026-09-29 (the MaxMind R2 host in a second pass the same day, after
+review caught the redirect):
 
 ```text
 snowdesk.info
