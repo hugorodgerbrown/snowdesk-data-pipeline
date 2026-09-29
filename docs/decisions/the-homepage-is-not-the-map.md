@@ -20,6 +20,9 @@ sections on what a reader gets, and a link into the app. The map lives at
 - A request to `/` whose query string holds any parameter other than
   attribution (`utm_*`, `ref`, `fbclid`, `gclid`, `mc_cid`, `mc_eid`) 301s
   to `/map/` with the query string unchanged. A bare `/` renders the homepage.
+- A fragment (`/#CH-4115`, the old bulletin back-link) never reaches the
+  server, so a nonce'd script in the homepage head replaces the location
+  with `/map/` plus the search and fragment.
 - The manifest's `start_url` is `/map/`; its `id` and `scope` stay `/`.
 - The service worker's `SHELL_PAGE` is `/map/`. The homepage is not warmed.
 

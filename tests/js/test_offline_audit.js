@@ -748,6 +748,24 @@ describe('the Save control (SNOW-912)', () => {
     expect(save.hidden).toBe(false);
   });
 
+  it('warms the map at /map/, not the homepage at /', async () => {
+    // SNOW-1047 moved the map off the root. `/` answers 200 with the
+    // marketing homepage, so a warm of `/` "succeeds" while leaving the
+    // page the audit asks about unsaved.
+    installController(SHELL);
+    installCachesStub({ [SHELL]: [SCRIPT, STYLE] });
+    window.pwaWarmCache = vi.fn(async (urls) => ({ ok: urls.length, failed: 0 }));
+
+    const save = await runPanel();
+    save.click();
+    await vi.waitUntil(() => window.pwaWarmCache.mock.calls.length > 0, {
+      timeout: 5000,
+    });
+
+    expect(window.pwaWarmCache).toHaveBeenCalledWith(['/map/']);
+    delete window.pwaWarmCache;
+  });
+
   it('is offered when the saved copy belongs to another account', async () => {
     // Re-fetching restamps it for whoever is signed in now, so the button
     // is the remedy here too.
@@ -1271,6 +1289,18 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
 
     expect(row.getAttribute('data-audit-status')).toBe('yes');
     expect(row.querySelectorAll('[data-audit-value]')).toHaveLength(1);
+  });
+
+  it('warms the map shell at /map/ first when the app would not open', async () => {
+    // The shell cache in this fixture is empty, so step 1 runs. Since
+    // SNOW-1047 the map is /map/; `/` is the homepage and warming it would
+    // record a completion with the app still unopenable offline.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    expect(warmed[0]).toEqual(['/map/']);
   });
 
   it('fetches the bulletins and weather inside the boundary, and no tile', async () => {

@@ -23,6 +23,26 @@ parameters never reaches this template — views.home 301s it to /map/.
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
 
+{% block extra_head %}
+    {% comment %}
+    Map links from before SNOW-1047 carry their state in the fragment
+    (/#CH-4115 opens that region). A fragment never reaches the server, so
+    views.home cannot 301 it the way it does /?d=…; this forwards any
+    fragment to /map/ before the homepage paints, and on a later hashchange
+    (a same-page edit does not reload). The homepage has no
+    in-page anchors of its own, so a fragment here is always a map link.
+    {% endcomment %}
+    <script nonce="{{ request.csp_nonce }}">
+        (function() {
+            function toMap() {
+                if (location.hash.length > 1) location.replace("{% url 'public:map' %}" + location.search + location.hash);
+            }
+            toMap();
+            window.addEventListener("hashchange", toMap);
+        })();
+    </script>
+{% endblock extra_head %}
+
 {% block content %}
     {% url 'public:map' as map_url %}
     <main class="font-sans w-full max-w-grid-max mx-auto px-4 py-8 flex-1">

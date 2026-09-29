@@ -98,6 +98,19 @@ class TestLegacyMapLinksOnRoot:
         assert response.status_code == 301
         assert response["Location"] == f"/map/?{query}"
 
+    def test_fragment_links_are_forwarded_client_side(self, client: Client) -> None:
+        """/#CH-4115 never reaches the server, so the page forwards it.
+
+        The bulletin back-link was ``/#CH-4115`` before the map moved; the
+        homepage carries a nonce'd head script that replaces the location
+        with ``/map/`` plus the search and fragment when a fragment is set.
+        """
+        content = client.get("/").content.decode()
+
+        assert "location.hash.length > 1" in content
+        assert 'location.replace("/map/" + location.search + location.hash)' in content
+        assert 'addEventListener("hashchange", toMap)' in content
+
     def test_redirect_preserves_the_query_string_verbatim(self, client: Client) -> None:
         """Encoded values survive the redirect unchanged."""
         response = client.get("/?d=x&loc=46.1%2C7.2")

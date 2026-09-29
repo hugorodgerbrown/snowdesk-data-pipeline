@@ -1336,7 +1336,7 @@
     // this is asking for the area to work.
     var shellOk = true;
     if (!appOpens(report)) {
-      var shell = await warm(['/']);
+      var shell = await warm(['/map/']);
       shellOk = !!(shell && shell.ok > 0 && shell.failed === 0);
     }
 
@@ -2378,7 +2378,7 @@
         // value on a critical row is `blocked`.
         //
         // Every failing state, with no exceptions — because SNOW-912 made
-        // the warm repair every one of them. `_warmCache(['/'])` re-fetches
+        // the warm repair every one of them. `_warmCache(['/map/'])` re-fetches
         // the page (restamping it for whoever is signed in now, which
         // answers 'principal', and overwriting an unreadable body), and
         // `_warmShellSubresources` then fetches the modules that page names
@@ -2553,7 +2553,7 @@
           // an unstamped entry that the worker refuses for ever.
           var result =
             typeof self.pwaWarmCache === 'function'
-              ? await self.pwaWarmCache(['/'])
+              ? await self.pwaWarmCache(['/map/'])
               : null;
           if (result && result.ok > 0 && result.failed === 0) {
             say(t.saved || FALLBACKS.saved);
