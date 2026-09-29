@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -232,6 +233,23 @@ class TestFetchMeteofrancoLocalMirror:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture()
+def _no_pdf_index() -> Iterator[MagicMock]:
+    """Stub the archive-PDF index lookup the pipeline makes per bulletin.
+
+    ``run_meteofrance_pipeline`` opens its own ``requests.Session`` to resolve
+    each bulletin's archive PDF URL. With only the XML fetch mocked, that
+    lookup went to donneespubliques.meteofrance.fr for real and passed only
+    because it fails open. ``None`` is the function's own "no index" answer.
+    """
+    with patch(
+        "apps.bulletins.services.meteofrance_fetcher._fetch_mf_index",
+        return_value=None,
+    ) as stub:
+        yield stub
+
+
+@pytest.mark.usefixtures("_no_pdf_index")
 class TestRunMeteofrance:
     """run_meteofrance_pipeline: pipeline lifecycle and outcome counting."""
 
@@ -504,6 +522,7 @@ class TestRunMeteofrance:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures("_no_pdf_index")
 class TestLatestMeteofrancoDate:
     """latest_meteofrance_date returns None or the most recent MF bulletin date."""
 
@@ -747,6 +766,7 @@ class TestMeteofrancePdfUrl:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures("_no_pdf_index")
 class TestReissuedBulletin:
     """A re-issue with a new @DATEDIFFUSION must be stored, not skipped.
 
