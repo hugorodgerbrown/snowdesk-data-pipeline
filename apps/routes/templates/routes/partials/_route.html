@@ -208,7 +208,7 @@ Context:
         interpolated into it rather than two strings joined with " · " in
         the template, so a locale can put the qualifier wherever its own
         grammar wants it — including after the figures.
-    {% endcomment %}
+        {% endcomment %}
         {% if pending_share %}
             {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you ·
                 {{ meta }}{% endblocktrans %}
