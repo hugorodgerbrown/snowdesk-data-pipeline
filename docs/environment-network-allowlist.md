@@ -79,8 +79,21 @@ apex and the apex does not cover its subdomains. Two assumptions:
   and `*.apple.com` would open far more than the one store listing host a
   scan needs, so those two are listed as the single host.
 
-Status is from a direct `curl` against each host through the session
-proxy on 2026-09-29; "blocked" means the CONNECT was refused by the policy.
+The status columns below record each host **before** the paste-ready
+list was applied: a direct `curl` through the session proxy on
+2026-09-29, where "blocked" means the policy refused the CONNECT.
+
+**Applied 2026-09-29, then re-probed the same day: 78 of 82 concrete
+hosts connect.** That includes every host the app, the tooling and the
+competitor scans actually call. The four that still fail are
+`snowdesk-data.info`, `i.posthog.com`, `geopf.fr` and `www.peakvisor.com`,
+and they now fail with a **502, not a 403**. The proxy logs this as
+"policy denial or upstream failure": the policy lets the host through, and
+the host itself doesn't answer on 443. That is most likely because it has
+no DNS record, which couldn't be checked from inside a session. All four
+are apex or `www.` siblings listed only for pair symmetry, not hosts
+anything uses, so no action is needed. **Read a 502 as the host's problem
+and a 403 as the policy's.**
 
 ### Our own infrastructure
 
@@ -259,8 +272,9 @@ play.google.com
 
 ### The live policy, and what to change
 
-The environment's policy as it stood on 2026-09-29 (33 entries, copied
-from the settings page). It explains every probe result above: `*.slf.ch`
+*Applied 2026-09-29 — kept as the record of the change.* The
+environment's policy as it stood on 2026-09-29 before the update (33
+entries, copied from the settings page). It explains every probe result above: `*.slf.ch`
 opens `aws.` and `www.` but not the bare `slf.ch`, and `onxmaps.com` opens
 only the apex that then redirects to `www.`.
 
@@ -695,7 +709,12 @@ them. Say so explicitly when handing one over.
   bare-apex siblings are mostly still refused, which is why the canonical
   list above pairs every domain with its wildcard.
 
-Everything else in the canonical list above is still outstanding as of
-2026-09-29 — most costly first: the ALBINA and Météo-France bulletin APIs
-and Open-Meteo, without which a web session cannot run an ingest or a
-weather fetch.
+- **2026-09-29 — the whole canonical list.** Pasted into the policy from
+  the [paste-ready block](#paste-ready) the same day and re-probed: 78 of
+  82 hosts connect. Among them are the ALBINA and Météo-France bulletin
+  APIs, Open-Meteo, what3words, MaxMind, PostHog and `semgrep.dev`, so a
+  web session can now run a full three-provider ingest, a weather fetch and
+  `tox -e sast`. The four 502s are explained under
+  [the canonical list](#the-complete-allowlist--canonical-as-of-2026-09-29).
+
+Nothing is outstanding. A new block goes into the canonical list first.
