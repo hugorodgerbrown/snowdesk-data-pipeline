@@ -108,10 +108,10 @@
   var STRINGS = self.pwaStrings.read('route-rail-strings-template', {
     'unit-m': '%(value)s m',
     'unit-km': '%(value)s km',
-    'figure-distance': '%(km)s km',
-    'figure-ascent': '▲ %(m)s m',
-    'figure-descent': '▼ %(m)s m',
-    'figure-range': '%(start)s → %(end)s m',
+    'route-ascend': 'Ascend %(m)s m',
+    'route-descend': 'descend %(m)s m',
+    'route-length': '%(km)s km',
+    'route-steep': '%(km)s km steep terrain',
     'leg-climb': 'Leg %(i)s — climb',
     'leg-descent': 'Leg %(i)s — descent',
     'lane-label': 'Elevation profile of %(name)s',
@@ -130,7 +130,8 @@
   var PLAN_TRIP_URL = rail.dataset.routePlanTripUrl || '';
 
   var nameEl = rail.querySelector('[data-route-rail-name]');
-  var figuresEl = rail.querySelector('[data-route-rail-figures]');
+  var verticalEl = rail.querySelector('[data-route-rail-vertical]');
+  var horizontalEl = rail.querySelector('[data-route-rail-horizontal]');
   var lane = rail.querySelector('[data-route-rail-lane]');
   var ticksEl = rail.querySelector('[data-route-rail-ticks]');
   var actionsEl = rail.querySelector('[data-route-rail-actions]');
@@ -214,30 +215,6 @@
     return interpolate(STRINGS[leg.climbing ? 'leg-climb' : 'leg-descent'], {
       i: String(leg.i),
     });
-  }
-
-  /**
-   * The route's start and end elevation, for the figures' range.
-   *
-   * Only a reading taken AT the end is that end. When the GPX's first or
-   * last point carries no `<ele>`, readProfile's first run begins inside
-   * the route, or its last run stops short of the finish, and the nearest
-   * reading is somewhere along the track — a height the route passes, not
-   * the one it starts or finishes at. That end is then null, and
-   * formatFigures leaves the range out rather than state half of it.
-   *
-   * @param {object} profile A readProfile result.
-   * @returns {{start: ?number, end: ?number}}
-   */
-  function profileEnds(profile) {
-    if (!profile || !profile.hasElevation) return { start: null, end: null };
-    var first = profile.runs[0][0];
-    var lastRun = profile.runs[profile.runs.length - 1];
-    var last = lastRun[lastRun.length - 1];
-    return {
-      start: first.d === 0 ? first.e : null,
-      end: last.d >= profile.distanceM ? last.e : null,
-    };
   }
 
   /**
@@ -565,17 +542,27 @@
 
     var coordinates = feature.geometry && feature.geometry.coordinates;
     var profile = profileCore.readProfile(Array.isArray(coordinates) ? coordinates : []);
-    var ends = profileEnds(profile);
     var spanM = typeof props.distance_m === 'number' ? props.distance_m : profile.distanceM;
+    // `terrain` is absent for an unsampled route, and the steep part of
+    // the horizontal line is then left out rather than read as zero. A
+    // route wholly outside the terrain coverage carries `surveyed_m: 0`
+    // and `steep_m: 0`; "0.0 km steep terrain" would state the ground is
+    // gentle on the strength of never having looked at it, so the steep
+    // figure is only shown once some ground was surveyed — the rule
+    // `summaryLines` in route_slope_core.js follows.
+    var terrain = readJson(props.terrain);
+    var surveyed = !!terrain && typeof terrain === 'object'
+      && typeof terrain.surveyed_m === 'number' && terrain.surveyed_m > 0;
 
     nameEl.textContent = current.name;
-    figuresEl.textContent = railCore.formatFigures(
+    verticalEl.textContent = railCore.formatRouteVertical(
+      { ascent_m: props.ascent_m, descent_m: props.descent_m },
+      STRINGS,
+    );
+    horizontalEl.textContent = railCore.formatRouteHorizontal(
       {
         distance_m: props.distance_m,
-        ascent_m: props.ascent_m,
-        descent_m: props.descent_m,
-        elevation_start: ends.start,
-        elevation_end: ends.end,
+        steep_m: surveyed ? terrain.steep_m : null,
       },
       STRINGS,
     );
