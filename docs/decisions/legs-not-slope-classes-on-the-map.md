@@ -1,8 +1,8 @@
 ---
 name: legs-not-slope-classes-on-the-map
-description: route_legs_core.js, routes-leg-climb/-descent, routes-transitions, point_from/point_to — a route on the map is its legs
+description: route_legs_core.js, routes-leg-climb/-descent, routes-transitions, routes-steep-shadow, point_from/point_to — a route on the map is its legs
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-28
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -35,6 +35,26 @@ numbered transitions and the start and end markers, and nothing else.
 The passages are shown on rail two only, as bars under the bank ribbon;
 `passages` still travels on the slope record and the detail sheet still
 names them.
+
+**2026-09-28 (SNOW-1046).** One terrain mark returns to the line: a
+steep-ground shadow. Wherever the ground under the route is 40° or
+steeper, a second, darker line (`routes-steep-shadow`, source
+`routes-steep`, built by `steepShadowCollection` in
+`route_legs_core.js`) runs 4.5 px to the downhill side of it. A run is
+consecutive 25 m segments at 40° or more on one side; it ends where the
+bank changes sign, so a shadow never crosses the line, where the bank is
+unknown, and at a leg boundary, so the shadow dims with its leg. A single
+segment is a run. The side is the sign of `banks`, and the layer's
+`line-offset` is that sign times the pixel distance, so the shadow sits
+downhill at every zoom. It is not tappable and has no legend row.
+
+It returns where the crux rings, arrows and passage line did not because
+it meets the rules above that they failed. It is one statement per
+stretch, not per 25 m segment. It is drawn on steep ground only, so a
+route with none carries no extra line. And it says where the exposure is
+and which way it drops, which nothing else on the map does at the zoom a
+route is framed at: the legs say up or down, the rail's bank ribbon says
+which way the ground tilts only once a reader opens it.
 
 ## Why
 
