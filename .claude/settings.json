@@ -86,20 +86,6 @@
       "Bash(gh pr merge*)"
     ],
     "deny": [
-      "Read(./.venv/**)",
-      "Read(./node_modules/**)",
-      "Read(./__pycache__/**)",
-      "Read(**/__pycache__/**)",
-      "Read(**/*.egg-info/**)",
-      "Read(./.lighthouseci/**)",
-      "Read(./logs/**)",
-      "Read(./static/css/output.css)",
-      "Read(./.tox/**)",
-      "Read(./htmlcov/**)",
-      "Read(./.pytest_cache/**)",
-      "Read(./.ruff_cache/**)",
-      "Read(./.mypy_cache/**)",
-
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.claude/.credentials.json)",
