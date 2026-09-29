@@ -41,8 +41,11 @@ from it measures the instrument as much as the track.
 
 The device series is still read, and for two reasons. A boundary the model
 has no height for (outside its coverage, or a hole in it) takes the
-track's elevation there, and a record written before SNOW-1043 has no
-``heights`` at all and is read from the track throughout, as before. The
+track's elevation there, REBASED onto the model's datum by the offset
+measured either side of the uncovered run (``terrain_heights``), so a
+coverage edge is not a vertical cliff; and a record written before
+SNOW-1043 has no ``heights`` at all and is read from the track throughout,
+as before. The
 track's elevation at a boundary is recovered by walking ``Route.points``
 again with the sampler's own functions (``cumulative_distances``,
 ``stride_distances``) at the record's own ``stride_m``, and interpolating
@@ -125,6 +128,7 @@ from apps.routes.services.bank import bank_angle_deg
 from apps.routes.services.passages import fall_line_alignment
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 from apps.routes.services.slope_summary import segment_lengths_m
+from apps.routes.services.terrain_heights import boundary_heights
 
 # Half-width of the track-gradient smoothing window, in segments either
 # side. Two: five segments, about 125 m on a 25 m stride — enough to take
@@ -268,9 +272,11 @@ def _boundary_elevations(
 ) -> list[float | None]:
     """Return the elevation at each of the record's boundaries.
 
-    The record's own ``heights`` when it carries them (SNOW-1043), with
-    the track's elevation standing in for a boundary the model has no
-    height for; the track's elevation throughout otherwise.
+    ``terrain_heights.boundary_heights`` when the record carries model
+    heights for these points (SNOW-1043) — the model's height at each
+    boundary, with a run the model does not cover read from the track and
+    rebased onto the model's datum, so a coverage edge is not a cliff. The
+    track's own elevation throughout otherwise.
 
     Args:
         record: The stored record, read for its ``heights`` and
@@ -284,18 +290,13 @@ def _boundary_elevations(
         throughout when the walk cannot be repeated — no stride on the
         record (one written before the sampler stored it), or a re-walk
         that lands a different number of boundaries, which means these
-        are not the points the record came from. A model height is used
-        whatever the track says.
+        are not the points the record came from.
 
     """
-    device = _device_elevations(record, points, boundary_count)
-    heights = record.get("heights")
-    if not isinstance(heights, list) or len(heights) != boundary_count:
-        return device
-    return [
-        float(height) if _number(height) is not None else fallback
-        for height, fallback in zip(heights, device, strict=True)
-    ]
+    model = boundary_heights(points, record)
+    if model is not None and len(model) == boundary_count:
+        return model
+    return _device_elevations(record, points, boundary_count)
 
 
 def _device_elevations(

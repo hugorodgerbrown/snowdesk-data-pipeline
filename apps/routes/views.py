@@ -587,15 +587,16 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     """Return a FeatureCollection of the requesting user's own routes.
 
     Backs the map's routes line layer (SNOW-687). One ``LineString``
-    Feature per route, whose ``coordinates`` are ``Route.points`` with
-    only the THIRD ordinate replaced — the model already stores ``[lon,
-    lat, ele]`` in GeoJSON axis order (RFC 7946), already simplified at
-    ingest, so the longitude and latitude pass through untouched and no
-    axis swap can creep in between the two representations. The elevation
-    is the terrain model's wherever the slope record carries a height for
-    it, and the recording device's elsewhere (SNOW-1043,
-    ``apps.routes.services.terrain_heights``): a barometric altimeter
+    Feature per route, whose ``coordinates`` are the terrain track —
+    ``Route.points`` (``[lon, lat, ele]`` in GeoJSON axis order, RFC 7946,
+    already simplified at ingest, so no axis swap can creep in) merged with
+    the slope record's 25 m boundary points when the record carries model
+    heights, every point on the terrain model's height and any run the
+    model does not cover rebased onto its datum (SNOW-1043,
+    ``apps.routes.services.terrain_heights``). A barometric altimeter
     drifts, and the profile drawn from it drew climbs that never happened.
+    The boundary points lie on the stored line, so the drawn line does
+    not change, and the legs' ``point_from``/``point_to`` index this list.
 
     Properties per feature: ``uuid``, ``name``, ``distance_m``,
     ``ascent_m``, ``descent_m``, ``duration_s`` and ``bounds``.

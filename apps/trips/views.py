@@ -197,10 +197,10 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     shows nothing to the person it was sent to.
 
     ``points`` is emitted in the snapshot's own GeoJSON axis order, so
-    there is no axis transform here. The one change is the THIRD ordinate:
-    the terrain model's height wherever the snapshot's slope record has
-    one, the recording device's elsewhere, and the ascent and descent
-    summed over those same heights (SNOW-1043 — see ``_trip_heights``).
+    there is no axis transform here. When the snapshot's slope record has
+    model heights it is the terrain track instead — the snapshot merged
+    with the record's boundary points, on the model's heights (SNOW-1043,
+    see ``_trip_heights``) — and the ascent and descent are summed over it.
 
     Args:
         trip: The trip to describe.
