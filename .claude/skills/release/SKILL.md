@@ -58,10 +58,21 @@ the ref checks and refuses on its own, but surface them before the preview.
   `gh run list --workflow release-sync.yml`.
 - No `release-vNN` branch or open release PR already exists
   (`gh pr list --search "Release v" --state open`).
-- `main`'s head commit is green:
-  `gh api repos/{owner}/{repo}/commits/<sha>/check-runs --paginate` — every
-  run `success`, `skipped` or `neutral`. `gh run list --branch main` can
-  miss the head SHA; read the check runs on the commit itself.
+- `main`'s head commit passes the checks that gate a release. The "Release
+  branch" ruleset (id `19141574`) is the source of truth for which those
+  are — read its required contexts, then their conclusions on the commit:
+
+  ```bash
+  gh api repos/{owner}/{repo}/rulesets/19141574 \
+      --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
+  gh api repos/{owner}/{repo}/commits/<sha>/check-runs --paginate \
+      --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
+  ```
+
+  Every required context must be `success`. A failing check outside that
+  list (e.g. `Dependency audit (dev + npm)`, detection-only) does not block
+  the release — mention it, do not stop on it. `gh run list --branch main`
+  can miss the head SHA; read the check runs on the commit itself.
 
 ### 2. Dry run and release preview
 
@@ -148,13 +159,19 @@ that merging deploys production.
 
 ### 5. After the merge — verify, fall back only if needed
 
-Only when the user says the PR is merged (or asks you to check):
+Only when the user says the PR is merged (or asks you to check).
+
+Verify against the release PR's **merge commit**, not `main`'s tip:
+`release-sync.yml` advances `release` to the fixed SHA of the push that
+changed `VERSION`, and another PR may have landed on `main` since.
 
 ```bash
-gh run list --workflow release-sync.yml --limit 3
+sha=$(gh pr view <n> --json mergeCommit --jq .mergeCommit.oid)
+gh run list --workflow release-sync.yml --commit "$sha"
 gh run list --workflow release.yml --limit 3
 git fetch origin --tags --quiet
-test "$(git rev-parse origin/release)" = "$(git rev-parse origin/main)" && echo "release == main ✓"
+test "$(git rev-parse origin/release)" = "$sha" && echo "release == release PR merge ✓"
+git tag --points-at "$sha"
 gh release list --limit 5
 ```
 
@@ -162,16 +179,16 @@ The expected tag is today's CalVer, matching `release.yml`:
 `date=$(date -u +'%Y.%m.%d')`; with no `$date` / `$date.*` tag yet it is
 `$date`, otherwise the next free `.N` (the bare date counts as `.1`).
 
-- **Release exists** for the `release` tip → report the tag and URL. Create
+- **A tag and Release exist** on `$sha` → report the tag and URL. Create
   nothing.
-- **release-sync failed or is still waiting** (`release` behind `main`) →
-  report the run and its failing step. Do not push `release` yourself.
-- **`release` advanced but no tag/Release** (release.yml did not run or
-  failed) → create them against the deployed tip, the same way CI does:
+- **release-sync failed or is still waiting** (`release` is not yet `$sha`)
+  → report the run and its failing step. Do not push `release` yourself.
+- **`release` is `$sha` but no tag/Release** (release.yml did not run or
+  failed) → create them against `$sha`, the same way CI does:
 
   ```bash
   gh release create "<tag>" \
-      --target "$(git rev-parse origin/release)" \
+      --target "$sha" \
       --title "<tag>" \
       --generate-notes
   ```
@@ -186,8 +203,8 @@ The expected tag is today's CalVer, matching `release.yml`:
 
 ## Stop and ask if
 
-- `main`'s head checks are red or pending, or its staging deploy was not
-  verified.
+- A required check on `main`'s head is failing or pending, or its staging
+  deploy was not verified.
 - `release` is not an ancestor of `main`, or `VERSION` differs between them.
 - A release PR or `release-vNN` branch already exists.
 - The sandbox or the permission check refuses a step.
