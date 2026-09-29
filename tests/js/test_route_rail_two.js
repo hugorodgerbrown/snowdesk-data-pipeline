@@ -15,7 +15,7 @@
  * draw and back, and passage bars
  * are 4 px tall and never under 6 px wide. SNOW-1044: the track row is
  * labelled stretch blocks fitted and wedges with stretch ticks from 10 px
- * a segment, a chevron marks each kick turn on a climb, the card's title
+ * a segment (no kick-turn chevron: the lane speaks them), the card's title
  * carries the leg's vertical and its subtitle the horizontal, and the
  * readout reads the slope, the bank and its side. SNOW-1032: a tap picks by row
  * and by nearest extent, the selection box is at least 12 px with the
@@ -1382,42 +1382,24 @@ describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
     expect(glyphCount()).toBe(40);
   });
 
-  it('marks each kick turn with a chevron at every zoom, on a climb only', () => {
+  it('draws no kick-turn chevron at either zoom: the map shows the zig-zag', () => {
     const banks = BANKS.map(() => 20);
     banks[300] = -20;
     banks[301] = -20;
-    banks[302] = 10;
-    banks[303] = -20;
-    banks[120] = -20;
     const { cursor } = attach({ banks });
     cursor.openLeg(LEGS[2]);
 
-    /** @returns {Array<string>} The chevrons' segment indices. */
-    const chevrons = () => Array.from(lane.querySelectorAll('.route-rail-two-kick-turn'))
-      .map((el) => el.getAttribute('data-index'));
-    // 299 → 300 changes side at 20°; 301 → 302 is under 15°; 302 → 303
-    // too; 303 → 304 changes side again.
-    expect(chevrons()).toEqual(['300', '304']);
+    /** @returns {number} Chevron-like marks drawn in the track row. */
+    const marks = () => lane.querySelectorAll('.route-rail-two-kick-turn, [data-route-rail-two-track] polyline').length;
+    expect(blocks().length).toBeGreaterThan(0);
+    expect(marks()).toBe(0);
 
     cursor.setIndex(300);
     zoomInButton.click();
     zoomInButton.click();
     zoomInButton.click();
     expect(glyphCount()).toBeGreaterThan(0);
-    expect(chevrons()).toEqual(['300', '304']);
-
-    // Leg 2 descends: its side-changes at 120 and 121 are no kick turns.
-    cursor.openLeg(LEGS[1]);
-    expect(chevrons()).toEqual([]);
-  });
-
-  it('draws no chevron where a bank is unknown', () => {
-    const banks = BANKS.slice();
-    for (let i = 140; i <= 459; i += 1) banks[i] = null;
-    const { cursor } = attach({ banks });
-    cursor.openLeg(LEGS[2]);
-
-    expect(lane.querySelectorAll('.route-rail-two-kick-turn')).toHaveLength(0);
+    expect(marks()).toBe(0);
   });
 
   it('zooms to the resolved span on a double-click, and back on another', () => {
@@ -1568,7 +1550,6 @@ describe('the readout (SNOW-1024)', () => {
     for (const selector of [
       '.route-rail-two-track-block',
       '.route-rail-two-track-label',
-      '.route-rail-two-kick-turn',
     ]) {
       const drawn = lane.querySelectorAll(selector);
       expect(drawn.length).toBeGreaterThan(0);

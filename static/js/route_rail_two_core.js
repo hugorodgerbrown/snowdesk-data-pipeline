@@ -69,7 +69,8 @@
  *
  * A KICK TURN (`kickTurns`) is the bank changing side between one segment
  * and the next on a climb, both banking `KICK_TURN_BANK_DEG` (15°) or
- * more; the row marks each at every zoom. `resolveSpan` is the widest
+ * more. The row does not draw them — the map shows the zig-zag — and the
+ * lane's spoken value names one under the cursor. `resolveSpan` is the widest
  * span at which the wedges draw, the target a double-tap zooms to. The
  * band strip and the passages are drawn per segment at every zoom,
  * however thin.
@@ -269,7 +270,7 @@
    * The band strip (0–10), a 4 px gap, the track row (14–40: the wedges
    * centred on y 27, rising at most `ribbonHalf` — bank_ribbon_core.js's
    * CAP_PX — either side; fitted, the stretch blocks `blockTop` to
-   * `blockTop + blockHeight`, with a kick turn's chevron above them), then
+   * `blockTop + blockHeight`), then
    * the no-fall bars 4 px tall at 40–44, directly under the track row, so
    * a capped wedge never covers a passage (SNOW-1031, SNOW-1044). SNOW-1024 took the distance ticks off the foot,
    * so no dead space sits between the band, the bank row and the readout.

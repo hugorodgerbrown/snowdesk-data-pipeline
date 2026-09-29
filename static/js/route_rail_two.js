@@ -75,8 +75,9 @@
  * it. From 10 px a segment it is the level-ski wedges, one per segment
  * (`bankGlyphs`, bank_ribbon_core.js, SNOW-1031), with a dashed tick at
  * each stretch boundary. The words summarise the wedges, so the two never
- * disagree. A chevron above the row marks each kick turn (`kickTurns`) at
- * every zoom. The band strip is drawn per segment at every zoom, sub-pixel
+ * disagree. Kick turns (`kickTurns`) are not drawn — the zig-zag shows on
+ * the map (SNOW-1044's revision, 2026-09-29) — but the lane speaks them
+ * (THE READOUT, below). The band strip is drawn per segment at every zoom, sub-pixel
  * if need be, and each no-fall passage keeps its own bar, 4 px tall under
  * the track row and never under 6 px wide (`passageBox`), so passages are
  * marked at every zoom.
@@ -205,8 +206,6 @@
   var LABEL_PAD_PX = 4;
   /** A label character's width when the text cannot be measured. */
   var LABEL_CHAR_PX = 6;
-  /** A kick turn's chevron: half its width and its height, in px. */
-  var CHEVRON = Object.freeze({ half: 4, height: 5 });
   /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
   var ALIGN_CLASSES = Object.freeze({
     left: 'text-left',
@@ -285,7 +284,7 @@
   var kicks = [];
   /**
    * The track row's `<g aria-hidden="true">` at the last draw: blocks,
-   * labels, wedges, ticks and chevrons are drawn into it.
+   * labels, wedges and ticks are drawn into it.
    *
    * @type {SVGElement}
    */
@@ -1292,12 +1291,13 @@
   /**
    * The track row (SNOW-1044): the stretches as labelled blocks while a
    * segment is under 10 px, the wedges with a dashed tick at each stretch
-   * boundary from 10 px up (`trackMode`), and a chevron at each kick turn
-   * in both.
+   * boundary from 10 px up (`trackMode`). Kick turns are not drawn: the
+   * map shows the zig-zag, and the lane speaks them (paintReadout).
    */
   function drawTrack() {
-    // Drawn for the eye only: the words and kick turns reach assistive
-    // tech through the lane's aria-valuetext (paintReadout).
+    // Drawn for the eye only: the words, and the kick turns the row does
+    // not draw, reach assistive tech through the lane's aria-valuetext
+    // (paintReadout).
     trackEl = svgEl('g', { 'aria-hidden': 'true', 'data-route-rail-two-track': '' });
     lane.appendChild(trackEl);
     if (core().trackMode(view, width) === 'wedges') {
@@ -1306,7 +1306,6 @@
     } else {
       drawStretchBlocks();
     }
-    drawKickTurns();
   }
 
   /**
@@ -1455,34 +1454,6 @@
         'pointer-events': 'none',
       }));
     }
-  }
-
-  /**
-   * A chevron above the track row at each kick turn in view, on the
-   * boundary between the two segments whose banks change side.
-   */
-  function drawKickTurns() {
-    var c = core();
-    var base = c.ROWS.blockTop - 1;
-    kicks.forEach(function (index) {
-      if (index <= view.from || index >= view.to) return;
-      var x = c.xOf(index, view, width);
-      trackEl.appendChild(svgEl('polyline', {
-        points: [
-          (x - CHEVRON.half).toFixed(2) + ',' + base,
-          x.toFixed(2) + ',' + (base - CHEVRON.height),
-          (x + CHEVRON.half).toFixed(2) + ',' + base,
-        ].join(' '),
-        fill: 'none',
-        stroke: 'var(--color-text-1)',
-        'stroke-width': '1.5',
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
-        class: 'route-rail-two-kick-turn',
-        'data-index': String(index),
-        'pointer-events': 'none',
-      }));
-    });
   }
 
   /**

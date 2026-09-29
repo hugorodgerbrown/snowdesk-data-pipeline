@@ -212,8 +212,11 @@ heights since SNOW-1043). Nothing new travels on the wire.
 - **A kick turn is the bank changing side on a climb** (`kickTurns`):
   segment `i` and `i − 1` both known, on opposite sides, both 15° or more
   (`KICK_TURN_BANK_DEG`). A descent's side-changes are turns, not kick
-  turns, and an unknown bank breaks the pair. The row marks each with a
-  chevron at every zoom. Measured on the canonical records
+  turns, and an unknown bank breaks the pair. The row first marked each
+  with a chevron at every zoom; on 2026-09-29 the chevron was removed,
+  because the map already shows the zig-zag and the rail does not need
+  to repeat it. `kickTurns` now feeds the lane's spoken value only
+  (below): a screen-reader user cannot see the map. Measured on the canonical records
   (`tests/js/fixtures/`, written by `bin/record-rail-fixtures`): the Col
   de la Chaux climbs give four — leg 2 at segments 57, 65 and 66, leg 4
   at 172, leg 6 none — and the Backside climb none. The ticket quoted
