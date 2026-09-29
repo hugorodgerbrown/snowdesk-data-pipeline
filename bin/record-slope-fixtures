@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+# bin/record-slope-fixtures — record the slope records of the canonical tracks.
+#
+# SNOW-1043. The tests that pin what the terrain model's heights do to a
+# real track — the Backside's legs read on model heights rather than on its
+# drifting altimeter — need the record ``build_slope_samples`` writes for
+# each canonical GPX. Producing one walks the live terrain tile origin, which
+# no test may reach (tests/conftest.py's ``_no_live_terrain_origin``), so the
+# records are captured once, here, and committed.
+#
+# For each ``apps/routes/fixtures/canonical/*.gpx`` this parses the file with
+# ``parse_gpx`` exactly as an upload is parsed, runs ``build_slope_samples``
+# over the parsed points, and writes the record as compact JSON to
+# ``tests/routes/fixtures/slope_records/<stem>.json``. The points themselves
+# are not written: a test re-parses the committed GPX, so the two can never
+# be a different track.
+#
+# Re-run it when the sampler's record changes shape or the terrain grid is
+# republished, and commit the result. It fails rather than writing a partial
+# fixture: a record without ``heights`` (an outage during the height pass)
+# or no record at all exits non-zero and leaves that file as it was.
+#
+#     uv run python bin/record-slope-fixtures
+#
+# Needs network access to the tile origin (``TERRAIN_TILE_BASE_URL``).
+#
+# ruff: noqa: T201, E402
+# T201 — CLI script; print() is the intended output channel.
+# E402 — the app imports must follow django.setup(), below.
+
+"""Canonical slope-record recorder — see the header block above."""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+
+import django
+
+django.setup()
+
+from apps.routes.services.canonical import canonical_paths
+from apps.routes.services.gpx import parse_gpx
+from apps.routes.services.slope_segments import build_slope_samples
+
+OUTPUT_DIR = REPO / "tests" / "routes" / "fixtures" / "slope_records"
+
+
+def main() -> int:
+    """Record one slope record per canonical track.
+
+    Returns:
+        0 when every track produced a complete record, 1 otherwise.
+
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    failed = 0
+    for path in canonical_paths():
+        parsed = parse_gpx(path.read_bytes())
+        record = build_slope_samples(parsed.points, path.name)
+        if record is None or "heights" not in record:
+            print(f"{path.stem}: incomplete record, not written", file=sys.stderr)
+            failed += 1
+            continue
+        target = OUTPUT_DIR / f"{path.stem}.json"
+        target.write_text(json.dumps(record, separators=(",", ":")) + "\n")
+        missing = sum(1 for height in record["heights"] if height is None)
+        print(
+            f"{path.stem}: {len(record['segments'])} segments, "
+            f"{missing} of {len(record['heights'])} heights null -> "
+            f"{target.relative_to(REPO)}"
+        )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

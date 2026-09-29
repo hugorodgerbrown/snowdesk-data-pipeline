@@ -37,6 +37,8 @@ from apps.core.models import BaseModel
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from apps.routes.services.terrain_heights import ClimbFigures
+
 
 # ---------------------------------------------------------------------------
 # QuerySet / Manager
@@ -305,6 +307,32 @@ class Route(BaseModel):
 
         """
         return split_hours_minutes(self.duration)
+
+    @property
+    def climb(self) -> ClimbFigures:
+        """Return the ascent and descent to show for this route (SNOW-1043).
+
+        The terrain model's figures when the slope record carries heights,
+        the stored ``ascent_m`` / ``descent_m`` otherwise — the rule is
+        ``terrain_heights.climb_figures``, and every surface that quotes a
+        figure reads it through here or through that function, so the map
+        feed and the templates cannot disagree. Read from the row's own
+        ``points`` and ``slope_samples``: no query. A plain property rather
+        than a cached one, because the sampler writes ``slope_samples`` to
+        a row a caller may already hold; a template that reads it more than
+        once binds it once with ``with``.
+
+        Returns:
+            ``ClimbFigures(ascent_m, descent_m)``, either possibly None.
+
+        """
+        # Imported here rather than at module scope: the service imports
+        # the slope sampler, which imports ``apps.routes.models``.
+        from apps.routes.services.terrain_heights import climb_figures  # noqa: PLC0415
+
+        return climb_figures(
+            self.points, self.slope_samples, self.ascent_m, self.descent_m
+        )
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this route.

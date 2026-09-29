@@ -39,10 +39,12 @@ from waffle.testutils import override_flag
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share
 from tests.factories import (
+    DRIFTING_TRACK,
     LocationFactory,
     RouteFactory,
     TripFactory,
     UserFactory,
+    drifting_track_record,
 )
 
 # 14 March 2026 is a Saturday, which is the day a trip is normally on.
@@ -510,6 +512,23 @@ class TestTripCardContents:
 
         assert 'data-testid="trip-past-row"' in html
         assert 'data-testid="trip-card-meeting-point"' not in html
+
+    def test_a_past_row_shows_the_model_ascent(self, client: Client) -> None:
+        """SNOW-1043: the row quotes what the trip's map sends, not the column."""
+        trip = TripFactory.create(
+            date=datetime.date(2026, 3, 1),
+            points=DRIFTING_TRACK,
+            distance_m=111.2,
+            ascent_m=200.0,
+            descent_m=0.0,
+            slope_samples=drifting_track_record(),
+        )
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert "0.1km · 40m" in html
+        assert "200m" not in html
 
     def test_the_new_trip_link_points_at_the_routes_panel(self, client: Client) -> None:
         """And not at the authoring form, which 404s without a ``?route=``.

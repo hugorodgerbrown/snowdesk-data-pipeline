@@ -291,11 +291,13 @@ svg text { font-family: var(--display); font-stretch: 92%; }
   <div class="num">2</div>
   <div>
     <header><h2>Where the track's heights come from</h2></header>
-    <p class="q">From the stored route — and from nothing finer, because nothing finer is kept.</p>
+    <p class="q">From the terrain model where it covers the ground, and from the stored route where it does not — and from nothing finer, because nothing finer is kept.</p>
     <div class="body cols">
       <div>
         <p>When a GPX file is uploaded, it is read, turned into a list of points with a height on each, and thrown away. The file itself is not stored. That keeps less of anyone's location history in fewer places, and it means there is no file store to run.</p>
-        <p>It also sets a ceiling. The track's gradient is worked out by walking the stored points again, 25 m at a time, and reading the height at each step. Whatever is wrong in those points stays wrong, and nothing can go back to the original recording to check.</p>
+        <p>It also sets a ceiling. The recorded gradient is worked out by walking the stored points again, 25 m at a time, and reading the height at each step. Whatever is wrong in those points stays wrong, and nothing can go back to the original recording to check.</p>
+        <p><b>The recorded height also drifts.</b> Most devices measure height with a barometer, and air pressure changes over the hours of a tour. On the Backside tour the recorded height starts 139 m above the ground and is 744 m above it 1.5 km later, while the skier is going down. So the gradient is now read from the terrain model's own heights, taken at the same 25 m steps as the ground's angle, and the recorded height is used only where the model has no ground. A recorded height that disagrees with the model is then the sign of a recording fault, not a number the gradient has to carry.</p>
+        <p>The charts and the table below are measured on the recorded heights, because that is where the check has work to do. On the model's heights the same four tours reject 0, 0, 1 and 0 pieces.</p>
       </div>
       <div class="side">
         <h3>What the stored points are</h3>
@@ -390,7 +392,7 @@ svg text { font-family: var(--display); font-stretch: 92%; }
 </article>
 
 <footer>
-  <p>Describes how Snowdesk measured the gradient along a saved route in September 2026. Figures are from four real tours, recorded at point spacings from 4 m to 19 m and stored whole.</p>
+  <p>Describes how Snowdesk measured the gradient along a saved route in September 2026. Figures are from four real tours, recorded at point spacings from 4 m to 19 m and stored whole, and are measured on the recorded heights; since late September 2026 the gradient reads the terrain model's heights, with the recorded ones as the fallback.</p>
 </footer>
 
 </div>
