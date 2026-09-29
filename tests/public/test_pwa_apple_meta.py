@@ -17,7 +17,7 @@ import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
 
-# Every test in this module hits ``Client().get(reverse("public:home"))``,
+# Every test in this module hits ``Client().get(reverse("public:map"))``,
 # which resolves database-backed context (e.g. nav, feature flags). Mark the
 # whole module so pytest-django enables DB access rather than blocking with
 # ``Database access not allowed``.
@@ -30,7 +30,7 @@ def test_home_renders_apple_touch_icon_link() -> None:
     180×180 is the iOS-recommended size; smaller variants are upscaled
     automatically by iOS.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     assert response.status_code == 200
     body = response.content.decode("utf-8")
     assert 'rel="apple-touch-icon"' in body
@@ -45,7 +45,7 @@ def test_home_declares_mobile_web_app_capable() -> None:
     removed; iOS now honours the unprefixed ``mobile-web-app-capable``
     spelling, which is what we emit.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert 'name="mobile-web-app-capable"' in body
     assert 'content="yes"' in body
@@ -53,7 +53,7 @@ def test_home_declares_mobile_web_app_capable() -> None:
 
 def test_home_declares_apple_status_bar_style() -> None:
     """``apple-mobile-web-app-status-bar-style`` flows the page under the iOS bar (SNOW-118)."""
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert 'name="apple-mobile-web-app-status-bar-style"' in body
     assert 'content="black-translucent"' in body
@@ -61,7 +61,7 @@ def test_home_declares_apple_status_bar_style() -> None:
 
 def test_home_declares_apple_web_app_title() -> None:
     """``apple-mobile-web-app-title`` overrides the home-screen icon label (SNOW-118)."""
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert 'name="apple-mobile-web-app-title"' in body
     assert 'content="Snowdesk"' in body
@@ -75,7 +75,7 @@ def test_home_apple_touch_icon_defaults_to_production_directory() -> None:
     tile on iPhone. The production href must resolve to the checked-in
     production icon, not the staging one.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert "/static/icons/pwa/apple-touch-icon-180.png" in body
 
@@ -88,7 +88,7 @@ def test_home_theme_color_defaults_to_production_hex() -> None:
     sync with the manifest ``theme_color`` avoids a jarring colour flip
     between "opened in browser" and "opened as installed app".
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert '<meta name="theme-color" content="#1a1a1a">' in body
 
@@ -104,14 +104,14 @@ def test_home_title_reflects_staging_environment() -> None:
     ``</title>`` boundary so the suffix isn't accidentally injected
     mid-title.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert " — Staging</title>" in body
 
 
 def test_home_title_has_no_suffix_on_production() -> None:
     """The default production ``<title>`` has no environment suffix (SNOW-399)."""
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert " — Staging</title>" not in body
 
@@ -124,7 +124,7 @@ def test_home_apple_web_app_title_reflects_staging_environment() -> None:
     override for the home-screen icon label. Without the swap the iOS
     staging tile would read "Snowdesk" identical to the production tile.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert 'content="Snowdesk (Staging)"' in body
 
@@ -132,7 +132,7 @@ def test_home_apple_web_app_title_reflects_staging_environment() -> None:
 @override_settings(SITE_ENVIRONMENT="staging")
 def test_home_apple_touch_icon_swaps_for_staging() -> None:
     """``apple-touch-icon`` href points at the staging icon set on staging (SNOW-399)."""
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert "/static/icons/pwa-staging/apple-touch-icon-180.png" in body
 
@@ -145,7 +145,7 @@ def test_home_theme_color_swaps_for_staging() -> None:
     a consistent amber tint across the browser chrome (open tab) and
     OS chrome (installed PWA).
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert '<meta name="theme-color" content="#b45309">' in body
 
@@ -157,6 +157,6 @@ def test_home_og_site_name_reflects_staging_environment() -> None:
     A staging URL shared into Slack should link-preview as staging so
     a reader doesn't mistake it for production copy or data.
     """
-    response = Client().get(reverse("public:home"))
+    response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
     assert '<meta property="og:site_name" content="Snowdesk (Staging)">' in body

@@ -95,7 +95,7 @@ class TestNavDropdownCarriesTheAccountArea:
         The three list pages SNOW-803 removed are asserted absent there.
         """
         client = _client_for(AccountFactory.create())
-        html = client.get(reverse("public:home")).content.decode()
+        html = client.get(reverse("public:map")).content.decode()
 
         for url_name in ("accounts:settings",):
             assert f'href="{reverse(url_name)}"' in html, url_name

@@ -673,7 +673,7 @@ mechanism changed with the move.
 `@never_cache` was the first shape of this fix and was backed out. The
 offline favourites roster is built on that page being in the shell cache,
 so `no-store` took a shipped feature offline with it. The page that must
-stay cacheable is now the map at `/` (SNOW-803 moved the roster there), and
+stay cacheable is now the map at `/map/` (SNOW-803 moved the roster there), and
 **no test currently pins that** — the guard named here,
 `tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`, went
 with the account pages it covered.
@@ -3168,7 +3168,7 @@ legitimate cache name.
 `htmx.min.js` / `maplibre-gl.min.js` correctly change the hash too),
 `src/css/main.css` (the committed Tailwind source — `static/css/output.css`
 is a gitignored build artefact and is never hashed), and the shell
-templates `base.html`, `home.html`, `partials/_map_embed.html`, and
+templates `base.html`, `map.html`, `partials/_map_embed.html`, and
 `static/offline.html`.
 
 `sw.js` is hashed like any other source. Under SNOW-517 that needed a

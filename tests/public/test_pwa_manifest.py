@@ -48,16 +48,16 @@ def test_manifest_served_with_correct_content_type() -> None:
     assert response["Content-Type"] == "application/manifest+json"
 
 
-def test_manifest_start_url_is_absolute_site_root() -> None:
-    """``start_url`` is the absolute canonical site URL (SNOW-87 / SNOW-118).
+def test_manifest_start_url_is_the_absolute_map_url() -> None:
+    """``start_url`` is the absolute URL of the map (SNOW-118).
 
-    SNOW-87 set ``start_url`` to the site root; SNOW-118 made it
-    absolute via ``settings.SITE_BASE_URL`` so it survives any future
-    move to a different manifest path or hostname migration.
+    SNOW-118 made it absolute via ``settings.SITE_BASE_URL``. It points at
+    ``/map/`` since the marketing homepage took ``/``: the installed app
+    opens on the map, not on the page that describes it.
     """
     manifest = _load_manifest()
     base = settings.SITE_BASE_URL.rstrip("/")
-    assert manifest.get("start_url") == f"{base}/"
+    assert manifest.get("start_url") == f"{base}/map/"
 
 
 def test_manifest_scope_is_absolute_site_root() -> None:
@@ -135,8 +135,8 @@ def test_manifest_id_changes_with_site_base_url() -> None:
         dev = _load_manifest()
     assert prod["id"] == "https://snowdesk.info/"
     assert dev["id"] == "http://localhost:8000/"
-    assert prod["start_url"] == "https://snowdesk.info/"
-    assert dev["start_url"] == "http://localhost:8000/"
+    assert prod["start_url"] == "https://snowdesk.info/map/"
+    assert dev["start_url"] == "http://localhost:8000/map/"
 
 
 def test_manifest_includes_lang() -> None:

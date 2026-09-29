@@ -51,9 +51,9 @@ def test_access_link_lands_on_confirm_then_post_signs_in(
         assert not before.is_verified
 
     page.click("button[type='submit']")
-    # SNOW-802: lands on the map (map.js consumes and strips ?panel=).
-    # Anchored on the origin so /account/access/<token>/ cannot match.
-    page.wait_for_url(re.compile(r"^https?://[^/]+/(\?.*)?$"))
+    # SNOW-802: lands on the map (map.js consumes and strips ?panel=), which
+    # is /map/ since SNOW-1047. Anchored so /account/access/<token>/ cannot match.
+    page.wait_for_url(re.compile(r"^https?://[^/]+/map/(\?.*)?$"))
 
     with django_db_blocker.unblock():
         after = Account.objects.get(pk=account.pk)

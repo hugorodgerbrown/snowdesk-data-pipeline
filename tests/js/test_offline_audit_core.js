@@ -31,7 +31,7 @@ function healthy(overrides) {
       serviceWorker: { supported: true, registered: true, controlled: true },
       storage: { usage: 50 * 1024 * 1024, quota: 500 * 1024 * 1024, persisted: true },
       shellEntries: [
-        { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+        { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
         {
           url: 'https://snowdesk.info/ch-4115/verbier/2026-02-16/',
           isPage: true,
@@ -52,7 +52,7 @@ function healthy(overrides) {
         },
       ],
       currentPrincipal: null,
-      mapPath: '/',
+      mapPath: '/map/',
       // SNOW-912: what the cached map page boots from. A healthy device
       // holds every one of them; the row is answered against this list,
       // not against "is any script cached".
@@ -761,7 +761,7 @@ describe('the verdict', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'acct-aaa' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'acct-aaa' },
         ],
         currentPrincipal: 'acct-bbb',
       }),
@@ -820,7 +820,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
           { url: 'https://snowdesk.info/static/css/output.abc.css', isPage: false },
           {
@@ -849,7 +849,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
           { url: 'https://snowdesk.info/static/css/output.abc.css', isPage: false },
           {
@@ -871,7 +871,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/help/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/privacy/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/trips/', isPage: true, principal: 'anonymous' },
@@ -891,7 +891,7 @@ describe('the rows that answer about what the user will see', () => {
       const report = core.buildReport(
         healthy({
           shellEntries: [
-            { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+            { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
             { url: `https://snowdesk.info${path}`, isPage: true, principal: 'anonymous' },
             { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
           ],
@@ -1085,7 +1085,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
         ],
       }),
@@ -1102,7 +1102,7 @@ describe('the rows that answer about what the user will see', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/static/js/map.abc.js', isPage: false },
           { url: 'https://snowdesk.info/static/css/settings.abc.css', isPage: false },
         ],
@@ -1259,7 +1259,7 @@ describe('the app-opens row', () => {
       healthy({
         shellEntries: [
           {
-            url: 'https://snowdesk.info/?d=2026-02-16',
+            url: 'https://snowdesk.info/map/?d=2026-02-16',
             isPage: true,
             principal: 'anonymous',
           },
@@ -1285,7 +1285,7 @@ describe('the app-opens row', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/static/js/offline_audit.js', isPage: false },
           { url: 'https://snowdesk.info/static/js/offline_audit_core.js', isPage: false },
         ],
@@ -1315,7 +1315,7 @@ describe('the app-opens row', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
         ],
         mapDependencies: [],
       }),
@@ -1331,7 +1331,7 @@ describe('the app-opens row', () => {
     // same lie pointing the other way.
     const report = core.buildReport(
       healthy({
-        shellEntries: [{ url: 'https://snowdesk.info/', isPage: true, principal: null }],
+        shellEntries: [{ url: 'https://snowdesk.info/map/', isPage: true, principal: null }],
       }),
       {},
     );
@@ -1404,7 +1404,7 @@ describe('the summary paragraph', () => {
     const report = core.buildReport(
       healthy({
         shellEntries: [
-          { url: 'https://snowdesk.info/', isPage: true, principal: 'anonymous' },
+          { url: 'https://snowdesk.info/map/', isPage: true, principal: 'anonymous' },
           { url: 'https://snowdesk.info/a.js', isPage: false },
           { url: 'https://snowdesk.info/a.css', isPage: false },
         ],

@@ -888,7 +888,7 @@ def offline_map_page(
     )
     _session_login(context, live_server.url, account.user)
 
-    page.goto(live_server.url + "/")
+    page.goto(live_server.url + "/map/")
     page.wait_for_load_state("load")
     page.wait_for_function(
         "() => navigator.serviceWorker.controller?.state === 'activated'",

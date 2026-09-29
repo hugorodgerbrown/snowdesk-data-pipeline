@@ -2,8 +2,11 @@
 apps/public/urls.py — URL routing for the public bulletin site.
 
 URL structure:
-  /                                            Interactive map homepage (canonical).
-  /map/                                        Permanent 301 redirect to /.
+  /                                            Marketing homepage — a static page
+                                               with a link into the map. With
+                                               map query parameters it 301s to
+                                               /map/?<same query>.
+  /map/                                        Interactive map (the app).
   /terms/                                      Permanent 301 redirect to
                                                /terms-of-service/ (SNOW-770).
   /help/                                        Plain-language "how it works"
@@ -12,7 +15,7 @@ URL structure:
                                                avalanche apps in this
                                                category (SNOW-836).
   /observations/                                Permanent 301 redirect to
-                                               /?panel=reports — the map with
+                                               /map/?panel=reports — the map with
                                                the reports sheet open (SNOW-804).
   /resorts/<slug>/                             Resort detail page — danger
                                                chip, bulletin link, favourite
@@ -40,10 +43,13 @@ the inbound path doesn't already match. Every render emits a
 ``<link rel="canonical">`` pointing at the form-3 canonical URL so SEO
 collapses all three forms into one indexed destination.
 
-``/map/`` is a permanent (301) redirect to ``/`` so existing bookmarks and
-inbound links are preserved; query strings (e.g. ``?d=``) are forwarded.
-The name ``map`` is kept so ``{% url 'public:map' %}`` still resolves
-(to the redirect URL) and existing reverse calls continue to work.
+The map lived at ``/`` from SNOW-344 until the marketing homepage took the
+root, so bookmarks and shared links carry map state on ``/`` (``?d=``,
+``?panel=``, ``?route_share=``, …). ``views.home`` 301s any ``/`` request
+whose query string holds more than attribution parameters (``utm_*``,
+``ref``, …) to ``/map/`` with the query preserved; a bare ``/`` renders the
+homepage. ``public:home`` is the homepage and ``public:map`` is the map —
+a link that means "the map" reverses ``public:map``.
 
 The ``/terms/`` and ``/examples/`` routes are registered before
 the generic ``<region_id:region_id>/<slug:slug>/`` pattern so Django's URL
@@ -59,14 +65,12 @@ from .feeds import CountryBulletinFeed
 app_name = "public"
 
 urlpatterns = [
+    # The marketing homepage. A request carrying map query parameters (the
+    # map's URLs from when it lived here) is 301'd on to /map/ by the view.
     path("", views.home, name="home"),
-    # SNOW-344: /map/ is now a permanent redirect to /; the name is kept so
-    # existing reverse() calls and {% url 'public:map' %} still resolve.
-    path(
-        "map/",
-        RedirectView.as_view(url="/", permanent=True, query_string=True),
-        name="map",
-    ),
+    # The interactive map — the app. This reverses SNOW-344, which had made
+    # /map/ a redirect to /.
+    path("map/", views.map_page, name="map"),
     # SNOW-770 merged the old /terms/ page into /terms-of-service/. The URL
     # stays registered — and stays HERE, ahead of the generic
     # <str:region_id>/ patterns, or "terms" starts resolving as a region_id
@@ -113,10 +117,12 @@ urlpatterns = [
     # reports sheet open (``?panel=`` is consumed by static/js/map.js).
     # Registered here, ahead of the generic <region_id:region_id>/ patterns,
     # so "observations" never resolves as a region id; the name is kept so
-    # an old reverse still resolves. Mirrors the /map/ redirect above.
+    # an old reverse still resolves.
     path(
         "observations/",
-        RedirectView.as_view(url="/?panel=reports", permanent=True, query_string=True),
+        RedirectView.as_view(
+            url="/map/?panel=reports", permanent=True, query_string=True
+        ),
         name="observations",
     ),
     # Resort detail page (SNOW-504) — registered before the generic

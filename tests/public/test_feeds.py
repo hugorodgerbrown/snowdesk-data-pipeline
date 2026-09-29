@@ -23,7 +23,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 from tests.factories import (
     BulletinFactory,
@@ -85,6 +85,17 @@ class TestCountryFeedEndpoint:
         assert response.status_code == 200
         # And path-case variance survives, too — URL-level `ch` and `CH`
         # both resolve to the same canonical feed body.
+
+    def test_channel_link_is_the_map(self, client: Client) -> None:
+        """The channel's own <link> opens the map, not the homepage (SNOW-1047)."""
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            body = client.get("/ch/feed.rss").content.decode()
+
+        # Atom: the feed-level alternate link, before the first <entry>.
+        channel = body.split("<entry>", 1)[0]
+        assert re.search(
+            r'<link href="https://snowdesk\.info/map/" rel="alternate"', channel
+        )
 
     def test_unknown_country_returns_404(self, client: Client) -> None:
         """A country outside the covered ISO-3166 set 404s."""
@@ -197,16 +208,16 @@ def test_llms_txt_references_all_four_feeds(client: Client) -> None:
 
 
 @pytest.mark.django_db
-def test_home_page_advertises_country_feeds_via_rel_alternate(
+def test_map_page_advertises_country_feeds_via_rel_alternate(
     client: Client,
 ) -> None:
-    """SNOW-396: home carries rel=alternate for each country feed.
+    """SNOW-396: the map carries rel=alternate for each country feed.
 
-    A feed reader (or an LLM crawler) that lands on ``/`` and inspects the
+    A feed reader (or an LLM crawler) that lands on the map and inspects the
     head should discover every country's RSS/Atom feed without needing to
     walk ``/llms.txt``.
     """
-    body = client.get("/").content.decode()
+    body = client.get("/map/").content.decode()
     for country in ("ch", "at", "it", "fr"):
         pattern = re.compile(
             r'<link[^>]*rel="alternate"[^>]*type="application/rss\+xml"[^>]*'
@@ -214,5 +225,5 @@ def test_home_page_advertises_country_feeds_via_rel_alternate(
             re.DOTALL,
         )
         assert pattern.search(body), (
-            f"expected rel=alternate RSS link for /{country}/feed.rss on home"
+            f"expected rel=alternate RSS link for /{country}/feed.rss on the map"
         )

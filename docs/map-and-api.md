@@ -20,8 +20,8 @@ live calls into its teardown helpers that were all permanent no-ops.
 Its **endpoint** did not go with it. `api:region_summary` is live, and
 `map_region_panel.js` is what consumes it now (SNOW-879) — the region panel
 is the surface that answers "tell me about this region".
-`/map/` permanently redirects
-here (301, query string forwarded). The template (`apps/public/templates/public/home.html`)
+The map is served at `/map/` by `public.views.map_page`; `/` is the static
+homepage, which 301s map-state requests here. The template (`apps/public/templates/public/map.html`)
 extends `base.html`. Static assets are the `static/js/map*.js` set (see
 "Module layout" below) and `static/css/map.css`.
 
@@ -31,7 +31,7 @@ extends `base.html`. Static assets are the `static/js/map*.js` set (see
 IIFE seams it already contained. It is now the boot IIFE alone — style and
 overlay install, region select, popups, markers, search — and the surfaces
 are siblings. `map.js`'s own header carries the full list with a line on
-what each file owns; `apps/public/templates/public/home.html` carries the
+what each file owns; `apps/public/templates/public/map.html` carries the
 script tags.
 
 **The order of those tags is load-bearing.** These are classic scripts, so
@@ -595,7 +595,7 @@ under the user's finger never silently re-picks. Tests:
 `tests/js/test_place_picker.js` (the geometry, against a fake map). The
 375x812 browser check went in SNOW-649.
 
-**Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
+**Route ordering**: `/map/` is registered before `<str:region_id>/` in
 `apps/public/urls.py`. Do not reorder these — Django matches URL patterns
 top-to-bottom and the generic region pattern would swallow `/map/` if it
 appeared first.

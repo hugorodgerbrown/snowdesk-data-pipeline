@@ -961,14 +961,14 @@ class TestEditLocationsPageGate:
 
     def test_superuser_sees_the_panel(self) -> None:
         """The querystring and the superuser bit both agree."""
-        resp = _superuser_client().get(reverse("public:home") + "?edit=locations")
+        resp = _superuser_client().get(reverse("public:map") + "?edit=locations")
         assert resp.status_code == 200
         assert b"edit-locations-panel" in resp.content
 
     @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
     def test_everyone_else_gets_the_normal_map(self, client_factory: Any) -> None:
         """The URL stays safe to bookmark and safe to paste into a chat."""
-        resp = client_factory().get(reverse("public:home") + "?edit=locations")
+        resp = client_factory().get(reverse("public:map") + "?edit=locations")
         assert resp.status_code == 200
         assert b"edit-locations-panel" not in resp.content
 
@@ -982,7 +982,7 @@ class TestEditLocationsPageGate:
         """
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=locations")
+            .get(reverse("public:map") + "?edit=locations")
             .content.decode()
         )
 
@@ -1003,7 +1003,7 @@ class TestEditLocationsPageGate:
         """
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=locations")
+            .get(reverse("public:map") + "?edit=locations")
             .content.decode()
         )
 
@@ -1013,7 +1013,7 @@ class TestEditLocationsPageGate:
 
     def test_the_normal_map_loads_neither_script(self) -> None:
         """A page nobody is editing is exactly the page it was before."""
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert "map_edit_locations" not in content
 
@@ -1027,19 +1027,19 @@ class TestEditLocationsPageGate:
         """
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=locations")
+            .get(reverse("public:map") + "?edit=locations")
             .content.decode()
         )
 
         assert 'aria-label="Close editor"' in content
-        assert f'href="{reverse("public:home")}"' in content
-        assert f'href="{reverse("public:home")}?edit=resorts"' in content
+        assert f'href="{reverse("public:map")}"' in content
+        assert f'href="{reverse("public:map")}?edit=resorts"' in content
 
     def test_the_bar_marks_locations_as_the_open_editor(self) -> None:
         """``aria-current`` follows the panel, not the markup order."""
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=locations")
+            .get(reverse("public:map") + "?edit=locations")
             .content.decode()
         )
         marked = content.split('aria-current="page"')[0]
@@ -1053,7 +1053,7 @@ class TestEditLocationsPageGate:
         """A close control on the public map would advertise the editor."""
         content = (
             client_factory()
-            .get(reverse("public:home") + "?edit=locations")
+            .get(reverse("public:map") + "?edit=locations")
             .content.decode()
         )
 
@@ -1061,7 +1061,7 @@ class TestEditLocationsPageGate:
 
     def test_an_unknown_edit_target_is_ignored(self) -> None:
         """Not an error — simply not an editor."""
-        resp = _superuser_client().get(reverse("public:home") + "?edit=wombats")
+        resp = _superuser_client().get(reverse("public:map") + "?edit=wombats")
         assert resp.status_code == 200
         assert b"edit-locations-panel" not in resp.content
         assert b"edit-resorts-panel" not in resp.content

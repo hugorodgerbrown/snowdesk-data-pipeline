@@ -80,7 +80,7 @@ def _build_wire_payload(
             "notification": {
                 "title": payload.get("title", "Snowdesk"),
                 "body": payload.get("body", ""),
-                "navigate": payload.get("url", "/"),
+                "navigate": payload.get("url", "/map/"),
             },
         }
     return payload

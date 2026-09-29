@@ -24,7 +24,7 @@ The feed is discoverable via three paths:
 
 1. ``robots.txt`` allows the RSS endpoints under ``Allow: /``.
 2. ``/llms.txt`` lists each country's feed under ``## Data``.
-3. The homepage carries ``<link rel="alternate" type="application/rss+xml">``
+3. The map page carries ``<link rel="alternate" type="application/rss+xml">``
    for each active country so browsers and feed readers can pick them up
    from the page head.
 """
@@ -36,6 +36,7 @@ from typing import Any
 from django.conf import settings
 from django.contrib.syndication.views import Feed
 from django.http import Http404
+from django.urls import reverse
 from django.utils.feedgenerator import Atom1Feed
 
 from apps.bulletins.models import RegionBulletin
@@ -104,8 +105,11 @@ class CountryBulletinFeed(Feed):
         return f"Snowdesk — {_COUNTRY_NAMES[obj]} avalanche bulletins"
 
     def link(self, obj: str) -> str:
-        """Return the feed's canonical HTML page — the interactive map."""
-        return f"{settings.SITE_BASE_URL.rstrip('/')}/"
+        """Return the feed's canonical HTML page — the interactive map.
+
+        ``/map/`` since SNOW-1047; ``/`` is the marketing homepage.
+        """
+        return f"{settings.SITE_BASE_URL.rstrip('/')}{reverse('public:map')}"
 
     def description(self, obj: str) -> str:
         """Return the feed description — country-specific."""

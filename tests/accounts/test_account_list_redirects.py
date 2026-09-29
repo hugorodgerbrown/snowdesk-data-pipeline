@@ -21,9 +21,9 @@ from django.urls import reverse
 from tests.factories import UserFactory
 
 CASES = [
-    ("accounts:favourites", "/account/favourites/", "/?panel=favourites"),
-    ("accounts:observations", "/account/observations/", "/?panel=reports"),
-    ("accounts:routes", "/account/routes/", "/?panel=routes"),
+    ("accounts:favourites", "/account/favourites/", "/map/?panel=favourites"),
+    ("accounts:observations", "/account/observations/", "/map/?panel=reports"),
+    ("accounts:routes", "/account/routes/", "/map/?panel=routes"),
 ]
 
 

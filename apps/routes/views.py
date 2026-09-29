@@ -962,7 +962,7 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     if is_top_level_navigation(request):
         add_pending_token(request.session, token)
 
-    destination = f"{reverse('public:home')}?route_share={token}"
+    destination = f"{reverse('public:map')}?route_share={token}"
     redir = HttpResponseRedirect(destination)
     redir["Cache-Control"] = "no-store"
     return redir

@@ -194,7 +194,7 @@ class TestAccountView:
         client = Client()
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert response["Location"] == "/?panel=favourites"
+        assert response["Location"] == "/map/?panel=favourites"
 
     def test_post_sets_confirmed_at_with_timezone(self) -> None:
         """verified_at timestamp has tzinfo set."""
@@ -239,7 +239,7 @@ class TestAccountView:
         client = Client()
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert response["Location"] == "/?panel=favourites"
+        assert response["Location"] == "/map/?panel=favourites"
 
     def test_get_expired_token_returns_400(self) -> None:
         """Expired token renders link_expired.html with status 400 on GET."""
@@ -324,7 +324,7 @@ class TestSignInView:
         client = _make_session_client(account)
         response = client.get(reverse("accounts:sign_in"))
         assert response.status_code == 302
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
 
     def test_post_known_email_sends_account_access_email(self) -> None:
         """Known email on POST → account access email sent."""

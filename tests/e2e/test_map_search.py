@@ -44,7 +44,7 @@ def test_search_matches_a_region_by_name(live_server: LiveServer, page: Page) ->
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
 
-    page.goto(f"{live_server.url}/")
+    page.goto(f"{live_server.url}/map/")
     page.wait_for_load_state("domcontentloaded")
     _open_search(page)
 

@@ -265,7 +265,7 @@ class TestRenderedOnThePage:
         """
         banner = make_banner(content="Scheduled maintenance on Sunday.")
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert f'id="pmid-{banner.id}"' in content
         assert "Scheduled maintenance on Sunday." in content
@@ -274,14 +274,14 @@ class TestRenderedOnThePage:
         """The row's level picks the status tokens, not a hard-coded colour."""
         make_banner(level=messages.ERROR)
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert "bg-status-error-bg" in content
         assert "text-status-error-text" in content
 
     def test_nothing_renders_when_no_banner_is_active(self) -> None:
         """The normal state. No empty strip, no stray border."""
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert 'id="pmid-' not in content
 
@@ -295,7 +295,7 @@ class TestRenderedOnThePage:
         """
         make_banner(content='<script>alert(1)</script> <a href="#">link</a>')
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
         assert "<script>alert(1)</script>" not in content
@@ -306,7 +306,7 @@ class TestRenderedOnThePage:
             content='Read the <a href="/help/">notes</a>.', mark_content_safe=True
         )
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
 
         assert '<a href="/help/">notes</a>' in content
 
@@ -314,7 +314,7 @@ class TestRenderedOnThePage:
         """No "×", and none of the hooks that would drive one."""
         banner = make_banner(is_dismissable=False)
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
         opening_tag = content[
             content.index(f'id="pmid-{banner.id}"') : content.index(
                 ">", content.index(f'id="pmid-{banner.id}"')
@@ -328,7 +328,7 @@ class TestRenderedOnThePage:
         """The × still hides the strip; nothing claims it can be recorded."""
         banner = make_banner(is_dismissable=True)
 
-        content = Client().get(reverse("public:home")).content.decode()
+        content = Client().get(reverse("public:map")).content.decode()
         start = content.index(f'id="pmid-{banner.id}"')
         opening_tag = content[start : content.index(">", start)]
 
@@ -342,7 +342,7 @@ class TestRenderedOnThePage:
         client = Client()
         client.force_login(user)
 
-        content = client.get(reverse("public:home")).content.decode()
+        content = client.get(reverse("public:map")).content.decode()
 
         assert (
             f'data-dismiss-url="{reverse("persistent_messages:dismiss_message", args=[banner.id])}"'
@@ -362,11 +362,11 @@ class TestRenderedOnThePage:
         client = Client()
         client.force_login(user)
 
-        before = client.get(reverse("public:home")).content.decode()
+        before = client.get(reverse("public:map")).content.decode()
         response = client.delete(
             reverse("persistent_messages:dismiss_message", args=[banner.id])
         )
-        after = client.get(reverse("public:home")).content.decode()
+        after = client.get(reverse("public:map")).content.decode()
 
         assert f'id="pmid-{banner.id}"' in before
         assert response.status_code == 204

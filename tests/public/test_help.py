@@ -378,13 +378,13 @@ class TestHelpPageDiscoverability:
     """
 
     def test_footer_links_to_help(self, client: Client) -> None:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content
         footer_start = content.index(b'data-testid="site-footer"')
         assert reverse("public:help").encode() in content[footer_start:]
 
     def test_nav_does_not_link_to_help(self, client: Client) -> None:
-        response = client.get(reverse("public:home"))
+        response = client.get(reverse("public:map"))
         content = response.content
         nav_start = content.index(b"<nav")
         nav_end = content.index(b"</nav>", nav_start)
@@ -416,7 +416,7 @@ class TestHelpCoversTheMapControls:
     def test_each_control_has_a_help_topic(
         self, client: Client, control: str, topic: str
     ) -> None:
-        home = client.get(reverse("public:home")).content
+        home = client.get(reverse("public:map")).content
         assert f'id="{control}"'.encode() in home, control
 
         help_page = client.get(reverse("public:help")).content
@@ -426,7 +426,7 @@ class TestHelpCoversTheMapControls:
     def test_each_control_has_a_coachmark_step(
         self, client: Client, control: str
     ) -> None:
-        home = client.get(reverse("public:home")).content
+        home = client.get(reverse("public:map")).content
         assert f'data-help-target="#{control}"'.encode() in home, control
 
 

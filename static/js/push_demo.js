@@ -333,7 +333,7 @@
       endpoint: sub.endpoint,
       title: $('#push-title').value || 'Snowdesk',
       body: $('#push-body').value || 'Test push from /_push-demo/',
-      url: $('#push-url').value || '/',
+      url: $('#push-url').value || '/map/',
     };
     log(`POST /account/push/test/ → ${body.title}`);
     const resp = await fetch('/account/push/test/', {

@@ -120,7 +120,7 @@ def push_test(request: HttpRequest) -> HttpResponse:
     - ``endpoint``  — if present, only enqueue for that one row
     - ``title``     — notification title (default: "Snowdesk")
     - ``body``      — notification body  (default: stub copy)
-    - ``url``       — URL to open on click (default: "/")
+    - ``url``       — URL to open on click (default: "/map/")
 
     Returns ``{"ok": True, "enqueued": N}`` where N is the number of tasks
     queued.  Actual delivery happens asynchronously in the background worker.
@@ -133,7 +133,7 @@ def push_test(request: HttpRequest) -> HttpResponse:
     payload = {
         "title": data.get("title", "Snowdesk"),
         "body": data.get("body", "Hello from the Web Push spike."),
-        "url": data.get("url", "/"),
+        "url": data.get("url", "/map/"),
     }
 
     # SNOW-384: thread client_version through to the background dispatch —

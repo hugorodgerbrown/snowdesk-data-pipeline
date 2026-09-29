@@ -52,7 +52,7 @@ _SCRIPT_SRC_RE = re.compile(r'<script[^>]+src="[^"]*?/static/js/([^"]+)"')
 
 def _home(client: Client) -> str:
     """Render the homepage and return its decoded body."""
-    response = client.get(reverse("public:home"))
+    response = client.get(reverse("public:map"))
     assert response.status_code == 200
     return response.content.decode()
 

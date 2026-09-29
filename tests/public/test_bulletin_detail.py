@@ -810,7 +810,7 @@ class TestMapTailLink:
 
         content = response.content.decode()
         assert 'data-testid="bulletin-map-link"' in content
-        assert 'href="/#CH-4115"' in content
+        assert 'href="/map/#CH-4115"' in content
         assert "See this region on the map" in content
 
     def test_historic_page_carries_the_date(
@@ -830,7 +830,7 @@ class TestMapTailLink:
                 )
             )
 
-        assert 'href="/?d=2026-03-15#CH-4115"' in response.content.decode()
+        assert 'href="/map/?d=2026-03-15#CH-4115"' in response.content.decode()
 
     def test_the_four_map_affordances_are_gone(
         self, client: Client, region: MicroRegion

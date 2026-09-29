@@ -105,7 +105,7 @@ def _shell_template_paths() -> tuple[Path, ...]:
     Return the shell templates that participate in the offline shell.
 
     These are the templates whose bytes ship inside the service worker's
-    cached shell (``base.html`` is extended by every page; ``home.html``
+    cached shell (``base.html`` is extended by every page; ``map.html``
     and ``_map_embed.html`` render the map shell; ``public/offline.html``
     is the offline-content page the activation re-warms alongside the map
     — SNOW-930's ``SHELL_PAGES``; ``static/offline.html`` is the precached
@@ -113,7 +113,7 @@ def _shell_template_paths() -> tuple[Path, ...]:
     """
     return (
         REPO_ROOT / "apps" / "public" / "templates" / "public" / "base.html",
-        REPO_ROOT / "apps" / "public" / "templates" / "public" / "home.html",
+        REPO_ROOT / "apps" / "public" / "templates" / "public" / "map.html",
         REPO_ROOT / "apps" / "public" / "templates" / "public" / "offline.html",
         REPO_ROOT
         / "apps"

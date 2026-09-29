@@ -7,7 +7,7 @@ Four sections, registered together in config/urls.py:
     resorts    ResortSitemap          — every resort's detail page
     locations  LocationWeatherSitemap — every named public location's
                                         weather page (SNOW-799)
-    static     StaticViewSitemap      — the homepage, the guides, the legal pages
+    static     StaticViewSitemap      — the homepage, the map, the guides, legal
 
 Until SNOW-676 the sitemap was the bulletin section alone, which had two
 consequences. The resort pages SNOW-504 built specifically as indexable,
@@ -322,7 +322,8 @@ class StaticViewSitemap(Sitemap):
 
     # Route name → (changefreq, priority).
     ROUTES: dict[str, tuple[str, float]] = {
-        "public:home": ("daily", 1.0),
+        "public:home": ("weekly", 1.0),
+        "public:map": ("daily", 0.9),
         "public:how_to_read_bulletin": ("monthly", 0.5),
         "public:help": ("monthly", 0.5),
         "public:compare": ("monthly", 0.5),

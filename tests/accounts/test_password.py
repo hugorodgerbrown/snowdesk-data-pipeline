@@ -53,7 +53,7 @@ class TestSetPasswordView:
             self.URL, {"new_password1": _STRONG, "new_password2": _STRONG}
         )
         assert response.status_code == 302
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
         account.user.refresh_from_db()
         assert account.user.check_password(_STRONG) is True
         assert account.user.has_usable_password() is True
@@ -120,7 +120,7 @@ class TestPasswordSignIn:
             self.URL, {"email": "signin@example.com", "password": _STRONG}
         )
         assert response.status_code == 302
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
         assert "_auth_user_id" in client.session
 
     def test_wrong_password_generic_error_no_session(self, client: Client) -> None:

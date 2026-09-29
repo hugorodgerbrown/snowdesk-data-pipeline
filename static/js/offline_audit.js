@@ -1336,7 +1336,7 @@
     // this is asking for the area to work.
     var shellOk = true;
     if (!appOpens(report)) {
-      var shell = await warm(['/']);
+      var shell = await warm(['/map/']);
       shellOk = !!(shell && shell.ok > 0 && shell.failed === 0);
     }
 
@@ -1630,10 +1630,10 @@
       : names.filter(function (name) {
           return name.indexOf(SHELL_CACHE_PREFIX) === 0;
         });
-    // The map is the site root. Hard-coded rather than derived from the
-    // current location, because this panel is reached from two pages and
-    // neither of them is the one being asked about.
-    var mapPath = '/';
+    // The map is /map/ (the site root is the marketing homepage). Hard-coded
+    // rather than derived from the current location, because this panel is
+    // reached from two pages and neither of them is the one being asked about.
+    var mapPath = '/map/';
     var shell = shellNames.length
       ? await readShellEntries(shellNames, mapPath, budget)
       : {
@@ -1872,7 +1872,7 @@
     }
     var currentPrincipal = typeof stored === 'string' ? stored : null;
 
-    var mapUrl = self.location.origin + '/';
+    var mapUrl = self.location.origin + '/map/';
     for (var i = 0; i < shellNames.length; i += 1) {
       var cache = await bounded(
         budget,
@@ -2378,7 +2378,7 @@
         // value on a critical row is `blocked`.
         //
         // Every failing state, with no exceptions — because SNOW-912 made
-        // the warm repair every one of them. `_warmCache(['/'])` re-fetches
+        // the warm repair every one of them. `_warmCache(['/map/'])` re-fetches
         // the page (restamping it for whoever is signed in now, which
         // answers 'principal', and overwriting an unreadable body), and
         // `_warmShellSubresources` then fetches the modules that page names
@@ -2553,7 +2553,7 @@
           // an unstamped entry that the worker refuses for ever.
           var result =
             typeof self.pwaWarmCache === 'function'
-              ? await self.pwaWarmCache(['/'])
+              ? await self.pwaWarmCache(['/map/'])
               : null;
           if (result && result.ok > 0 && result.failed === 0) {
             say(t.saved || FALLBACKS.saved);

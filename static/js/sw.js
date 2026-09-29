@@ -930,7 +930,7 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // live, which is the whole point of it — stale HTML pointing at hashed
 // assets that no longer exist is worse than no HTML at all. What nothing
 // did afterwards was put the map page BACK, so from the moment a deploy
-// activated until the user next opened ``/`` while connected, the app
+// activated until the user next opened the map while connected, the app
 // could not open offline at all. It was silent, it happened on every
 // deploy, and the only surface that ever said so was SNOW-907's report —
 // which is how it was found: a device nine minutes past a deploy, on a
@@ -941,7 +941,7 @@ const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_a
 // would have to be re-fetched here anyway; and ``_warmCache`` already
 // knows how to stamp a same-origin HTML response with the principal its
 // body declares (SNOW-624), which is what makes the entry servable at all.
-const SHELL_PAGE = '/';
+const SHELL_PAGE = '/map/';
 
 // SNOW-930: every page the activation re-warms, of which SHELL_PAGE is the
 // first and the one ``_canOpenOffline`` asks about. ``/offline/`` joins it
@@ -957,6 +957,36 @@ const SHELL_PAGE = '/';
 // single string because ``_canOpenOffline`` asks one question — "will the
 // app open" — and the app is the map.
 const SHELL_PAGES = [SHELL_PAGE, '/offline/'];
+
+// SNOW-1047: the map lived at `/` until the homepage took the root, so
+// bookmarks, shared links and home-screen shortcuts carry map state there
+// (`/?d=…`, `/?panel=…`, `/?route_share=…`). Online, `views.home` 301s them
+// to `/map/`; offline that request never reaches it, and the fallback below
+// matches on pathname, so `/` could never find the cached `/map/` shell. The
+// worker answers the same 301 itself, on both paths.
+//
+// The rule mirrors `apps/public/views.py` `_carries_map_state`: any
+// parameter that is not attribution is map state. Keep the two lists equal.
+const ATTRIBUTION_PARAM_PREFIXES = ['utm_'];
+const ATTRIBUTION_PARAMS = new Set(['ref', 'fbclid', 'gclid', 'mc_cid', 'mc_eid']);
+
+/**
+ * The `/map/` URL a legacy root navigation should be redirected to.
+ *
+ * @param {URL} url The navigation's URL.
+ * @returns {string|null} The absolute redirect target, or null when the
+ *     request is not a root navigation carrying map state.
+ */
+function _legacyRootMapUrl(url) {
+  if (url.origin !== self.location.origin || url.pathname !== '/') return null;
+  for (const key of url.searchParams.keys()) {
+    const attribution =
+      ATTRIBUTION_PARAMS.has(key) ||
+      ATTRIBUTION_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+    if (!attribution) return new URL(SHELL_PAGE + url.search, url.origin).toString();
+  }
+  return null;
+}
 
 // The subresources of a warmed page: same-origin scripts and stylesheets,
 // by attribute. A page whose HTML is saved and whose JavaScript is not
@@ -3649,6 +3679,21 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * @returns {Promise<Response|null>}
  */
 async function _networkFirstFallback(request, cache, startedAt) {
+  // SNOW-1047: offline, `/` is the homepage — nothing to use without a
+  // connection, and not warmed — while every reason a device navigates
+  // there offline is the map: an app installed before the move launches
+  // `/`, and a legacy `/#CH-4115` bookmark requests `/` with the fragment
+  // withheld from this worker. A 302 with no fragment of its own keeps the
+  // request's (the browser carries it across the redirect), so the region
+  // survives. Temporary, not 301: online, `/` is the homepage.
+  if (
+    (request.mode === 'navigate' || request.destination === 'document') &&
+    new URL(request.url).pathname === '/'
+  ) {
+    const toMap = Response.redirect(new URL(SHELL_PAGE, self.location.origin).toString(), 302);
+    _debugServe(request, 'navigate', 'root-to-map', toMap, startedAt);
+    return toMap;
+  }
   const current = await _currentPrincipal();
   const cached = await cache.match(request);
   // SNOW-846: this function, not its caller, is where the shell page and
@@ -3811,6 +3856,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (sync === 'navigate') {
+    // SNOW-1047: answered before any network, so it works offline too.
+    const legacyMapUrl = _legacyRootMapUrl(url);
+    if (legacyMapUrl) {
+      event.respondWith(Response.redirect(legacyMapUrl, 301));
+      return;
+    }
     event.respondWith(_guardedRespond(_networkFirst(request), request, event.clientId));
     return;
   }
@@ -4569,7 +4620,7 @@ self.addEventListener('sync', (event) => {
 // payload URL if one is already open, otherwise open a new window.
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Snowdesk', body: '', url: '/' };
+  let payload = { title: 'Snowdesk', body: '', url: '/map/' };
   if (event.data) {
     try {
       payload = { ...payload, ...event.data.json() };
@@ -4613,7 +4664,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = event.notification.data?.url || '/';
+  const target = event.notification.data?.url || '/map/';
   // SNOW-384: one click = one occurrence. Emitted unconditionally on
   // click, ahead of the focus/openWindow race below, so the signal
   // isn't lost if the focus/navigate branch throws.

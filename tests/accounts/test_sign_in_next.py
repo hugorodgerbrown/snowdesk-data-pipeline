@@ -15,7 +15,7 @@ THE THREE PATHS. Password, magic link and passkey each honour a safe
 ``next`` and each fall back to the destination they had before this ticket
 when ``next`` is absent OR unsafe:
 
-  password   → ``next``, else the map (``public:home``).
+  password   → ``next``, else the map (``public:map``).
   magic link → the emailed URL carries an encoded ``?next=``, ``account_view``
                carries it across its confirm POST, and the redirect after
                login honours it, else ``/?panel=favourites``.
@@ -45,8 +45,8 @@ _STRONG = "Str0ngPassw0rd!"
 _SAFE_NEXT = "/trips/s/abcdef123456/"
 
 # Where each path lands with no usable ``next``.
-_HOME = "/"
-_VERIFIED_LANDING_URL = "/?panel=favourites"
+_HOME = "/map/"
+_VERIFIED_LANDING_URL = "/map/?panel=favourites"
 
 
 @pytest.fixture(autouse=True)
@@ -154,7 +154,7 @@ class TestSignInPageCarriesNext:
         assert response.status_code == 302
         assert response["Location"] == _SAFE_NEXT
 
-    def test_an_already_signed_in_visitor_falls_back_to_home(
+    def test_an_already_signed_in_visitor_falls_back_to_the_map(
         self, client: Client
     ) -> None:
         account = AccountFactory.create()
@@ -195,7 +195,7 @@ class TestPasswordSignInHonoursNext:
         response = client.post(
             self.URL, {"email": account.user.email, "password": _STRONG}
         )
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
 
     def test_unsafe_next_falls_back_to_home(self, client: Client) -> None:
         account = self._account_with_password()
@@ -207,7 +207,7 @@ class TestPasswordSignInHonoursNext:
                 "next": "https://evil.example/x",
             },
         )
-        assert response["Location"] == reverse("public:home")
+        assert response["Location"] == reverse("public:map")
 
     def test_a_wrong_password_keeps_next_on_the_retry(self, client: Client) -> None:
         """A typo must not cost the destination."""
@@ -364,7 +364,7 @@ class TestSignInRefusesToBounceOffItself:
         response = client.get(self.URL, {"next": self.URL})
 
         assert response.status_code == 302
-        assert response.headers["Location"] == reverse("public:home")
+        assert response.headers["Location"] == reverse("public:map")
 
     def test_the_hidden_field_is_empty_for_an_anonymous_visitor(
         self, client: Client
@@ -386,7 +386,7 @@ class TestSignInRefusesToBounceOffItself:
 
         response = client.get(self.URL, {"next": reverse("accounts:register")})
 
-        assert response.headers["Location"] == reverse("public:home")
+        assert response.headers["Location"] == reverse("public:map")
 
     def test_a_next_naming_the_password_reset_page_is_dropped(
         self, client: Client
@@ -402,7 +402,7 @@ class TestSignInRefusesToBounceOffItself:
 
         response = client.get(self.URL, {"next": reverse("accounts:reset_password")})
 
-        assert response.headers["Location"] == reverse("public:home")
+        assert response.headers["Location"] == reverse("public:map")
 
     def test_a_next_naming_the_reset_confirm_page_survives(
         self, client: Client
@@ -435,4 +435,4 @@ class TestSignInRefusesToBounceOffItself:
 
         response = client.get(self.URL, {"next": f"{self.URL}?next=/trips/"})
 
-        assert response.headers["Location"] == reverse("public:home")
+        assert response.headers["Location"] == reverse("public:map")

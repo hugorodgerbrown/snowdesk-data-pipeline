@@ -374,7 +374,7 @@ def _map_deep_link(parameter: str, value: str) -> str:
         A root-relative URL.
 
     """
-    return f"{reverse('public:home')}?{urlencode({parameter: value})}"
+    return f"{reverse('public:map')}?{urlencode({parameter: value})}"
 
 
 def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:

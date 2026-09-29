@@ -331,7 +331,7 @@ class TestLoadOrder:
         it holds however the tags get moved between base, blocks and
         partials.
         """
-        html = client.get(reverse("public:home")).content.decode()
+        html = client.get(reverse("public:map")).content.decode()
 
         helper = html.find("js/i18n_strings.js")
         assert helper != -1, "i18n_strings.js is not loaded on the map page"
@@ -355,7 +355,7 @@ class TestLoadOrder:
         than a surface partial, so it moves independently of the three
         above and needs its own assertion.
         """
-        html = client.get(reverse("public:home")).content.decode()
+        html = client.get(reverse("public:map")).content.decode()
 
         helper = html.find("js/i18n_strings.js")
         consumer = html.find("js/favourites_offline.js")

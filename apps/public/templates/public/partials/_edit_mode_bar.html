@@ -48,14 +48,14 @@
             {# are in is a harmless reload, and a control that vanishes when   #}
             {# active is a worse affordance than one that no-ops.              #}
             <a
-                href="{% url 'public:home' %}?edit=resorts"
+                href="{% url 'public:map' %}?edit=resorts"
                 {% if active == "resorts" %}aria-current="page"{% endif %}
                 class="rounded-pill px-2 py-0.5 text-xs {% if active == 'resorts' %}{{ on }}{% else %}{{ off }}{% endif %}"
             >
                 {% trans "Resorts" %}
             </a>
             <a
-                href="{% url 'public:home' %}?edit=locations"
+                href="{% url 'public:map' %}?edit=locations"
                 {% if active == "locations" %}aria-current="page"{% endif %}
                 class="rounded-pill px-2 py-0.5 text-xs {% if active == 'locations' %}{{ on }}{% else %}{{ off }}{% endif %}"
             >
@@ -68,7 +68,7 @@
         {# lives on the link — a bare × has no accessible name at all, and     #}
         {# "Close editor" says what closes, since the panel is not the page.   #}
         <a
-            href="{% url 'public:home' %}"
+            href="{% url 'public:map' %}"
             aria-label="{% trans 'Close editor' %}"
             title="{% trans 'Close editor' %}"
             class="{% icon_button_classes extra='-mt-2 -mr-2' %}"

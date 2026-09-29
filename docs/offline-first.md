@@ -497,7 +497,7 @@ carries the full argument.
 `/account/manage/` (SNOW-667 split that into `/account/` +
 `/account/settings/`), then the favourites section of `/account/`, then
 `/account/favourites/` (SNOW-668). SNOW-803 removed that page: the pins
-sheet on the map at `/` is the only surface that fetches
+sheet on the map at `/map/` is the only surface that fetches
 `/favourites/partials/list/`, the write-through keys on that request
 path, and `/` is the navigation the shell caches. Every cached navigation
 is stamped with `X-SW-Principal` — the map like any other — so the

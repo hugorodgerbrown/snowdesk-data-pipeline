@@ -82,6 +82,8 @@ const SW_EXPORTS = [
   '_warmShellSubresources',
   '_rewarmShell',
   'SHELL_PAGE',
+  // SNOW-1047: the legacy `/?<map state>` redirect the worker answers itself.
+  '_legacyRootMapUrl',
   'SHELL_SUBRESOURCE_LIMIT',
   // SNOW-930: the shell pages the activation walks.
   'SHELL_PAGES',
@@ -675,7 +677,7 @@ describe('_networkFirst principal partitioning (C1)', () => {
     // mutations.principal, so the read side falls back to anonymous —
     // which is what a public page stamps.
     const caches = makeCaches();
-    const request = navRequest('/');
+    const request = navRequest('/map/');
     let online = basicResponse(pageHtml('', 'season scrubber'));
     const sw = loadSw({
       caches,
@@ -3330,7 +3332,7 @@ describe('re-warming the shell after an activation (SNOW-912)', () => {
   // about the two halves of the repair: what a page needs in order to be
   // more than a blank frame, and the activation-time call that fetches it.
   const SHELL_CACHE = 'snowdesk-shell-UNSUBSTITUTED';
-  const MAP_URL = `${ORIGIN}/`;
+  const MAP_URL = `${ORIGIN}/map/`;
   const SCRIPT_URL = `${ORIGIN}/static/js/map.abc123.js`;
   const STYLE_URL = `${ORIGIN}/static/css/output.def456.css`;
   const PAGE_DAY = '2026-09-11';
@@ -3627,7 +3629,7 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
     const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/'));
+    await sw._networkFirst(navRequest('/map/'));
     await flush();
     await setStoredPrincipal('acct-uuid-a');
 
@@ -3641,7 +3643,7 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
     const online = basicResponse(pageHtml('acct-uuid-a', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/'));
+    await sw._networkFirst(navRequest('/map/'));
     await flush();
     await setStoredPrincipal('acct-uuid-b');
 
@@ -3671,14 +3673,14 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
   });
 
   it('accepts a shell cached under a dated URL, as the fallback does', async () => {
-    // `/?d=2026-01-23` and `/` share one cached shell — the date is read
+    // `/map/?d=2026-01-23` and `/map/` share one cached shell — the date is read
     // back off location.search by page JS. A searchless match is what
     // `_networkFirstFallback` uses, so this has to agree.
     const caches = makeCaches();
     const online = basicResponse(pageHtml('anonymous', 'the map'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/?d=2026-01-23'));
+    await sw._networkFirst(navRequest('/map/?d=2026-01-23'));
     await flush();
 
     expect(await sw._canOpenOffline()).toBe(true);
@@ -3722,5 +3724,68 @@ describe('answering whether the app would open offline (SNOW-922)', () => {
       sw.__listeners.message({ data: { type: 'can-open-offline' }, waitUntil: () => {} }),
     ).not.toThrow();
     await flush();
+  });
+});
+
+describe('legacy root map links (SNOW-1047)', () => {
+  // The map moved from `/` to `/map/`. Online, the server 301s `/?d=…`;
+  // offline that request never reaches it, so the worker must answer the
+  // same redirect or the link opens the offline fallback.
+  it.each([
+    ['/?d=2026-02-16', '/map/?d=2026-02-16'],
+    ['/?panel=reports', '/map/?panel=reports'],
+    ['/?utm_source=x&route_share=abc', '/map/?utm_source=x&route_share=abc'],
+  ])('sends %s to %s', (path, target) => {
+    const sw = loadSw();
+    expect(sw._legacyRootMapUrl(new URL(ORIGIN + path))).toBe(ORIGIN + target);
+  });
+
+  it.each(['/', '/?utm_source=newsletter', '/?ref=producthunt', '/map/?d=2026-02-16', '/help/?d=1'])(
+    'leaves %s alone',
+    (path) => {
+      const sw = loadSw();
+      expect(sw._legacyRootMapUrl(new URL(ORIGIN + path))).toBeNull();
+    },
+  );
+
+  it('answers a legacy navigation with a 301 before touching the network', async () => {
+    // The default fetch stub rejects, as it would with no connection: the
+    // redirect has to come from the worker, not from views.home.
+    const sw = loadSw();
+    let responded;
+    sw.__listeners.fetch({
+      request: navRequest('/?d=2026-02-16'),
+      clientId: '',
+      respondWith(value) {
+        responded = value;
+      },
+    });
+
+    const response = await responded;
+    expect(response.status).toBe(301);
+    expect(response.headers.get('Location')).toBe(ORIGIN + '/map/?d=2026-02-16');
+  });
+});
+
+describe('an offline navigation to the root (SNOW-1047)', () => {
+  // An app installed before the move launches `/`, and a legacy
+  // `/#CH-4115` bookmark requests `/` with the fragment withheld from the
+  // worker. Offline, both must reach the map, not offline.html.
+  it('redirects to /map/ with a 302 when the network fails', async () => {
+    const sw = loadSw();
+
+    const response = await sw._networkFirst(navRequest('/'));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(ORIGIN + '/map/');
+  });
+
+  it('leaves an online root navigation to the network (the homepage)', async () => {
+    const homepage = basicResponse(pageHtml('', 'the homepage'));
+    const sw = loadSw({ fetch: () => Promise.resolve(homepage) });
+
+    const response = await sw._networkFirst(navRequest('/'));
+
+    expect(await response.text()).toContain('the homepage');
   });
 });

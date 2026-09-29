@@ -1360,7 +1360,7 @@ class TestMapViewEditMode:
 
     def test_query_string_as_superuser_renders_panel(self) -> None:
         """``?edit=resorts`` as a superuser shows the panel."""
-        resp = _superuser_client().get(reverse("public:home") + "?edit=resorts")
+        resp = _superuser_client().get(reverse("public:map") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" in resp.content
 
@@ -1369,7 +1369,7 @@ class TestMapViewEditMode:
         self, client_factory: Any
     ) -> None:  # mock-typing-impractical
         """``?edit=resorts`` for everyone else renders the normal map."""
-        resp = client_factory().get(reverse("public:home") + "?edit=resorts")
+        resp = client_factory().get(reverse("public:map") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 
@@ -1382,19 +1382,19 @@ class TestMapViewEditMode:
         """
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=resorts")
+            .get(reverse("public:map") + "?edit=resorts")
             .content.decode()
         )
 
         assert 'aria-label="Close editor"' in content
-        assert f'href="{reverse("public:home")}"' in content
-        assert f'href="{reverse("public:home")}?edit=locations"' in content
+        assert f'href="{reverse("public:map")}"' in content
+        assert f'href="{reverse("public:map")}?edit=locations"' in content
 
     def test_the_bar_marks_resorts_as_the_open_editor(self) -> None:
         """``aria-current`` says which of the two the reader is in."""
         content = (
             _superuser_client()
-            .get(reverse("public:home") + "?edit=resorts")
+            .get(reverse("public:map") + "?edit=resorts")
             .content.decode()
         )
         marked = content.split('aria-current="page"')[0]
@@ -1403,7 +1403,7 @@ class TestMapViewEditMode:
 
     def test_no_query_string_does_not_render_panel(self) -> None:
         """Without the querystring the panel is absent, even for a superuser."""
-        resp = _superuser_client().get(reverse("public:home"))
+        resp = _superuser_client().get(reverse("public:map"))
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 

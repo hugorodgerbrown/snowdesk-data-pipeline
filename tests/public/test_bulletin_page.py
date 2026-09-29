@@ -2903,7 +2903,7 @@ class TestMapBackLink:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/?d=2026-03-15#CH-4115"' in content
+        assert 'href="/map/?d=2026-03-15#CH-4115"' in content
 
     def test_today_bulletin_omits_date_query_string(
         self, client: Client, region: MicroRegion
@@ -2920,9 +2920,9 @@ class TestMapBackLink:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/#CH-4115"' in content
+        assert 'href="/map/#CH-4115"' in content
         # Confirm the date query string is absent from the nav map link.
-        assert "/?d=" not in content
+        assert "/map/?d=" not in content
 
     def test_empty_state_includes_date_and_fragment(self, client: Client) -> None:
         """The empty-state (no bulletin) page still produces a dated map back-link.
@@ -2939,7 +2939,7 @@ class TestMapBackLink:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'href="/?d=2025-12-01#CH-9999"' in content
+        assert 'href="/map/?d=2025-12-01#CH-9999"' in content
 
 
 # ---------------------------------------------------------------------------

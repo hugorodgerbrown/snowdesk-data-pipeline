@@ -163,7 +163,7 @@ class TestRouteShareRedirect:
         response = client.get(_redirect_url(share.token))
 
         assert response.status_code == 302
-        assert response["Location"] == f"/?route_share={share.token}"
+        assert response["Location"] == f"/map/?route_share={share.token}"
 
     def test_the_redirect_is_never_a_301(self, client: Client) -> None:
         """A 301 is cached by the browser and never re-seats the session."""
@@ -629,7 +629,7 @@ class TestAnonymousRecipientJourney:
         followed = recipient.get(_redirect_url(token))
 
         assert followed.status_code == 302
-        assert followed["Location"] == f"/?route_share={token}"
+        assert followed["Location"] == f"/map/?route_share={token}"
         assert recipient.session[PENDING_SESSION_KEY] == [token]
 
         # 3. The map panel answers that anonymous session, and the row it

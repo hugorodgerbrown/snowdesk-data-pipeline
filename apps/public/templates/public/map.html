@@ -1,0 +1,514 @@
+{% extends "public/base.html" %}
+{% load i18n static %}
+{% comment %}
+apps/public/templates/public/map.html — the interactive map at /map/ (the app).
+
+SNOW-314: the full-frame map with a dismissable landing overlay (#home-intro).
+The map surface uses the _map_embed.html partial (show_intro=True adds the
+overlay inside #map). The offmap-banner, edit panels and edit JS are included
+here too.
+
+The map lived at / (as public/home.html) from SNOW-344 until the marketing
+homepage took the root; / now 301s here when it carries map query
+parameters (views.home).
+
+This template owns the page metadata (page_meta) and loads home_intro.js
+in addition to the shared map assets.
+{% endcomment %}
+
+{# SNOW-553: title and description now feed the share card as well as the #}
+{# tab and the SERP snippet. The separate, shorter og:description this    #}
+{# page used to carry is gone — one string, so the two can't drift.       #}
+{# SNOW-535: kept under ~155 characters so search results show it whole.  #}
+{% block page_meta %}
+    {% trans "Avalanche map · Snowdesk" as page_title %}
+    {% trans "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino, on one map. Read the day's danger, submit field observations." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
+
+{# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
+{# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
+{# and the site footer stay within the visible viewport on mobile.          #}
+{% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
+
+{% block extra_head %}
+    {# Warm the basemap connection before anything asks for it. MapLibre only #}
+    {# requests the style JSON once map.js has been fetched, parsed and run,  #}
+    {# so the DNS + TCP + TLS handshake to the tile host would otherwise      #}
+    {# start after all of that — hundreds of milliseconds into the load on a  #}
+    {# mobile connection, with the map's first bytes queued behind it.        #}
+    {# crossorigin is required, not optional: MapLibre fetches the style and  #}
+    {# tiles in CORS mode, and a preconnect without it warms a separate       #}
+    {# connection pool that those requests never touch.                       #}
+    <link rel="preconnect" href="{{ basemap_origin }}" crossorigin>
+    <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
+    <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+    <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {# The explainer is an opt-in map mode. Keep its styles off the normal #}
+    {# homepage path; production's manifest storage fingerprints this URL. #}
+    {% if request.GET.layers == 'exploded' %}
+        <link rel="stylesheet" href="{% static 'css/map_exploded.css' %}">
+    {% endif %}
+    {# Per-country RSS/Atom feeds (SNOW-396). Feed readers and LLM crawlers  #}
+    {# pick these up from the page head; the four hrefs cover every country. #}
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Switzerland avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='ch' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Austria avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='at' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — Italy avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='it' %}"
+    >
+    <link
+        rel="alternate"
+        type="application/rss+xml"
+        title="Snowdesk — France avalanche bulletins"
+        href="{% url 'public:country_bulletin_feed' country='fr' %}"
+    >
+{% endblock %}
+
+{% block content %}
+    {# SNOW-324/486: off-map notification. Hidden by default; map.js reveals it #}
+    {# when the locate pill is tapped while the user is outside the map's       #}
+    {# bounds, and a 7s timeout auto-dismisses. Rendered through the shared     #}
+    {# floating-banner primitive (top-centre card, dismissible) and wired to    #}
+    {# overlays.js via data-overlay — the same shape and × as every other       #}
+    {# floating nudge, on all viewports.                                        #}
+    {% trans "Off the map" as offmap_title %}
+    {% trans "Your location is outside the mapped regions." as offmap_body %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
+    {# SNOW-682: locate-failed notification. Same primitive, same top-centre  #}
+    {# slot and the same JS owner as the off-map banner above — and mutually  #}
+    {# exclusive with it, since both are answers to the same tap. Revealed by #}
+    {# map_geolocate.js when no fix arrives within its five-second budget     #}
+    {# (offline on a phone, the common case is a cold GPS lock that never     #}
+    {# lands), and auto-dismissed after 12s. The CTA re-runs the locate: it   #}
+    {# is the retry the user would otherwise get by hunting for the roundel   #}
+    {# again, which is exactly what a banner sitting over the map is in the   #}
+    {# way of.                                                                #}
+    {% trans "Can't find your location" as locate_failed_title %}
+    {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
+    {% trans "Try again" as locate_failed_cta %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
+    {# SNOW-828: the trip-arrival banner. Revealed by map.js when the page   #}
+    {# is opened on ?trip= or ?trip_share= and the route has been drawn —    #}
+    {# it names WHICH trip the line belongs to (the title is written at      #}
+    {# runtime from the geojson's own properties, which is what body_id and  #}
+    {# title_id are the hooks for) and offers the way back to the page the   #}
+    {# reader came from. Without it the arrival is an unexplained magenta    #}
+    {# line, since the trip is drawn transiently and appears in no panel.    #}
+    {# Bottom-centre rather than top: the two banners above are answers to a #}
+    {# locate tap and this is not, so they are not mutually exclusive and    #}
+    {# must not share a slot.                                               #}
+    {% trans "Showing this trip's route." as trip_arrival_body %}
+    {% trans "Back to the trip" as trip_arrival_cta %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
+    {# SNOW-314: shared map surface with intro overlay enabled.          #}
+    {# The _map_embed partial renders #home-intro when show_intro=True.  #}
+    {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
+    {# here via #home-intro's "Explore the map" CTA, reached on a first   #}
+    {# visit or by re-opening the panel from the "?" roundel; never       #}
+    {# automatically straight after the intro is dismissed.               #}
+    {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
+    {# SNOW-344: edit-resorts panel (moved from map.html).               #}
+    {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+    {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
+    {% if edit_target == "locations" %}{% include "public/partials/edit_locations_panel.html" %}{% endif %}
+    {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
+    {# and favourites) — loaded once here, ahead of both surface partials. #}
+    <script defer src="{% static 'js/htmx.min.js' %}"></script>
+    {# SNOW-475: place_picker.js is likewise shared by both sheet surfaces #}
+    {# — loaded once here, ahead of both surface partials. Each partial     #}
+    {# carried its own tag until the 2026-08-03 JS review (C5): browsers    #}
+    {# do not deduplicate script elements by URL, so the IIFE ran twice and #}
+    {# the second window.PlacePicker overwrote the first, orphaning its     #}
+    {# closure. Document order here puts it before report.js and            #}
+    {# favourites.js, which is what both of them require.                   #}
+    <script defer src="{% static 'js/place_picker.js' %}"></script>
+    {# SNOW-608: the sheet controller, failure toast and mutation-storage  #}
+    {# guard both surfaces below share. Loaded here rather than from       #}
+    {# either partial — all three scripts are defer, so document order is  #}
+    {# execution order and window.MapSheet exists before either caller.    #}
+    <script defer src="{% static 'js/map_sheet.js' %}"></script>
+    {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
+    {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
+    {# the same reason as the three tags above: all four are defer, so       #}
+    {# document order is execution order, and favourites.js / report.js /    #}
+    {# routes.js each call window.pwaPanelRows.warm() at init. Each guards   #}
+    {# the call with `?.`, so a page that omits this tag degrades to the     #}
+    {# fetch-on-every-open behaviour rather than breaking.                   #}
+    <script defer src="{% static 'js/panel_rows_cache.js' %}"></script>
+    {# SNOW-658: only one overlay is open over the map at a time              #}
+    {# (window.pwaMapOverlays). Every map overlay — the layers menu, the      #}
+    {# three UGC sheets, the anchored detail popup, the legend card and the   #}
+    {# help coachmark — registers with it and announces its own open, and it  #}
+    {# closes the rest. It replaces the                                       #}
+    {# hand-wired pairs each surface used to carry, which covered three of    #}
+    {# the fifteen relationships between them. Loaded HERE, ahead of every    #}
+    {# registering module: map_sheet.js registers from attach(), and both     #}
+    {# surface partials below (and the map bundle further down) register at   #}
+    {# their own parse time, so this has to have run first.                   #}
+    <script defer src="{% static 'js/map_overlay_exclusivity.js' %}"></script>
+    {# SNOW-658: where a map overlay may reach — the floor above the season   #}
+    {# scrubber, the height cap below #map's top edge, and the inset past the #}
+    {# bottom-right roundel column (window.pwaOverlayBounds). Shared by the   #}
+    {# layers menu (map_basemap_picker.js, in the bundle below) and the three #}
+    {# UGC sheets. Loaded here, outside the bundle's contiguous run: every    #}
+    {# consumer calls it from a user-triggered handler, never at parse time,  #}
+    {# so it only has to be on the page.                                      #}
+    <script defer src="{% static 'js/map_overlay_bounds.js' %}"></script>
+    {# SNOW-658: renaming a UGC panel row in place — the interaction the    #}
+    {# two renameable panels (downloads, favourites) share, with each       #}
+    {# passing its own commit. Loaded here rather than from either surface  #}
+    {# for the same reason htmx/place_picker/map_sheet are: both callers    #}
+    {# are below, all these scripts are defer, so document order is         #}
+    {# execution order and window.pwaInlineRename exists before either.     #}
+    {#                                                                      #}
+    {# It replaced overflow_menu.js on this page for one day, when Hugo's   #}
+    {# SNOW-658 design took the "…" off every panel and nothing here opened #}
+    {# one. That ruling is gone — see the next block, and                   #}
+    {# docs/design-system.md's interaction principles — so both modules now #}
+    {# load, and this comment is kept only so the swap does not look        #}
+    {# unexplained in the history.                                          #}
+    {# SNOW-867: the "…" row menus. Loaded HERE, once, because several       #}
+    {# surfaces on this page carry one — the routes panel (SNOW-830), the    #}
+    {# downloads panel, and the favourites panel (SNOW-887) — under the      #}
+    {# rule that replaced SNOW-658's: two or more actions is a "…", one is a #}
+    {# bare icon. It used to load from _routes_surface.html as that panel's  #}
+    {# own dependency; a second tag there would run the module twice, since  #}
+    {# browsers do not deduplicate script elements by URL.                   #}
+    <script defer src="{% static 'js/overflow_menu.js' %}"></script>
+    {# SNOW-887: window.pwaShare. Loaded HERE for the same reason as the     #}
+    {# menu above — the routes panel had it as its own dependency until the  #}
+    {# favourites panel became a second consumer, and two tags would run the #}
+    {# module twice. Deferred scripts run in document order, so pwaShare     #}
+    {# exists before routes.js and favourites.js reach their own top level;  #}
+    {# static/js/map.js reads it from a click handler, long after all of     #}
+    {# them.                                                                 #}
+    <script defer src="{% static 'js/share.js' %}"></script>
+    <script defer src="{% static 'js/inline_rename.js' %}"></script>
+    {# SNOW-711: the server half of that rename — read the row's uuid off   #}
+    {# the pencil, POST the committed name, hand the response back. The     #}
+    {# favourites and routes panels here and the account page's own list    #}
+    {# all did that identically; each still decides what to do with the     #}
+    {# response, which is the only part that differs.                       #}
+    <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
+    {# The other half of a UGC row's name: pressing it frames that item on   #}
+    {# the map. Loaded here for the same reason as the two above — the       #}
+    {# routes, favourites, field-observation and (SNOW-811) downloads        #}
+    {# surfaces below all delegate to window.pwaRowFocus, and deferred       #}
+    {# classic scripts run in document order. Not loaded on the account      #}
+    {# pages: their rows name the same places, but there is no map on those  #}
+    {# pages to fly, so those rows render no focus button at all.            #}
+    <script defer src="{% static 'js/row_focus.js' %}"></script>
+    {# SNOW-752: the third shared row module — recognise a row's own Remove #}
+    {# landing, so the surface that owns the list can re-read it and tell   #}
+    {# the map. Loaded here, ahead of the three panel modules below, for    #}
+    {# the same reason as the two above: each calls window.pwaRowRemoved    #}
+    {# .watch() as its IIFE runs, and deferred classic scripts run in       #}
+    {# document order. Unlike row_focus.js this one IS also loaded on the   #}
+    {# account pages — their rows carry the same trash, and a list there    #}
+    {# goes just as stale.                                                  #}
+    <script defer src="{% static 'js/row_removed.js' %}"></script>
+    {# Keeps every `<time data-relative-time>` on this page true for as     #}
+    {# long as the page is open — the field-observation rows' "reported 2   #}
+    {# hours ago". This is the map: it is opened at the car park and read   #}
+    {# again hours later, out of signal, with nothing re-rendering it.      #}
+    {# Loaded here rather than from _report_surface.html so it binds once   #}
+    {# and is available to any other surface that grows a relative age.     #}
+    <script defer src="{% static 'js/relative_time.js' %}"></script>
+    {# SNOW-672: the sign-in gate the three surfaces below all show. Loaded #}
+    {# here, ahead of them, for the same reason as relative_time.js — one   #}
+    {# owner for the treatment rather than a copy in each module.           #}
+    <script defer src="{% static 'js/signin_cta.js' %}"></script>
+    {# SNOW-749: the account half of offline downloads — pushes each        #}
+    {# completed download's DEFINITION to the account and reads back the    #}
+    {# areas already there. Loaded ahead of the map bundle so                #}
+    {# window.pwaDownloadsSync exists by the time map_basemap_downloads.js  #}
+    {# and map_region_download.js reach for it; both read it lazily, from   #}
+    {# inside async functions, so this is belt-and-braces rather than a     #}
+    {# load-order contract. Entirely inert for a signed-out visitor — it    #}
+    {# reads eligibility off #map-custom-download-control.                   #}
+    <script defer src="{% static 'js/downloads_sync.js' %}"></script>
+    {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
+    {# and hidden, so the markup, tokens and ARIA roles have a single      #}
+    {# owner and the "×" is handled by overlays.js like every other toast. #}
+    {% include "includes/_toast.html" with id="map-sheet-toast" kind="warning" body="" %}
+    {# SNOW-333: field-report sheet + JS — shared with the map surface.  #}
+    {% include "public/partials/_report_surface.html" %}
+    {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
+    {% include "public/partials/_favourites_surface.html" %}
+    {# SNOW-686: saved-routes sheet + JS — shared with the map surface.     #}
+    {# Ungated since SNOW-724 retired the ``routes`` rollout flag; the      #}
+    {# sheet renders for every visitor, and routes.js branches on           #}
+    {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
+    {% include "public/partials/_routes_surface.html" %}
+    {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
+    {# condition symbol on the map itself, so this surface is inert until    #}
+    {# one is tapped.                                                        #}
+    {% include "public/partials/_weather_surface.html" %}
+    {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
+    {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
+    {# the map roundel (#map-custom-download-control) now, not the       #}
+    {# layers menu's old "Manage downloads…" row — that row is gone.     #}
+    {% include "public/partials/_map_downloads_sheet.html" %}
+{% endblock %}
+
+{% block extra_js %}
+    <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+    {# SNOW-492: offline read cache for the favourites / community-reports #}
+    {# map overlays. Loads before map.js — ensureOverlayLoaded calls        #}
+    {# window.pwaMapOverlayCache on both a successful fetch (write-through) #}
+    {# and a failed one (read-back). Needs db.js (base.html), which is     #}
+    {# earlier in document order and also deferred.                        #}
+    <script defer src="{% static 'js/map_overlay_offline_cache.js' %}"></script>
+    {# SNOW-496: pure scrubber/timelapse/ribbon math, extracted so it can be #}
+    {# unit-tested directly (tests/js/test_scrubber_core.js) — map.js's own  #}
+    {# IIFEs delegate to window.pwaScrubberCore. Must load before map.js.    #}
+    <script defer src="{% static 'js/scrubber_core.js' %}"></script>
+    {# SNOW-792: pure month-grid math for the map's date picker              #}
+    {# (window.pwaCalendarCore), unit-tested in tests/js/test_calendar_core. #}
+    {# Must load before map_calendar.js, which reads it at parse time and    #}
+    {# stays shut without it — and, since SNOW-927, before map_scrubber.js,  #}
+    {# which reads MAX_FORWARD_DAYS at parse time to bound its boot ceiling. #}
+    {# The scrubber degrades quietly rather than breaking if reordered (it   #}
+    {# falls back to a today-only ceiling), so nothing would crash to tell   #}
+    {# you — and tests/public/test_map_script_order.py does not cover this   #}
+    {# pair, its regex matching only map*.js filenames.                      #}
+    <script defer src="{% static 'js/calendar_core.js' %}"></script>
+    {# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus). #}
+    {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}
+    {# setMenuOpen on every popover open.                                    #}
+    <script defer src="{% static 'js/map_layer_sync_status.js' %}"></script>
+    {# SNOW-521: pure tile-math + "up to N MB" estimate for the "Download   #}
+    {# basemap" control (window.pwaBasemapDownloadCore). Must load before   #}
+    {# map.js, whose cacheNowInit delegates to it.                          #}
+    {# SNOW-623: the one choropleth paint routine (window.pwaChoroplethCore),#}
+    {# replacing three copies in map.js whose clearMissing semantics          #}
+    {# genuinely differ. Must load before map.js.                             #}
+    <script defer src="{% static 'js/choropleth_core.js' %}"></script>
+    {# SNOW-618: pure region/resort search matching + ordering              #}
+    {# (window.pwaSearchCore), extracted from map.js's main IIFE so it can  #}
+    {# be unit-tested. Must load before map.js, whose search box uses it.   #}
+    <script defer src="{% static 'js/search_core.js' %}"></script>
+    {# SNOW-656: the Bulletins layer's preference-vs-suppression state       #}
+    {# machine (window.pwaLayerVisibilityCore) — which of the two rows the   #}
+    {# old l4 tier split into is effective right now, and how regions-fill   #}
+    {# must be painted for it. Read by map.js at parse time (the boot seed   #}
+    {# resolves the Bulletins preference through seedFromLegacy), so it must #}
+    {# load before the bundle.                                              #}
+    <script defer src="{% static 'js/layer_visibility_core.js' %}"></script>
+    {# The diagonal-hatch pixels the downloaded-areas overlay is painted     #}
+    {# with (window.pwaHatchCore) — the mark that lets the download squares  #}
+    {# and the danger choropleth share the same polygons. Read by map.js at  #}
+    {# parse time (installRegionsLayers registers the fallback image before  #}
+    {# adding the layer that names it), so it must load before the bundle.   #}
+    <script defer src="{% static 'js/hatch_core.js' %}"></script>
+    {# SNOW-737: the stored map camera and its validation                     #}
+    {# (window.pwaViewportCore) — what the visitor was looking at when they   #}
+    {# last closed the app. Read by map.js at parse time (the MapLibre        #}
+    {# constructor takes the restored centre and zoom), so it must load       #}
+    {# before the bundle.                                                    #}
+    <script defer src="{% static 'js/map_viewport_core.js' %}"></script>
+    {# SNOW-691: the slope overlay's coverage rectangle, zoom limits and     #}
+    {# class table (window.pwaSlopeOverlayCore), extracted so the coverage   #}
+    {# predicate can be unit-tested (tests/js/test_slope_overlay_core.js).   #}
+    {# Here with the other *_core.js modules and NOT inside the map bundle's #}
+    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
+    {# from installSlopeLayer, on the style-install path, never at parse     #}
+    {# time, so it has no place in the temporal-dead-zone ordering the       #}
+    {# bundle exists to protect.                                            #}
+    <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# SNOW-761: the weather overlay's pure transforms                       #}
+    {# (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the #}
+    {# temperature-and-altitude label, the date projection and the           #}
+    {# cluster-to-lowest collapse, extracted so all four are Vitest-covered  #}
+    {# (tests/js/test_map_weather_core.js). Here with the other *_core.js    #}
+    {# modules and NOT inside the map bundle's contiguous run                #}
+    {# (test_bundle_scripts_are_contiguous): map.js reads it from            #}
+    {# installWeatherLayer and refreshWeatherSourceData, never at parse      #}
+    {# time, so it has no place in the temporal-dead-zone ordering the       #}
+    {# bundle exists to protect.                                             #}
+    <script defer src="{% static 'js/map_weather_core.js' %}"></script>
+    {# The saved-route elevation profile's maths and SVG                     #}
+    {# (window.pwaElevationProfileCore) — the picture the route popup's      #}
+    {# distance/ascent/descent figures summarise, derived from the elevation #}
+    {# already carried as the third ordinate of each route coordinate.       #}
+    {# Here with the other *_core.js modules and NOT inside the map bundle's #}
+    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
+    {# from activateRoute, on a tap, never at parse time — so like the       #}
+    {# slope core it has no place in the temporal-dead-zone                  #}
+    {# ordering the bundle exists to protect.                                #}
+    <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
+    {# The start dot and checkered finish flag on a saved route              #}
+    {# (window.pwaRouteMarkersCore) — the endpoint geometry plus the raw     #}
+    {# RGBA for both icons, which a checkered flag needs because SDF keeps   #}
+    {# only an alpha mask and would collapse it to a silhouette. Read by     #}
+    {# map.js from installRoutesLayer, on the overlay's first load, never at #}
+    {# parse time — so like the other call-site cores it sits here and not   #}
+    {# inside the map bundle's contiguous run.                               #}
+    <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+    {# SNOW-910: a route's slope record, read (window.pwaRouteSlopeCore).    #}
+    {# SNOW-1017 took the slope-coloured line off the map; map.js still      #}
+    {# reads this core for the no-fall passages and the terrain lines (the   #}
+    {# crux rings and fall-line arrows left the map with SNOW-1019), and the #}
+    {# elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
+    {# never at parse time, so like the other call-site cores it sits here   #}
+    {# and not inside the map bundle's contiguous run.                       #}
+    <script defer src="{% static 'js/route_slope_core.js' %}"></script>
+    {# SNOW-1017: the route as its legs (window.pwaRouteLegsCore) — one      #}
+    {# line per leg sliced from the route's own coordinates, a numbered      #}
+    {# point at each transition, and the opacity a leg opened on the rail    #}
+    {# dims the rest with. After the slope core, whose segments its          #}
+    {# passages are built from. Read at install time, never at parse time.   #}
+    <script defer src="{% static 'js/route_legs_core.js' %}"></script>
+    {# SNOW-1019: the route cursor on the map (window.pwaRouteCursorMapCore)  #}
+    {# — a selection as a stretch of line, the cursor index as a dot, and a  #}
+    {# pointer on the line back to the nearest sample. Read by map.js when a #}
+    {# route opens and on a pointer, never at parse time.                    #}
+    <script defer src="{% static 'js/route_cursor_map_core.js' %}"></script>
+    {# SNOW-1018: rail one. The route cursor (window.pwaRouteCursorCore,     #}
+    {# SNOW-1016) had no caller until this rail, which is its first; the     #}
+    {# rail's pure half (window.pwaRouteRailCore) — tick step, figures line, #}
+    {# one fill per leg — and its DOM half (window.pwaRouteRail), which      #}
+    {# map.js's activateRoute calls on a tap. None of the three reads map    #}
+    {# state at parse time, so they sit with the call-site cores and not     #}
+    {# inside the map bundle's contiguous run.                               #}
+    <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_core.js' %}"></script>
+    {# SNOW-1019: rail two, the open leg. The bank's level-ski wedges        #}
+    {# (window.pwaBankRibbonCore, SNOW-1021/1031), rail two's pure half      #}
+    {# (window.pwaRouteRailTwoCore) and its DOM half                         #}
+    {# (window.pwaRouteRailTwo), which route_rail.js attaches on open — so   #}
+    {# all three come before it.                                             #}
+    <script defer src="{% static 'js/bank_ribbon_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_two.js' %}"></script>
+    <script defer src="{% static 'js/route_rail.js' %}"></script>
+    {# SNOW-1019: the leader line — a dashed line from the route cursor's    #}
+    {# dot on the map to rail one's cursor and on to rail two's. Its pure    #}
+    {# half (window.pwaRouteLeaderCore) and its DOM half                     #}
+    {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
+    <script defer src="{% static 'js/route_leader_core.js' %}"></script>
+    <script defer src="{% static 'js/route_leader.js' %}"></script>
+    {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
+    {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
+    {# geometry is fetched from, and what the address bar should say once   #}
+    {# it has been read. map.js reads it inside its load handler, not at    #}
+    {# parse time, so it sits with the other call-site cores.               #}
+    <script defer src="{% static 'js/trip_deeplink_core.js' %}"></script>
+    {# SNOW-898: the two pure decisions inside a country load               #}
+    {# (window.pwaCountryLoadCore) — which of a country's four feeds must   #}
+    {# be fetched, and what its layers-menu sync dot should do given which  #}
+    {# of them landed. map.js reads it from inside ensureCountryLoaded,     #}
+    {# never at parse time, so it sits with the other call-site cores.      #}
+    <script defer src="{% static 'js/country_load_core.js' %}"></script>
+    <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
+    {# SNOW-860: the one reader of what this device has downloaded          #}
+    {# (window.pwaBasemapAreas). map_basemap_downloads.js delegates to it,  #}
+    {# and /account/settings/ loads the same file for the "Reset local      #}
+    {# data" breakdown — one reader, so the two surfaces cannot disagree.   #}
+    {# Outside the map bundle's contiguous run (it publishes on window and  #}
+    {# reads nothing from another file's lexical scope), and before it,     #}
+    {# because map_basemap_downloads.js calls into it.                      #}
+    <script defer src="{% static 'js/basemap_downloaded_areas.js' %}"></script>
+    {# SNOW-611: the one ordered pinned-download run both map download      #}
+    {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
+    {# map.js, whose runPinnedDownload delegates to it.                     #}
+    <script defer src="{% static 'js/basemap_download_runner.js' %}"></script>
+    {# Distraction-free pin positioning (window.PlacementFocus): hides every #}
+    {# app layer over the basemap while a favourite / observation / resort   #}
+    {# pin is being positioned. Callers (place_picker.js, map.js,            #}
+    {# map_edit_resorts.js) only reach it from user-triggered handlers, so   #}
+    {# document order relative to them doesn't matter — it just has to be on #}
+    {# the page.                                                             #}
+    <script defer src="{% static 'js/map_placement_focus.js' %}"></script>
+    {# SNOW-610: map.js, split along the eleven seams it already had. THIS   #}
+    {# ORDER IS LOAD-BEARING. These are classic scripts sharing one global   #}
+    {# lexical scope: a top-level let/const is readable from a later script  #}
+    {# as a bare identifier, but sits in the temporal dead zone until its    #}
+    {# own script has run — and every IIFE below runs at parse time. So      #}
+    {# declarations come first, then map.js's boot IIFE, then the surfaces,  #}
+    {# in the order they had inside the single file. map.js's header carries #}
+    {# the same list with a line on what each one owns.                      #}
+    <script defer src="{% static 'js/map_state.js' %}"></script>
+    <script defer src="{% static 'js/map_basemap_downloads.js' %}"></script>
+    <script defer src="{% static 'js/map_shared.js' %}"></script>
+    <script defer src="{% static 'js/map.js' %}"></script>
+    <script defer src="{% static 'js/map_scrubber.js' %}"></script>
+    <script defer src="{% static 'js/map_legend.js' %}"></script>
+    <script defer src="{% static 'js/map_timelapse.js' %}"></script>
+    <script defer src="{% static 'js/map_basemap_picker.js' %}"></script>
+    <script defer src="{% static 'js/map_region_download.js' %}"></script>
+    <script defer src="{% static 'js/map_custom_download.js' %}"></script>
+    <script defer src="{% static 'js/map_geolocate.js' %}"></script>
+    <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
+    {# SNOW-801: the region + date panel the #region-readout chip discloses. #}
+    {# After map_season_ribbon.js, which owns the chip this hangs off.       #}
+    <script defer src="{% static 'js/map_region_panel.js' %}"></script>
+    {# SNOW-792: the map's date picker. After map_scrubber.js, which owns    #}
+    {# the snowdesk:scrub-to listener it dispatches into.                     #}
+    <script defer src="{% static 'js/map_calendar.js' %}"></script>
+    {# SNOW-658: the three overlay roundels' shared "my overlay is on the    #}
+    {# map" state (data-overlay-shown). Reads window.pwaDownloadedOverlay /  #}
+    {# pwaFavouritesOverlay / pwaCommunityReportsOverlay, which map.js       #}
+    {# publishes at parse time — hence AFTER the bundle. Deliberately        #}
+    {# outside the bundle's contiguous run (it is not a bundle member: no    #}
+    {# bundle module reads it), which is what                                #}
+    {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
+    <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# HACK MODE (feature discovery): the drop-zone control — one-tap        #}
+    {# "download the ground around me". Outside the map bundle (nothing in    #}
+    {# the bundle reads it), so its tag sits BELOW the bundle's contiguous    #}
+    {# run — see tests/public/test_map_script_order.py. After                 #}
+    {# map_geolocate.js, whose listener answers the locate request it         #}
+    {# dispatches.                                                            #}
+    <script defer src="{% static 'js/map_drop_zone.js' %}"></script>
+    {# HACK MODE, DEBUG only: the tile-zoom readout beside the help        #}
+    {# roundel. Outside the map bundle, so it sits below the bundle's run —  #}
+    {# see tests/public/test_map_script_order.py.                            #}
+    {% if zoom_readout_visible %}
+        <script defer src="{% static 'js/map_zoom_readout.js' %}"></script>
+    {% endif %}
+    {% if request.GET.layers == 'exploded' %}
+        {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
+        {# ordinary map visits so the feature has no JS cost until opened.  #}
+        {% include "includes/_map_explainer_strings.html" %}
+        <script defer src="{% static 'js/map_exploded.js' %}"></script>
+    {% endif %}
+    {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
+    <script defer src="{% static 'js/home_intro.js' %}"></script>
+    {# Collapsible bottom-right control group. Independent of map.js — it     #}
+    {# only reads #map-controls-br's DOM — but must load before map_help.js   #}
+    {# so it is listening for snowdesk:map-help-open by the time an           #}
+    {# auto-starting tour fires it.                                           #}
+    <script defer src="{% static 'js/map_controls_collapse.js' %}"></script>
+    {# SNOW-794: shows and hides the season scrubber as the shown day moves  #}
+    {# in and out of the season. Loads AFTER map_scrubber.js, which is what   #}
+    {# dispatches the snowdesk:date-changed it listens for — order is not     #}
+    {# load-bearing for a document listener, but reading the pair in the      #}
+    {# order they talk is.                                                    #}
+    <script defer src="{% static 'js/map_scrubber_reveal.js' %}"></script>
+    {# SNOW-457: map help / coachmark tour #}
+    <script defer src="{% static 'js/map_help.js' %}"></script>
+    {# SNOW-344: edit-resorts JS (moved from map.html). #}
+    {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
+    {# SNOW-755: edit-locations JS. The core module carries the logic and #}
+    {# must load first — map_edit_locations.js reads its frozen export at    #}
+    {# parse time, and both are deferred, so document order is the order.    #}
+    {% if edit_target == "locations" %}
+        <script defer src="{% static 'js/map_edit_locations_core.js' %}"></script>
+        <script defer src="{% static 'js/map_edit_locations.js' %}"></script>
+    {% endif %}
+{% endblock %}

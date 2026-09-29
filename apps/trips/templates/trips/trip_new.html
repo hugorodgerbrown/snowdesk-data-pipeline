@@ -42,7 +42,7 @@ one. It is also behind auth, so no unfurler will ever reach it.
             {% endblocktrans %}
         </p>
         {% card padding="p-6" %}
-        {% url 'public:home' as trip_cancel_url %}
+        {% url 'public:map' as trip_cancel_url %}
         {% include "trips/partials/_trip_form.html" with form=form route_uuid=route.uuid cancel_url=trip_cancel_url %}
         {% endcard %}
     </main>
