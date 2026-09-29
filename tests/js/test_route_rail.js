@@ -192,7 +192,12 @@ describe('open', () => {
 
   it('writes the name, the vertical line and the horizontal line', () => {
     window.pwaRouteRail.open(
-      feature({ ascent_m: 366, descent_m: 1934, distance_m: 12900, terrain: { steep_m: 3460 } }),
+      feature({
+        ascent_m: 366,
+        descent_m: 1934,
+        distance_m: 12900,
+        terrain: { surveyed_m: 12900, steep_m: 3460 },
+      }),
     );
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
@@ -306,11 +311,20 @@ describe('open', () => {
 
   it('reads the steep terrain from a stringified terrain summary', () => {
     // A feature MapLibre hands back carries its nested properties as JSON.
-    window.pwaRouteRail.open(feature({ terrain: JSON.stringify({ steep_m: 0 }) }));
+    window.pwaRouteRail.open(
+      feature({ terrain: JSON.stringify({ surveyed_m: 620, steep_m: 0 }) }),
+    );
 
     expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe(
       '0.6 km · 0.0 km steep terrain',
     );
+  });
+
+  it('omits the steep terrain when none of the route was surveyed', () => {
+    // Wholly outside the terrain coverage: zero steep is not a finding.
+    window.pwaRouteRail.open(feature({ terrain: { surveyed_m: 0, steep_m: 0 } }));
+
+    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe('0.6 km');
   });
 
   it('omits the steep terrain for an unsampled route', () => {
