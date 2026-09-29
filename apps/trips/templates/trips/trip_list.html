@@ -130,7 +130,7 @@ trip's own page says what one trip is.
 
             The share strings are the trip page's own, in one partial since
             SNOW-834 (see _trip_share_strings.html and docs/i18n.md).
-        {% endcomment %}
+            {% endcomment %}
             {% if created_trip %}{% trans "Trip created." as created_toast_body %}{% endif %}
             {% include "includes/_toast.html" with id="trip-toast-success" kind="success" group="trip" body=created_toast_body visible=created_trip timeout=6000 %}
             {% include "includes/_toast.html" with id="trip-toast-error" kind="error" group="trip" body="" timeout=6000 %}

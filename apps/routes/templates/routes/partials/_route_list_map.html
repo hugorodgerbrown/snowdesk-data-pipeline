@@ -42,7 +42,7 @@ Context:
 
     They are the same row (_route.html), given ``pending_share``, which
     switches its id, its actions and its meta prefix. See that file.
-{% endcomment %}
+        {% endcomment %}
         {% for share in pending_shares %}
             {% include "routes/partials/_route.html" with route=share.route pending_share=share map_focus=True %}
         {% endfor %}
