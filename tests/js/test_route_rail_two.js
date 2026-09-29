@@ -1544,6 +1544,19 @@ describe('the readout (SNOW-1024)', () => {
     );
   });
 
+  it('keeps the track word and a kick turn in aria-valuetext while a band is selected', () => {
+    const angles = ANGLES.map((a, i) => (i < 100 ? 35 : a));
+    const banks = BANKS.map((b, i) => (i < 50 ? 20 : i < 100 ? -20 : b));
+    const { cursor } = attach({ angles, banks });
+    cursor.openLeg(LEGS[0]);
+    cursor.setIndex(50);
+
+    cursor.select({ kind: 'band', from: 45, to: 55 });
+
+    expect(readoutLines()).toEqual(['550 m 35–40°']);
+    expect(lane.getAttribute('aria-valuetext')).toMatch(/550 m 35–40°\. Traverse\. Kick turn$/);
+  });
+
   it('hides the track row from assistive tech', () => {
     const banks = BANKS.map(() => 20);
     banks[300] = -20;

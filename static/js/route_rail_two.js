@@ -1662,11 +1662,12 @@
     /**
      * What only assistive tech hears, after the lines: the track row's
      * word and kick turn under the cursor, which the eye reads off the
-     * row itself (SNOW-1044).
+     * row itself (SNOW-1044). Said whenever there is a cursor, whichever
+     * line the readout shows — the row still draws them under a selection.
      *
      * @type {Array<string>}
      */
-    var spoken = [];
+    var spoken = state.index === null ? [] : trackSpoken(state.index);
     /** The anchor's px, or null to sit left at 0. */
     var anchorX = null;
     var stem = false;
@@ -1703,7 +1704,6 @@
           { angle: String(Math.round(angle)), bank: String(Math.round(Math.abs(roll))) },
         ));
       }
-      spoken = trackSpoken(state.index);
       if (cursorIn) {
         anchorX = c.xOf(state.index + 0.5, view, width);
         stem = true;
