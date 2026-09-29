@@ -15,11 +15,13 @@ There is deliberately no "whole route" button and no breadcrumb: closing
 the leg IS the whole route.
 
 RAIL TWO IS THE SECOND ROW (SNOW-1019), `[data-route-rail-two]`. It sits
-in rail one's two columns (`subgrid`): the leg's title, figures, zoom −/+
-and its own × on the left; on the right a 44 px lane of three rows on one
-x-axis — a strip of slope bands (one per run of segments sharing a class,
-unmerged), the track drawn as level-ski wedges showing its bank, and one bar per
-no-fall passage — and the readout under it, anchored to the cursor or the
+in rail one's two columns (`subgrid`): on the left the TERRAIN eyebrow, a
+title carrying the leg's vertical ("Leg 2 — ascend 210 m"), a subtitle
+carrying its horizontal ("847 m · 200 m steep terrain"), zoom −/+ and its
+own × (SNOW-1044); on the right a 44 px lane of three rows on one x-axis —
+a strip of slope bands (one per run of segments sharing a class,
+unmerged), the TRACK ROW, and one bar per no-fall passage — and the
+readout under it, anchored to the cursor or the
 selection (the leg's elevation profile was a fourth row until it was
 taken out: it drew near-flat and said nothing rail one does not;
 SNOW-1024 took out its distance ticks). With no leg open it shows EMPTY
@@ -33,9 +35,13 @@ motion: the segment fills, stretches to the lane and becomes the band
 strip while the card, anchored by its bottom edge, grows upward; closing
 reverses it, and reduced motion skips it. It opens FITTED, the whole leg
 however long (SNOW-1031), pans and zooms within the leg, and its bands
-and passages are pressable selections. Fitted, the bank row may be too
-coarse to draw: it then shows "Zoom in to see the bank", and a double-tap
-zooms to where it draws. static/js/route_rail_two.js draws
+and passages are pressable selections. The track row (SNOW-1044) is a row
+of labelled stretches — Gentle, Traverse, Steep; on a climb Skin and
+Bootpack — while a segment is under 10 px, and the level-ski wedges
+showing the bank from 10 px up; a double-tap zooms to where the wedges
+draw. Kick turns are not drawn (the map shows the zig-zag); the lane's
+aria-valuetext names one under the cursor.
+static/js/route_rail_two.js draws
 it in REAL PIXELS — the viewBox is the lane's measured width, never
 stretched — because a wedge's ground line draws the bank angle, and a
 stretched wedge would lie about it. Rail one marks the part of the open leg
@@ -186,7 +192,7 @@ Context:
             <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
                     {% include "includes/_eyebrow.html" with text=route_rail_two_eyebrow tag="h3" heading_id="route-rail-two-eyebrow" %}
-                    <p data-route-rail-two-title class="mt-1 truncate text-sm font-semibold text-text-1"></p>
+                    <p data-route-rail-two-title class="mt-1 text-sm font-semibold text-text-1 text-balance"></p>
                 </div>
                 <div class="-mr-3 -mt-3 flex flex-none items-start">
                     <button
@@ -215,6 +221,7 @@ Context:
                     </button>
                 </div>
             </div>
+            {# The subtitle: the leg's horizontal (SNOW-1044).              #}
             <p data-route-rail-two-figures class="mt-1 font-mono text-meta text-text-2"></p>
         </div>
         {# The lane, drawn in real pixels by static/js/route_rail_two.js.   #}
@@ -275,16 +282,16 @@ Context:
     {# (tests/test_js_strings_are_translatable.py); the distance and leg  #}
     {# names repeat rail one's msgids, so they translate once.            #}
     <template id="route-rail-two-strings-template">
-        <span data-string="figure-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
-        <span data-string="figure-ascent">{% blocktrans %}▲ %(m)s m{% endblocktrans %}</span>
-        <span data-string="figure-descent">{% blocktrans %}▼ %(m)s m{% endblocktrans %}</span>
-        <span data-string="figure-range">{% blocktrans %}%(start)s → %(end)s m{% endblocktrans %}</span>
         <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
         <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
+        <span data-string="leg-ascend">{% blocktrans %}Leg %(i)s — ascend %(m)s m{% endblocktrans %}</span>
+        <span data-string="leg-descend">{% blocktrans %}Leg %(i)s — descend %(m)s m{% endblocktrans %}</span>
+        <span data-string="leg-length">{% blocktrans %}%(length)s m{% endblocktrans %}</span>
+        <span data-string="leg-length-steep">{% blocktrans %}%(length)s m · %(steep)s m steep
+                terrain{% endblocktrans %}</span>
         <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
         <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
         <span data-string="two-placeholder">{% trans "Select a route leg to view terrain" %}</span>
-        <span data-string="two-bank-zoom">{% trans "Zoom in to see the bank" %}</span>
         <span data-string="two-hint">{% trans "Drag to read a point. Tap a band or passage to select it." %}</span>
         <span data-string="class-slope-gentle">{% trans "under 30°" %}</span>
         <span data-string="class-slope-30">{% trans "30–35°" %}</span>
@@ -293,18 +300,19 @@ Context:
         <span data-string="class-slope-45">{% trans "45–50°" %}</span>
         <span data-string="class-slope-50">{% trans "over 50°" %}</span>
         <span data-string="class-unknown">{% trans "slope not known" %}</span>
-        <span data-string="attitude-flat">{% trans "Flat" %}</span>
-        <span data-string="attitude-gentle-descent">{% trans "Gentle descent" %}</span>
-        <span data-string="attitude-gentle-ascent">{% trans "Gentle ascent" %}</span>
-        <span data-string="attitude-fall-line">{% trans "Fall line" %}</span>
-        <span data-string="attitude-falls-away-left">{% trans "Ground falls away left" %}</span>
-        <span data-string="attitude-falls-away-right">{% trans "Ground falls away right" %}</span>
-        <span data-string="attitude-traverse-left">{% trans "Traverse · falls away left" %}</span>
-        <span data-string="attitude-traverse-right">{% trans "Traverse · falls away right" %}</span>
-        <span data-string="attitude-traverse">{% trans "Traverse" %}</span>
+        <span data-string="track-gentle">{% trans "Gentle" %}</span>
+        <span data-string="track-skin">{% trans "Skin" %}</span>
+        <span data-string="track-traverse">{% trans "Traverse" %}</span>
+        <span data-string="track-steep">{% trans "Steep" %}</span>
+        <span data-string="track-bootpack">{% trans "Bootpack" %}</span>
+        <span data-string="track-kick-turn">{% trans "Kick turn" %}</span>
         <span data-string="readout-slope">{% blocktrans %}%(angle)s° slope{% endblocktrans %}</span>
         <span data-string="readout-slope-bank">{% blocktrans %}%(angle)s° slope · %(bank)s°
                 bank{% endblocktrans %}</span>
+        <span data-string="readout-slope-bank-left">{% blocktrans %}%(angle)s° slope · %(bank)s° bank, falls away
+                left{% endblocktrans %}</span>
+        <span data-string="readout-slope-bank-right">{% blocktrans %}%(angle)s° slope · %(bank)s° bank, falls away
+                right{% endblocktrans %}</span>
         <span data-string="readout-band">{% blocktrans %}%(length)s m %(class)s{% endblocktrans %}</span>
         <span data-string="readout-passage">{% blocktrans %}No-fall passage · %(length)s m{% endblocktrans %}</span>
     </template>

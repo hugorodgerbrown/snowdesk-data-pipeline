@@ -32,17 +32,15 @@
  * kilometre apart, kilometres otherwise — so a strip never reads "500 m,
  * 1 km, 1.5 km".
  *
- * ## The figures line
- *
- * `formatFigures` is the ONE formatter for `distance · ▲ ascent · ▼ descent ·
- * start → end`, taken by a leg on rail two (SNOW-1019). A null figure is
- * OMITTED, never shown as zero: a route whose GPX carried no elevation has
- * an unknown ascent, not a flat one (Route.ascent_m's docstring).
+ * ## The figure lines
  *
  * Rail one's own header (SNOW-1045) reads as rail two's card: one line for
  * the vertical (`formatRouteVertical`, "Ascend 366 m · descend 1,934 m")
  * and one for the horizontal (`formatRouteHorizontal`, "12.9 km · 3.5 km
- * steep terrain"). The same omission rule holds on both.
+ * steep terrain"). A null figure is OMITTED, never shown as zero: a route
+ * whose GPX carried no elevation has an unknown ascent, not a flat one
+ * (Route.ascent_m's docstring). (`formatFigures`, the ▲/▼ line rail two's
+ * card read, went with SNOW-1044's card.)
  *
  * Exports (frozen `self.pwaRouteRailCore`):
  *
@@ -50,7 +48,6 @@
  *   majorStep(spanM)                         → metres between labelled ticks
  *   tickUnit(spanM)                          → 'm' or 'km', once per strip
  *   ticks(spanM, units?)                     → [{d, major, label}]
- *   formatFigures(figures, strings?)         → the figures line
  *   formatRouteVertical(figures, strings?)   → rail one's ascend/descend line
  *   formatRouteHorizontal(figures, strings?) → rail one's length/steep line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
@@ -129,15 +126,6 @@
 
   /** The English units, the fallback when no strings are passed. */
   var DEFAULT_UNITS = Object.freeze({ m: '%(value)s m', km: '%(value)s km' });
-
-  /** The English figure templates, the fallback when no strings are passed. */
-  var DEFAULT_FIGURES = Object.freeze({
-    'figure-distance': '%(km)s km',
-    'figure-ascent': '▲ %(m)s m',
-    'figure-descent': '▼ %(m)s m',
-    'figure-range': '%(start)s → %(end)s m',
-    'figure-separator': ' · ',
-  });
 
   /** The English templates for rail one's two lines (SNOW-1045). */
   var DEFAULT_ROUTE_LINES = Object.freeze({
@@ -244,44 +232,6 @@
    */
   function isKnown(value) {
     return typeof value === 'number' && isFinite(value);
-  }
-
-  /**
-   * The figures line for a route or a leg.
-   *
-   * @param {{
-   *   distance_m?: ?number,
-   *   ascent_m?: ?number,
-   *   descent_m?: ?number,
-   *   elevation_start?: ?number,
-   *   elevation_end?: ?number,
-   * }} figures What is known; a null or absent figure is left out.
-   * @param {Object<string, string>} [strings] Templates keyed as
-   *   `DEFAULT_FIGURES`, from the partial's strings template.
-   * @returns {string}
-   */
-  function formatFigures(figures, strings) {
-    var t = { ...DEFAULT_FIGURES, ...(strings || {}) };
-    var f = figures || {};
-
-    /** @type {Array<string>} */
-    var parts = [];
-    if (isKnown(f.distance_m)) {
-      parts.push(interpolate(t['figure-distance'], { km: (f.distance_m / 1000).toFixed(1) }));
-    }
-    if (isKnown(f.ascent_m)) {
-      parts.push(interpolate(t['figure-ascent'], { m: String(Math.round(f.ascent_m)) }));
-    }
-    if (isKnown(f.descent_m)) {
-      parts.push(interpolate(t['figure-descent'], { m: String(Math.round(f.descent_m)) }));
-    }
-    if (isKnown(f.elevation_start) && isKnown(f.elevation_end)) {
-      parts.push(interpolate(t['figure-range'], {
-        start: String(Math.round(f.elevation_start)),
-        end: String(Math.round(f.elevation_end)),
-      }));
-    }
-    return parts.join(t['figure-separator']);
   }
 
   /**
@@ -516,7 +466,6 @@
     majorStep: majorStep,
     tickUnit: tickUnit,
     ticks: ticks,
-    formatFigures: formatFigures,
     formatRouteVertical: formatRouteVertical,
     formatRouteHorizontal: formatRouteHorizontal,
     legSpan: legSpan,

@@ -4,8 +4,9 @@
  *
  * Rail two opens under rail one when a leg is pressed. It draws the open
  * leg on three rows sharing one x-axis — a strip of slope bands, the track
- * drawn as a row of level-ski wedges showing its bank (bank_ribbon_core.js,
- * SNOW-1031), and one bar per no-fall passage — and it pans and zooms within the leg. (It drew the
+ * row (labelled stretches fitted, level-ski wedges showing its bank once
+ * zoomed in: SNOW-1031, SNOW-1044), and one bar per no-fall passage — and
+ * it pans and zooms within the leg. (It drew the
  * leg's elevation profile above them until SNOW-1019 took the row out;
  * the leg's profile is still read here, for the identity cell's figures.
  * Its distance scale went in SNOW-1024: rail one already prints where
@@ -43,21 +44,36 @@
  * fitted, rail two is an overview, and zooming is how it is read in
  * detail. The rail is never widened to make something tappable.
  *
- * ## The bank row follows the zoom
+ * ## The track row: words, or wedges (SNOW-1044)
  *
- * A glyph needs about `GLYPH_MIN_PX` (10 px) to read, and a segment at the
- * fitted scale can be under 1 px, so each glyph covers N whole segments,
- * N = ceil(10 px / segment width) (`glyphGroup`). Groups are aligned to
- * the leg's start, so a group never splits a segment and never shifts as
- * the view pans. A glyph draws the segment with the LARGEST |roll| in its
- * group, with that segment's side — never the mean, which cancels a
- * zig-zag out. Past `MAX_GROUP` (3 segments, 75 m) one glyph would
- * summarise too much ground, so the row draws NO glyphs and the mount
- * shows a placeholder that asks for a zoom instead. The scale is constant
- * across the lane, so the row is either all drawn or all placeholder.
- * `resolveSpan` is the widest span that draws, the target a double-tap
- * zooms to. The band strip and the passages are drawn per segment at
- * every zoom, however thin.
+ * The row under the band strip says what the TRACK does on that ground.
+ * A bank glyph needs `GLYPH_MIN_PX` (10 px) to read, and a segment at the
+ * fitted scale can be under 1 px, so the row has two modes (`trackMode`):
+ *
+ *   under 10 px a segment — WORDS: one labelled block per STRETCH of the
+ *     leg (`stretches`), each a run of one `segmentWord`, at least
+ *     `MIN_STRETCH_SEGMENTS` (6 × 25 m = 150 m) long;
+ *   at 10 px or more — WEDGES: one level-ski wedge per segment
+ *     (`bankGlyphs`, bank_ribbon_core.js's `bankWedge`), with a dashed tick
+ *     at each stretch boundary, so the words' stretches stay placed.
+ *
+ * The words summarise what the wedges show, so the two never disagree:
+ * Gentle is ground under `GROUND_STEEP_DEG` (25°); on steeper ground a
+ * bank of `TRAVERSE_BANK_DEG` (20°) or more is Traverse and a smaller one
+ * Steep — the track is with the fall line. On a climb Gentle is Skin, and
+ * a gradient along the track of `BOOTPACK_GRADIENT_DEG` (25°) or more is
+ * Bootpack. The gradient is `segmentGradients`, read off the geometry's
+ * heights — the terrain model's since SNOW-1043. A run shorter than 150 m
+ * is merged into its longer neighbour, the shortest first, until none is
+ * left (a leg shorter than 150 m is one stretch).
+ *
+ * A KICK TURN (`kickTurns`) is the bank changing side between one segment
+ * and the next on a climb, both banking `KICK_TURN_BANK_DEG` (15°) or
+ * more. The row does not draw them — the map shows the zig-zag — and the
+ * lane's spoken value names one under the cursor. `resolveSpan` is the widest
+ * span at which the wedges draw, the target a double-tap zooms to. The
+ * band strip and the passages are drawn per segment at every zoom,
+ * however thin.
  *
  * ## Slope bands
  *
@@ -73,7 +89,9 @@
  *
  *   MIN_SPAN                                  → the narrowest span, 6
  *   GLYPH_MIN_PX                              → the px a bank glyph needs, 10
- *   MAX_GROUP                                 → most segments a glyph reads, 3
+ *   GROUND_STEEP_DEG, TRAVERSE_BANK_DEG,
+ *   BOOTPACK_GRADIENT_DEG, KICK_TURN_BANK_DEG,
+ *   MIN_STRETCH_SEGMENTS, STEEP_TERRAIN_DEG   → the track row's thresholds
  *   PASSAGE_MIN_PX                            → a passage bar's least width, 6
  *   ROWS                                      → the lane's vertical layout
  *   bandRuns(angles, classify, range?)        → [{from, to, classIndex}]
@@ -92,13 +110,18 @@
  *   clip(range, view)                         → visible part, or null
  *   nearestRange(ranges, x, view, width, radiusPx) → the range a tap picks
  *   steepestBand(bands, x, view, width, radiusPx) → the band a tap picks
- *   glyphGroup(span, width)                   → segments per bank glyph, N
- *   resolveSpan(leg, width)                   → the widest span whose row draws
- *   bankGlyphs(options)                       → {placeholder, glyphs} for the view
+ *   trackMode(view, width)                    → 'words' or 'wedges'
+ *   resolveSpan(leg, width)                   → the widest span the wedges draw at
+ *   bankGlyphs(options)                       → one wedge per segment in view
+ *   segmentGradients(profile, sampleCount, spanM) → signed gradient per segment
+ *   segmentWord(angle, bank, gradient, climbing) → the track's word there
+ *   stretches(leg, angles, banks, gradients)  → [{from, to, word}], ≥ 150 m
+ *   kickTurns(leg, banks)                     → the segments a kick turn lands on
+ *   steepLength(leg, angles, sampleCount, spanM) → metres of ground ≥ 30°
+ *   bankSide(bank)                            → 'left', 'right' or null
  *   passageBox(part, view, width)             → a passage bar's {x, width} in px
  *   legProfile(profile, leg, sampleCount, clipRun) → the leg in sample units
- *   legFigures(legProfile, leg, sampleCount, spanM) → for formatFigures
- *   trackAttitude(angle, roll, climbing)      → {term, side}, or null
+ *   legFigures(legProfile, leg, sampleCount, spanM) → distance, ascent, descent
  *   readoutAnchor(x, width)                   → {align, left} for the readout
  *   roundStretch(metres)                      → a length to the nearest 25 m
  *   legSlots(legs, sampleCount)               → the leg picker's segments
@@ -158,8 +181,6 @@
    * @typedef {{
    *   x: number,
    *   index: number,
-   *   from: number,
-   *   to: number,
    *   roll: number,
    *   halfWidth: number,
    *   dy: number,
@@ -167,10 +188,15 @@
    *   up: ?Array<[number, number]>,
    *   down: ?Array<[number, number]>,
    * }} BankGlyph
-   *   One level-ski glyph for a group of segments: its centre `x` (the
-   *   group's centre), the sample `index` it draws (the group's largest
-   *   |roll|), the group's first and last samples, that sample's signed
-   *   roll, the glyph's half-width, and `bankWedge`'s geometry.
+   *   One level-ski glyph for one segment: its centre `x`, the sample
+   *   `index` it draws, that sample's signed roll, the glyph's half-width,
+   *   and `bankWedge`'s geometry.
+   */
+
+  /**
+   * @typedef {{from: number, to: number, word: string}} Stretch
+   *   A run of one track word, sample indices inclusive. `word` is one of
+   *   'gentle', 'skin', 'traverse', 'steep', 'bootpack' or 'unknown'.
    */
 
   /**
@@ -201,14 +227,32 @@
   /** The narrowest span, in samples, a zoom may reach. */
   var MIN_SPAN = 6;
 
-  /** The px a bank glyph needs to read; a group spans at least this. */
+  /**
+   * The px a bank glyph needs to read. A segment this wide or wider puts
+   * the track row in wedges; a narrower one, in words (`trackMode`).
+   */
   var GLYPH_MIN_PX = 10;
 
-  /**
-   * The most segments one bank glyph may stand for: 3 × 25 m. Past it the
-   * row shows the zoom placeholder instead of glyphs.
-   */
-  var MAX_GROUP = 3;
+  /** A segment's length on the wire, metres: the sampler's stride. */
+  var STRIDE_M = 25;
+
+  /** Ground under this is Gentle (or Skin on a climb), degrees. */
+  var GROUND_STEEP_DEG = 25;
+
+  /** On steep ground, a bank of this or more is a Traverse, degrees. */
+  var TRAVERSE_BANK_DEG = 20;
+
+  /** On a climb, a gradient of this or more along the track is a Bootpack. */
+  var BOOTPACK_GRADIENT_DEG = 25;
+
+  /** Both sides of a kick turn bank at least this far, degrees. */
+  var KICK_TURN_BANK_DEG = 15;
+
+  /** The shortest stretch the words show: 6 segments, 150 m. */
+  var MIN_STRETCH_SEGMENTS = 6;
+
+  /** Ground of this or more counts as steep terrain on the card, degrees. */
+  var STEEP_TERRAIN_DEG = 30;
 
   /** A glyph's largest half-width in px, bank_ribbon_core.js's. */
   var GLYPH_HALF_WIDTH = 7;
@@ -223,11 +267,12 @@
    * The lane's vertical layout, in px. The svg is drawn at this height in
    * real pixels (the partial's `h-11`, 44 px), so these are screen units.
    *
-   * The band strip (0–10), a 4 px gap, the bank row (14–40: the wedges
+   * The band strip (0–10), a 4 px gap, the track row (14–40: the wedges
    * centred on y 27, rising at most `ribbonHalf` — bank_ribbon_core.js's
-   * CAP_PX — either side), then the no-fall bars 4 px tall at 40–44,
-   * directly under the bank row, so a capped wedge never covers a
-   * passage (SNOW-1031). SNOW-1024 took the distance ticks off the foot,
+   * CAP_PX — either side; fitted, the stretch blocks `blockTop` to
+   * `blockTop + blockHeight`), then
+   * the no-fall bars 4 px tall at 40–44, directly under the track row, so
+   * a capped wedge never covers a passage (SNOW-1031, SNOW-1044). SNOW-1024 took the distance ticks off the foot,
    * so no dead space sits between the band, the bank row and the readout.
    * SNOW-1019 took the leg's elevation profile off the top: it drew
    * near-flat and said nothing rail one's highlighted leg does not.
@@ -238,29 +283,11 @@
     bandHeight: 10,
     ribbonY: 27,
     ribbonHalf: 13,
+    blockTop: 20,
+    blockHeight: 16,
     passageTop: 40,
     passageHeight: 4,
   });
-
-  /**
-   * The fall-line tolerance of `FALL_LINE_TOLERANCE_DEG` in
-   * apps/routes/services/passages.py, the tolerance its fall-line vote
-   * uses. Kept here for that cross-reference; the readout's own words use
-   * the narrower `FALL_LINE_DEG` (SNOW-1024's design review).
-   */
-  var FALL_LINE_TOLERANCE_DEG = 30;
-
-  /** Under this far off the fall line, the readout says "Fall line". */
-  var FALL_LINE_DEG = 20;
-
-  /** Past this far off the fall line, a track is traversing. */
-  var TRAVERSE_DEG = 65;
-
-  /** Under this slope angle the ground is flat and has no fall line. */
-  var FLAT_DEG = 5;
-
-  /** Under this slope angle the ground is a gentle ascent or descent. */
-  var GENTLE_DEG = 10;
 
   /** Under this bank the ground falls away to neither side. */
   var LEVEL_BANK_DEG = 3;
@@ -636,43 +663,40 @@
   }
 
   /**
-   * How many whole segments one bank glyph covers at this scale:
-   * N = ceil(`GLYPH_MIN_PX` / the width of one segment), never under 1.
+   * Which way the track row draws at this scale (SNOW-1044): 'wedges'
+   * once a segment is `GLYPH_MIN_PX` (10 px) wide or more, 'words' below.
    *
-   * @param {number} span Samples across the lane.
+   * @param {View} view
    * @param {number} width The lane's width in px.
-   * @returns {number} Infinity for a lane with no width.
+   * @returns {'words'|'wedges'}
    */
-  function glyphGroup(span, width) {
-    if (!(width > 0) || !(span > 0)) return Infinity;
-    var segPx = width / span;
-    // The epsilon keeps an exact 10 / 3 px at N = 3 rather than 4.
-    return Math.max(1, Math.ceil(GLYPH_MIN_PX / segPx - EPSILON));
+  function trackMode(view, width) {
+    var span = view.to - view.from;
+    if (!(width > 0) || !(span > 0)) return 'words';
+    // The epsilon keeps an exact 10 px segment in wedges.
+    return width / span >= GLYPH_MIN_PX - EPSILON ? 'wedges' : 'words';
   }
 
   /**
-   * The widest span at which the bank row draws (N ≤ `MAX_GROUP`),
-   * clamped to the leg's limits: the span a double-tap zooms to.
+   * The widest span at which the wedges draw — a segment of at least
+   * `GLYPH_MIN_PX` — clamped to the leg's limits: the span a double-tap
+   * zooms to.
    *
    * @param {Leg} leg
    * @param {number} width The lane's width in px.
    * @returns {number}
    */
   function resolveSpan(leg, width) {
-    var widest = Math.floor((width * MAX_GROUP) / GLYPH_MIN_PX);
+    var widest = Math.floor(width / GLYPH_MIN_PX + EPSILON);
     return clamp(widest, minSpan(leg), legLength(leg));
   }
 
   /**
-   * The bank row for the view: one glyph per group of N whole segments,
-   * or the placeholder when N is past `MAX_GROUP` (SNOW-1031).
-   *
-   * Groups start at `leg.from` and step by N, so they hold still as the
-   * view pans. Each glyph draws the segment with the largest |roll| in its
-   * group, with its sign — never a mean, which would cancel a zig-zag to
-   * level. A group whose banks are all unknown draws nothing: a gap, not
-   * a level glyph. The glyph sits on the group's centre with half-width
-   * `min(7, group px / 2 − 0.5)`, so neighbours never touch.
+   * The wedges for the view: one level-ski glyph per segment, each on its
+   * segment's centre with half-width `min(7, segment px / 2 − 0.5)`, so
+   * neighbours never touch (SNOW-1031). A segment whose bank is unknown
+   * draws nothing: a gap, not a level glyph. Called in wedges mode only
+   * (`trackMode`); fitted, the row is words.
    *
    * @param {{
    *   bankWedge: function(number, number, Object): WedgeShape,
@@ -686,7 +710,7 @@
    *   y?: number,
    * }} options `bankWedge` is `pwaBankRibbonCore.bankWedge`; the rest as
    *   that function and this module name them.
-   * @returns {{placeholder: boolean, glyphs: Array<BankGlyph>}} In lane px.
+   * @returns {Array<BankGlyph>} In lane px, left to right.
    */
   function bankGlyphs(options) {
     var view = options.view;
@@ -695,26 +719,14 @@
     var banks = options.banks;
     /** @type {Array<BankGlyph>} */
     var glyphs = [];
-    var n = glyphGroup(view.to - view.from, width);
-    if (n > MAX_GROUP) return { placeholder: true, glyphs: glyphs };
-    if (!Array.isArray(banks)) return { placeholder: false, glyphs: glyphs };
-    var firstGroup = Math.max(0, Math.floor((view.from - leg.from) / n));
-    for (var start = leg.from + firstGroup * n; start <= leg.to && start < view.to; start += n) {
-      var end = Math.min(leg.to, start + n - 1);
-      var index = -1;
-      var roll = 0;
-      for (var i = start; i <= end; i += 1) {
-        var value = banks[i];
-        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-        if (index < 0 || Math.abs(value) > Math.abs(roll)) {
-          index = i;
-          roll = value;
-        }
-      }
-      if (index < 0) continue;
-      var left = xOf(start, view, width);
-      var right = xOf(end + 1, view, width);
-      if (right <= 0 || left >= width) continue;
+    if (!Array.isArray(banks)) return glyphs;
+    var first = Math.max(leg.from, Math.floor(view.from + EPSILON));
+    var last = Math.min(leg.to, Math.ceil(view.to - EPSILON) - 1);
+    for (var i = first; i <= last; i += 1) {
+      var roll = banks[i];
+      if (typeof roll !== 'number' || !Number.isFinite(roll)) continue;
+      var left = xOf(i, view, width);
+      var right = xOf(i + 1, view, width);
       var halfWidth = Math.min(GLYPH_HALF_WIDTH, (right - left) / 2 - 0.5);
       if (!(halfWidth > 0)) continue;
       var x = (left + right) / 2;
@@ -727,9 +739,7 @@
       });
       glyphs.push({
         x: x,
-        index: index,
-        from: start,
-        to: end,
+        index: i,
         roll: roll,
         halfWidth: halfWidth,
         dy: shape.dy,
@@ -738,7 +748,258 @@
         down: shape.down,
       });
     }
-    return { placeholder: false, glyphs: glyphs };
+    return glyphs;
+  }
+
+  /**
+   * @param {*} value
+   * @returns {value is number}
+   */
+  function isKnown(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  /**
+   * The index of the profile run holding a distance, or -1 when the
+   * distance falls in a gap or off either end.
+   *
+   * @param {Array<Array<{d: number, e: number}>>} runs
+   * @param {number} d
+   * @returns {number}
+   */
+  function runAt(runs, d) {
+    for (var r = 0; r < runs.length; r += 1) {
+      var run = runs[r];
+      if (run.length && d >= run[0].d - EPSILON && d <= run[run.length - 1].d + EPSILON) {
+        return r;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * A profile's height at a distance, linear between its points; null
+   * outside every run.
+   *
+   * @param {Array<Array<{d: number, e: number}>>} runs
+   * @param {number} d
+   * @returns {?number}
+   */
+  function heightAt(runs, d) {
+    var r = runAt(runs, d);
+    if (r < 0) return null;
+    var run = runs[r];
+    if (run.length === 1) return run[0].e;
+    var lo = 0;
+    var hi = run.length - 1;
+    while (hi - lo > 1) {
+      var mid = (lo + hi) >> 1;
+      if (run[mid].d <= d) lo = mid;
+      else hi = mid;
+    }
+    var a = run[lo];
+    var b = run[hi];
+    var gap = b.d - a.d;
+    return gap > 0 ? a.e + (b.e - a.e) * clamp((d - a.d) / gap, 0, 1) : a.e;
+  }
+
+  /**
+   * The signed gradient along the track at each segment, in degrees:
+   * positive where the track rises in its own direction (SNOW-1044).
+   *
+   * Rise over run between the heights one stride (25 m of the route)
+   * either side of the segment's midpoint, clamped to the track's ends,
+   * read off `readProfile`'s runs — the geometry's z, which the feed
+   * fills from the terrain model (SNOW-1043). The segment's midpoint sits
+   * on the profile by share, as the rest of this module places it.
+   *
+   * @param {{runs: Array<Array<{d: number, e: number}>>, distanceM: number,
+   *   hasElevation: boolean}} profile A `readProfile` result.
+   * @param {number} sampleCount N, the length of `slope.angles`.
+   * @param {number} spanM The route's length, rail one's `distance_m`.
+   * @returns {Array<?number>} N entries, null where a height is missing.
+   */
+  function segmentGradients(profile, sampleCount, spanM) {
+    var count = sampleCount > 0 ? Math.floor(sampleCount) : 0;
+    /** @type {Array<?number>} */
+    var out = new Array(count).fill(null);
+    if (!profile || !profile.hasElevation || !(profile.distanceM > 0) || !count) return out;
+    var distanceM = profile.distanceM;
+    var half = STRIDE_M * (spanM > 0 ? distanceM / spanM : 1);
+    for (var i = 0; i < count; i += 1) {
+      var mid = ((i + 0.5) / count) * distanceM;
+      var a = Math.max(0, mid - half);
+      var b = Math.min(distanceM, mid + half);
+      if (!(b - a > EPSILON)) continue;
+      // Both ends in ONE run: `readProfile` keeps an elevation gap as a
+      // gap rather than interpolating across it, so a window that spans
+      // one would measure a rise nothing recorded — and could call it a
+      // Bootpack.
+      var run = runAt(profile.runs, a);
+      if (run < 0 || run !== runAt(profile.runs, b)) continue;
+      var ea = heightAt(profile.runs, a);
+      var eb = heightAt(profile.runs, b);
+      if (ea === null || eb === null) continue;
+      out[i] = (Math.atan((eb - ea) / (b - a)) * 180) / Math.PI;
+    }
+    return out;
+  }
+
+  /**
+   * The track row's word for one segment (SNOW-1044).
+   *
+   *   angle unknown                               → 'unknown';
+   *   on a climb, gradient ≥ 25°                  → 'bootpack';
+   *   ground < 25°                                → 'skin' on a climb,
+   *                                                 'gentle' otherwise;
+   *   ground ≥ 25°, |bank| ≥ 20°                  → 'traverse';
+   *   ground ≥ 25°, |bank| < 20° or bank unknown  → 'steep'.
+   *
+   * @param {?number} angle The slope angle, degrees.
+   * @param {?number} bank The signed bank, degrees.
+   * @param {?number} gradient The signed gradient along the track, degrees.
+   * @param {boolean} climbing Whether the leg climbs.
+   * @returns {string}
+   */
+  function segmentWord(angle, bank, gradient, climbing) {
+    if (!isKnown(angle)) return 'unknown';
+    if (climbing && isKnown(gradient) && gradient >= BOOTPACK_GRADIENT_DEG) return 'bootpack';
+    if (angle < GROUND_STEEP_DEG) return climbing ? 'skin' : 'gentle';
+    if (isKnown(bank) && Math.abs(bank) >= TRAVERSE_BANK_DEG) return 'traverse';
+    return 'steep';
+  }
+
+  /**
+   * Join neighbouring stretches that carry the same word, in place.
+   *
+   * @param {Array<Stretch>} runs
+   */
+  function coalesce(runs) {
+    for (var j = runs.length - 1; j > 0; j -= 1) {
+      if (runs[j].word === runs[j - 1].word) {
+        runs[j - 1].to = runs[j].to;
+        runs.splice(j, 1);
+      }
+    }
+  }
+
+  /**
+   * The leg's stretches: runs of one `segmentWord`, none shorter than
+   * `MIN_STRETCH_SEGMENTS` (150 m) unless the leg itself is (SNOW-1044).
+   *
+   * The shortest run under the minimum (the leftmost on a tie) is merged
+   * into its LONGER neighbour (the earlier on a tie) and takes its word;
+   * neighbours left carrying one word are joined; and that repeats until
+   * no short run is left or the leg is one stretch. Every segment of the
+   * leg stays in exactly one stretch.
+   *
+   * @param {{from: number, to: number, climbing?: boolean}} leg
+   * @param {Array<?number>} angles `slope.angles`.
+   * @param {Array<?number>} banks `slope.banks`.
+   * @param {?Array<?number>} gradients `segmentGradients`, or null.
+   * @returns {Array<Stretch>} Left to right, touching end to end.
+   */
+  function stretches(leg, angles, banks, gradients) {
+    var climbing = !!leg.climbing;
+    /** @type {Array<Stretch>} */
+    var runs = [];
+    for (var i = leg.from; i <= leg.to; i += 1) {
+      var word = segmentWord(
+        Array.isArray(angles) ? angles[i] : null,
+        Array.isArray(banks) ? banks[i] : null,
+        Array.isArray(gradients) ? gradients[i] : null,
+        climbing,
+      );
+      var open = runs.length ? runs[runs.length - 1] : null;
+      if (open && open.word === word) {
+        open.to = i;
+      } else {
+        runs.push({ from: i, to: i, word: word });
+      }
+    }
+    /** @param {Stretch} run */
+    function size(run) { return run.to - run.from + 1; }
+    while (runs.length > 1) {
+      var k = -1;
+      for (var j = 0; j < runs.length; j += 1) {
+        if (size(runs[j]) < MIN_STRETCH_SEGMENTS && (k < 0 || size(runs[j]) < size(runs[k]))) k = j;
+      }
+      if (k < 0) break;
+      var left = k > 0 ? runs[k - 1] : null;
+      var right = k < runs.length - 1 ? runs[k + 1] : null;
+      var into = !right || (left && size(left) >= size(right)) ? left : right;
+      if (!into) break;
+      into.from = Math.min(into.from, runs[k].from);
+      into.to = Math.max(into.to, runs[k].to);
+      runs.splice(k, 1);
+      coalesce(runs);
+    }
+    return runs;
+  }
+
+  /**
+   * The kick turns on a leg (SNOW-1044): each segment `i` whose bank and
+   * its predecessor's are both known, on opposite sides, and both at
+   * least `KICK_TURN_BANK_DEG` (15°). A climb only — a descent's
+   * side-changes are turns, not kick turns.
+   *
+   * @param {{from: number, to: number, climbing?: boolean}} leg
+   * @param {Array<?number>} banks `slope.banks`.
+   * @returns {Array<number>} The second segment of each pair, ascending.
+   */
+  function kickTurns(leg, banks) {
+    /** @type {Array<number>} */
+    var out = [];
+    if (!leg.climbing || !Array.isArray(banks)) return out;
+    for (var i = leg.from + 1; i <= leg.to; i += 1) {
+      var before = banks[i - 1];
+      var after = banks[i];
+      if (!isKnown(before) || !isKnown(after)) continue;
+      if (Math.abs(before) < KICK_TURN_BANK_DEG || Math.abs(after) < KICK_TURN_BANK_DEG) continue;
+      if ((before > 0) !== (after > 0)) out.push(i);
+    }
+    return out;
+  }
+
+  /**
+   * The ground of `STEEP_TERRAIN_DEG` (30°) or more on a leg, in metres:
+   * its segments at that angle times one segment's share of the route.
+   *
+   * @param {Leg} leg
+   * @param {Array<?number>} angles `slope.angles`.
+   * @param {number} sampleCount N.
+   * @param {number} spanM The route's length, rail one's `distance_m`.
+   * @returns {?number} Null with no slope record, no length to share, or
+   *   no known angle on the leg: ground nobody surveyed is not "0 m
+   *   steep", the rule rail one follows on `surveyed_m`.
+   */
+  function steepLength(leg, angles, sampleCount, spanM) {
+    if (!Array.isArray(angles) || !angles.length || !(sampleCount > 0) || !(spanM > 0)) {
+      return null;
+    }
+    var count = 0;
+    var surveyed = 0;
+    for (var i = leg.from; i <= leg.to; i += 1) {
+      var angle = angles[i];
+      if (!isKnown(angle)) continue;
+      surveyed += 1;
+      if (angle >= STEEP_TERRAIN_DEG) count += 1;
+    }
+    if (!surveyed) return null;
+    return (count / sampleCount) * spanM;
+  }
+
+  /**
+   * The side the ground falls away to: 'right' for a positive bank
+   * (bank.py's sign), 'left' for a negative one, null for a bank under
+   * 3° or an unknown one.
+   *
+   * @param {?number} bank
+   * @returns {?string}
+   */
+  function bankSide(bank) {
+    if (!isKnown(bank) || Math.abs(bank) < LEVEL_BANK_DEG) return null;
+    return bank > 0 ? 'right' : 'left';
   }
 
   /**
@@ -801,33 +1062,25 @@
   }
 
   /**
-   * The leg's figures, in the shape `formatFigures` takes.
+   * The leg's figures: its length, ascent and descent (SNOW-1044's card
+   * title reads the ascent on a climb and the descent otherwise).
    *
    * The distance is the leg's share of the route's length, so it agrees
    * with rail one's ticks. Ascent and descent sum the profile's own
-   * steps. The start and end elevations are only given when the profile
-   * reaches the leg's ends — a reading inside the leg is a height the leg
-   * passes, not the one it starts or finishes at.
+   * steps; both are null for a leg with no elevation.
    *
    * @param {LegProfile} lp A `legProfile` result.
    * @param {Leg} leg
    * @param {number} sampleCount N.
    * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number,
-   *   elevation_start: ?number, elevation_end: ?number}}
+   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number}}
    */
   function legFigures(lp, leg, sampleCount, spanM) {
     var distance = sampleCount > 0 && spanM > 0
       ? (legLength(leg) / sampleCount) * spanM
       : null;
     if (!lp.runs.length) {
-      return {
-        distance_m: distance,
-        ascent_m: null,
-        descent_m: null,
-        elevation_start: null,
-        elevation_end: null,
-      };
+      return { distance_m: distance, ascent_m: null, descent_m: null };
     }
     var ascent = 0;
     var descent = 0;
@@ -838,69 +1091,7 @@
         else descent -= step;
       }
     });
-    var first = lp.runs[0][0];
-    var lastRun = lp.runs[lp.runs.length - 1];
-    var last = lastRun[lastRun.length - 1];
-    return {
-      distance_m: distance,
-      ascent_m: ascent,
-      descent_m: descent,
-      elevation_start: Math.abs(first.s - lp.from) < EPSILON ? first.e : null,
-      elevation_end: Math.abs(last.s - lp.to) < EPSILON ? last.e : null,
-    };
-  }
-
-  /**
-   * What the track is doing on the ground at one segment, in the words of
-   * SNOW-1024's design review.
-   *
-   * The slope angle `a` is the ground's steepness and the bank `roll` is
-   * how far it tilts ACROSS the track (apps/routes/services/bank.py), so
-   * tan|roll| = tan(a) · |sin δ|, where δ is the angle between the track
-   * and the fall line. That gives δ from the two numbers the wire already
-   * carries, clamped to [0, 1] before the `asin` because both are rounded
-   * to whole degrees.
-   *
-   *   a < 5°            → 'flat': no fall line to be on or off;
-   *   5° ≤ a < 10°      → 'gentle-descent' on a descending leg,
-   *                       'gentle-ascent' on a climbing one, no side;
-   *   δ < 20°           → 'fall-line', either way along it;
-   *   20° ≤ δ ≤ 65°     → 'falls-away': the ground drops to one side;
-   *   δ > 65°           → 'traverse'.
-   *
-   * `side` is where the ground falls away: 'right' for a positive roll
-   * (bank.py's sign), 'left' for a negative one, and null under 3°, on
-   * flat or gentle ground, or with the bank unknown. On ground of 10° or
-   * more a bank under 3° puts δ under 17.4°, so 'falls-away' and
-   * 'traverse' always carry a side when the bank is known.
-   *
-   * @param {?number} angle The segment's slope angle, degrees.
-   * @param {?number} roll The segment's signed bank, degrees.
-   * @param {boolean} climbing Whether the open leg climbs.
-   * @returns {?{term: string, side: ?string}} Null when the angle is
-   *   unknown, or the bank is unknown on ground of 10° or more — below
-   *   that the angle alone decides the term.
-   */
-  function trackAttitude(angle, roll, climbing) {
-    if (typeof angle !== 'number' || !Number.isFinite(angle)) return null;
-    if (angle < FLAT_DEG) return { term: 'flat', side: null };
-    if (angle < GENTLE_DEG) {
-      return { term: climbing ? 'gentle-ascent' : 'gentle-descent', side: null };
-    }
-    if (typeof roll !== 'number' || !Number.isFinite(roll)) return null;
-    var rad = Math.PI / 180;
-    var sinDelta = clamp(Math.tan(Math.abs(roll) * rad) / Math.tan(angle * rad), 0, 1);
-    var delta = Math.asin(sinDelta) / rad;
-    var term;
-    if (delta < FALL_LINE_DEG) {
-      term = 'fall-line';
-    } else if (delta > TRAVERSE_DEG) {
-      term = 'traverse';
-    } else {
-      term = 'falls-away';
-    }
-    var side = Math.abs(roll) < LEVEL_BANK_DEG ? null : roll > 0 ? 'right' : 'left';
-    return { term: term, side: side };
+    return { distance_m: distance, ascent_m: ascent, descent_m: descent };
   }
 
   /**
@@ -1024,16 +1215,16 @@
   }
 
   self.pwaRouteRailTwoCore = Object.freeze({
-    FALL_LINE_TOLERANCE_DEG: FALL_LINE_TOLERANCE_DEG,
-    FALL_LINE_DEG: FALL_LINE_DEG,
-    TRAVERSE_DEG: TRAVERSE_DEG,
-    GENTLE_DEG: GENTLE_DEG,
-    trackAttitude: trackAttitude,
     readoutAnchor: readoutAnchor,
     roundStretch: roundStretch,
     MIN_SPAN: MIN_SPAN,
     GLYPH_MIN_PX: GLYPH_MIN_PX,
-    MAX_GROUP: MAX_GROUP,
+    GROUND_STEEP_DEG: GROUND_STEEP_DEG,
+    TRAVERSE_BANK_DEG: TRAVERSE_BANK_DEG,
+    BOOTPACK_GRADIENT_DEG: BOOTPACK_GRADIENT_DEG,
+    KICK_TURN_BANK_DEG: KICK_TURN_BANK_DEG,
+    MIN_STRETCH_SEGMENTS: MIN_STRETCH_SEGMENTS,
+    STEEP_TERRAIN_DEG: STEEP_TERRAIN_DEG,
     PASSAGE_MIN_PX: PASSAGE_MIN_PX,
     ROWS: ROWS,
     bandRuns: bandRuns,
@@ -1052,9 +1243,15 @@
     clip: clip,
     nearestRange: nearestRange,
     steepestBand: steepestBand,
-    glyphGroup: glyphGroup,
+    trackMode: trackMode,
     resolveSpan: resolveSpan,
     bankGlyphs: bankGlyphs,
+    segmentGradients: segmentGradients,
+    segmentWord: segmentWord,
+    stretches: stretches,
+    kickTurns: kickTurns,
+    steepLength: steepLength,
+    bankSide: bankSide,
     passageBox: passageBox,
     legProfile: legProfile,
     legFigures: legFigures,

@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+# bin/record-rail-fixtures — write the routes feed's view of two canonical
+# tracks as JSON fixtures for rail two's Vitest suite.
+#
+# SNOW-1044. Rail two's track rail reads `slope.angles`, `slope.banks`, the
+# legs and the geometry's z — the terrain model's heights since SNOW-1043 —
+# exactly as the routes feed serves them. Its kick-turn and stretch tests
+# run against real tours, so this writes, for each track named in TRACKS,
+# the four things the feed would send for it: the geometry's coordinates
+# (``terrain_points``), ``compact_slope``'s ``angles`` and ``banks``, the
+# legs from ``wire_legs`` and the route's ``distance_m``. The input is the
+# committed GPX under apps/routes/fixtures/canonical/ and the committed
+# slope record under tests/routes/fixtures/slope_records/ (see
+# bin/record-slope-fixtures), so this needs no network and no database.
+#
+# Output: ``tests/js/fixtures/<stem>.json``. Re-run it whenever either input
+# or the feed's shape changes, and commit the result:
+#
+#     uv run python bin/record-rail-fixtures
+#
+# ruff: noqa: T201, E402
+# T201 — CLI script; print() is the intended output channel.
+# E402 — the app imports must follow django.setup(), below.
+
+"""Rail-two fixture recorder — see the header block above."""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+
+import django
+
+django.setup()
+
+from apps.routes.services.canonical import canonical_paths
+from apps.routes.services.gpx import parse_gpx
+from apps.routes.services.leg_wire import wire_legs
+from apps.routes.services.slope_wire import compact_slope
+from apps.routes.services.terrain_heights import terrain_points
+
+RECORDS_DIR = REPO / "tests" / "routes" / "fixtures" / "slope_records"
+OUTPUT_DIR = REPO / "tests" / "js" / "fixtures"
+
+# The tours the Vitest suite reads: the one the kick-turn count was
+# measured on, and the one it is compared with.
+TRACKS = ("mont-fort-col-de-la-chaux", "mont-fort-backside")
+
+
+def main() -> int:
+    """Write one fixture per track in TRACKS.
+
+    Returns:
+        0 when every track was written, 1 when one had no record or no
+        slope on the wire.
+
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    paths = {path.stem: path for path in canonical_paths()}
+    failed = 0
+    for stem in TRACKS:
+        record_path = RECORDS_DIR / f"{stem}.json"
+        if stem not in paths or not record_path.exists():
+            print(f"{stem}: no GPX or no slope record", file=sys.stderr)
+            failed += 1
+            continue
+        record = json.loads(record_path.read_text())
+        parsed = parse_gpx(paths[stem].read_bytes())
+        points = terrain_points(parsed.points, record)
+        slope = compact_slope(record)
+        if slope is None:
+            print(f"{stem}: compact_slope refused the record", file=sys.stderr)
+            failed += 1
+            continue
+        fixture = {
+            "distance_m": parsed.distance_m,
+            "coordinates": points,
+            "angles": slope["angles"],
+            "banks": slope["banks"],
+            "legs": wire_legs(points, record) or [],
+        }
+        target = OUTPUT_DIR / f"{stem}.json"
+        target.write_text(json.dumps(fixture, separators=(",", ":")) + "\n")
+        print(
+            f"{stem}: {len(slope['angles'])} segments, "
+            f"{len(fixture['legs'])} legs -> {target.relative_to(REPO)}"
+        )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

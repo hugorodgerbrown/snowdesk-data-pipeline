@@ -4,8 +4,8 @@
  *
  * The tick step at the three spans the ticket names (500 m, 12.9 km,
  * 80 km), one unit per strip, one fill per leg carrying the leg's own
- * direction, and the figures formatter giving a route and a leg the same
- * shape — the property that lets rail two (SNOW-1017) reuse it unchanged.
+ * direction, and rail one's vertical and horizontal figure lines
+ * (SNOW-1045).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -90,47 +90,6 @@ describe('ticks', () => {
       .filter((t) => t.major)
       .map((t) => t.label);
     expect(labels[1]).toBe('5 km');
-  });
-});
-
-describe('formatFigures', () => {
-  const full = {
-    distance_m: 12900,
-    ascent_m: 1234.4,
-    descent_m: 1100,
-    elevation_start: 1820,
-    elevation_end: 2410,
-  };
-
-  it('writes distance · ascent · descent · start→end', () => {
-    expect(core.formatFigures(full)).toBe('12.9 km · ▲ 1234 m · ▼ 1100 m · 1820 → 2410 m');
-  });
-
-  it('gives a route and a leg the identical shape', () => {
-    const route = core.formatFigures(full);
-    const leg = core.formatFigures({
-      distance_m: 3200,
-      ascent_m: 640,
-      descent_m: 12,
-      elevation_start: 1820,
-      elevation_end: 2448,
-    });
-    const shape = (line) => line.replace(/[\d.]+/g, '#');
-    expect(shape(leg)).toBe(shape(route));
-  });
-
-  it('omits a null figure rather than showing zero', () => {
-    expect(
-      core.formatFigures({ distance_m: 5000, ascent_m: null, descent_m: null }),
-    ).toBe('5.0 km');
-  });
-
-  it('keeps a genuine zero', () => {
-    expect(core.formatFigures({ distance_m: 1000, ascent_m: 0 })).toBe('1.0 km · ▲ 0 m');
-  });
-
-  it('drops the range when either end is unknown', () => {
-    expect(core.formatFigures({ elevation_start: 1800, elevation_end: null })).toBe('');
   });
 });
 

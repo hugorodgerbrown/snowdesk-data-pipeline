@@ -1,8 +1,8 @@
 ---
 name: the-bank-angle-is-drawn-signed
-description: bank.py, `banks` on the wire, bankWedge level-ski wedges, bankGlyphs max-|roll| grouping, the zoom placeholder — kept signed, sent flat
+description: bank.py, `banks` on the wire, bankWedge wedges, the track row (segmentWord, stretches, trackMode), kickTurns — kept signed, sent flat
 status: current
-last-reviewed: 2026-09-25
+last-reviewed: 2026-09-29
 ---
 
 # The bank angle is drawn signed
@@ -138,6 +138,9 @@ above for keeping the sign stand; only the mark changed.
 
 ## The bank row follows the zoom (SNOW-1031 revision)
 
+*Superseded in part by SNOW-1044 (next section): the grouping and the
+placeholder are gone; fitted, the row is words.*
+
 The Leg 7 review revised how rail two lays the glyphs out. Rail two now
 always opens **fitted** — the whole leg, however long — so at that scale
 it is an overview, and zooming is how it is read in detail. The rail is
@@ -172,3 +175,60 @@ to make it drawable.
   the bank row.
 - **The readout stays exact.** "37° slope · 36° bank" reads the segment
   under the cursor at every zoom; only the drawing groups.
+
+## The track row: words fitted, wedges zoomed in (SNOW-1044, 2026-09-29)
+
+Fitted, the SNOW-1031 row said "Zoom in to see the bank" and nothing
+about what the track does. SNOW-1044 replaces the placeholder and the
+glyph grouping with a TRACK ROW that always says something, read from the
+same two numbers the wedges draw — `angles` and `banks`, plus the
+gradient along the track from the geometry's z (the terrain model's
+heights since SNOW-1043). Nothing new travels on the wire.
+
+- **Two modes, switched at 10 px a segment** (`trackMode` in
+  `static/js/route_rail_two_core.js`). Under 10 px the row is WORDS: one
+  labelled block per stretch of the leg. At 10 px or more it is the
+  WEDGES, one per segment (`bankGlyphs`; at that scale a group would only
+  ever be one segment, so `glyphGroup`, `MAX_GROUP` and the placeholder
+  are gone), with a dashed tick at each stretch boundary so the words'
+  stretches stay placed. `resolveSpan`, the double-tap target, is the
+  widest span at which the wedges draw.
+- **The words summarise the wedges**, so the two views never disagree
+  (`segmentWord`): **Gentle** is ground under 25°; on steeper ground a
+  bank of 20° or more is **Traverse** and a smaller one **Steep** — the
+  track is with the fall line; an unknown bank on steep ground is Steep.
+  On a climb Gentle becomes **Skin**, and a gradient of 25° or more is
+  **Bootpack**, which takes precedence. The gradient is rise over run one
+  stride either side of the segment's midpoint (`segmentGradients`). The
+  thresholds are named constants (`GROUND_STEEP_DEG`, `TRAVERSE_BANK_DEG`,
+  `BOOTPACK_GRADIENT_DEG`).
+- **Stretches are 150 m or more** (`stretches`, six 25 m segments). The
+  shortest run under that is merged into its longer neighbour and takes
+  its word, neighbours then carrying one word join, and it repeats; a leg
+  shorter than 150 m is one stretch. Every segment stays in exactly one
+  stretch. The merge counts segments, not metres: a route's per-segment
+  share of `distance_m` is a hair off 25 m, and six segments must not
+  read as 149.8 m.
+- **A kick turn is the bank changing side on a climb** (`kickTurns`):
+  segment `i` and `i − 1` both known, on opposite sides, both 15° or more
+  (`KICK_TURN_BANK_DEG`). A descent's side-changes are turns, not kick
+  turns, and an unknown bank breaks the pair. The row first marked each
+  with a chevron at every zoom; on 2026-09-29 the chevron was removed,
+  because the map already shows the zig-zag and the rail does not need
+  to repeat it. `kickTurns` now feeds the lane's spoken value only
+  (below): a screen-reader user cannot see the map. Measured on the canonical records
+  (`tests/js/fixtures/`, written by `bin/record-rail-fixtures`): the Col
+  de la Chaux climbs give four — leg 2 at segments 57, 65 and 66, leg 4
+  at 172, leg 6 none — and the Backside climb none. The ticket quoted
+  five for the Col de la Chaux skin; the thresholds were not tuned to
+  reach it.
+- **The readout says the side in words.** Under the cursor it reads
+  "24° slope · 15° bank, falls away right" (`bankSide`: no side under 3°,
+  no bank clause for an unknown bank). The attitude word (`trackAttitude`)
+  and its δ-from-fall-line bands went: the track row above now names the
+  stretch, and two vocabularies for one segment would disagree.
+- **The track row is drawn for the eye; the words are spoken.** The row's
+  SVG group is `aria-hidden`. The lane's `aria-valuetext` carries the
+  readout's line and then, under the cursor, the stretch's word and "Kick
+  turn" where one lands, so nothing the row shows is lost to assistive
+  tech.
