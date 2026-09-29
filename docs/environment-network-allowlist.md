@@ -1,8 +1,8 @@
 ---
 name: environment-network-allowlist
-description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
+description: Canonical egress allowlist (bare + *. pairs) for Claude Code on the web — EGRESS_BLOCKED hosts, provider APIs, basemaps, scan sites
 status: current
-last-reviewed: 2026-09-27
+last-reviewed: 2026-09-29
 ---
 
 # Environment network allow-list
@@ -44,13 +44,339 @@ apply to itself — add the domains below to the relevant environment(s) via
 their network-policy settings, then move the row to "Actioned" (or delete
 it) once done.
 
-**Diagnosing a block:** `curl -sS
-http://127.0.0.1:45137/__agentproxy/status` reports proxy state; a
-`WebFetch` failure with `"error_type":"EGRESS_BLOCKED"` is the policy, not
-the target site's own bot protection (a 403/timeout *from the site itself*
-would come through differently — see `/root/.ccr/README.md` in-session for
-the full diagnostic playbook). Only the former is fixed by an allowlist
-change.
+**Diagnosing a block:** `curl -sS "$HTTPS_PROXY/__agentproxy/status"`
+reports proxy state (the port varies per session, so read it from the
+variable rather than hard-coding one). A policy denial shows as
+`curl: (56) CONNECT tunnel failed, response 403` from the shell and
+`"error_type":"EGRESS_BLOCKED"` from `WebFetch` — the two agree host for
+host. The target site's own bot protection comes through differently: the
+tunnel is established and the *site* answers `HTTP/2 403` (e.g. a
+Cloudflare `cf-mitigated: challenge`). Only the former is fixed by an
+allowlist change. See `/root/.ccr/README.md` in-session for the full
+diagnostic playbook.
+
+## The complete allowlist — canonical as of 2026-09-29
+
+**This is the list to paste into the environment's network policy.** It
+supersedes the dated "Requested" sections below, which stay as the record
+of *why* each domain was asked for. When a session hits a new block, add
+the domain here first and a dated note below second.
+
+**The matching rule, measured 2026-09-29: the policy matches exact hosts.**
+`opensnow.com` connected while `www.opensnow.com` was refused;
+`get.whympr.com` connected while `whympr.com` and `www.whympr.com` were
+refused; `onxmaps.com` connected and then 301-redirected to a refused
+`www.onxmaps.com`. So every domain below is listed as a **pair — the bare
+domain and a `*.` wildcard** — because a wildcard does not cover its own
+apex and the apex does not cover its subdomains. Two assumptions:
+
+- **A `*.` wildcard is taken to match one label.** Where the host we need
+  sits two labels down (`eu.i.posthog.com`), the wildcard is written at
+  its parent (`*.i.posthog.com`) so it works under either reading. If the
+  policy's wildcard turns out to match any depth, those collapse into
+  their registrable domain.
+- **Very large platforms get exact hosts, not a wildcard.** `*.google.com`
+  and `*.apple.com` would open far more than the one store listing host a
+  scan needs, so those two are listed as the single host.
+
+The status columns below record each host **before** the paste-ready
+list was applied: a direct `curl` through the session proxy on
+2026-09-29, where "blocked" means the policy refused the CONNECT.
+
+**Applied 2026-09-29, then re-probed the same day: 78 of 82 concrete
+hosts connect.** That includes every host the app, the tooling and the
+competitor scans actually call. The four that still fail are
+`snowdesk-data.info`, `i.posthog.com`, `geopf.fr` and `www.peakvisor.com`,
+and they now fail with a **502, not a 403**. The proxy logs this as
+"policy denial or upstream failure": the policy lets the host through, and
+the host itself doesn't answer on 443. That is most likely because it has
+no DNS record, which couldn't be checked from inside a session. All four
+are apex or `www.` siblings listed only for pair symmetry, not hosts
+anything uses, so no action is needed. **Read a 502 as the host's problem
+and a 403 as the policy's.**
+
+### Our own infrastructure
+
+| Allow | Hosts actually used | Status 2026-09-29 |
+|---|---|---|
+| `snowdesk.info`, `*.snowdesk.info` | Production site; route share links (`/routes/s/<token>/`) | bare open, `www.` blocked |
+| `snowdesk-data.info`, `*.snowdesk-data.info` | `tiles.snowdesk-data.info` — basemap origin and the `/terrain/v1/` grid `sample_route_slope` reads | open |
+
+### Bulletin providers and the EAWS
+
+What `fetch_bulletins` calls. **Only SLF is reachable**, so a web session
+cannot run an ALBINA or Météo-France ingest end to end.
+
+| Allow | Hosts actually used | Status 2026-09-29 |
+|---|---|---|
+| `slf.ch`, `*.slf.ch` | `aws.slf.ch` (`SLF_API_URL`), `www.slf.ch` (competitor scan) | `aws.`/`www.` open, bare blocked |
+| `avalanche.report`, `*.avalanche.report` | `static.avalanche.report` (ALBINA bulletins), `api.avalanche.report` | blocked |
+| `meteofrance.fr`, `*.meteofrance.fr` | `public-api.meteofrance.fr` (DPBRA), `portail-api.meteofrance.fr` (token), `donneespubliques.meteofrance.fr` | blocked |
+| `avalanches.org`, `*.avalanches.org` | `www.avalanches.org` — EAWS glossary and standards linked from the site and fixtures | blocked |
+
+### Weather, location and analytics services
+
+| Allow | Hosts actually used | Status 2026-09-29 |
+|---|---|---|
+| `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | blocked |
+| `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_URL`), the docs and terms | blocked |
+| `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
+| `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
+| `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open, and in the policy since 2026-09-29 (before that it was reachable only through a platform default) |
+| `i.posthog.com`, `*.i.posthog.com` | `eu.i.posthog.com` (`POSTHOG_HOST`), `eu-assets.i.posthog.com` | blocked |
+
+### Basemaps and map overlays
+
+From `csp_defaults` in `config/settings/base.py` — regenerate this group
+from that function, not from a style URL, when a basemap changes.
+
+| Allow | Hosts actually used | Status 2026-09-29 |
+|---|---|---|
+| `geo.admin.ch`, `*.geo.admin.ch` | `vectortiles.` and the five shards `vectortiles0.`–`vectortiles4.` (swisstopo), `wmts.` (slope-angle overlay) | open |
+| `openfreemap.org`, `*.openfreemap.org` | `tiles.openfreemap.org` — the fallback basemap | open |
+| `geopf.fr`, `*.geopf.fr` | `data.geopf.fr` — IGN Plan (France) | open |
+| `wien.gv.at`, `*.wien.gv.at` | `mapsneu.wien.gv.at` — basemap.at (Austria) | open |
+
+### Terrain-source research (Mapterhorn, SNOW-693)
+
+| Allow | Status 2026-09-29 |
+|---|---|
+| `mapterhorn.com`, `*.mapterhorn.com` (incl. `download.`) | blocked |
+| `protomaps.com`, `*.protomaps.com` | blocked |
+| `oliverwipfli.ch`, `*.oliverwipfli.ch` | blocked |
+| `source.coop`, `*.source.coop` | blocked |
+| `spatialists.ch`, `*.spatialists.ch` | blocked |
+
+### Tooling
+
+| Allow | Why | Status 2026-09-29 |
+|---|---|---|
+| `semgrep.dev`, `*.semgrep.dev` | `tox -e sast` rule packs | blocked |
+| `linear.app`, `*.linear.app` | `uploads.linear.app` — ticket attachment bodies | `uploads.` open |
+
+### Competitor scan (`docs/competitors.md`)
+
+| Allow | Status 2026-09-29 |
+|---|---|
+| `whiterisk.ch`, `*.whiterisk.ch` | bare open, `www.` blocked |
+| `snowsafe.at`, `*.snowsafe.at` | bare open, `www.` blocked |
+| `whympr.com`, `*.whympr.com` | `get.` open, bare and `www.` blocked |
+| `opensnow.com`, `*.opensnow.com` | bare open, `www.` blocked |
+| `avalancheclarity.com`, `*.avalancheclarity.com` | bare open, `www.` blocked |
+| `peakvisor.com`, `*.peakvisor.com` | bare open, `www.` blocked |
+| `skida.app`, `*.skida.app` | open (both) |
+| `onxmaps.com`, `*.onxmaps.com` | bare open but redirects to `www.`, which is blocked — **effectively blocked** |
+| `aerostacks.com`, `*.aerostacks.com` | same redirect trap — **effectively blocked** |
+| `bergundsteigen.com`, `*.bergundsteigen.com` | same redirect trap — **effectively blocked** |
+| `granitealpinelab.com`, `*.granitealpinelab.com` | bare open, `www.` blocked |
+| `sportstartups.org`, `*.sportstartups.org` | `www.` open, bare blocked |
+| `swissinfo.ch`, `*.swissinfo.ch` | `www.` open, bare blocked |
+| `destinet.de`, `*.destinet.de` | bare open, `www.` blocked |
+| `tracxn.com`, `*.tracxn.com` | bare open, `www.` blocked |
+| `the-ski-guru.com`, `*.the-ski-guru.com` | bare open, `www.` blocked |
+| `uptodown.com`, `*.uptodown.com` | bare open, `www.` blocked |
+| `apps.apple.com` (exact host) | open |
+| `play.google.com` (exact host) | open |
+
+**Dropped: `apkmirror.com` and `apkpure.com`.** Both were requested on
+2026-08-30. The policy now lets the tunnel through, and the *site* then
+answers `HTTP 403` from Cloudflare's bot challenge. No allowlist entry
+fixes that, so neither is on the list; use `uptodown.com` or the store
+listings for version history instead.
+
+### Paste-ready
+
+The 81 entries above, one per line, in the same group order — all applied
+on 2026-09-29 (the MaxMind R2 host in a second pass the same day, after
+review caught the redirect):
+
+```text
+snowdesk.info
+*.snowdesk.info
+snowdesk-data.info
+*.snowdesk-data.info
+slf.ch
+*.slf.ch
+avalanche.report
+*.avalanche.report
+meteofrance.fr
+*.meteofrance.fr
+avalanches.org
+*.avalanches.org
+open-meteo.com
+*.open-meteo.com
+what3words.com
+*.what3words.com
+w3w.co
+*.w3w.co
+maxmind.com
+*.maxmind.com
+mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com
+i.posthog.com
+*.i.posthog.com
+geo.admin.ch
+*.geo.admin.ch
+openfreemap.org
+*.openfreemap.org
+geopf.fr
+*.geopf.fr
+wien.gv.at
+*.wien.gv.at
+mapterhorn.com
+*.mapterhorn.com
+protomaps.com
+*.protomaps.com
+oliverwipfli.ch
+*.oliverwipfli.ch
+source.coop
+*.source.coop
+spatialists.ch
+*.spatialists.ch
+semgrep.dev
+*.semgrep.dev
+linear.app
+*.linear.app
+whiterisk.ch
+*.whiterisk.ch
+snowsafe.at
+*.snowsafe.at
+whympr.com
+*.whympr.com
+opensnow.com
+*.opensnow.com
+avalancheclarity.com
+*.avalancheclarity.com
+peakvisor.com
+*.peakvisor.com
+skida.app
+*.skida.app
+onxmaps.com
+*.onxmaps.com
+aerostacks.com
+*.aerostacks.com
+bergundsteigen.com
+*.bergundsteigen.com
+granitealpinelab.com
+*.granitealpinelab.com
+sportstartups.org
+*.sportstartups.org
+swissinfo.ch
+*.swissinfo.ch
+destinet.de
+*.destinet.de
+tracxn.com
+*.tracxn.com
+the-ski-guru.com
+*.the-ski-guru.com
+uptodown.com
+*.uptodown.com
+apps.apple.com
+play.google.com
+```
+
+### The live policy, and what to change
+
+*Applied 2026-09-29 — kept as the record of the change.* The
+environment's policy as it stood on 2026-09-29 before the update (33
+entries, copied from the settings page). It explains every probe result above: `*.slf.ch`
+opens `aws.` and `www.` but not the bare `slf.ch`, and `onxmaps.com` opens
+only the apex that then redirects to `www.`.
+
+```text
+*.geo.admin.ch  *.geopf.fr  *.linear.app  *.openfreemap.org  *.slf.ch
+*.snowdesk-data.info  aerostacks.com  apkmirror.com  apkpure.com
+apps.apple.com  avalancheclarity.com  bergundsteigen.com  destinet.de
+get.whympr.com  mapsneu.wien.gv.at  onxmaps.com  opensnow.com
+peakvisor.com  play.google.com  skida.app  snowdesk.info  snowsafe.at
+the-ski-guru.com  tracxn.com  uptodown.com  whiterisk.ch
+wmts.geo.admin.ch  typesafe.ai  docs.typesafe.ai  www.sportstartups.org
+www.swissinfo.ch  granitealpinelab.com  www.skida.app
+```
+
+**Add (57):** every paste-ready entry not in the live list:
+
+```text
+*.snowdesk.info
+snowdesk-data.info
+slf.ch
+avalanche.report
+*.avalanche.report
+meteofrance.fr
+*.meteofrance.fr
+avalanches.org
+*.avalanches.org
+open-meteo.com
+*.open-meteo.com
+what3words.com
+*.what3words.com
+w3w.co
+*.w3w.co
+maxmind.com
+*.maxmind.com
+i.posthog.com
+*.i.posthog.com
+geo.admin.ch
+openfreemap.org
+geopf.fr
+wien.gv.at
+*.wien.gv.at
+mapterhorn.com
+*.mapterhorn.com
+protomaps.com
+*.protomaps.com
+oliverwipfli.ch
+*.oliverwipfli.ch
+source.coop
+*.source.coop
+spatialists.ch
+*.spatialists.ch
+semgrep.dev
+*.semgrep.dev
+linear.app
+*.whiterisk.ch
+*.snowsafe.at
+whympr.com
+*.whympr.com
+*.opensnow.com
+*.avalancheclarity.com
+*.peakvisor.com
+*.skida.app
+*.onxmaps.com
+*.aerostacks.com
+*.bergundsteigen.com
+*.granitealpinelab.com
+sportstartups.org
+*.sportstartups.org
+swissinfo.ch
+*.swissinfo.ch
+*.destinet.de
+*.tracxn.com
+*.the-ski-guru.com
+*.uptodown.com
+```
+
+**Remove (2):** `apkmirror.com`, `apkpure.com` — the site itself refuses
+the request (see "Dropped" above), so the entries open nothing useful.
+
+**Redundant once the adds land (6)** — harmless to keep, safe to delete:
+`wmts.geo.admin.ch` (already covered today by `*.geo.admin.ch`),
+`mapsneu.wien.gv.at`, `get.whympr.com`, `www.skida.app`,
+`www.sportstartups.org` and `www.swissinfo.ch`.
+
+**Not Snowdesk's (2):** `typesafe.ai` and `docs.typesafe.ai` appear in no
+request in this doc. Presumably another project shares the environment;
+leave them to whoever added them.
+
+Not listed because the session proxy already bypasses them (its
+`noProxy` setting): the Anthropic API hosts, `pypi.org`,
+`files.pythonhosted.org` and `registry.npmjs.org`. GitHub is also absent
+because git traffic goes through the session's own git proxy.
+
+## History — the dated requests
+
+Each section below records one block as it was found. The canonical list
+above supersedes them; they stay as the record of why each domain was
+asked for.
 
 ## Requested — 2026-09-22 (route rail design)
 
@@ -317,9 +643,10 @@ download it.
 1. Open the environment's settings on claude.ai/code (the environment this
    routine runs in — check which one via the session's own "current
    remote execution environment" info if unsure).
-2. Find the network-policy / egress-allowlist setting and add the domains
-   above (bare domain, no scheme — match however the policy UI expects
-   entries; consult the [docs](https://code.claude.com/docs/en/claude-code-on-the-web)
+2. Find the network-policy / egress-allowlist setting and paste the
+   [canonical list](#paste-ready) (no scheme; each domain as its bare
+   form *and* its `*.` wildcard, because the policy matches exact hosts —
+   consult the [docs](https://code.claude.com/docs/en/claude-code-on-the-web)
    if the format is unclear).
 3. Once actioned, note it here (date + which domains) so a future scan
    doesn't re-request an already-granted domain, and delete or move the
@@ -371,5 +698,27 @@ them. Say so explicitly when handing one over.
   was requested; see the section of the same date above for what still
   blocks a large attachment even with the domain open.
 
-The 2026-08-30, 2026-09-05, 2026-09-06, 2026-09-09, 2026-09-13, 2026-09-19,
-2026-09-20 and 2026-09-27 competitor-scan requests are all still outstanding.
+- **By 2026-09-29 — the map infrastructure and most of the competitor
+  scan**, found open when every requested host was re-probed that day
+  (nobody recorded when the policy was changed):
+  `tiles.snowdesk-data.info`, `vectortiles.geo.admin.ch` and
+  `vectortiles0`–`4.geo.admin.ch`, `wmts.geo.admin.ch`,
+  `tiles.openfreemap.org`, `data.geopf.fr`, `mapsneu.wien.gv.at`,
+  `snowdesk.info`, `aws.slf.ch`, `www.slf.ch`, `whiterisk.ch`,
+  `snowsafe.at`, `get.whympr.com`, `opensnow.com`, `avalancheclarity.com`,
+  `peakvisor.com`, `skida.app`, `www.skida.app`, `destinet.de`,
+  `tracxn.com`, `the-ski-guru.com`, `uptodown.com`, `apps.apple.com`,
+  `play.google.com`, `granitealpinelab.com`, `www.sportstartups.org` and
+  `www.swissinfo.ch`. These are exact hosts only — their `www.` and
+  bare-apex siblings are mostly still refused, which is why the canonical
+  list above pairs every domain with its wildcard.
+
+- **2026-09-29 — the whole canonical list.** Pasted into the policy from
+  the [paste-ready block](#paste-ready) the same day and re-probed: 78 of
+  82 hosts connect. Among them are the ALBINA and Météo-France bulletin
+  APIs, Open-Meteo, what3words, MaxMind, PostHog and `semgrep.dev`, so a
+  web session can now run a full three-provider ingest, a weather fetch and
+  `tox -e sast`. The four 502s are explained under
+  [the canonical list](#the-complete-allowlist--canonical-as-of-2026-09-29).
+
+Nothing is outstanding. A new block goes into the canonical list first.
