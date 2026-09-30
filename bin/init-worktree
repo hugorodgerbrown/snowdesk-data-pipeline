@@ -22,9 +22,11 @@
 #                    file also keeps it from searching upward: a worktree
 #                    lives inside the main repo, and with nothing of its own
 #                    to find, decouple would walk up and load the main .env
-#                    anyway. A .env symlink left by an earlier run is
-#                    removed; a real .env file is a developer's own choice
-#                    and is left alone, with no settings.ini written over it.
+#                    anyway. The symlink to the main .env that an earlier
+#                    run left is removed; any other .env — a regular file,
+#                    or a link pointed somewhere else — is a developer's own
+#                    choice and is left alone, with no settings.ini written
+#                    over it.
 #   - db.sqlite3   → seeded from committed fixtures + dev users (guarantees
 #                    every worktree has the same data as CI; avoids drift that
 #                    breaks the SNOW-13 query-count baseline). Recipe, on the
@@ -114,11 +116,21 @@ link_if_missing() {
 
 # Take the main repo's keys back out of a worktree made before SNOW-1028.
 #
-# Only ever a symlink: that is what this script used to create, and removing
-# one deletes a link, never the main repo's file behind it. A regular .env is
-# something a developer put there on purpose and is not ours to delete.
+# Only ever the link this script used to create: a symlink whose target is
+# the main repo's .env. Removing it deletes a link, never the file behind it.
+# Anything else called .env — a regular file, or a link a developer pointed
+# at a credentials file of their own — was put there on purpose and is not
+# ours to delete.
+#
+# Two tests, either sufficient. The target string is what `ln -s` wrote and
+# still matches when the main .env has since been deleted, which leaves the
+# link broken; -ef follows the link and matches when the same file is
+# reached by a differently spelled path.
 unlink_env_symlink() {
     if [ ! -L ".env" ]; then
+        return
+    fi
+    if [ "$(readlink .env)" != "$main_repo/.env" ] && [ ! .env -ef "$main_repo/.env" ]; then
         return
     fi
     rm .env

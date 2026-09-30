@@ -177,10 +177,11 @@ not reach it. Two ways to bring a value in:
 - **One command:** set it in the environment — `NAME=value uv run …`. The
   environment wins over either file.
 
-A `.env` symlink left by an earlier run is removed on the next session. A
-regular `.env` file in a worktree is left alone and no `settings.ini` is
-written beside it; sandboxed commands in that worktree then fail on the
-deny until the file is removed. Which settings file holds what, and why:
+The symlink to the main `.env` that an earlier run left is removed on the
+next session. Any other `.env` in a worktree — a regular file, or a link
+pointed somewhere else — is left alone and no `settings.ini` is written
+beside it; sandboxed commands in that worktree then fail on the deny until
+the file is removed. Which settings file holds what, and why:
 [`.claude/README.md`](../.claude/README.md#which-file-a-setting-belongs-in).
 
 ## Dev credentials

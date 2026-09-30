@@ -64,8 +64,8 @@ already created an empty SQLite file by connecting to it.
 
 Refuses to run in the main worktree. In a worktree it symlinks `.venv` back
 to the main repo, writes a gitignored `settings.ini` holding a throwaway
-`SECRET_KEY` — never a link to the main repo's `.env`, and it removes one an
-earlier run left (SNOW-1028; the why is in
+`SECRET_KEY` — never a link to the main repo's `.env`, and it removes that
+link where an earlier run left one (SNOW-1028; the why is in
 [`worktrees.md`](worktrees.md#settings-and-the-bash-sandbox)) — and, when
 `db.sqlite3` is absent, runs the seed recipe (migrate → `sync_waffle_flags`
 → region fixtures → resorts → `seed_test_data`, which includes the dev

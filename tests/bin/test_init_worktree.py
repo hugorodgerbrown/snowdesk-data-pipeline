@@ -482,6 +482,43 @@ class TestTheWorktreeSettingsFile:
         assert (sandbox.worktree / ".env").read_text() == "SECRET_KEY=chosen\n"
         assert not (sandbox.worktree / "settings.ini").exists()
 
+    def test_a_developers_own_env_symlink_is_left_alone(
+        self, sandbox: Sandbox, tmp_path: Path
+    ) -> None:
+        """Only the link to the MAIN repo's .env is the script's to remove.
+
+        A developer may point ``.env`` at a credentials file of their own.
+        Being a symlink does not make it the legacy one; its target does.
+        """
+        own = tmp_path / "my-credentials.env"
+        own.write_text("SECRET_KEY=mine\n")
+        (sandbox.worktree / ".env").symlink_to(own)
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert (sandbox.worktree / ".env").is_symlink()
+        assert (sandbox.worktree / ".env").resolve() == own
+        assert "removed the .env symlink" not in result.stdout
+        assert not (sandbox.worktree / "settings.ini").exists()
+
+    def test_the_legacy_symlink_is_removed_even_when_it_is_broken(
+        self, sandbox: Sandbox
+    ) -> None:
+        """The target string identifies it once the file behind it is gone.
+
+        Left in place, a broken link gives python-decouple nothing to find
+        in the worktree, so it would search upward instead.
+        """
+        (sandbox.worktree / ".env").symlink_to(sandbox.main / ".env")
+        (sandbox.main / ".env").unlink()
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert not (sandbox.worktree / ".env").is_symlink()
+        assert (sandbox.worktree / "settings.ini").exists()
+
     def test_an_existing_settings_file_is_never_rewritten(
         self, sandbox: Sandbox
     ) -> None:
