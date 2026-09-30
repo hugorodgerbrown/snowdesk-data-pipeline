@@ -2204,6 +2204,44 @@
     }
   };
 
+  // The zoom from which a route's core is painted in the slope classes
+  // rather than its leg colours (legs-not-slope-classes-on-the-map.md,
+  // 2026-09-30). The leg lines stop here and the class lines start.
+  const ROUTE_SLOPE_MINZOOM = 14;
+
+  /**
+   * The opacity of a leg's core line: `base` below ROUTE_SLOPE_MINZOOM,
+   * and from there 0 for a leg of a sampled route, whose slope segments
+   * take its place, and still `base` for one whose route has none.
+   *
+   * An opacity rather than a `maxzoom` because the switch is per route: a
+   * layer's zoom range cannot vary by feature, and a `maxzoom` hid the
+   * core of every route the sampler had not reached yet, leaving only its
+   * casing.
+   *
+   * @param {number|Array<*>} base The opacity, or a dimming expression.
+   * @returns {Array<*>} A zoom `step` expression.
+   */
+  const legCoreOpacity = (base) => [
+    'step', ['zoom'], base,
+    ROUTE_SLOPE_MINZOOM, ['case', ['==', ['get', 'sampled'], true], 0, base],
+  ];
+
+  /**
+   * The slope-class segments for a routes payload, each tagged with its
+   * leg. Guarded like the legs, and for the same reason: a missing core
+   * costs the classes, not the routes overlay.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A line
+   *   FeatureCollection, empty when nothing has been sampled.
+   */
+  const routeSlopesFor = (geojson) => {
+    const core = self.pwaRouteLegsCore;
+    if (!core || !core.slopeSegmentCollection) return { type: 'FeatureCollection', features: [] };
+    return core.slopeSegmentCollection(geojson);
+  };
+
   /**
    * The start/finish point features for a routes payload.
    *
@@ -2260,22 +2298,6 @@
     const core = self.pwaRouteLegsCore;
     if (!core) return { type: 'FeatureCollection', features: [] };
     return core.transitionCollection(geojson);
-  };
-
-  /**
-   * The steep-ground shadows for a routes payload (SNOW-1046).
-   *
-   * Guarded like the legs above, and for the same reason: a missing core
-   * costs the shadows, not the routes overlay.
-   *
-   * @param {?object} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} A line
-   *   FeatureCollection, empty when there is no steep ground to mark.
-   */
-  const routeSteepFor = (geojson) => {
-    const core = self.pwaRouteLegsCore;
-    if (!core || !core.steepShadowCollection) return { type: 'FeatureCollection', features: [] };
-    return core.steepShadowCollection(geojson);
   };
 
   /**
@@ -2480,13 +2502,16 @@
     if (!core) return;
     for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
       if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', legCoreOpacity(core.dimOpacity(openLegOnMap, 1, 0.25)));
+      }
+    }
+    for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
+      if (map.getLayer(id)) {
         map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
       }
     }
-    for (const id of ['routes-leg-casing', 'routes-steep-shadow']) {
-      if (map.getLayer(id)) {
-        map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15));
-      }
+    if (map.getLayer('routes-leg-casing')) {
+      map.setPaintProperty('routes-leg-casing', 'line-opacity', core.dimOpacity(openLegOnMap, 0.55, 0.15));
     }
   };
 
@@ -2896,42 +2921,6 @@
       type: 'geojson',
       data: routeLegsFor(geojson),
     });
-    // SNOW-1046: the steep-ground shadow — a darker line beside the route
-    // on its downhill side wherever the ground under it is 40° or steeper,
-    // one feature per run (route_legs_core.js's steepShadowCollection).
-    // The one terrain mark back on the line after SNOW-1019; the amendment
-    // in docs/decisions/legs-not-slope-classes-on-the-map.md says why.
-    //
-    // The side is the sign of the bank, which is positive where the ground
-    // falls away on the skier's right. MapLibre's `line-offset` is positive
-    // to the RIGHT of the line's drawing direction, and a run is drawn in
-    // track order, so `side` times a pixel distance puts the shadow on the
-    // downhill side at every zoom. Inserted beneath `routes-line-casing`,
-    // the lowest route stroke, so it sits under the flat line as well as
-    // the legs: a sampled route with no drawable legs is still drawn by
-    // `routes-line` and still gets a shadow, and without the `beforeId`
-    // this layer would paint over it wherever the two meet. Not tappable
-    // and no legend row.
-    map.addSource('routes-steep', {
-      type: 'geojson',
-      data: routeSteepFor(geojson),
-    });
-    map.addLayer({
-      id: 'routes-steep-shadow',
-      type: 'line',
-      source: 'routes-steep',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': legOpacity(0.55, 0.15),
-        'line-width': 3,
-        'line-offset': ['*', ['get', 'side'], 4.5],
-      },
-    }, 'routes-line-casing');
     map.addLayer({
       id: 'routes-leg-casing',
       type: 'line',
@@ -2961,7 +2950,7 @@
       },
       paint: {
         'line-color': colours.climb,
-        'line-opacity': legOpacity(1, 0.25),
+        'line-opacity': legCoreOpacity(legOpacity(1, 0.25)),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
         // In line-widths, so the dash keeps its proportions as the line
         // thickens with zoom — the pending line's own [2, 1.5].
@@ -2980,10 +2969,44 @@
       },
       paint: {
         'line-color': colours.descent,
-        'line-opacity': legOpacity(1, 0.25),
+        'line-opacity': legCoreOpacity(legOpacity(1, 0.25)),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
       },
     });
+    // From z14 the route's core is painted in the slope classes — the six
+    // buckets of route_slope_core.js, the slope raster's palette — in
+    // place of the leg colours, which go transparent at the same zoom on
+    // a sampled route (legCoreOpacity) and stay on one with no segments. The leg
+    // casing and the numbered transitions stay at every zoom, so the legs
+    // are still countable where the colour has changed meaning, and each
+    // segment carries its leg's `i`, so opening a leg dims the others as
+    // it does below z14. A segment the terrain had no answer for is its
+    // own layer in the unknown grey. The amendment of 2026-09-30 in
+    // docs/decisions/legs-not-slope-classes-on-the-map.md says why the
+    // classes came back at this zoom.
+    const slopeCore = self.pwaRouteSlopeCore;
+    map.addSource('routes-slopes', { type: 'geojson', data: routeSlopesFor(geojson) });
+    for (const [id, unknown] of [['routes-slope-line', false], ['routes-slope-unknown', true]]) {
+      map.addLayer({
+        id,
+        type: 'line',
+        source: 'routes-slopes',
+        minzoom: ROUTE_SLOPE_MINZOOM,
+        filter: unknown ? ['==', ['get', 'unknown'], true] : ['!=', ['get', 'unknown'], true],
+        layout: {
+          visibility: overlayState.routes ? 'visible' : 'none',
+          'line-cap': 'butt',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': unknown
+            ? ((slopeCore && slopeCore.UNKNOWN_COLOUR) || ROUTE_LINE_COLOUR)
+            : (slopeCore ? slopeCore.colourExpression() : ROUTE_LINE_COLOUR),
+          'line-opacity': legOpacity(1, 0.25),
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.2, 16, 5.5],
+        },
+      });
+    }
     // SNOW-764: the shared-with-you line. A THIRD layer rather than a
     // data-driven `line-color` on the one above, because the difference is
     // not only colour: this line is DASHED, and `line-dasharray` is not a
@@ -6206,7 +6229,7 @@
         if (key === 'routes') {
           routesGeojsonCache = data;
           // FIVE sources, not one: the lines, the derived start/finish
-          // points, the legs, the steep-ground shadows and the transitions
+          // points, the legs, the slope-class segments and the transitions
           // (see installRoutesLayer).
           // Refreshing only the first would leave a deleted route's flag
           // standing on the map, its legs drawn along a track that is no
@@ -6214,7 +6237,7 @@
           map.getSource('routes')?.setData(routesSourceData(data));
           map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
           map.getSource('route-legs')?.setData(routeLegsFor(data));
-          map.getSource('routes-steep')?.setData(routeSteepFor(data));
+          map.getSource('routes-slopes')?.setData(routeSlopesFor(data));
           map.getSource('route-transitions')?.setData(routeTransitionsFor(data));
           // An upload is the one way the key's condition changes with no
           // visibility event behind it: the overlay was already on and
@@ -7800,7 +7823,9 @@
     // a legged route now draws, and 'routes-line' no longer draws it, so
     // leaving them out would make every such route untappable and send
     // the tap through to the region underneath. Their features carry the
-    // route's uuid for exactly this (see route_legs_core.js).
+    // route's uuid for exactly this (see route_legs_core.js). The two
+    // slope layers are here on the same terms: from z14 they are where a
+    // sampled route draws, and their segments carry the uuid too.
     //
     // The transition markers are absent on
     // the endpoint markers' reasoning: each sits on a leg's own first
@@ -7813,6 +7838,8 @@
       'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
+      'routes-slope-line',
+      'routes-slope-unknown',
       'routes-line',
     ];
 
@@ -7837,6 +7864,8 @@
       'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
+      'routes-slope-line',
+      'routes-slope-unknown',
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -8790,7 +8819,11 @@
         // activation. A miss is silent: better no rail than a rail about
         // the wrong route.
         case 'routes-leg-climb':
-        case 'routes-leg-descent': {
+        case 'routes-leg-descent':
+        // From z14 a sampled route is drawn by its slope segments, which
+        // carry the same uuid and resolve the same way.
+        case 'routes-slope-line':
+        case 'routes-slope-unknown': {
           if (tapOpenRoute(feature, point)) break;
           const route = routeFeatureByUuid(feature.properties?.uuid);
           if (route) activateRoute(route);

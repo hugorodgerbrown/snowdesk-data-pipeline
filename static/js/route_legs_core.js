@@ -38,13 +38,6 @@
  * literal colours and cannot reference a custom property. Each names the
  * token it mirrors, the convention `route_slope_core.js` follows.
  *
- * THE STEEP-GROUND SHADOW (SNOW-1046) is the one terrain mark that came
- * back after SNOW-1019 took them all off the line: a darker line offset
- * to the downhill side wherever the ground under the route is 40° or
- * steeper. `steepRuns` finds the stretches, `steepShadowCollection`
- * draws them. The amendment in the decision record above says why this
- * one returned.
- *
  * Every function here is pure.
  *
  * Exports (frozen `self.pwaRouteLegsCore`):
@@ -54,11 +47,8 @@
  *   legCollection(fc)         — one LineString per leg, `{uuid, i, climbing}`
  *   transitionCollection(fc)  — one Point per transition,
  *                               `{uuid, n, climbing}`
- *   passageCollection(fc)     — the no-fall passages, tagged with their
- *                               leg's `climbing`
- *   STEEP_MIN_DEG             — the angle a steep-ground shadow starts at
- *   steepRuns(slope, legs)    — the runs of steep segments, one side each
- *   steepShadowCollection(fc) — one LineString per run, `{uuid, i, side}`
+ *   slopeSegmentCollection(fc) — every slope-class segment, tagged with
+ *                               its leg's `i` and `climbing`
  *   dimOpacity(open, on, off) — the opacity expression a selection paints
  *   hasDrawableLegs(f)        — whether every leg of a route can be sliced
  *   withDrawableLegs(fc)      — the payload with undrawable `legs` removed,
@@ -176,7 +166,8 @@
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
    * @returns {Array<{uuid: ?string, coordinates: Array<Array<number>>,
-   *   legs: Array<WireLeg>}>}
+   *   legs: Array<WireLeg>, sampled: boolean}>} `sampled` is whether the
+   *   route has slope segments to draw.
    */
   function leggedRoutes(geojson) {
     const features = (geojson && geojson.features) || [];
@@ -187,10 +178,13 @@
       if (properties.pending) continue;
       if (!hasDrawableLegs(feature)) continue;
       const coordinates = feature.geometry.coordinates;
+      const slopeCore = self.pwaRouteSlopeCore;
       routes.push({
         uuid: properties.uuid ? String(properties.uuid) : null,
         coordinates: coordinates,
         legs: properties.legs,
+        sampled: !!(slopeCore && slopeCore.segmentFeatures
+          && slopeCore.segmentFeatures(feature).length),
       });
     }
     return routes;
@@ -217,7 +211,11 @@
    * leg's last coordinate is the next leg's first. Properties are the
    * owning route's `uuid` — a tap on a leg resolves back to its route —
    * the leg's number `i`, which the selection's opacity expression
-   * matches on, and `climbing`, which picks the layer.
+   * matches on, and `climbing`, which picks the layer. `sampled: true`
+   * marks a leg whose route has slope segments to draw: from z14 the map
+   * paints those instead of the leg's core, and a leg without the flag
+   * keeps its core at every zoom, so a route the sampler has not reached
+   * does not lose its line.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
    * @returns {FeatureCollection} The legs, possibly none.
@@ -242,6 +240,7 @@
           properties: Object.assign(
             { i: leg.i, climbing: leg.climbing === true },
             route.uuid ? { uuid: route.uuid } : {},
+            route.sampled ? { sampled: true } : {},
           ),
         });
       }
@@ -286,28 +285,31 @@
   }
 
   /**
-   * The no-fall passage segments of every owned route, each tagged with
-   * the number (`i`) and `climbing` flag of the leg it lies in.
+   * The slope-class segments of every owned route, each tagged with the
+   * number (`i`) and `climbing` flag of the leg it lies in.
+   *
+   * What the map paints a route's core with from ROUTE_SLOPE_MINZOOM
+   * (docs/decisions/legs-not-slope-classes-on-the-map.md, 2026-09-30).
+   * The leg tag is what lets opening a leg on the rail dim the other legs'
+   * segments, as it dims their lines below that zoom.
    *
    * A route drawn FLAT — no legs, or legs `hasDrawableLegs` rejects —
-   * gets neither `climbing` nor `i` on its passages. Its line is the
-   * flat fuchsia one, so the edge must take that colour rather than
-   * guessing a leg, and it has no leg for a selection to dim it by. The
-   * paint expressions in `map.js` read the absent keys as exactly that.
+   * gets neither `climbing` nor `i` on its segments: it has no leg for a
+   * selection to dim it by, and `dimOpacity` reads the absent `i` as
+   * "not the open leg".
    *
    * The segments are `route_slope_core.js`'s: `segmentFeatures` emits one
    * feature per entry of `slope.angles`, in order, so a segment's position
    * in its output IS its sample index — the index space the legs' `from`
-   * and `to` are in. The passage's edge then takes the leg's colour, so
-   * the split reads as part of the line it splits.
+   * and `to` are in.
    *
-   * Empty when `route_slope_core.js` is not loaded: the passages are an
+   * Empty when `route_slope_core.js` is not loaded: the classes are an
    * addition to the leg lines, and a missing core should cost them only.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
-   * @returns {FeatureCollection} The passage segments, possibly none.
+   * @returns {FeatureCollection} The segments, possibly none.
    */
-  function passageCollection(geojson) {
+  function slopeSegmentCollection(geojson) {
     const out = empty();
     const slopeCore = self.pwaRouteSlopeCore;
     if (!slopeCore || !slopeCore.segmentFeatures) return out;
@@ -321,7 +323,6 @@
       const segments = slopeCore.segmentFeatures(features[r]);
       for (let index = 0; index < segments.length; index += 1) {
         const segment = segments[index];
-        if (!segment.properties || segment.properties.passage !== true) continue;
         const leg = legs.find(
           (candidate) => candidate
             && typeof candidate.from === 'number'
@@ -336,147 +337,6 @@
             {},
             segment.properties,
             leg ? { i: leg.i, climbing: leg.climbing === true } : {},
-          ),
-        });
-      }
-    }
-    return out;
-  }
-
-  /**
-   * The angle, in degrees, at which the ground under a route earns a
-   * steep-ground shadow (SNOW-1046). Inclusive: a 40° segment is steep.
-   */
-  const STEEP_MIN_DEG = 40;
-
-  /**
-   * One run of steep ground: consecutive segments on one side of the
-   * track, inside one leg.
-   *
-   * @typedef {object} SteepRun
-   * @property {number} from Its first slope segment, inclusive.
-   * @property {number} to Its last slope segment, inclusive.
-   * @property {number} side 1 where the ground falls away on the skier's
-   *   right, -1 on the left.
-   * @property {?number} i The number of the leg it lies in, or null when
-   *   the route has no legs to place it in.
-   */
-
-  /**
-   * The sign of one wire bank: 1, -1, or 0 where the side is not known.
-   *
-   * @param {*} bank A `banks` entry — signed whole degrees, or null.
-   * @returns {number}
-   */
-  function sideOf(bank) {
-    if (typeof bank !== 'number' || !Number.isFinite(bank)) return 0;
-    return Math.sign(bank);
-  }
-
-  /**
-   * The leg a slope segment lies in, by the legs' inclusive `from`/`to`.
-   *
-   * @param {Array<WireLeg>} legs The route's legs.
-   * @param {number} index A slope segment index.
-   * @returns {?number} The leg's number, or null when no leg holds it.
-   */
-  function legNumberAt(legs, index) {
-    for (let j = 0; j < legs.length; j += 1) {
-      const leg = legs[j];
-      if (
-        leg
-        && typeof leg.from === 'number'
-        && typeof leg.to === 'number'
-        && leg.from <= index
-        && index <= leg.to
-      ) {
-        return typeof leg.i === 'number' ? leg.i : null;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * The runs of steep ground along one route's slope record (SNOW-1046).
-   *
-   * A run is consecutive 25 m segments whose angle is at least `minDeg`.
-   * It ends where the ground stops being steep, where the bank changes
-   * sign — so a shadow never crosses the line — where the bank is null or
-   * 0, because a shadow with no known side has nowhere to sit, and at a
-   * leg boundary, so a run dims with its leg. A single segment is a run.
-   *
-   * @param {?{angles?: Array<?number>, banks?: Array<?number>}} slope The
-   *   route's compact slope record.
-   * @param {?Array<WireLeg>} legs The route's legs, or none; with none,
-   *   no run is split by a leg and every `i` is null.
-   * @param {{minDeg?: number}} [opts] `minDeg` defaults to STEEP_MIN_DEG.
-   * @returns {Array<SteepRun>} The runs in track order, possibly none.
-   */
-  function steepRuns(slope, legs, opts) {
-    const minDeg = opts && typeof opts.minDeg === 'number' ? opts.minDeg : STEEP_MIN_DEG;
-    const angles = slope && slope.angles;
-    const banks = slope && slope.banks;
-    if (!Array.isArray(angles) || !Array.isArray(banks)) return [];
-    const legList = Array.isArray(legs) ? legs : [];
-
-    /** @type {Array<SteepRun>} */
-    const runs = [];
-    /** @type {?SteepRun} */
-    let current = null;
-    for (let index = 0; index < angles.length; index += 1) {
-      const angle = angles[index];
-      const side = sideOf(banks[index]);
-      const steep = typeof angle === 'number' && angle >= minDeg && side !== 0;
-      const i = legList.length ? legNumberAt(legList, index) : null;
-      if (current && steep && current.side === side && current.i === i) {
-        current.to = index;
-        continue;
-      }
-      current = null;
-      if (!steep) continue;
-      current = { from: index, to: index, side: side, i: i };
-      runs.push(current);
-    }
-    return runs;
-  }
-
-  /**
-   * One LineString per steep run of every owned route (SNOW-1046).
-   *
-   * Sliced from the slope record's own points — segment k runs from
-   * `points[k]` to `points[k + 1]`, so a run is `points[from..to + 1]`.
-   * Properties are the route's `uuid`, the leg number `i` the selection's
-   * opacity expression matches on (null for a route drawn flat, which has
-   * no leg to dim it by), and `side`, which signs the layer's pixel
-   * offset. A pending share produces nothing, for the module comment's
-   * reason; so does a route with no slope record, or one whose halves do
-   * not pair up.
-   *
-   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
-   * @returns {FeatureCollection} The runs, possibly none.
-   */
-  function steepShadowCollection(geojson) {
-    const out = empty();
-    const features = (geojson && geojson.features) || [];
-    for (let r = 0; r < features.length; r += 1) {
-      const feature = features[r];
-      const properties = (feature && feature.properties) || {};
-      if (properties.pending) continue;
-      const slope = properties.slope;
-      const points = slope && slope.points;
-      const angles = slope && slope.angles;
-      if (!Array.isArray(points) || !Array.isArray(angles)) continue;
-      if (points.length !== angles.length + 1) continue;
-      const legs = hasDrawableLegs(feature) ? properties.legs : [];
-      const runs = steepRuns(slope, legs);
-      for (let k = 0; k < runs.length; k += 1) {
-        const run = runs[k];
-        out.features.push({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates: points.slice(run.from, run.to + 2) },
-          properties: Object.assign(
-            { i: run.i, side: run.side },
-            properties.uuid ? { uuid: String(properties.uuid) } : {},
           ),
         });
       }
@@ -513,10 +373,7 @@
     LEG_DESCENT_COLOUR: LEG_DESCENT_COLOUR,
     legCollection: legCollection,
     transitionCollection: transitionCollection,
-    passageCollection: passageCollection,
-    STEEP_MIN_DEG: STEEP_MIN_DEG,
-    steepRuns: steepRuns,
-    steepShadowCollection: steepShadowCollection,
+    slopeSegmentCollection: slopeSegmentCollection,
     dimOpacity: dimOpacity,
     hasDrawableLegs: hasDrawableLegs,
     withDrawableLegs: withDrawableLegs,
