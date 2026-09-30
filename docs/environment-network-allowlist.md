@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Canonical egress allowlist (bare + *. pairs) for Claude Code on the web — EGRESS_BLOCKED hosts, provider APIs, basemaps, scan sites
 status: current
-last-reviewed: 2026-09-29
+last-reviewed: 2026-09-30
 ---
 
 # Environment network allow-list
@@ -110,7 +110,7 @@ cannot run an ALBINA or Météo-France ingest end to end.
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
 | `slf.ch`, `*.slf.ch` | `aws.slf.ch` (`SLF_API_URL`), `www.slf.ch` (competitor scan) | `aws.`/`www.` open, bare blocked |
-| `avalanche.report`, `*.avalanche.report` | `static.avalanche.report` (ALBINA bulletins), `api.avalanche.report` | blocked |
+| `avalanche.report`, `*.avalanche.report` | `static.avalanche.report` (ALBINA bulletins), `api.avalanche.report` | open (re-probed 2026-09-30: a dry-run `fetch_bulletins --source albina --today` completed) |
 | `meteofrance.fr`, `*.meteofrance.fr` | `public-api.meteofrance.fr` (DPBRA), `portail-api.meteofrance.fr` (token), `donneespubliques.meteofrance.fr` | blocked |
 | `avalanches.org`, `*.avalanches.org` | `www.avalanches.org` — EAWS glossary and standards linked from the site and fixtures | blocked |
 
@@ -118,12 +118,12 @@ cannot run an ALBINA or Météo-France ingest end to end.
 
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
-| `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | blocked |
+| `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | **intermittent** (re-probed 2026-09-30: roughly one request in three to `api.open-meteo.com` hangs at CONNECT until the 30 s timeout, the rest answer in under a second; SLF and npm never hang. A dry-run `fetch_weather` fails one or two locations per run. Re-save the pair in the policy and re-probe; if it persists it is the gateway's, not the policy's) |
 | `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_URL`), the docs and terms | blocked |
 | `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
 | `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
 | `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open, and in the policy since 2026-09-29 (before that it was reachable only through a platform default) |
-| `i.posthog.com`, `*.i.posthog.com` | `eu.i.posthog.com` (`POSTHOG_HOST`), `eu-assets.i.posthog.com` | blocked |
+| `i.posthog.com`, `*.i.posthog.com` | `eu.i.posthog.com` (`POSTHOG_HOST`), `eu-assets.i.posthog.com` | `eu.` open (re-probed 2026-09-30: the tunnel is established and the host answers) |
 
 ### Basemaps and map overlays
 
@@ -151,8 +151,9 @@ from that function, not from a style URL, when a basemap changes.
 
 | Allow | Why | Status 2026-09-29 |
 |---|---|---|
-| `semgrep.dev`, `*.semgrep.dev` | `tox -e sast` rule packs | blocked |
+| `semgrep.dev`, `*.semgrep.dev` | `tox -e sast` rule packs | open (re-probed 2026-09-30) |
 | `linear.app`, `*.linear.app` | `uploads.linear.app` — ticket attachment bodies | `uploads.` open |
+| `playwright.dev`, `*.playwright.dev` | `cdn.playwright.dev` — the Chromium build `tox -e e2e` fetches in `commands_pre` (`playwright install chromium`). The image ships build 1194; the pinned `playwright` package wants 1243, so without this host the e2e env cannot start | **blocked** (403, requested 2026-09-30) |
 
 ### Competitor scan (`docs/competitors.md`)
 
@@ -186,7 +187,7 @@ listings for version history instead.
 
 ### Paste-ready
 
-The 81 entries above, one per line, in the same group order — all applied
+The 83 entries above, one per line, in the same group order — 81 applied
 on 2026-09-29 (the MaxMind R2 host in a second pass the same day, after
 review caught the redirect):
 
@@ -236,6 +237,8 @@ semgrep.dev
 *.semgrep.dev
 linear.app
 *.linear.app
+playwright.dev
+*.playwright.dev
 whiterisk.ch
 *.whiterisk.ch
 snowsafe.at
@@ -377,6 +380,23 @@ because git traffic goes through the session's own git proxy.
 Each section below records one block as it was found. The canonical list
 above supersedes them; they stay as the record of why each domain was
 asked for.
+
+## Requested — 2026-09-30 (stress-testing a cloud session)
+
+A session ran the whole default `tox` envlist, `sast`, `audit`, the dev
+server, both seed commands, dry-run fetches from all three providers and
+`npm run lh`. One host was blocked at CONNECT, and the block takes the
+whole `e2e` env with it.
+
+| Domain | Why it matters |
+|---|---|
+| `cdn.playwright.dev` | `tox -e e2e` runs `playwright install chromium` in `commands_pre`, and the pinned `playwright` package (1.63) asks for Chromium build 1243. The image ships build 1194 under `$PLAYWRIGHT_BROWSERS_PATH`, so the download is the only way the env can start, and the proxy answers it with `403 … no rule or allowlist entry allows host "cdn.playwright.dev"`. Listed as the pair `playwright.dev` / `*.playwright.dev` under Tooling above |
+
+The same pass re-probed four rows the 2026-09-29 table marked blocked
+and found them open — ALBINA, semgrep, PostHog — or intermittent
+(Open-Meteo, whose CONNECT hangs about one time in three). Those cells
+now carry the 2026-09-30 result; the rest of the table was not re-probed
+and keeps its 2026-09-29 status.
 
 ## Requested — 2026-09-22 (route rail design)
 
