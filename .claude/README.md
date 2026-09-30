@@ -328,6 +328,43 @@ cloud session. Every grant the documented dev loop needs — `uv`, `npm`, `gh`,
 `settings.json`. Keep `settings.local.json` for genuinely machine-local things
 only; a grant parked there is invisible to Cloud and to Routines.
 
+### Which file a setting belongs in
+
+Three files, one question each (SNOW-1028):
+
+| File | Holds | Test |
+|---|---|---|
+| `.claude/settings.json` (committed) | Everything this project needs on any machine: the Bash, WebFetch and MCP grants, the denies, the hooks, and the project-relative sandbox allowance `sandbox.filesystem.allowRead: ["./.env"]` | Would a cloud session or a fresh worktree need it? |
+| `~/.claude/settings.json` (user) | Everything true of the machine rather than the project: `sandbox.enabled`, `excludedCommands` (`"git *"`, `"gh *"`), the network allowlist, cache paths under `~`, the GPG agent socket | Would another repo on this machine need it too? |
+| `.claude/settings.local.json` (gitignored) | A per-checkout preference such as `outputStyle`, and nothing else | Is it neither of the above? |
+
+Three properties of the sandbox decide where an entry can go:
+
+- **A `./` path resolves against the file that holds it.** In the committed
+  file `./.env` is the checkout's `.env`; in `~/.claude/settings.json` the same
+  string means `~/.claude/.env` and grants nothing. A project-relative
+  allowance therefore cannot be global.
+- **A `permissions.deny` `Read(...)` rule is also a sandbox read-deny**, and a
+  read-denied directory refuses file creation, rename and delete whatever
+  `allowWrite` says. The committed file denies reads of secrets only
+  (`~/.ssh`, `~/.aws`, the credentials file, `**/.env`); a deny on `.tox`,
+  `node_modules`, `__pycache__` or a cache directory stops tox, `npm ci` and
+  ruff from running inside the sandbox.
+- **The `Read(**/.env)` deny is anchored to the session's own directory.**
+  It stops the Read tool and any sandboxed command from opening the `.env` in
+  the checkout the session runs in, and Django has to open exactly that file:
+  python-decouple loads it before the first setting is read, and ruff stats
+  it. `sandbox.filesystem.allowRead: ["./.env"]` re-opens it for sandboxed
+  commands only; the Read tool stays denied. The deny does not reach a
+  `.env` outside the session's directory, so a worktree session can already
+  open the main checkout's file by its own path — measured on 2026-09-30,
+  and the reason SNOW-1028 dropped its plan to stop symlinking `.env` into
+  worktrees: python-decouple searches upward and would load the main file
+  anyway.
+
+The committed file carries no `sandbox.enabled`, so its sandbox block is inert
+wherever the sandbox is off.
+
 `gh pr merge` and `git push --force` sit in `permissions.ask` rather than
 `allow` or `deny`: possible when you invoke `merge-prs` or the commit
 re-signing flow, never silent, and blocked by default in an unattended run

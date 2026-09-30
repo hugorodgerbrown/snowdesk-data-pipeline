@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, dev credentials, reseed
+description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, .env + sandbox, dev credentials, reseed
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-30
 ---
 
 # Worktrees and DB seeding
@@ -147,6 +147,18 @@ manual DevTools step. Set `SW_DEV_SHELL_BYPASS=False` in `.env` to opt back
 into ordinary caching for the whole worktree, or use the checkbox on
 `/_sw-version/` (staff-only) to toggle it per-browser without touching
 `.env`. Full rationale: [`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
+
+## `.env` and the Bash sandbox
+
+A worktree's `.env` is a symlink to the main checkout's, so a worktree runs
+with the same keys. `.claude/settings.json` denies `Read(**/.env)`, which
+the Claude Code sandbox also applies to Bash commands, and Django cannot
+start without opening that file. The committed
+`sandbox.filesystem.allowRead: ["./.env"]` re-opens it for sandboxed
+commands, so `uv run tox`, `uv run python manage.py …` and the pre-commit
+hooks all run inside the sandbox in a worktree and in the main checkout
+alike (SNOW-1028). Which settings file holds what, and why:
+[`.claude/README.md`](../.claude/README.md#which-file-a-setting-belongs-in).
 
 ## Dev credentials
 

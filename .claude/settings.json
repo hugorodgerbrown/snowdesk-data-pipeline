@@ -18,6 +18,9 @@
       "Bash(python3 -c:*)",
       "Bash(sqlite3 db.sqlite3:*)",
       "Bash(bin/:*)",
+      "Bash(node:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
 
       "Bash(git status:*)",
       "Bash(git log:*)",
@@ -60,6 +63,7 @@
       "WebFetch(domain:gitlab.com)",
       "WebFetch(domain:docs.claude.com)",
       "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:tiles.snowdesk-data.info)",
 
       "Skill(implement)",
       "Skill(implement:*)",
@@ -105,6 +109,11 @@
       "mcp__*__get_key_value",
       "mcp__*__list_key_value"
     ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowRead": ["./.env"]
+    }
   },
   "hooks": {
     "PreToolUse": [
