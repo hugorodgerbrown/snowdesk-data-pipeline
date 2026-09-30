@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, dev credentials, reseed
+description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, settings.ini not .env, dev credentials, reseed
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-30
 ---
 
 # Worktrees and DB seeding
@@ -143,10 +143,46 @@ shell cache — the page looks up to date; the code running it is not.
 Worktrees run `config.settings.development`, whose `SW_DEV_SHELL_BYPASS`
 defaults to `True` (SNOW-585) — the service worker skips its shell cache
 entirely in that case, so every reload serves current bytes off disk with no
-manual DevTools step. Set `SW_DEV_SHELL_BYPASS=False` in `.env` to opt back
-into ordinary caching for the whole worktree, or use the checkbox on
-`/_sw-version/` (staff-only) to toggle it per-browser without touching
-`.env`. Full rationale: [`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
+manual DevTools step. Set `SW_DEV_SHELL_BYPASS=False` in the worktree's
+`settings.ini` to opt back into ordinary caching for the whole worktree, or
+use the checkbox on `/_sw-version/` (staff-only) to toggle it per-browser
+without touching the file. Full rationale: [`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
+
+## Settings and the Bash sandbox
+
+A worktree has no `.env`. `bin/init-worktree` writes a gitignored
+`settings.ini` holding a throwaway `SECRET_KEY` and nothing else
+(SNOW-1028); every other setting falls back to its default, which is all CI
+runs on. python-decouple looks for `settings.ini` before `.env` and stops at
+the first directory that holds either, so the file does two jobs: it gives
+Django a key, and it stops decouple searching upward — a worktree lives
+inside the main checkout, and with nothing of its own to find, decouple
+would load the main `.env`.
+
+The reason is the Claude Code sandbox. `.claude/settings.json` denies
+`Read(**/.env)`, the sandbox applies that to Bash commands too, and a
+worktree that symlinked the main `.env` (what the script did before) could
+only boot Django by allowing every sandboxed command to read the real keys.
+With `settings.ini` there is nothing secret in a worktree to allow, and
+`uv run tox`, `uv run python manage.py …` and the pre-commit hooks all run
+inside the sandbox.
+
+What a worktree therefore runs without: the PostHog, Météo-France,
+Open-Meteo, MaxMind and what3words keys and the mail password. Pages render
+from the seeded database; a feature that calls one of those services does
+not reach it. Two ways to bring a value in:
+
+- **One setting, one worktree:** add `NAME=value` under `[settings]` in that
+  worktree's `settings.ini`. A `%` in a value must be written `%%`.
+- **One command:** set it in the environment — `NAME=value uv run …`. The
+  environment wins over either file.
+
+The symlink to the main `.env` that an earlier run left is removed on the
+next session. Any other `.env` in a worktree — a regular file, or a link
+pointed somewhere else — is left alone and no `settings.ini` is written
+beside it; sandboxed commands in that worktree then fail on the deny until
+the file is removed. Which settings file holds what, and why:
+[`.claude/README.md`](../.claude/README.md#which-file-a-setting-belongs-in).
 
 ## Dev credentials
 

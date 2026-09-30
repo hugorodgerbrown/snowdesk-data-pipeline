@@ -7,8 +7,26 @@
 # worktree means manual setup before Django will boot.
 #
 # This script picks the right strategy per asset:
-#   - .env, .venv  → symlink to the main repo (slow-changing, identical
+#   - .venv        → symlink to the main repo (slow-changing, identical
 #                    across worktrees; one source of truth).
+#   - settings.ini → written here, holding a throwaway SECRET_KEY and
+#                    nothing else (SNOW-1028). NOT a symlink to the main
+#                    repo's .env, which is what this script made until then:
+#                    that put the real API keys and the mail password inside
+#                    every worktree, where the Claude Code sandbox had to be
+#                    told to let any command read them, or Django could not
+#                    start. A worktree needs none of them — every other
+#                    setting has a default, which is all CI runs on.
+#                    python-decouple looks for settings.ini BEFORE .env and
+#                    stops at the first directory that holds either, so this
+#                    file also keeps it from searching upward: a worktree
+#                    lives inside the main repo, and with nothing of its own
+#                    to find, decouple would walk up and load the main .env
+#                    anyway. The symlink to the main .env that an earlier
+#                    run left is removed; any other .env — a regular file,
+#                    or a link pointed somewhere else — is a developer's own
+#                    choice and is left alone, with no settings.ini written
+#                    over it.
 #   - db.sqlite3   → seeded from committed fixtures + dev users (guarantees
 #                    every worktree has the same data as CI; avoids drift that
 #                    breaks the SNOW-13 query-count baseline). Recipe, on the
@@ -93,6 +111,53 @@ link_if_missing() {
     fi
     ln -s "$main_repo/$name" "$name"
     echo "init-worktree: linked $name -> $main_repo/$name"
+    actions=$((actions + 1))
+}
+
+# Take the main repo's keys back out of a worktree made before SNOW-1028.
+#
+# Only ever the link this script used to create: a symlink whose target is
+# the main repo's .env. Removing it deletes a link, never the file behind it.
+# Anything else called .env — a regular file, or a link a developer pointed
+# at a credentials file of their own — was put there on purpose and is not
+# ours to delete.
+#
+# Identified by its target STRING, which is exactly what `ln -s` wrote and
+# still matches when the main .env has since been deleted, leaving the link
+# broken. Deliberately not by the file it resolves to (-ef): the main .env
+# may itself be a link to a credentials file, and a developer who points a
+# worktree's .env at that same file has made their own link, not ours.
+unlink_env_symlink() {
+    if [ ! -L ".env" ]; then
+        return
+    fi
+    if [ "$(readlink .env)" != "$main_repo/.env" ]; then
+        return
+    fi
+    rm .env
+    echo "init-worktree: removed the .env symlink (worktrees run on settings.ini, without the main repo's keys)"
+    actions=$((actions + 1))
+}
+
+write_settings_if_missing() {
+    # A developer's own .env wins: decouple reads settings.ini first, so
+    # writing one beside it would silently override the file they chose.
+    # ``-L`` as well as ``-e``, as in link_if_missing: a link whose target is
+    # missing for now — a secret-manager mount not yet up — is still their
+    # choice, and a settings.ini written today would go on overriding it
+    # after the target came back. The same holds for settings.ini itself,
+    # and more sharply: the redirect below FOLLOWS a dangling link, so it
+    # would write the throwaway key into the file the link points at.
+    if [ -e "settings.ini" ] || [ -L "settings.ini" ] || [ -e ".env" ] || [ -L ".env" ]; then
+        return
+    fi
+    local key
+    # od rather than python or openssl: it is POSIX, so it is on the PATH
+    # before the virtualenv is, and it does not end in a pipe that pipefail
+    # would read as a failure the way `tr < /dev/urandom | head` does.
+    key=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    printf '[settings]\nSECRET_KEY=%s\n' "$key" > settings.ini
+    echo "init-worktree: wrote settings.ini with a throwaway SECRET_KEY"
     actions=$((actions + 1))
 }
 
@@ -212,7 +277,8 @@ build_css_if_missing() {
     actions=$((actions + 1))
 }
 
-link_if_missing .env
+unlink_env_symlink
+write_settings_if_missing
 link_if_missing .venv
 
 # Branch on the database's existence HERE rather than inside either

@@ -17,9 +17,8 @@
 #      SECRET_KEY through python-decouple with no default. tox does not
 #      declare `passenv` for it, so an exported variable never reaches pytest
 #      — only the file works. A cloud session starts from a fresh clone and
-#      bin/init-worktree cannot help: it symlinks .env from the main repo and
-#      refuses to run in the main worktree, which is precisely what a cloud
-#      session checks out.
+#      bin/init-worktree cannot help: it refuses to run in the main worktree,
+#      which is precisely what a cloud session checks out.
 #   5. Verifies the result with `manage.py check` and shouts if it failed.
 #   6. Seeds db.sqlite3 and compiles static/css/output.css, so the session can
 #      run the app — runserver, npm run lh, the dev-mirror views — and not

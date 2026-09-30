@@ -17,6 +17,8 @@ DO_NOT_ADD/
 .env
 .env.*
 .envrc
+# A worktree's throwaway SECRET_KEY, written by bin/init-worktree (SNOW-1028).
+/settings.ini
 .claude/worktrees/
 .venv
 .venv/

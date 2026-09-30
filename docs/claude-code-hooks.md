@@ -19,7 +19,7 @@ the committed `Bash(bin/:*)` permission grant covers the path.
 | Event | Matcher | Script | What it does |
 |---|---|---|---|
 | `SessionStart` | — | [`bin/setup-remote-env`](../bin/setup-remote-env) | Provisions Python 3.14, `.venv`, `.env`, the dev database, `output.css`, `sqlite3`, the pre-commit hook and a proxy-trusting Chromium in a **cloud** session |
-| `SessionStart` | — | [`bin/init-worktree`](../bin/init-worktree) | Seeds a fresh git worktree: symlinks `.env`/`.venv`, builds `db.sqlite3`, compiles the stylesheet. On later sessions, keeps the database migrated |
+| `SessionStart` | — | [`bin/init-worktree`](../bin/init-worktree) | Seeds a fresh git worktree: symlinks `.venv`, writes a `settings.ini` with a throwaway `SECRET_KEY`, builds `db.sqlite3`, compiles the stylesheet. On later sessions, keeps the database migrated |
 | `SessionEnd` | — | [`bin/mark-worktree-cleanable`](../bin/mark-worktree-cleanable) | Tombstones the worktree if — and only if — it is clean and fully merged |
 | `PreToolUse` | `Bash` | [`bin/claude-hook-deny-command`](../bin/claude-hook-deny-command) | Refuses three prohibited commands before they run |
 
@@ -85,10 +85,14 @@ the stylesheet build.
 
 ### `bin/init-worktree`
 
-Refuses to run in the main worktree. In a worktree it symlinks `.env` and
-`.venv` back to the main repo and, when `db.sqlite3` is absent, runs the seed
-recipe (migrate → `sync_waffle_flags` → region fixtures → resorts →
-`seed_test_data`, which includes the dev users).
+Refuses to run in the main worktree. In a worktree it symlinks `.venv` back
+to the main repo, writes a gitignored `settings.ini` holding a throwaway
+`SECRET_KEY` — never a link to the main repo's `.env`, and it removes that
+link where an earlier run left one (SNOW-1028; the why is in
+[`worktrees.md`](worktrees.md#settings-and-the-bash-sandbox)) — and, when
+`db.sqlite3` is absent, runs the seed recipe (migrate → `sync_waffle_flags`
+→ region fixtures → resorts → `seed_test_data`, which includes the dev
+users).
 
 When the database already exists it runs `migrate` and `sync_waffle_flags`
 and nothing else (SNOW-997) — those two are idempotent and are what keeps

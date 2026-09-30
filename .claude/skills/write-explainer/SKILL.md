@@ -122,8 +122,8 @@ used. Fix a source only once the two measures are reconciled.
 
 - Seed a worktree DB if it has none: `bin/init-worktree` (the four canonical
   tracks plus the synthetic Verbier track, all with slope records). `uv run`
-  commands need the Bash sandbox off (`dangerouslyDisableSandbox: true`):
-  uv's cache lives outside it.
+  commands run inside the Bash sandbox; if one is refused, stop and report
+  the refusal rather than turning the sandbox off.
 - Export exactly the arrays the chosen example needs with
   `uv run python manage.py shell -c "…"`, calling the service function
   itself, and write compact JSON (`separators=(',', ':')`). One tour's rows,
@@ -234,9 +234,9 @@ every run; they are Node's, and harmless.
 ## 7. Check it in a browser
 
 Serve the directory (`python3 -m http.server <port> --bind 127.0.0.1` from
-`docs/explainers/`, on a free port) and open it in the Browser pane. Binding
-a port needs the Bash sandbox off (`dangerouslyDisableSandbox: true`); run
-it in the background and stop it when done. A `file://` URL opens as a
+`docs/explainers/`, on a free port) and open it in the Browser pane. Run it
+in the background and stop it when done; a loopback port binds inside the
+Bash sandbox. A `file://` URL opens as a
 static snapshot with scripts disabled — useful for seeing the baked copy,
 but no page tools work on it.
 
