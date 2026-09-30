@@ -89,7 +89,7 @@
  *                    px, or null; the leader line's stop (SNOW-1019)
  *   cursor()       — the open route's cursor, or null; map.js follows it
  *                    to dim every leg but the open one (SNOW-1017) and to
- *                    draw the selection and index on the line, and writes
+ *                    draw the index as a dot on the line, and writes
  *                    the index back from a pointer on it (SNOW-1019)
  *   element        — the rail itself, measured by map.js's fit padding
  */
