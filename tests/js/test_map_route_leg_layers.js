@@ -348,6 +348,11 @@ function buildFixture() {
     <section id="map-route-legs-section" hidden></section>`;
 }
 
+/** A leg core's opacity: `base`, and from z14 nothing on a sampled route. */
+const coreOpacity = (base) => [
+  'step', ['zoom'], base, 14, ['case', ['==', ['get', 'sampled'], true], 0, base],
+];
+
 let mapStub;
 let core;
 let legsCore;
@@ -405,8 +410,8 @@ describe('the leg source', () => {
     const data = sources.get('route-legs').data;
 
     expect(data.features.map((f) => f.properties)).toEqual([
-      { uuid: 'sampled-route', i: 1, climbing: true },
-      { uuid: 'sampled-route', i: 2, climbing: false },
+      { uuid: 'sampled-route', i: 1, climbing: true, sampled: true },
+      { uuid: 'sampled-route', i: 2, climbing: false, sampled: true },
     ]);
   });
 });
@@ -503,9 +508,12 @@ describe('the leg layers', () => {
 });
 
 describe('the slope classes from z14', () => {
-  it('take over from the leg lines at one zoom, with no gap and no overlap', () => {
+  it('take over from a sampled route\'s leg lines at one zoom', () => {
+    // An opacity step, not a maxzoom: the switch is per route, and a
+    // route the sampler has not reached keeps its leg core at z14.
     for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
-      expect(layers.get(id).maxzoom).toBe(14);
+      expect(layers.get(id).maxzoom).toBeUndefined();
+      expect(layers.get(id).paint['line-opacity']).toEqual(coreOpacity(1));
     }
     for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
       expect(layers.get(id).minzoom).toBe(14);
@@ -535,6 +543,15 @@ describe('the slope classes from z14', () => {
 
     expect(ids.indexOf('routes-slope-line')).toBeGreaterThan(ids.indexOf('routes-leg-casing'));
     expect(ids.indexOf('routes-line-pending')).toBeGreaterThan(ids.indexOf('routes-slope-unknown'));
+  });
+
+  it('open the route a tapped segment belongs to', () => {
+    for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
+      fitBoundsOptions.length = 0;
+      tapLayer(id, { uuid: 'sampled-route', i: 2, slope_class: 5 });
+
+      expect(rail.last().feature.properties.uuid).toBe('sampled-route');
+    }
   });
 
   it('are reached by the routes overlay switch', () => {
@@ -695,8 +712,8 @@ describe('opening a leg on the rail', () => {
 
     cursor.openLeg(LEGS[1]);
     const dimmed = legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 1, 0.25);
-    expect(opacityOf('routes-leg-climb')).toEqual(dimmed);
-    expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
+    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(dimmed));
+    expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(dimmed));
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
     expect(opacityOf('routes-slope-line')).toEqual(dimmed);
@@ -704,8 +721,8 @@ describe('opening a leg on the rail', () => {
 
     cursor.closeLeg();
     expect(opacityOf('routes-slope-line')).toBe(1);
-    expect(opacityOf('routes-leg-climb')).toBe(1);
-    expect(opacityOf('routes-leg-descent')).toBe(1);
+    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
+    expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(1));
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
     rail.state.cursor = null;
   });
@@ -721,7 +738,7 @@ describe('opening a leg on the rail', () => {
     cursor.openLeg(LEGS[0]);
 
     expect(paintCalls).toEqual([]);
-    expect(opacityOf('routes-leg-climb')).toBe(1);
+    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
   });
 
   it('installs the leg layers dimmed when a basemap swap rebuilds them', async () => {
@@ -740,8 +757,8 @@ describe('opening a leg on the rail', () => {
 
     expect(layers.has('routes-leg-climb')).toBe(true);
     const open = { uuid: 'sampled-route', i: 2 };
-    expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
-    expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
+    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(legsCore.dimOpacity(open, 1, 0.25)));
+    expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(legsCore.dimOpacity(open, 1, 0.25)));
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
     expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
@@ -760,7 +777,7 @@ describe('opening a leg on the rail', () => {
     });
     rail.state.cursor.openLeg({ i: 1, from: 0, to: 2 });
 
-    expect(opacityOf('routes-leg-climb')).toBe(1);
+    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
     rail.state.cursor = null;
   });
 });

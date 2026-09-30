@@ -177,10 +177,13 @@
       if (properties.pending) continue;
       if (!hasDrawableLegs(feature)) continue;
       const coordinates = feature.geometry.coordinates;
+      const slopeCore = self.pwaRouteSlopeCore;
       routes.push({
         uuid: properties.uuid ? String(properties.uuid) : null,
         coordinates: coordinates,
         legs: properties.legs,
+        sampled: !!(slopeCore && slopeCore.segmentFeatures
+          && slopeCore.segmentFeatures(feature).length),
       });
     }
     return routes;
@@ -207,7 +210,11 @@
    * leg's last coordinate is the next leg's first. Properties are the
    * owning route's `uuid` — a tap on a leg resolves back to its route —
    * the leg's number `i`, which the selection's opacity expression
-   * matches on, and `climbing`, which picks the layer.
+   * matches on, and `climbing`, which picks the layer. `sampled: true`
+   * marks a leg whose route has slope segments to draw: from z14 the map
+   * paints those instead of the leg's core, and a leg without the flag
+   * keeps its core at every zoom, so a route the sampler has not reached
+   * does not lose its line.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
    * @returns {FeatureCollection} The legs, possibly none.
@@ -232,6 +239,7 @@
           properties: Object.assign(
             { i: leg.i, climbing: leg.climbing === true },
             route.uuid ? { uuid: route.uuid } : {},
+            route.sampled ? { sampled: true } : {},
           ),
         });
       }

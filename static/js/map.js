@@ -2210,6 +2210,24 @@
   const ROUTE_SLOPE_MINZOOM = 14;
 
   /**
+   * The opacity of a leg's core line: `base` below ROUTE_SLOPE_MINZOOM,
+   * and from there 0 for a leg of a sampled route, whose slope segments
+   * take its place, and still `base` for one whose route has none.
+   *
+   * An opacity rather than a `maxzoom` because the switch is per route: a
+   * layer's zoom range cannot vary by feature, and a `maxzoom` hid the
+   * core of every route the sampler had not reached yet, leaving only its
+   * casing.
+   *
+   * @param {number|Array<*>} base The opacity, or a dimming expression.
+   * @returns {Array<*>} A zoom `step` expression.
+   */
+  const legCoreOpacity = (base) => [
+    'step', ['zoom'], base,
+    ROUTE_SLOPE_MINZOOM, ['case', ['==', ['get', 'sampled'], true], 0, base],
+  ];
+
+  /**
    * The slope-class segments for a routes payload, each tagged with its
    * leg. Guarded like the legs, and for the same reason: a missing core
    * costs the classes, not the routes overlay.
@@ -2482,7 +2500,12 @@
   const applyLegDimming = () => {
     const core = self.pwaRouteLegsCore;
     if (!core) return;
-    for (const id of ['routes-leg-climb', 'routes-leg-descent', 'routes-slope-line', 'routes-slope-unknown']) {
+    for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-opacity', legCoreOpacity(core.dimOpacity(openLegOnMap, 1, 0.25)));
+      }
+    }
+    for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
       if (map.getLayer(id)) {
         map.setPaintProperty(id, 'line-opacity', core.dimOpacity(openLegOnMap, 1, 0.25));
       }
@@ -2917,7 +2940,6 @@
       id: 'routes-leg-climb',
       type: 'line',
       source: 'route-legs',
-      maxzoom: ROUTE_SLOPE_MINZOOM,
       filter: ['==', ['get', 'climbing'], true],
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
@@ -2928,7 +2950,7 @@
       },
       paint: {
         'line-color': colours.climb,
-        'line-opacity': legOpacity(1, 0.25),
+        'line-opacity': legCoreOpacity(legOpacity(1, 0.25)),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
         // In line-widths, so the dash keeps its proportions as the line
         // thickens with zoom — the pending line's own [2, 1.5].
@@ -2939,7 +2961,6 @@
       id: 'routes-leg-descent',
       type: 'line',
       source: 'route-legs',
-      maxzoom: ROUTE_SLOPE_MINZOOM,
       filter: ['!=', ['get', 'climbing'], true],
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
@@ -2948,13 +2969,14 @@
       },
       paint: {
         'line-color': colours.descent,
-        'line-opacity': legOpacity(1, 0.25),
+        'line-opacity': legCoreOpacity(legOpacity(1, 0.25)),
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
       },
     });
     // From z14 the route's core is painted in the slope classes — the six
     // buckets of route_slope_core.js, the slope raster's palette — in
-    // place of the leg colours, which stop at the same zoom. The leg
+    // place of the leg colours, which go transparent at the same zoom on
+    // a sampled route (legCoreOpacity) and stay on one with no segments. The leg
     // casing and the numbered transitions stay at every zoom, so the legs
     // are still countable where the colour has changed meaning, and each
     // segment carries its leg's `i`, so opening a leg dims the others as
@@ -7801,7 +7823,9 @@
     // a legged route now draws, and 'routes-line' no longer draws it, so
     // leaving them out would make every such route untappable and send
     // the tap through to the region underneath. Their features carry the
-    // route's uuid for exactly this (see route_legs_core.js).
+    // route's uuid for exactly this (see route_legs_core.js). The two
+    // slope layers are here on the same terms: from z14 they are where a
+    // sampled route draws, and their segments carry the uuid too.
     //
     // The transition markers are absent on
     // the endpoint markers' reasoning: each sits on a leg's own first
@@ -7814,6 +7838,8 @@
       'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
+      'routes-slope-line',
+      'routes-slope-unknown',
       'routes-line',
     ];
 
@@ -7838,6 +7864,8 @@
       'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
+      'routes-slope-line',
+      'routes-slope-unknown',
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -8791,7 +8819,11 @@
         // activation. A miss is silent: better no rail than a rail about
         // the wrong route.
         case 'routes-leg-climb':
-        case 'routes-leg-descent': {
+        case 'routes-leg-descent':
+        // From z14 a sampled route is drawn by its slope segments, which
+        // carry the same uuid and resolve the same way.
+        case 'routes-slope-line':
+        case 'routes-slope-unknown': {
           if (tapOpenRoute(feature, point)) break;
           const route = routeFeatureByUuid(feature.properties?.uuid);
           if (route) activateRoute(route);

@@ -88,6 +88,18 @@ describe('legCollection', () => {
     expect(core.legCollection(fc).features).toHaveLength(2);
   });
 
+  it('marks the legs of a route with slope segments as sampled', () => {
+    // The map hides a sampled leg's core from z14, where its segments
+    // take over; an unsampled leg (above) carries no flag and keeps it.
+    const slope = {
+      points: [[7.0, 46.0], [7.0, 46.002], [7.0, 46.004], [7.0, 46.005], [7.0, 46.006]],
+      angles: [20.0, 20.0, 20.0, 20.0],
+    };
+    const features = core.legCollection(routes({ slope })).features;
+
+    expect(features.map((f) => f.properties.sampled)).toEqual([true, true]);
+  });
+
   it('draws nothing for a pending share', () => {
     const fc = routes({ pending: true, uuid: undefined, token: 'tok' });
 
