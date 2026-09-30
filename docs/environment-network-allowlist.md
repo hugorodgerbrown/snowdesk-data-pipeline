@@ -398,6 +398,12 @@ and found them open — ALBINA, semgrep, PostHog — or intermittent
 now carry the 2026-09-30 result; the rest of the table was not re-probed
 and keeps its 2026-09-29 status.
 
+Météo-France was reached but every massif failed for want of
+`METEOFRANCE_API_KEY`, and that is not a request: a cloud session is
+never given a provider credential
+([decision](decisions/cloud-sessions-hold-no-provider-credentials.md)).
+The policy opens a host; it does not put a key in the container.
+
 ## Requested — 2026-09-22 (route rail design)
 
 **Our own infrastructure is blocked, which is the costly one.** Every host

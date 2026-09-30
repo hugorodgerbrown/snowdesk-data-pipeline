@@ -80,6 +80,13 @@ apikey: <METEOFRANCE_API_KEY>
 Without a valid key, `fetch_meteofrance_bulletin` raises `RuntimeError`
 immediately and the massif is counted as a failure.
 
+That is what a Claude Code cloud session sees, by design: the key is
+never given to one
+([decision](decisions/cloud-sessions-hold-no-provider-credentials.md)),
+so a live Météo-France fetch is production's job and a session uses
+`--local-mirror` instead. Nothing in the test suite or the seeds needs the
+key.
+
 ---
 
 ## Render deployment — env var wiring

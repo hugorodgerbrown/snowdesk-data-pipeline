@@ -42,7 +42,10 @@ candidate is rejected — 3.14.0rc2 satisfied a naive `>= 3.14` test and left th
 session unable to `import django`), rebuilds `.venv` when it is missing or
 cannot import Django, seeds a throwaway `.env` with a random `SECRET_KEY`,
 verifies the result with `manage.py check`, then seeds `db.sqlite3` and builds
-`static/css/output.css`.
+`static/css/output.css`. The throwaway `.env` carries no provider API key,
+and none is added to the environment to make up for it: a cloud session
+never holds one, and nothing it is for needs one
+([decision](decisions/cloud-sessions-hold-no-provider-credentials.md)).
 
 The seed is `bin/init-worktree`'s recipe **copied**, step for step — migrate
 → `sync_waffle_flags` → region fixtures → `import_resorts` →
