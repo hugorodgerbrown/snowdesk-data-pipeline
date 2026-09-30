@@ -19,10 +19,11 @@
  * row outright.
  *
  * THE CARD (SNOW-1044) is three lines with a leg open: the TERRAIN
- * eyebrow, a title carrying the vertical ("Leg 2 — ascend 210 m", the
- * leg's ascent on a climb and its descent otherwise) and a subtitle
- * carrying the horizontal ("847 m · 200 m steep terrain", steep being
- * ground of 30° or more; the steep part is left out with no slope record).
+ * eyebrow, a title carrying the vertical and the length ("Leg 2 — ascend
+ * 210 m over 0.8 km", the leg's ascent on a climb and its descent
+ * otherwise) and a subtitle naming the very steep and extremely steep
+ * ground the leg crosses ("Crosses very steep, extremely steep terrain";
+ * no line at all for a leg with neither, or with no slope record).
  *
  * THE LEG PICKER (SNOW-1033). The empty lane holds the route's legs, one
  * `<button class="route-rail-two-leg">` per leg in `[data-route-rail-two-legs]`,
@@ -69,13 +70,10 @@
  * the window sits on the route.
  *
  * THE TRACK ROW FOLLOWS THE ZOOM (SNOW-1044). While a segment is under
- * 10 px it is a row of labelled blocks, one per stretch of the leg
- * (`stretches`, 150 m or more): Gentle, Traverse, Steep — on a climb Skin
- * and Bootpack — each word dropped when its block is too narrow to hold
- * it. From 10 px a segment it is the level-ski wedges, one per segment
- * (`bankGlyphs`, bank_ribbon_core.js, SNOW-1031), with a dashed tick at
- * each stretch boundary. The words summarise the wedges, so the two never
- * disagree. Kick turns (`kickTurns`) are not drawn — the zig-zag shows on
+ * 10 px it is empty: the labelled stretch blocks it drew there repeated
+ * the leg title and the band strip, and went on 2026-09-30. From 10 px a segment the row is the level-ski
+ * wedges, one per segment (`bankGlyphs`, bank_ribbon_core.js, SNOW-1031).
+ * Kick turns (`kickTurns`) are not drawn — the zig-zag shows on
  * the map (SNOW-1044's revision, 2026-09-29) — but the lane speaks them
  * (THE READOUT, below). The band strip is drawn per segment at every zoom, sub-pixel
  * if need be, and each no-fall passage keeps its own bar, 4 px tall under
@@ -135,20 +133,22 @@
  * picker segment opens the leg, fitted, and nothing more (SNOW-1033).
  *
  * THE READOUT sits under the lane, ANCHORED to what it reads
- * (SNOW-1024). Under the cursor it is one line, the ground's figures and
- * the side it falls away to: "24° slope · 15° bank, falls away right"
- * (SNOW-1044; no side under 3° of bank, `bankSide`). It names no slope
- * class, no track word and no distance there: the band and the track row
- * under the cursor already show them. A 1 px stem (`[data-route-rail-two-stem]`) carries the
- * cursor line on below the lane and stops just above the text. With a
- * band or passage selected it is one line under the selection box, the
- * length to the nearest 25 m then the class ("600 m under 30°"). Either
- * way it steps between left-aligned, centred and right-aligned by where
- * its anchor sits across the lane (`readoutAnchor`), never clamping
- * smoothly. With neither it offers a hint, left-aligned. The track row is
+ * (SNOW-1024). Under the cursor it is one line: the track's own angle
+ * and the ground's steepness in the avalanche services' words
+ * (`slopeTerm`) — "25° descent · steep slope", "16° ascent · moderate
+ * slope". The track's angle is `segmentGradients`, read off the heights
+ * rail one's profile draws (`trackGrade`). It names no track word, no
+ * bank, no slope angle and no distance there:
+ * the wedge and the band under the cursor already show them. With a
+ * band or passage selected it is one line, the length to the nearest 25 m
+ * then the class ("600 m under 30°"). With neither it offers a hint. The
+ * text is always LEFT-ALIGNED at the lane's left edge and never follows
+ * the cursor: it sat under its anchor until 2026-09-30, and moved with
+ * every drag. The track row is
  * drawn `aria-hidden`; the lane's `aria-valuetext` carries the readout's
- * line and then, under the cursor, the stretch's track word and "Kick
- * turn" where one lands, so what the row shows reaches assistive tech.
+ * line and then, under the cursor, the side the ground falls away to
+ * (`bankSide`, no side under 3° of bank) and "Kick turn" where one lands,
+ * so what the row shows reaches assistive tech.
  *
  * KEYS. The lane is one `role="slider"` tab stop — leg 4 of the seed tour
  * alone has 59 bands, which would be 59 tab stops. ←/→ move the cursor
@@ -202,16 +202,6 @@
   var DOUBLE_TAP_MS = 300;
   /** Two lifts closer than this across the lane are a double-tap, in px. */
   var DOUBLE_TAP_PX = 24;
-  /** A stretch label's least padding either side of its text, in px. */
-  var LABEL_PAD_PX = 4;
-  /** A label character's width when the text cannot be measured. */
-  var LABEL_CHAR_PX = 6;
-  /** The readout's alignment classes, by `readoutAnchor`'s `align`. */
-  var ALIGN_CLASSES = Object.freeze({
-    left: 'text-left',
-    center: '-translate-x-1/2 text-center',
-    right: '-translate-x-full text-right',
-  });
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
@@ -220,8 +210,10 @@
     'leg-descent': 'Leg %(i)s — descent',
     'leg-ascend': 'Leg %(i)s — ascend %(m)s m',
     'leg-descend': 'Leg %(i)s — descend %(m)s m',
-    'leg-length': '%(length)s m',
-    'leg-length-steep': '%(length)s m · %(steep)s m steep terrain',
+    'leg-over': '%(title)s over %(km)s km',
+    'leg-crosses-very': 'Crosses very steep terrain',
+    'leg-crosses-extremely': 'Crosses extremely steep terrain',
+    'leg-crosses-both': 'Crosses very steep, extremely steep terrain',
     'two-lane-label': 'Slope and bank along %(leg)s',
     'two-value': '%(km)s km along the route',
     'two-placeholder': 'Select a route leg to view terrain',
@@ -233,16 +225,18 @@
     'class-slope-45': '45–50°',
     'class-slope-50': 'over 50°',
     'class-unknown': 'slope not known',
-    'track-gentle': 'Gentle',
-    'track-skin': 'Skin',
-    'track-traverse': 'Traverse',
-    'track-steep': 'Steep',
-    'track-bootpack': 'Bootpack',
     'track-kick-turn': 'Kick turn',
-    'readout-slope': '%(angle)s° slope',
-    'readout-slope-bank': '%(angle)s° slope · %(bank)s° bank',
-    'readout-slope-bank-left': '%(angle)s° slope · %(bank)s° bank, falls away left',
-    'readout-slope-bank-right': '%(angle)s° slope · %(bank)s° bank, falls away right',
+    'track-falls-left': 'Ground falls away left',
+    'track-falls-right': 'Ground falls away right',
+    'grade-ascent': '%(deg)s° ascent',
+    'grade-descent': '%(deg)s° descent',
+    'grade-level': 'level',
+    'slope-flat': 'flat',
+    'slope-moderate': 'moderate slope',
+    'slope-steep': 'steep slope',
+    'slope-very-steep': 'very steep slope',
+    'slope-extremely-steep': 'extremely steep slope',
+    'readout-point': '%(grade)s · %(slope)s',
     'readout-band': '%(length)s m %(class)s',
     'readout-passage': 'No-fall passage · %(length)s m',
   });
@@ -253,10 +247,11 @@
   var lane = row.querySelector('[data-route-rail-two-lane]');
   var readoutBoxEl = row.querySelector('[data-route-rail-two-readout-box]');
   var readoutEl = row.querySelector('[data-route-rail-two-readout]');
-  var stemEl = row.querySelector('[data-route-rail-two-stem]');
   var zoomOutEl = row.querySelector('[data-route-rail-two-zoom="out"]');
   var zoomInEl = row.querySelector('[data-route-rail-two-zoom="in"]');
   var closeEl = row.querySelector('[data-route-rail-two-close]');
+  /** The staff debug rail, or null: the partial renders it for staff only. */
+  var debugEl = row.querySelector('[data-route-rail-debug]');
   var legsEl = row.querySelector('[data-route-rail-two-legs]');
 
   /**
@@ -278,8 +273,13 @@
   var legLine = null;
   /** The open leg's slope-band runs. */
   var bands = [];
-  /** The open leg's stretches, one track word each (SNOW-1044). */
-  var legStretches = [];
+  /**
+   * The signed gradient along the track at each of the route's segments
+   * (`segmentGradients`), which the readout reads.
+   *
+   * @type {Array<?number>}
+   */
+  var gradients = [];
   /** The segments a kick turn lands on in the open leg (SNOW-1044). */
   var kicks = [];
   /**
@@ -433,41 +433,47 @@
   }
 
   /**
-   * The card's title, carrying the leg's vertical: "Leg 2 — ascend 210 m"
-   * on a climb, "Leg 1 — descend 570 m" otherwise (SNOW-1044). With no
-   * height to read it falls back to rail one's "Leg 2 — climb".
+   * The card's title, carrying the leg's vertical and its length: "Leg 2
+   * — ascend 210 m over 0.8 km" on a climb, "Leg 1 — descend 570 m over
+   * 1.0 km" otherwise. With no height to read the vertical falls back to
+   * rail one's "Leg 2 — climb"; with no length the title ends there.
    *
    * @param {{i: number, climbing: boolean}} openLeg
-   * @param {{ascent_m: ?number, descent_m: ?number}} figures `legFigures`.
+   * @param {{ascent_m: ?number, descent_m: ?number, distance_m: ?number}}
+   *   figures `legFigures`.
    * @returns {string}
    */
   function legTitle(openLeg, figures) {
     var metres = openLeg.climbing ? figures.ascent_m : figures.descent_m;
-    if (typeof metres !== 'number' || !isFinite(metres)) return legLabel(openLeg);
-    return interpolate(STRINGS[openLeg.climbing ? 'leg-ascend' : 'leg-descend'], {
-      i: String(openLeg.i),
-      m: wholeMetres(metres),
-    });
+    var title = typeof metres !== 'number' || !isFinite(metres)
+      ? legLabel(openLeg)
+      : interpolate(STRINGS[openLeg.climbing ? 'leg-ascend' : 'leg-descend'], {
+        i: String(openLeg.i),
+        m: wholeMetres(metres),
+      });
+    var lengthM = figures.distance_m;
+    if (typeof lengthM !== 'number' || !isFinite(lengthM)) return title;
+    return interpolate(STRINGS['leg-over'], { title: title, km: (lengthM / 1000).toFixed(1) });
   }
 
   /**
-   * The card's subtitle, carrying the leg's horizontal: "847 m · 200 m
-   * steep terrain", steep being ground of 30° or more (SNOW-1044). The
-   * steep part is left out for a route with no slope record.
+   * The card's subtitle: the steepest classes the leg crosses, named and
+   * not measured — "Crosses very steep, extremely steep terrain". Very
+   * steep is 35° to 40° and extremely steep 40° or more, each named only
+   * where the leg has some. Empty for a leg with neither, and for a route
+   * with no slope record.
    *
-   * @param {?number} lengthM The leg's length, `legFigures`' distance.
-   * @param {?number} steepM `steepLength`, or null.
+   * @param {?{verySteep: number, extremelySteep: number}} shares
+   *   `steepShares`, or null.
    * @returns {string}
    */
-  function legSubtitle(lengthM, steepM) {
-    if (typeof lengthM !== 'number' || !isFinite(lengthM)) return '';
-    if (typeof steepM !== 'number' || !isFinite(steepM)) {
-      return interpolate(STRINGS['leg-length'], { length: wholeMetres(lengthM) });
-    }
-    return interpolate(STRINGS['leg-length-steep'], {
-      length: wholeMetres(lengthM),
-      steep: wholeMetres(steepM),
-    });
+  function legSubtitle(shares) {
+    if (!shares) return '';
+    var very = shares.verySteep > 0;
+    var extreme = shares.extremelySteep > 0;
+    if (very && extreme) return STRINGS['leg-crosses-both'];
+    if (very) return STRINGS['leg-crosses-very'];
+    return extreme ? STRINGS['leg-crosses-extremely'] : '';
   }
 
   /**
@@ -499,14 +505,14 @@
   }
 
   /**
-   * An event's y down the lane, in the lane's own units (`ROWS.height`).
+   * An event's y down the lane, in the lane's own units (`laneLayout`).
    *
    * @param {MouseEvent} event
    * @returns {number}
    */
   function laneY(event) {
     var rect = lane.getBoundingClientRect();
-    var scale = rect.height > 0 ? core().ROWS.height / rect.height : 1;
+    var scale = rect.height > 0 ? laneLayout().height / rect.height : 1;
     return (event.clientY - rect.top) * scale;
   }
 
@@ -540,6 +546,48 @@
     if (next !== index) asOwnWrite(function () { ctx.cursor.setIndex(next); })(null);
   }
 
+  /**
+   * The lane's row layout at the last `layoutLane`; null with no leg open.
+   *
+   * @type {?{height: number, bandTop: number, bandHeight: number,
+   *   ribbonY: number, ribbonHalf: number, passageTop: number,
+   *   passageHeight: number}}
+   */
+  var laneRows = null;
+  /** Whether the open leg has been drawn once: a first draw resizes nothing. */
+  var laneDrawn = false;
+
+  /**
+   * The lane's vertical layout now: `ROWS` with the wedges drawn,
+   * `ROWS_FITTED` while the track row is empty.
+   *
+   * @returns {{height: number, bandTop: number, bandHeight: number,
+   *   ribbonY: number, ribbonHalf: number, passageTop: number,
+   *   passageHeight: number}}
+   */
+  function laneLayout() {
+    return laneRows || core().ROWS;
+  }
+
+  /**
+   * Size the lane to the rows the window draws: 44 px with the wedges,
+   * 18 px while the track row is empty, so a fitted leg holds no blank
+   * strip open. With no leg the partial's own height stands, for the leg
+   * picker.
+   *
+   * @returns {boolean} Whether the layout changed.
+   */
+  function layoutLane() {
+    var c = core();
+    var next = leg ? c.rowsFor(c.trackMode(view, measure())) : null;
+    var changed = next !== laneRows;
+    laneRows = next;
+    lane.style.height = next ? next.height + 'px' : '';
+    // The picker's lane is the partial's own 44 px: drop the leg's viewBox.
+    if (!next) lane.removeAttribute('viewBox');
+    return changed;
+  }
+
   /** Redraw on the next animation frame, once however often it is asked. */
   function scheduleDraw() {
     if (typeof window.requestAnimationFrame !== 'function') {
@@ -568,8 +616,7 @@
     leg = openLeg;
     legLine = c.legProfile(ctx.profile, leg, ctx.sampleCount, railCore.clipRun);
     bands = c.bandRuns(angles(), classify, leg);
-    var gradients = c.segmentGradients(ctx.profile, ctx.sampleCount, ctx.spanM);
-    legStretches = angles().length ? c.stretches(leg, angles(), banks(), gradients) : [];
+    gradients = c.segmentGradients(ctx.profile, ctx.sampleCount, ctx.spanM, ctx.legs);
     kicks = c.kickTurns(leg, banks());
     var slope = ctx.slope;
     passages = (slope && Array.isArray(slope.passages) ? slope.passages : []).filter(
@@ -579,13 +626,18 @@
       },
     );
     setView(c.placeView(leg, c.openingSpan(leg), leg.from));
+    // One open leg swapped straight for another can change the card's
+    // height with the row already open: the lane's rows (18 px with no
+    // wedges, 44 px with them), the subtitle's line, a title that wraps.
+    var heightBefore = row.hidden ? 0 : rowHeight();
+    var subtitled = !figuresEl.hidden;
+    var relaid = layoutLane();
 
     var figures = c.legFigures(legLine, leg, ctx.sampleCount, ctx.spanM);
     titleEl.textContent = legTitle(leg, figures);
-    figuresEl.textContent = legSubtitle(
-      figures.distance_m,
-      c.steepLength(leg, angles(), ctx.sampleCount, ctx.spanM),
-    );
+    figuresEl.textContent = legSubtitle(c.steepShares(leg, angles()));
+    // A leg with no very steep ground has no subtitle, and no line for it.
+    figuresEl.hidden = !figuresEl.textContent;
     lane.setAttribute('aria-label', interpolate(STRINGS['two-lane-label'], { leg: legLabel(leg) }));
     lane.setAttribute('aria-valuemin', String(leg.from));
     lane.setAttribute('aria-valuemax', String(leg.to));
@@ -599,7 +651,8 @@
     }
     if (legsEl) legsEl.hidden = true;
     row.hidden = false;
-    if (changed && !quiet && ctx.onResize) ctx.onResize();
+    var reshaped = relaid || !figuresEl.hidden !== subtitled || rowHeight() !== heightBefore;
+    if ((changed || reshaped) && !quiet && ctx.onResize) ctx.onResize();
   }
 
   /**
@@ -720,9 +773,12 @@
   /** Forget the open leg and every press on it, and clear the drawing. */
   function forgetLeg() {
     leg = null;
+    layoutLane();
+    laneDrawn = false;
     legLine = null;
     bands = [];
-    legStretches = [];
+    gradients = [];
+    paintDebug(null);
     kicks = [];
     passages = [];
     press = null;
@@ -731,7 +787,6 @@
     pointers.clear();
     lane.replaceChildren();
     readoutEl.replaceChildren();
-    stemEl.hidden = true;
   }
 
   /**
@@ -745,6 +800,7 @@
     var changed = row.hidden || !row.hasAttribute('data-empty');
     titleEl.textContent = STRINGS['two-placeholder'];
     figuresEl.textContent = '';
+    figuresEl.hidden = true;
     ['aria-label', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']
       .forEach(function (name) { lane.removeAttribute(name); });
     setEmpty(true);
@@ -1073,7 +1129,7 @@
      * @param {number} b
      */
     function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
-    var rows = c.ROWS;
+    var rows = laneLayout();
     var parts = ghostOf(button);
     var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
       return b !== button;
@@ -1157,7 +1213,7 @@
      * @param {number} b
      */
     function slice(name, a, b) { return c.motionSlice(plan, name, a, b); }
-    var rows = c.ROWS;
+    var rows = laneLayout();
     var parts = ghostOf(button);
     var others = Array.from(legsEl.querySelectorAll('.route-rail-two-leg')).filter(function (b) {
       return b !== button;
@@ -1256,7 +1312,7 @@
   /** The slope-band strip, one rect per run, unknown runs dashed. */
   function drawBands() {
     var c = core();
-    var rows = c.ROWS;
+    var rows = laneLayout();
     var classes = self.pwaRouteSlopeCore ? self.pwaRouteSlopeCore.CLASSES : [];
     bands.forEach(function (band) {
       var part = c.clip(band, view);
@@ -1289,82 +1345,19 @@
   }
 
   /**
-   * The track row (SNOW-1044): the stretches as labelled blocks while a
-   * segment is under 10 px, the wedges with a dashed tick at each stretch
-   * boundary from 10 px up (`trackMode`). Kick turns are not drawn: the
-   * map shows the zig-zag, and the lane speaks them (paintReadout).
+   * The track row (SNOW-1044): the wedges once a segment is 10 px wide,
+   * and nothing under that (`trackMode`) — the labelled stretch blocks it
+   * drew fitted said nothing the leg title and the band strip did not.
+   * Kick turns are not drawn: the map shows the zig-zag, and the lane
+   * speaks them (paintReadout).
    */
   function drawTrack() {
-    // Drawn for the eye only: the words, and the kick turns the row does
-    // not draw, reach assistive tech through the lane's aria-valuetext
-    // (paintReadout).
+    // Drawn for the eye only: what the track does, and the kick turns the
+    // row does not draw, reach assistive tech through the lane's
+    // aria-valuetext (paintReadout).
     trackEl = svgEl('g', { 'aria-hidden': 'true', 'data-route-rail-two-track': '' });
     lane.appendChild(trackEl);
-    if (core().trackMode(view, width) === 'wedges') {
-      drawWedges();
-      drawStretchTicks();
-    } else {
-      drawStretchBlocks();
-    }
-  }
-
-  /**
-   * One labelled block per stretch in view: the track's word for it,
-   * centred, and left out when it does not fit. A stretch whose ground is
-   * not known is dashed and unlabelled, as an unknown band is.
-   */
-  function drawStretchBlocks() {
-    var c = core();
-    var rows = c.ROWS;
-    legStretches.forEach(function (stretch) {
-      var part = c.clip(stretch, view);
-      if (!part) return;
-      var x0 = c.xOf(part.from, view, width) + 1;
-      var x1 = c.xOf(part.to, view, width) - 1;
-      if (!(x1 - x0 > 0)) return;
-      var unknown = stretch.word === 'unknown';
-      var attrs = {
-        x: x0.toFixed(2),
-        y: String(rows.blockTop),
-        width: (x1 - x0).toFixed(2),
-        height: String(rows.blockHeight),
-        rx: '2',
-        fill: 'var(--color-track-block)',
-        class: 'route-rail-two-track-block',
-        'data-word': stretch.word,
-        'data-from': String(stretch.from),
-        'data-to': String(stretch.to),
-        'pointer-events': 'none',
-      };
-      if (unknown) {
-        attrs['fill-opacity'] = '0.35';
-        attrs.stroke = 'var(--color-slope-unknown)';
-        attrs['stroke-dasharray'] = '3 2';
-      }
-      trackEl.appendChild(svgEl('rect', attrs));
-      var words = STRINGS['track-' + stretch.word];
-      if (!words) return;
-      var text = svgEl('text', {
-        x: ((x0 + x1) / 2).toFixed(2),
-        y: String(rows.blockTop + rows.blockHeight / 2),
-        'text-anchor': 'middle',
-        'dominant-baseline': 'central',
-        fill: 'var(--color-text-1)',
-        class: 'route-rail-two-track-label text-meta',
-        'data-word': stretch.word,
-        'pointer-events': 'none',
-      });
-      text.textContent = words;
-      trackEl.appendChild(text);
-      var textWidth = 0;
-      try {
-        textWidth = /** @type {SVGTextElement} */ (text).getComputedTextLength();
-      } catch (_err) {
-        // jsdom and a hidden lane lay nothing out; estimate below.
-      }
-      if (!(textWidth > 0)) textWidth = words.length * LABEL_CHAR_PX;
-      if (textWidth + 2 * LABEL_PAD_PX > x1 - x0) text.remove();
-    });
+    if (core().trackMode(view, width) === 'wedges') drawWedges();
   }
 
   /**
@@ -1390,8 +1383,8 @@
       leg: leg,
       view: view,
       width: width,
-      capPx: c.ROWS.ribbonHalf,
-      y: c.ROWS.ribbonY,
+      capPx: laneLayout().ribbonHalf,
+      y: laneLayout().ribbonY,
     }).forEach(function (wedge) {
       var index = String(wedge.index);
       if (wedge.up) {
@@ -1432,31 +1425,6 @@
   }
 
   /**
-   * A dashed tick down the track row at each boundary between two
-   * stretches in view, so the wedges keep the words' stretches placed.
-   */
-  function drawStretchTicks() {
-    var c = core();
-    var rows = c.ROWS;
-    for (var k = 1; k < legStretches.length; k += 1) {
-      var s = legStretches[k].from;
-      if (s <= view.from || s >= view.to) continue;
-      var x = c.xOf(s, view, width).toFixed(2);
-      trackEl.appendChild(svgEl('line', {
-        x1: x,
-        x2: x,
-        y1: String(rows.ribbonY - rows.ribbonHalf),
-        y2: String(rows.ribbonY + rows.ribbonHalf),
-        stroke: 'var(--color-track-tick)',
-        'stroke-dasharray': '2 2',
-        class: 'route-rail-two-track-tick',
-        'data-at': String(s),
-        'pointer-events': 'none',
-      }));
-    }
-  }
-
-  /**
    * One bar per no-fall passage, 4 px tall directly under the track row,
    * spanning its real extent but never under 6 px wide (`passageBox`), so
    * it is marked at every zoom.
@@ -1468,9 +1436,9 @@
       if (!box) return;
       lane.appendChild(svgEl('rect', {
         x: box.x.toFixed(2),
-        y: String(c.ROWS.passageTop),
+        y: String(laneLayout().passageTop),
         width: box.width.toFixed(2),
-        height: String(c.ROWS.passageHeight),
+        height: String(laneLayout().passageHeight),
         rx: '1',
         fill: 'var(--color-text-1)',
         class: 'route-rail-two-passage',
@@ -1496,7 +1464,7 @@
       x: x0.toFixed(2),
       y: '0',
       width: (x1 - x0).toFixed(2),
-      height: String(core().ROWS.height),
+      height: String(laneLayout().height),
       fill: 'var(--color-card)',
       'fill-opacity': DIM_OPACITY,
       'pointer-events': 'none',
@@ -1510,7 +1478,7 @@
    */
   function drawMarks() {
     var c = core();
-    var height = c.ROWS.height;
+    var height = laneLayout().height;
     var state = ctx.cursor.state();
     var selected = inLeg(state.selection);
     var part = selected ? c.clip(selected, view) : null;
@@ -1584,25 +1552,6 @@
   }
 
   /**
-   * Place the readout under its anchor, stepped by `readoutAnchor`.
-   *
-   * With no anchor — the idle hint — it spans the lane and wraps: the hint
-   * is a sentence, wider than a phone's lane, and describes no one place.
-   *
-   * @param {?number} x The anchor's px across the lane, or null.
-   */
-  function placeReadout(x) {
-    if (x === null) {
-      readoutEl.className = 'absolute inset-x-0 top-1 text-left';
-      readoutEl.style.left = '';
-      return;
-    }
-    var anchor = core().readoutAnchor(x, width);
-    readoutEl.className = 'absolute top-1 whitespace-nowrap ' + ALIGN_CLASSES[anchor.align];
-    readoutEl.style.left = anchor.left.toFixed(2) + 'px';
-  }
-
-  /**
    * A selected band's slope class: the one its selection carries
    * (SNOW-1032), else the matching band's, else its first sample's. A
    * band is one class throughout, so any of the three reads the same.
@@ -1619,6 +1568,30 @@
   }
 
   /**
+   * The readout's line for one segment: the track's own angle and the
+   * ground's class — "25° descent · steep slope". The track's angle is
+   * the gradient the profile draws (`trackGrade`); the class is
+   * `slopeTerm`, the avalanche services' words. Nothing else: what the
+   * track does on that ground is the wedge's to show, and
+   * aria-valuetext says the side it banks to.
+   *
+   * @param {number} index
+   * @returns {string}
+   */
+  function pointLine(index) {
+    var c = core();
+    var angle = angles()[index];
+    if (typeof angle !== 'number' || !isFinite(angle)) return classLabel(null);
+    var grade = c.trackGrade(gradients[index]);
+    var slope = STRINGS['slope-' + c.slopeTerm(angle)];
+    if (!grade) return slope;
+    return interpolate(STRINGS['readout-point'], {
+      grade: interpolate(STRINGS['grade-' + grade.way], { deg: String(grade.deg) }),
+      slope: slope,
+    });
+  }
+
+  /**
    * The readout: the selection's length and class, under the selection;
    * or the terrain and its figures, under the cursor; or a hint.
    * `aria-valuetext` carries the same lines.
@@ -1631,18 +1604,18 @@
     /** @type {Array<string>} */
     var lines = [];
     /**
-     * What only assistive tech hears, after the lines: the track row's
-     * word and kick turn under the cursor, which the eye reads off the
-     * row itself (SNOW-1044). Said whenever there is a cursor, whichever
-     * line the readout shows — the row still draws them under a selection.
+     * What only assistive tech hears, after the lines: what the track row
+     * shows under the cursor, which the eye reads off the row itself
+     * (SNOW-1044). Said whenever there is a cursor, whichever line the
+     * readout shows — the row still draws it under a selection. Under a
+     * selection the readout's line is the selection's, so the segment's
+     * own line is spoken too.
      *
      * @type {Array<string>}
      */
-    var spoken = state.index === null ? [] : trackSpoken(state.index);
-    /** The anchor's px, or null to sit left at 0. */
-    var anchorX = null;
-    var stem = false;
-    var cursorIn = state.index !== null && state.index + 1 > view.from && state.index < view.to;
+    var spoken = state.index === null
+      ? []
+      : trackSpoken(state.index, !(state.selection && selected));
     if (state.selection && selected) {
       var length = String(c.roundStretch(
         (state.selection.to - state.selection.from + 1) * perSample,
@@ -1655,37 +1628,14 @@
           class: classLabel(selectedClass(state.selection)),
         }));
       }
-      var part = c.clip(selected, view);
-      if (part) anchorX = (c.xOf(part.from, view, width) + c.xOf(part.to, view, width)) / 2;
     } else if (state.index !== null) {
-      // The ground's figures under the cursor and the side it falls away
-      // to (SNOW-1044): "24° slope · 15° bank, falls away right". No word
-      // and no gradient on screen — the track row above already names the
-      // stretch; aria-valuetext adds the word for assistive tech.
-      var angle = angles()[state.index];
-      var roll = banks()[state.index];
-      if (typeof angle !== 'number' || !isFinite(angle)) {
-        lines.push(classLabel(null));
-      } else if (typeof roll !== 'number' || !isFinite(roll)) {
-        lines.push(interpolate(STRINGS['readout-slope'], { angle: String(Math.round(angle)) }));
-      } else {
-        var side = c.bankSide(roll);
-        lines.push(interpolate(
-          STRINGS[side ? 'readout-slope-bank-' + side : 'readout-slope-bank'],
-          { angle: String(Math.round(angle)), bank: String(Math.round(Math.abs(roll))) },
-        ));
-      }
-      if (cursorIn) {
-        anchorX = c.xOf(state.index + 0.5, view, width);
-        stem = true;
-      }
+      lines.push(pointLine(state.index));
     } else {
       lines.push(STRINGS['two-hint']);
     }
     readoutEl.replaceChildren.apply(readoutEl, lines.map(readoutLine));
-    placeReadout(anchorX);
-    stemEl.hidden = !stem;
-    if (stem && anchorX !== null) stemEl.style.left = (anchorX - 0.5).toFixed(2) + 'px';
+
+    paintDebug(state.index);
 
     var index = state.index === null ? leg.from : state.index;
     lane.setAttribute('aria-valuenow', String(index));
@@ -1697,21 +1647,220 @@
   }
 
   /**
-   * The track row read aloud at one segment: its stretch's word, then
-   * "Kick turn" when one lands there. Empty where the stretch's ground is
-   * not known and no kick turn lands.
+   * The track row read aloud at one segment: the segment's own line
+   * (unless the readout is already showing it), the side the ground falls
+   * away to, then "Kick turn" when one lands there.
    *
    * @param {number} index
+   * @param {boolean} named Whether the readout's line is the segment's.
    * @returns {Array<string>}
    */
-  function trackSpoken(index) {
+  function trackSpoken(index, named) {
     /** @type {Array<string>} */
     var out = [];
-    var stretch = legStretches.find(function (s) { return index >= s.from && index <= s.to; });
-    var word = stretch ? STRINGS['track-' + stretch.word] : null;
-    if (word) out.push(word);
+    if (!named) out.push(pointLine(index));
+    var side = core().bankSide(banks()[index]);
+    if (side) out.push(STRINGS['track-falls-' + side]);
     if (kicks.indexOf(index) >= 0) out.push(STRINGS['track-kick-turn']);
     return out;
+  }
+
+  // ---- the staff debug rail ------------------------------------------------
+  //
+  // Rendered by the partial for staff only, so `debugEl` is null for
+  // everyone else and nothing below runs. Its labels and fragments are
+  // English only: a staff surface, read beside /_route-terrain/.
+
+  /** The staff terrain table's rows for the open route, by segment. */
+  var debugRows = [];
+
+  /** Fetch the open route's terrain rows for the debug rail (staff only). */
+  function loadDebugRows() {
+    debugRows = [];
+    if (!debugEl || !ctx.uuid || typeof fetch !== 'function') return;
+    var owner = ctx;
+    var url = debugEl.getAttribute('data-url-template')
+      .replace('00000000-0000-0000-0000-000000000000', encodeURIComponent(ctx.uuid));
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (response) { return response.ok ? response.json() : { rows: [] }; })
+      .then(function (body) {
+        if (ctx !== owner) return;
+        debugRows = Array.isArray(body.rows) ? body.rows : [];
+        if (leg) paintReadout();
+      })
+      .catch(function () { /* the rail reads "–" without the rows */ });
+  }
+
+  /**
+   * A figure with its unit, or "–" for one that is not known.
+   *
+   * @param {*} value
+   * @param {string} unit
+   * @returns {string}
+   */
+  function debugFigure(value, unit) {
+    return typeof value === 'number' && isFinite(value) ? value + unit : '–';
+  }
+
+  /**
+   * A bearing in degrees with its eight-point compass name.
+   *
+   * @param {*} degrees
+   * @returns {string}
+   */
+  function debugBearing(degrees) {
+    if (typeof degrees !== 'number' || !isFinite(degrees)) return '–';
+    var names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return degrees + '° ' + names[Math.round(degrees / 45) % 8];
+  }
+
+  /**
+   * A segment as the debug rail names it: its position in the open leg
+   * ("#192"), or in another leg with that leg's number ("L6#58").
+   *
+   * @param {number} index
+   * @returns {string}
+   */
+  function debugSegment(index) {
+    var own = index >= leg.from && index <= leg.to
+      ? leg
+      : ctx.legs.find(function (other) { return index >= other.from && index <= other.to; });
+    if (!own) return 's' + index;
+    return (own === leg ? '' : 'L' + own.i) + '#' + (index - own.from + 1);
+  }
+
+  /**
+   * Where one segment starts and ends along the route ("11.214 km →
+   * 11.239 km"): the table's own `from_m` and `length_m`, else the
+   * segment's share of the route's length.
+   *
+   * @param {number} index
+   * @param {?{from_m: number, length_m: number}} server The table's row.
+   * @param {number} perSample One segment's share of the route, metres.
+   * @returns {string}
+   */
+  function debugExtent(index, server, perSample) {
+    var exact = server && typeof server.from_m === 'number' && typeof server.length_m === 'number';
+    var from = exact ? server.from_m : index * perSample;
+    var to = exact ? server.from_m + server.length_m : (index + 1) * perSample;
+    return (from / 1000).toFixed(3) + ' km → ' + (to / 1000).toFixed(3) + ' km';
+  }
+
+  /**
+   * The bank in words ("Falling 46.8° to skier's left"): how steeply the
+   * ground tilts across the track and the side it falls to. A positive
+   * bank falls to the right (bank.py's sign). No 3° floor here, unlike
+   * `bankSide`: the debug rail shows the figure as it is.
+   *
+   * @param {*} bank The signed bank, degrees.
+   * @returns {string}
+   */
+  function debugBanking(bank) {
+    if (typeof bank !== 'number' || !isFinite(bank)) return '–';
+    if (bank === 0) return 'Level (0°)';
+    return 'Falling ' + Math.abs(bank) + '° to skier’s ' + (bank > 0 ? 'right' : 'left');
+  }
+
+  /**
+   * How far the track points from the fall line, 0–180° ("101°"): 0
+   * straight down it, 90 across it, 180 straight up it.
+   *
+   * @param {*} bearing The track's direction, degrees.
+   * @param {*} aspect The direction the ground faces, degrees.
+   * @returns {string} "–" when either is unknown.
+   */
+  function debugOffFallLine(bearing, aspect) {
+    if (typeof bearing !== 'number' || typeof aspect !== 'number') return '–';
+    var delta = Math.abs(bearing - aspect) % 360;
+    return Math.round(delta > 180 ? 360 - delta : delta) + '°';
+  }
+
+  /**
+   * The readout's window where it is not the 50 m the field is labelled
+   * with: `segmentGradients` stops it at the leg's ends, so the first and
+   * last segment of a leg are measured over 37.5 m (" · 37.5 m").
+   *
+   * @param {number} index
+   * @param {number} perSample One segment's length, metres.
+   * @returns {string} Empty for a full window.
+   */
+  function debugShortWindow(index, perSample) {
+    // One stride either side of the midpoint: route_rail_two_core.js's STRIDE_M.
+    var half = 25;
+    var mid = (index + 0.5) * perSample;
+    var width = Math.min((leg.to + 1) * perSample, mid + half)
+      - Math.max(leg.from * perSample, mid - half);
+    return width < 2 * half - 0.05 ? ' · ' + (Math.round(width * 10) / 10) + ' m' : '';
+  }
+
+  /**
+   * The staff table's smoothed track gradient at one segment and the
+   * segments it was summed over ("0.1° · #190..194"; the table stops the
+   * window at the leg's ends and names it per row), naming any in the
+   * window that contributed nothing: a rejected one, or one with no height.
+   *
+   * @param {number} index
+   * @returns {string}
+   */
+  function debugSmoothed(index) {
+    var server = debugRows[index];
+    if (!server) return '–';
+    var from = server.track_gradient_from;
+    var to = server.track_gradient_to;
+    if (!Number.isInteger(from) || !Number.isInteger(to)) return '–';
+    var skipped = [];
+    for (var k = from; k <= to; k += 1) {
+      var row = debugRows[k];
+      if (!row || row.track_gradient_rejected
+          || typeof row.ele_from_m !== 'number' || typeof row.ele_to_m !== 'number') {
+        skipped.push(debugSegment(k));
+      }
+    }
+    var first = debugSegment(from);
+    var last = debugSegment(to);
+    // "#190..194" inside the open leg; a leg number only if the table's
+    // legs and the feed's ever disagree.
+    var sameLeg = first.charAt(0) === '#' && last.charAt(0) === '#';
+    return debugFigure(server.track_gradient_deg, '°') + ' · ' + first + '..'
+      + (sameLeg ? last.slice(1) : last)
+      + (skipped.length ? ' less ' + skipped.join(', ') : '');
+  }
+
+  /**
+   * Fill the debug rail for one segment: the staff terrain table's row
+   * beside what the readout itself read. Every field reads "–" with no
+   * cursor on the leg.
+   *
+   * @param {?number} index The segment under the cursor, or null.
+   */
+  function paintDebug(index) {
+    if (!debugEl) return;
+    var server = index === null ? null : debugRows[index] || null;
+    var perSample = ctx && ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
+    var gradient = index === null ? null : gradients[index];
+    var values = index === null ? {} : {
+      sample: index + ' · leg ' + leg.i + ' #' + (index - leg.from + 1),
+      km: debugExtent(index, server, perSample),
+      heights: server
+        ? debugFigure(server.ele_from_m, '') + ' → ' + debugFigure(server.ele_to_m, ' m')
+        : '–',
+      aspect: server ? debugBearing(server.aspect_deg) : '–',
+      angle: debugFigure(angles()[index], '°'),
+      bearing: server ? debugBearing(server.bearing_deg) : '–',
+      track: debugFigure(typeof gradient === 'number' ? Math.round(gradient * 10) / 10 : null, '°')
+        + debugShortWindow(index, perSample),
+      smoothed: debugSmoothed(index),
+      bank: debugBanking(server && typeof server.roll_deg === 'number' ? server.roll_deg : banks()[index]),
+      fall: server ? debugOffFallLine(server.bearing_deg, server.aspect_deg) : '–',
+    };
+    Array.prototype.forEach.call(
+      debugEl.querySelectorAll('[data-route-rail-debug-field]'),
+      function (cell) {
+        var value = values[cell.getAttribute('data-route-rail-debug-field')];
+        cell.textContent = value || '–';
+        cell.title = value || '';
+      },
+    );
   }
 
   /** Draw the whole lane for the current window. */
@@ -1719,7 +1868,11 @@
     if (!ctx || !leg) return;
     var c = core();
     width = measure();
-    lane.setAttribute('viewBox', '0 0 ' + width + ' ' + c.ROWS.height);
+    // A zoom across the wedges' threshold changes the lane's height, and
+    // the card's with it: the map's bottom chrome is told once drawn.
+    var resized = layoutLane() && laneDrawn;
+    laneDrawn = true;
+    lane.setAttribute('viewBox', '0 0 ' + width + ' ' + laneLayout().height);
     lane.replaceChildren();
     drawDefs();
     drawBands();
@@ -1732,6 +1885,7 @@
     zoomInEl.disabled = span <= c.minSpan(leg) + eps;
     zoomOutEl.disabled = span >= c.legLength(leg) - eps;
     if (ctx.onView) ctx.onView({ from: view.from, to: view.to }, leg);
+    if (resized && ctx.onResize) ctx.onResize();
     // The leader line (route_leader.js) follows this rail's cursor point,
     // which a pan or a zoom moves without the cursor changing.
     document.dispatchEvent(new CustomEvent('snowdesk:route-rail-two-drawn', { detail: null }));
@@ -1752,10 +1906,10 @@
     if (index === null || index + 1 <= view.from || index >= view.to) return null;
     var c = core();
     var rect = lane.getBoundingClientRect();
-    var scale = rect.height > 0 ? rect.height / c.ROWS.height : 1;
+    var scale = rect.height > 0 ? rect.height / laneLayout().height : 1;
     return {
       x: rect.left + (c.xOf(index + 0.5, view, width) / width) * (rect.width || width),
-      y: rect.top + c.ROWS.bandTop * scale,
+      y: rect.top + laneLayout().bandTop * scale,
     };
   }
 
@@ -1850,7 +2004,7 @@
   function tap(x, y) {
     var c = core();
     ctx.cursor.setIndex(clamp(c.indexAt(x, view, width), leg.from, leg.to));
-    var passageRow = y >= c.ROWS.passageTop - PASSAGE_ROW_SLACK_PX;
+    var passageRow = y >= laneLayout().passageTop - PASSAGE_ROW_SLACK_PX;
     if (passageRow) {
       var passage = c.nearestRange(passages, x, view, width, TAP_RADIUS_PX);
       if (passage) toggleSelection('passage', passage.from, passage.to);
@@ -2165,10 +2319,12 @@
       legs: options.legs || [],
       sampleCount: options.sampleCount,
       spanM: options.spanM,
+      uuid: options.uuid || null,
       onView: options.onView || null,
       onResize: options.onResize || null,
     };
     lastState = null;
+    loadDebugRows();
     unsubscribe = ctx.cursor.subscribe(onState);
     onState(ctx.cursor.state());
   }

@@ -9,19 +9,20 @@
  * pinch selects nothing, the −/+ buttons change the span and disable at
  * the limits, an index published from elsewhere scrolls the window, a
  * one-finger drag scrubs the cursor while two fingers pan it, a null bank
- * draws no tick, and the readout reads the terrain under the cursor or the stretch selected, stepped left, centred
- * or right under its anchor (SNOW-1024). SNOW-1031's revision: a leg opens
- * fitted, a double-click or a touch double-tap zooms to where the wedges
- * draw and back, and passage bars
+ * draws no tick, and the readout reads the point under the cursor or the
+ * stretch selected, always left-aligned at the lane's left edge.
+ * SNOW-1031's revision: a leg opens fitted, a double-click or a touch
+ * double-tap zooms to where the wedges draw and back, and passage bars
  * are 4 px tall and never under 6 px wide. SNOW-1044: the track row is
- * labelled stretch blocks fitted and wedges with stretch ticks from 10 px
- * a segment (no kick-turn chevron: the lane speaks them), the card's title
- * carries the leg's vertical and its subtitle the horizontal, and the
- * readout reads the slope, the bank and its side. SNOW-1032: a tap picks by row
- * and by nearest extent, the selection box is at least 12 px with the
- * rest of the lane dimmed, a band's selection carries its class, and a
- * touch or mouse drag scrubs and on release selects the band holding the
- * cursor's index, exactly; a mouse drag no longer pans.
+ * EMPTY fitted, and the lane collapsed to 18 px with it, and wedges from
+ * 10 px a segment (no kick-turn chevron: the lane speaks them); the card's
+ * title carries the leg's vertical and its length, its subtitle names the
+ * very steep and extremely steep ground the leg crosses, and the readout
+ * reads the track's own angle and the ground's EAWS class. SNOW-1032: a
+ * tap picks by row and by nearest extent, the selection box is at least
+ * 12 px with the rest of the lane dimmed, a band's selection carries its
+ * class, and a touch or mouse drag scrubs and on release selects the band
+ * holding the cursor's index, exactly; a mouse drag no longer pans.
  * SNOW-1033: the empty lane is a leg picker, one button per leg opening it
  * through the cursor, and opening or closing a leg runs a WAAPI motion
  * that is skipped where `Element.prototype.animate` is missing or motion
@@ -58,7 +59,6 @@ document.body.innerHTML = `
         <div data-route-rail-two-legs hidden></div>
       </div>
       <div data-route-rail-two-readout-box>
-        <span data-route-rail-two-stem hidden></span>
         <div data-route-rail-two-readout></div>
       </div>
     </div>
@@ -72,8 +72,8 @@ const row = document.querySelector('[data-route-rail-two]');
 const lane = row.querySelector('[data-route-rail-two-lane]');
 const readout = row.querySelector('[data-route-rail-two-readout]');
 const readoutBox = row.querySelector('[data-route-rail-two-readout-box]');
-const stem = row.querySelector('[data-route-rail-two-stem]');
 const title = row.querySelector('[data-route-rail-two-title]');
+const figures = row.querySelector('[data-route-rail-two-figures]');
 const zoomOutButton = row.querySelector('[data-route-rail-two-zoom="out"]');
 const zoomInButton = row.querySelector('[data-route-rail-two-zoom="in"]');
 const closeButton = row.querySelector('[data-route-rail-two-close]');
@@ -123,9 +123,12 @@ function track(count) {
  * Attach rail two to a fresh cursor over the test route.
  *
  * @param {object} [slopeOverrides] Keys replacing the default slope record.
+ * @param {Array<Array<?number>>} [coordinates] The track the profile is
+ *   read from; `track(200)` by default, which rises 4 m a point (about
+ *   3°) between three 196 m drops.
  * @returns {{cursor: object, onView: Function, onResize: Function}}
  */
-function attach(slopeOverrides = {}) {
+function attach(slopeOverrides = {}, coordinates = track(200)) {
   const cursor = self.pwaRouteCursorCore.createRouteCursor(N);
   const onView = vi.fn();
   const onResize = vi.fn();
@@ -137,7 +140,7 @@ function attach(slopeOverrides = {}) {
       passages: [{ from: 110, to: 114, m: 250, fall_line: 'across' }],
       ...slopeOverrides,
     },
-    profile: self.pwaElevationProfileCore.readProfile(track(200)),
+    profile: self.pwaElevationProfileCore.readProfile(coordinates),
     legs: LEGS,
     sampleCount: N,
     spanM: SPAN_M,
@@ -218,7 +221,7 @@ describe('following the cursor', () => {
     cursor.openLeg(LEGS[1]);
     expect(row.hasAttribute('data-empty')).toBe(false);
     expect(two.view()).toEqual({ from: 100, to: 140 });
-    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m over 2.0 km');
     expect(onView).toHaveBeenLastCalledWith({ from: 100, to: 140 }, expect.anything());
     expect(onResize).toHaveBeenCalledTimes(2);
 
@@ -724,56 +727,181 @@ describe('the rows (SNOW-1019, SNOW-1024)', () => {
     expect(rows.passageHeight).toBe(4);
     expect(rows.passageTop + rows.passageHeight).toBe(rows.height);
   });
+
+  it('collapses the lane to 18 px while the track row is empty, and grows it back for the wedges', () => {
+    const { cursor, onResize } = attach();
+
+    // Leg 3 fitted is 1.9 px a sample: no wedges, so no row held open.
+    cursor.openLeg(LEGS[2]);
+    expect(lane.style.height).toBe('18px');
+    expect(lane.getAttribute('viewBox')).toBe('0 0 600 18');
+    const opened = onResize.mock.calls.length;
+
+    // 320 → 160 → 80: still under 10 px a sample, and nothing resized.
+    zoomInButton.click();
+    zoomInButton.click();
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened);
+
+    // 40 samples at 15 px: the wedges draw, and the card is told it grew.
+    zoomInButton.click();
+    expect(lane.style.height).toBe('44px');
+    expect(lane.getAttribute('viewBox')).toBe('0 0 600 44');
+    expect(onResize).toHaveBeenCalledTimes(opened + 1);
+
+    zoomOutButton.click();
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened + 2);
+  });
+
+  it('tells the map when one open leg is swapped for another of a different height', () => {
+    const { cursor, onResize } = attach();
+    // Leg 3 fitted is 18 px; leg 2 draws its wedges at 44 px.
+    cursor.openLeg(LEGS[2]);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[1]);
+    expect(lane.style.height).toBe('44px');
+    expect(onResize).toHaveBeenCalledTimes(opened + 1);
+
+    cursor.openLeg(LEGS[2]);
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened + 2);
+  });
+
+  it('tells the map nothing when the swapped leg is the same height', () => {
+    const { cursor, onResize } = attach();
+    // Legs 1 and 3 are both too long for wedges, and neither has a subtitle.
+    cursor.openLeg(LEGS[0]);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[2]);
+
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened);
+  });
+
+  it('tells the map when the swapped leg gains or loses its subtitle line', () => {
+    // Very steep ground in leg 1 only: it has a subtitle, leg 3 has none.
+    const angles = ANGLES.slice();
+    angles[10] = 37;
+    const { cursor, onResize } = attach({ angles });
+    cursor.openLeg(LEGS[0]);
+    expect(figures.hidden).toBe(false);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[2]);
+    expect(figures.hidden).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(opened + 1);
+
+    cursor.openLeg(LEGS[0]);
+    expect(onResize).toHaveBeenCalledTimes(opened + 2);
+  });
+
+  it('opens a short leg at 44 px, and hands the lane back to the picker on close', () => {
+    const { cursor } = attach();
+
+    cursor.openLeg(LEGS[1]);
+    expect(lane.style.height).toBe('44px');
+
+    cursor.closeLeg();
+    expect(lane.style.height).toBe('');
+    expect(lane.hasAttribute('viewBox')).toBe(false);
+  });
 });
 
 describe('the card (SNOW-1044)', () => {
-  const subtitle = () => row.querySelector('[data-route-rail-two-figures]').textContent;
+  /** Angles with `from`–`to` (inclusive) set to `angle`. */
+  const withGround = (angle, from, to) => ANGLES.map((a, i) => (i >= from && i <= to ? angle : a));
 
-  it('titles a descent with its descent and a climb with its ascent', () => {
+  it('titles a descent with its descent and a climb with its ascent, each over its length', () => {
     const { cursor } = attach();
+    // 40 samples of 50 m.
     cursor.openLeg(LEGS[1]);
-    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m over 2.0 km');
 
+    // 320 samples of 50 m.
     cursor.openLeg(LEGS[2]);
-    expect(title.textContent).toMatch(/^Leg 3 — ascend \d{1,3}(,\d{3})* m$/);
+    expect(title.textContent).toMatch(/^Leg 3 — ascend \d{1,3}(,\d{3})* m over 16\.0 km$/);
   });
 
-  it('subtitles the leg with its length and its ground of 30° or more', () => {
-    const { cursor } = attach();
+  it('falls back to the leg\'s direction with no heights to read, still over its length', () => {
+    const { cursor } = attach({}, track(200).map(([x, y]) => [x, y, null]));
     cursor.openLeg(LEGS[1]);
-    // 40 samples of 50 m; half of them 32° ground.
-    expect(subtitle()).toBe('2,000 m · 1,000 m steep terrain');
 
-    cursor.openLeg(LEGS[2]);
-    expect(subtitle()).toBe('16,000 m · 8,000 m steep terrain');
+    expect(title.textContent).toBe('Leg 2 — descent over 2.0 km');
   });
 
-  it('keeps a steep figure of zero, and leaves it out with no slope record', () => {
-    const { cursor } = attach({ angles: ANGLES.map(() => 12) });
+  it('has no subtitle for a leg with no very steep ground', () => {
+    // 20° and 32°: moderate and steep, neither named.
+    const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
-    expect(subtitle()).toBe('2,000 m · 0 m steep terrain');
 
+    expect(figures.textContent).toBe('');
+    expect(figures.hidden).toBe(true);
+  });
+
+  it('names very steep ground the leg crosses', () => {
+    const { cursor } = attach({ angles: withGround(37, 110, 110) });
+    cursor.openLeg(LEGS[1]);
+
+    // One 50 m sample of 40 is enough to name it; no figure is given.
+    expect(figures.textContent).toBe('Crosses very steep terrain');
+    expect(figures.hidden).toBe(false);
+  });
+
+  it('names extremely steep ground from 40°', () => {
+    const { cursor } = attach({ angles: withGround(40, 110, 112) });
+    cursor.openLeg(LEGS[1]);
+
+    expect(figures.textContent).toBe('Crosses extremely steep terrain');
+  });
+
+  it('names both where the leg has both, and nothing outside the leg', () => {
+    const angles = withGround(37, 110, 110);
+    angles[120] = 45;
+    // Steeper ground in leg 3 is not leg 2's.
+    angles[300] = 60;
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[1]);
+
+    expect(figures.textContent).toBe('Crosses very steep, extremely steep terrain');
+  });
+
+  it('has no subtitle with no slope record, and hides it again on close', () => {
     const bare = attach({ angles: [], banks: [] });
     bare.cursor.openLeg(LEGS[1]);
-    expect(subtitle()).toBe('2,000 m');
-  });
+    expect(figures.hidden).toBe(true);
 
-  it('falls back to the leg\'s direction with no heights to read', () => {
+    const { cursor } = attach({ angles: withGround(37, 110, 110) });
+    cursor.openLeg(LEGS[1]);
+    expect(figures.hidden).toBe(false);
+    cursor.closeLeg();
+    expect(figures.textContent).toBe('');
+    expect(figures.hidden).toBe(true);
+  });
+});
+
+describe('the staff debug rail', () => {
+  it('asks for no terrain rows where the partial renders no debug rail', () => {
+    // The rail is in the page for staff only; without it nothing is fetched.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
     const cursor = self.pwaRouteCursorCore.createRouteCursor(N);
     two.attach({
       cursor,
       slope: { angles: ANGLES, banks: BANKS, passages: [] },
-      profile: self.pwaElevationProfileCore.readProfile(track(200).map(([x, y]) => [x, y, null])),
+      profile: self.pwaElevationProfileCore.readProfile(track(200)),
       legs: LEGS,
       sampleCount: N,
       spanM: SPAN_M,
-      onView: vi.fn(),
-      onResize: vi.fn(),
+      uuid: '7f16de92-f3e3-4458-ad85-89aa7a573bba',
     });
     cursor.openLeg(LEGS[1]);
+    cursor.setIndex(105);
 
-    expect(title.textContent).toBe('Leg 2 — descent');
-    expect(subtitle()).toBe('2,000 m · 1,000 m steep terrain');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 
@@ -798,7 +926,7 @@ describe('the empty state (SNOW-1024)', () => {
 
     cursor.openLeg(LEGS[1]);
 
-    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m over 2.0 km');
     expect(title.classList.contains('text-text-1')).toBe(true);
     expect(title.classList.contains('text-text-2')).toBe(false);
     expect(zoomOutButton.hidden).toBe(false);
@@ -862,7 +990,7 @@ describe('the leg picker (SNOW-1033)', () => {
 
     expect(openLeg).toHaveBeenCalledWith(LEGS[1]);
     expect(cursor.state().openLeg).toMatchObject({ from: 100, to: 139 });
-    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m over 2.0 km');
     // It opens fitted, as a leg opened anywhere else does (SNOW-1031).
     expect(two.view()).toEqual({ from: 100, to: 140 });
   });
@@ -1051,7 +1179,7 @@ describe('the opening motion (SNOW-1033)', () => {
       { left: '0px', width: '100%' },
     ]);
     // The leg is drawn under it already; the map hears the height at the end.
-    expect(title.textContent).toBe('Leg 2 — descend 196 m');
+    expect(title.textContent).toBe('Leg 2 — descend 196 m over 2.0 km');
     expect(legsLayer.hidden).toBe(false);
     expect(onResize).toHaveBeenCalledTimes(1);
 
@@ -1280,8 +1408,8 @@ describe('the wedges (SNOW-1031)', () => {
 });
 
 describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
-  /** @returns {Array<Element>} The stretch blocks drawn. */
-  const blocks = () => Array.from(lane.querySelectorAll('.route-rail-two-track-block'));
+  /** @returns {number} Marks of any kind drawn in the track row. */
+  const trackMarks = () => lane.querySelector('[data-route-rail-two-track]').childElementCount;
   /** @returns {number} Glyph ground lines drawn. */
   const glyphCount = () => lane.querySelectorAll('.route-rail-two-wedge[data-wedge="ground"]').length;
 
@@ -1302,83 +1430,43 @@ describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
     pointer(lane, 'pointerup', { x: x + 10 });
   }
 
-  it('opens a long leg fitted, with stretch blocks in place of wedges', () => {
+  it('opens a long leg fitted, with the track row empty', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[2]);
 
     expect(two.view()).toEqual({ from: 140, to: 460 });
     expect(glyphCount()).toBe(0);
+    // No blocks, labels, ticks or placeholder stand in for the wedges.
+    expect(trackMarks()).toBe(0);
+    expect(lane.querySelectorAll('text')).toHaveLength(0);
     expect(lane.querySelector('[data-route-rail-two-bank-placeholder]')).toBeNull();
-    // Five-sample runs of 20° and 32° ground banked ±20°: on a climb that
-    // is Skin and Traverse, each run under six samples, so the merge
-    // leaves one stretch.
-    const drawn = blocks();
-    expect(drawn.map((b) => b.getAttribute('data-word'))).toEqual(['traverse']);
-    expect(drawn[0].getAttribute('fill')).toBe('var(--color-track-block)');
-    expect(drawn[0].getAttribute('pointer-events')).toBe('none');
-    expect(drawn[0].getAttribute('y')).toBe(String(self.pwaRouteRailTwoCore.ROWS.blockTop));
-    const label = lane.querySelector('.route-rail-two-track-label');
-    expect(label.textContent).toBe('Traverse');
-    // No ticks in words: the blocks are the stretches.
-    expect(lane.querySelector('.route-rail-two-track-tick')).toBeNull();
     // The bands are still drawn per segment, and the passages marked.
     expect(bandRects().length).toBeGreaterThan(0);
   });
 
-  it('labels each stretch with its word, and drops a label that does not fit', () => {
-    // Leg 3 (140–459) fitted at 1.875 px a sample: 30 samples of gentle
-    // climbing then steep ground with the fall line, then 12 steep and
-    // banked, the rest gentle.
-    const angles = ANGLES.slice();
-    const banks = BANKS.slice();
-    for (let i = 140; i <= 459; i += 1) {
-      angles[i] = i < 170 ? 10 : i < 200 ? 35 : i < 212 ? 35 : 10;
-      banks[i] = i >= 200 && i < 212 ? 25 : 0;
-    }
-    const { cursor } = attach({ angles, banks });
-    cursor.openLeg(LEGS[2]);
-
-    expect(blocks().map((b) => [b.getAttribute('data-word'), b.getAttribute('data-from')])).toEqual([
-      ['skin', '140'],
-      ['steep', '170'],
-      ['traverse', '200'],
-      ['skin', '212'],
-    ]);
-    const labels = Array.from(lane.querySelectorAll('.route-rail-two-track-label'));
-    // The 12-sample traverse is 22.5 px − 2: too narrow for "Traverse".
-    expect(labels.map((l) => l.textContent)).toEqual(['Skin', 'Steep', 'Skin']);
-  });
-
-  it('switches to wedges at 10 px a segment, with a dashed tick at each stretch boundary', () => {
-    const angles = ANGLES.slice();
-    const banks = BANKS.slice();
-    for (let i = 140; i <= 459; i += 1) {
-      angles[i] = i < 300 ? 10 : 35;
-      banks[i] = 0;
-    }
-    const { cursor } = attach({ angles, banks });
+  it('switches to wedges at 10 px a segment, and draws nothing else in the row', () => {
+    const { cursor } = attach();
     cursor.openLeg(LEGS[2]);
     cursor.setIndex(300);
     // 320 → 160 → 80 → 40 samples: 15 px a segment.
     zoomInButton.click();
     zoomInButton.click();
-    expect(blocks().length).toBeGreaterThan(0);
+    expect(trackMarks()).toBe(0);
     zoomInButton.click();
 
-    expect(blocks()).toHaveLength(0);
     // A 40-sample window about the cursor: the segments it cuts draw too.
     expect(glyphCount()).toBeGreaterThanOrEqual(40);
-    const ticks = Array.from(lane.querySelectorAll('.route-rail-two-track-tick'));
-    expect(ticks.map((t) => t.getAttribute('data-at'))).toEqual(['300']);
-    expect(ticks[0].getAttribute('stroke-dasharray')).toBe('2 2');
-    expect(ticks[0].getAttribute('stroke')).toBe('var(--color-track-tick)');
+    // Every mark in the row is a wedge's: no tick between them.
+    const row = lane.querySelector('[data-route-rail-two-track]');
+    Array.from(row.children).forEach((mark) => {
+      expect(mark.classList.contains('route-rail-two-wedge')).toBe(true);
+    });
   });
 
   it('draws wedges fitted on a leg short enough', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
-    expect(blocks()).toHaveLength(0);
     expect(glyphCount()).toBe(40);
   });
 
@@ -1391,7 +1479,7 @@ describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
 
     /** @returns {number} Chevron-like marks drawn in the track row. */
     const marks = () => lane.querySelectorAll('.route-rail-two-kick-turn, [data-route-rail-two-track] polyline').length;
-    expect(blocks().length).toBeGreaterThan(0);
+    expect(trackMarks()).toBe(0);
     expect(marks()).toBe(0);
 
     cursor.setIndex(300);
@@ -1413,13 +1501,12 @@ describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
 
     // resolveSpan at 600 px is 60, centred on sample 300.
     expect(two.view()).toEqual({ from: 270, to: 330 });
-    expect(blocks()).toHaveLength(0);
     expect(glyphCount()).toBeGreaterThan(0);
 
     lane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300 }));
 
     expect(two.view()).toEqual({ from: 140, to: 460 });
-    expect(blocks().length).toBeGreaterThan(0);
+    expect(glyphCount()).toBe(0);
   });
 
   it('zooms on a touch double-tap without toggling the selection', () => {
@@ -1454,39 +1541,138 @@ describe('the track row follows the zoom (SNOW-1031, SNOW-1044)', () => {
     const { cursor } = attach({ passages: [{ from: 300, to: 300, m: 50, fall_line: 'across' }] });
     cursor.openLeg(LEGS[2]);
 
-    // One 1.9 px sample, widened to 6 px.
+    // One 1.9 px sample, widened to 6 px, directly under the bands while
+    // the track row is empty.
     let bar = lane.querySelector('.route-rail-two-passage');
     expect(bar.getAttribute('height')).toBe('4');
-    expect(bar.getAttribute('y')).toBe('40');
+    expect(bar.getAttribute('y')).toBe('14');
     expect(Number(bar.getAttribute('width'))).toBe(6);
 
     zoomInButton.click();
     zoomInButton.click();
     zoomInButton.click();
-    // 15 px a sample at the 40-sample window: its real extent.
+    // 15 px a sample at the 40-sample window: its real extent, under the
+    // wedges now.
     bar = lane.querySelector('.route-rail-two-passage');
+    expect(bar.getAttribute('y')).toBe('40');
     expect(Number(bar.getAttribute('width'))).toBe(15);
   });
 });
 
 describe('the readout (SNOW-1024)', () => {
-  it('reads the slope, the bank and the side the ground falls away to', () => {
-    // Sample 101: 20° ground banked 20° to the right.
+  /** A straight track losing 4 m a point: a steady 3° descent. */
+  const descending = () => track(200).map(([x, y], i) => [x, y, 3000 - i * 4]);
+  /** A straight track at one height. */
+  const level = () => track(200).map(([x, y]) => [x, y, 2000]);
+
+  it('reads the track\'s own angle and the ground\'s class', () => {
+    // Sample 101 is 20° ground, 105 is 32°; the track rises 4 m a point.
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     cursor.setIndex(101);
+    expect(readoutLines()).toEqual(['3° ascent · moderate slope']);
+    expect(lane.getAttribute('aria-valuetext')).toContain('3° ascent · moderate slope');
 
-    expect(readoutLines()).toEqual(['20° slope · 20° bank, falls away right']);
-    expect(lane.getAttribute('aria-valuetext')).toContain(
-      '20° slope · 20° bank, falls away right',
-    );
-
-    cursor.setIndex(102);
-    expect(readoutLines()).toEqual(['20° slope · 20° bank, falls away left']);
+    cursor.setIndex(105);
+    expect(readoutLines()).toEqual(['3° ascent · steep slope']);
   });
 
-  it('says no side for a bank under 3°', () => {
+  it('names the EAWS classes, and flat under 5°', () => {
+    const angles = ANGLES.slice();
+    [4.9, 5, 29.9, 30, 35, 40, 62].forEach((angle, k) => { angles[101 + k] = angle; });
+    const { cursor } = attach({ angles });
+    cursor.openLeg(LEGS[1]);
+
+    const classes = [101, 102, 103, 104, 105, 106, 107].map((index) => {
+      cursor.setIndex(index);
+      return readoutLines()[0].split(' · ')[1];
+    });
+    expect(classes).toEqual([
+      'flat',
+      'moderate slope',
+      'moderate slope',
+      'steep slope',
+      'very steep slope',
+      'extremely steep slope',
+      'extremely steep slope',
+    ]);
+  });
+
+  it('reads a falling track as a descent, whichever way the leg goes', () => {
+    const { cursor } = attach({}, descending());
+
+    cursor.openLeg(LEGS[1]);
+    cursor.setIndex(101);
+    expect(readoutLines()).toEqual(['3° descent · moderate slope']);
+
+    // Leg 3 is a climb; the segment still falls.
+    cursor.openLeg(LEGS[2]);
+    cursor.setIndex(300);
+    expect(readoutLines()).toEqual(['3° descent · moderate slope']);
+  });
+
+  it('reads a track angle that rounds to 0° as level', () => {
+    const { cursor } = attach({}, level());
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['level · moderate slope']);
+  });
+
+  it('reads the class alone with no heights to measure the track on', () => {
+    const { cursor } = attach({}, track(200).map(([x, y]) => [x, y, null]));
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+
+    expect(readoutLines()).toEqual(['moderate slope']);
+  });
+
+  it('shows no track word, no bank and no slope angle on screen', () => {
+    const { cursor } = attach();
+    cursor.openLeg(LEGS[0]);
+    cursor.setIndex(5);
+
+    expect(readoutLines()).toEqual(['3° ascent · steep slope']);
+    expect(readout.textContent).not.toMatch(/Skin|Traverse|Fall-line|Bootpack|Gentle|Kick|bank|falls away|\d+° slope/);
+  });
+
+  it('reads the same line whatever the bank, known or not', () => {
+    const banks = BANKS.slice();
+    banks[101] = null;
+    banks[102] = 60;
+    const { cursor } = attach({ banks });
+    cursor.openLeg(LEGS[1]);
+
+    cursor.setIndex(101);
+    expect(readoutLines()).toEqual(['3° ascent · moderate slope']);
+    cursor.setIndex(102);
+    expect(readoutLines()).toEqual(['3° ascent · moderate slope']);
+  });
+
+  it('speaks the side the ground falls away to and a kick turn in aria-valuetext only', () => {
+    // Leg 1 climbs 35° ground banked 20° right, then left from sample 50:
+    // a kick turn lands on 50.
+    const angles = ANGLES.map((a, i) => (i < 100 ? 35 : a));
+    const banks = BANKS.map((b, i) => (i < 50 ? 20 : i < 100 ? -20 : b));
+    const { cursor } = attach({ angles, banks });
+    cursor.openLeg(LEGS[0]);
+
+    cursor.setIndex(50);
+    expect(readoutLines()).toEqual(['3° ascent · very steep slope']);
+    expect(lane.getAttribute('aria-valuetext')).toBe(
+      '2.52 km along the route. 3° ascent · very steep slope. Ground falls away left. Kick turn',
+    );
+
+    cursor.setIndex(10);
+    expect(lane.getAttribute('aria-valuetext')).toBe(
+      '0.53 km along the route. 3° ascent · very steep slope. Ground falls away right',
+    );
+  });
+
+  it('speaks no side for a bank under 3°', () => {
     const banks = BANKS.slice();
     banks[101] = 2;
     const { cursor } = attach({ banks });
@@ -1494,39 +1680,12 @@ describe('the readout (SNOW-1024)', () => {
 
     cursor.setIndex(101);
 
-    expect(readoutLines()).toEqual(['20° slope · 2° bank']);
-  });
-
-  it('shows no track word and no gradient on screen', () => {
-    const { cursor } = attach();
-    cursor.openLeg(LEGS[0]);
-    cursor.setIndex(5);
-
-    expect(readoutLines()).toEqual(['32° slope · 20° bank, falls away right']);
-    expect(readout.textContent).not.toMatch(/Skin|Traverse|Steep|Gentle|Kick|gradient/);
-  });
-
-  it('speaks the stretch\'s track word and a kick turn in aria-valuetext only', () => {
-    // Leg 1 climbs 35° ground banked 20° right, then left from sample 50:
-    // one Traverse stretch, and a kick turn landing on 50.
-    const angles = ANGLES.map((a, i) => (i < 100 ? 35 : a));
-    const banks = BANKS.map((b, i) => (i < 50 ? 20 : i < 100 ? -20 : b));
-    const { cursor } = attach({ angles, banks });
-    cursor.openLeg(LEGS[0]);
-
-    cursor.setIndex(50);
-    expect(readoutLines()).toEqual(['35° slope · 20° bank, falls away left']);
     expect(lane.getAttribute('aria-valuetext')).toBe(
-      '2.52 km along the route. 35° slope · 20° bank, falls away left. Traverse. Kick turn',
-    );
-
-    cursor.setIndex(10);
-    expect(lane.getAttribute('aria-valuetext')).toBe(
-      '0.53 km along the route. 35° slope · 20° bank, falls away right. Traverse',
+      '5.08 km along the route. 3° ascent · moderate slope',
     );
   });
 
-  it('keeps the track word and a kick turn in aria-valuetext while a band is selected', () => {
+  it('speaks the point\'s own line, its side and a kick turn while a band is selected', () => {
     const angles = ANGLES.map((a, i) => (i < 100 ? 35 : a));
     const banks = BANKS.map((b, i) => (i < 50 ? 20 : i < 100 ? -20 : b));
     const { cursor } = attach({ angles, banks });
@@ -1536,33 +1695,26 @@ describe('the readout (SNOW-1024)', () => {
     cursor.select({ kind: 'band', from: 45, to: 55 });
 
     expect(readoutLines()).toEqual(['550 m 35–40°']);
-    expect(lane.getAttribute('aria-valuetext')).toMatch(/550 m 35–40°\. Traverse\. Kick turn$/);
+    expect(lane.getAttribute('aria-valuetext')).toMatch(
+      /550 m 35–40°\. 3° ascent · very steep slope\. Ground falls away left\. Kick turn$/,
+    );
   });
 
   it('hides the track row from assistive tech', () => {
-    const banks = BANKS.map(() => 20);
-    banks[300] = -20;
-    const { cursor } = attach({ banks });
+    const { cursor } = attach();
     cursor.openLeg(LEGS[2]);
 
-    const group = lane.querySelector('[data-route-rail-two-track]');
-    expect(group.getAttribute('aria-hidden')).toBe('true');
-    for (const selector of [
-      '.route-rail-two-track-block',
-      '.route-rail-two-track-label',
-    ]) {
-      const drawn = lane.querySelectorAll(selector);
-      expect(drawn.length).toBeGreaterThan(0);
-      drawn.forEach((el) => expect(group.contains(el)).toBe(true));
-    }
+    expect(lane.querySelector('[data-route-rail-two-track]').getAttribute('aria-hidden')).toBe('true');
+
     cursor.setIndex(300);
     zoomInButton.click();
     zoomInButton.click();
     zoomInButton.click();
     const wedges = lane.querySelectorAll('.route-rail-two-wedge');
     expect(wedges.length).toBeGreaterThan(0);
-    const now = lane.querySelector('[data-route-rail-two-track]');
-    wedges.forEach((el) => expect(now.contains(el)).toBe(true));
+    const group = lane.querySelector('[data-route-rail-two-track]');
+    expect(group.getAttribute('aria-hidden')).toBe('true');
+    wedges.forEach((el) => expect(group.contains(el)).toBe(true));
   });
 
   it('says the slope is not known where the angle is unknown', () => {
@@ -1576,17 +1728,6 @@ describe('the readout (SNOW-1024)', () => {
     expect(readoutLines()).toEqual(['slope not known']);
   });
 
-  it('keeps the slope alone where only the bank is unknown', () => {
-    const banks = BANKS.slice();
-    banks[101] = null;
-    const { cursor } = attach({ banks });
-    cursor.openLeg(LEGS[1]);
-
-    cursor.setIndex(101);
-
-    expect(readoutLines()).toEqual(['20° slope']);
-  });
-
   it('reads a band as its length to the nearest 25 m and its class, on one line', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
@@ -1597,52 +1738,31 @@ describe('the readout (SNOW-1024)', () => {
     expect(readoutLines()).toEqual(['250 m 30–35°']);
   });
 
-  it('offers the hint with nothing under the cursor, spanning the lane so it wraps', () => {
+  it('offers the hint with nothing under the cursor', () => {
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
 
     expect(readoutLines()).toEqual([
       'Drag to read a point. Tap a band or passage to select it.',
     ]);
-    expect(readout.classList.contains('text-left')).toBe(true);
-    expect(readout.classList.contains('inset-x-0')).toBe(true);
-    expect(readout.classList.contains('whitespace-nowrap')).toBe(false);
-    expect(readout.style.left).toBe('');
-    expect(stem.hidden).toBe(true);
   });
 
-  it('steps left, centred and right with the cursor, the stem on the line', () => {
-    // The 100–140 window across 600 px: 15 px a sample.
+  it('never moves the text: nothing places it under the cursor or a selection', () => {
+    // The partial left-aligns the readout at the lane's left edge; the
+    // script used to set a class and a `left` per anchor.
     const { cursor } = attach();
     cursor.openLeg(LEGS[1]);
+    const before = readout.className;
 
-    cursor.setIndex(102);
-    expect(readout.classList.contains('text-left')).toBe(true);
-    expect(readout.classList.contains('-translate-x-1/2')).toBe(false);
-    expect(parseFloat(readout.style.left)).toBe(37.5);
-    expect(stem.hidden).toBe(false);
-    expect(parseFloat(stem.style.left)).toBe(37);
-
-    cursor.setIndex(120);
-    expect(readout.classList.contains('text-center')).toBe(true);
-    expect(readout.classList.contains('-translate-x-1/2')).toBe(true);
-    expect(parseFloat(readout.style.left)).toBe(307.5);
-
-    cursor.setIndex(138);
-    expect(readout.classList.contains('text-right')).toBe(true);
-    expect(readout.classList.contains('-translate-x-full')).toBe(true);
-    expect(parseFloat(readout.style.left)).toBe(577.5);
-  });
-
-  it('centres a selection\'s readout under its box, with no stem', () => {
-    const { cursor } = attach();
-    cursor.openLeg(LEGS[1]);
-
+    for (const index of [102, 120, 138]) {
+      cursor.setIndex(index);
+      expect(readout.style.left).toBe('');
+      expect(readout.className).toBe(before);
+    }
     cursor.select({ kind: 'band', from: 115, to: 119 });
-
-    // 115–120 of the 100–140 window is 225–300 px; its middle is 262.5.
-    expect(readout.classList.contains('text-center')).toBe(true);
-    expect(parseFloat(readout.style.left)).toBe(262.5);
-    expect(stem.hidden).toBe(true);
+    expect(readout.style.left).toBe('');
+    expect(readout.className).toBe(before);
+    // And no stem joins the cursor line to it.
+    expect(row.querySelector('[data-route-rail-two-stem]')).toBeNull();
   });
 });

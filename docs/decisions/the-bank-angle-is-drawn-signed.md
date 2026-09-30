@@ -1,8 +1,8 @@
 ---
 name: the-bank-angle-is-drawn-signed
-description: bank.py, `banks` on the wire, bankWedge wedges, the track row (segmentWord, stretches, trackMode), kickTurns — kept signed, sent flat
+description: bank.py, `banks` on the wire, bankWedge wedges, bankGlyphs one wedge per segment (trackMode), kickTurns — kept signed, sent flat
 status: current
-last-reviewed: 2026-09-29
+last-reviewed: 2026-09-30
 ---
 
 # The bank angle is drawn signed
@@ -177,6 +177,13 @@ to make it drawable.
   under the cursor at every zoom; only the drawing groups.
 
 ## The track row: words fitted, wedges zoomed in (SNOW-1044, 2026-09-29)
+
+*Superseded in part on 2026-09-30 by
+[the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md](the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md):
+the words, the stretches, the stretch ticks and the readout's
+slope-and-bank line are gone. Fitted, the row is empty; the readout is
+the track's angle and the ground's class. The wedges from 10 px a
+segment, `trackMode`, `resolveSpan` and the kick turns below stand.*
 
 Fitted, the SNOW-1031 row said "Zoom in to see the bank" and nothing
 about what the track does. SNOW-1044 replaces the placeholder and the

@@ -24,7 +24,12 @@ import uuid
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseNotFound,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, render
 
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
@@ -224,7 +229,8 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     SNOW-1020. The rows come from
     ``apps.routes.services.terrain_detail.terrain_detail`` and nothing here
     derives a figure of its own. ``?format=csv`` returns the same rows as
-    a download, so the table and the file cannot disagree.
+    a download, so the table and the file cannot disagree, and
+    ``?format=json`` returns them for the map's staff debug rail.
 
     Any route, not only the viewer's own: this is staff-only, and staff
     already read ``slope_samples`` in the Route admin, which links here.
@@ -241,6 +247,11 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     """
     route = get_object_or_404(Route, uuid=route_uuid)
     rows = terrain_detail(route.slope_samples, route.points) or []
+
+    if request.GET.get("format") == "json":
+        # The map's staff debug rail (static/js/route_rail_two.js) reads
+        # one row per segment by index.
+        return JsonResponse({"rows": rows})
 
     if request.GET.get("format") == "csv":
         response = HttpResponse(content_type="text/csv")
