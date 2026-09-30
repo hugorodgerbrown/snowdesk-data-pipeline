@@ -155,7 +155,9 @@ if [[ -n "$TICKETS" ]]; then
         [[ -z "$subject" ]] && subject="$(printf '%s\n' "$SUBJECTS" | grep -m1 -F "$ticket" || true)"
         line="- ${subject:-$ticket}"
         # `--` because the line opens with "- ", which grep reads as options.
-        if printf '%s\n' "$seen_subjects" | grep -qxF -- "$line"; then
+        # A here-string, not `printf | grep -q`: under pipefail an early
+        # grep -q exit can SIGPIPE the printf and fail a line that matched.
+        if grep -qxF -- "$line" <<<"$seen_subjects"; then
             continue
         fi
         seen_subjects+="${line}"$'\n'
@@ -210,7 +212,8 @@ UNMENTIONED=""
 if [[ -n "$NEW_DATA_COMMANDS" ]]; then
     while read -r cmd; do
         [[ -z "$cmd" ]] && continue
-        if ! printf '%s\n' "$DEPLOY_STEPS" | grep -qF "$cmd"; then
+        # Here-string for the same pipefail/SIGPIPE reason as above.
+        if ! grep -qF -- "$cmd" <<<"$DEPLOY_STEPS"; then
             UNMENTIONED+="${cmd}"$'\n'
         fi
     done <<<"$NEW_DATA_COMMANDS"

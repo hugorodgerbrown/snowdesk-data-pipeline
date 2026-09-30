@@ -42,18 +42,27 @@ Four things about this template are load-bearing:
    opposite of the ``wind_arrow_rotation`` filter used by _weather_panel and
    _forecast_panel, which points downwind; see the service's docstring.
 
+5. **The plots stretch sideways, never taller** (SNOW-1049). Each SVG is
+   preserveAspectRatio="none", keeps the drawing's aspect ratio below the
+   authored 606-unit width and is capped at its authored height above it.
+   Every stroke is vector-effect="non-scaling-stroke" so a stretched line
+   keeps its weight, and the wind arrows are fixed-size HTML glyphs rather
+   than paths in a stretched viewBox, which would squash them sideways.
+
 A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
 0.0 mm" answers the question; two empty rulers under it would not.
 {% endcomment %}
 {% if chart %}
     {% firstof testid_prefix "hourly-chart" as prefix %}
     {% comment %}
-    max-w-narrow is the 640px content column the chart was drawn against. It
-    scales down below that with the viewBox and stops growing above it: the
-    drawing is authored at one width, and stretching it across a wide page
-    pulls the bands apart without adding a thing to read.
+    The card spans the content column, so its edges line up with the day
+    picker above it (SNOW-1049). It used to stop at max-w-narrow, the 640px
+    column the drawing was authored against, because a fixed viewBox scaled
+    up in proportion and a wide page made every plot twice as tall. The
+    plots now stretch horizontally only — see point 5 above — so the extra
+    width spreads the hours and the heights stay put.
     {% endcomment %}
-    {% card padding="p-0" extra="relative max-w-narrow overflow-hidden" %}
+    {% card padding="p-0" extra="relative overflow-hidden" %}
     <div data-testid="{{ prefix }}" role="group" aria-label="{{ chart.aria_label }}">
         {% comment %}
         CHART 1 OF 3 — TEMPERATURE.
@@ -97,7 +106,9 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         <div class="relative mx-4">
             <svg
                 viewBox="{{ chart.view_box_temp }}"
-                class="block h-auto w-full"
+                preserveAspectRatio="none"
+                class="block w-full"
+                style="aspect-ratio: {{ chart.aspect_temp }}; max-height: {{ chart.max_h_temp }}"
                 aria-hidden="true"
                 data-testid="{{ prefix }}-temp"
             >
@@ -109,6 +120,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.zero_line_y }}"
                         class="stroke-text-1"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                         stroke-dasharray="3 3"
                         opacity="0.35"
                     />
@@ -141,6 +153,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.elevation_line_y }}"
                         class="stroke-accent"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                         stroke-dasharray="1 3"
                         stroke-linecap="round"
                     />
@@ -152,6 +165,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         fill="none"
                         class="stroke-accent"
                         stroke-width="2"
+                        vector-effect="non-scaling-stroke"
                         stroke-dasharray="7 4"
                         stroke-linejoin="round"
                     />
@@ -163,6 +177,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         fill="none"
                         class="stroke-text-1"
                         stroke-width="2.25"
+                        vector-effect="non-scaling-stroke"
                         stroke-linejoin="round"
                         stroke-linecap="round"
                     />
@@ -217,6 +232,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.temp_height }}"
                         class="stroke-border-strong"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
                 {% endfor %}
 
@@ -237,6 +253,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ tick.y }}"
                         class="stroke-border-strong"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
                 {% endfor %}
                 {% for tick in chart.freezing_ticks %}
@@ -247,6 +264,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ tick.y }}"
                         class="stroke-accent"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                         opacity="0.55"
                     />
                 {% endfor %}
@@ -259,6 +277,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.temp_height }}"
                         class="stroke-border"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
                 {% endfor %}
                 {% for x in chart.hour_ticks %}
@@ -269,6 +288,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.temp_height }}"
                         class="stroke-border-strong"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
                 {% endfor %}
             </svg>
@@ -278,20 +298,32 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
             gutter, metres down the right. Both are derived from the day,
             and the freezing level is the only series reading against the
             metres.
+
+            Each gutter label hugs the tick it names: the left gutter's
+            are anchored by their right edge and the right gutter's by their
+            left, both at the outer end of the tick. Pinned to the card's
+            edges instead, they drifted about 50px from their ticks once the
+            chart spanned a wide column and the gutters widened with it.
             {% endcomment %}
-            <span class="absolute left-0 top-1 font-mono text-xs text-text-3">&deg;C</span>
-            <span class="absolute right-0 top-1 font-mono text-xs text-accent">m</span>
+            <span
+                class="absolute top-1 pr-1 font-mono text-xs text-text-3"
+                style="right: {{ chart.left_gutter_right }}"
+            >&deg;C</span>
+            <span
+                class="absolute top-1 pl-1 font-mono text-xs text-accent"
+                style="left: {{ chart.right_gutter_left }}"
+            >m</span>
 
             {% for tick in chart.temp_ticks %}
                 <span
-                    class="absolute left-0 font-mono text-xs text-text-3"
-                    style="top: {{ tick.top }}"
+                    class="absolute pr-1 font-mono text-xs text-text-3"
+                    style="right: {{ chart.left_gutter_right }}; top: {{ tick.top }}"
                 >{{ tick.text }}</span>
             {% endfor %}
             {% for tick in chart.freezing_ticks %}
                 <span
-                    class="absolute right-0 font-mono text-xs text-accent"
-                    style="top: {{ tick.top }}"
+                    class="absolute pl-1 font-mono text-xs text-accent"
+                    style="left: {{ chart.right_gutter_left }}; top: {{ tick.top }}"
                 >{{ tick.text }}</span>
             {% endfor %}
 
@@ -431,7 +463,9 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
             <div class="relative mx-4">
                 <svg
                     viewBox="{{ chart.view_box_precip }}"
-                    class="block h-auto w-full"
+                    preserveAspectRatio="none"
+                    class="block w-full"
+                    style="aspect-ratio: {{ chart.aspect_precip }}; max-height: {{ chart.max_h_precip }}"
                     aria-hidden="true"
                     data-testid="{{ prefix }}-precip"
                 >
@@ -451,6 +485,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.snow_baseline_y }}"
                         class="stroke-border"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
 
                     {% for bar in chart.precip_bars %}
@@ -470,6 +505,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y2="{{ chart.precip_baseline_y }}"
                         class="stroke-chart-precip"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                         opacity="0.5"
                     />
 
@@ -481,6 +517,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                             y2="{{ chart.precip_height }}"
                             class="stroke-border"
                             stroke-width="1"
+                            vector-effect="non-scaling-stroke"
                         />
                     {% endfor %}
                     {% for x in chart.hour_ticks %}
@@ -491,6 +528,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                             y2="{{ chart.precip_height }}"
                             class="stroke-border-strong"
                             stroke-width="1"
+                            vector-effect="non-scaling-stroke"
                         />
                     {% endfor %}
                 </svg>
@@ -504,10 +542,16 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 stays because it names the quantity, which a lone figure
                 does not.
                 {% endcomment %}
-                <span class="absolute left-0 text-accent" style="top: {{ chart.snow_icon_top }}">
+                <span
+                    class="absolute pr-1 text-accent"
+                    style="right: {{ chart.left_gutter_right }}; top: {{ chart.snow_icon_top }}"
+                >
                     {% include "includes/_icon_snowflake.html" %}
                 </span>
-                <span class="absolute left-0 text-chart-precip" style="top: {{ chart.precip_icon_top }}">
+                <span
+                    class="absolute pr-1 text-chart-precip"
+                    style="right: {{ chart.left_gutter_right }}; top: {{ chart.precip_icon_top }}"
+                >
                     {% include "includes/_icon_raindrops.html" %}
                 </span>
 
@@ -559,13 +603,21 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         lines around wherever the two converge.
         {% endcomment %}
         <div class="relative mx-4">
-            <svg viewBox="{{ chart.view_box_wind }}" class="block h-auto w-full" aria-hidden="true">
+            <svg
+                viewBox="{{ chart.view_box_wind }}"
+                preserveAspectRatio="none"
+                class="block w-full"
+                style="aspect-ratio: {{ chart.aspect_wind }}; max-height: {{ chart.max_h_wind }}"
+                aria-hidden="true"
+                data-testid="{{ prefix }}-wind"
+            >
                 {% for points in chart.gust_segments %}
                     <polyline
                         points="{{ points }}"
                         fill="none"
                         class="stroke-text-2"
                         stroke-width="1.5"
+                        vector-effect="non-scaling-stroke"
                         stroke-dasharray="5 4"
                         stroke-linejoin="round"
                     />
@@ -576,6 +628,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         fill="none"
                         class="stroke-chart-wind"
                         stroke-width="1.75"
+                        vector-effect="non-scaling-stroke"
                         stroke-linejoin="round"
                     />
                 {% endfor %}
@@ -585,14 +638,18 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         x1="{{ x }}"
                         y1="{{ chart.wind_tick_top }}"
                         x2="{{ x }}"
-                        y2="{{ 92 }}"
+                        y2="{{ chart.wind_height }}"
                         class="stroke-border-strong"
                         stroke-width="1"
+                        vector-effect="non-scaling-stroke"
                     />
                 {% endfor %}
             </svg>
 
-            <span class="absolute left-0 top-0 font-mono text-xs text-text-3">{% translate "km/h" %}</span>
+            <span
+                class="absolute top-0 pr-1 font-mono text-xs text-text-3"
+                style="right: {{ chart.left_gutter_right }}"
+            >{% translate "km/h" %}</span>
             {% for label in chart.gust_labels %}
                 <span
                     class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
@@ -607,21 +664,37 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
             {% endfor %}
         </div>
 
-        {# ── Direction row ────────────────────────────────────────── #}
-        <div class="relative mx-4">
-            <svg viewBox="{{ chart.view_box_direction }}" class="block h-auto w-full" aria-hidden="true">
-                {% for arrow in chart.arrows %}
+        {% comment %}
+        Direction row. HTML, not a stretched SVG: an arrow drawn inside a
+        viewBox that stretches sideways is squashed with it and points the
+        wrong way. Each arrow is a fixed-size glyph, placed at its block's
+        centre on the same x-scale as the wind figures above and rotated by
+        CSS about its own centre. The glyph points north at zero rotation, so
+        the rotation is the bearing — the arrowhead points at the source.
+        {% endcomment %}
+        <div
+            class="relative mx-4"
+            style="height: {{ chart.direction_height }}"
+            aria-hidden="true"
+            data-testid="{{ prefix }}-direction"
+        >
+            {% for arrow in chart.arrows %}
+                <svg
+                    viewBox="0 0 30 30"
+                    class="absolute top-0 h-full -translate-x-1/2 overflow-visible"
+                    style="left: {{ arrow.left }}; aspect-ratio: 1; transform: rotate({{ arrow.rotation }}deg)"
+                    data-testid="{{ prefix }}-arrow"
+                >
                     <path
-                        d="{{ arrow.d }}"
-                        transform="{{ arrow.transform }}"
+                        d="M 15 22 L 15 8 M 11.5 12 L 15 8 L 18.5 12"
                         fill="none"
                         class="stroke-chart-wind"
                         stroke-width="1.5"
                         stroke-linecap="round"
                         stroke-linejoin="round"
                     />
-                {% endfor %}
-            </svg>
+                </svg>
+            {% endfor %}
         </div>
 
         {% comment %}

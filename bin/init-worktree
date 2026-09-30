@@ -144,7 +144,12 @@ quiet_when_unchanged() {
         echo "init-worktree: manage.py $* failed (exit $status)" >&2
         exit "$status"
     fi
-    if printf '%s\n' "$output" | grep -qF "$no_op_sentence"; then
+    # A here-string, NOT `printf | grep -q`: under pipefail, grep -q exits at
+    # its first match, printf can then die of SIGPIPE mid-write, and the
+    # pipeline reports failure for a sentence that IS there. That race is
+    # what made test_it_says_nothing_when_everything_is_already_current
+    # flaky on CI, where the captured output is long enough to lose it.
+    if grep -qF -- "$no_op_sentence" <<<"$output"; then
         return 0
     fi
     printf '%s\n' "$output"
