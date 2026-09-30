@@ -1,8 +1,8 @@
 ---
 name: legs-not-slope-classes-on-the-map
-description: route_legs_core.js, routes-leg-climb/-descent, routes-transitions, routes-steep-shadow, point_from/point_to — a route on the map is its legs
+description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-09-28
+last-reviewed: 2026-09-30
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -55,6 +55,31 @@ route with none carries no extra line. And it says where the exposure is
 and which way it drops, which nothing else on the map does at the zoom a
 route is framed at: the legs say up or down, the rail's bank ribbon says
 which way the ground tilts only once a reader opens it.
+
+**2026-09-30.** The steep-ground shadow is off the map, with its
+source, layer and `steepRuns` / `steepShadowCollection`. At the zooms a
+route is read at, the offset line sat under the leg casing's edge and
+read as a thicker casing rather than as steep ground. Two replacements
+were tried beside the line and dropped: a comb of hachures, and filled
+wedges pointing down the slope (the Böschung / slopes mark of the
+swisstopo and Ordnance Survey legends). Neither read at route scale.
+
+In their place the slope classes return to the line itself, from z14
+(`ROUTE_SLOPE_MINZOOM` in `map.js`). Below z14 a route is its legs, as
+above. From z14 the leg lines stop and `routes-slope-line` /
+`routes-slope-unknown` (source `routes-slopes`, built by
+`slopeSegmentCollection` in `route_legs_core.js`) paint the route's core
+per 25 m segment in the six classes, in the slope raster's palette,
+with an unknown segment in grey. The leg casing and the numbered
+transitions stay at every zoom, so the legs remain countable; each
+segment carries its leg's `i`, so opening a leg on the rail dims the
+others' segments as it dims their lines. The climb dash does not carry
+over: a dash restarts on every two-point segment.
+
+The density argument below is about the zoom a route is FRAMED at,
+where the question is which part is the climb. z14 is past that: the
+reader has zoomed in on a stretch, and the question there is how steep
+it is. The legs answer the first zoom, the classes the second.
 
 ## Why
 

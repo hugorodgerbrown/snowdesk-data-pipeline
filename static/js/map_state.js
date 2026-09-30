@@ -228,11 +228,10 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-1019 also took SNOW-911's 'routes-cruxes', the fall-line
   // arrows' 'routes-fall-lines' and SNOW-964's two passage layers off the
   // map, and out of this list: the line carries no terrain marks.
-  // SNOW-1046's steep-ground shadow is the one exception; it sits beside
-  // the leg casing it is drawn under, and element [0] is unchanged.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
-    'routes-steep-shadow', 'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
+    'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
+    'routes-slope-line', 'routes-slope-unknown',
     'routes-transitions', 'routes-transition-labels',
     'routes-cursor-selection-casing', 'routes-cursor-selection', 'routes-cursor-point',
   ],

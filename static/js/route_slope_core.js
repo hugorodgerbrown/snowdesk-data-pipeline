@@ -15,16 +15,14 @@
  * an angle falls in.
  *
  * WHO READS IT NOW. SNOW-1017 took the slope-coloured line off the home
- * map — a route there draws as its legs (route_legs_core.js, and
- * docs/decisions/legs-not-slope-classes-on-the-map.md) — and the classes
- * return on SNOW-1019's leg rail. What map.js still reads from here is
- * the marks the record carries: the no-fall passages (through
- * route_legs_core.js's passageCollection, which builds on
- * `segmentFeatures`), the crux rings, the fall-line arrows, and the
- * terrain lines in words. The trip page (trip_map.js) still paints the
- * slope-coloured line with `segmentCollection` and `CLASSES`, and the
- * elevation profile (elevation_profile_core.js) its bands with
- * `classify`, so every export stays.
+ * map below z14 — a route there draws as its legs (route_legs_core.js,
+ * and docs/decisions/legs-not-slope-classes-on-the-map.md) — and from z14
+ * map.js paints the route's core in these classes again, through
+ * route_legs_core.js's slopeSegmentCollection, which builds on
+ * `segmentFeatures`, and `colourExpression`. The route detail sheet
+ * reads `summaryLines`; the trip page (trip_map.js) paints the
+ * slope-coloured line with `segmentCollection` and `colourExpression`;
+ * the rails and the elevation profile read `CLASSES` and `classify`.
  *
  * THREE STATES, AND THEY MUST NOT COLLAPSE INTO TWO:
  *
@@ -66,6 +64,7 @@
  *   FALL_LINE_TOKEN        — and the token that colour mirrors
  *   STEEP_THRESHOLD_DEG    — the angle a length is counted against
  *   classify(angle)        — a bucket index, or null for an unknown
+ *   colourExpression()     — the MapLibre `step` painting a segment by class
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
  *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
@@ -338,6 +337,23 @@
       });
     }
     return features;
+  }
+
+  /**
+   * The MapLibre `step` expression painting a segment by its slope class.
+   *
+   * Built from CLASSES rather than written out, so the trip page and the
+   * map page cannot drift: both read this one expression. A `step` takes
+   * the first colour, then a (stop, colour) pair per class after it — the
+   * stops are the CLASS INDICES `classify` assigns, not angles.
+   *
+   * @returns {Array<*>} The expression.
+   */
+  function colourExpression() {
+    /** @type {Array<*>} */
+    const expression = ['step', ['get', 'slope_class'], CLASSES[0].hex];
+    for (let i = 1; i < CLASSES.length; i += 1) expression.push(i, CLASSES[i].hex);
+    return expression;
   }
 
   /**
@@ -698,6 +714,7 @@
     FALL_LINE_TOKEN: FALL_LINE_TOKEN,
     STEEP_THRESHOLD_DEG: STEEP_THRESHOLD_DEG,
     classify: classify,
+    colourExpression: colourExpression,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
     cruxCollection: cruxCollection,

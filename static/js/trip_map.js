@@ -181,26 +181,15 @@
   }
 
   /**
-   * The MapLibre `step` expression painting a segment by its slope class.
-   *
-   * Built from the core's CLASSES rather than written out, so this page
-   * and the map page cannot drift: both read one list. A `step` takes the
-   * first colour, then a (stop, colour) pair per class after it — the
-   * stops are the CLASS INDICES the core assigns, not angles, because the
-   * angle was classified server-side and the expression only looks the
-   * colour up.
+   * The MapLibre `step` expression painting a segment by its slope class
+   * — the core's own, shared with the map page (SNOW-962).
    *
    * @returns {Array<*>|string} The expression, or the flat route colour
    *   when the core is unavailable and there is nothing to classify by.
    */
   function slopeColourExpression() {
     var core = self.pwaRouteSlopeCore;
-    if (!core) return ROUTE_LINE_COLOUR;
-    var expression = ['step', ['get', 'slope_class'], core.CLASSES[0].hex];
-    for (var i = 1; i < core.CLASSES.length; i += 1) {
-      expression.push(i, core.CLASSES[i].hex);
-    }
-    return expression;
+    return core ? core.colourExpression() : ROUTE_LINE_COLOUR;
   }
 
   /**

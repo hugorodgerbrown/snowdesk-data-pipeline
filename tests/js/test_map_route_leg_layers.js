@@ -1,7 +1,7 @@
 /*
  * tests/js/test_map_route_leg_layers.js — a saved route drawn as its legs
  * and transitions, wired through map.js (SNOW-1017, replacing SNOW-910's
- * slope-coloured line).
+ * slope-coloured line), and in slope classes again from z14.
  *
  * tests/js/test_route_legs_core.js covers the slicing, the numbering and
  * the opacity expression. What is left is the wiring, and four parts of
@@ -56,9 +56,6 @@ const SLOPE = {
   // The same steep segment carries a fall-line mark (the ground faces
   // 205°). Since SNOW-1019 the map draws none; the record keeps it.
   fall_lines: [{ i: 1, deg: 205 }],
-  // SNOW-1046: the steep segment banks 40° to the left, so it carries the
-  // one steep-ground shadow, on the left of the line.
-  banks: [2, -40, null],
 };
 
 /** Two legs over the sampled route: up the first segment, down the rest. */
@@ -244,20 +241,7 @@ function stubMapLibre() {
         setData: (data) => { sources.get(id).data = data; },
       });
     },
-    // Honours MapLibre's `beforeId`, so the Map's insertion order is the
-    // paint order and a layer-order assertion means what it says.
-    addLayer: (def, beforeId) => {
-      if (!beforeId || !layers.has(beforeId)) {
-        layers.set(def.id, def);
-        return;
-      }
-      const entries = [...layers.entries()];
-      layers.clear();
-      for (const [id, layer] of entries) {
-        if (id === beforeId) layers.set(def.id, def);
-        layers.set(id, layer);
-      }
-    },
+    addLayer: (def) => { layers.set(def.id, def); },
     removeLayer: (id) => layers.delete(id),
     removeSource: (id) => sources.delete(id),
     moveLayer: () => {},
@@ -518,6 +502,49 @@ describe('the leg layers', () => {
   });
 });
 
+describe('the slope classes from z14', () => {
+  it('take over from the leg lines at one zoom, with no gap and no overlap', () => {
+    for (const id of ['routes-leg-climb', 'routes-leg-descent']) {
+      expect(layers.get(id).maxzoom).toBe(14);
+    }
+    for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
+      expect(layers.get(id).minzoom).toBe(14);
+      expect(layers.get(id).source).toBe('routes-slopes');
+    }
+    // The casing is the legs' at every zoom, so the legs stay countable.
+    expect(layers.get('routes-leg-casing').maxzoom).toBeUndefined();
+  });
+
+  it('hold every segment of the owned sampled route, tagged with its leg', () => {
+    const data = sources.get('routes-slopes').data;
+
+    expect(data.features.map((f) => [f.properties.uuid, f.properties.i])).toEqual([
+      ['sampled-route', 1], ['sampled-route', 2], ['sampled-route', 2],
+    ]);
+  });
+
+  it('paint a known segment by its class and an unknown one grey', () => {
+    expect(layers.get('routes-slope-line').filter).toEqual(['!=', ['get', 'unknown'], true]);
+    expect(layers.get('routes-slope-line').paint['line-color']).toEqual(core.colourExpression());
+    expect(layers.get('routes-slope-unknown').filter).toEqual(['==', ['get', 'unknown'], true]);
+    expect(layers.get('routes-slope-unknown').paint['line-color']).toBe(core.UNKNOWN_COLOUR);
+  });
+
+  it('sit over the leg casing and under a pending share', () => {
+    const ids = [...layers.keys()];
+
+    expect(ids.indexOf('routes-slope-line')).toBeGreaterThan(ids.indexOf('routes-leg-casing'));
+    expect(ids.indexOf('routes-line-pending')).toBeGreaterThan(ids.indexOf('routes-slope-unknown'));
+  });
+
+  it('are reached by the routes overlay switch', () => {
+    for (const id of ['routes-slope-line', 'routes-slope-unknown']) {
+      expect(window.snowdeskMapState.overlayLayers.routes).toContain(id);
+      expect(layers.get(id).layout.visibility).toBe('visible');
+    }
+  });
+});
+
 describe('the transition markers', () => {
   it('mark legs − 1 transitions on the owned route', () => {
     const features = sources.get('route-transitions').data.features;
@@ -657,38 +684,6 @@ describe('tapping a legged route', () => {
   });
 });
 
-describe('the steep-ground shadow (SNOW-1046)', () => {
-  it('holds one run for the owned route and none for the pending share', () => {
-    const data = sources.get('routes-steep').data;
-
-    expect(data.features.map((f) => f.properties)).toEqual([
-      { uuid: 'sampled-route', i: 2, side: -1 },
-    ]);
-    expect(data.features[0].geometry.coordinates).toEqual(SLOPE.points.slice(1, 3));
-  });
-
-  it('offsets to the downhill side by the sign of the bank', () => {
-    const shadow = layers.get('routes-steep-shadow');
-
-    expect(shadow.source).toBe('routes-steep');
-    expect(shadow.paint['line-offset']).toEqual(['*', ['get', 'side'], 4.5]);
-    expect(shadow.paint['line-width']).toBe(3);
-  });
-
-  it('sits under every route stroke and is reached by the overlay switch', () => {
-    const ids = [...layers.keys()];
-    const shadow = ids.indexOf('routes-steep-shadow');
-
-    // Under the flat line's casing as well as the legs': a sampled route
-    // with no drawable legs is drawn by `routes-line` and still has runs.
-    expect(shadow).toBeLessThan(ids.indexOf('routes-line-casing'));
-    expect(shadow).toBeLessThan(ids.indexOf('routes-line'));
-    expect(shadow).toBeLessThan(ids.indexOf('routes-leg-casing'));
-    expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-steep-shadow');
-    expect(layers.get('routes-steep-shadow').layout.visibility).toBe('visible');
-  });
-});
-
 describe('opening a leg on the rail', () => {
   /** The newest opacity set on one layer. */
   const opacityOf = (id) => layers.get(id).paint['line-opacity'];
@@ -704,14 +699,14 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-descent')).toEqual(dimmed);
     expect(opacityOf('routes-leg-casing'))
       .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
-    expect(opacityOf('routes-steep-shadow'))
-      .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
+    expect(opacityOf('routes-slope-line')).toEqual(dimmed);
+    expect(opacityOf('routes-slope-unknown')).toEqual(dimmed);
 
     cursor.closeLeg();
+    expect(opacityOf('routes-slope-line')).toBe(1);
     expect(opacityOf('routes-leg-climb')).toBe(1);
     expect(opacityOf('routes-leg-descent')).toBe(1);
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
-    expect(opacityOf('routes-steep-shadow')).toBe(0.55);
     rail.state.cursor = null;
   });
 
@@ -748,11 +743,8 @@ describe('opening a leg on the rail', () => {
     expect(opacityOf('routes-leg-climb')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-descent')).toEqual(legsCore.dimOpacity(open, 1, 0.25));
     expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
-    expect(opacityOf('routes-steep-shadow')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
     // Painted at install, not patched afterwards.
-    expect(paintCalls.filter(
-      ([id]) => id.startsWith('routes-leg-') || id === 'routes-steep-shadow',
-    )).toEqual([]);
+    expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
 
     cursor.closeLeg();
     rail.state.cursor = null;

@@ -207,6 +207,19 @@ describe('segmentFeatures', () => {
   });
 });
 
+describe('colourExpression', () => {
+  it('steps through the six class colours by class index', () => {
+    expect(core.colourExpression()).toEqual([
+      'step', ['get', 'slope_class'], core.CLASSES[0].hex,
+      1, core.CLASSES[1].hex,
+      2, core.CLASSES[2].hex,
+      3, core.CLASSES[3].hex,
+      4, core.CLASSES[4].hex,
+      5, core.CLASSES[5].hex,
+    ]);
+  });
+});
+
 describe('segmentCollection', () => {
   it('flattens every sampled route into one collection', () => {
     const collection = core.segmentCollection({
