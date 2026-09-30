@@ -52,6 +52,13 @@ ROUTES_CHANGED = "Created mont-fort-backside.gpx (sampled)"
 # against a database that already exists.
 DATA_SEED_COMMANDS = ("loaddata", "import_resorts", "seed_test_data")
 
+# Stands in for the main repo's real SECRET_KEY: the value no worktree file
+# may ever contain.
+MAIN_REPO_SECRET = "main-repo-secret"  # noqa: S105 - a test marker, not a credential
+
+# What a worktree that has already been set up holds in place of a .env.
+EXISTING_SETTINGS = "[settings]\nSECRET_KEY=already-here\n"
+
 _UV_STUB = """#!/usr/bin/env bash
 # Records every invocation, then answers as the real manage.py command
 # would. "$4" is the manage.py subcommand: run python manage.py <cmd> ...
@@ -150,8 +157,9 @@ def sandbox(tmp_path: Path) -> Sandbox:
     (main / "README.md").write_text("placeholder\n")
     _git(main, "add", ".")
     _git(main, "commit", "-m", "initial")
-    # The two assets the script symlinks rather than builds.
-    (main / ".env").write_text("SECRET_KEY=x\n")
+    # The main repo's real settings, which a worktree must never be handed
+    # (SNOW-1028), and the one asset the script symlinks rather than builds.
+    (main / ".env").write_text(f"SECRET_KEY={MAIN_REPO_SECRET}\n")
     (main / ".venv").mkdir()
 
     worktree = tmp_path / "worktree"
@@ -236,13 +244,38 @@ class TestAFreshWorktree:
             "seed_test_data",
         ]
 
-    def test_links_env_and_venv_from_the_main_repo(self, sandbox: Sandbox) -> None:
+    def test_links_the_venv_from_the_main_repo(self, sandbox: Sandbox) -> None:
         """Slow-changing and identical everywhere, so one source of truth."""
         _run(sandbox, sandbox.worktree)
 
-        assert (sandbox.worktree / ".env").is_symlink()
-        assert (sandbox.worktree / ".env").resolve() == sandbox.main / ".env"
         assert (sandbox.worktree / ".venv").is_symlink()
+        assert (sandbox.worktree / ".venv").resolve() == sandbox.main / ".venv"
+
+    def test_it_writes_its_own_settings_rather_than_linking_the_main_env(
+        self, sandbox: Sandbox
+    ) -> None:
+        """SNOW-1028: a worktree gets a throwaway key, never the real ones.
+
+        The symlink this replaced put the main repo's API keys inside every
+        worktree, where the sandbox had to let any command read them for
+        Django to start. python-decouple reads ``settings.ini`` before
+        ``.env`` and stops at the first directory holding either, so this
+        file is also what stops it walking up to the main repo's ``.env``.
+        """
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert not (sandbox.worktree / ".env").exists()
+        assert not (sandbox.worktree / ".env").is_symlink()
+        header, key_line = (sandbox.worktree / "settings.ini").read_text().splitlines()
+        assert header == "[settings]"
+        name, _, value = key_line.partition("=")
+        assert name == "SECRET_KEY"
+        # 32 random bytes as hex. Django's own check warns under 50
+        # characters, and "%" would break ConfigParser's interpolation.
+        assert len(value) == 64
+        assert set(value) <= set("0123456789abcdef")
+        assert MAIN_REPO_SECRET not in value
 
     def test_builds_the_stylesheet_when_it_is_absent(self, sandbox: Sandbox) -> None:
         """output.css is a gitignored artefact, so each worktree builds its own."""
@@ -261,13 +294,14 @@ class TestAnExistingDatabase:
     def _already_bootstrapped(self, sandbox: Sandbox) -> None:
         """Put the worktree in the state every session after the first finds.
 
-        The symlinks matter as much as the database here. Without them the
-        script links both on the way past and counts two actions it did
-        not take on the database's behalf, which would make the quiet-run
-        and action-count assertions below measure the wrong thing.
+        The settings file and the symlink matter as much as the database
+        here. Without them the script makes both on the way past and counts
+        two actions it did not take on the database's behalf, which would
+        make the quiet-run and action-count assertions below measure the
+        wrong thing.
         """
         (sandbox.worktree / "db.sqlite3").write_text("")
-        (sandbox.worktree / ".env").symlink_to(sandbox.main / ".env")
+        (sandbox.worktree / "settings.ini").write_text(EXISTING_SETTINGS)
         (sandbox.worktree / ".venv").symlink_to(sandbox.main / ".venv")
 
     def test_the_schema_and_the_flag_manifest_are_brought_up_to_date(
@@ -378,7 +412,7 @@ class TestTheMainWorktree:
     """The refusal, which is about the symlinks rather than the database."""
 
     def test_it_refuses_and_runs_nothing(self, sandbox: Sandbox) -> None:
-        """Linking .env to itself is meaningless, so the script declines.
+        """Linking .venv to itself is meaningless, so the script declines.
 
         Asserted on the call log as well as the exit code: refusing but
         having already migrated something would be a worse outcome than
@@ -401,10 +435,59 @@ class TestSymlinkHandling:
         would make the script try to create a symlink that already exists
         and fail the whole run on the ``ln`` error.
         """
-        (sandbox.worktree / ".env").symlink_to(sandbox.main / "gone")
+        (sandbox.worktree / ".venv").symlink_to(sandbox.main / "gone")
 
         result = _run(sandbox, sandbox.worktree)
 
         assert result.returncode == 0, result.stderr
-        assert (sandbox.worktree / ".env").is_symlink()
-        assert not (sandbox.worktree / ".env").exists()
+        assert (sandbox.worktree / ".venv").is_symlink()
+        assert not (sandbox.worktree / ".venv").exists()
+
+
+class TestTheWorktreeSettingsFile:
+    """SNOW-1028 — the main repo's keys stay out of a worktree."""
+
+    def test_an_env_symlink_from_an_earlier_run_is_removed(
+        self, sandbox: Sandbox
+    ) -> None:
+        """Every worktree made before this change holds one.
+
+        Asserted on the main repo's file as well: removing the link must
+        delete a link, and never the file behind it.
+        """
+        (sandbox.worktree / ".env").symlink_to(sandbox.main / ".env")
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert not (sandbox.worktree / ".env").is_symlink()
+        assert (sandbox.worktree / "settings.ini").exists()
+        assert "removed the .env symlink" in result.stdout
+        assert (sandbox.main / ".env").read_text() == (
+            f"SECRET_KEY={MAIN_REPO_SECRET}\n"
+        )
+
+    def test_a_developers_own_env_file_is_left_alone(self, sandbox: Sandbox) -> None:
+        """A regular file was put there on purpose, so it is not ours.
+
+        No ``settings.ini`` is written beside it either: python-decouple
+        reads that one first, so writing it would silently override the
+        file the developer chose.
+        """
+        (sandbox.worktree / ".env").write_text("SECRET_KEY=chosen\n")
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert (sandbox.worktree / ".env").read_text() == "SECRET_KEY=chosen\n"
+        assert not (sandbox.worktree / "settings.ini").exists()
+
+    def test_an_existing_settings_file_is_never_rewritten(
+        self, sandbox: Sandbox
+    ) -> None:
+        """A new key on every session would sign every dev login out."""
+        (sandbox.worktree / "settings.ini").write_text(EXISTING_SETTINGS)
+
+        _run(sandbox, sandbox.worktree)
+
+        assert (sandbox.worktree / "settings.ini").read_text() == EXISTING_SETTINGS

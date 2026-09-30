@@ -110,11 +110,6 @@
       "mcp__*__list_key_value"
     ]
   },
-  "sandbox": {
-    "filesystem": {
-      "allowRead": ["./.env"]
-    }
-  },
   "hooks": {
     "PreToolUse": [
       {

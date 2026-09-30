@@ -7,8 +7,24 @@
 # worktree means manual setup before Django will boot.
 #
 # This script picks the right strategy per asset:
-#   - .env, .venv  → symlink to the main repo (slow-changing, identical
+#   - .venv        → symlink to the main repo (slow-changing, identical
 #                    across worktrees; one source of truth).
+#   - settings.ini → written here, holding a throwaway SECRET_KEY and
+#                    nothing else (SNOW-1028). NOT a symlink to the main
+#                    repo's .env, which is what this script made until then:
+#                    that put the real API keys and the mail password inside
+#                    every worktree, where the Claude Code sandbox had to be
+#                    told to let any command read them, or Django could not
+#                    start. A worktree needs none of them — every other
+#                    setting has a default, which is all CI runs on.
+#                    python-decouple looks for settings.ini BEFORE .env and
+#                    stops at the first directory that holds either, so this
+#                    file also keeps it from searching upward: a worktree
+#                    lives inside the main repo, and with nothing of its own
+#                    to find, decouple would walk up and load the main .env
+#                    anyway. A .env symlink left by an earlier run is
+#                    removed; a real .env file is a developer's own choice
+#                    and is left alone, with no settings.ini written over it.
 #   - db.sqlite3   → seeded from committed fixtures + dev users (guarantees
 #                    every worktree has the same data as CI; avoids drift that
 #                    breaks the SNOW-13 query-count baseline). Recipe, on the
@@ -93,6 +109,36 @@ link_if_missing() {
     fi
     ln -s "$main_repo/$name" "$name"
     echo "init-worktree: linked $name -> $main_repo/$name"
+    actions=$((actions + 1))
+}
+
+# Take the main repo's keys back out of a worktree made before SNOW-1028.
+#
+# Only ever a symlink: that is what this script used to create, and removing
+# one deletes a link, never the main repo's file behind it. A regular .env is
+# something a developer put there on purpose and is not ours to delete.
+unlink_env_symlink() {
+    if [ ! -L ".env" ]; then
+        return
+    fi
+    rm .env
+    echo "init-worktree: removed the .env symlink (worktrees run on settings.ini, without the main repo's keys)"
+    actions=$((actions + 1))
+}
+
+write_settings_if_missing() {
+    # A developer's own .env wins: decouple reads settings.ini first, so
+    # writing one beside it would silently override the file they chose.
+    if [ -e "settings.ini" ] || [ -e ".env" ]; then
+        return
+    fi
+    local key
+    # od rather than python or openssl: it is POSIX, so it is on the PATH
+    # before the virtualenv is, and it does not end in a pipe that pipefail
+    # would read as a failure the way `tr < /dev/urandom | head` does.
+    key=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    printf '[settings]\nSECRET_KEY=%s\n' "$key" > settings.ini
+    echo "init-worktree: wrote settings.ini with a throwaway SECRET_KEY"
     actions=$((actions + 1))
 }
 
@@ -212,7 +258,8 @@ build_css_if_missing() {
     actions=$((actions + 1))
 }
 
-link_if_missing .env
+unlink_env_symlink
+write_settings_if_missing
 link_if_missing .venv
 
 # Branch on the database's existence HERE rather than inside either
