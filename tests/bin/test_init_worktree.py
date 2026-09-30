@@ -569,3 +569,22 @@ class TestTheWorktreeSettingsFile:
         _run(sandbox, sandbox.worktree)
 
         assert (sandbox.worktree / "settings.ini").read_text() == EXISTING_SETTINGS
+
+    def test_a_broken_settings_symlink_is_not_written_through(
+        self, sandbox: Sandbox, tmp_path: Path
+    ) -> None:
+        """A redirect follows a dangling link and creates the file behind it.
+
+        A developer who manages ``settings.ini`` through a link whose
+        target is missing for now must not find the throwaway key written
+        into that target — outside the worktree — when it comes back.
+        """
+        target = tmp_path / "managed-settings.ini"
+        (sandbox.worktree / "settings.ini").symlink_to(target)
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert (sandbox.worktree / "settings.ini").is_symlink()
+        assert not target.exists()
+        assert "wrote settings.ini" not in result.stdout

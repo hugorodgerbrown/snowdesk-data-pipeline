@@ -145,8 +145,10 @@ write_settings_if_missing() {
     # ``-L`` as well as ``-e``, as in link_if_missing: a link whose target is
     # missing for now — a secret-manager mount not yet up — is still their
     # choice, and a settings.ini written today would go on overriding it
-    # after the target came back.
-    if [ -e "settings.ini" ] || [ -e ".env" ] || [ -L ".env" ]; then
+    # after the target came back. The same holds for settings.ini itself,
+    # and more sharply: the redirect below FOLLOWS a dangling link, so it
+    # would write the throwaway key into the file the link points at.
+    if [ -e "settings.ini" ] || [ -L "settings.ini" ] || [ -e ".env" ] || [ -L ".env" ]; then
         return
     fi
     local key
