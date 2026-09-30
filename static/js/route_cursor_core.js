@@ -22,9 +22,11 @@
  * server converts them before they reach this module, and `from` / `to`
  * are the first and last segment of the leg, both inclusive.
  *
- * This module owns no DOM and reads no globals. It holds three things —
- * the cursor `index`, the `openLeg`, the `selection` — clamps them, and
- * tells subscribers when they change.
+ * This module owns no DOM and reads no globals. It holds two things —
+ * the cursor `index` and the `openLeg` — clamps them, and tells
+ * subscribers when they change. It holds no selection: SNOW-1052 took
+ * band and passage selection off rail two, so every gesture there only
+ * moves the index.
  *
  * Clamping:
  *
@@ -33,19 +35,11 @@
  *     drag off the end of rail two cannot move the cursor on rail one or
  *     the map outside the open leg;
  *   - opening a leg pulls an out-of-range cursor into it rather than
- *     rejecting the leg; closing a leg leaves the cursor where it was;
- *   - a selection is clamped to the route and put in order, never to the
- *     open leg: a passage that runs past the leg's end is still the
- *     passage, and rail two clips it when it draws.
+ *     rejecting the leg; closing a leg leaves the cursor where it was.
  *
- * A selection carries `classIndex` (SNOW-1032): the slope class of a
- * selected band, an index into `pwaRouteSlopeCore.CLASSES`, so the map can
- * draw the stretch in the band's colour. Anything that is not an integer —
- * a passage, a band of unknown ground — is held as null.
- *
- * `null` is a real state for the index and the selection: no pointer over
- * any surface, nothing selected. A non-finite number is not — it is a
- * conversion bug in the surface that sent it, and it throws.
+ * `null` is a real state for the index: no pointer over any surface. A
+ * non-finite number is not — it is a conversion bug in the surface that
+ * sent it, and it throws.
  *
  * Exports (frozen `self.pwaRouteCursorCore`):
  *
@@ -53,10 +47,9 @@
  *
  * and the cursor it returns:
  *
- *   state()                 — the current frozen `{index, openLeg, selection}`
+ *   state()                 — the current frozen `{index, openLeg}`
  *   setIndex(index | null)
  *   openLeg(leg) / closeLeg()
- *   select({kind, from, to, classIndex?}) / clearSelection()
  *   subscribe(fn)           — returns the unsubscribe function
  */
 
@@ -72,14 +65,7 @@
    */
 
   /**
-   * @typedef {{kind: string, from: number, to: number, classIndex?: ?number}} Selection
-   *   A selected range in sample indices, both ends inclusive. `kind` names
-   *   what was pressed (`'band'`, `'passage'`, …) so a surface can draw it;
-   *   `classIndex` is a band's slope class, null for anything else.
-   */
-
-  /**
-   * @typedef {{index: ?number, openLeg: ?Leg, selection: ?Selection}} CursorState
+   * @typedef {{index: ?number, openLeg: ?Leg}} CursorState
    */
 
   /**
@@ -123,8 +109,6 @@
    *   setIndex: function(?number): void,
    *   openLeg: function(Leg): void,
    *   closeLeg: function(): void,
-   *   select: function(Selection): void,
-   *   clearSelection: function(): void,
    *   subscribe: function(function(CursorState): void): function(): void,
    * }}
    */
@@ -135,7 +119,7 @@
     const last = count - 1;
 
     /** @type {CursorState} */
-    let current = Object.freeze({ index: null, openLeg: null, selection: null });
+    let current = Object.freeze({ index: null, openLeg: null });
     /** @type {Set<function(CursorState): void>} */
     const subscribers = new Set();
 
@@ -144,15 +128,10 @@
      *
      * @param {?number} index The new cursor index.
      * @param {?Leg} leg The new open leg.
-     * @param {?Selection} selection The new selection.
      */
-    function commit(index, leg, selection) {
-      if (
-        index === current.index
-        && leg === current.openLeg
-        && selection === current.selection
-      ) return;
-      current = Object.freeze({ index: index, openLeg: leg, selection: selection });
+    function commit(index, leg) {
+      if (index === current.index && leg === current.openLeg) return;
+      current = Object.freeze({ index: index, openLeg: leg });
       subscribers.forEach((fn) => fn(current));
     }
 
@@ -175,7 +154,7 @@
      */
     function setIndex(index) {
       const next = index === null ? null : bound(toIndex(index, 'index'), current.openLeg);
-      commit(next, current.openLeg, current.selection);
+      commit(next, current.openLeg);
     }
 
     /**
@@ -198,42 +177,12 @@
 
       const next = Object.freeze({ ...leg, from: from, to: to });
       const index = current.index === null ? null : bound(current.index, next);
-      commit(index, next, current.selection);
+      commit(index, next);
     }
 
     /** Close the open leg. The cursor stays where it was. */
     function closeLeg() {
-      commit(current.index, null, current.selection);
-    }
-
-    /**
-     * Select a range, replacing any selection already held.
-     *
-     * Selecting the range already held — same kind, same ends — is a no-op
-     * whatever its `classIndex`.
-     *
-     * @param {Selection} selection What was pressed, in sample indices.
-     */
-    function select(selection) {
-      const a = clamp(toIndex(selection && selection.from, 'selection.from'), 0, last);
-      const b = clamp(toIndex(selection && selection.to, 'selection.to'), 0, last);
-      const from = Math.min(a, b);
-      const to = Math.max(a, b);
-      const held = current.selection;
-      if (held && held.kind === selection.kind && held.from === from && held.to === to) return;
-      const classIndex = Number.isInteger(selection.classIndex)
-        ? /** @type {number} */ (selection.classIndex)
-        : null;
-      commit(
-        current.index,
-        current.openLeg,
-        Object.freeze({ kind: selection.kind, from: from, to: to, classIndex: classIndex }),
-      );
-    }
-
-    /** Clear the selection. */
-    function clearSelection() {
-      commit(current.index, current.openLeg, null);
+      commit(current.index, null);
     }
 
     /**
@@ -257,8 +206,6 @@
       setIndex: setIndex,
       openLeg: openLeg,
       closeLeg: closeLeg,
-      select: select,
-      clearSelection: clearSelection,
       subscribe: subscribe,
     });
   }

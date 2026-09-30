@@ -3,7 +3,7 @@
  * both rails (static/js/route_cursor_core.js, SNOW-1016).
  *
  * Pure state: index arithmetic, clamping at the route's and the open leg's
- * ends, the selection, and when subscribers are called. The case most worth
+ * ends, and when subscribers are called. The case most worth
  * holding is the leg clamp — a drag off the end of rail two must not move
  * the cursor on rail one or the map outside the open leg, and nothing but a
  * test would notice it doing so on a leg that ends near the route's end.
@@ -23,8 +23,8 @@ beforeEach(() => {
 });
 
 describe('createRouteCursor', () => {
-  it('starts with no cursor, no leg and no selection', () => {
-    expect(cursor.state()).toEqual({ index: null, openLeg: null, selection: null });
+  it('starts with no cursor and no leg', () => {
+    expect(cursor.state()).toEqual({ index: null, openLeg: null });
   });
 
   it.each([0, -1, 2.5, NaN, undefined])('rejects a segment count of %s', (count) => {
@@ -108,56 +108,12 @@ describe('an open leg', () => {
   });
 });
 
-describe('the selection', () => {
-  it('is set, replaced and cleared', () => {
-    cursor.select({ kind: 'band', from: 10, to: 14 });
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: null });
-
-    cursor.select({ kind: 'passage', from: 40, to: 43 });
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 40, to: 43, classIndex: null });
-
-    cursor.clearSelection();
-    expect(cursor.state().selection).toBeNull();
-  });
-
-  it('is put in order and clamped to the route', () => {
-    cursor.select({ kind: 'band', from: 120, to: 95 });
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 95, to: 99, classIndex: null });
-  });
-
-  it('is not clamped to the open leg', () => {
-    cursor.openLeg({ from: 30, to: 59 });
-    cursor.select({ kind: 'passage', from: 55, to: 70 });
-    expect(cursor.state().selection).toEqual({ kind: 'passage', from: 55, to: 70, classIndex: null });
-  });
-
-  it('keeps an integer classIndex and holds anything else as null (SNOW-1032)', () => {
-    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 3 });
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: 3 });
-
-    cursor.select({ kind: 'band', from: 20, to: 24, classIndex: 2.5 });
-    expect(cursor.state().selection.classIndex).toBeNull();
-
-    cursor.select({ kind: 'passage', from: 40, to: 43 });
-    expect(cursor.state().selection.classIndex).toBeNull();
-  });
-
-  it('treats a re-select of the same range as a no-op, whatever its class', () => {
-    const fn = vi.fn();
-    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 1 });
-    cursor.subscribe(fn);
-
-    cursor.select({ kind: 'band', from: 10, to: 14, classIndex: 4 });
-
-    expect(fn).not.toHaveBeenCalled();
-    expect(cursor.state().selection.classIndex).toBe(1);
-  });
-
-  it('survives opening and closing a leg', () => {
-    cursor.select({ kind: 'band', from: 10, to: 14 });
-    cursor.openLeg({ from: 30, to: 59 });
-    cursor.closeLeg();
-    expect(cursor.state().selection).toEqual({ kind: 'band', from: 10, to: 14, classIndex: null });
+describe('no selection (SNOW-1052)', () => {
+  it('has no select or clearSelection and no selection key', () => {
+    expect(cursor.select).toBeUndefined();
+    expect(cursor.clearSelection).toBeUndefined();
+    cursor.setIndex(12);
+    expect('selection' in cursor.state()).toBe(false);
   });
 });
 
@@ -169,7 +125,7 @@ describe('subscribe', () => {
     cursor.setIndex(42);
 
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(fn).toHaveBeenCalledWith({ index: 42, openLeg: null, selection: null });
+    expect(fn).toHaveBeenCalledWith({ index: 42, openLeg: null });
   });
 
   it('is not called on subscription', () => {
@@ -181,14 +137,12 @@ describe('subscribe', () => {
   it('is not called for a set that changes nothing', () => {
     cursor.setIndex(42);
     cursor.openLeg({ from: 30, to: 59 });
-    cursor.select({ kind: 'band', from: 10, to: 14 });
     const fn = vi.fn();
     cursor.subscribe(fn);
 
     cursor.setIndex(42);
     cursor.setIndex(42.2);
     cursor.openLeg({ from: 30, to: 59, i: 2 });
-    cursor.select({ kind: 'band', from: 14, to: 10 });
     cursor.setIndex(90); // clamps to 59, which is a change
     cursor.setIndex(95); // clamps to 59 again, which is not
 
@@ -201,7 +155,6 @@ describe('subscribe', () => {
 
     cursor.setIndex(null);
     cursor.closeLeg();
-    cursor.clearSelection();
 
     expect(fn).not.toHaveBeenCalled();
   });
