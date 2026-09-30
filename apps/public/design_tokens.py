@@ -570,11 +570,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             # the pair: a slate climb, a fuchsia descent).
             Token("--color-route-rail-climb", "Rail leg — climb", "#64748b", None),
             Token("--color-route-rail-descent", "Rail leg — descent", "#c026d3", None),
-            # SNOW-1044: rail two's track row — the stretch blocks it
-            # draws fitted, and the dashed tick at each stretch boundary
-            # once it draws the wedges.
-            Token("--color-track-block", "Track row — stretch", "#ebe8e2", "#3a3834"),
-            Token("--color-track-tick", "Track row — tick", "#6e6b65", "#9a968e"),
         ),
     ),
     FoundationCategory(

@@ -259,26 +259,44 @@ class TestRailTwoShipsInsideRailOne:
             "leg-descent",
             "leg-ascend",
             "leg-descend",
-            "leg-length",
-            "leg-length-steep",
-            "track-gentle",
-            "track-skin",
-            "track-traverse",
-            "track-steep",
-            "track-bootpack",
+            "leg-over",
+            "leg-crosses-very",
+            "leg-crosses-extremely",
+            "leg-crosses-both",
             "track-kick-turn",
-            "readout-slope",
-            "readout-slope-bank",
-            "readout-slope-bank-left",
-            "readout-slope-bank-right",
+            "track-falls-left",
+            "track-falls-right",
+            "grade-ascent",
+            "grade-descent",
+            "grade-level",
+            "slope-flat",
+            "slope-moderate",
+            "slope-steep",
+            "slope-very-steep",
+            "slope-extremely-steep",
+            "readout-point",
             "readout-band",
             "readout-passage",
         } <= keys
         # SNOW-1024 retired the side-suffixed slope lines and the
         # uphill / downhill traverse terms; SNOW-1044 the attitude words,
-        # the zoom placeholder and the ▲/▼ figures line.
+        # the zoom placeholder and the ▲/▼ figures line. The 2026-09-30
+        # pass retired the track words (the row's blocks and the readout's
+        # leading word), the slope-and-bank readout and the subtitle's
+        # lengths.
         assert keys.isdisjoint(
             {
+                "leg-length",
+                "leg-length-steep",
+                "track-gentle",
+                "track-skin",
+                "track-traverse",
+                "track-steep",
+                "track-bootpack",
+                "readout-slope",
+                "readout-slope-bank",
+                "readout-slope-bank-left",
+                "readout-slope-bank-right",
                 "readout-slope-left",
                 "readout-slope-right",
                 "attitude-downhill-traverse",
@@ -294,10 +312,8 @@ class TestRailTwoShipsInsideRailOne:
             }
         )
 
-    def test_its_card_strings_read_as_the_ticket_words_them(
-        self, client: Client
-    ) -> None:
-        """SNOW-1044: the title's vertical, the subtitle and the readout."""
+    def test_its_card_strings_read_as_agreed(self, client: Client) -> None:
+        """The title's vertical and length, the subtitle and the readout."""
         rail = _rail(_home(client))
         block = re.search(
             r'<template id="route-rail-two-strings-template">(.*?)</template>',
@@ -314,15 +330,26 @@ class TestRailTwoShipsInsideRailOne:
 
         assert strings["leg-ascend"] == "Leg %(i)s — ascend %(m)s m"
         assert strings["leg-descend"] == "Leg %(i)s — descend %(m)s m"
-        assert strings["leg-length-steep"] == (
-            "%(length)s m · %(steep)s m steep terrain"
+        assert strings["leg-over"] == "%(title)s over %(km)s km"
+        assert strings["leg-crosses-both"] == (
+            "Crosses very steep, extremely steep terrain"
         )
-        assert strings["readout-slope-bank-right"] == (
-            "%(angle)s° slope · %(bank)s° bank, falls away right"
-        )
-        assert [strings[f"track-{word}"] for word in ("gentle", "skin")] == [
-            "Gentle",
-            "Skin",
+        # The readout: the track's own angle, then the ground's EAWS class.
+        assert strings["readout-point"] == "%(grade)s · %(slope)s"
+        assert [strings[f"grade-{way}"] for way in ("ascent", "descent", "level")] == [
+            "%(deg)s° ascent",
+            "%(deg)s° descent",
+            "level",
+        ]
+        assert [
+            strings[f"slope-{term}"]
+            for term in ("flat", "moderate", "steep", "very-steep", "extremely-steep")
+        ] == [
+            "flat",
+            "moderate slope",
+            "steep slope",
+            "very steep slope",
+            "extremely steep slope",
         ]
 
     def test_it_has_no_distance_scale(self, client: Client) -> None:
@@ -332,17 +359,92 @@ class TestRailTwoShipsInsideRailOne:
         assert "data-route-rail-two-ticks" not in rail
 
     def test_its_readout_sits_in_the_lane_cell(self, client: Client) -> None:
-        """Two columns, and the readout with its stem under the lane."""
+        """Two columns, and the readout left-aligned under the lane."""
         rail = _rail(_home(client))
 
         assert "data-route-rail-readout" not in rail
         assert "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]" in rail
         assert "data-route-rail-two-readout-box" in rail
-        assert "data-route-rail-two-stem" in rail
-        # The 44 px lane.
+        # It stays at the lane's left edge: no stem follows the cursor, and
+        # the script sets no position on it.
+        assert "data-route-rail-two-stem" not in rail
+        readout = re.search(r"<div[^>]*data-route-rail-two-readout(?!-)[^>]*>", rail)
+        assert readout is not None
+        assert {"inset-x-0", "text-left"} <= set(
+            re.search(r'class="([^"]*)"', readout.group(0)).group(1).split()  # type: ignore[union-attr]
+        )
+        # The 44 px lane the leg picker stands in; an open leg sizes it.
         lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
         assert lane is not None
         assert "h-11" in lane.group(0)
+
+    def test_its_title_has_the_cells_whole_width(self, client: Client) -> None:
+        """Under the eyebrow and the buttons, not beside them."""
+        rail = _rail(_home(client))
+
+        title = rail.index("data-route-rail-two-title")
+        assert rail.index("data-route-rail-two-close") < title
+        assert title < rail.index("data-route-rail-two-figures")
+
+
+@pytest.mark.django_db
+class TestTheDebugRailIsStaffOnly:
+    """Every figure behind a wedge, for staff, under rail two."""
+
+    def test_an_anonymous_visitor_gets_none(self, client: Client) -> None:
+        """No element, so the script fetches nothing."""
+        assert "data-route-rail-debug" not in _rail(_home(client))
+
+    def test_a_signed_in_user_gets_none(self, client: Client) -> None:
+        """Signed in is not staff (the factory's users are, unless told)."""
+        client.force_login(UserFactory.create(is_staff=False))
+
+        assert "data-route-rail-debug" not in _rail(_home(client))
+
+    def test_staff_get_the_rail_and_its_fields(self, client: Client) -> None:
+        """Ten fields, in the order the rail shows them."""
+        client.force_login(UserFactory.create(is_staff=True))
+        rail = _rail(_home(client))
+
+        assert re.findall(r'data-route-rail-debug-field="([^"]+)"', rail) == [
+            "sample",
+            "km",
+            "heights",
+            "aspect",
+            "angle",
+            "bearing",
+            "track",
+            "smoothed",
+            "bank",
+            "fall",
+        ]
+        labels = [
+            " ".join(label.split())
+            for label in re.findall(r"<dt[^>]*>(.*?)</dt>", rail, re.S)
+        ]
+        assert labels == [
+            "Sample",
+            "Along route",
+            "Elevation",
+            "Slope aspect",
+            "Slope angle",
+            "Track direction",
+            "Track angle (50 m)",
+            "Track angle (125 m)",
+            "Banking",
+            "Track to Fall line",
+        ]
+
+    def test_it_reads_the_staff_terrain_table(self, client: Client) -> None:
+        """The URL the script fills with the open route's uuid."""
+        client.force_login(UserFactory.create(is_staff=True))
+        rail = _rail(_home(client))
+
+        template = reverse(
+            "public:route_terrain",
+            kwargs={"route_uuid": "00000000-0000-0000-0000-000000000000"},
+        )
+        assert f'data-url-template="{template}?format=json"' in rail
 
 
 @pytest.mark.django_db

@@ -7,11 +7,11 @@
  * zoom about an anchor between its two limits, the wedges one per segment
  * and the passage bars' least width (SNOW-1031), and the leg's profile and
  * figures on the sample axis — the same axis rail one places its legs on —
- * plus where the readout sits and a stretch's length to the nearest 25 m
- * (SNOW-1024). SNOW-1044 adds the track row: the words-or-wedges switch,
- * each word's threshold, the stretches' merge, the kick turns (measured on
+ * plus a stretch's length to the nearest 25 m (SNOW-1024). SNOW-1044 adds the track row: the empty-or-wedges switch,
+ * the ground's class, the kick turns (measured on
  * two canonical tours recorded by bin/record-rail-fixtures), the gradient
- * along the track, the card's steep length and the bank's side. SNOW-1032 adds the selection
+ * along the track, the card's very and extremely steep shares and the
+ * bank's side. SNOW-1032 adds the selection
  * box's minimum width. SNOW-1033 adds the leg picker's slots, the
  * nearest-range pick (the leg picker's, and rail two's band and passage
  * taps') and the opening motion's timeline.
@@ -216,16 +216,32 @@ describe('clip', () => {
 });
 
 describe('trackMode (SNOW-1044)', () => {
-  it('is words under 10 px a segment and wedges from 10 px up', () => {
+  it('is empty under 10 px a segment and wedges from 10 px up', () => {
     // 433 segments over 390 px: 0.9 px each.
-    expect(core.trackMode({ from: 0, to: 433 }, 390)).toBe('words');
-    expect(core.trackMode({ from: 0, to: 61 }, 600)).toBe('words');
+    expect(core.trackMode({ from: 0, to: 433 }, 390)).toBe('empty');
+    expect(core.trackMode({ from: 0, to: 61 }, 600)).toBe('empty');
     expect(core.trackMode({ from: 0, to: 60 }, 600)).toBe('wedges');
     expect(core.trackMode({ from: 0, to: 20 }, 600)).toBe('wedges');
   });
 
-  it('is words for a lane with no width', () => {
-    expect(core.trackMode({ from: 0, to: 10 }, 0)).toBe('words');
+  it('is empty for a lane with no width', () => {
+    expect(core.trackMode({ from: 0, to: 10 }, 0)).toBe('empty');
+  });
+});
+
+describe('rowsFor', () => {
+  it('gives the wedges their 44 px lane', () => {
+    expect(core.rowsFor('wedges')).toBe(core.ROWS);
+    expect(core.ROWS.height).toBe(44);
+  });
+
+  it('collapses the lane to the bands and the passages while the row is empty', () => {
+    const rows = core.rowsFor('empty');
+    expect(rows).toBe(core.ROWS_FITTED);
+    // Band 0–10, a 4 px gap, the no-fall bars 14–18: nothing held open.
+    expect(rows.bandTop + rows.bandHeight).toBe(10);
+    expect(rows.passageTop).toBe(14);
+    expect(rows.passageTop + rows.passageHeight).toBe(rows.height);
   });
 });
 
@@ -234,7 +250,7 @@ describe('resolveSpan', () => {
     const span = core.resolveSpan({ from: 0, to: 999 }, 390);
     expect(span).toBe(39);
     expect(core.trackMode({ from: 0, to: span }, 390)).toBe('wedges');
-    expect(core.trackMode({ from: 0, to: span + 1 }, 390)).toBe('words');
+    expect(core.trackMode({ from: 0, to: span + 1 }, 390)).toBe('empty');
   });
 
   it('is clamped to the leg', () => {
@@ -297,125 +313,70 @@ describe('bankGlyphs', () => {
   });
 });
 
-describe('segmentWord (SNOW-1044)', () => {
-  it('calls ground under 25° Gentle, or Skin on a climb', () => {
-    expect(core.segmentWord(24.9, 40, 5, false)).toBe('gentle');
-    expect(core.segmentWord(24.9, 40, 5, true)).toBe('skin');
-    expect(core.segmentWord(0, null, null, true)).toBe('skin');
+describe('slopeTerm', () => {
+  it('reads the EAWS slope-gradient classes, with flat under 5°', () => {
+    expect(core.slopeTerm(0)).toBe('flat');
+    expect(core.slopeTerm(4.9)).toBe('flat');
+    expect(core.slopeTerm(5)).toBe('moderate');
+    expect(core.slopeTerm(29.9)).toBe('moderate');
+    expect(core.slopeTerm(30)).toBe('steep');
+    expect(core.slopeTerm(34.9)).toBe('steep');
+    expect(core.slopeTerm(35)).toBe('very-steep');
+    expect(core.slopeTerm(39.9)).toBe('very-steep');
+    expect(core.slopeTerm(40)).toBe('extremely-steep');
+    expect(core.slopeTerm(62)).toBe('extremely-steep');
   });
 
-  it('calls ground of 25° or more with a bank of 20° or more a Traverse', () => {
-    expect(core.segmentWord(25, 20, 0, false)).toBe('traverse');
-    expect(core.segmentWord(35, -20, 0, true)).toBe('traverse');
-    expect(core.segmentWord(35, 19.9, 0, false)).toBe('steep');
-  });
-
-  it('calls ground of 25° or more with the fall line Steep', () => {
-    expect(core.segmentWord(25, 0, -24, false)).toBe('steep');
-    expect(core.segmentWord(40, -10, 10, true)).toBe('steep');
-  });
-
-  it('calls steep ground with an unknown bank Steep', () => {
-    expect(core.segmentWord(30, null, null, false)).toBe('steep');
-  });
-
-  it('calls a gradient of 25° or more on a climb Bootpack, before anything else', () => {
-    expect(core.segmentWord(30, 5, 25, true)).toBe('bootpack');
-    expect(core.segmentWord(40, 30, 26, true)).toBe('bootpack');
-    expect(core.segmentWord(30, 5, 24.9, true)).toBe('steep');
-    // Never on a descent, and never read from a falling gradient.
-    expect(core.segmentWord(30, 5, 30, false)).toBe('steep');
-    expect(core.segmentWord(30, 5, -30, true)).toBe('steep');
-  });
-
-  it('calls an unknown angle unknown', () => {
-    expect(core.segmentWord(null, 30, 30, true)).toBe('unknown');
-    expect(core.segmentWord(undefined, null, null, false)).toBe('unknown');
+  it('is null for an unknown angle', () => {
+    expect(core.slopeTerm(null)).toBeNull();
+    expect(core.slopeTerm(undefined)).toBeNull();
   });
 });
 
-describe('stretches (SNOW-1044)', () => {
-  /** @returns {number} Segments in a stretch. */
-  const size = (s) => s.to - s.from + 1;
-
-  /**
-   * Angles laid in runs: [[angle, count], …] from index 0.
-   *
-   * @param {Array<[number, number]>} runs
-   * @returns {Array<number>}
-   */
-  function laid(runs) {
-    return runs.flatMap(([angle, count]) => Array(count).fill(angle));
-  }
-
-  it('gives one stretch per run of one word, each 150 m or more', () => {
-    const angles = laid([[10, 8], [35, 10], [10, 6]]);
-    const leg = { from: 0, to: angles.length - 1, climbing: false };
-    expect(core.stretches(leg, angles, Array(24).fill(0), null)).toEqual([
-      { from: 0, to: 7, word: 'gentle' },
-      { from: 8, to: 17, word: 'steep' },
-      { from: 18, to: 23, word: 'gentle' },
-    ]);
+describe('trackGrade', () => {
+  it('reads whole degrees and the way the track goes', () => {
+    expect(core.trackGrade(-24.7)).toEqual({ deg: 25, way: 'descent' });
+    expect(core.trackGrade(7.7)).toEqual({ deg: 8, way: 'ascent' });
   });
 
-  it('merges a short run into its longer neighbour, and joins what then matches', () => {
-    // 10 gentle, 2 steep, 10 gentle: the 2 go into a gentle and all join.
-    const angles = laid([[10, 10], [35, 2], [10, 10]]);
-    const leg = { from: 0, to: 21, climbing: false };
-    expect(core.stretches(leg, angles, Array(22).fill(0), null)).toEqual([
-      { from: 0, to: 21, word: 'gentle' },
-    ]);
-    // 6 gentle, 3 steep, 9 traverse: the 3 go right, into the longer.
-    const mixed = laid([[10, 6], [35, 3], [35, 9]]);
-    const banks = [...Array(9).fill(0), ...Array(9).fill(30)];
-    expect(core.stretches({ from: 0, to: 17 }, mixed, banks, null)).toEqual([
-      { from: 0, to: 5, word: 'gentle' },
-      { from: 6, to: 17, word: 'traverse' },
-    ]);
+  it('calls a gradient that rounds to 0° level, either side of it', () => {
+    expect(core.trackGrade(0.4)).toEqual({ deg: 0, way: 'level' });
+    expect(core.trackGrade(-0.4)).toEqual({ deg: 0, way: 'level' });
   });
 
-  it('merges the shortest first', () => {
-    // 8 gentle, 5 steep, 1 gentle, 8 steep: the 1 goes first (into the
-    // 8 steep, the longer), then the 5 steep joins them.
-    const angles = laid([[10, 8], [35, 5], [10, 1], [35, 8]]);
-    expect(core.stretches({ from: 0, to: 21 }, angles, Array(22).fill(0), null)).toEqual([
-      { from: 0, to: 7, word: 'gentle' },
-      { from: 8, to: 21, word: 'steep' },
-    ]);
+  it('is null for an unknown gradient', () => {
+    expect(core.trackGrade(null)).toBeNull();
   });
+});
 
-  it('keeps every segment in one stretch, and none under 150 m', () => {
-    // A pseudo-random leg, deterministic.
-    let seed = 7;
-    const next = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const angles = Array.from({ length: 400 }, () => Math.floor(next() * 45));
-    const banks = Array.from({ length: 400 }, () => Math.floor(next() * 60) - 30);
-    const leg = { from: 20, to: 379, climbing: true };
-    const out = core.stretches(leg, angles, banks, null);
-    expect(out[0].from).toBe(20);
-    expect(out[out.length - 1].to).toBe(379);
-    out.forEach((s, i) => {
-      if (i) expect(s.from).toBe(out[i - 1].to + 1);
-      if (i) expect(s.word).not.toBe(out[i - 1].word);
-      expect(size(s)).toBeGreaterThanOrEqual(core.MIN_STRETCH_SEGMENTS);
+describe('steepShares', () => {
+  it('shares the leg between very steep (35–40°) and extremely steep (40°+)', () => {
+    const angles = [10, 30, 34.9, 35, 39.9, 40, 62, null];
+    expect(core.steepShares({ from: 0, to: 7 }, angles)).toEqual({
+      verySteep: 2 / 8,
+      extremelySteep: 2 / 8,
     });
   });
 
-  it('makes a leg shorter than 150 m one stretch', () => {
-    const angles = laid([[10, 2], [35, 3]]);
-    expect(core.stretches({ from: 0, to: 4 }, angles, Array(5).fill(0), null)).toEqual([
-      { from: 0, to: 4, word: 'steep' },
-    ]);
+  it('is zero for a leg with neither', () => {
+    expect(core.steepShares({ from: 0, to: 2 }, [10, 30, 34.9])).toEqual({
+      verySteep: 0,
+      extremelySteep: 0,
+    });
   });
 
-  it('reads the gradient for Bootpack on a climb', () => {
-    const angles = Array(12).fill(35);
-    const gradients = [...Array(6).fill(10), ...Array(6).fill(30)];
-    expect(core.stretches({ from: 0, to: 11, climbing: true }, angles, Array(12).fill(0), gradients))
-      .toEqual([
-        { from: 0, to: 5, word: 'steep' },
-        { from: 6, to: 11, word: 'bootpack' },
-      ]);
+  it('is null with no slope record or no known angle on the leg', () => {
+    expect(core.steepShares({ from: 0, to: 1 }, [])).toBeNull();
+    expect(core.steepShares({ from: 0, to: 1 }, null)).toBeNull();
+    expect(core.steepShares({ from: 0, to: 1 }, [null, null])).toBeNull();
+  });
+
+  it('finds 28 very steep and 19 extremely steep wedges on the last leg of the Col de la Chaux', () => {
+    const leg = chaux.legs[6];
+    const n = leg.to - leg.from + 1;
+    const shares = core.steepShares(leg, chaux.angles);
+    expect(Math.round(shares.verySteep * n)).toBe(28);
+    expect(Math.round(shares.extremelySteep * n)).toBe(19);
   });
 });
 
@@ -461,21 +422,6 @@ describe('the canonical tours (SNOW-1044)', () => {
   it('finds none on the Backside climb', () => {
     expect(kicksByLeg(backside)).toEqual({ 2: [] });
   });
-
-  it('cuts every leg into stretches of 150 m or more', () => {
-    for (const tour of [chaux, backside]) {
-      const profile = readProfile(tour.coordinates);
-      const gradients = core.segmentGradients(profile, tour.angles.length, tour.distance_m);
-      for (const leg of tour.legs) {
-        const out = core.stretches(leg, tour.angles, tour.banks, gradients);
-        expect(out[0].from).toBe(leg.from);
-        expect(out[out.length - 1].to).toBe(leg.to);
-        for (const s of out) {
-          if (out.length > 1) expect(s.to - s.from + 1).toBeGreaterThanOrEqual(6);
-        }
-      }
-    }
-  });
 });
 
 describe('segmentGradients (SNOW-1044)', () => {
@@ -493,6 +439,36 @@ describe('segmentGradients (SNOW-1044)', () => {
 
   it('is null throughout for a profile with no heights', () => {
     expect(core.segmentGradients(readProfile([]), 4, 100)).toEqual([null, null, null, null]);
+  });
+
+  it('stops the window at the leg’s ends, so a summit does not flatten its neighbours', () => {
+    // track(81) rises to its middle and falls: the top sits between
+    // segments 11 and 12 of 24.
+    const profile = readProfile(track(81));
+    const legs = [{ from: 0, to: 11 }, { from: 12, to: 23 }];
+    const open = core.segmentGradients(profile, 24, profile.distanceM);
+    const cut = core.segmentGradients(profile, 24, profile.distanceM, legs);
+    // Unclamped, the window either side of the top reaches over it.
+    expect(Math.abs(open[11])).toBeLessThan(Math.abs(open[2]) - 5);
+    expect(Math.abs(open[12])).toBeLessThan(Math.abs(open[21]) - 5);
+    // Clamped, the last segment up and the first down read their own leg.
+    expect(cut[11]).toBeCloseTo(cut[2], 6);
+    expect(cut[12]).toBeCloseTo(cut[21], 6);
+    // Mid-leg the figure does not move.
+    expect(cut[2]).toBeCloseTo(open[2], 9);
+    expect(cut[21]).toBeCloseTo(open[21], 9);
+  });
+
+  it('reads the first segment down from the Col de la Chaux as a descent of about 12°', () => {
+    const profile = readProfile(chaux.coordinates);
+    const n = chaux.angles.length;
+    const leg = chaux.legs[6];
+    const open = core.segmentGradients(profile, n, chaux.distance_m);
+    const cut = core.segmentGradients(profile, n, chaux.distance_m, chaux.legs);
+    // The window over the summit reads the 5.2 m drop in 25 m as 7°.
+    expect(open[leg.from]).toBeCloseTo(-6.9, 0);
+    expect(cut[leg.from]).toBeLessThan(-10);
+    expect(cut[leg.from]).toBeGreaterThan(-14);
   });
 
   it('is null where a height is missing', () => {
@@ -514,26 +490,6 @@ describe('segmentGradients (SNOW-1044)', () => {
     expect(out[5]).toBeNull();
     expect(out[2]).not.toBeNull();
     expect(out[9]).not.toBeNull();
-  });
-});
-
-describe('steepLength (SNOW-1044)', () => {
-  it('sums the segments of 30° or more at one segment’s share', () => {
-    const angles = [10, 30, 29.9, 45, null, 31];
-    expect(core.steepLength({ from: 0, to: 5 }, angles, 6, 150)).toBeCloseTo(75);
-    expect(core.steepLength({ from: 0, to: 2 }, angles, 6, 150)).toBeCloseTo(25);
-  });
-
-  it('is null with no slope record', () => {
-    expect(core.steepLength({ from: 0, to: 5 }, [], 6, 150)).toBeNull();
-    expect(core.steepLength({ from: 0, to: 5 }, null, 6, 150)).toBeNull();
-  });
-
-  it('is null when no angle on the leg is known, and zero when surveyed and gentle', () => {
-    // A route wholly outside terrain coverage sends angles that are all null.
-    expect(core.steepLength({ from: 0, to: 3 }, [null, null, null, null], 4, 100)).toBeNull();
-    expect(core.steepLength({ from: 0, to: 1 }, [10, null, 45, 50], 4, 100)).toBe(0);
-    expect(core.steepLength({ from: 1, to: 1 }, [10, null, 45, 50], 4, 100)).toBeNull();
   });
 });
 
@@ -621,28 +577,6 @@ describe('legProfile and legFigures', () => {
       ascent_m: null,
       descent_m: null,
     });
-  });
-});
-
-describe('readoutAnchor', () => {
-  it('left-aligns in the left quarter, starting at the line', () => {
-    expect(core.readoutAnchor(0, 400)).toEqual({ align: 'left', left: 0 });
-    expect(core.readoutAnchor(99, 400)).toEqual({ align: 'left', left: 99 });
-  });
-
-  it('centres on the line in the middle half, stepping at a quarter', () => {
-    expect(core.readoutAnchor(100, 400)).toEqual({ align: 'center', left: 100 });
-    expect(core.readoutAnchor(200, 400)).toEqual({ align: 'center', left: 200 });
-    expect(core.readoutAnchor(300, 400)).toEqual({ align: 'center', left: 300 });
-  });
-
-  it('right-aligns in the right quarter, ending at the line', () => {
-    expect(core.readoutAnchor(301, 400)).toEqual({ align: 'right', left: 301 });
-    expect(core.readoutAnchor(400, 400)).toEqual({ align: 'right', left: 400 });
-  });
-
-  it('left-aligns for a lane with no width', () => {
-    expect(core.readoutAnchor(10, 0).align).toBe('left');
   });
 });
 

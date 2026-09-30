@@ -14,6 +14,8 @@ which is precisely how the bug hid in the first place.
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from apps.routes.services.canonical import canonical_documents
@@ -128,6 +130,38 @@ class TestTheCorpusLegCounts:
             True,
             False,
         ]
+
+
+class TestATransitionSitsOnTheExtremum:
+    """A climb ends on its high point and a descent on its low point."""
+
+    @pytest.mark.parametrize("filename", sorted(EXPECTED_LEGS))
+    def test_no_point_near_a_transition_beats_it(self, filename: str) -> None:
+        """Within the smoothing window nothing is higher than a top.
+
+        Nor lower than a bottom. Read off the smoothed series alone, a
+        transition sat 9 to 50 m from the ground's own turning point and
+        a descent opened with segments that still climbed.
+        """
+        from apps.routes.services.legs import (
+            SMOOTHING_WINDOW_M,
+            _cumulative_distances,
+        )
+
+        points = _track(filename)
+        cumulative = _cumulative_distances(points)
+        legs = detect_legs(points)
+
+        for leg, following in itertools.pairwise(legs):
+            nearby = [
+                float(points[index][2])  # type: ignore[arg-type]
+                for index in range(leg.start + 1, following.end)
+                if abs(cumulative[index] - cumulative[leg.end]) <= SMOOTHING_WINDOW_M
+            ]
+            if leg.climbing:
+                assert leg.elevation_end == max(nearby)
+            else:
+                assert leg.elevation_end == min(nearby)
 
 
 class TestTheParameterPlateau:

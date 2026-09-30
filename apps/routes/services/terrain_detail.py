@@ -16,6 +16,8 @@ points. Nothing is re-sampled either.
 
 ## Where each figure comes from
 
+* ``ele_from_m`` / ``ele_to_m`` — the height at the segment's two
+  boundaries, the series ``track_gradient_deg`` is measured on (below).
 * ``angle_deg`` / ``aspect_deg`` — the stored segment, verbatim.
 * ``bearing_deg`` — the chord between the segment's two stored boundaries,
   the same measurement ``passages`` votes with.
@@ -108,6 +110,18 @@ ramifications, both recorded in that decision's consequences:
   good. It can be rejected here; it cannot be repaired, and a rule that
   would repair it applies to new uploads only.
 
+## The smoothing window stops at the leg's ends
+
+A leg (``apps.routes.services.legs``) turns on a summit or a low point, so
+a window reaching past it sums a descent with the climb behind it: the
+first segment down from the Col de la Chaux drops 5.2 m in 25 m, about 12
+degrees, and read 5.6 across the col. Each segment is therefore smoothed
+only with segments of its own leg — the legs the routes feed sends
+(``leg_wire.wire_legs`` over the terrain track). ``track_gradient_from``
+and ``track_gradient_to`` name the window that was used, so a reader can
+see which segments a figure stands on. A track with no legs keeps the
+whole window.
+
 ## An unknown segment keeps its track figures
 
 An unknown segment carries its reason, and ``angle_deg``, ``aspect_deg``,
@@ -125,10 +139,11 @@ from typing import Any
 
 from apps.core.geo import initial_bearing_deg
 from apps.routes.services.bank import bank_angle_deg
+from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.passages import fall_line_alignment
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 from apps.routes.services.slope_summary import segment_lengths_m
-from apps.routes.services.terrain_heights import boundary_heights
+from apps.routes.services.terrain_heights import boundary_heights, terrain_points
 
 # Half-width of the track-gradient smoothing window, in segments either
 # side. Two: five segments, about 125 m on a 25 m stride — enough to take
@@ -161,11 +176,15 @@ COLUMNS: tuple[str, ...] = (
     "i",
     "from_m",
     "length_m",
+    "ele_from_m",
+    "ele_to_m",
     "angle_deg",
     "aspect_deg",
     "bearing_deg",
     "track_gradient_deg",
     "track_gradient_rejected",
+    "track_gradient_from",
+    "track_gradient_to",
     "roll_deg",
     "fall_line",
     "unknown",
@@ -225,7 +244,8 @@ def terrain_detail(
     accepted = [
         None if bad else rise for rise, bad in zip(rises, rejected, strict=True)
     ]
-    gradients = _track_gradients(accepted, lengths, gradient_window)
+    windows = _gradient_windows(record, points or [], len(segments), gradient_window)
+    gradients = _track_gradients(accepted, lengths, windows)
 
     rows: list[dict[str, Any]] = []
     from_m = 0.0
@@ -247,6 +267,8 @@ def terrain_detail(
                 "i": index,
                 "from_m": round(from_m, _LENGTH_PRECISION),
                 "length_m": round(lengths[index], _LENGTH_PRECISION),
+                "ele_from_m": _rounded(elevations[index]),
+                "ele_to_m": _rounded(elevations[index + 1]),
                 "angle_deg": angle_deg,
                 "aspect_deg": aspect_deg,
                 "bearing_deg": _rounded(bearing_deg),
@@ -254,6 +276,8 @@ def terrain_detail(
                     None if rejected[index] else _rounded(gradients[index])
                 ),
                 "track_gradient_rejected": rejected[index],
+                "track_gradient_from": windows[index][0],
+                "track_gradient_to": windows[index][1],
                 "roll_deg": _rounded(
                     bank_angle_deg(angle_deg, aspect_deg, bearing_deg)
                 ),
@@ -392,10 +416,41 @@ def _steeper_than_ground(
     return math.degrees(math.atan(abs(rise_m) / length_m)) > angle_deg + tolerance_deg
 
 
+def _gradient_windows(
+    record: dict[str, Any],
+    points: list[list[float | None]],
+    count: int,
+    window: int,
+) -> list[tuple[int, int]]:
+    """Return the segments each segment's gradient is smoothed over.
+
+    ``window`` segments either side, stopped at the track's ends and at
+    the ends of the segment's own leg (see the module docstring).
+
+    Args:
+        record: The slope record.
+        points: The track it was sampled from.
+        count: The number of segments.
+        window: Half-width of the smoothing, in segments.
+
+    Returns:
+        One ``(first, last)`` pair per segment, both inclusive.
+
+    """
+    bounds = [(0, count - 1)] * count
+    for leg in wire_legs(terrain_points(points, record), record) or []:
+        for index in range(leg["from"], min(leg["to"], count - 1) + 1):
+            bounds[index] = (leg["from"], min(leg["to"], count - 1))
+    return [
+        (max(low, index - window), min(high, index + window))
+        for index, (low, high) in enumerate(bounds)
+    ]
+
+
 def _track_gradients(
     rises: list[float | None],
     lengths: list[float],
-    window: int,
+    windows: list[tuple[int, int]],
 ) -> list[float | None]:
     """Return the smoothed, signed along-track gradient of each segment.
 
@@ -403,7 +458,7 @@ def _track_gradients(
         rises: One height change per segment, None where unknown or
             rejected — either way it contributes nothing to any window.
         lengths: One along-track length per segment, in metres.
-        window: Half-width of the smoothing, in segments.
+        windows: The ``(first, last)`` segments each one is summed over.
 
     Returns:
         Degrees, positive climbing. None for a segment whose window holds
@@ -414,9 +469,7 @@ def _track_gradients(
     for index in range(len(lengths)):
         rise = 0.0
         run = 0.0
-        for neighbour in range(
-            max(0, index - window), min(len(lengths), index + window + 1)
-        ):
+        for neighbour in range(windows[index][0], windows[index][1] + 1):
             neighbour_rise = rises[neighbour]
             if neighbour_rise is None:
                 continue

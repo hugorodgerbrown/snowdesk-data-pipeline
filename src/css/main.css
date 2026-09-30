@@ -503,22 +503,6 @@
   --color-route-rail-climb:   #64748b;   /* slate-500                    */
   --color-route-rail-descent: #c026d3;   /* the route line's own fuchsia */
 
-  /* —— rail two's track row (SNOW-1044) ——
-     Fitted, the track row is a row of labelled blocks, one
-     per stretch of the leg (Gentle, Traverse, Steep, Skin,
-     Bootpack); zoomed in, the wedges, with a dashed tick at
-     each stretch boundary. The block is a neutral ground
-     for its word — text-1 on it — and deliberately not a
-     slope class or a leg colour: the words describe the
-     track, and the band strip above already carries the
-     steepness. The tick is the text-3 ink, a guide rather
-     than a mark. Consumed by .route-rail-two-track-block
-     and .route-rail-two-track-tick below, which also keeps
-     them out of Tailwind's tree-shaking.
-     ————————————————————————————————————————— */
-  --color-track-block: #ebe8e2;   /* warm neutral, a step below tag */
-  --color-track-tick:  #6e6b65;   /* text-3                         */
-
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;
@@ -789,11 +773,6 @@
   --color-status-success-text:#6ee7b7;
   --color-status-info-bg:     #1e2a4a;
   --color-status-info-text:   #93c5fd;
-
-  /* Rail two's track row (SNOW-1044): a step above the card, and
-     text-3's dark ink for the tick. */
-  --color-track-block: #3a3834;
-  --color-track-tick:  #9a968e;
 
   /* Info callout */
   --color-callout-info-bg:      #2a2825;                /* same as dark --color-card         */
@@ -1628,10 +1607,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 .route-rail-two-band:hover,
 .route-rail-two-passage:hover { opacity: 0.75; }
-/* Rail two's track row (SNOW-1044): the stretch blocks and the ticks
-   between them in wedges, both read-only — taps fall through to the lane. */
-.route-rail-two-track-block { fill: var(--color-track-block); }
-.route-rail-two-track-tick { stroke: var(--color-track-tick); }
 .route-rail-two-passage[data-selected="false"] { opacity: 0.85; }
 .route-rail-two-passage[data-selected="false"]:hover { opacity: 0.65; }
 

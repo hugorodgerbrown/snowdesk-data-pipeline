@@ -645,6 +645,17 @@ class TestRouteTerrainPage:
         assert lines[0] == list(COLUMNS)
         assert len(lines) - 1 == _segment_count(route)
 
+    def test_json_carries_the_same_rows_as_the_table(
+        self, staff_client: Client
+    ) -> None:
+        """One object per segment, keyed by the columns, for the debug rail."""
+        route = _sampled_route()
+        response = staff_client.get(_route_terrain_url(route), {"format": "json"})
+        assert response.status_code == 200
+        rows = response.json()["rows"]
+        assert len(rows) == _segment_count(route)
+        assert list(rows[0]) == list(COLUMNS)
+
     def test_unsampled_route_says_so(self, staff_client: Client) -> None:
         """A route with no record renders the page, not a table."""
         route = RouteFactory.create()

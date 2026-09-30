@@ -39,6 +39,7 @@ from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.legs import detect_legs
 from apps.routes.services.slope_segments import SAMPLE_STRIDE_M, stride_coordinates
+from apps.routes.services.terrain_detail import terrain_detail
 from apps.routes.services.terrain_heights import (
     ClimbFigures,
     boundary_heights,
@@ -381,7 +382,10 @@ class TestTheBacksideOnModelHeights:
         """Three legs: down, up, down.
 
         Measured on the committed record, on the merged terrain track:
-        574.3 m of descent, 260.4 m of ascent, then 1,321.4 m of descent.
+        574.3 m of descent, 274.6 m of ascent, then 1,321.4 m of descent.
+        The climb ends on the track's high point (``_snap_to_extrema``);
+        cut where the smoothed series turned, 39 m short of it, it read
+        260.4 m.
         """
         points, record = _canonical("mont-fort-backside")
 
@@ -389,7 +393,7 @@ class TestTheBacksideOnModelHeights:
 
         assert [leg.climbing for leg in legs] == [False, True, False]
         assert legs[0].descent_m == pytest.approx(574.3, abs=10)
-        assert legs[1].ascent_m == pytest.approx(260.4, abs=10)
+        assert legs[1].ascent_m == pytest.approx(274.6, abs=5)
         assert legs[2].descent_m == pytest.approx(1321.4, abs=10)
 
     def test_the_model_heights_cut_the_phantom_climb_from_the_totals(self) -> None:
@@ -407,6 +411,36 @@ class TestTheBacksideOnModelHeights:
 
         assert None not in record["heights"]
         assert len(record["heights"]) == len(record["points"])
+
+
+class TestTheSmoothingStopsAtTheLeg:
+    """The terrain table's gradient is summed inside one leg only."""
+
+    def test_no_window_reaches_into_another_leg(self) -> None:
+        """Every segment's window sits inside the leg that holds it."""
+        points, record = _canonical("mont-fort-col-de-la-chaux")
+        rows = terrain_detail(record, points)
+        assert rows is not None
+
+        for leg in wire_legs(terrain_points(points, record), record) or []:
+            for row in rows[leg["from"] : leg["to"] + 1]:
+                assert leg["from"] <= row["track_gradient_from"] <= row["i"]
+                assert row["i"] <= row["track_gradient_to"] <= leg["to"]
+
+    def test_the_first_segment_down_from_the_col_reads_as_the_descent_it_is(
+        self,
+    ) -> None:
+        """Leg 7 opens dropping 5.2 m in 25 m; across the col it read 5.6."""
+        points, record = _canonical("mont-fort-col-de-la-chaux")
+        rows = terrain_detail(record, points)
+        assert rows is not None
+        leg = (wire_legs(terrain_points(points, record), record) or [])[6]
+
+        first = rows[leg["from"]]
+
+        assert first["ele_to_m"] < first["ele_from_m"]
+        assert first["track_gradient_from"] == leg["from"]
+        assert first["track_gradient_deg"] < -10
 
 
 class TestChamonixAcrossTheCoverageEdge:

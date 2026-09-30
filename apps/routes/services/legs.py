@@ -74,6 +74,25 @@ likely to move the answer at the low edge than the high one. Re-measured
 They are keyword arguments, which is the mechanical proof that re-tuning
 costs nothing.
 
+## A transition sits ON the high or low point, not beside it
+
+The smoothed series finds WHICH turns are real; it does not say where they
+are. A 100 m boxcar average turns tens of metres before or after the ground
+does, so a transition read straight off it cut every canonical leg 9 to
+50 m away from its true summit or low point, by up to 13 m of height —
+and the first segments of a "descent" were still climbing. Measured on the
+four canonical tracks on terrain-model heights, 2026-09-30: all twelve
+transitions were off.
+
+So once the runs are settled each transition is SNAPPED onto the highest
+raw elevation (the end of a climb) or the lowest (the end of a descent)
+within ``window_m`` of where the smoothed series put it
+(``_snap_to_extrema``). The window is the smoothing's own half-width: the
+point that turned the average is inside it. A snap never crosses a
+neighbouring transition, so every run keeps at least one segment, and it
+can only lengthen a run's excursion, so nothing the merge settled comes
+undone.
+
 ## Sub-threshold runs are MERGED, never dropped
 
 The version this was prototyped from discarded them, and on one route the
@@ -391,6 +410,54 @@ def _merge_short_runs(
     return runs
 
 
+def _snap_to_extrema(
+    runs: list[list[int]],
+    elevations: list[float],
+    cumulative: list[float],
+    window_m: float,
+) -> list[list[int]]:
+    """Move each transition onto the high or low point it stands for.
+
+    The runs come from the SMOOTHED series, whose turning points sit tens
+    of metres from the ground's own (see the module docstring). Each
+    shared boundary is moved to the highest raw elevation within
+    ``window_m`` of it when the run before it climbs, and the lowest when
+    it descends; on a tie, the point nearest the original boundary.
+
+    Args:
+        runs: ``[start, end, sign]`` triples, boundaries shared.
+        elevations: Raw metres per point.
+        cumulative: Along-track distance per point.
+        window_m: How far either side of a boundary to look, in metres.
+
+    Returns:
+        The runs, covering exactly the same points, every run still at
+        least one segment long.
+
+    """
+    runs = [run[:] for run in runs]
+    for position in range(len(runs) - 1):
+        boundary = runs[position][1]
+        # Strictly inside the two runs the boundary separates, so neither
+        # collapses; the run before has already had its start snapped.
+        candidates = [
+            index
+            for index in range(runs[position][0] + 1, runs[position + 1][1])
+            if abs(cumulative[index] - cumulative[boundary]) <= window_m
+        ]
+        if not candidates:
+            continue
+        pick = max if runs[position][2] > 0 else min
+        extreme = pick(elevations[index] for index in candidates)
+        snapped = min(
+            (index for index in candidates if elevations[index] == extreme),
+            key=lambda index: abs(index - boundary),
+        )
+        runs[position][1] = snapped
+        runs[position + 1][0] = snapped
+    return runs
+
+
 def _bearing(start: list[float | None], end: list[float | None]) -> float:
     """Return the initial great-circle bearing from one point to another.
 
@@ -498,6 +565,7 @@ def detect_legs(
     cumulative = _cumulative_distances(points)
     smoothed = _smooth(elevations, cumulative, window_m)
     runs = _merge_short_runs(_runs(smoothed), elevations, threshold_m)
+    runs = _snap_to_extrema(runs, elevations, cumulative, window_m)
 
     return [
         _leg(points, cumulative, elevations, run, index)

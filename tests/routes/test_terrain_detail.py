@@ -278,6 +278,36 @@ class TestSmoothing:
             abs(r["track_gradient_deg"]) for r in raw
         )
 
+    def test_each_row_names_the_segments_it_was_smoothed_over(self) -> None:
+        """Two either side, stopped at the track's ends; one leg throughout."""
+        points = _plane_track(0.0, 30.0, 180.0)
+        record = _record(points, 30.0, 180.0)
+        rows = terrain_detail(record, points)
+        assert rows is not None
+        last = len(rows) - 1
+
+        assert [
+            (r["track_gradient_from"], r["track_gradient_to"]) for r in rows[:3]
+        ] == [
+            (0, 2),
+            (0, 3),
+            (0, 4),
+        ]
+        assert (rows[last]["track_gradient_from"], rows[last]["track_gradient_to"]) == (
+            last - 2,
+            last,
+        )
+
+    def test_a_window_of_zero_names_the_segment_alone(self) -> None:
+        """The raw gradient is the segment's own."""
+        points = _plane_track(0.0, 30.0, 180.0)
+        record = _record(points, 30.0, 180.0)
+        rows = terrain_detail(record, points, gradient_window=0)
+        assert rows is not None
+
+        for row in rows:
+            assert row["track_gradient_from"] == row["track_gradient_to"] == row["i"]
+
 
 class TestRejection:
     """A segment steeper than its ground is not a measurement of the track."""
@@ -420,6 +450,19 @@ class TestModelHeights:
         assert rows is not None
         for row in rows:
             assert row["track_gradient_deg"] == pytest.approx(30.0, abs=0.2)
+
+    def test_each_row_carries_the_heights_its_gradient_was_measured_on(self) -> None:
+        """The model's height at the segment's two boundaries."""
+        points = _plane_track(0.0, 30.0, 180.0)
+        record = _record(points, 30.0, 180.0)
+        model = [2000.0 + 10.0 * index for index in range(len(record["points"]))]
+        record["heights"] = model
+        rows = terrain_detail(record, points, gradient_window=0)
+        assert rows is not None
+
+        for row in rows:
+            assert row["ele_from_m"] == model[row["i"]]
+            assert row["ele_to_m"] == model[row["i"] + 1]
 
     def test_a_null_height_falls_back_to_the_track(self) -> None:
         """Where the model has no ground, the recorded elevation stands."""

@@ -576,6 +576,7 @@
         legs: legs,
         sampleCount: sampleCount,
         spanM: spanM,
+        uuid: current.uuid,
         onView: drawWindow,
         onResize: publishHeight,
       });
