@@ -118,7 +118,7 @@ cannot run an ALBINA or Météo-France ingest end to end.
 
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
-| `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | **intermittent** (re-probed 2026-09-30: roughly one request in three to `api.open-meteo.com` hangs at CONNECT until the 30 s timeout, the rest answer in under a second; SLF and npm never hang. A dry-run `fetch_weather` fails one or two locations per run. Re-save the pair in the policy and re-probe; if it persists it is the gateway's, not the policy's) |
+| `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | **intermittent, and not the policy's** (2026-09-30: roughly one request in three to `api.open-meteo.com` stalls until the client timeout, the rest answer in under a second; SLF and npm never stall. A dry-run `fetch_weather` fails one or two locations per run. Diagnosed after the pair was re-saved: `curl -v` shows the proxy answering `200 Connection Established` on every attempt, the stall is *after* the tunnel, and `__agentproxy/status` logs no failure for the host. The host resolves to one IP. So it is the egress gateway or the origin — most likely Open-Meteo's per-IP rate limit on a shared egress address — and no allowlist entry changes it) |
 | `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_URL`), the docs and terms | blocked |
 | `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
 | `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
@@ -153,7 +153,7 @@ from that function, not from a style URL, when a basemap changes.
 |---|---|---|
 | `semgrep.dev`, `*.semgrep.dev` | `tox -e sast` rule packs | open (re-probed 2026-09-30) |
 | `linear.app`, `*.linear.app` | `uploads.linear.app` — ticket attachment bodies | `uploads.` open |
-| `playwright.dev`, `*.playwright.dev` | `cdn.playwright.dev` — the Chromium build `tox -e e2e` fetches in `commands_pre` (`playwright install chromium`). The image ships build 1194; the pinned `playwright` package wants 1243, so without this host the e2e env cannot start | **blocked** (403, requested 2026-09-30) |
+| `playwright.dev`, `*.playwright.dev` | `cdn.playwright.dev` — the Chromium build `tox -e e2e` fetches in `commands_pre` (`playwright install chromium`). The image ships build 1194; the pinned `playwright` package wants 1243, so without this host the e2e env cannot start | open (requested and applied 2026-09-30; `tox -e e2e` then passed 13/13 from a cloud session) |
 
 ### Competitor scan (`docs/competitors.md`)
 
@@ -187,8 +187,9 @@ listings for version history instead.
 
 ### Paste-ready
 
-The 83 entries above, one per line, in the same group order — 81 applied
-on 2026-09-29 (the MaxMind R2 host in a second pass the same day, after
+The 83 entries above, one per line, in the same group order — all
+applied: the `playwright.dev` pair on 2026-09-30, the other 81 on
+2026-09-29 (the MaxMind R2 host in a second pass the same day, after
 review caught the redirect):
 
 ```text
@@ -386,7 +387,8 @@ asked for.
 A session ran the whole default `tox` envlist, `sast`, `audit`, the dev
 server, both seed commands, dry-run fetches from all three providers and
 `npm run lh`. One host was blocked at CONNECT, and the block takes the
-whole `e2e` env with it.
+whole `e2e` env with it. Applied the same day; `tox -e e2e` then passed
+in the same session, 13 of 13, with the browser fetched from the CDN.
 
 | Domain | Why it matters |
 |---|---|
