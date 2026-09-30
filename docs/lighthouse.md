@@ -2,7 +2,7 @@
 name: lighthouse
 description: Lighthouse CI budgets and the npm run lh local audit under config.settings.perf; checklist for new public pages
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-09-30
 ---
 
 # Lighthouse CI — accessibility, SEO, performance, best-practices
@@ -22,7 +22,14 @@ Mobile preset by default (no desktop override), 3 runs per URL.
 
 ## Run locally — `npm run lh`
 
-Requires Chrome/Chromium on the host. The script:
+Requires Chrome/Chromium on the host — chrome-launcher honours
+`CHROME_PATH`, else looks for `google-chrome` or `chromium` on `PATH`. In
+a Claude Code cloud session `bin/setup-remote-env` links the image's
+Playwright Chromium to `/usr/local/bin/chromium`, so nothing needs
+setting. Chrome is launched with `--no-sandbox` (`collect.settings.chromeFlags`
+in `lighthouserc.json`): a cloud session runs as root, and Chromium refuses
+to start as root without it. The flag changes nothing for a localhost audit
+on a developer machine or a GitHub runner. The script:
 
 1. Runs `bin/minify-js` (SNOW-622), which minifies `static/js/*.js` **in
    place**. Before this, the audit measured ~23,000 lines of unminified
