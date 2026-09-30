@@ -1585,14 +1585,15 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    the browser must not take a touch on it as a page scroll or a zoom:
    `touch-action: none` hands every pointer to the script. A press on a
    band or a passage bar moves the cursor there; nothing is selected
-   (SNOW-1052 removed the `data-selected` rules with the selection). */
+   (SNOW-1052 removed the `data-selected` rules with the selection). A
+   press or a drag reads a point, so the pointer is a crosshair rather
+   than a grab hand, and a band or bar has no hover of its own. */
 .route-rail-two-lane {
     touch-action: none;
-    cursor: grab;
+    cursor: crosshair;
     user-select: none;
 }
-.route-rail-two-lane:active { cursor: grabbing; }
-/* The empty row (SNOW-1024) holds no leg, so there is nothing to grab. */
+/* The empty row (SNOW-1024) holds no leg, so there is nothing to read. */
 [data-route-rail-two][data-empty] .route-rail-two-lane { cursor: default; }
 /* A press on the lane focuses it; the ring is for keyboard focus only. */
 .route-rail-two-lane:focus:not(:focus-visible) { outline: none; }
@@ -1600,14 +1601,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
 }
-.route-rail-two-band,
-.route-rail-two-passage {
-    cursor: pointer;
-    transition: opacity 120ms ease-out;
-}
-.route-rail-two-band:hover,
-.route-rail-two-passage:hover { opacity: 0.75; }
-
 /* —— Rail two's leg picker (SNOW-1033) ——————————
    static/js/route_rail_two.js lays one <button class="route-rail-two-leg">
    per leg over the empty lane, marked `data-climbing` like rail one's leg
