@@ -626,7 +626,12 @@
       },
     );
     setView(c.placeView(leg, c.openingSpan(leg), leg.from));
-    layoutLane();
+    // One open leg swapped straight for another can change the card's
+    // height with the row already open: the lane's rows (18 px with no
+    // wedges, 44 px with them), the subtitle's line, a title that wraps.
+    var heightBefore = row.hidden ? 0 : rowHeight();
+    var subtitled = !figuresEl.hidden;
+    var relaid = layoutLane();
 
     var figures = c.legFigures(legLine, leg, ctx.sampleCount, ctx.spanM);
     titleEl.textContent = legTitle(leg, figures);
@@ -646,7 +651,8 @@
     }
     if (legsEl) legsEl.hidden = true;
     row.hidden = false;
-    if (changed && !quiet && ctx.onResize) ctx.onResize();
+    var reshaped = relaid || !figuresEl.hidden !== subtitled || rowHeight() !== heightBefore;
+    if ((changed || reshaped) && !quiet && ctx.onResize) ctx.onResize();
   }
 
   /**

@@ -754,6 +754,50 @@ describe('the rows (SNOW-1019, SNOW-1024)', () => {
     expect(onResize).toHaveBeenCalledTimes(opened + 2);
   });
 
+  it('tells the map when one open leg is swapped for another of a different height', () => {
+    const { cursor, onResize } = attach();
+    // Leg 3 fitted is 18 px; leg 2 draws its wedges at 44 px.
+    cursor.openLeg(LEGS[2]);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[1]);
+    expect(lane.style.height).toBe('44px');
+    expect(onResize).toHaveBeenCalledTimes(opened + 1);
+
+    cursor.openLeg(LEGS[2]);
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened + 2);
+  });
+
+  it('tells the map nothing when the swapped leg is the same height', () => {
+    const { cursor, onResize } = attach();
+    // Legs 1 and 3 are both too long for wedges, and neither has a subtitle.
+    cursor.openLeg(LEGS[0]);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[2]);
+
+    expect(lane.style.height).toBe('18px');
+    expect(onResize).toHaveBeenCalledTimes(opened);
+  });
+
+  it('tells the map when the swapped leg gains or loses its subtitle line', () => {
+    // Very steep ground in leg 1 only: it has a subtitle, leg 3 has none.
+    const angles = ANGLES.slice();
+    angles[10] = 37;
+    const { cursor, onResize } = attach({ angles });
+    cursor.openLeg(LEGS[0]);
+    expect(figures.hidden).toBe(false);
+    const opened = onResize.mock.calls.length;
+
+    cursor.openLeg(LEGS[2]);
+    expect(figures.hidden).toBe(true);
+    expect(onResize).toHaveBeenCalledTimes(opened + 1);
+
+    cursor.openLeg(LEGS[0]);
+    expect(onResize).toHaveBeenCalledTimes(opened + 2);
+  });
+
   it('opens a short leg at 44 px, and hands the lane back to the picker on close', () => {
     const { cursor } = attach();
 
