@@ -20,8 +20,8 @@
  *   - THE SELECTION. Opening a leg on the rail dims the others through the
  *     cursor; closing it has to restore them, or the map stays dimmed
  *     after the rail has gone.
- *   - THE CURSOR (SNOW-1019). A selection and the cursor index are drawn
- *     on the line from the same subscription, and a pointer on the open
+ *   - THE CURSOR (SNOW-1019). The cursor index is drawn on the line from
+ *     the same subscription, and a pointer on the open
  *     route's line writes the index back — a tap there opening the leg it
  *     lands in rather than re-running the first tap's framing.
  *
@@ -836,33 +836,17 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     const ids = [...layers.keys()];
     const routeLayers = window.snowdeskMapState.overlayLayers.routes;
 
-    for (const id of [
-      'routes-cursor-selection-casing', 'routes-cursor-selection', 'routes-cursor-point',
-    ]) {
-      expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-line-pending'));
-      expect(routeLayers).toContain(id);
-      expect(layers.get(id).layout.visibility).toBe('visible');
-    }
-    expect(layers.get('routes-cursor-point').type).toBe('circle');
+    const id = 'routes-cursor-point';
+    expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-line-pending'));
+    expect(routeLayers).toContain(id);
+    expect(layers.get(id).layout.visibility).toBe('visible');
+    expect(layers.get(id).type).toBe('circle');
   });
 
-  it('draws a selection as its stretch of line, and clears it', () => {
-    const cursor = openSampledRoute();
-
-    cursor.select({ kind: 'band', from: 1, to: 2 });
-    expect(sources.get('route-cursor-selection').data.features[0].geometry.coordinates)
-      .toEqual([[7.0, 46.005], [7.0, 46.01], [7.0, 46.015]]);
-
-    cursor.clearSelection();
-    expect(sources.get('route-cursor-selection').data.features).toEqual([]);
-    rail.state.cursor = null;
-  });
-
-  it('paints a band in its slope colour on the dark casing, a passage in ink (SNOW-1032)', () => {
-    expect(layers.get('routes-cursor-selection').paint['line-color'])
-      .toEqual(['coalesce', ['get', 'colour'], '#1a1916']);
-    expect(layers.get('routes-cursor-selection-casing').paint['line-color'])
-      .toEqual(['case', ['has', 'colour'], '#1a1916', '#ffffff']);
+  it('draws no selection stretch (SNOW-1052)', () => {
+    expect(sources.has('route-cursor-selection')).toBe(false);
+    expect(layers.has('routes-cursor-selection')).toBe(false);
+    expect(layers.has('routes-cursor-selection-casing')).toBe(false);
   });
 
   it('draws the cursor index as a dot on its segment, and hides it on null', () => {
@@ -907,18 +891,15 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('repaints the selection and dot when a basemap swap rebuilds the layers', async () => {
+  it('repaints the dot when a basemap swap rebuilds the layers', async () => {
     const cursor = openSampledRoute();
-    cursor.select({ kind: 'passage', from: 1, to: 1 });
     cursor.setIndex(1);
 
     for (const id of [...layers.keys()]) layers.delete(id);
     for (const id of [...sources.keys()]) sources.delete(id);
     for (const handler of mapStub.handlers.styledata || []) await handler();
 
-    expect(sources.get('route-cursor-selection').data.features).toHaveLength(1);
     expect(sources.get('route-cursor-point').data.features).toHaveLength(1);
-    cursor.clearSelection();
     cursor.setIndex(null);
     rail.state.cursor = null;
   });
