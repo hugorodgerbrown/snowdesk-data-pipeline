@@ -519,6 +519,47 @@ class TestTheWorktreeSettingsFile:
         assert not (sandbox.worktree / ".env").is_symlink()
         assert (sandbox.worktree / "settings.ini").exists()
 
+    def test_a_link_to_the_file_the_main_env_links_to_is_not_the_legacy_one(
+        self, sandbox: Sandbox, tmp_path: Path
+    ) -> None:
+        """The legacy link is known by its target string, not by where it ends.
+
+        The main repo's ``.env`` may itself be a link to a credentials
+        file. A developer who points a worktree's ``.env`` at that same
+        file reaches the same bytes by a link of their own, and a test
+        that followed both links could not tell the two apart.
+        """
+        shared = tmp_path / "credentials.env"
+        shared.write_text("SECRET_KEY=shared\n")
+        (sandbox.main / ".env").unlink()
+        (sandbox.main / ".env").symlink_to(shared)
+        (sandbox.worktree / ".env").symlink_to(shared)
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert (sandbox.worktree / ".env").is_symlink()
+        assert "removed the .env symlink" not in result.stdout
+        assert not (sandbox.worktree / "settings.ini").exists()
+
+    def test_a_developers_broken_env_symlink_still_counts_as_theirs(
+        self, sandbox: Sandbox, tmp_path: Path
+    ) -> None:
+        """A target that is missing for now is not a target that was never meant.
+
+        A secret-manager mount that is not up yet leaves the link broken.
+        A ``settings.ini`` written in that moment would go on overriding
+        the developer's file after the mount came back, since
+        python-decouple reads ``settings.ini`` first.
+        """
+        (sandbox.worktree / ".env").symlink_to(tmp_path / "not-mounted-yet.env")
+
+        result = _run(sandbox, sandbox.worktree)
+
+        assert result.returncode == 0, result.stderr
+        assert (sandbox.worktree / ".env").is_symlink()
+        assert not (sandbox.worktree / "settings.ini").exists()
+
     def test_an_existing_settings_file_is_never_rewritten(
         self, sandbox: Sandbox
     ) -> None:

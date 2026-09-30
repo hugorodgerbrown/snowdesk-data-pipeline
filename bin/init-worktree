@@ -122,15 +122,16 @@ link_if_missing() {
 # at a credentials file of their own — was put there on purpose and is not
 # ours to delete.
 #
-# Two tests, either sufficient. The target string is what `ln -s` wrote and
-# still matches when the main .env has since been deleted, which leaves the
-# link broken; -ef follows the link and matches when the same file is
-# reached by a differently spelled path.
+# Identified by its target STRING, which is exactly what `ln -s` wrote and
+# still matches when the main .env has since been deleted, leaving the link
+# broken. Deliberately not by the file it resolves to (-ef): the main .env
+# may itself be a link to a credentials file, and a developer who points a
+# worktree's .env at that same file has made their own link, not ours.
 unlink_env_symlink() {
     if [ ! -L ".env" ]; then
         return
     fi
-    if [ "$(readlink .env)" != "$main_repo/.env" ] && [ ! .env -ef "$main_repo/.env" ]; then
+    if [ "$(readlink .env)" != "$main_repo/.env" ]; then
         return
     fi
     rm .env
@@ -141,7 +142,11 @@ unlink_env_symlink() {
 write_settings_if_missing() {
     # A developer's own .env wins: decouple reads settings.ini first, so
     # writing one beside it would silently override the file they chose.
-    if [ -e "settings.ini" ] || [ -e ".env" ]; then
+    # ``-L`` as well as ``-e``, as in link_if_missing: a link whose target is
+    # missing for now — a secret-manager mount not yet up — is still their
+    # choice, and a settings.ini written today would go on overriding it
+    # after the target came back.
+    if [ -e "settings.ini" ] || [ -e ".env" ] || [ -L ".env" ]; then
         return
     fi
     local key
