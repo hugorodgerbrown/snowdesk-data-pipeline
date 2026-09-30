@@ -448,7 +448,21 @@ fi
 #
 # Both are skipped when the answer is already in place, so a warm container
 # pays nothing.
-chromium_bin=$(ls -d "${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}"/chromium-*/chrome-linux/chrome 2>/dev/null | head -1)
+#
+# Discovery is a glob loop rather than `$(ls … | head -1)`: under
+# `set -e`, an `ls` that matches nothing makes that assignment exit the
+# script, silently, before either step has run. A glob that matches nothing
+# stays literal, which the -x test rejects, and chromium_bin stays empty.
+chromium_bin=""
+for candidate in "${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}"/chromium-*/chrome-linux/chrome; do
+    if [ -x "$candidate" ]; then
+        chromium_bin=$candidate
+        break
+    fi
+done
+if [ -z "$chromium_bin" ]; then
+    echo "$LOG_PREFIX: WARNING — no Chromium under ${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}; skipping the browser setup" >&2
+fi
 ca_bundle=/root/.ccr/ca-bundle.crt
 nss_db="$HOME/.pki/nssdb"
 
