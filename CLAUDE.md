@@ -689,6 +689,7 @@ Read these when working in the relevant area:
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |
 | Météo-France live ingest operations | [`docs/meteofrance-live-ingest.md`](docs/meteofrance-live-ingest.md) |
+| Why a Claude Code cloud session never holds a provider API key (METEOFRANCE_API_KEY, WHAT3WORDS_API_KEY, MAXMIND_LICENSE_KEY; tests and seeds need none, `--local-mirror` in a session) | [`docs/decisions/cloud-sessions-hold-no-provider-credentials.md`](docs/decisions/cloud-sessions-hold-no-provider-credentials.md) |
 | SLF API historical-depth probe (2026-05-01) | [`docs/slf-api-history.md`](docs/slf-api-history.md) |
 | Why the SLF CAAML shape is detected per response, not assumed from the URL (detect_caaml_shape, CAAML_SHAPE_PER_REGION, customData.CH.weather, SLF_API_LEGACY_URL) | [`docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md`](docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md) |
 | Archive PDF URL patterns per provider | [`docs/archive_pdfs/`](docs/archive_pdfs/) |

@@ -2,7 +2,7 @@
 name: claude-code-hooks
 description: Claude Code hooks wired in .claude/settings.json — setup-remote-env, init-worktree, mark-worktree-cleanable, claude-hook-deny-command
 status: current
-last-reviewed: 2026-09-07
+last-reviewed: 2026-09-30
 ---
 
 # Claude Code hooks
@@ -18,7 +18,7 @@ the committed `Bash(bin/:*)` permission grant covers the path.
 
 | Event | Matcher | Script | What it does |
 |---|---|---|---|
-| `SessionStart` | — | [`bin/setup-remote-env`](../bin/setup-remote-env) | Provisions Python 3.14, `.venv`, `.env`, the dev database and `output.css` in a **cloud** session |
+| `SessionStart` | — | [`bin/setup-remote-env`](../bin/setup-remote-env) | Provisions Python 3.14, `.venv`, `.env`, the dev database, `output.css`, `sqlite3`, the pre-commit hook and a proxy-trusting Chromium in a **cloud** session |
 | `SessionStart` | — | [`bin/init-worktree`](../bin/init-worktree) | Seeds a fresh git worktree: symlinks `.env`/`.venv`, builds `db.sqlite3`, compiles the stylesheet. On later sessions, keeps the database migrated |
 | `SessionEnd` | — | [`bin/mark-worktree-cleanable`](../bin/mark-worktree-cleanable) | Tombstones the worktree if — and only if — it is clean and fully merged |
 | `PreToolUse` | `Bash` | [`bin/claude-hook-deny-command`](../bin/claude-hook-deny-command) | Refuses three prohibited commands before they run |
@@ -42,7 +42,10 @@ candidate is rejected — 3.14.0rc2 satisfied a naive `>= 3.14` test and left th
 session unable to `import django`), rebuilds `.venv` when it is missing or
 cannot import Django, seeds a throwaway `.env` with a random `SECRET_KEY`,
 verifies the result with `manage.py check`, then seeds `db.sqlite3` and builds
-`static/css/output.css`.
+`static/css/output.css`. The throwaway `.env` carries no provider API key,
+and none is added to the environment to make up for it: a cloud session
+never holds one, and nothing it is for needs one
+([decision](decisions/cloud-sessions-hold-no-provider-credentials.md)).
 
 The seed is `bin/init-worktree`'s recipe **copied**, step for step — migrate
 → `sync_waffle_flags` → region fixtures → `import_resorts` →
@@ -59,6 +62,26 @@ Idempotent: every step checks whether it is already done, so a warm container
 costs about a second. The database check asks whether region rows exist
 rather than whether the file does, because the `manage.py check` above has
 already created an empty SQLite file by connecting to it.
+
+Two further steps, added after a stress test of a cloud session on
+2026-09-30, close gaps the image leaves. It installs `sqlite3` (which
+`.claude/settings.json` pre-approves as though it existed) and the
+pre-commit hook into `.git/hooks` (a fresh clone has none, so a commit made
+in a cloud session used to skip ruff, djangofmt, gitleaks and the lint
+guards). Then it makes the image's pre-installed Chromium usable: a
+`/usr/local/bin/chromium` symlink so chrome-launcher — and therefore
+`npm run lh` — finds it without `CHROME_PATH`, and an import of the session
+proxy's CA bundle into Chromium's own NSS store at `~/.pki/nssdb`, which is
+the one trust store `NODE_EXTRA_CA_CERTS` and `SSL_CERT_FILE` do not reach.
+Without that import every request the browser makes to a real host fails
+with `ERR_CERT_AUTHORITY_INVALID`, and a screenshot of the map shows region
+outlines on a blank canvas. A Playwright script in a cloud session passes
+`executable_path="/usr/local/bin/chromium"`: the pinned package wants a
+newer build than the image carries, and its download host is on the
+network policy's request list in
+[`environment-network-allowlist.md`](environment-network-allowlist.md).
+Both steps are best-effort and warn rather than fail, like the seed and
+the stylesheet build.
 
 ### `bin/init-worktree`
 

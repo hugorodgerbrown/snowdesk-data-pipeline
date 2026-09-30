@@ -26,6 +26,11 @@
 #      merely its tests. Both are best-effort: a failure here warns but does
 #      not fail the script, because tox needs neither (pytest-django builds
 #      its own test database and the `js` env runs its own `npm ci`).
+#   7. Installs the two tools the image lacks (sqlite3, and the pre-commit
+#      hook into .git/hooks), and
+#   8. makes the pre-installed Chromium usable: on PATH as `chromium` for
+#      Lighthouse, and trusting the session proxy's CA so it can fetch a
+#      basemap tile. Both best-effort, same rule as 6.
 #
 # Why "final" and not merely ">= 3.14"
 # ------------------------------------
@@ -375,5 +380,128 @@ else
         echo "$LOG_PREFIX: WARNING — stylesheet build failed; pages will render unstyled" >&2
         echo "$css_log" | tail -10 >&2
         rm -f static/css/output.css
+    fi
+fi
+
+# ── 7. Tools the container image lacks ─────────────────────────────────────
+# Found by stress-testing a cloud session on 2026-09-30. Each is a real gap
+# with a real consequence, and each is cheap; none is worth failing the
+# session over, so every one warns and moves on.
+#
+# The package lists baked into the image are stale, so a bare `apt-get
+# install` 404s on the security pool. `apt-get update` is run once, only
+# when something needs installing; a third-party PPA in the image's sources
+# is refused by the proxy and apt carries on with the lists it has.
+apt_installed=0
+apt_install() {
+    local package=$1
+    if [ "$apt_installed" -eq 0 ]; then
+        apt-get update >/dev/null 2>&1 || true
+        apt_installed=1
+    fi
+    if apt-get install -y --no-install-recommends "$package" >/dev/null 2>&1; then
+        echo "$LOG_PREFIX: installed $package"
+    else
+        echo "$LOG_PREFIX: WARNING — could not install $package" >&2
+        return 1
+    fi
+}
+
+# sqlite3: .claude/settings.json pre-approves `sqlite3 db.sqlite3 …`, which
+# is only an approval of something that exists if the binary does.
+if ! command -v sqlite3 &>/dev/null; then
+    apt_install sqlite3 || true
+fi
+
+# The pre-commit hook. A cloud session is a fresh clone, so .git/hooks has
+# nothing in it and a commit made here skips ruff, djangofmt, gitleaks and
+# the four lint guards. CI's `tox -e djangofmt` backstops exactly one of
+# those; the rest are caught only at the hook.
+if [ ! -f ".git/hooks/pre-commit" ]; then
+    if .venv/bin/pre-commit install >/dev/null 2>&1; then
+        echo "$LOG_PREFIX: installed the pre-commit hook"
+    else
+        echo "$LOG_PREFIX: WARNING — could not install the pre-commit hook" >&2
+    fi
+fi
+
+# ── 8. Let the pre-installed Chromium work behind the proxy ────────────────
+# The image ships one Chromium under $PLAYWRIGHT_BROWSERS_PATH, and two
+# things stop it being useful out of the box.
+#
+# It trusts nothing the proxy signs. The session's TLS is re-terminated at
+# an agent proxy, and every toolchain has to trust /root/.ccr/ca-bundle.crt:
+# Node reads NODE_EXTRA_CA_CERTS, Python reads SSL_CERT_FILE, the system
+# store already holds it. Chromium ignores all three and consults its own
+# NSS database at ~/.pki/nssdb, so every request it makes to a real host —
+# a basemap tile, a bulletin PDF — dies with ERR_CERT_AUTHORITY_INVALID,
+# which is why a screenshot of the map page shows region outlines on a
+# blank canvas. certutil imports one certificate at a time and the bundle
+# holds ~150, so it is split first.
+#
+# Nothing finds it. chrome-launcher (Lighthouse) honours CHROME_PATH or
+# else looks for `chromium` on PATH; the Playwright package resolves a build
+# number the image does not carry and cdn.playwright.dev is not on the
+# network policy, so `playwright install` cannot fetch the one it wants. A
+# symlink under the name chrome-launcher searches for covers Lighthouse;
+# Playwright callers pass executable_path=/usr/local/bin/chromium.
+#
+# Both are skipped when the answer is already in place, so a warm container
+# pays nothing.
+#
+# Discovery is a glob loop rather than `$(ls … | head -1)`: under
+# `set -e`, an `ls` that matches nothing makes that assignment exit the
+# script, silently, before either step has run. A glob that matches nothing
+# stays literal, which the -x test rejects, and chromium_bin stays empty.
+chromium_bin=""
+for candidate in "${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}"/chromium-*/chrome-linux/chrome; do
+    if [ -x "$candidate" ]; then
+        chromium_bin=$candidate
+        break
+    fi
+done
+if [ -z "$chromium_bin" ]; then
+    echo "$LOG_PREFIX: WARNING — no Chromium under ${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}; skipping the browser setup" >&2
+fi
+ca_bundle=/root/.ccr/ca-bundle.crt
+nss_db="$HOME/.pki/nssdb"
+
+if [ -n "$chromium_bin" ] && [ ! -e /usr/local/bin/chromium ]; then
+    if ln -s "$chromium_bin" /usr/local/bin/chromium 2>/dev/null; then
+        echo "$LOG_PREFIX: linked /usr/local/bin/chromium -> $chromium_bin"
+    else
+        echo "$LOG_PREFIX: WARNING — could not link chromium onto PATH" >&2
+    fi
+fi
+
+if [ -n "$chromium_bin" ] && [ -f "$ca_bundle" ]; then
+    if ! command -v certutil &>/dev/null; then
+        apt_install libnss3-tools || true
+    fi
+    if command -v certutil &>/dev/null; then
+        mkdir -p "$nss_db"
+        if [ ! -f "$nss_db/cert9.db" ]; then
+            certutil -d "sql:$nss_db" -N --empty-password >/dev/null 2>&1 || true
+        fi
+        # Already imported: the nicknames below all start with "ccr-".
+        if ! certutil -d "sql:$nss_db" -L 2>/dev/null | grep -q '^ccr-'; then
+            split_dir=$(mktemp -d)
+            csplit -s -z -f "$split_dir/ca-" "$ca_bundle" \
+                '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
+            imported=0
+            for cert in "$split_dir"/ca-*; do
+                [ -f "$cert" ] || continue
+                if certutil -d "sql:$nss_db" -A -t "C,," \
+                    -n "ccr-$(basename "$cert")" -i "$cert" >/dev/null 2>&1; then
+                    imported=$((imported + 1))
+                fi
+            done
+            rm -rf "$split_dir"
+            if [ "$imported" -gt 0 ]; then
+                echo "$LOG_PREFIX: imported $imported proxy CA certificate(s) into Chromium's trust store"
+            else
+                echo "$LOG_PREFIX: WARNING — no proxy CA certificates imported; Chromium will fail TLS to real hosts" >&2
+            fi
+        fi
     fi
 fi
