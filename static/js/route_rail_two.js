@@ -59,11 +59,12 @@
  * comment has the axis): the strip of slope bands, the TRACK ROW — what
  * the track does on that ground (SNOW-1044) — and one bar per no-fall
  * passage;
- * then the cursor line, the selection's outline, and edge fades where more
- * leg lies beyond the window. The bands are `bandRuns`, one per run of
- * segments sharing a class, never merged. While a band or passage is
- * selected, the rest of the lane is dimmed under a card-coloured veil
- * (SNOW-1032). The leg's elevation profile was a fourth row
+ * then the cursor line and edge fades where more leg lies beyond the
+ * window. The bands are `bandRuns`, one per run of segments sharing a
+ * class, never merged. Nothing on the lane is selectable: SNOW-1052
+ * removed band and passage selection, with its outline, the veil that
+ * dimmed the rest of the lane and the stretch the map highlighted, so a
+ * band and a passage bar are read, never pressed. The leg's elevation profile was a fourth row
  * above the bands until SNOW-1019 removed it: it drew near-flat and added
  * nothing rail one's highlighted leg does not show. SNOW-1024 removed the
  * distance ticks and their labels: rail one's bracket already says where
@@ -91,44 +92,39 @@
  * the cursor. Rail two opens FITTED — the whole leg, however long — pans
  * by a two-finger drag, horizontal wheel or trackpad, and zooms by pinch, Ctrl/⌘-wheel,
  * the −/+ buttons, the −/+ keys and a double-tap. Panning stops at the
- * leg's ends; the next leg is opened on rail one. An index or a selection published from
- * elsewhere that lands outside the window CENTRES it there (a range wider
- * than the window aligns its start), so the cursor line and the leader
+ * leg's ends; the next leg is opened on rail one. An index published from
+ * elsewhere that lands outside the window CENTRES it there, so the cursor
+ * line and the leader
  * line ending on it sit mid-lane; rail two's own writes — its keys and
  * pointer — scroll the least distance instead, so stepping with the
  * arrows does not jump the view. After a pan or zoom the cursor index is
  * pulled into the window. Rail one draws a bracket over what the window shows from
  * `onView`, and presses inside the open leg call `centreOn`.
  *
- * PRESSES. A one-finger, pen or mouse press that moves past `DRAG_PX`
- * SCRUBS: the cursor follows it, which is what the idle hint "Drag to
- * read a point" promises — dragging reads points, releasing selects. A
- * touch drag used to pan, so the hint pointed at a gesture that never
- * read anything (SNOW-1024); since SNOW-1032's revision a mouse drag
- * scrubs too, and a mouse pans with the horizontal or Shift wheel or by
- * zooming. RELEASING a drag selects the band holding the cursor's index,
- * exactly — the band whose `from ≤ index ≤ to`, with no radius and no
- * snapping — wherever the pointer ends, the passage foot included; a
- * release onto the band already selected leaves it selected. Two fingers
- * pan and zoom together — the pinch keeps the sample under their midpoint
- * beneath it, so moving both fingers moves the window. A tap selects a
- * band or passage (`cursor.select`) — tapping the same one again clears
- * it — and moves the cursor there. The tap target is not the drawn width
- * (SNOW-1032): a tap in the passage row's foot picks the passage whose
- * extent is nearest within `TAP_RADIUS_PX` (`nearestRange`); anywhere
- * else it picks the STEEPEST band within `TAP_RADIUS_PX`
- * (`steepestBand`) — bands touch, so the nearest would always be the one
- * under the finger. The selection box is drawn at least `MIN_BOX_PX` wide (`selectionBox`); the readout and the map read
- * the band's real extent. A band's selection carries its `classIndex`,
- * which the map draws the stretch in. A second pointer starts a pinch and
- * cancels the press in progress, so a pinch never scrubs or selects.
+ * PRESSES ONLY MOVE THE CURSOR (SNOW-1052). A one-finger, pen or mouse
+ * press that moves past `DRAG_PX` SCRUBS: the cursor follows it, which is
+ * what the idle hint "Drag or tap to read a point" promises. A touch drag
+ * used to pan, so the hint pointed at a gesture that never read anything
+ * (SNOW-1024); since SNOW-1032's revision a mouse drag scrubs too, and a
+ * mouse pans with the horizontal or Shift wheel or by zooming. Releasing
+ * a drag leaves the cursor where the drag ended. A TAP puts the cursor on
+ * the segment under it (`indexAt`), and it stays there after the lift. A
+ * mouse hover moves it too. Until SNOW-1052 a tap or a drag's release
+ * also SELECTED a band or passage, and the readout then read the
+ * selection's length and class — "25 m 45–50°" — which the band's colour
+ * already says; the pick jumped sideways (the steepest band within the
+ * tap radius won), fired on every release, and left the readout stale
+ * while the cursor moved on. Two fingers pan and zoom together — the
+ * pinch keeps the sample under their midpoint beneath it, so moving both
+ * fingers moves the window. A second pointer starts a pinch and cancels
+ * the press in progress, so a pinch never scrubs.
  *
  * DOUBLE-TAP. A double-click, or two touch or pen lifts within
  * `DOUBLE_TAP_MS` and `DOUBLE_TAP_PX` with no drag between, zooms straight
  * to the widest span whose wedges draw (`resolveSpan`), centred on the
  * tap; the same on a view already at or inside it returns to the fitted
- * leg. The first tap's selection stands: the second tap of a pair does
- * not toggle it. A pair whose first press was on the leg picker, or
+ * leg. The first tap's cursor stands: the second tap of a pair does not
+ * move it. A pair whose first press was on the leg picker, or
  * within `DOUBLE_TAP_MS` of one, does not zoom: a double-click on a
  * picker segment opens the leg, fitted, and nothing more (SNOW-1033).
  *
@@ -139,9 +135,10 @@
  * slope". The track's angle is `segmentGradients`, read off the heights
  * rail one's profile draws (`trackGrade`). It names no track word, no
  * bank, no slope angle and no distance there:
- * the wedge and the band under the cursor already show them. With a
- * band or passage selected it is one line, the length to the nearest 25 m
- * then the class ("600 m under 30°"). With neither it offers a hint. The
+ * the wedge and the band under the cursor already show them. Inside a
+ * no-fall passage the line ends "· no-fall passage" (`readout-no-fall`),
+ * because the passage bar under the track row is only 4 px tall. With no
+ * cursor it offers a hint. The
  * text is always LEFT-ALIGNED at the lane's left edge and never follows
  * the cursor: it sat under its anchor until 2026-09-30, and moved with
  * every drag. The track row is
@@ -152,8 +149,8 @@
  *
  * KEYS. The lane is one `role="slider"` tab stop — leg 4 of the seed tour
  * alone has 59 bands, which would be 59 tab stops. ←/→ move the cursor
- * (Shift: ten samples), Home/End go to the leg's ends, Enter/Space
- * selects the band under the cursor, −/+ zoom.
+ * (Shift: ten samples), Home/End go to the leg's ends, −/+ zoom. Enter
+ * and Space selected the band under the cursor until SNOW-1052.
  *
  * Publishes (frozen `window.pwaRouteRailTwo`):
  *
@@ -182,17 +179,8 @@
   var WHEEL_ZOOM = 0.01;
   /** The width of the fade at an edge with more leg beyond it, in px. */
   var FADE_PX = 16;
-  /**
-   * How far beside a leg's segment on the picker, or a band or passage on
-   * an open leg, a tap still picks it, in px.
-   */
+  /** How far beside a leg's segment on the picker a tap still picks it, in px. */
   var TAP_RADIUS_PX = 22;
-  /** The narrowest selection box drawn, in px. */
-  var MIN_BOX_PX = 12;
-  /** How far above the passage bars a tap still counts as their row, px. */
-  var PASSAGE_ROW_SLACK_PX = 4;
-  /** The veil's opacity over the lane outside a selection. */
-  var DIM_OPACITY = '0.62';
   /**
    * The leg picker's coloured part inside its 44 px button, in px: the
    * `top-2.5 h-6` of `legButton`, which the motion shrinks onto the band.
@@ -217,7 +205,7 @@
     'two-lane-label': 'Slope and bank along %(leg)s',
     'two-value': '%(km)s km along the route',
     'two-placeholder': 'Select a route leg to view terrain',
-    'two-hint': 'Drag to read a point. Tap a band or passage to select it.',
+    'two-hint': 'Drag or tap to read a point.',
     'class-slope-gentle': 'under 30°',
     'class-slope-30': '30–35°',
     'class-slope-35': '35–40°',
@@ -237,8 +225,7 @@
     'slope-very-steep': 'very steep slope',
     'slope-extremely-steep': 'extremely steep slope',
     'readout-point': '%(grade)s · %(slope)s',
-    'readout-band': '%(length)s m %(class)s',
-    'readout-passage': 'No-fall passage · %(length)s m',
+    'readout-no-fall': '%(point)s · no-fall passage',
   });
   var interpolate = self.pwaStrings.interpolate;
 
@@ -502,18 +489,6 @@
    */
   function laneX(event) {
     return event.clientX - lane.getBoundingClientRect().left;
-  }
-
-  /**
-   * An event's y down the lane, in the lane's own units (`laneLayout`).
-   *
-   * @param {MouseEvent} event
-   * @returns {number}
-   */
-  function laneY(event) {
-    var rect = lane.getBoundingClientRect();
-    var scale = rect.height > 0 ? laneLayout().height / rect.height : 1;
-    return (event.clientY - rect.top) * scale;
   }
 
   /**
@@ -821,15 +796,15 @@
   }
 
   /**
-   * The part of a selection inside the open leg, or null.
+   * The part of a range (a passage) inside the open leg, or null.
    *
-   * @param {?{from: number, to: number}} selection
+   * @param {?{from: number, to: number}} range
    * @returns {?{from: number, to: number}}
    */
-  function inLeg(selection) {
-    if (!selection || !leg) return null;
-    var from = Math.max(selection.from, leg.from);
-    var to = Math.min(selection.to, leg.to);
+  function inLeg(range) {
+    if (!range || !leg) return null;
+    var from = Math.max(range.from, leg.from);
+    var to = Math.min(range.to, leg.to);
     return from <= to ? { from: from, to: to } : null;
   }
 
@@ -837,7 +812,7 @@
    * Follow the cursor: draw the open leg or show the empty row, and
    * scroll what changed into view.
    *
-   * @param {{index: ?number, openLeg: ?object, selection: ?object}} state
+   * @param {{index: ?number, openLeg: ?object}} state
    */
   function onState(state) {
     var previous = lastState;
@@ -886,10 +861,6 @@
     var bring = ownWrite ? c.ensureVisible : c.followView;
     if (state.index !== null && (fresh || !previous || previous.index !== state.index)) {
       setView(bring(leg, view, state.index, state.index));
-    }
-    var selected = inLeg(state.selection);
-    if (selected && (fresh || !previous || previous.selection !== state.selection)) {
-      setView(bring(leg, view, selected.from, selected.to));
     }
     draw();
     if (opening && from) animateOpen(opening, from);
@@ -1297,18 +1268,6 @@
     lane.appendChild(defs);
   }
 
-  /**
-   * Whether a range is the one the cursor holds selected.
-   *
-   * @param {string} kind
-   * @param {{from: number, to: number}} range
-   * @returns {boolean}
-   */
-  function isSelected(kind, range) {
-    var held = ctx.cursor.state().selection;
-    return !!held && held.kind === kind && held.from === range.from && held.to === range.to;
-  }
-
   /** The slope-band strip, one rect per run, unknown runs dashed. */
   function drawBands() {
     var c = core();
@@ -1329,11 +1288,9 @@
         height: String(rows.bandHeight),
         fill: 'var(' + token + ')',
         class: 'route-rail-two-band',
-        'data-select-kind': 'band',
         'data-from': String(band.from),
         'data-to': String(band.to),
         'data-class': unknown ? 'unknown' : String(band.classIndex),
-        'data-selected': isSelected('band', band) ? 'true' : 'false',
       };
       if (unknown) {
         attrs['fill-opacity'] = '0.35';
@@ -1442,65 +1399,17 @@
         rx: '1',
         fill: 'var(--color-text-1)',
         class: 'route-rail-two-passage',
-        'data-select-kind': 'passage',
         'data-from': String(passage.from),
         'data-to': String(passage.to),
-        'data-selected': isSelected('passage', passage) ? 'true' : 'false',
       }));
     });
   }
 
-  /**
-   * The veil over one side of the selection: the card's colour, so the
-   * rest of the lane recedes rather than greys.
-   *
-   * @param {number} x0 Its left edge, px.
-   * @param {number} x1 Its right edge, px.
-   * @param {string} side 'left' or 'right'.
-   */
-  function drawDim(x0, x1, side) {
-    if (x1 - x0 <= 0) return;
-    lane.appendChild(svgEl('rect', {
-      x: x0.toFixed(2),
-      y: '0',
-      width: (x1 - x0).toFixed(2),
-      height: String(laneLayout().height),
-      fill: 'var(--color-card)',
-      'fill-opacity': DIM_OPACITY,
-      'pointer-events': 'none',
-      'data-route-rail-two-dim': side,
-    }));
-  }
-
-  /**
-   * The veil either side of the selection, the selection's outline, the
-   * cursor line, and the edge fades.
-   */
+  /** The cursor line and the edge fades. */
   function drawMarks() {
     var c = core();
     var height = laneLayout().height;
     var state = ctx.cursor.state();
-    var selected = inLeg(state.selection);
-    var part = selected ? c.clip(selected, view) : null;
-    if (part) {
-      // The box is widened to be seen; the readout and the map read the
-      // range's real extent (SNOW-1032).
-      var box = c.selectionBox(part, view, width, MIN_BOX_PX);
-      drawDim(0, box.x, 'left');
-      drawDim(box.x + box.w, width, 'right');
-      lane.appendChild(svgEl('rect', {
-        x: box.x.toFixed(2),
-        y: '1',
-        width: box.w.toFixed(2),
-        height: String(height - 2),
-        rx: '2',
-        fill: 'none',
-        stroke: 'var(--color-text-1)',
-        'stroke-width': '1.5',
-        'pointer-events': 'none',
-        'data-route-rail-two-selection': '',
-      }));
-    }
     if (state.index !== null && state.index + 1 > view.from && state.index < view.to) {
       var cx = c.xOf(state.index + 0.5, view, width).toFixed(2);
       lane.appendChild(svgEl('line', {
@@ -1552,22 +1461,6 @@
   }
 
   /**
-   * A selected band's slope class: the one its selection carries
-   * (SNOW-1032), else the matching band's, else its first sample's. A
-   * band is one class throughout, so any of the three reads the same.
-   *
-   * @param {{from: number, to: number, classIndex?: ?number}} selection
-   * @returns {?number}
-   */
-  function selectedClass(selection) {
-    if (typeof selection.classIndex === 'number') return selection.classIndex;
-    var match = bands.find(function (b) {
-      return b.from === selection.from && b.to === selection.to;
-    });
-    return match ? match.classIndex : classify(angles()[selection.from]);
-  }
-
-  /**
    * The readout's line for one segment: the track's own angle and the
    * ground's class — "25° descent · steep slope". The track's angle is
    * the gradient the profile draws (`trackGrade`); the class is
@@ -1592,48 +1485,33 @@
   }
 
   /**
-   * The readout: the selection's length and class, under the selection;
-   * or the terrain and its figures, under the cursor; or a hint.
-   * `aria-valuetext` carries the same lines.
+   * Whether a no-fall passage holds a sample index.
+   *
+   * @param {number} index
+   * @returns {boolean}
+   */
+  function inPassage(index) {
+    return passages.some(function (p) { return index >= p.from && index <= p.to; });
+  }
+
+  /**
+   * The readout: the point line under the cursor, with "· no-fall
+   * passage" appended inside one (SNOW-1052); or a hint with no cursor.
+   * `aria-valuetext` carries the same line, then what the track row shows.
    */
   function paintReadout() {
-    var c = core();
     var state = ctx.cursor.state();
-    var selected = inLeg(state.selection);
     var perSample = ctx.sampleCount > 0 ? ctx.spanM / ctx.sampleCount : 0;
-    /** @type {Array<string>} */
-    var lines = [];
-    /**
-     * What only assistive tech hears, after the lines: what the track row
-     * shows under the cursor, which the eye reads off the row itself
-     * (SNOW-1044). Said whenever there is a cursor, whichever line the
-     * readout shows — the row still draws it under a selection. Under a
-     * selection the readout's line is the selection's, so the segment's
-     * own line is spoken too.
-     *
-     * @type {Array<string>}
-     */
-    var spoken = state.index === null
-      ? []
-      : trackSpoken(state.index, !(state.selection && selected));
-    if (state.selection && selected) {
-      var length = String(c.roundStretch(
-        (state.selection.to - state.selection.from + 1) * perSample,
-      ));
-      if (state.selection.kind === 'passage') {
-        lines.push(interpolate(STRINGS['readout-passage'], { length: length }));
-      } else {
-        lines.push(interpolate(STRINGS['readout-band'], {
-          length: length,
-          class: classLabel(selectedClass(state.selection)),
-        }));
-      }
-    } else if (state.index !== null) {
-      lines.push(pointLine(state.index));
+    var line;
+    if (state.index === null) {
+      line = STRINGS['two-hint'];
     } else {
-      lines.push(STRINGS['two-hint']);
+      line = pointLine(state.index);
+      if (inPassage(state.index)) {
+        line = interpolate(STRINGS['readout-no-fall'], { point: line });
+      }
     }
-    readoutEl.replaceChildren.apply(readoutEl, lines.map(readoutLine));
+    readoutEl.replaceChildren(readoutLine(line));
 
     paintDebug(state.index);
 
@@ -1643,22 +1521,21 @@
       interpolate(STRINGS['two-value'], {
         km: (((index + 0.5) * perSample) / 1000).toFixed(2),
       }),
-    ].concat(lines, spoken).join('. '));
+      line,
+    ].concat(state.index === null ? [] : trackSpoken(state.index)).join('. '));
   }
 
   /**
-   * The track row read aloud at one segment: the segment's own line
-   * (unless the readout is already showing it), the side the ground falls
-   * away to, then "Kick turn" when one lands there.
+   * What only assistive tech hears at one segment, after the readout's
+   * line: the side the ground falls away to, then "Kick turn" when one
+   * lands there (SNOW-1044). The eye reads both off the track row.
    *
    * @param {number} index
-   * @param {boolean} named Whether the readout's line is the segment's.
    * @returns {Array<string>}
    */
-  function trackSpoken(index, named) {
+  function trackSpoken(index) {
     /** @type {Array<string>} */
     var out = [];
-    if (!named) out.push(pointLine(index));
     var side = core().bankSide(banks()[index]);
     if (side) out.push(STRINGS['track-falls-' + side]);
     if (kicks.indexOf(index) >= 0) out.push(STRINGS['track-kick-turn']);
@@ -1954,69 +1831,14 @@
   }
 
   /**
-   * Select a band or passage, or clear it when it is already selected.
-   *
-   * @param {string} kind
-   * @param {number} from
-   * @param {number} to
-   * @param {?number} [classIndex] A band's slope class, for the map's
-   *   colour (SNOW-1032); none for a passage.
-   */
-  function toggleSelection(kind, from, to, classIndex) {
-    var cursor = ctx.cursor;
-    if (isSelected(kind, { from: from, to: to })) {
-      cursor.clearSelection();
-    } else if (kind === 'band') {
-      cursor.select({ kind: kind, from: from, to: to, classIndex: classIndex });
-    } else {
-      cursor.select({ kind: kind, from: from, to: to });
-    }
-  }
-
-  /**
-   * A drag's release: select the band holding the cursor's index, exactly
-   * — `from ≤ index ≤ to`, no radius, no snapping (SNOW-1032). A release
-   * onto the band already selected leaves it selected; only a tap toggles.
-   */
-  function selectUnderCursor() {
-    var index = ctx.cursor.state().index;
-    if (index === null) return;
-    var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
-    if (!band || isSelected('band', band)) return;
-    ctx.cursor.select({ kind: 'band', from: band.from, to: band.to, classIndex: band.classIndex });
-  }
-
-  /**
-   * A tap: select a band or passage near it, and move the cursor there.
-   *
-   * The row is read from the tap's y: from `PASSAGE_ROW_SLACK_PX` above the
-   * passage bars down, a passage — the nearest on-screen extent within
-   * `TAP_RADIUS_PX` (`nearestRange`); anywhere else in the lane, a band —
-   * the STEEPEST within `TAP_RADIUS_PX` (`steepestBand`), because bands
-   * touch and "nearest" would always be the one under the finger, leaving
-   * a one-segment band a one-segment target (SNOW-1032). The cursor moves
-   * to the tap, pulled inside the picked band so the readout and the
-   * leader line sit on what was selected.
+   * A tap: put the cursor on the segment under it (`indexAt`). It stays
+   * there after the lift. Until SNOW-1052 a tap also selected the band or
+   * passage near it.
    *
    * @param {number} x The lane x the press went down at.
-   * @param {number} y The lane y it went down at, in `ROWS` units.
    */
-  function tap(x, y) {
-    var c = core();
-    ctx.cursor.setIndex(clamp(c.indexAt(x, view, width), leg.from, leg.to));
-    var passageRow = y >= laneLayout().passageTop - PASSAGE_ROW_SLACK_PX;
-    if (passageRow) {
-      var passage = c.nearestRange(passages, x, view, width, TAP_RADIUS_PX);
-      if (passage) toggleSelection('passage', passage.from, passage.to);
-      return;
-    }
-    var band = c.steepestBand(bands, x, view, width, TAP_RADIUS_PX);
-    if (!band) return;
-    var index = ctx.cursor.state().index;
-    if (index !== null && (index < band.from || index > band.to)) {
-      ctx.cursor.setIndex(clamp(index, band.from, band.to));
-    }
-    toggleSelection('band', band.from, band.to, band.classIndex);
+  function tap(x) {
+    ctx.cursor.setIndex(clamp(core().indexAt(x, view, width), leg.from, leg.to));
   }
 
   /** Start a pinch from the two pointers down. */
@@ -2045,7 +1867,6 @@
       press = {
         id: id,
         x0: x,
-        y0: laneY(event),
         moved: false,
         pointerType: event.pointerType || '',
       };
@@ -2058,7 +1879,7 @@
       }
     } else if (pointers.size === 2) {
       // A second finger: this is a pinch, and the press that started it
-      // must not end as a pan, a scrub or a selection.
+      // must not end as a pan or a scrub.
       press = null;
       lastTap = null;
       startPinch();
@@ -2120,7 +1941,6 @@
     if (!ended) return;
     if (ended.moved) {
       lastTap = null;
-      if (lifted) selectUnderCursor();
       clampIndex();
       draw();
     } else if (lifted) {
@@ -2144,11 +1964,11 @@
 
   /**
    * A press lifted without a drag: a tap, or the second tap of a pair.
-   * The second tap never toggles the selection the first one made; for a
+   * The second tap does not move the cursor the first one placed; for a
    * finger or a pen it zooms (`doubleTap`), and for a mouse the browser's
    * own `dblclick` does.
    *
-   * @param {{x0: number, y0: number, pointerType: string}} ended
+   * @param {{x0: number, pointerType: string}} ended
    */
   function liftTap(ended) {
     var now = Date.now();
@@ -2162,7 +1982,7 @@
       return;
     }
     lastTap = { time: now, x: ended.x0 };
-    tap(ended.x0, ended.y0);
+    tap(ended.x0);
   }
 
   lane.addEventListener('pointerup', asOwnWrite(function (event) {
@@ -2224,14 +2044,6 @@
       case 'End':
         cursor.setIndex(leg.to);
         break;
-      case 'Enter':
-      case ' ': {
-        if (index === null) return;
-        var band = bands.find(function (b) { return index >= b.from && index <= b.to; });
-        if (!band) return;
-        toggleSelection('band', band.from, band.to, band.classIndex);
-        break;
-      }
       case '-':
       case '_':
         zoomBy(2);
