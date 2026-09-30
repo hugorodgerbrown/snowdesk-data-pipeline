@@ -1,6 +1,6 @@
 ---
 name: the-rail-readout-is-the-tracks-angle-and-the-grounds-class
-description: rail two readout — trackGrade, slopeTerm (EAWS classes, flat under 5°), steepShares, ROWS_FITTED, no track words, the staff debug rail
+description: rail two readout — trackGrade, slopeTerm (flat under 5°), steepShares, ROWS_FITTED, staff debug rail, readout-no-fall, no selection
 status: current
 last-reviewed: 2026-09-30
 ---
@@ -71,8 +71,9 @@ tour's last leg. Under the cursor rail two reads one line of two facts:
   terrain".
 - **The lane changes height at the wedges' threshold**, 18 px to 44 px,
   and the card with it; `onResize` tells the map.
-- **Fitted, the lane is an 18 px touch target.** Taps still pick the
-  steepest band within 22 px sideways.
+- **Fitted, the lane is an 18 px touch target.** A tap puts the cursor
+  on the segment under it (SNOW-1052; until then it picked the steepest
+  band within 22 px sideways).
 - **A bench cut across a steep face still reads wrong.** A road traverse
   on the Col de la Chaux leg sits at about 2,194 m for 250 m, and three
   boundary heights read 5–9 m high where the recorded position is off the
@@ -81,9 +82,38 @@ tour's last leg. Under the cursor rail two reads one line of two facts:
 - **The EAWS classes are defined on a 1:25,000 map, at the steepest part
   of a slope.** The record is a 10 m window every 25 m, so it names local
   features a map-scale reading would not.
-- **The band strip, its selection text ("50 m 40–45°") and the legend
-  keep their degree ranges.**
+- **The band strip and the legend keep their degree ranges.** The
+  selection text ("50 m 40–45°") that also did went with the selection
+  in SNOW-1052 (below).
 - The earlier records of this row and readout are in
   [the-bank-angle-is-drawn-signed.md](the-bank-angle-is-drawn-signed.md);
   its SNOW-1044 section's words, stretches and readout are superseded
   here. The wedges, the sign and the kick turns stand.
+
+## SNOW-1052: the selection readout is gone
+
+2026-09-30. Rail two no longer selects a band or a passage, and the
+readout no longer reads a selection. Every gesture on the lane — tap,
+drag, drag release, mouse hover, arrow keys — only moves the cursor, and
+a tap leaves it at the tapped segment after the lift. The readout is
+always the point line above, or the hint "Drag or tap to read a point."
+with no cursor. Inside a no-fall passage the line ends
+**"· no-fall passage"** (`readout-no-fall`), because the passage bar is
+4 px tall and the point line says nothing about it.
+
+- **Why.** The selection readout ("25 m 45–50°") said what the band's
+  colour already shows. The pick jumped sideways — the steepest band
+  within the tap radius won, not the one under the finger — it fired on
+  every drag release, and it left the readout on the selection while the
+  cursor moved on, so the line under the lane described a place the
+  cursor had left.
+- **What went.** The cursor's `select` / `clearSelection` and its
+  `selection` state (`route_cursor_core.js`); `selectionBox` and
+  `steepestBand` (`route_rail_two_core.js`); the outline, the veil
+  either side of it and `data-selected` on rail two; Enter and Space;
+  the map's highlighted stretch (`selectionLine`, the
+  `route-cursor-selection` source and its two layers). `nearestRange`
+  stays: the leg picker uses it.
+- **What stands.** Pinch, the −/+ zoom, the double-tap zoom, the leg
+  picker, the passage bars, and `aria-valuetext`'s bank side and "Kick
+  turn" after the line.

@@ -552,14 +552,13 @@
    *
    * Each range is clipped to the view and measured on screen as
    * `[x0, x1]`; its distance is 0 when `x` falls inside and the gap to
-   * the nearer edge otherwise. So a leg, band or passage only a few px
+   * the nearer edge otherwise. So a leg only a few px
    * wide is still picked by a tap `radiusPx` beside it. On a tie the range whose half-open
    * `[x0, x1)` holds `x` wins — the one `indexAt` puts the cursor in —
    * then the leftmost.
    *
    * @template {{from: number, to: number}} R
-   * @param {Array<R>} ranges Leg slots, bands or passages, sample
-   *   indices inclusive.
+   * @param {Array<R>} ranges Leg slots, sample indices inclusive.
    * @param {number} x The tap's px across the lane.
    * @param {View} view
    * @param {number} width The lane's width in px.

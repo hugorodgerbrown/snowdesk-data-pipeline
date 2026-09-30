@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-09-30
 ---
 
 # Map page — functional specification
@@ -319,15 +319,15 @@ itself still pans and zooms by gesture, and the rails, the leader line
 and the route detail sheet stay.
 
 **The route cursor on the map (SNOW-1019).** While a route's rail is
-open, the map and both rails share one cursor. A band or passage
-selected on rail two is drawn on the map as a highlighted stretch of the
-line — a dark core over a white casing — and the cursor's position is a
-fuchsia dot on the line. A mouse moving along the open route's line moves
+open, the map and both rails share one cursor. The cursor's position is
+a fuchsia dot on the line. Nothing else is drawn for it: SNOW-1052
+removed band and passage selection from rail two, and with it the
+highlighted stretch the map drew for a selection. A mouse moving along the open route's line moves
 the cursor (within about 24 px of the line), and so do a mouse over rail
 one and presses on rail two. A tap on the open route's line moves the
 cursor to the tapped place and opens the leg there; the first tap on a
 route still opens the rail and frames the track. Closing the rail clears
-the dot and the highlight. All of it is hidden with the routes overlay.
+the dot. All of it is hidden with the routes overlay.
 A dashed leader line in the route colour runs from the dot on the map
 down to rail one's cursor, where it meets the profile, and on to rail
 two's while a leg is open, so one place can be followed across all three
