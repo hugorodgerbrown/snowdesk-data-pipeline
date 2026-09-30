@@ -166,7 +166,8 @@
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
    * @returns {Array<{uuid: ?string, coordinates: Array<Array<number>>,
-   *   legs: Array<WireLeg>}>}
+   *   legs: Array<WireLeg>, sampled: boolean}>} `sampled` is whether the
+   *   route has slope segments to draw.
    */
   function leggedRoutes(geojson) {
     const features = (geojson && geojson.features) || [];
