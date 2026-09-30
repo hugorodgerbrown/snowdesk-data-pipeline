@@ -34,8 +34,9 @@ Opening a leg from the empty row, from any surface, is one ~340 ms
 motion: the segment fills, stretches to the lane and becomes the band
 strip while the card, anchored by its bottom edge, grows upward; closing
 reverses it, and reduced motion skips it. It opens FITTED, the whole leg
-however long (SNOW-1031), pans and zooms within the leg, and its bands
-and passages are pressable selections. The track row (SNOW-1044) is empty
+however long (SNOW-1031), pans and zooms within the leg, and every press
+on it only moves the cursor: the readout reads the point, with "· no-fall
+passage" inside one (SNOW-1052 removed band and passage selection). The track row (SNOW-1044) is empty
 while a segment is under 10 px, and the level-ski wedges showing the bank
 from 10 px up; a double-tap zooms to where the wedges draw. Kick turns are not drawn (the map shows the zig-zag); the lane's
 aria-valuetext names one under the cursor.
@@ -341,7 +342,7 @@ Context:
         <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
         <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
         <span data-string="two-placeholder">{% trans "Select a route leg to view terrain" %}</span>
-        <span data-string="two-hint">{% trans "Drag to read a point. Tap a band or passage to select it." %}</span>
+        <span data-string="two-hint">{% trans "Drag or tap to read a point." %}</span>
         <span data-string="class-slope-gentle">{% trans "under 30°" %}</span>
         <span data-string="class-slope-30">{% trans "30–35°" %}</span>
         <span data-string="class-slope-35">{% trans "35–40°" %}</span>
@@ -361,7 +362,6 @@ Context:
         <span data-string="slope-very-steep">{% trans "very steep slope" %}</span>
         <span data-string="slope-extremely-steep">{% trans "extremely steep slope" %}</span>
         <span data-string="readout-point">{% blocktrans %}%(grade)s · %(slope)s{% endblocktrans %}</span>
-        <span data-string="readout-band">{% blocktrans %}%(length)s m %(class)s{% endblocktrans %}</span>
-        <span data-string="readout-passage">{% blocktrans %}No-fall passage · %(length)s m{% endblocktrans %}</span>
+        <span data-string="readout-no-fall">{% blocktrans %}%(point)s · no-fall passage{% endblocktrans %}</span>
     </template>
 </section>
