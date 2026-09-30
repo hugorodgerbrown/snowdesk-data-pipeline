@@ -320,9 +320,12 @@ and the route detail sheet stay.
 
 **The route cursor on the map (SNOW-1019).** While a route's rail is
 open, the map and both rails share one cursor. The cursor's position is
-a fuchsia dot on the line. Nothing else is drawn for it: SNOW-1052
+a dot on the line, filled in the slope-class colour of the segment under
+it — the colour of the band under rail two's cursor line — or grey where
+the terrain had no answer. Nothing else is drawn for it: SNOW-1052
 removed band and passage selection from rail two, and with it the
-highlighted stretch the map drew for a selection. A mouse moving along the open route's line moves
+highlighted stretch the map drew for a selection. A mouse moving along
+the open route's line moves
 the cursor (within about 24 px of the line), and so do a mouse over rail
 one and presses on rail two. A tap on the open route's line moves the
 cursor to the tapped place and opens the leg there; the first tap on a

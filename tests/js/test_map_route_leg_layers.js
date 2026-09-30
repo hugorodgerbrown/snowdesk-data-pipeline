@@ -843,6 +843,13 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     expect(layers.get(id).type).toBe('circle');
   });
 
+  it('paints the dot in its feature\'s slope colour, else the route colour (SNOW-1052)', () => {
+    const colour = layers.get('routes-cursor-point').paint['circle-color'];
+
+    expect(colour[0]).toBe('coalesce');
+    expect(colour[1]).toEqual(['get', 'colour']);
+  });
+
   it('draws no selection stretch (SNOW-1052)', () => {
     expect(sources.has('route-cursor-selection')).toBe(false);
     expect(layers.has('routes-cursor-selection')).toBe(false);
@@ -855,6 +862,7 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     cursor.setIndex(1);
     const [dot] = sources.get('route-cursor-point').data.features;
     expect(dot.geometry.coordinates[1]).toBeCloseTo(46.0075);
+    expect(dot.properties.colour).toMatch(/^#[0-9a-f]{6}$/);
 
     cursor.setIndex(null);
     expect(sources.get('route-cursor-point').data.features).toEqual([]);

@@ -4,14 +4,17 @@
  *
  * The cursor dot on its segment's middle, the nearest sample on screen
  * with its distance cap, and null for everything a route with no slope
- * record cannot answer. SNOW-1052 removed `selectionLine`.
+ * record cannot answer. SNOW-1052 removed `selectionLine`, and gave the
+ * dot its segment's slope-class colour.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import '../../static/js/route_slope_core.js';
 import '../../static/js/route_cursor_map_core.js';
 
 const core = self.pwaRouteCursorMapCore;
+const slopeCore = self.pwaRouteSlopeCore;
 
 /** Four points bounding three segments along a meridian. */
 const SLOPE = {
@@ -29,12 +32,36 @@ describe('cursorPoint', () => {
     expect(point.properties.index).toBe(1);
   });
 
+  it('carries the colour of its segment\'s slope class (SNOW-1052)', () => {
+    expect(core.cursorPoint(SLOPE, 0).properties.colour).toBe(slopeCore.CLASSES[0].hex);
+    expect(core.cursorPoint(SLOPE, 1).properties.colour).toBe(slopeCore.CLASSES[2].hex);
+  });
+
+  it('carries the unknown grey for a segment with no angle', () => {
+    expect(core.cursorPoint(SLOPE, 2).properties.colour).toBe(slopeCore.UNKNOWN_COLOUR);
+  });
+
   it('answers null for a null index, an index off the route, or no record', () => {
     expect(core.cursorPoint(SLOPE, null)).toBeNull();
     expect(core.cursorPoint(SLOPE, 3)).toBeNull();
     expect(core.cursorPoint(SLOPE, -1)).toBeNull();
     expect(core.cursorPoint(SLOPE, 1.5)).toBeNull();
     expect(core.cursorPoint(null, 0)).toBeNull();
+  });
+});
+
+describe('cursorPoint with no slope core', () => {
+  const saved = self.pwaRouteSlopeCore;
+  afterEach(() => {
+    self.pwaRouteSlopeCore = saved;
+  });
+
+  it('carries no colour, so the map falls back to the route colour', () => {
+    delete self.pwaRouteSlopeCore;
+    const point = core.cursorPoint(SLOPE, 1);
+
+    expect(point.properties.index).toBe(1);
+    expect(point.properties).not.toHaveProperty('colour');
   });
 });
 

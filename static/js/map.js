@@ -3044,7 +3044,10 @@
         visibility: overlayState.routes ? 'visible' : 'none',
       },
       paint: {
-        'circle-color': ROUTE_LINE_COLOUR,
+        // The slope class of the segment under the cursor (SNOW-1052), so
+        // the dot matches the band under rail two's cursor line; the
+        // route's own colour when the feature carries none.
+        'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
         'circle-radius': 6,
         'circle-stroke-color': ROUTE_CURSOR_HALO,
         'circle-stroke-width': 2,

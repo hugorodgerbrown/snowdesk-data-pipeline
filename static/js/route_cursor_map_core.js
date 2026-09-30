@@ -20,8 +20,20 @@
  * slope is not drawn — has no sample axis at all, and every function here
  * answers null for it rather than guessing a position.
  *
- * Pure: no DOM, no map, no globals. map.js projects the midpoints
- * (`map.project`) and hands the pixels in.
+ * Pure: no DOM, no map, and one global read — `cursorPoint` looks the
+ * segment's colour up in `self.pwaRouteSlopeCore` when it is called, never
+ * at parse time. map.js projects the midpoints (`map.project`) and hands
+ * the pixels in.
+ *
+ * ## The dot is the colour of the ground under it (SNOW-1052)
+ *
+ * The cursor's feature carries `colour`: the hex of its segment's slope
+ * class, `pwaRouteSlopeCore.CLASSES[classify(angle)].hex`, which mirrors
+ * the `--color-slope-*` token rail two fills that band with — so the dot
+ * on the map and the band under rail two's cursor line are one colour. A
+ * segment the terrain had no answer for takes `UNKNOWN_COLOUR`, as the
+ * line does. With no slope core loaded it carries no `colour`, and map.js
+ * falls back to the route's own colour.
  *
  * Nothing here draws a stretch of line. SNOW-1052 removed band and
  * passage selection from rail two, and with it the highlighted stretch
@@ -31,7 +43,8 @@
  * Exports (frozen `self.pwaRouteCursorMapCore`):
  *
  *   sampleCount(slope)                   → N, or 0 with no usable record
- *   cursorPoint(slope, index)            → Point Feature, or null
+ *   cursorPoint(slope, index)            → Point Feature, or null; its
+ *                                          `colour` is the segment's class
  *   segmentMidpoints(slope)              → [[lon, lat]] per segment
  *   nearestSample(midpointsPx, px, maxPx) → the nearest index, or null
  *   legAt(legs, index)                   → the leg holding an index, or null
@@ -114,7 +127,24 @@
   }
 
   /**
-   * Where the cursor index sits: the middle of its segment.
+   * The hex a segment is drawn in: its slope class's, or the unknown grey.
+   *
+   * @param {?Slope} slope
+   * @param {number} index
+   * @returns {?string} Null when no slope core is loaded.
+   */
+  function segmentColour(slope, index) {
+    const slopeCore = self.pwaRouteSlopeCore;
+    if (!slopeCore || !Array.isArray(slopeCore.CLASSES)) return null;
+    const angle = slope && Array.isArray(slope.angles) ? slope.angles[index] : null;
+    const classIndex = slopeCore.classify(angle);
+    if (classIndex === null) return slopeCore.UNKNOWN_COLOUR || null;
+    const entry = slopeCore.CLASSES[classIndex];
+    return entry && typeof entry.hex === 'string' ? entry.hex : null;
+  }
+
+  /**
+   * Where the cursor index sits: the middle of its segment, in its colour.
    *
    * @param {?Slope} slope
    * @param {?number} index
@@ -127,10 +157,14 @@
     if (index < 0 || index >= count) return null;
     const middle = segmentMidpoints(slope)[index];
     if (!middle) return null;
+    /** @type {Object<string, *>} */
+    const properties = { index: index };
+    const colour = segmentColour(slope, index);
+    if (colour) properties.colour = colour;
     return {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: middle },
-      properties: { index: index },
+      properties: properties,
     };
   }
 
