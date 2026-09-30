@@ -275,17 +275,19 @@ class TestRailTwoShipsInsideRailOne:
             "slope-very-steep",
             "slope-extremely-steep",
             "readout-point",
-            "readout-band",
-            "readout-passage",
+            "readout-no-fall",
         } <= keys
         # SNOW-1024 retired the side-suffixed slope lines and the
         # uphill / downhill traverse terms; SNOW-1044 the attitude words,
         # the zoom placeholder and the ▲/▼ figures line. The 2026-09-30
         # pass retired the track words (the row's blocks and the readout's
         # leading word), the slope-and-bank readout and the subtitle's
-        # lengths.
+        # lengths. SNOW-1052 retired the selection's band and passage
+        # readouts with the selection.
         assert keys.isdisjoint(
             {
+                "readout-band",
+                "readout-passage",
                 "leg-length",
                 "leg-length-steep",
                 "track-gentle",
@@ -336,6 +338,8 @@ class TestRailTwoShipsInsideRailOne:
         )
         # The readout: the track's own angle, then the ground's EAWS class.
         assert strings["readout-point"] == "%(grade)s · %(slope)s"
+        assert strings["readout-no-fall"] == "%(point)s · no-fall passage"
+        assert strings["two-hint"] == "Drag or tap to read a point."
         assert [strings[f"grade-{way}"] for way in ("ascent", "descent", "level")] == [
             "%(deg)s° ascent",
             "%(deg)s° descent",

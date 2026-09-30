@@ -578,11 +578,10 @@ describe('the cursor line (SNOW-1019)', () => {
     window.pwaRouteRail.open(feature());
     const cursor = window.pwaRouteRail.cursor();
     cursor.setIndex(3);
-    cursor.select({ kind: 'band', from: 2, to: 4 });
 
     window.pwaRouteRail.close();
 
-    expect(cursor.state()).toMatchObject({ index: null, selection: null, openLeg: null });
+    expect(cursor.state()).toEqual({ index: null, openLeg: null });
   });
 });
 

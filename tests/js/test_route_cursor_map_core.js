@@ -2,70 +2,25 @@
  * tests/js/test_route_cursor_map_core.js — the route cursor placed on the
  * map (static/js/route_cursor_map_core.js, SNOW-1019).
  *
- * A selection's inclusive `to` reaching point to + 1, the cursor dot on
- * its segment's middle, the nearest sample on screen with its distance
- * cap, and null for everything a route with no slope record cannot answer.
- * SNOW-1032: a selected band carries its slope class's hex as `colour`.
+ * The cursor dot on its segment's middle, the nearest sample on screen
+ * with its distance cap, and null for everything a route with no slope
+ * record cannot answer. SNOW-1052 removed `selectionLine`, and gave the
+ * dot its segment's slope-class colour.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_cursor_map_core.js';
 
 const core = self.pwaRouteCursorMapCore;
+const slopeCore = self.pwaRouteSlopeCore;
 
 /** Four points bounding three segments along a meridian. */
 const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.002], [7.0, 46.004], [7.0, 46.006]],
   angles: [20, 35, null],
 };
-
-describe('selectionLine', () => {
-  it('runs from point `from` to point `to + 1`', () => {
-    const line = core.selectionLine(SLOPE, { kind: 'band', from: 1, to: 2 });
-
-    expect(line.geometry).toEqual({
-      type: 'LineString',
-      coordinates: [[7.0, 46.002], [7.0, 46.004], [7.0, 46.006]],
-    });
-    expect(line.properties).toEqual({ kind: 'band', from: 1, to: 2 });
-  });
-
-  it('colours a band by its class, the --color-slope-* mirror (SNOW-1032)', () => {
-    const line = core.selectionLine(SLOPE, { kind: 'band', from: 1, to: 1, classIndex: 2 });
-
-    expect(line.properties.colour).toBe(self.pwaRouteSlopeCore.CLASSES[2].hex);
-    expect(line.properties.colour).toBe('#f46f24');
-  });
-
-  it('gives no colour to a passage, an unknown band or an unknown class', () => {
-    const passage = core.selectionLine(SLOPE, { kind: 'passage', from: 0, to: 0, classIndex: 2 });
-    const unknown = core.selectionLine(SLOPE, { kind: 'band', from: 2, to: 2, classIndex: null });
-    const beyond = core.selectionLine(SLOPE, { kind: 'band', from: 0, to: 0, classIndex: 99 });
-
-    expect(passage.properties).not.toHaveProperty('colour');
-    expect(unknown.properties).not.toHaveProperty('colour');
-    expect(beyond.properties).not.toHaveProperty('colour');
-  });
-
-  it('draws a one-sample selection as its one segment', () => {
-    expect(core.selectionLine(SLOPE, { kind: 'passage', from: 0, to: 0 }).geometry.coordinates)
-      .toEqual([[7.0, 46.0], [7.0, 46.002]]);
-  });
-
-  it('answers null for no selection, or one outside the route', () => {
-    expect(core.selectionLine(SLOPE, null)).toBeNull();
-    expect(core.selectionLine(SLOPE, { kind: 'band', from: 2, to: 3 })).toBeNull();
-    expect(core.selectionLine(SLOPE, { kind: 'band', from: -1, to: 0 })).toBeNull();
-    expect(core.selectionLine(SLOPE, { kind: 'band', from: 2, to: 1 })).toBeNull();
-  });
-
-  it('answers null for a route with no slope record, like a pending share', () => {
-    expect(core.selectionLine(null, { kind: 'band', from: 0, to: 0 })).toBeNull();
-    expect(core.selectionLine({}, { kind: 'band', from: 0, to: 0 })).toBeNull();
-  });
-});
 
 describe('cursorPoint', () => {
   it('sits at the middle of the index\'s segment', () => {
@@ -77,12 +32,36 @@ describe('cursorPoint', () => {
     expect(point.properties.index).toBe(1);
   });
 
+  it('carries the colour of its segment\'s slope class (SNOW-1052)', () => {
+    expect(core.cursorPoint(SLOPE, 0).properties.colour).toBe(slopeCore.CLASSES[0].hex);
+    expect(core.cursorPoint(SLOPE, 1).properties.colour).toBe(slopeCore.CLASSES[2].hex);
+  });
+
+  it('carries the unknown grey for a segment with no angle', () => {
+    expect(core.cursorPoint(SLOPE, 2).properties.colour).toBe(slopeCore.UNKNOWN_COLOUR);
+  });
+
   it('answers null for a null index, an index off the route, or no record', () => {
     expect(core.cursorPoint(SLOPE, null)).toBeNull();
     expect(core.cursorPoint(SLOPE, 3)).toBeNull();
     expect(core.cursorPoint(SLOPE, -1)).toBeNull();
     expect(core.cursorPoint(SLOPE, 1.5)).toBeNull();
     expect(core.cursorPoint(null, 0)).toBeNull();
+  });
+});
+
+describe('cursorPoint with no slope core', () => {
+  const saved = self.pwaRouteSlopeCore;
+  afterEach(() => {
+    self.pwaRouteSlopeCore = saved;
+  });
+
+  it('carries no colour, so the map falls back to the route colour', () => {
+    delete self.pwaRouteSlopeCore;
+    const point = core.cursorPoint(SLOPE, 1);
+
+    expect(point.properties.index).toBe(1);
+    expect(point.properties).not.toHaveProperty('colour');
   });
 });
 

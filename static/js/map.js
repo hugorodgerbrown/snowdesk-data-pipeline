@@ -2146,19 +2146,11 @@
   // EAWS danger palette, so a pending route can never be mistaken for a
   // rating.
   const ROUTE_PENDING_COLOUR = '#0d9488';
-  // SNOW-1019: the route cursor's two inks on the map. A selection is a
-  // near-black core (mirroring --color-text-1, the ink the rails outline a
-  // selection with) over a white casing (mirroring --color-card, the
-  // surface the rails are drawn on), so the stretch reads over both leg
-  // colours and over any basemap. The cursor dot takes the route line's
-  // own fuchsia with the same card-white ring.
-  //
-  // SNOW-1032: a selected slope BAND is drawn in its class colour instead
-  // — the feature's `colour`, route_slope_core.js's hex mirror of
-  // --color-slope-* — over ROUTE_CURSOR_INK as the casing, which is also
-  // the value of --color-route-line-casing (both are #1a1916). A passage
-  // has no `colour` and keeps the ink-over-white look.
-  const ROUTE_CURSOR_INK = '#1a1916';
+  // SNOW-1019: the route cursor's ink on the map. The cursor dot takes
+  // the route line's own fuchsia with a white ring (mirroring
+  // --color-card, the surface the rails are drawn on), so it reads over
+  // both leg colours and over any basemap. SNOW-1052 removed the
+  // highlighted stretch a rail selection used to draw, and its two inks.
   const ROUTE_CURSOR_HALO = '#ffffff';
 
   /** Map image ids for the two route end markers. */
@@ -2465,13 +2457,11 @@
   // middle in [lon, lat] — or null. Read by the hover and the tap, which
   // convert a pointer on the line into a sample index.
   let routeCursorTarget = null;
-  // SNOW-1019: what the cursor's two sources hold — the selection's
-  // stretch of line and the cursor dot — as FeatureCollections. Module
-  // state for the reason `openLegOnMap` is: a basemap re-install rebuilds
-  // the sources from scratch and has to repaint the current index and
-  // selection under an open rail.
+  // SNOW-1019: what the cursor's source holds — the cursor dot — as a
+  // FeatureCollection. Module state for the reason `openLegOnMap` is: a
+  // basemap re-install rebuilds the source from scratch and has to repaint
+  // the current index under an open rail.
   const EMPTY_ROUTE_CURSOR_FC = Object.freeze({ type: 'FeatureCollection', features: [] });
-  let routeCursorSelectionData = EMPTY_ROUTE_CURSOR_FC;
   let routeCursorPointData = EMPTY_ROUTE_CURSOR_FC;
   // SNOW-1019: keeping the cursor's dot out from behind the rails. True
   // while THIS module writes the index (a hover or a tap on the line), so
@@ -2531,29 +2521,23 @@
   };
 
   /**
-   * Put the cursor's selection and index on the map (SNOW-1019).
+   * Put the cursor's index on the map (SNOW-1019).
    *
-   * Writes both into module state first, so a source installed later — a
-   * basemap re-install — starts from them, then into the sources if they
-   * are there.
+   * Writes it into module state first, so a source installed later — a
+   * basemap re-install — starts from it, then into the source if it is
+   * there.
    *
-   * @param {?{index: ?number, selection: ?object}} state The cursor's
-   *   state, or null to clear both.
+   * @param {?{index: ?number}} state The cursor's state, or null to clear
+   *   the dot.
    * @returns {void}
    */
   const paintRouteCursor = (state) => {
     const core = self.pwaRouteCursorMapCore;
     const slope = routeCursorTarget ? routeCursorTarget.slope : null;
-    const line = core && state ? core.selectionLine(slope, state.selection) : null;
     const point = core && state ? core.cursorPoint(slope, state.index) : null;
-    routeCursorSelectionData = line
-      ? { type: 'FeatureCollection', features: [line] }
-      : EMPTY_ROUTE_CURSOR_FC;
     routeCursorPointData = point
       ? { type: 'FeatureCollection', features: [point] }
       : EMPTY_ROUTE_CURSOR_FC;
-    const selectionSource = map.getSource('route-cursor-selection');
-    if (selectionSource) selectionSource.setData(routeCursorSelectionData);
     const pointSource = map.getSource('route-cursor-point');
     if (pointSource) pointSource.setData(routeCursorPointData);
   };
@@ -2562,9 +2546,8 @@
    * Follow the open route's cursor (SNOW-1017, widened by SNOW-1019).
    *
    * The ONE subscription the map holds to the route cursor. A leg opened
-   * on a rail dims the rest of the map's legs; a selection is drawn as a
-   * highlighted stretch of the line; the cursor index is drawn as a dot on
-   * it. The map writes back too — the hover and the tap below convert a
+   * on a rail dims the rest of the map's legs; the cursor index is drawn
+   * as a dot on the line. The map writes back too — the hover and the tap below convert a
    * pointer on the open route's line into an index — through the
    * `routeCursorTarget` this sets.
    *
@@ -2575,7 +2558,7 @@
    * follow: every leg is restored to full strength and the cursor marks
    * are cleared.
    *
-   * The rail's `close()` clears the selection, the index and the open leg
+   * The rail's `close()` clears the index and the open leg
    * before it lets the cursor go (route_rail.js), so a close from the
    * rail's own ×, Escape or backdrop reaches here as an empty state and
    * restores the lines.
@@ -3042,54 +3025,13 @@
         'line-dasharray': [2, 1.5],
       },
     });
-    // SNOW-1019: the route cursor on the map — a selection made on a rail
-    // as a highlighted stretch of the open route's line, and the cursor
-    // index as a dot on it. Their own two sources, filled from module
-    // state by paintRouteCursor, so a basemap re-install repaints the
-    // current selection and index. Over every line layer, the pending one
-    // included, since a selection is what the reader is looking at now;
-    // under the point marks installed after this, which the reader
-    // orients by.
-    //
-    // A PALE CASING UNDER A DARK CORE: the one pairing that reads over
-    // the climb's slate, the descent's fuchsia and every basemap.
-    map.addSource('route-cursor-selection', {
-      type: 'geojson',
-      data: routeCursorSelectionData,
-    });
-    map.addLayer({
-      id: 'routes-cursor-selection-casing',
-      type: 'line',
-      source: 'route-cursor-selection',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        // A band's colour sits on the dark route casing
-        // (--color-route-line-casing); the ink core keeps the white halo
-        // (--color-card).
-        'line-color': ['case', ['has', 'colour'], ROUTE_CURSOR_INK, ROUTE_CURSOR_HALO],
-        'line-opacity': 0.9,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 12, 9, 16, 14],
-      },
-    });
-    map.addLayer({
-      id: 'routes-cursor-selection',
-      type: 'line',
-      source: 'route-cursor-selection',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        // A band's --color-slope-* mirror, else the --color-text-1 ink.
-        'line-color': ['coalesce', ['get', 'colour'], ROUTE_CURSOR_INK],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 4.5, 16, 7],
-      },
-    });
+    // SNOW-1019: the route cursor on the map — the cursor index as a dot
+    // on the open route's line. Its own source, filled from module state
+    // by paintRouteCursor, so a basemap re-install repaints the current
+    // index. Over every line layer, the pending one included; under the
+    // point marks installed after this, which the reader orients by.
+    // SNOW-1052 removed the highlighted stretch (`route-cursor-selection`)
+    // a rail selection drew here.
     map.addSource('route-cursor-point', {
       type: 'geojson',
       data: routeCursorPointData,
@@ -3102,7 +3044,10 @@
         visibility: overlayState.routes ? 'visible' : 'none',
       },
       paint: {
-        'circle-color': ROUTE_LINE_COLOUR,
+        // The slope class of the segment under the cursor (SNOW-1052), so
+        // the dot matches the band under rail two's cursor line; the
+        // route's own colour when the feature carries none.
+        'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
         'circle-radius': 6,
         'circle-stroke-color': ROUTE_CURSOR_HALO,
         'circle-stroke-width': 2,
@@ -8681,8 +8626,7 @@
       });
       // SNOW-1017: follow the new cursor, so a leg opened on the rail dims
       // the rest of the map — and, since SNOW-1019, so the cursor's index
-      // and selection are drawn on the line and a pointer on the line
-      // moves them. A pending share has no uuid and is never followed: it
+      // is drawn on the line and a pointer on the line moves it. A pending share has no uuid and is never followed: it
       // draws no legs and its slope is not shown.
       bindRouteCursor(props.pending ? null : props.uuid || null);
 
