@@ -49,7 +49,11 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.day_rating import day_rating_pairs, recompute_region_day
+from apps.bulletins.services.day_rating import (
+    day_rating_pairs,
+    recompute_region_day,
+    slim_regions_prefetch,
+)
 from apps.bulletins.services.meteofrance_translator import format_comment_as_html
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
@@ -197,9 +201,9 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"No bulletin found with bulletin_id={bulletin_id_arg!r}"
                 )
-            return qs.prefetch_related("regions")
+            return qs.prefetch_related(slim_regions_prefetch())
         return Bulletin.objects.filter(bulletin_id__startswith="FR").prefetch_related(
-            "regions"
+            slim_regions_prefetch()
         )
 
     def _process_bulletin(

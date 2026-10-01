@@ -78,7 +78,11 @@ from apps.bulletins.models import (
     RegionBulletin,
     RegionDayRating,
 )
-from apps.bulletins.services.day_rating import day_rating_pairs, refresh_day_ratings
+from apps.bulletins.services.day_rating import (
+    day_rating_pairs,
+    refresh_day_ratings,
+    slim_regions_prefetch,
+)
 from apps.bulletins.services.meteofrance_identity import BULLETIN_ID_RE
 from apps.core.command_iteration import iterate_rows
 from apps.regions.models import MicroRegion
@@ -221,7 +225,7 @@ class Command(BaseCommand):
         """
         qs = Bulletin.objects.filter(
             bulletin_id__startswith=_FR_PREFIX
-        ).prefetch_related("regions")
+        ).prefetch_related(slim_regions_prefetch())
 
         massifs: dict[str, _MassifStats] = defaultdict(_MassifStats)
         replaceable_pks: list[int] = []

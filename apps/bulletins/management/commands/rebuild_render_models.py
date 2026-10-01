@@ -49,7 +49,11 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.day_rating import day_rating_pairs, refresh_day_ratings
+from apps.bulletins.services.day_rating import (
+    day_rating_pairs,
+    refresh_day_ratings,
+    slim_regions_prefetch,
+)
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -132,12 +136,12 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"No bulletin found with bulletin_id={bulletin_id_arg!r}"
                 )
-            return qs.prefetch_related("regions")
+            return qs.prefetch_related(slim_regions_prefetch())
         if rebuild_all:
-            return Bulletin.objects.all().prefetch_related("regions")
+            return Bulletin.objects.all().prefetch_related(slim_regions_prefetch())
         return Bulletin.objects.needs_render_model_rebuild(
             RENDER_MODEL_VERSION
-        ).prefetch_related("regions")
+        ).prefetch_related(slim_regions_prefetch())
 
     def _process_bulletin(
         self, bulletin: Bulletin, *, commit: bool

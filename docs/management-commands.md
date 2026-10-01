@@ -90,8 +90,12 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    into a set for the day-rating refresh that follows, and each pair held
    a full `MicroRegion` with its boundary polygon — on course for ~2 GB
    over a full-season rebuild (SNOW-1054). Accumulate primary keys, or
-   instances loaded with `.only()` the fields the later step reads
-   (`day_rating_pairs` loads `pk` and `region_id`), never full rows.
+   instances loaded with only the fields the later step reads, never full
+   rows. Slim the load where it happens: a streamed queryset that prefetches
+   a relation must prefetch the slim queryset
+   (`prefetch_related(slim_regions_prefetch())`, which loads `pk` and
+   `region_id`), because chaining `.only()` onto an already-prefetched
+   manager bypasses the cache and queries once per row.
 
    Never hand-roll OFFSET/LIMIT batching to page through a queryset —
    re-querying a slice of the *same* filtered queryset on every page is

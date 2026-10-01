@@ -65,6 +65,7 @@ from apps.bulletins.services.day_rating import (
     day_rating_pairs,
     recompute_region_day,
     refresh_day_ratings,
+    slim_regions_prefetch,
     target_day_for_valid_from,
 )
 from apps.bulletins.services.render_model import (
@@ -950,6 +951,27 @@ class TestDayRatingPairs:
 
         assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
         assert "region_id" not in held.get_deferred_fields()
+
+    def test_reads_a_slim_prefetch_without_querying(self) -> None:
+        """With slim_regions_prefetch, pairs come from the cache, slim (SNOW-1054).
+
+        Chaining .only() onto a prefetched manager bypasses the cache and
+        queries once per bulletin; a full-archive rebuild would pay that
+        for every bulletin it streams.
+        """
+        region = MicroRegionFactory.create(region_id="CH-3009")
+        vf = datetime.datetime(2026, 3, 7, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 7, 17, 0, tzinfo=UTC)
+        _make_bulletin_for_region(region, vf, vt)
+        (bulletin,) = Bulletin.objects.filter(regions=region).prefetch_related(
+            slim_regions_prefetch()
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            ((held, _day),) = day_rating_pairs([bulletin])
+
+        assert len(queries) == 0
+        assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
 
     def test_refresh_from_held_pairs_reads_no_deferred_field(self) -> None:
         """Recomputing from the slim instances never lazy-loads a deferred field.
