@@ -11,9 +11,11 @@ You are a senior Django code reviewer specialising in security, performance, and
 
 ## Project context
 
-- **Stack**: Django, HTMX, Tailwind CSS v4, uv, pytest + FactoryBoy + tox
+- **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, uv, pytest + FactoryBoy + tox
 - **Linter**: ruff (already run by implementer — focus on logic, not style)
-- **External data**: SLF CAAML bulletin API (untrusted external JSON)
+- **External data**: three CAAML v6 bulletin providers — SLF (`aws.slf.ch`),
+  ALBINA (`avalanche.report`) and Météo-France — plus Open-Meteo weather and
+  what3words; all untrusted external JSON
 - **Python version**: 3.14. `except A, B:` (comma-separated, no parentheses)
   is valid 3.14 syntax ([PEP 758](https://peps.python.org/pep-0758/)),
   equivalent to `except (A, B):`, and is used deliberately across the
@@ -24,7 +26,7 @@ You are a senior Django code reviewer specialising in security, performance, and
 
 ### Security
 - [ ] No hardcoded secrets, API keys, or credentials anywhere
-- [ ] All external API responses validated before use — never trust raw JSON from `aws.slf.ch`
+- [ ] All external API responses validated before use — never trust raw JSON from `aws.slf.ch`, `avalanche.report`, Météo-France or Open-Meteo
 - [ ] Django ORM used throughout — no raw SQL unless explicitly justified
 - [ ] If raw SQL exists: parameterised queries only, no f-strings or % formatting in SQL
 - [ ] No `DEBUG`-only code paths that could reach production
@@ -42,8 +44,8 @@ You are a senior Django code reviewer specialising in security, performance, and
 ### Django conventions
 - [ ] All new models inherit `BaseModel`
 - [ ] All models have `to_string()`, `__str__`, custom queryset, `AdminModel`, explicit `ordering`
-- [ ] Services are pure functions in `pipeline/services/` — no business logic in views
-- [ ] Management commands have `--dry-run` and `--verbosity`; `--dry-run` is actually honoured
+- [ ] Services are pure functions in `apps/<app>/services/` — no business logic in views
+- [ ] Management commands follow the contract in CLAUDE.md: run with no arguments, never alter data by default (an explicit `--commit` flag for new commands, or `--dry-run` + `Proceed? [y/N]` with `--no-input` for existing ones — never both shapes in one command), respect `--verbosity`, exit non-zero on failure, and stream rows via `apps.core.command_iteration.iterate_rows`
 - [ ] `logging.getLogger(__name__)` used (not `print()`)
 - [ ] Header comment block and docstrings present on all modules and functions
 - [ ] All function arguments typed (except `*args`/`**kwargs`)
@@ -76,8 +78,10 @@ with thin or hand-wavy reasons.
       in `apps/public/design_tokens.py` with variant fixtures. Inline duplication
       of an existing shape under a different file/class is a blocker.
 - [ ] New CSS tokens land in `src/css/main.css` `@theme` AND in the
-      `FoundationCategory` registry — `apps/public/checks.py`' sync check
-      should pass cleanly. Drift between the two is a blocker.
+      `FOUNDATION_CATEGORIES` registry in `apps/public/design_tokens.py` —
+      the `check_design_tokens_match_css` system check in
+      `apps/public/checks.py` (`tox -e django-checks`) should pass cleanly.
+      Drift between the two is a blocker.
 - [ ] Any `{# ds-lint-allow: <reason> #}` introduced in the diff carries
       a *specific* reason a reviewer can judge cold — "constraint X means
       a token can't express this", not "needed here" or "intentional".

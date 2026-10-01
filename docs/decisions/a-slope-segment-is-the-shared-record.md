@@ -2,7 +2,7 @@
 name: a-slope-segment-is-the-shared-record
 description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
-last-reviewed: 2026-09-29
+last-reviewed: 2026-10-01
 ---
 
 # A slope segment is the shared record, and it samples the ground
@@ -69,16 +69,23 @@ kind of absence: a route nothing has looked at yet.
 They call for different treatments on screen. A never-sampled route keeps
 the flat fuchsia line it has always had — an honest "no claim made". A
 sampled route with unanswerable stretches draws those dashed and grey — "we
-looked, and this ground is not surveyed". Collapsing the two would mean
+looked, and this ground is not surveyed". (On the trip page still; on the
+home map a route has been drawn as its legs whether or not it is sampled
+since SNOW-1017, with the classes painted on the line only from z14 —
+[legs-not-slope-classes-on-the-map](legs-not-slope-classes-on-the-map.md).) Collapsing the two would mean
 either dashing every route nobody has sampled (a claim we have not earned)
 or drawing unsurveyed ground flat and uncoloured (indistinguishable from
 gentle). So the field's null is the first, an `unknown` segment is the
 second, and the GeoJSON keeps them apart by the PRESENCE of the `slope`
 property rather than by its value.
 
-That presence is also load-bearing on the map: `routes-line` filters on
-`['!', ['has', 'slope']]` so a sampled route is not painted flat underneath
-its own colours. A present-but-null value would answer that filter wrongly.
+That presence is also load-bearing on the map: the home map's
+`routes-line` filtered on `['!', ['has', 'slope']]` so a sampled route was
+not painted flat underneath its own colours, and a present-but-null value
+would have answered that filter wrongly. (Since SNOW-1017 that layer tests
+the presence of `legs` instead, for the same reason; the trip map adds its
+flat `trip-route-line` only when `isSlopeColoured` finds no segments to
+paint.)
 
 ### The per-segment aspect is stored and not sent
 

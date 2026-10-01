@@ -9,8 +9,9 @@ and the `*_core.js` modules it reads, `apps/public/api.py`'s map endpoints,
 `home.html` and `_map_embed.html`, `static/css/map.css`.
 
 It exists because the map is where the complexity is. It is the heaviest page
-on the site, it holds 44,506 lines of first-party JavaScript across 75 files
-loaded as classic scripts in a load-bearing order, and it is the one part of
+on the site, it holds roughly 76,000 lines of first-party JavaScript across
+117 files (2026-10-01; 44,506 across 75 at the first cycle) loaded as classic
+scripts in a load-bearing order, and it is the one part of
 the codebase where the tooling that guards everything else — `ruff`, `mypy`,
 pre-commit — does not reach.
 

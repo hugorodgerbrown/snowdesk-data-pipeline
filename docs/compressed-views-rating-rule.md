@@ -2,7 +2,7 @@
 name: compressed-views-rating-rule
 description: Peak-rating rule — choropleth, map tooltip and season calendar always show RegionDayRating.max_rating on split days
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # Compressed-views rating rule
@@ -29,23 +29,31 @@ on days where conditions deteriorate in the afternoon.
 ## How peak is computed
 
 `apps/bulletins/services/day_rating.py` — `recompute_region_day` — implements the
-split logic:
+split logic (policy v8, `DAY_RATING_VERSION = 8`):
 
 1. A single authoritative bulletin is selected for each (region, calendar day)
    pair: the morning-of-day issue if present, otherwise the prior-evening
-   fallback.
-2. Traits are partitioned into two buckets:
+   fallback (`target_date == day`, latest `valid_from`).
+2. **Elevation-band split first** (SNOW-293, `_detect_elevation_band_split`):
+   if `render_model["danger"]["ratings"]` holds two or more `all_day`
+   entries with distinct keys — the Météo-France shape — `min_rating` is
+   the lowest band and `max_rating` the highest, and the trait rule below
+   is not consulted.
+3. Otherwise traits are partitioned into two buckets:
    - `morning_levels`: traits with `time_period` in `("all_day", "earlier")`.
    - `afternoon_levels`: traits with `time_period == "later"`.
-3. `_resolve_min_max_keys` applies the split rule:
+4. `_resolve_min_max_keys` applies the split rule:
    - If `max(afternoon_levels) > max(morning_levels)` → split day:
      `min_rating = key of max(morning_levels)`,
      `max_rating = key of max(afternoon_levels)`.
    - Otherwise → headline-only: both `min_rating` and `max_rating` equal the
      bulletin's aggregate `render_model["danger"]["key"]` (the SLF-computed
      headline, kept in sync with the Day Risk Profile panel — SNOW-138).
-4. On quiet days (no traits) both ratings fall back to the headline key.
-5. On days with no qualifying bulletin both are set to `NO_RATING`.
+   `am_rating` / `pm_rating` (SNOW-291) record both buckets' peaks whenever
+   both are non-empty, split or not.
+5. On quiet days (no traits) step 2 still runs; failing that, both ratings
+   fall back to the headline key.
+6. On days with no qualifying bulletin both are set to `NO_RATING`.
 
 The canonical two-period escalating fixture is **morning=2 (moderate),
 afternoon=3 (considerable) → `max_rating`=considerable**. This is the

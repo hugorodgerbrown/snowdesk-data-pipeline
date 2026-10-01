@@ -2,7 +2,7 @@
 name: auth-testing-checklist
 description: Manual auth test checklist — magic-link, password, passkey sign-in, logout, registration, password reset, change email, account deletion
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Login / Logout Testing Checklist — Snowdesk
@@ -32,7 +32,7 @@ the scenario doc does not.
 - [ ] Submit a **known** email with no password → "Check your inbox" page (`manage_sent.html`).
 - [ ] Mailpit receives an account-access email linking to `/account/access/<token>/`.
 - [ ] `GET` the access link → confirm page with a POST button; **no login, no state change** (prefetch safety).
-- [ ] Click the button (POST) → signed in, redirected to `/account/?just_confirmed=1`, which 301s on to `/?panel=favourites`; confirmation banner shown.
+- [ ] Click the button (POST) → signed in, redirected to the validated `?next=` if the link carried one, otherwise straight to `/map/?panel=favourites` (the map with the pins sheet open).
 - [ ] Submit an **unknown** email → identical "check your inbox" page, no email sent (enumeration parity).
 - [ ] Re-POST the same access link within the TTL → idempotent (lands in the same place, no error).
 
@@ -99,8 +99,8 @@ the scenario doc does not.
 
 ## 10. Nav visibility (check in each state)
 
-- [ ] **Anonymous** → "Register" and "Sign in" links visible.
-- [ ] **Authenticated account** → avatar dropdown: the offline-mode switch, "Settings", "Sign out" — no region links, no list entries (SNOW-802/803: those are map sheets).
+- [ ] **Anonymous** → a single "Sign in" button; the sign-in page carries the "Create an account" link.
+- [ ] **Authenticated account** → avatar dropdown: "Trips", "Settings", "Sign out" — no region links, no list entries (SNOW-802/803: those are map sheets), no offline-mode switch (SNOW-921 moved it to the network menu).
 - [ ] `/account/`, `/account/favourites/`, `/account/routes/`, `/account/observations/` → 301 to the map with the matching sheet open.
 - [ ] **Staff** → extra cog dropdown (Component library, Django admin, …) rendered alongside the avatar.
 

@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, seventeen read-only tools, resources/read, MCP Apps show_danger_map view
 status: current
-last-reviewed: 2026-09-26
+last-reviewed: 2026-10-01
 ---
 
 # MCP server
@@ -494,7 +494,7 @@ stateless and always advertises the metadata.
 ### `show_danger_map`
 
 `get_regional_snapshot` plus a dated bulletin page `url` per region, a
-`scope_label`, and `map_url` (the Snowdesk map for the day, `/?d=<date>`),
+`scope_label`, and `map_url` (the Snowdesk map for the day, `/map/?d=<date>`),
 with `_meta.ui.resourceUri = "ui://snowdesk/danger-map.html"`.
 
 * **Params:** as `get_regional_snapshot` — exactly one of `country` /

@@ -2,7 +2,7 @@
 name: weather-is-one-immutable-location-row
 description: Weather model — one row per (Location, observed_on), immutable once past; upsert_weather, fetch_weather, Location.objects.active()
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-10-01
 ---
 
 # Weather is one immutable row per location per day (SNOW-757)
@@ -29,7 +29,7 @@ Weather                                apps/weather/
   observed_on   date — the day this row is OF
   fetched_at    datetime — updated on every write
 
-  17 daily scalars describing observed_on
+  18 daily scalars describing observed_on
   hourly        JSON — observed_on itself, hour by hour
   forecast      JSON — the days AFTER it, as known ON it
 

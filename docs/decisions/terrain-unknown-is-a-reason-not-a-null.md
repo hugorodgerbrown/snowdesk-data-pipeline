@@ -2,7 +2,7 @@
 name: terrain-unknown-is-a-reason-not-a-null
 description: sample_height and sample_slope return a TerrainUnknown — outside_coverage, no_data, unavailable — never None; a 204 is the coverage answer
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # A terrain unknown is a reason, never a null

@@ -2,7 +2,7 @@
 name: a-trip-share-is-a-page-not-a-pending-claim
 description: A trip link opens a public page; it needs none of SNOW-764's session pending-claim machinery, because a trip has somewhere to be seen
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-10-01
 ---
 
 # A trip share is a page, not a pending claim
@@ -34,7 +34,8 @@ built for a route share:
 
 A `Route` is a polyline. It has no page — a route is read on the map, as a
 line among the user's own lines — so `route_share_redirect` had to land the
-recipient *somewhere*, and the only somewhere was `/`. That is a map of
+recipient *somewhere*, and the only somewhere was the map (then at `/`,
+now `/map/`). That is a map of
 their own data, which does not include the route they were just sent. Making
 the line visible there meant carrying the token past the redirect, which
 meant the session; and making the panel and the GeoJSON feed draw it meant
@@ -57,7 +58,9 @@ same link lands on the same page in the same state, so the intention needs
 no server-side memory — the browser's history is holding it.
 
 **Two acts, neither of which needs a claim.** A recipient can **join** the
-trip (SNOW-822) or **save the route** (SNOW-824), both `POST`s addressed by
+trip (SNOW-822 — labelled "Save this trip" since SNOW-848 took the roster
+surface off the page; the `trips:join` endpoint name survives) or **save
+the route** (SNOW-824), both `POST`s addressed by
 the token, both requiring an account. Neither is a *claim* in SNOW-764's
 sense — an intention recorded now and acted on later — so neither needs a
 place to be recorded.
@@ -68,11 +71,14 @@ place to be recorded.
   everything before being asked for anything, which is the property the
   pending list was working to preserve, obtained here for free.
 - **The cost is one page load per action.** A signed-out visitor who wants
-  to join signs in and re-opens the link, rather than having their intention
-  replayed for them. Accepted: `apps.accounts.views.sign_in_view` does not
-  read a `?next=` parameter today, so the roster's CTA does not pretend to
-  pass one. Teaching sign-in about `next` would close this and is its own
-  ticket.
+  to save the trip signs in and comes back to the link, rather than having
+  their intention replayed for them. When this was decided
+  `apps.accounts.views.sign_in_view` read no `?next=` parameter, so the
+  page's sign-in link could not pass one; SNOW-825 has since taught sign-in
+  about `next` (every read goes through `apps.accounts.redirects.safe_next`),
+  so the sign-in link carries the trip URL and the recipient lands back on
+  the trip after signing in. The save itself is still a second click —
+  nothing is replayed.
 - **Saving the route copies the trip's SNAPSHOT**, not the organiser's
   `Route`. It works after they delete theirs, and what the viewer gets is
   the geometry they were shown. Nulls stay null; the copy carries no timing

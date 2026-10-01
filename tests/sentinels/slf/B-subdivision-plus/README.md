@@ -17,5 +17,5 @@ Two avalanche problem types in the `aggregation` (`wind_slab` and `wet_snow`).
 
 ## PDF
 
-See `slf/A-single-level/README.md` — no stable URL for archived SLF PDFs is
+See [`../A-single-level/README.md`](../A-single-level/README.md) — no stable URL for archived SLF PDFs is
 discoverable from the public API.  `source.pdf` is absent from this directory.

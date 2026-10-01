@@ -2,7 +2,7 @@
 name: resorts-are-editable-data
 description: resorts.tsv is the only resort file — import_resorts applies it, dump_resorts_sheet writes it back, no deploy loads it; resorts.json retired
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-10-01
 ---
 
 # Resorts are editable data, and one file describes them
@@ -101,7 +101,9 @@ dump it, get the same bytes.
   an error rather than guessed at, and the fix is to fill the sheet.
 - **Deleting a resort is safe for user data**: `Favourite.resort` is
   `SET_NULL`, so a favourite made from a deleted resort degrades to a plain
-  pin with its snapshotted name, coordinates and region intact. It does leave
-  the resort's `ForecastCell` unreferenced — run `prune_forecast_points
-  --commit` after a bulk deletion to clear those and their cascaded weather
-  rows (SNOW-633).
+  pin with its snapshotted name, coordinates and region intact. Its
+  `ResortLocation` links cascade with it; the `Location` rows they pointed
+  at stay, so run `prune_orphan_locations --commit` after a bulk deletion to
+  clear any anonymous one nothing else references, together with its
+  `Weather` rows. (The `ForecastCell` estate and `prune_forecast_points`
+  that SNOW-633 added went with SNOW-762.)

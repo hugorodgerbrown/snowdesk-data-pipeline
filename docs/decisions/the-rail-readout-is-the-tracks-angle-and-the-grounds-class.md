@@ -2,7 +2,7 @@
 name: the-rail-readout-is-the-tracks-angle-and-the-grounds-class
 description: rail two readout — trackGrade, slopeTerm (flat under 5°), steepShares, ROWS_FITTED, staff debug rail, readout-no-fall, no selection
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # The rail's readout is the track's angle and the ground's class

@@ -12,8 +12,8 @@ description: |
   use for a per-PR / per-diff review (that's the built-in `/code-review` skill
   and the `reviewer` agent) — this is the whole-codebase drift audit.
 user-invocable: true
-# Both Linear server names: the local MCP config and the claude.ai connector
-# (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
+# Three renderings of the one Linear connector — the tool prefix differs per
+# client surface (CLI, cloud, Desktop); list all three. See .claude/README.md.
 allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
@@ -226,7 +226,9 @@ PATH=~/.local/bin:$PATH uv run tox
   to a spin-off. Re-run. **Never** push a red branch — exit non-zero in
   routine mode if it can't be made green.
 
-Stage and commit. Subject: `SNOW-NNN: code review pass YYYY-MM-DD`. Include
+Stage and commit with `--author="Claude <noreply@anthropic.com>"` (the
+PreToolUse hook refuses a commit without it). Subject:
+`SNOW-NNN: code review pass YYYY-MM-DD`. Include
 the doc, README pointer update, and any inline-fix files.
 
 ## Step 10 — Push and open the PR

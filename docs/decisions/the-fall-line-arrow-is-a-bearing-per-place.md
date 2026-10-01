@@ -2,7 +2,7 @@
 name: the-fall-line-arrow-is-a-bearing-per-place
 description: fall_line.py, fall_line_marks, fall_lines on the wire, routes-fall-lines — the downhill arrow on a route, steep ground only
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-10-01
 ---
 
 # The fall-line arrow is a bearing per place, not an aspect per segment

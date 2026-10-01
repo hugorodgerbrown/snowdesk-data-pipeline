@@ -3718,8 +3718,8 @@ body.map-framing #map-legend {
 /* SNOW-522: painted when the framed area exceeds DOWNLOAD_CEILING_MB — the
    same "too large" backstop the per-region control's disabled state
    carries, mirrored here since a custom area's size is only known once
-   framed. static/js/map.js toggles this class alongside disabling
-   #map-frame-confirm. */
+   framed. static/js/map_custom_download.js toggles this class alongside
+   disabling #map-frame-confirm. */
 .map-frame-readout--over-ceiling {
     color: var(--color-status-error-text);
 }

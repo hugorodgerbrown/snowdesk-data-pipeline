@@ -10,7 +10,7 @@ rename / delete + the geojson layer), so the create form and the CSRF token
 it carries are rendered once, here, and reused by the JS for both the
 create flow and the pin-detail (rename/delete) flow.
 
-Three shared modules are loaded once each by home.html (shared with
+Three shared modules are loaded once each by map.html (shared with
 _report_surface.html) before this partial — none is repeated here:
 
   htmx.min.js       used by the report surface's HTMX-swapped form.
@@ -153,7 +153,7 @@ Context expected:
         </button>
     </div>
 </template>
-{# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
+{# SNOW-475: place_picker.js is loaded by map.html (shared with        #}
 {# _report_surface.html) — not repeated here; see this partial's header #}
 {# comment.                                                             #}
 {# SNOW-414: saved-pin add/rename/delete JS. #}

@@ -2,7 +2,7 @@
 name: a-downloaded-area-is-verified-by-what-it-renders
 description: missingRenderDependencies, incomplete, repair, contentIncomplete, refreshAreaContent — an area needs its style, TileJSON, sprite, bulletins
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # A downloaded area is verified by what it renders, not by its tiles

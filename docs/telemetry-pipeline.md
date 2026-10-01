@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Telemetry pipeline
@@ -170,10 +170,11 @@ change the frozenset + document the property shape here.
   lifecycle): `map.favourite.created` (`static/js/favourites.js`, a
   create-form submit whose response carries a favourite row),
   `map.favourite.deleted` (same file, a delete response with an empty
-  body), `map.favourite.overlay_toggled` with `properties.visible`
-  (emitted by `window.pwaFavouritesOverlay`'s own show/hide in
-  `static/js/map.js`, which the layers menu's Favourites row drives —
-  SNOW-904).
+  body), `map.favourite.shared` (same file, the row's Share control,
+  before the share sheet opens), `map.favourite.overlay_toggled` with
+  `properties.visible` (emitted by `window.pwaFavouritesOverlay`'s own
+  show/hide in `static/js/map.js`, which the layers menu's Favourites row
+  drives — SNOW-904).
 - **Community reports** (SNOW-419 — same `map.*` namespace):
   `map.community_reports.overlay_toggled` with `properties.visible`
   (SNOW-658: emitted by `window.pwaCommunityReportsOverlay`'s own
@@ -204,7 +205,7 @@ change the frozenset + document the property shape here.
   fires regardless of opt-in.
 - **Basemap download bookkeeping** (SNOW-612, same `map.*` namespace):
   `map.basemap.record_write_failed` with `properties.region_id`
-  (`static/js/map.js`'s `_recordRegionDownload`) — a completed download
+  (`static/js/map_region_download.js`'s `_recordRegionDownload`) — a completed download
   whose `basemap.regions` record could not be written. The run leaves a
   pinned Cache Storage bucket behind with nothing naming it, which then
   reads as an orphan; the bucket is reconciled and deletable either way,
@@ -334,7 +335,8 @@ The exact set from spec §16 (`static/js/telemetry.js::CRITICAL_EVENTS`):
 `pwa.kill_switch.activated`, `pwa.forced_update.triggered`,
 `pwa.reset.user_initiated`, `pwa.reset.forced`,
 `pwa.sw.fetch_undefined`, `pwa.mutation.failed_permanent`,
-`pwa.push.subscription_lost`, `pwa.sw.activation_failed`.
+`pwa.push.subscription_lost`, `pwa.sw.activation_failed` — plus `js.error`,
+which SNOW-894 added to the set (see the emitter table below).
 
 Every critical `emit()`:
 1. Fires `navigator.sendBeacon('/api/telemetry', envelope)` immediately
@@ -392,15 +394,15 @@ below the table.
 | `static/js/sw_register.js` | `pwa.sw.update_available` (`revealUpdateBannerIfStuck`, once per page, and only when the stuck-worker banner was actually revealed: SNOW-1025 made a routine update silent, so this counts workers that could not update themselves, not deploys) / `.update_applied` (the `controllerchange` after either a silent activation or the banner's Reload) / `pwa.kill_switch.activated` with `properties.mechanism: 'a'` (the pre-register kill fetch — `fetchSwConfig()` returning `kill: true`) |
 | `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
 | `static/js/mutation_queue.js` (real queue, SNOW-376) | `pwa.mutation.enqueued` (`enqueue`) / `.drained` with the real count of rows a 2xx removed (`drain`) / `.failed_permanent` with `properties.attempts` reflecting the attempt that just failed — a permanent 4xx or the 20th retry (`_markRowFailed`, and `markFailed` for a caller-driven report outside the queue) |
-| `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); `TODO(SNOW-848)` in the source marks it for tightening once real eviction cases surface |
-| `static/js/favourites.js` (SNOW-414) | `map.favourite.created` (create-form `htmx:afterSwap` whose response carries `[data-favourite-uuid]`, gated on a module-level "currently creating" flag so a rename doesn't also fire it) / `map.favourite.deleted` (delete's empty-body `htmx:afterSwap`) |
+| `static/js/db.js::_checkStorageEstimate` (cold-start, inside `open()`'s `onsuccess`) | `pwa.storage.evicted_probable` — conservative heuristic (implausibly low `navigator.storage.estimate()` quota, or zero usage alongside a surviving `pwa.install.installed_at` localStorage marker); a `TODO` in the source (no ticket filed) marks it for tightening once real eviction cases surface |
+| `static/js/favourites.js` (SNOW-414) | `map.favourite.created` (create-form `htmx:afterSwap` whose response carries `[data-favourite-uuid]`, gated on a module-level "currently creating" flag so a rename doesn't also fire it) / `map.favourite.deleted` (delete's empty-body `htmx:afterSwap`) / `map.favourite.shared` (the row's Share control, emitted before `pwaShare.shareOrCopy` runs) |
 | `static/js/map.js` — `window.pwaFavouritesOverlay` (SNOW-414) | `map.favourite.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, whatever drives them (the layers menu's Favourites row since SNOW-904, the panel switch before it) |
-| `static/js/map.js::basemapPickerInit` (SNOW-419) | `map.community_reports.overlay_toggled` with `properties.visible` — the basemap-menu overlay-toggle click handler, only for `data-overlay-key="community_reports"` |
+| `static/js/map.js` — `window.pwaCommunityReportsOverlay` (SNOW-419, SNOW-658) | `map.community_reports.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, whatever drives them (the layers menu's "Field observations" row since SNOW-904) |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 | `static/js/routes.js` (SNOW-686, SNOW-764) | `map.route.created` (a successful upload to `routes:create`) / `map.route.deleted` (a panel row's Remove form returning 2xx) / `map.route.shared` (a share link minted, not sent) / `map.route.claimed` (a recipient's Save returning 2xx; `static/js/map.js` emits the same event for the map's own claim path). No file name, size, geometry, uuid or token on any of them |
 | `static/js/map.js` — `window.pwaRoutesOverlay` (SNOW-687) | `map.route.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, the favourites sibling the routes set was missing at SNOW-686 |
 | `static/js/mutation_queue.js` (SNOW-462) | `pwa.mutation.discarded` with `properties.reason` — `account_change` (the whole queue cleared on a principal change at load) or `principal_mismatch` (one row caught by the drain guard). A discarded row is never replayed |
-| `static/js/map.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |
+| `static/js/map_region_download.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |
 | `static/js/error_reporting.js` (SNOW-894) | `js.error` — every uncaught exception (`window` `error`) and unhandled rejection. **CRITICAL**, so it beacons immediately and fires regardless of opt-in; the payload is what differs. Opted in: `{kind, pathname, message, filename, lineno, colno, stack}`. Opted out: `{kind, pathname}` and nothing more. Never a query string on either branch — the map's URLs carry `?route_share=` / `?trip_share=` tokens, and a share token is a capability. Deduped per page on `message\|filename\|lineno` (3 reports per fault, 20 distinct faults), because a throw inside a MapLibre `moveend` handler fires on every frame of a pan |
 
 **SNOW-585 — suppressed in dev.** `pwa.sw.update_available` (and

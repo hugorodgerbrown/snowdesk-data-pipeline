@@ -2,7 +2,7 @@
 name: overlay-primitives
 description: Four DS overlay primitives (banner/toast/sheet/modal), the data-action=dismiss + data-overlay contract, and the ordered z-index token scheme
 status: current
-last-reviewed: 2026-07-21
+last-reviewed: 2026-10-01
 ---
 
 # Overlay primitives, the shared dismiss contract, and the z-index scheme
@@ -21,9 +21,11 @@ control, and z-index literal.
    optional icon/CTA/dismiss, anchored bottom-centre by default or top-centre
    via `position="top"`). Migrated the sw-update banner, the Android/Chromium
    + iOS install prompts, and the **off-map nudge** (`#offmap-banner`,
-   `position="top"`, `icon="location-off"`) — the map.js reveal keeps its 7s
+   `position="top"`, `icon="location-off"`) — the reveal (now in
+   `static/js/map_geolocate.js`, `floatingBanner`) keeps its 7s
    auto-dismiss timer but the card shape and the "×" are now the shared
-   primitive + `overlays.js`. Because it floats on every viewport it no
+   primitive + `overlays.js`. `#locate-failed-banner` (SNOW-682) is the
+   same primitive with a 12s timer and a "Try again" CTA. Because it floats on every viewport it no
    longer pushes the map down on mobile (a deliberate convergence onto the
    one nudge shape).
 2. **Toast** — `templates/includes/_toast.html`. Transient, bottom-centred
@@ -50,8 +52,12 @@ control, and z-index literal.
    rather than one of the four overlay primitives, and it is listed here only
    so the next reader does not route it back through a toast.
 3. **Sheet** — `templates/includes/_overlay_sheet.html`. Fly-out panel
-   shared by the favourite and report map surfaces; content is injected by
-   the owning JS module at open time.
+   shared by the favourite and report map surfaces, and since then by the
+   routes panel, the downloads sheet, the route detail sheet, the weather
+   sheet and the layers menu's sign-in sheet (seven `id`s today); content
+   is injected by the owning JS module at open time, and
+   `static/js/map_sheet.js`'s `MapSheet.attach` gives each one the shared
+   dismissal routes and its registration with `window.pwaMapOverlays`.
 4. **Modal** — `templates/includes/_overlay_modal.html`. Full-screen
    backdrop + centred card, CTA-only by design (no dismiss control). Shared
    shell for the two PWA modals (forced update, reset required).
@@ -112,9 +118,10 @@ restore focus) listen for `overlay:dismissed` rather than binding their own
 --z-toast:  50;   /* transient toasts: share, mutation-queue, htmx-error            */
 --z-popup:  60;   /* sheets: favourite / report fly-outs                            */
 --z-modal:  70;   /* full-screen modals: forced update, reset required              */
+--z-launch: 80;   /* PWA launch shell (SNOW-878) — covers the booting app entirely   */
 ```
 
-Final stacking order is modal > popup > toast > banner — a deliberate
+Final stacking order is launch > modal > popup > toast > banner — a deliberate
 reorder from the pre-SNOW-486 state, which had toasts stacking above
 sheets.
 
@@ -132,6 +139,9 @@ not lifted into the global scale.
   ancestor with the right `data-overlay-hide` declaration — no per-page JS
   required, unless the overlay owns a transition the generic hide would
   short-circuit (see `_toast_banner.html` above).
-- Any change to `static/js/overlays.js` or a primitive partial that touches
-  shell JS/CSS requires a `CACHE_VERSION` bump in `static/js/sw.js`, or
-  returning users get the stale shell.
+- A change to `static/js/overlays.js` or a primitive partial that touches
+  shell JS/CSS used to need a hand-edited `CACHE_VERSION` bump in
+  `static/js/sw.js`. It no longer does: since SNOW-590 the literal on disk is
+  a placeholder that `serve_sw` (`apps/public/views.py`) substitutes with a
+  hash of the shell at serve time, so a shell change rolls the cache on
+  its own ([`../offline-map.md`](../offline-map.md)).

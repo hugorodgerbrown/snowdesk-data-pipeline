@@ -2,14 +2,14 @@
 name: weather-day-picker-is-a-selector-not-navigation
 description: The weather day picker is a CSS radio group inside one Weather row's forecast window, not links pushing ?date= — no future row exists
 status: current
-last-reviewed: 2026-09-01
+last-reviewed: 2026-10-01
 ---
 
 # The day picker selects inside a row; `?date=` selects the row
 
 ## Decision
 
-The seven cells on `/weather/<location_id>/` are radio inputs in one
+The seven cells on `/weather/<short_id>/` are radio inputs in one
 server-rendered `<fieldset>`, revealed by hand-written `:has()` rules in
 [`src/css/main.css`](../../src/css/main.css). They are **not** links, and
 pressing one does not change the URL.

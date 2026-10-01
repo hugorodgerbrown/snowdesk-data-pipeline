@@ -2,7 +2,7 @@
 name: linear-workflow
 description: Linear ticket lifecycle — status transitions, scoping comment contract, branch naming, PR body with Closes SNOW-xxx
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # Linear workflow

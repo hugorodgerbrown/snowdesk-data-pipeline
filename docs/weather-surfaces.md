@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_panel, _weather_day_picker, _weather_day_line, _weather_masthead, build_weather_display, is_day, /api/weather.geojson
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-10-01
 ---
 
 # Weather surfaces
@@ -11,7 +11,7 @@ Everything a user can see of the Open-Meteo domain. The data behind it —
 one `Weather` row per `(location, observed_on)`, with the forward days in
 its `forecast` column — is
 [`docs/decisions/weather-is-one-immutable-location-row.md`](decisions/weather-is-one-immutable-location-row.md);
-this document is the four places that row is read.
+this document is the three places that row is read.
 
 This file replaces `docs/weather-header.md`, which described a surface that
 no longer exists. That document was about a bucket-coloured band across the
@@ -24,15 +24,21 @@ restoration.
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
-| Resort page ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | every `ResortLocation.location` | today |
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
 
-The first four are server-rendered; the map overlay is a GeoJSON feed and a
+The first two are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet
 ([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
 that hands off to the location forecast page.
+
+**The resort page is not on this list either (SNOW-807).** It reads no
+weather at all: it is a router to the two documents, and its Forecasts
+section is a plain list of the resort's curated locations, each a link to
+its own `/weather/<short_id>/` page with the role and elevation that tell
+village from summit. SNOW-761 drew one panel per location there and
+SNOW-783 trimmed it to the day; SNOW-807 removed the rest.
 
 **The bulletin masthead is not on this list, and that is the point
 (SNOW-784).** It carried a row read off `MicroRegion.centroid_location`
@@ -48,7 +54,8 @@ is unaffected; see the closing note in this file.
 `_hourly_chart.html`) belong to the location forecast page alone. A
 surface that names a location shows the day and links to the rest — the
 resort page and the favourite card both drew the whole week inline until
-SNOW-783, the resort page once per curated altitude.
+SNOW-783, the resort page once per curated altitude, before SNOW-807 took
+the day off the resort page as well.
 
 `_forecast_panel.html` and `_forecast_chart.html` were the week's two
 components until SNOW-789 and are **deleted**, not renamed. Historical
@@ -226,8 +233,8 @@ at the valley floor.
 **The `--color-weather-*` tokens render nothing.** They are still
 registered in the component library and still defined in
 [`src/css/main.css`](../src/css/main.css); SNOW-761 chose not to bring the
-coloured band back, because three surfaces now include this partial and
-each owns its own chrome. The panel still emits `data-weather-bucket` and
+coloured band back, because the surfaces that include this partial each
+own their own chrome. The panel still emits `data-weather-bucket` and
 `data-time-of-day`, so a later ticket that wants the band has the hook and
 the palette in place.
 
@@ -261,8 +268,10 @@ rather than a different page — and the MCP server reaches it through
 The layout it replaces stated the same high and low three times — a
 "Today" `_weather_panel`, the day cells, and an outlook chart drawing them
 as shape — and named the location again in every sub-header.
-`_weather_panel.html` is **not** deleted: it keeps its other three
-consumers, and is simply no longer on this page.
+`_weather_panel.html` is **not** deleted: it keeps its other consumers —
+the favourite card and the help page's illustration
+(`public/help/illustrations/_weather_panel.html`) — and is simply no longer
+on this page.
 
 ### Three page shapes
 
@@ -527,9 +536,9 @@ infinitely high, so it only ever wins a cluster it is alone in.
 In [`static/js/map.js`](../static/js/map.js), around `installWeatherLayer`:
 
 * **Icons are rasterised, not SDF.** The condition SVGs are multi-path and
-  image-shaded (every file but `clearsky_*` embeds a base64 PNG for cloud
-  shading); an SDF registration keeps only the alpha mask and would discard
-  the colour. They are decoded through an `<img>` and a 2D canvas
+  coloured (the Yr comparison set goes further and embeds a base64 PNG for
+  cloud shading in every file but the clear-sky pair); an SDF registration
+  keeps only the alpha mask and would discard the colour. They are decoded through an `<img>` and a 2D canvas
   into raw `ImageData` and registered with `map.addImage`, memoised per
   filename so the re-register after a basemap `setStyle` is synchronous.
   This is the one thing jsdom cannot check, and the one Playwright test

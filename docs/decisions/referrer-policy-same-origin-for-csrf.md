@@ -2,7 +2,7 @@
 name: referrer-policy-same-origin-for-csrf
 description: Token-confirm GET pages use Referrer-Policy same-origin, not no-referrer, so their same-origin POST passes Django CSRF on HTTPS (SNOW-438)
 status: current
-last-reviewed: 2026-07-19
+last-reviewed: 2026-10-01
 ---
 
 # Referrer-Policy on token-bearing confirm pages

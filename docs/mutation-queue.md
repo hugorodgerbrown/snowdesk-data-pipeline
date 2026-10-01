@@ -2,7 +2,7 @@
 name: mutation-queue
 description: Client mutation queue — window.pwaMutationQueue, queue:mutations, Idempotency-Key, backoff, offline drain guard, Background Sync, principal
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Client mutation queue
@@ -123,9 +123,9 @@ classified differently depending on which one processes it.
 
 ## Backoff schedule
 
-`backoffDelayMs(attempts)` (`mutation_queue_core.js:68`): `2^attempts`
+`backoffDelayMs(attempts)` (`mutation_queue_core.js`): `2^attempts`
 seconds, capped at 300s — 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, then 300s
-from attempt 9 onward. `MAX_ATTEMPTS = 20` (`mutation_queue_core.js:53`), so
+from attempt 9 onward. `MAX_ATTEMPTS = 20` (`mutation_queue_core.js`), so
 a row that only ever classifies `retry` exhausts its budget after 63 minutes
 of accumulated backoff.
 
@@ -283,9 +283,9 @@ network — ahead of the in-flight guard, so no row is read and no request is
 made. It is the same guard `telemetry.js`'s `flush()` carries.
 
 "Not using the network" is `_networkInUse()`, not `navigator.onLine`
-(SNOW-748). The interface being up is only half the question: the account
-menu's offline-mode toggle can put the app in a forced offline mode while the radio
-stays up, and replaying a queued mutation under it spends one of the row's
+(SNOW-748). The interface being up is only half the question: the network
+menu's "Offline mode" switch (the account menu's until SNOW-921) can put the
+app in a forced offline mode while the radio stays up, and replaying a queued mutation under it spends one of the row's
 20 attempts on a connection the user asked the app not to use. Both modules
 consult `window.pwaConnectivity.isOnline()` (`pwa_offline.js`), falling back
 to `navigator.onLine` on a page where that module has not run. A forced mode
@@ -293,12 +293,13 @@ leaves the row queued, which is the state the queue is built around — nothing
 is dropped, and the next drain after the toggle returns to `auto` replays it.
 
 The service worker cannot absorb an offline replay. Classification returns
-`'network'` for every non-GET request — `basemap_cache_core.js:84`, and the
-inline fallback at `sw.js:888` — and the `'network'` branch of the `fetch`
-listener makes no `event.respondWith()` call (`sw.js:1734`), so a replay
-POST is never seen by the SW's caching layer. The browser handles it, and
-`fetch` rejects while offline. `_processRow()` treats a thrown `fetch()` as
-`'retry'` (`mutation_queue.js:512`), which increments `attempts` and pushes
+`'network'` for every non-GET request — `basemap_cache_core.js`'s
+`classifySync`, and the inline fallback in `sw.js`'s `_classifySync` —
+and the `'network'` branch of the `fetch` listener makes no
+`event.respondWith()` call, so a replay POST is never seen by the SW's
+caching layer. The browser handles it, and `fetch` rejects while offline.
+`_processRow()` treats a thrown `fetch()` as `'retry'`, which increments
+`attempts` and pushes
 `next_attempt_at` out by the backoff above. Without the guard, the
 visible-tab timer re-triggering every 30s spends that budget against a
 network that isn't there: at `MAX_ATTEMPTS` of 20 and a 300s backoff cap, a
@@ -333,7 +334,7 @@ relying entirely on the page-lifecycle drain triggers above instead.
   self-drains directly against IndexedDB (`sw.js::_openMutationsDb`, no
   `window.pwaDb` available in a worker). It opens `snowdesk-pwa-v1` with no
   version number, so it attaches to whatever schema version a page last
-  migrated to — `db.js` owns `DB_VERSION` (4) and a hardcoded version here
+  migrated to — `db.js` owns `DB_VERSION` (7 today) and a hardcoded version here
   would throw `VersionError` the moment `db.js` moved ahead. Its
   `onupgradeneeded` branch fires only when a sync beats every page to the
   DB, creating a v1 database holding `queue:mutations` alone; the next page

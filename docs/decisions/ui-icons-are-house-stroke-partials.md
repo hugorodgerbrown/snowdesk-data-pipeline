@@ -2,7 +2,7 @@
 name: ui-icons-are-house-stroke-partials
 description: UI icons are _icon_*.html partials — 24×24, stroke-2, currentColor, one source per mark; three Font Awesome filled glyphs excepted
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-10-01
 ---
 
 # UI icons are house stroke partials
@@ -16,8 +16,10 @@ template.
 
 Three glyphs are the named exception, and they are filled Font Awesome
 Free paths on a 512 grid, each carrying its CC BY 4.0 attribution inline:
-the map's favourites star and community-report flag (`static/js/map.js`),
-and `_icon_observation.html`'s binoculars. The first two are MapLibre SDF
+the map's favourites star and community-report flag (`static/js/map.js`,
+with the same two paths repeated as the legend key in
+`public/partials/_map_embed.html`), and `_icon_observation.html`'s
+binoculars. The first two are MapLibre SDF
 symbols painted at roughly 18px over aerial imagery, where a 2px stroke
 washes out and a filled silhouette does not. The third is the roundel that
 opens the observation panel, deliberately heavier than its two neighbours
@@ -53,8 +55,9 @@ enumerated here.
 `<svg>` in the template that happens to need it first — and a second
 surface wanting the same mark includes the partial rather than pasting the
 path. Icon partials carry no component-library registry entry (none of the
-twenty do): the library documents composed surfaces, and an icon is a
-primitive of one.
+twenty-three do — the registry's "Icons" foundation lists the favicon and
+EAWS pictogram assets, not these partials): the library documents composed
+surfaces, and an icon is a primitive of one.
 
 A fourth filled glyph needs an argument that answers this file, not a
 precedent from the three above — "there is already a filled one" is not

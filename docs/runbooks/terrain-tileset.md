@@ -2,7 +2,7 @@
 name: terrain-tileset
 description: Terrain elevation tileset — swissALTI3D to a 5 m EPSG:3035 Int16 grid at /terrain/v1/, the build, grid.json, the 204 rule, TERRAIN_VERSION
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # Runbook — terrain elevation tileset (SNOW-908)
@@ -30,7 +30,7 @@ So the two terrain surfaces are unrelated in everything but subject:
 | What it is | swisstopo's pre-rendered `ch.swisstopo.hangneigung-ueber_30` raster | Our own Int16 height grid |
 | Who consumes it | MapLibre, in the browser | Django, server-side |
 | Answers | "shade this pixel" | "this coordinate is 2,417.25 m" |
-| Lives in | `static/js/slope_overlay_core.js` | SNOW-917 (not yet started) |
+| Lives in | `static/js/slope_overlay_core.js` | Served from `snowdesk-tiles`; read by `apps/locations/services/terrain.py` (SNOW-917) |
 
 ## Where the build lives
 
@@ -47,8 +47,11 @@ The build, the grid definition and the publish path are in
 | `scripts/vm-build.sh terrain` | The whole VM path — installs GDAL, builds, publishes. |
 | `scripts/verify.sh` | Acceptance checks against the live origin. |
 
-Nothing in *this* repo builds or serves it. What this repo will own is the
-sampling side — SNOW-917, not yet started.
+Every path in that table is a path in `snowdesk-tiles`, not here. Nothing
+in *this* repo builds or serves the tileset; what this repo owns is the
+sampling side — SNOW-917, landed as `apps/locations/services/terrain.py`,
+`terrain_grid.py` and `terrain_sources.py` (see "What this repo owns",
+below).
 
 ## The grid, as published on 2026-09-13
 
@@ -175,7 +178,7 @@ op run --env-file=.env.1password -- ./scripts/upload.sh
 ./scripts/verify.sh
 ```
 
-1. List the swissALTI3D squares over `TERRAIN_BBOX` from swisstopo's STAC API,
+1. List the swissALTI3D squares over `TERRAIN_BBOX` (a `snowdesk-tiles` build variable) from swisstopo's STAC API,
    taking the **2 m** GeoTIFF, one item per square kilometre, newest survey per
    square. The 2026-09-13 run listed **80,485 items and dropped 36,835 as
    superseded, leaving 43,650 squares** surveyed between **2019 and 2025** —
@@ -308,11 +311,28 @@ Storage is the only ongoing cost, and it is the reason the grid can be this
 fine. **~3.5 GB in R2, about five cents a month.** Egress is free, the writes
 are one-off, and there is no dyno and no schedule.
 
-## What this repo will own
+## What this repo owns
 
-**SNOW-917** — the sampling API, the source registry and `TERRAIN_TILE_URL` —
-and it is **not yet started**. The one rule it carries in from here: it reads
-`grid.json` rather than hardcoding the geometry. A grid rebuilt with different
-numbers and a sampler still applying the old ones does not fail loudly; it
-returns plausible, silently wrong heights. `verify.sh` compares the published
-definition against the source on every run for the same reason.
+**SNOW-917** — the sampling side, under `apps/locations/services/`:
+
+- `terrain_grid.py` — fetches `grid.json` from
+  `settings.TERRAIN_TILE_BASE_URL` (default
+  `https://tiles.snowdesk-data.info/terrain/v1`; a BASE, not an XYZ
+  template) and caches it for `GRID_CACHE_SECONDS` (3,600 s, matching the
+  origin's `max-age`). There is no committed fallback copy. A tile's URL is
+  composed from the definition's own `tile_url_template` (`tile_url`),
+  never from the setting, so a version bump at the origin moves every
+  consumer within the hour.
+- `terrain_sources.py` — the source registry read from `grid.json`'s
+  `sources[]`, with the bbox-superset coverage test and the tier rule
+  (`select_source`).
+- `terrain.py` — `sample_height` / `sample_slope`. A `204` is memoised as
+  "no ground here" for the life of the process; a transport failure is
+  not, and answers `UNAVAILABLE`
+  ([terrain-unknown-is-a-reason-not-a-null](../decisions/terrain-unknown-is-a-reason-not-a-null.md)).
+
+The one rule it carries in from here: it reads `grid.json` rather than
+hardcoding the geometry. A grid rebuilt with different numbers and a sampler
+still applying the old ones does not fail loudly; it returns plausible,
+silently wrong heights. `verify.sh` (in `snowdesk-tiles`) compares the
+published definition against the source on every run for the same reason.

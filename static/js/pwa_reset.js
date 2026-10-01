@@ -44,7 +44,7 @@
  * ``data-pwa-reset-skip-confirm``, for a surface that already carries
  * its own dialogue.
  *
- * SNOW-860: on /account/settings/ that dialog also quotes the total from
+ * SNOW-860: on /offline/ (SNOW-930; /account/settings/ before it) that dialog also quotes the total from
  * ``reset_data_summary.js``'s breakdown — the same figures the user has
  * just read on the page, from the same summary, so the two can never
  * disagree. Every other page carries the standing copy alone. The wipe
@@ -273,10 +273,10 @@
     'and are not affected.';
 
   /**
-   * The dialog copy, with the settings page's own figures folded in
+   * The dialog copy, with the /offline/ page's own figures folded in
    * (SNOW-860).
    *
-   * `/account/settings/` paints a breakdown of what this wipe deletes;
+   * `/offline/` paints a breakdown of what this wipe deletes;
    * the dialog quotes the total — and the unsent-change count, which is
    * the one line item nothing else can get back — from THAT summary
    * rather than computing a second one. Two numbers for the same

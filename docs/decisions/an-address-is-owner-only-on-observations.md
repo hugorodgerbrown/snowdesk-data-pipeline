@@ -2,7 +2,7 @@
 name: an-address-is-owner-only-on-observations
 description: A field observation's what3words address is owner-only — never in community_reports_geojson, where a 3m square undoes coordinate rounding
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-10-01
 ---
 
 # A report's address is for the person who filed it

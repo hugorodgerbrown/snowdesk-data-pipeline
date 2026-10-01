@@ -2,7 +2,7 @@
 name: the-update-banner-is-gated-on-the-shell-not-the-build
 description: Why the update banner compares CACHE_VERSION not APP_VERSION — shellIsStale, the /api/version shell field, build-identity cache, revealNow
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-10-01
 ---
 
 # The update banner is gated on the shell, not the build

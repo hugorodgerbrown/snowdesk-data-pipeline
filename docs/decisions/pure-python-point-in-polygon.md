@@ -2,7 +2,7 @@
 name: pure-python-point-in-polygon
 description: region_for_point and point_in_polygon are pure-Python ray-casting on the request path, not dev-only Shapely; classify_match is gone
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-10-01
 ---
 
 # Pure-Python point-in-polygon on the request path
@@ -19,6 +19,15 @@ last-reviewed: 2026-09-08
 > .create_favourite`) and for a GPS-gated field report
 > (`apps/observations/views.py`), and it stays pure Python for the reasons
 > below.
+>
+> **Shapely is a runtime dependency now.** SNOW-323 promoted it from the
+> `dev` group to `[project] dependencies` so that bulletin-grouping
+> dissolves (`apps/bulletins/services/grouping.py`), basemap tile
+> selection (`apps/regions/services/basemap_tiles.py`) and GPX parsing
+> (`apps/routes/services/gpx.py`) can use it. The "dev-only" argument
+> below is therefore history; what still holds is that `region_for_point`
+> is pure Python on the request path and does not need GEOS for a
+> kilometre-scale answer.
 
 **Decision.** The subscribe and add-region request handlers classified a
 subscriber's geolocation relative to the target MicroRegion using a

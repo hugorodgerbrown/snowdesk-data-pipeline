@@ -2,7 +2,7 @@
 name: claude-code-hooks
 description: Claude Code hooks wired in .claude/settings.json — setup-remote-env, init-worktree, mark-worktree-cleanable, claude-hook-deny-command
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # Claude Code hooks
@@ -144,8 +144,8 @@ is in
 
 ## What is deliberately not a Claude Code hook
 
-**The lint guards.** `ds-lint`, `i18n-lint`, `js-globals-lint` and `docs-lint`
-run as **pre-commit** hooks (see
+**The lint guards.** `ds-lint`, `i18n-lint`, `js-globals-lint`, `docs-lint`
+and `migrations-lint` run as **pre-commit** hooks (see
 [`.pre-commit-config.yaml`](../.pre-commit-config.yaml)), not from here. They
 are file checks, and pre-commit is the mechanism this repo already uses for
 file checks: it protects every committer — Hugo's own commits, another agent's,

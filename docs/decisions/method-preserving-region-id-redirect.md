@@ -2,10 +2,18 @@
 name: method-preserving-region-id-redirect
 description: POST views behind lowercase_region_id redirect with 308 not 301, so an htmx POST to an uppercase EAWS id is not downgraded to GET and 405ed
 status: current
-last-reviewed: 2026-08-09
+last-reviewed: 2026-10-01
 ---
 
 # Method-preserving redirect for region-scoped POST endpoints
+
+> **The four call sites named below are gone.** `fetch_weather_snippet`
+> went with the weather estate (SNOW-762) and the three `accounts` views
+> with the `Subscription` model (SNOW-802/805), so no view currently passes
+> `preserve_method=True`. The decorator keeps the flag and
+> `tests/public/test_decorators.py` keeps the 308 assertion, because the
+> rule in **Consequences** applies to the next region-scoped POST endpoint
+> regardless.
 
 **Decision.** `lowercase_region_id` (`apps/public/decorators.py`) canonicalises
 a mixed-case `region_id` with a **301** on full-page GET views, and with a

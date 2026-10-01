@@ -2,7 +2,7 @@
 name: choropleth-blended-not-translucent
 description: REVERSED by SNOW-656 — regions-fill was opaque with pre-blended colours; it is now translucent again, at a user-chosen opacity step
 status: historical
-last-reviewed: 2026-08-10
+last-reviewed: 2026-10-01
 ---
 
 # The choropleth is pre-blended, not translucent (REVERSED)

@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-08-23
+last-reviewed: 2026-10-01
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -23,28 +23,31 @@ is probably wrong — fix it rather than relaxing the rule.
 ```
 config/          Django project: split settings (base + development/staging/
                  production/perf overlays), urls, wsgi
-apps/            Parent package for the nine Django apps (SNOW-557 — moved
-                 here without changing any app label)
+apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
+                 here without changing any app label). The per-app summary
+                 lives in CLAUDE.md's "Architecture" block; the apps below
+                 are the ones this document's examples draw on
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware, the require_htmx decorator, and
                  the monitor_query_counts command
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
-                 (dump_resorts_sheet, refresh_eaws_fixtures,
-                 build_france_fixture, build_switzerland_fixture,
-                 audit_resort_regions)
+                 (dump_resorts_sheet, refresh_eaws_fixtures, the four
+                 build_<country>_fixture commands, audit_resort_regions,
+                 import_resorts)
   bulletins/     Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
-                 PipelineRun, RegionDayRating, the ingestion
-                 services (slf_fetcher / albina_fetcher / meteofrance_fetcher /
-                 meteofrance_translator / meteofrance_archive_loader /
-                 meteofrance_massifs / render_model / day_rating /
-                 slf_archive / geoip), the dev-only SLF mirror
-                 endpoints, and the bulletin management
-                 commands
+                 PipelineRun, RegionDayRating, BulletinGrouping, the
+                 ingestion services (slf_fetcher / albina_fetcher /
+                 meteofrance_fetcher / meteofrance_translator /
+                 meteofrance_archive_loader / meteofrance_massifs /
+                 render_model / day_rating / day_summary / grouping /
+                 slf_archive / geoip, among others under services/), the
+                 dev-only SLF mirror endpoints, and the bulletin
+                 management commands
   accounts/      Signed-token account flow — Account, PasskeyCredential,
                  PushSubscription
-  favourites/    Saved map pins and resorts — Favourite, its relevance
-                 scoring, and the /favourites/ HTMX partials
+  favourites/    Saved map pins, resorts and region pins — Favourite, its
+                 relevance scoring, and the /favourites/ HTMX partials
   observations/  Community field reports — FieldObservation and the
                  /partials/report/ submission endpoints
   analytics/     PostHog wiring and the /api/telemetry receiver. No models.
@@ -53,6 +56,8 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  docs/decisions/no-signals-for-side-effects.md)
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/. No models — reads the
                  bulletins/regions tables
+  locations/, weather/, routes/, trips/, downloads/, oauth/
+                 See CLAUDE.md for each
   public/        Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)
 tests/           Mirrors the layout of the modules under test
@@ -71,9 +76,12 @@ drives the calendar. `core/` exists so neither app needs to import
 abstract bases from the other.
 
 Tests live in a **top-level** `tests/` directory, not inside each app.
-The tree under `tests/` mirrors the source tree: `apps/bulletins/models.py`
-has tests at `tests/bulletins/test_bulletin_model.py` and
-`apps/regions/models.py` has tests at `tests/regions/models/test_models.py`.
+The tree under `tests/` mirrors the source tree: the models in
+`apps/bulletins/models.py` have tests at
+`tests/bulletins/test_bulletin_grouping_model.py`,
+`tests/bulletins/test_bulletin_share_model.py` and
+`tests/bulletins/test_day_rating_model.py`, and `apps/regions/models.py`
+has tests under `tests/regions/models/`.
 
 ---
 
@@ -134,7 +142,8 @@ Contains pure-ish functions that:
   line, then details. `Args:` / `Returns:` / `Raises:` sections use
   Google style. A trailing blank line inside the closing `"""` is
   permitted (pydocstyle rules `D406`/`D407`/`D410`–`D417` are disabled).
-- Do **not** start the first sentence with "This" (`D404`).
+- `D404` ("do not start with This") is in the ignore list, so a docstring
+  may open with "This"; prefer not to.
 - Section dividers inside large modules use a comment band:
   ```python
   # ---------------------------------------------------------------------------
@@ -180,11 +189,11 @@ Contains pure-ish functions that:
   `logger.info("Pipeline run %s started", run.pk)`.
 - Use `logger.exception(...)` inside `except` blocks to capture
   tracebacks; `logger.error("...", exc_info=True)` is also acceptable.
-- The `core`, `regions`, `bulletins`, and `accounts` loggers are
-  configured in [config/settings/base.py](../config/settings/base.py) to
-  write to `logs/pipeline.log` with rotation (the filename is legacy and
-  intentionally preserved), and errors additionally to `logs/errors.log`.
-  Don't reconfigure handlers inside app code.
+- The `apps.core`, `apps.regions`, `apps.bulletins`, and `apps.accounts`
+  loggers are configured in [config/settings/base.py](../config/settings/base.py)
+  to write to `logs/pipeline.log` with rotation (the filename is legacy
+  and intentionally preserved), and errors additionally to
+  `logs/errors.log`. Don't reconfigure handlers inside app code.
 - `print()` is a lint error (`T2` rule). Use the logger.
 - log API responses with `logger.debug()`
 
@@ -229,7 +238,8 @@ Every concrete model must:
    (BigAutoField), `uuid`, `created_at`, `updated_at`.
 2. **Define a `Meta`** that inherits from `BaseModel.Meta` and sets an
    explicit `ordering` (default is `-created_at` via BaseModel).
-3. **Define `__str__`** returning a human-readable representation.
+3. **Define `to_string()`** returning a human-readable representation,
+   with `__str__` delegating to it.
 4. **Define a custom QuerySet** even if empty (`pass`), and expose it
    via `objects = XxxQuerySet.as_manager()`. Domain query methods live
    on the queryset — not on the model.
@@ -242,7 +252,7 @@ Every concrete model must:
 6. **Have a Factory** in [tests/factories.py](../tests/factories.py).
 7. **Have test coverage** under `tests/<app>/` mirroring the source
    path (e.g. `tests/regions/models/test_models.py`,
-   `tests/bulletins/test_bulletin_model.py`).
+   `tests/bulletins/test_bulletin_grouping_model.py`).
 
 Keep business logic **out** of models. Put it in the owning app's
 `services/` subdirectory (e.g. [apps/bulletins/services/](../apps/bulletins/services/)).
@@ -304,8 +314,9 @@ fetch, or mutate other records.
 ### 3.7 Management commands
 
 Every command under an app's `management/commands/` subdirectory
-(`apps/bulletins/management/commands/`, `apps/regions/management/commands/`,
-`apps/core/management/commands/`) must:
+(eleven apps carry one — `apps/bulletins/management/commands/`,
+`apps/regions/management/commands/` and `apps/core/management/commands/`
+hold most of them) must:
 
 - Have a module header docstring and class docstring.
 - Override `add_arguments(self, parser: ArgumentParser) -> None` with
@@ -326,9 +337,10 @@ catalogue and flag reference.
 
 ### 3.8 Settings
 
-- Split across `config/settings/base.py`, `development.py`,
-  `production.py`. `DJANGO_SETTINGS_MODULE` is read from the
-  environment.
+- Split across `config/settings/base.py` and four overlays —
+  `development.py`, `production.py`, `staging.py` (production hardening,
+  one web dyno, no task worker) and `perf.py` (Lighthouse / query-count
+  runs). `DJANGO_SETTINGS_MODULE` is read from the environment.
 - Secrets and per-env config come from `python-decouple`
   (`config("SECRET_KEY")`). Never hard-code credentials, and never read
   them via `os.environ` directly.
@@ -381,9 +393,9 @@ catalogue and flag reference.
 - Per-file ignores for `*tests/*` disable docstring rules, line-length,
   `S101` (asserts), password-related `S1xx` rules, and `S113` so tests
   can use short literal fixtures freely.
-- `disallow_untyped_defs` is **off** for `tests.*` — idiomatic pytest
-  test functions need not end with `-> None`. Real type errors still
-  surface.
+- `tests/` is type-checked with the same `disallow_untyped_defs` as the
+  apps (`tox -e mypy` runs `mypy apps/ tests/ config/ schedule.py`), so a
+  test function ends with `-> None` like any other.
 
 ### 5.2 Test structure
 
@@ -463,9 +475,10 @@ workers pays the cost eight times. Group the module by what it caches.
 
 - Target: **all new code has covering tests**; aim for ≥90% total
   coverage across the project apps.
-- `pytest --cov=core --cov=bulletins --cov=regions --cov=public
-  --cov=accounts` runs by default via `addopts` in
-  [pyproject.toml](../pyproject.toml).
+- `pytest -n auto --cov=apps.<app>` for every app package runs by default
+  via `addopts` in [pyproject.toml](../pyproject.toml); `tox -e test` adds
+  `--cov=config --cov=schedule`. The list is enumerated, so an app added to
+  the tree is unmeasured until someone appends it to both.
 - `config/`, `*/migrations/*`, and `__init__.py` are excluded from
   coverage reporting.
 
@@ -495,10 +508,12 @@ workers pays the cost eight times. Group the module by what it caches.
   `debug-statements`
 - `gitleaks` for committed secrets
 - Local `djangofmt` hook via `.venv/bin/djangofmt`
-- Local `mypy` hook via `.venv/bin/mypy …` — the target package list must
-  be **identical** to the `commands` in `tox.ini`'s `[testenv:mypy]`, so a
-  local commit can't pass while CI mypy fails on a package the hook skipped.
-  Change both together.
+- Local `mypy` hook via `.venv/bin/mypy …` — the hook must cover the same
+  tree as `tox.ini`'s `[testenv:mypy]` (`mypy apps/ tests/ config/
+  schedule.py`), so a local commit can't pass while CI mypy fails on a
+  package the hook skipped. Change both together.
+- Local `ds-lint`, `i18n-lint`, `js-globals-lint`, `docs-lint` and
+  `migrations-lint` hooks, each running the matching `bin/` script.
 
 Install with `uv run pre-commit install`. Do not bypass hooks with
 `--no-verify` — if a hook fails, fix the underlying issue and create a
@@ -507,11 +522,13 @@ Install with `uv run pre-commit install`. Do not bypass hooks with
 ### 6.3 tox
 
 [tox.ini](../tox.ini) defines the default envlist — `fmt`, `lint`, `mypy`,
-`django-checks`, `ds-lint`, `docs-lint`, `test` — which runs in CI on every
-push. `djangofmt`, `audit`, `sast`, `e2e`, and `js` are wired up as tox envs
-but kept out of the default list (they mutate the tree, hit the network, or
-are opt-in); run the relevant one locally before opening a PR that touches
-templates, dependencies, or security-sensitive code.
+`django-checks`, `ds-lint`, `js-globals-lint`, `i18n-lint`, `docs-lint`,
+`e2e-lint`, `fidelity-lint`, `migrations-lint`, `test`, `js` — which runs
+in CI on every push. `djangofmt`, `audit`, `audit-dev`, `sast`, `e2e`,
+`js-types` and `offline` are wired up as tox envs but kept out of the
+default list (they mutate the tree, hit the network, or are opt-in); run
+the relevant one locally before opening a PR that touches templates,
+dependencies, or security-sensitive code.
 
 | env              | purpose                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------- |
@@ -520,8 +537,14 @@ templates, dependencies, or security-sensitive code.
 | `mypy`           | `mypy` over every app package + `tests/`, `config/`, `schedule.py` (see the env's `commands`) |
 | `django-checks`  | `manage.py check` + `makemigrations --check`                                             |
 | `test`           | `pytest -n auto` with `--cov` across every app package (see the env's `commands`)         |
-| `audit`          | `pip-audit` against the uv-exported requirements                                         |
+| `js`             | `npm ci && npm run test:js` — the Vitest suite under `tests/js/`                         |
+| `audit`          | `pip-audit` against the uv-exported runtime requirements (`--no-dev`)                    |
 | `sast`           | `semgrep` with the Django + Python + security-audit rulesets                             |
+
+The guard envs (`ds-lint`, `js-globals-lint`, `i18n-lint`, `docs-lint`,
+`e2e-lint`, `fidelity-lint`, `migrations-lint`, `djangofmt`) each run one
+`bin/` script; CLAUDE.md's "Local CI" section lists every env with a
+one-line purpose.
 
 Run the default suite locally with `tox` before pushing.
 
@@ -537,7 +560,7 @@ Every tox env installs from [uv.lock](../uv.lock) via the `tox-uv` plugin's
 `uv-venv-lock-runner` — see
 [`docs/decisions/tox-envs-install-from-uv-lock.md`](decisions/tox-envs-install-from-uv-lock.md).
 Each env declares `dependency_groups = <group>` (`test`, `type`, `lint`,
-`sast`, `e2e` — see [pyproject.toml](../pyproject.toml)'s
+`sast`, `e2e`, `offline` — see [pyproject.toml](../pyproject.toml)'s
 `[dependency-groups]`) and syncs `--frozen`, so the pin lives in **one
 place**: whatever version `uv.lock` already resolved for local dev,
 pre-commit's `.venv/bin/*`, and production is exactly what CI installs.

@@ -13,7 +13,7 @@
     "JSDoc comments. See CLAUDE.md and docs/client-side-tests.md.",
     "",
     "checkJs is FALSE on purpose. Opt-in is per file via a `// @ts-check`",
-    "line, so this lands green on thirteen files rather than red on 75 with a",
+    "line, so it landed green on thirteen files rather than red on 75 with a",
     "suppression list. A new file is unchecked until someone opts it in."
   ],
   "compilerOptions": {

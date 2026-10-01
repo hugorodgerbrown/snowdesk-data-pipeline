@@ -2,7 +2,7 @@
 name: blocked-builds-not-a-version-floor
 description: APP_BLOCKED_VERSIONS names the builds the server refuses; no APP_MIN_VERSION floor, because APP_VERSION is a git SHA and SHAs have no order
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-10-01
 ---
 
 # Blocked builds, not a version floor

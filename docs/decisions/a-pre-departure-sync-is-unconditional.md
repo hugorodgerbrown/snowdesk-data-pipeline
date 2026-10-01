@@ -2,7 +2,7 @@
 name: a-pre-departure-sync-is-unconditional
 description: syncArea, Sync now, ?sync=, completableArea — one press per area refetches whatever the record says about freshness
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # A pre-departure sync is unconditional, and it is per area

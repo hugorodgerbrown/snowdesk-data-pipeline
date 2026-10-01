@@ -14,7 +14,7 @@ separate.
 
 The ``/sw.js``, ``/manifest.webmanifest``, ``/robots.txt``, ``/llms.txt``,
 ``/favicon.ico``, ``/.well-known/oauth-*`` and ``/oauth/`` routes are
-registered before ``apps.public.urls`` so the generic ``<str:region_id>/``
+registered before ``apps.public.urls`` so the generic ``<region_id:region_id>/``
 pattern in apps.public.urls does not swallow them.
 
 When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
@@ -27,7 +27,7 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
   ``fetch_bulletins --source albina --local-mirror`` can replay
   ``apps/bulletins/local_mirrors/albina_archive.ndjson``.
 
-The three mirrors live in separate URL modules so Django's namespace-uniqueness
+The two mirror URL modules are kept separate so Django's namespace-uniqueness
 check (``urls.W005``) is satisfied. Production never imports any mirror module.
 """
 
@@ -127,7 +127,7 @@ urlpatterns = [
 ]
 
 # Dev-only routes must register BEFORE ``apps.public.urls`` because that
-# include's generic ``<str:region_id>/`` pattern would otherwise swallow
+# include's generic ``<region_id:region_id>/`` pattern would otherwise swallow
 # the prefix. Production never imports these modules.
 if settings.DEBUG:
     urlpatterns.extend(
@@ -146,11 +146,11 @@ urlpatterns.append(
     )
 )
 # observations/ partials must be registered BEFORE ``apps.public.urls`` because
-# the generic ``<str:region_id>/`` catch-all in apps.public.urls would otherwise
+# the generic ``<region_id:region_id>/`` catch-all in apps.public.urls would otherwise
 # swallow ``partials/report/…`` and resolve "partials" as a region_id.
 urlpatterns.append(path("", include("apps.observations.urls")))
 # favourites/ must likewise be registered BEFORE ``apps.public.urls`` — the
-# generic ``<str:region_id>/`` catch-all would otherwise swallow the
+# generic ``<region_id:region_id>/`` catch-all would otherwise swallow the
 # "favourites" prefix and resolve it as a region_id.
 urlpatterns.append(path("favourites/", include("apps.favourites.urls")))
 # routes/ (SNOW-685) — same ordering constraint as favourites/ above: the

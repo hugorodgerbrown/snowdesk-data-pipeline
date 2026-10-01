@@ -231,8 +231,8 @@
    * "fix" this back to a full wipe, that is the argument to answer first.
    *
    * ``window.pwaResetLocalData`` (pwa_reset.js) remains the
-   * everything-goes path, reachable from the manage page and the offline
-   * page, and it asks for confirmation first.
+   * everything-goes path, reachable from /offline/ and the offline
+   * fallback page, and it asks for confirmation first.
    *
    * Falls back to a plain reload when the global is absent (``sw_register.js``
    * returns early on a browser with no ``navigator.serviceWorker``) —

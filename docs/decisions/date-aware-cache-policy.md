@@ -2,7 +2,7 @@
 name: date-aware-cache-policy
 description: bulletin-groupings.geojson Cache-Control uses a fetcher-derived settled threshold; the SW persists only what the response marks immutable
 status: current
-last-reviewed: 2026-07-26
+last-reviewed: 2026-10-01
 ---
 
 # Date-aware cache policy for bulletin-groupings.geojson

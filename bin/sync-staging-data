@@ -194,8 +194,8 @@ fi
 
 # --- Clear -------------------------------------------------------------------
 # regions_microregion must survive, and it is the only surviving table that
-# points into the set. Its reference is nullable, so release it first;
-# link_region_centroid_locations rebuilds it at the end.
+# points into the set. Its reference is nullable, so release it first; the
+# links are copied back from production at the end (see "Restore").
 echo "Releasing region centroid references..."
 psql_local -c "UPDATE regions_microregion SET centroid_location_id = NULL;" > /dev/null
 

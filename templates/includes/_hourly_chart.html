@@ -38,9 +38,10 @@ Four things about this template are load-bearing:
    formats in Python, which puts that beyond reach here.
 
 4. **Wind arrows point at the SOURCE** — where the weather is coming from,
-   which is what the legend says and what loads a slope. Note this is the
-   opposite of the ``wind_arrow_rotation`` filter used by _weather_panel and
-   _forecast_panel, which points downwind; see the service's docstring.
+   which is what the legend says and what loads a slope. The
+   ``wind_arrow_rotation`` filter _weather_panel uses has pointed the same
+   way since SNOW-785 (it pointed downwind before);
+   tests/public/test_weather_tags.py holds the two together.
 
 5. **The plots stretch sideways, never taller** (SNOW-1049). Each SVG is
    preserveAspectRatio="none", keeps the drawing's aspect ratio below the

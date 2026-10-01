@@ -2,7 +2,7 @@
 name: audit-map
 description: >-
   Technical review of the map subsystem — static/js/map*.js and its core
-  modules, apps/public/api.py's map endpoints, home.html and _map_embed.html,
+  modules, apps/public/api.py's map endpoints, map.html and _map_embed.html,
   static/css/map.css. Re-verifies the previous cycle's findings against the
   code, measures the page, finds what's new, then raises a dated parent ticket
   in Linear with one scoped child per new finding and writes a dated HTML
@@ -97,7 +97,7 @@ django.setup()
 from django.test import Client
 from django.conf import settings
 settings.ALLOWED_HOSTS = ['*']
-srcs = re.findall(r'<script[^>]+src="([^"]+)"', Client().get('/').content.decode())
+srcs = re.findall(r'<script[^>]+src="([^"]+)"', Client().get('/map/').content.decode())
 print('scripts:', len(srcs), 'first-party:', len([s for s in srcs if not s.endswith('.min.js')]))
 EOF
 
@@ -181,7 +181,7 @@ a real problem and goes in the doc.
 The previous cycle cannot have anticipated the last week. Look for:
 
 - New files in `static/js/` — and whether each is in `MAP_BUNDLE` /
-  `home.html` in the right position, or reaches state through
+  `map.html` in the right position, or reaches state through
   `window.snowdeskMapState`
 - New MapLibre sources and layers (`addSource(` / `addLayer(`) — and whether
   each new layer install ends in `raiseMarkerLayers()`, and whether it

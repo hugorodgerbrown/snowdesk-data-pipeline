@@ -372,7 +372,7 @@
     //
     // SNOW-748: this asks the effective connectivity, not ``navigator.onLine``
     // alone. Under an offline mode — the worker's own latch, or the one the
-    // user set from the account menu — the interface is up and no request
+    // user set from the network menu — the interface is up and no request
     // may leave the app, so the radio answers only half the question. The
     // raw read stays as the fallback for a page where ``pwa_offline.js``
     // has not run.

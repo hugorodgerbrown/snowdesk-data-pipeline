@@ -223,7 +223,7 @@
    * The flat line has to be SUPPRESSED when it is, or the two paint over
    * each other and the route colour shows through at every butt-capped
    * join — the same reason `map.js` filters its own flat layer on
-   * `['!', ['has', 'slope']]`.
+   * `['!', ['has', 'legs']]`.
    *
    * Asked of the produced segments rather than of the property, because
    * the segments are what actually draw: with no core loaded the property

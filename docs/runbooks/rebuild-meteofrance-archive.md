@@ -2,7 +2,7 @@
 name: rebuild-meteofrance-archive
 description: Regenerate meteofrance_archive.ndjson from the local BRA PDFs — where they live, how to parallelise, what to assert before committing
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
 # Rebuild the Météo-France archive

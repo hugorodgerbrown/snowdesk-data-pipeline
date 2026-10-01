@@ -2,7 +2,7 @@
 name: the-bank-angle-is-drawn-signed
 description: bank.py, `banks` on the wire, bankWedge wedges, bankGlyphs one wedge per segment (trackMode), kickTurns — kept signed, sent flat
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # The bank angle is drawn signed
@@ -97,9 +97,10 @@ beside the 13 kB the boundary coordinates already take.
   upright tick would claim the ground is level across the track where
   nothing is known.
 - **The mount is deferred to SNOW-1019.** This decision ships the
-  derivation, the wire field and the pure drawing core (`bankTicks`);
-  rail two, its legend line and the tokens that paint `strong` ticks
-  arrive with the rail. The core takes the caller's own x → sample-index
+  derivation, the wire field and the pure drawing core (`bankTicks`,
+  since replaced by `bankWedge` / `bankWedges` — see the superseded
+  drawing below); rail two, its legend line and the tokens that paint
+  `strong` ticks arrive with the rail. The core takes the caller's own x → sample-index
   conversion, the rule `route_cursor_core.js` set, so it does not depend
   on how that rail lays out its axis.
 - **About 2 kB more per sampled route** in the offline-cached routes feed.

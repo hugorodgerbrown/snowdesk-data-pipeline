@@ -2,7 +2,7 @@
 name: deployment
 description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
-last-reviewed: 2026-09-02
+last-reviewed: 2026-10-01
 ---
 
 # Deployment / path-to-live
@@ -107,10 +107,12 @@ has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 (its own env group in Render).
 
 Staging has **no scheduler and no task worker**, so its database does not
-ingest bulletins on its own. The `snowdesk-staging-data-sync` cron job
-(SNOW-729) copies the provider-derived tables out of production nightly at
-07:20 UTC instead — bulletins, region ratings and the curated resort
-estate, and no user data whatsoever. Setup, the first full load, and skipped-row triage:
+ingest bulletins on its own. [`bin/sync-staging-data`](../bin/sync-staging-data)
+(SNOW-729/736) copies the provider-derived tables out of production instead —
+bulletins, region ratings, weather and the curated resort estate, and no user
+data whatsoever. It is run by hand: the `snowdesk-staging-data-sync` cron job
+that ran it nightly at 07:20 UTC was disabled on 2026-08-27 and its
+`render.yaml` block is commented out. Setup, the first full load, and skipped-row triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
 A manual `fetch_bulletins` run against staging still works, but is no longer
 the way staging gets its data. Because there is no `db_worker` to consume the
@@ -140,9 +142,10 @@ Two callers, with very different profiles:
   [`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md)
   and confirm headroom before running that backfill in production.
 
-`OPEN_METEO_ARCHIVE_BASE_URL` is still not read: the archive endpoint went
-with the old weather app and a historical backfill (SNOW-731) has not
-landed.
+`OPEN_METEO_HISTORY_BASE_URL` is the third setting: the historical-forecast
+host `backfill_weather` (SNOW-731) reads when filling past days. The old
+`OPEN_METEO_ARCHIVE_BASE_URL` went with the weather app SNOW-762 stripped and
+is no longer read.
 
 Cutting over to a paid subscription is an env-group edit, not a deploy: set
 the variables on the `Production` group (web, scheduler, and worker all read

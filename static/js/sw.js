@@ -401,8 +401,8 @@ const OFFLINE_PROBE_URL = '/livez';
 //                          all, and a probe on a backoff schedule looks for a
 //                          route so the app can come back on its own.
 //   ``'offline-forced'`` — the USER asked for offline mode, from the "Offline
-//                          mode" row in the account menu
-//                          (templates/includes/nav.html). Read paths behave
+//                          mode" row in the network menu
+//                          (templates/includes/_connection_panel.html). Read paths behave
 //                          exactly as they do while latched, but nothing
 //                          probes: a mode the user chose is left alone until
 //                          the user changes it back.
@@ -2976,8 +2976,8 @@ function _hydrateNetworkMode() {
  * Apply a ``network-mode`` message from a page, and answer the sender with the
  * mode the worker is actually in.
  *
- * Three sources send one: the user's own control (the account menu's
- * "Offline mode" row since SNOW-748), the mode persisted in ``meta:app`` being
+ * Three sources send one: the user's own control (the network menu's
+ * "Offline mode" row — the account menu's from SNOW-748 until SNOW-921), the mode persisted in ``meta:app`` being
  * re-asserted on boot, and
  * the page's ``online`` listener asking for an immediate probe rather than
  * waiting out the backoff. A page can also send no mode at all, which is a
@@ -3641,8 +3641,8 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * ``?d=YYYY-MM-DD`` client-side via ``history.replaceState`` while the
  * user scrubs the timeline (see ``static/js/map.js``), so those URLs are
  * never fetched from the server and never cached. An offline reload of
- * ``/?d=2026-01-23`` would otherwise miss the exact-URL cache lookup and
- * fall straight to ``offline.html`` even though the ``/`` shell HTML
+ * ``/map/?d=2026-01-23`` would otherwise miss the exact-URL cache lookup and
+ * fall straight to ``offline.html`` even though the ``/map/`` shell HTML
  * (which is byte-identical for every ``?d`` value — the date is read
  * back off ``location.search`` by page-level JS) has been cached since
  * the first visit. Matching with ``ignoreSearch: true`` returns that

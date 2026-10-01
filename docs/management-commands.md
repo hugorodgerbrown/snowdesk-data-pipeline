@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, purge_expired_oauth_tokens, mint_mcp_token, backfill_*
 status: current
-last-reviewed: 2026-09-24
+last-reviewed: 2026-10-01
 ---
 
 # Management commands
@@ -140,8 +140,9 @@ uv run python manage.py purge_request_logs --days 90  # try a stricter window
 ```
 
 **Twelve months, not fourteen days.** The table is not an access log. Rows
-exist to give `Account.acquisition_request` and `Subscription.subscribed_via`
-their geo and language context, so a two-week window would blank that for
+exist to give `Account.acquisition_request` its geo and language context
+(and gave `Subscription.subscribed_via` the same until SNOW-805 dropped that
+model), so a two-week window would blank that for
 every account older than a fortnight and defeat the reason the rows are
 kept. `RETENTION_DAYS` in the command module is the source of the period —
 **the Privacy Policy quotes it, so changing one means changing the other.**
@@ -151,9 +152,9 @@ account deletion removes its rows outright rather than anonymising them, and
 a retention sweep that only blanked columns would leave the two paths
 disagreeing about what a spent row looks like.
 
-Rows referenced by `Account.acquisition_request` or
-`Subscription.subscribed_via` are deleted like any other — both FKs are
-`SET_NULL`, so the referring row survives with the pointer cleared. That is
+Rows referenced by `Account.acquisition_request` are deleted like any
+other — the FK is `SET_NULL`, so the referring row survives with the pointer
+cleared. That is
 intended: the account keeps its history, the identifiers behind it expire.
 `BulletinShareClick.request` is `CASCADE` (SNOW-774), so a click goes with
 the request context it consists of; it was `PROTECT`, which would have
@@ -222,11 +223,13 @@ This brings a freshly migrated DB to a fully navigable state:
   normal user that owns the favourites — folded in from the former
   `seed_dev_users` command). Credentials: [`docs/worktrees.md`](worktrees.md).
   `seed_test_data --include user` seeds just the accounts.
-- One `Route` (an 8-point skin track above Verbier, parsed from a generated
-  GPX by `create_route`) and one `Trip` planned off it by `create_trip`, both
-  owned by the normal dev user. The trip is dated a week ahead of the run so it
-  files under "Coming up" and its share link is live — `/trips/` and the map's
-  routes panel are otherwise empty until you upload a GPX by hand.
+- Five `Route`s — an 8-point synthetic skin track above Verbier, parsed from a
+  generated GPX by `create_route`, plus the four canonical tracks under
+  `apps/routes/fixtures/canonical/` (SNOW-989), through the same upload path —
+  and one `Trip` planned off the synthetic one by `create_trip`, all owned by
+  the normal dev user. The trip is dated a week ahead of the run so it files
+  under "Coming up" and its share link is live — `/trips/` and the map's routes
+  panel are otherwise empty until you upload a GPX by hand.
 
 The canonical preview URL after seeding is `/ch-4115/martigny-verbier/2026-04-08/`.
 
@@ -240,7 +243,8 @@ bulletin IDs, so re-seeding a populated DB raises a clean `CommandError`. Exactl
 
 Model names are case-insensitive and strongly typed against a `SeedModel`
 enumeration (`bulletin`, `regionbulletin`, `regiondayrating`,
-`bulletingrouping`, `location`, `favourite`, `user`); an empty or unknown value
+`bulletingrouping`, `location`, `favourite`, `user`, `route`, `trip`); an
+empty or unknown value
 lists the available models. FK prerequisites of a selected model are pulled in
 automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
@@ -463,7 +467,7 @@ observations are not the sheet's to own, and deleting them would destroy
 user data.
 
 **There is no elevation column.** Elevation is always derived
-([`docs/locations.md`](locations.md)); an out-of-band resolution pass
+([`docs/locations.md`](locations.md)); `fill_location_elevations` (below)
 resolves it via `fetch_elevation`. That makes it a **check on the curation**: compare a resolved
 height against the resort sheet's `base_elevation_m` / `top_elevation_m`
 before committing, because a location whose height is nowhere near the
@@ -482,7 +486,7 @@ uv run python manage.py import_locations --mode update --commit  # fields only
 ### `dump_locations_sheets` — write the location estate back to its sheets
 
 The other half of `import_locations`, and what makes an edit durable. The
-in-map location editor (`/?edit=locations` — SNOW-755) and any hand edit
+in-map location editor (`/map/?edit=locations` — SNOW-755) and any hand edit
 write to **this environment's database only**; until the sheets under
 `apps/locations/data/` carry the change, the next `import_locations`
 reconciliation would delete it. This command renders both sheets from the
@@ -730,7 +734,11 @@ uv run python manage.py fill_location_elevations                  # preview
 uv run python manage.py fill_location_elevations --commit         # apply
 uv run python manage.py fill_location_elevations --commit --force # re-resolve
 uv run python manage.py fill_location_elevations --report         # check pins
+uv run python manage.py fill_location_elevations --commit --delay 1.0  # pace harder
 ```
+
+Flags: `--commit`, `--force`, `--report`, `--delay SECONDS` (default 0.2,
+the pause between Open-Meteo lookups).
 
 ### `link_resort_locations` — give every geocoded resort weather
 
@@ -807,10 +815,13 @@ uv run python manage.py refresh_centroid_elevations --commit           # resolve
 uv run python manage.py refresh_centroid_elevations --commit --force   # re-resolve all
 ```
 
+Flags: `--commit`, `--force`, `--delay SECONDS` (default 1.0 — paces the
+lookups inside Open-Meteo's free-tier rate limit).
+
 ### `backfill_observation_locations` — mint a Location per field report
 
-One-shot backfill for SNOW-709, the sibling of
-`backfill_favourite_locations`. Mints the `Location` each pre-SNOW-709
+One-shot backfill for SNOW-709, the sibling of the since-deleted
+`backfill_favourite_locations` (SNOW-762). Mints the `Location` each pre-SNOW-709
 report happened at and points its FK there. **Not a data migration**, for
 the same reason.
 
@@ -1253,9 +1264,11 @@ incident that invalidates derived state:
   to backfill bulletins after a multi-day outage. Add `--delay 5` for
   multi-year backfills to stay polite to the public APIs.
 - `audit_resort_regions --commit` — after editing resort coordinates or
-  region polygons; refixes FKs and rewrites the resort fixture.
+  region polygons; re-FKs mismatched resorts and rewrites
+  `apps/regions/data/resorts.tsv` (full description under the
+  `fetch_bulletins` block below).
 
-  Flags: `--commit`, `--delay SECONDS` (default 1.0).
+  Flags: `--commit`.
 
 - `uppercase_resort_choice_values --commit` — one-off post-deploy step for
   SNOW-582: rewrites `Resort.geocode_source` from its legacy lower-case
@@ -1418,6 +1431,8 @@ incident that invalidates derived state:
 
   Flags: `--source {slf,albina,meteofrance}` (default: all sources).
 
+### `fetch_bulletins` — ingest bulletins from the three providers
+
 `--source` is required. Pass one or more provider names (case-insensitive);
 both space-separated (`--source slf albina`) and repeated flags
 (`--source slf --source albina`) are accepted. Duplicates are silently
@@ -1518,7 +1533,8 @@ uv run python manage.py rebuild_render_models           # read-only
 uv run python manage.py rebuild_render_models --commit  # persist
 
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row),
-#   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602)
+#   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602),
+#   --skip-day-ratings (persist render models without refreshing RegionDayRating)
 
 # Re-derive every RegionDayRating row under the current v8 policy: min/max
 # come from an elevation-band split (distinct all_day band keys) or, failing
@@ -1538,10 +1554,11 @@ uv run python manage.py recompute_day_ratings \
 uv run python manage.py monitor_query_counts           # CI / local gate
 uv run python manage.py monitor_query_counts --commit  # accept new counts
 
-# Recompute the derived centre + bbox on L1/L2 EAWS fixtures from the
-# union of their L4 children. Run after editing apps/regions/fixtures/eaws_CH.json
-# (e.g. when EAWS publishes a new season). Read-only by default; --commit
-# to write the consolidated fixture.
+# Recompute the derived centre, bbox and boundary on the L1/L2 entries of
+# apps/regions/fixtures/eaws_CH.json from the union of their L4 children, and
+# (SNOW-583) basemap_download on every L4 entry. Run after editing that
+# fixture (e.g. when EAWS publishes a new season). Read-only by default;
+# --commit to write the consolidated fixture.
 uv run python manage.py refresh_eaws_fixtures           # diff-only
 uv run python manage.py refresh_eaws_fixtures --commit  # persist
 
@@ -1559,7 +1576,7 @@ uv run python manage.py diagnose_region_coverage --verbose-table       # add per
 
 # Re-emit apps/regions/data/resorts.tsv from the current DB rows (SNOW-74,
 # SNOW-817). Use after a session of placing resort coordinates via the
-# in-map editor at /?edit=resorts — without this step, edits live only in
+# in-map editor at /map/?edit=resorts — without this step, edits live only in
 # that environment's database. Read-only by default; --commit writes the
 # file. Keeps existing rows in place (so a re-pin is a one-line diff) and
 # carries retired NOT_A_SKI_RESORT rows through verbatim — they have no DB
@@ -1604,7 +1621,8 @@ uv run python manage.py export_day_character_csv \
 uv run python manage.py build_switzerland_fixture          # preview only
 uv run python manage.py build_switzerland_fixture --commit # write fixture
 
-# Load the committed fixture into a local DB (production reloads via build.sh):
+# Load the committed fixture into a local DB (no deploy loads it — see
+# "Region fixtures" above):
 uv run python manage.py loaddata apps/regions/fixtures/eaws_CH.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -1618,7 +1636,8 @@ uv run python manage.py loaddata apps/regions/fixtures/eaws_CH.json
 uv run python manage.py build_france_fixture          # preview only
 uv run python manage.py build_france_fixture --commit # write fixture
 
-# Load the committed fixture into a local DB (production reloads via build.sh):
+# Load the committed fixture into a local DB (no deploy loads it — see
+# "Region fixtures" above):
 uv run python manage.py loaddata apps/regions/fixtures/eaws_FR.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -1631,7 +1650,8 @@ uv run python manage.py loaddata apps/regions/fixtures/eaws_FR.json
 uv run python manage.py build_austria_fixture          # preview only
 uv run python manage.py build_austria_fixture --commit # write fixture
 
-# Load the committed fixture into a local DB (production reloads via build.sh):
+# Load the committed fixture into a local DB (no deploy loads it — see
+# "Region fixtures" above):
 uv run python manage.py loaddata apps/regions/fixtures/eaws_AT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)
@@ -1644,7 +1664,8 @@ uv run python manage.py loaddata apps/regions/fixtures/eaws_AT.json
 uv run python manage.py build_italy_fixture          # preview only
 uv run python manage.py build_italy_fixture --commit # write fixture
 
-# Load the committed fixture into a local DB (production reloads via build.sh):
+# Load the committed fixture into a local DB (no deploy loads it — see
+# "Region fixtures" above):
 uv run python manage.py loaddata apps/regions/fixtures/eaws_IT.json
 
 # Flags: --commit (write fixture; omit for a read-only summary)

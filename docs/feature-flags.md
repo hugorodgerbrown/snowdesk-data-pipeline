@@ -2,7 +2,7 @@
 name: feature-flags
 description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # Feature flags (django-waffle)
@@ -53,7 +53,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The `/offline/` "Sync log" panel (SNOW-930 moved it off `/account/settings/`) (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `debug_log` | `groups=["GRP_DEBUG"]` | The on-device debug trace on every public page — the panel and the `static/js/debug_log.js` recorder behind it ([`debug-log.md`](debug-log.md)). | SNOW-812. |
-| `what3words` | `superusers=True` | A trip's meeting point rendered as `///filled.count.soap` on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), and its matching `/help/` section. | SNOW-840. |
+| `what3words` | `superusers=True` | A three word address rendered as `///filled.count.soap`: a trip's meeting point on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), a saved pin's address (`apps/favourites/views.py`), a field observation's owner-only address (`apps/observations/views.py`), and its matching `/help/` section. | SNOW-840. |
 
 **`what3words` is a subscription gate, not a rollout gate.** It is the
 one flag here whose off state is the *correct* state in an environment
@@ -62,9 +62,9 @@ plan in November 2024, so the feature needs the paid Basic plan and a
 `WHAT3WORDS_API_KEY`. The flag is what lets the code merge and deploy
 before either exists. It gates an outbound HTTP call rather than a
 template branch, which is why it is read in the view: flag off means no
-call, no query and no change to the page. It is read on two trip
-surfaces and never on the homepage, so the `download_sync` cost argument
-below does not apply to it.
+call, no query and no change to the page. It is read on the trip,
+favourite and observation surfaces and never on the homepage or the map
+page, so the `download_sync` cost argument below does not apply to it.
 
 **The first two flags are the same shape.** `sync_log` is not a
 rollout gate waiting to be opened: it is a per-user diagnostic toggle. The

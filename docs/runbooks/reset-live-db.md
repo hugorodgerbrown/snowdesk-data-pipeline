@@ -2,7 +2,7 @@
 name: reset-live-db
 description: Reset the live Render Postgres DB after a rewritten migration graph (SNOW-313): drop schema, migrate, loaddata, re-ingest, rollback
 status: current
-last-reviewed: 2026-06-14
+last-reviewed: 2026-10-01
 ---
 
 # Runbook — reset the live database
@@ -188,7 +188,7 @@ python manage.py migrate --check                  # exits 0 — no unapplied mig
 python manage.py showmigrations | grep '\[ \]'     # no output = all applied
 ```
 
-- Hit the homepage (the map) and one bulletin page.
+- Hit the homepage, `/map/` and one bulletin page.
 - Confirm admin login works with the new superuser.
 - Confirm the scheduler logs the next cron tick and the task worker is
   idle-listening.

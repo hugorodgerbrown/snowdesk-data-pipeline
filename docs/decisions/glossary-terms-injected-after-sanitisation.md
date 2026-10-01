@@ -2,7 +2,7 @@
 name: glossary-terms-injected-after-sanitisation
 description: EAWS glossary terms are marked up after bleach.clean, in a native popover with no JavaScript; the bleach allowlist stays narrow
 status: current
-last-reviewed: 2026-09-06
+last-reviewed: 2026-10-01
 ---
 
 # Glossary terms are injected after sanitisation

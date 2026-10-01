@@ -2,7 +2,7 @@
 name: bounded-offline-read-paths
 description: sw.js read paths and the page's storage reads are time-bounded and latch — _boundedFetch, OFFLINE_LATCH_THRESHOLD, /livez, bounded()
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Offline read paths are bounded, and latch

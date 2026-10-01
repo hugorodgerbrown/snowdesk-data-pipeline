@@ -2,7 +2,7 @@
 name: dev-bypasses-the-shell-cache
 description: SW_DEV_SHELL_BYPASS makes sw.js skip the shell cache in local dev so a stale worker can't serve pre-pull assets; production is unaffected
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-10-01
 ---
 
 # Dev bypasses the shell cache
@@ -14,10 +14,13 @@ setting, `SW_DEV_SHELL_BYPASS` (`config/settings/base.py`, default `False`;
 `development.py` flips the default to `True`), substituted into the served
 `/sw.js` body by `apps.public.views.serve_sw`. `apps.core.checks` errors if
 it is ever `True` with `DEBUG` off, so it cannot reach production. The
-update banner (`sw_register.js::showUpdateBanner`,
+update banner (`sw_register.js::revealUpdateBanner`,
 `pwa_version_check.js::showSoftBanner`) is suppressed whenever the bypass is
 active, via a `<meta name="pwa-dev-shell-bypass">` tag rendered only in that
-case. An opt-in checkbox on `/_sw-version/` (`static/js/pwa_dev_shell_toggle.js`)
+case. (SNOW-1025 later made a routine update apply silently and kept the
+banner for a stuck worker only —
+[`service-worker-updates-apply-silently`](service-worker-updates-apply-silently.md);
+the bypass and its suppression are unchanged by that.) An opt-in checkbox on `/_sw-version/` (`static/js/pwa_dev_shell_toggle.js`)
 restores ordinary caching for anyone who deliberately wants to exercise it
 locally.
 
@@ -64,8 +67,8 @@ only ever runs from `serve_sw` (never `serve_sw_kill`), and the system
 check makes shipping the flag turned on a failed deploy rather than a
 silent regression of the shell cache everywhere.
 
-Known cosmetic gap, deliberately not fixed here: in a tab that did not
-click "Reload", `controllerchange` bails early (`!userTriggeredUpdate`)
-without hiding an already-shown banner or emitting
-`pwa.sw.update_applied`. The Reload button itself still works correctly.
-Tracked as a separate follow-up, out of scope for this change.
+A cosmetic gap was deliberately left open here and closed later: in a tab
+that did not click "Reload", `controllerchange` used to bail early
+(`!userTriggeredUpdate`) without hiding an already-shown banner. Since
+SNOW-1025 that handler takes a stale banner down when a silent activation
+replaces the worker it was about.

@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, db.js) — schema, queue:mutations, meta:app, data:favourites/map_overlays/panel_rows, log:sync, log:debug
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # IndexedDB scaffolding
@@ -39,10 +39,10 @@ never removed.
 | `queue:mutations`  | `id`            | true          | SNOW-376 mutation queue (`window.pwaMutationQueue`) |
 | `queue:events`     | `id`            | true          | SNOW-385 telemetry buffer    |
 | `meta:sync`        | `resource`      | false         | last-sync timestamps         |
-| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart), `basemap.customAreas` (SNOW-522, array shape since SNOW-635 — every persisted custom-area basemap download, written/read by `static/js/map.js`'s `mapCustomDownloadControlInit`; see below), `basemap.regions` (SNOW-570 — one row per downloaded region, written/read by `static/js/map.js`'s `mapDownloadControlInit`; see below), `basemap.budgetMb` (SNOW-586 — device-local override of the standing pinned-download byte budget, `DOWNLOAD_BUDGET_MB` (500) if absent; read-only from this ticket, SNOW-588's managed-downloads UI is what will ever write it) |
+| `meta:app`         | `key`           | false         | install ts, first-launch, opt-in, `push.subscribed_before`, `mutations.principal` (SNOW-462 — last-seen principal for mutation-queue partitioning), `basemap.origins` (SNOW-487 — durable mirror of the SW's `_basemapOrigins` allowlist, written by `static/js/map.js` and lazily rehydrated by `static/js/sw.js`'s `_hydrateBasemapOrigins()` after an idle worker restart), `basemap.customAreas` (SNOW-522, array shape since SNOW-635 — every persisted custom-area basemap download, written by `static/js/map_basemap_downloads.js`'s `_appendCustomArea` and read through `basemapDownloadedAreas()`; see below), `basemap.regions` (SNOW-570 — one row per downloaded region, written/read by `static/js/map_region_download.js`'s `_recordRegionDownload` / `_probeDone`; see below), `basemap.budgetMb` (SNOW-586 — device-local override of the standing pinned-download byte budget, `DOWNLOAD_BUDGET_MB` (500) if absent; written by the "Manage downloads" sheet's budget `<select>`, SNOW-588 — `BUDGET_KEY` in `static/js/map_downloads_manager.js`), `network.mode` (SNOW-742/748 — the user-forced or auto-latched offline mode, see [`offline-map.md`](offline-map.md#network-mode-snow-742-snow-748)) |
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
-| `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
+| `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'` / `'routes'` since SNOW-687), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
 | `data:panel_rows`  | `key`           | false         | SNOW-661 offline rows for a map UGC panel — one row per panel (`'observations'`, and `'routes'` since SNOW-950), written/read by `static/js/observations_offline.js` (`window.pwaObservationsOffline`) and `static/js/routes_offline.js` (`window.pwaRoutesOffline`) — on a panel swap and on `panel_rows_cache.js`'s idle warm |
 | `data:route_bulletins` | `key`       | false         | SNOW-973 one saved route's reading of one day's bulletin — one row per `(route uuid, day)`, written/read by `static/js/routes_bulletin_offline.js` (`window.pwaRoutesBulletinOffline`) when the map's route detail panel is opened. The only `data:*` row carrying the response's freshness envelope, because this one expires |
 | `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
@@ -66,12 +66,16 @@ of its own.
 
 ```js
 {
-  key,        // 'favourites' | 'community_reports'
+  key,        // 'favourites' | 'community_reports' | 'routes' (SNOW-687)
   geojson,    // the last successfully-fetched FeatureCollection, verbatim
   cached_at,  // ISO 8601 timestamp — observability only, not a store-level
-              // expiry cutoff (favourites never expire; community reports
-              // apply the existing 48h age-fade window at read-back time,
-              // in static/js/map.js's dropExpiredCommunityReports)
+              // expiry cutoff (favourites and routes never expire;
+              // community reports apply the existing 48h age-fade window
+              // at read-back time, in static/js/map.js's
+              // dropExpiredCommunityReports)
+  principal,  // SNOW-493 — the signed-in account (or null) for the
+              // PRINCIPAL_SCOPED resources (favourites, routes); absent on
+              // community_reports, which is public data
 }
 ```
 
@@ -176,19 +180,29 @@ area can exist at once:
                     // control, via window.pwaBasemapDownloads.rename()).
                     // ABSENT on the STORED record until then — the default
                     // "Custom area N" label is filled in on every READ
-                    // instead (map.js's basemapDownloadedAreas(), from
-                    // `ordinal`), never written back here, which is what
+                    // instead (basemap_downloaded_areas.js's
+                    // basemapDownloadedAreas(), from `ordinal`), never
+                    // written back here, which is what
                     // keeps it translatable. (Through SNOW-634 this was
                     // always set at download time, off the control's own
                     // data-area-label attribute — that attribute is gone.)
-      template,     // SNOW-632 — the tile URL template this run actually
-                    // fetched, recorded so a later run can tell whether
-                    // the active basemap has changed since
+      template,     // SNOW-632 — the tile sources this run actually
+                    // fetched (a `string[][]` since SNOW-843; a bare
+                    // string on an older record), recorded so a later run
+                    // can tell whether the active basemap has changed
+      basemapKey,   // SNOW-645 — the picker key the run was made under
+      deps,         // SNOW-844 — the render-dependency urls (style,
+                    // TileJSON, sprite) the run fetched
+      glyphPrefix,  // SNOW-871 — the glyph prefix the run promoted under
       bytes,        // this run's own reported on-disk size, recorded
                     // outright — never accumulated, and (SNOW-635) never
                     // needing to be, since every area now owns a bucket
                     // no other run ever writes into
       savedAt,      // ISO 8601 timestamp of the confirmed download
+      contentAt,    // SNOW-924 — when the area's bulletins/weather were
+                    // last fetched in full; absent means never
+      contentIncomplete, // SNOW-932 — true when the last content run fell
+                    // short; absent means fine (deleted on success)
     },
     // ...one entry per downloaded custom area
   ],
@@ -196,7 +210,7 @@ area can exist at once:
 ```
 
 **Migration.** Lazy, on first read, inside `basemapDownloadedAreas()`
-(`static/js/map.js`'s `_readCustomAreas`) — the same boot-path read the
+(`static/js/map_basemap_downloads.js`'s `_readCustomAreas`) — the same boot-path read the
 roundel's own probe already makes. If the legacy single-row
 `basemap.customArea` is present and `basemap.customAreas` is not, it is
 wrapped as a one-entry array (`id: 'custom'`, `ordinal: 1`) and the old
@@ -224,8 +238,9 @@ cache-state dashboard" invariant every download control follows — see
 
 One entry per region the user has deliberately downloaded — see
 [`offline-map.md`](offline-map.md) for the full "Download basemap"
-feature. Written/read by `static/js/map.js`'s `mapDownloadControlInit`;
-a re-download of the same region replaces only that region's own entry:
+feature. Written/read by `static/js/map_region_download.js`
+(`_recordRegionDownload` / `_probeDone`); a re-download of the same
+region replaces only that region's own entry:
 
 ```js
 {
@@ -233,23 +248,30 @@ a re-download of the same region replaces only that region's own entry:
   value: [
     {
       region_id,  // e.g. 'CH-4115'
-      z,          // SNOW-583 — the blob's own clipped tile ranges
-                  // ({"<z>": [xmin, xmax, ymin, ymax]}), i.e. the tile set
-                  // the run ACTUALLY fetched (region plus a tile of
-                  // margin), not the region's bbox. `_probeDone` reads
-                  // this back directly and hands it to blobFullyCached,
-                  // so coverage is checked against what was downloaded
+      z,          // SNOW-583 — the blob's own clipped tile rows
+                  // ({"<z>": {"<y>": [xmin, xmax]}} — one span per
+                  // surviving row), i.e. the tile set the run ACTUALLY
+                  // fetched (region plus a tile of margin), not the
+                  // region's bbox. `_probeDone` reads this back directly
+                  // and hands it to blobFullyCached, so coverage is
+                  // checked against what was downloaded
       band,       // [minZ, maxZ] the run actually fetched
       name,       // SNOW-586 — the region's display name
                   // (FEATURE_BY_REGION_ID[region_id].properties.name),
                   // recorded so eviction copy never depends on
                   // regions.geojson still being loaded
-      bytes,      // SNOW-586 — accumulated, not replaced, across repeat
-                  // downloads: this region's pinned bucket is keyed on
-                  // region_id ALONE, not per-basemap, so a download under
-                  // a SECOND basemap adds genuinely new bytes to the one
-                  // shared bucket
+      template,   // SNOW-632/843 — the tile sources the run fetched
+      basemapKey, // SNOW-645 — the picker key the run was made under
+      deps,       // SNOW-844 — the render-dependency urls the run fetched
+      glyphPrefix,// SNOW-871 — the glyph prefix the run promoted under
+      bytes,      // SNOW-586 — this run's own reported total, recorded
+                  // outright (SNOW-632 made a basemap switch REPLACE the
+                  // previous copy rather than add to it, so the bucket
+                  // only ever holds one run's tiles by the time this is
+                  // written — see per-area-pinned-basemap-caches.md)
       savedAt,    // ISO 8601 timestamp of the confirmed download
+      contentAt,  // SNOW-924 — see the custom-area shape above
+      contentIncomplete, // SNOW-932 — see the custom-area shape above
     },
     // ...one entry per downloaded region
   ],
@@ -320,7 +342,7 @@ window.pwaDb = {
   clear(store),               // Promise<void>
   appendSyncLog(entry),        // Promise<void> — put + trim to newest 100 (log:sync, SNOW-482)
   getSyncLog(limit),           // Promise<value[]> — newest first (log:sync, SNOW-482)
-  context(),                  // eight-field envelope context (see below)
+  context(),                  // seven-field envelope context (see below)
   isResetRequired(),          // boolean — true after a migration failure
   DB_NAME, DB_VERSION, STORE_NAMES,   // read-only introspection
 };
@@ -356,7 +378,7 @@ A migration that throws is fatal for the session:
 `VersionError` (from opening the DB at an older version than the one
 on disk — usually a rollback) routes through the same path.
 
-## Eight-field envelope context helper
+## Seven-field envelope context helper
 
 `pwaDb.context()` returns the fixed session/device context every
 telemetry envelope will lift (spec §16.1). Cached per page load — a

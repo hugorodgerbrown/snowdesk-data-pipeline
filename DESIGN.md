@@ -379,6 +379,7 @@ Applied with `.dark` on `<html>`. EAWS, slope, weather-header and marker colours
 | `chip-strong` | `rgba(0, 0, 0, 0.08)` | `rgba(255, 255, 255, 0.08)` |
 | `accent` | `#2563eb` | `#3b82f6` |
 | `accent-hover` | `#1d4ed8` | `#60a5fa` |
+| `accent-text` | `#ffffff` | `#ffffff` |
 | `chart-note-bg` | `#eef2ff` | `#252a44` |
 | `chart-note-text` | `#2563eb` | `#93c5fd` |
 | `chart-night` | `#475569` | `#64748b` |
@@ -386,7 +387,7 @@ Applied with `.dark` on `<html>`. EAWS, slope, weather-header and marker colours
 | `glass` | `rgba(255, 255, 255, 0.85)` | `rgba(20, 22, 26, 0.78)` |
 | `scrim` | `rgba(0, 0, 0, 0.4)` | `rgba(0, 0, 0, 0.6)` |
 | `popup-glass` | `rgba(248, 246, 240, 0.65)` | `rgba(20, 22, 26, 0.6)` |
-| `weather-icon-halo` | `rgba(41, 45, 54, 0.85)` | `rgba(0, 0, 0, 0)` |
+| `weather-icon-halo` | `rgba(41, 45, 54, 0.85)` | `transparent` |
 
 ## Typography
 

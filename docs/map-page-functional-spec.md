@@ -2,13 +2,14 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # Map page — functional specification
 
-This is the product-level specification for the Snowdesk map, the site's
-home page (`/`). It describes what the map is for, what each layer means,
+This is the product-level specification for the Snowdesk map, the app at
+`/map/` (`/` is a static homepage that links into it —
+[`decisions/the-homepage-is-not-the-map.md`](decisions/the-homepage-is-not-the-map.md)). It describes what the map is for, what each layer means,
 who can see and use each surface, and how the timeline works. It is
 written for anyone reasoning about the map as a product — designers,
 reviewers, testers, and future contributors — and complements the
@@ -28,8 +29,11 @@ and how is it changing?"**
 
 Tapping a region selects it: the region is outlined, and the season
 ribbon and its readout chip at the top of the map switch to that
-region — its name as a geographic breadcrumb, its danger swatch for the
-selected day, and the arrow roundel linking to the full bulletin. The
+region — its name as a geographic breadcrumb and its danger swatch for the
+selected day. The chip is a disclosure button: pressing it opens the
+**region panel** (SNOW-801), which carries the link to the full bulletin
+for the shown day, the resorts inside the region, and the region's pin
+(SNOW-814). The
 selection is mirrored in the URL fragment (`#CH-4115`), so it is
 deep-linkable and the back button drops it. Nothing is overlaid on the
 map itself: tapping a region does not open a popup over the terrain the
@@ -100,8 +104,8 @@ The **micro-region choropleth is the map's core**: each L4 region is
 filled with the colour of its peak danger rating for the selected date.
 Regions with no bulletin that day are left uncoloured (`no_rating`).
 Selecting a region — by tapping the fill, tapping a resort pin inside
-it, or picking it from search — opens the detail surface and outlines
-the region.
+it, or picking it from search — outlines the region and points the
+readout chip at it; the region panel is one press on that chip away.
 
 **Why the geography and the bulletin fill are separate** (SNOW-656). The
 geography is fixed and date-independent; the data painted onto it changes with
@@ -162,17 +166,20 @@ track a specific location — a col, a slope, a hut, a chosen line — and
 return to it across sessions. It is the user's own private data.
 
 - **What it shows.** A `★` marker at the saved point, labelled with the
-  user's chosen name. Tapping it opens a detail card: the point's
-  coordinates and altitude, and the current danger rating of the
-  containing micro-region.
-- **Who can use it.** Signed-in users for whom the `favourites` feature
-  flag is active (currently superusers, during rollout). Anonymous
-  visitors and ineligible users never see the "Add favourite" control
-  and their browsers never fetch the per-user endpoint.
+  user's chosen name. Tapping it opens a pinned popup holding the name and
+  when it was saved (SNOW-658) — nothing else; the point's weather page is
+  one tap from the favourites panel. A favourite is a dropped pin, a saved
+  resort (SNOW-499, the star on a resort's popup) or a region pin
+  (SNOW-802 — a region with no coordinate, listed in the region panel
+  rather than the pins sheet, SNOW-814).
+- **Who can use it.** Signed-in users — authentication is the whole gate
+  since SNOW-724 retired the rollout flag. Anonymous visitors see the
+  roundel and the panel, get a sign-in prompt inside it, and their
+  browsers never fetch the per-user endpoint.
 - **When / how.** Eligible users get an "Add favourite" control; placing
   a pin, dragging to refine, and naming it creates the favourite (rate-
-  limited to 10 creates per minute). Pins can be renamed and deleted from
-  their detail sheet.
+  limited to 10 creates per minute). Renaming, removing and sharing live in
+  the favourites panel's row menu, not in the popup.
 - **Default on.** Unlike the public overlays, favourites default to
   _visible_ for eligible users and are fetched at load — it is the user's
   own saved data, not a public dataset they must opt into.
@@ -218,7 +225,7 @@ users. They are shown as reference, not as authoritative geography.
   resort names were matched but never shown, so a query for "Verbier"
   silently returned a region row instead.
 - **Who can edit it.** Placement/correction of resort coordinates is a
-  staff tool: the in-map resort editor at `/?edit=resorts`, open to
+  staff tool: the in-map resort editor at `/map/?edit=resorts`, open to
   superusers only. Edits land in the local
   database and are persisted back to the git fixture with a management
   command; there is no live crowd-sourced write path yet. The "may at
@@ -267,12 +274,24 @@ users so they can be used independently:
 of reports, was a filtered view of this layer and became a redirect to the
 map with the reports sheet open — SNOW-804.)
 
-> **Weather overlay — removed by SNOW-762.** Section 3.4 described a
-> weather condition symbol plus the day's max temperature at each
-> resort- and favourite-anchored forecast point. The whole weather domain
-> was stripped ahead of the SNOW-757 rebuild; nothing on the map draws
-> weather today. SNOW-761 decides what comes back and writes this section
-> again.
+### 3.4 Weather — the Open-Meteo overlay (SNOW-761)
+
+The **Weather** row under Conditions draws one symbol per public
+`Location` — a resort's village, mid-station and peak, a region centroid —
+from `/api/weather.geojson`: the day's WMO condition icon, captioned with
+the day's maximum temperature and the station's ground elevation, because
+two degrees at 1500 m and two degrees at 3000 m describe different weeks.
+It follows the scrubbed day without a second request — the feed carries the
+week ahead and the map re-projects it in memory — and a location with
+nothing for the shown day draws nothing. Tapping a symbol opens the weather
+sheet, whose "View forecast" hands off to that location's page at
+`/weather/<short_id>/`. Public, never a user's own pin: the feed is built
+from `Location.objects.public()`, so a favourite's location is never on
+it. **Off by default.** Full contract:
+[`weather-surfaces.md`](weather-surfaces.md).
+
+(SNOW-762 removed the earlier resort- and favourite-anchored weather
+symbols; this is the SNOW-757 rebuild's replacement.)
 
 ### 3.4a Routes — private imported tracks (SNOW-687)
 
@@ -388,7 +407,7 @@ list.
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
 | Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
-| Resorts | Public | Superusers, via the `/?edit=resorts` editor | Off | Shared reference |
+| Resorts | Public | Superusers, via the `/map/?edit=resorts` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Routes | Signed in | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
@@ -525,14 +544,18 @@ toggle**:
 
 | Position | Control | Visible when minimised |
 |----------|---------|------------------------|
-| 1 | Locate me | **yes** |
+| 1 | Locate me (`#locate-toggle`) | **yes** |
 | 2 | Layers (`#basemap-pill`) | no |
-| 3 | Bulletin fill strength | no |
-| 4 | Manage downloads | no |
-| 5 | Favourites | no |
-| 6 | Field observations | no |
-| 7 | Map help ("?") | no |
-| foot | Expand / collapse toggle | **yes** |
+| 3 | Bulletin fill strength (`#map-fill-toggle`) | no |
+| 4 | Downloads (`_map_custom_download_control.html` — opens the downloads sheet, SNOW-634) | no |
+| 5 | Favourites (`#favourite-add-btn`) | no |
+| 6 | Field observations (`#report-btn`) | no |
+| 7 | Routes (`#route-add-btn`, SNOW-686) | no |
+| foot | Expand / collapse toggle (`#map-controls-toggle`) | **yes** |
+
+The map help "?" (`#map-help-toggle`) is not in this column: it sits in the
+bottom-LEFT stack (`#map-legend`), above the legend toggle and the date row
+(SNOW-794).
 
 Locate is the only permanent one. "Where am I" is the question worth a
 standing control on a map the user is physically standing in; everything
@@ -596,13 +619,15 @@ so the control reads correctly before JS runs.
 
 ---
 
-## 3.7 The three overlay panels, and why they differ by viewport
+## 3.7 The overlay panels, and why they differ by viewport
 
-Downloads, Favourites and Field observations each open a panel from their
-own roundel in the bottom-right stack. The three share one shape — a
+Downloads, Favourites, Field observations and Routes each open a panel from
+their own roundel in the bottom-right stack. The four share one shape — a
 header carrying the roundel's own mark, a list of what the user has, and an
 "add" call to action — and **two layouts**, chosen by viewport width at the
-`sm` breakpoint (640px).
+`sm` breakpoint (640px). The route detail sheet and the weather sheet are
+built on the same `_overlay_sheet.html` primitive and follow the same two
+layouts.
 
 Each carried a fourth part, a footer switch labelled "Display on the map",
 until SNOW-904 made §3.6's layers menu the sole control for every layer.
@@ -708,14 +733,22 @@ See [`offline-map.md`](offline-map.md).
 The **basemap** is the geographic backdrop under all the region and UGC
 layers — the terrain, roads, place names, and relief the coloured regions
 sit on top of. It is purely context; it never carries a danger rating.
-The basemap picker is a stacked-layers control in the top-right cluster,
-and the choice persists per-device.
+The basemap picker is the **Basemap** section of the layers menu, opened
+from the stacked-layers roundel in the bottom-right column (§3.6a), and the
+choice persists per-device.
 
 | Basemap | What it is | When you'd use it |
 |---------|------------|-------------------|
-| **OpenFreeMap** | The "Liberty" style — a general-purpose street/terrain map covering the whole Alps. | The default. The only basemap that covers all four countries, so the sensible choice for any cross-border view. |
+| **OpenFreeMap** | The "Liberty" style — a general-purpose street/terrain map covering the whole Alps. | The default. The only basemap that covers all four countries, so the sensible choice for any cross-border view — and the only one on which the Italian outlines are drawn ([why](decisions/boundaries-follow-the-basemap.md)). |
 | **Swisstopo (CH)** | The official Swiss Federal Office of Topography winter basemap. | Detailed Swiss terrain — ski runs, contours, winter features — when you're focused on Switzerland. Covers CH only. |
-| _Swisstopo light_ | A lighter swisstopo style. | Available as a deployment-level default; not surfaced as a routine picker option. |
+| **IGN (FR)** | IGN's "Plan IGN" vector style. | The French equivalent; blank outside France. |
+| **basemap.at (AT)** | Austria's national basemap. | The Austrian equivalent; blank outside Austria. |
+| _Swisstopo light_ | A lighter swisstopo style. | Available as a deployment-level default (`BASEMAP=swisstopo_light`); not surfaced as a picker option. |
+
+The EAWS boundary outlines follow the chosen basemap's coverage, not the
+enabled providers (SNOW-891): a national basemap draws its own country's
+outlines only, because an outline past the border would delineate ground
+no tile covers.
 
 Switching basemap re-draws the backdrop and re-installs every region and
 UGC layer on top, preserving the current selection and scrubbed-to date.
@@ -777,17 +810,18 @@ carries the danger-by-day colour that was the only other thing it offered.
 - **Derived layers follow.** The bulletin-groupings layer re-dissolves for
   each scrubbed date (it only redraws once the scrubber settles, so it
   never thrashes during a drag or playback).
-- **Performance.** The full season's ratings are fetched once, on the
-  first scrub, and served from memory thereafter — the first scrub pays a
-  single round-trip; every later scrub and all playback render instantly.
-  A cold map load fetches one day's ratings when the URL names one, and
-  none at all when it does not, keeping first paint small.
+- **Performance.** The full season's ratings are fetched once, by the
+  scrubber's own initialisation on every cold load (it needs the date
+  range to leave its loading state — SNOW-234; SNOW-793 measured that it
+  was never lazy), and served from memory thereafter, so every scrub and
+  all playback render instantly. Separately, and off that promise, a cold
+  map load fetches one day's ratings — the `?d=` day, or today — to paint
+  the choropleth, keeping first paint small.
 - **Jumping to a day.** Dragging is fine for "show me the storm week" and
   poor for "show me the 16th": the track is a few hundred pixels wide and
-  the season is seven months long, so a pixel is about a day. A calendar
-  button at the end of the transport row opens a month grid — in the
-  bottom-right overlay slot, with the favourites, observations and routes
-  panels — and picking a day goes there exactly.
+  the season is seven months long, so a pixel is about a day. The date pill
+  in the bottom-left row opens a month grid beside it (SNOW-792/794) and
+  picking a day goes there exactly.
 
   **The calendar reaches further than the scrubber does.** The scrubber is a
   season; the calendar runs from the start of the archive to the last day the
@@ -815,7 +849,7 @@ carries the danger-by-day colour that was the only other thing it offered.
   map is showing and the button that changes it are the same pill, in the
   bottom-left row. They were two, a screen apart — a readout you could not
   press beside a button that did not say what it would show.
-- **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
+- **Shareable.** The scrubbed date is reflected in the URL (`/map/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded, today included. An
   empty querystring means **today** (SNOW-793): the map opens painted for
   it and the date ribbon names it, so a bare link keeps meaning "today"
@@ -859,10 +893,12 @@ tapping one still selects that region.
 a home screen. The service worker caches the app shell and the region
 geometry so a second visit paints instantly, and caches basemap tiles for
 areas the user has actually browsed. Safety-critical data (danger
-ratings, bulletin text) is **never** served stale from cache — it is
-always fetched fresh or shown as explicitly expired, on the principle
-that a stale avalanche rating is worse than no rating. Two offline aids
-close the gaps this leaves:
+ratings, bulletin text) is never shown as if it were current when it is
+not: every reading carries freshness headers and is shown as explicitly
+stale or expired past its horizon, on the principle that a stale avalanche
+rating presented as fresh is worse than no rating
+([`offline-first.md`](offline-first.md)). Two offline aids close the gaps
+this leaves:
 
 - Favourites, community-reports and routes overlays get a client-side
   write-through cache so they still render offline once fetched
@@ -870,18 +906,22 @@ close the gaps this leaves:
   re-apply their 48-hour age filter). When an
   overlay can't load and nothing is cached, a small "unavailable offline"
   toast explains why rather than the toggle looking broken.
-- A one-shot **"Cache this area for offline"** command warms the current
-  viewport's basemap tiles and the region data feeds for the area on
-  screen. It is an explicit, bounded action — not a background download.
+- **Area downloads** — a region's download control in the readout chip, or
+  "Download a custom area" in the downloads sheet (SNOW-492/521/634) — pin
+  the basemap tiles for that area plus its content (the bulletins for a
+  window of days and the weather locations inside it, SNOW-953). It is an
+  explicit, bounded action — not a background download — and the downloads
+  sheet lists, renames and forgets what is held.
 
 When the basemap style itself can't be fetched offline, the map falls
 back to a plain background so the SW-cached region colours still paint
 instead of showing a blank canvas.
 
-**Edit-resorts mode.** `/?edit=resorts`, open to superusers only, is
-the staff tool for placing and correcting resort coordinates (§3.2). The
-URL is safe to bookmark: for everyone else it silently renders the normal
-map.
+**Edit-resorts mode.** `/map/?edit=resorts`, open to superusers only, is
+the staff tool for placing and correcting resort coordinates (§3.2);
+`/map/?edit=locations` (SNOW-755) is its sibling for the curated location
+estate. Both URLs are safe to bookmark: for everyone else they silently
+render the normal map.
 
 ---
 
@@ -895,9 +935,8 @@ map.
   (version/freshness headers, mutation queue, reset).
 - [`compressed-views-rating-rule.md`](compressed-views-rating-rule.md) —
   the peak-rating rule the choropleth and tooltip follow.
-- [`feature-flags.md`](feature-flags.md) — the one surviving flag
-  (`sync_log`), and how flags are added and removed.
+- [`feature-flags.md`](feature-flags.md) — the three flags in the manifest
+  (`sync_log`, `debug_log`, `what3words`; none gates a map layer), and how
+  flags are added and removed.
 - [`glossary.md`](glossary.md) — domain term → code symbol map (EAWS
   tiers, MicroRegion, FieldObservation, Resort, RegionDayRating).
-</content>
-</invoke>

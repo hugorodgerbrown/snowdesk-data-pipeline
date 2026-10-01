@@ -2,7 +2,7 @@
 name: worktrees
 description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, settings.ini not .env, dev credentials, reseed
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # Worktrees and DB seeding
@@ -37,7 +37,8 @@ The dataset is built from the FactoryBoy factories in `tests/factories.py` by
 `seed_test_data` (the factory-based path that replaced the old
 `loaddata test_data` JSON fixture). It covers the CH region/resort reference
 data, the map-coverage and CH-4115 detail bulletin layer, a small
-`Location`/`Favourite` set, one `Route` and the `Trip` planned off it, and
+`Location`/`Favourite` set, five `Route`s (one synthetic, four canonical) and
+the `Trip` planned off the synthetic one, and
 the two named dev accounts (see [Dev credentials](#dev-credentials) — folded in from the former
 `seed_dev_users` command via `SeedModel.USER`, so `--all` creates them and
 `seed_test_data --include user` seeds just the accounts). `seed_test_data`
@@ -48,7 +49,7 @@ safe.
 
 Copying the live dev DB produces a worktree whose data differs from CI's
 seed environment. That divergence repeatedly broke the SNOW-13
-query-count baseline (home=8/map=7 under CI fixtures, lower off a copied
+query-count baseline (home=3/map=7 under CI fixtures, lower off a copied
 dev DB), causing churn on SNOW-341 and SNOW-342. Seeding deterministically
 from the factories guarantees every worktree is identical to CI's data
 environment.
@@ -248,13 +249,13 @@ contains so it can be relied on and extended safely.
 | `bulletins.bulletin` | 39 | `seed_test_data` (10 grouped map-date + 29 CH-4115 detail) |
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
-| `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
+| `bulletins.bulletingrouping` | 10 | `seed_test_data` (one per multi-region map-date bulletin; the single-region CH-4115 detail bulletins get none — SNOW-1001) |
 | `locations.location` | 6 | `seed_test_data` (5 pins + the trip's meeting point, minted by `create_trip`) |
 | `favourites.favourite` | 6 | `seed_test_data` (5 point pins + 1 CH-4115 region pin, owned by the normal dev user) |
 | `auth.user` | 2 | `seed_test_data` (superuser + normal dev user) |
 | `accounts.account` | 1 | `seed_test_data` (the normal dev user's verified profile) |
-| `routes.route` | 1 | `seed_test_data` (parsed from a generated GPX by `create_route`, owned by the normal dev user) |
-| `trips.trip` | 1 | `seed_test_data` (planned off that route by `create_trip`, dated a week ahead of the run) |
+| `routes.route` | 5 | `seed_test_data` (the synthetic track parsed from a generated GPX by `create_route`, plus the four canonical tracks under `apps/routes/fixtures/canonical/` — SNOW-989; all owned by the normal dev user) |
+| `trips.trip` | 1 | `seed_test_data` (planned off the synthetic route by `create_trip`, dated a week ahead of the run) |
 
 ### Data coverage
 
@@ -299,12 +300,14 @@ contains so it can be relied on and extended safely.
   feature is there. Turn it on with
   `python manage.py waffle_flag what3words --everyone` (or sign in as the
   superuser, whom the flag already targets).
-- **Route / trip:** one `Route` — an 8-point, 3.4 km / 700 m skin track above
-  Verbier — and one `Trip` planned off it, both owned by the normal dev user.
-  Both go through the production services (`create_route` parses a generated
-  GPX, `create_trip` copies the snapshot, mints the meeting point and writes
-  the organiser's roster row), so the derived fields and the roster are the
-  real ones rather than a factory's guess at them.
+- **Route / trip:** five `Route`s — an 8-point, 3.4 km / 700 m synthetic skin
+  track above Verbier, plus the four canonical GPX tracks (SNOW-989; untimed,
+  so their `started_at` / `finished_at` pair is null) — and one `Trip` planned
+  off the synthetic one, all owned by the normal dev user. All go through the
+  production services (`create_route` parses the GPX, `create_trip` copies the
+  snapshot, mints the meeting point and writes the organiser's roster row), so
+  the derived fields and the roster are the real ones rather than a factory's
+  guess at them.
 
   **The trip is dated a week ahead of the run**, alone in a seed whose every
   other date is pinned to April 2026. A trip is filed by whether its day has
@@ -379,6 +382,6 @@ The dataset shape lives in code, not a committed fixture:
 - Row *values* come from the factories in `tests/factories.py`.
 
 After changing either, re-run `monitor_query_counts` (read-only) to verify the
-baseline (home=8, map=7) is unchanged. To refresh the region reference data
+baseline (home=3, map=7) is unchanged. To refresh the region reference data
 itself, use `dump_resorts_sheet --commit` (resort → MicroRegion mappings) or
 `refresh_eaws_fixtures --commit` (EAWS MicroRegion boundaries).

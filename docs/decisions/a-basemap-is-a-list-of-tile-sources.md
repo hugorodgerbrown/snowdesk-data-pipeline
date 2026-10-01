@@ -2,7 +2,7 @@
 name: a-basemap-is-a-list-of-tile-sources
 description: Basemap tiles are every vector source x MapLibre's per-tile host rotation — tileSources, tileSourcesKey, register-basemap-origins (SNOW-843)
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-10-01
 ---
 
 # A basemap is a list of tile sources, not a tile URL
