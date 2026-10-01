@@ -106,7 +106,7 @@ class Command(BaseCommand):
                 self,
                 candidates,
                 verbosity=verbosity,
-                describe=lambda row: f"{row.pk} {row}",
+                describe=lambda row: row.to_string(),
             ),
         )
 

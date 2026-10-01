@@ -83,7 +83,12 @@ def uppercase_field_values(
     qs = manager.filter(**{f"{field}__in": list(lower_to_upper)})
 
     batch: list[models.Model] = []
-    for obj in iterate_rows(cmd, qs, verbosity=verbosity):
+    for obj in iterate_rows(
+        cmd,
+        qs,
+        verbosity=verbosity,
+        describe=lambda obj: f"{field}={getattr(obj, field)}",
+    ):
         old_value = getattr(obj, field)
         new_value = lower_to_upper[old_value]
         converted[new_value] += 1

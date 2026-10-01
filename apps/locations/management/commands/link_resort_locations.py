@@ -165,7 +165,7 @@ class Command(BaseCommand):
             self,
             candidates,
             verbosity=verbosity,
-            describe=lambda row: f"{row.pk} {row.name}",
+            describe=lambda row: row.name,
         ):
             self._resolve_one(resort, counts, commit=commit)
 

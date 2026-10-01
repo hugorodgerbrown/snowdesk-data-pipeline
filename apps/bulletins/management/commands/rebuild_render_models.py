@@ -239,7 +239,7 @@ class Command(BaseCommand):
             qs,
             verbosity=verbosity,
             chunk_size=chunk_size,
-            describe=lambda b: b.bulletin_id,
+            describe=Bulletin.row_label,
         ):
             success, _ = self._process_bulletin(bulletin, commit=commit)
             rebuilt += 1

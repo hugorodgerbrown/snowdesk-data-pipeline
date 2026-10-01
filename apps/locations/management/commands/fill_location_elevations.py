@@ -134,7 +134,9 @@ class Command(BaseCommand):
         queryset = Location.objects.all() if force else Location.objects.unresolved()
         counts = {"resolved": 0, "failed": 0}
 
-        for location in iterate_rows(self, queryset, verbosity=verbosity):
+        for location in iterate_rows(
+            self, queryset, verbosity=verbosity, describe=Location.to_string
+        ):
             self._resolve_one(
                 location, counts, commit=commit, delay=delay, verbosity=verbosity
             )

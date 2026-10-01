@@ -15,6 +15,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -213,5 +214,10 @@ class TestBackfillBulletinSourceCommand:
         call_command("backfill_bulletin_source", "--commit")
 
         out_lines = capsys.readouterr().out.splitlines()
-        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        # Each line is ``<pk> <source> <day> <bulletin_id>`` (Bulletin.row_label).
+        printed_pks = [
+            int(m[1])
+            for line in out_lines
+            if (m := re.match(r"^(\d+) \S+ \d{4}-\d{2}-\d{2} \S+$", line))
+        ]
         assert printed_pks == pks

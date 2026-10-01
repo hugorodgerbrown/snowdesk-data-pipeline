@@ -167,9 +167,9 @@ class Command(BaseCommand):
         """
         if target_date is None:
             seen: set[str] = set()
-            rows = Bulletin.objects.values_list("id", "raw_data")
-            for _pk, raw_data in iterate_rows(
-                self, rows, verbosity=verbosity, describe=lambda row: row[0]
+            rows = Bulletin.objects.values_list("id", "bulletin_id", "raw_data")
+            for _pk, _bulletin_id, raw_data in iterate_rows(
+                self, rows, verbosity=verbosity, describe=lambda row: row[1]
             ):
                 _collect_region_ids(raw_data, seen)
             return seen
@@ -179,7 +179,9 @@ class Command(BaseCommand):
         # exactly the bulletins forecasting this day.
         candidates = Bulletin.objects.for_target_date(target_date)
         seen = set()
-        for bulletin in iterate_rows(self, candidates, verbosity=verbosity):
+        for bulletin in iterate_rows(
+            self, candidates, verbosity=verbosity, describe=Bulletin.row_label
+        ):
             _collect_region_ids(bulletin.raw_data, seen)
         return seen
 

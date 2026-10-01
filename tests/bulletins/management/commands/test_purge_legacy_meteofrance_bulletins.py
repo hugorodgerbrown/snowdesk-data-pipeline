@@ -427,7 +427,12 @@ class TestStreaming:
         call_command("purge_legacy_meteofrance_bulletins", "--commit", verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
-        printed = [line for line in out_lines if line in set(expected)]
+        # Each line is ``<pk> <source> <day> <bulletin_id>`` (Bulletin.row_label).
+        printed = [
+            line.rsplit(" ", 1)[-1]
+            for line in out_lines
+            if line.rsplit(" ", 1)[-1] in set(expected)
+        ]
         assert printed == expected
 
 

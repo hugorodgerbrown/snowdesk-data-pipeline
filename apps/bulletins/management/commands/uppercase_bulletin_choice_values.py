@@ -176,7 +176,9 @@ def _uppercase_render_model_source(
     qs = Bulletin.objects.filter(render_model__source__in=list(lower_to_upper))
 
     batch: list[Bulletin] = []
-    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
+    for bulletin in iterate_rows(
+        cmd, qs, verbosity=verbosity, describe=Bulletin.row_label
+    ):
         old_value = bulletin.render_model.get("source")
         new_value = lower_to_upper[old_value]
         converted[new_value] += 1

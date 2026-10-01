@@ -710,17 +710,27 @@ def day_rating_pairs(
     pairs before the mutation touches the bulletins' region links, then pass
     them to :func:`refresh_day_ratings`.
 
+    Each region is loaded with ``pk`` and ``region_id`` only — all that
+    :func:`recompute_region_day` reads. The callers accumulate these pairs
+    across a whole run, and every bulletin loads its regions afresh, so the
+    set holds one instance per (region, day): a full-season rebuild touches
+    tens of thousands. A full ``MicroRegion`` carries its boundary polygon
+    (~5 KB parsed for a Swiss region, ~30 KB for an Austrian or Italian one),
+    which put a full rebuild on course for ~2 GB of held memory (SNOW-1054).
+    With two fields a pair costs ~0.5 KB.
+
     Args:
         bulletins: Bulletins whose (region, day) pairs should be collected.
 
     Returns:
         A set of ``(region, day)`` tuples, deduplicated across bulletins.
+        Each region has every field but ``pk`` and ``region_id`` deferred.
 
     """
     pairs: set[tuple["MicroRegion", date]] = set()
     for bulletin in bulletins:
         day = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
-        for region in bulletin.regions.all():
+        for region in bulletin.regions.only("pk", "region_id"):
             pairs.add((region, day))
     return pairs
 

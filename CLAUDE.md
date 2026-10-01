@@ -334,7 +334,12 @@ These rules apply to **every** new or refactored management command
 5. **Streams a growable queryset, doesn't materialise it** — order `-id`
    and iterate via `apps.core.command_iteration.iterate_rows` (or
    `countdown` for a derived, non-row unit of work), printing each row's
-   id as it is processed so stdout reads as a countdown to 1. Exemptions
+   id **and a label an operator can read** (a region code, a bulletin's
+   provider and day, a place name) as it is processed, so stdout reads as
+   a countdown to 1 that says what each row is. `describe` is required;
+   it must read only already-loaded fields, never query per row. Anything
+   a run accumulates across rows (a set of pairs to refresh afterwards)
+   holds keys or slim `.only()` instances, never full rows. Exemptions
    (derived non-row units of work; stdout carrying a data artefact) need
    an inline reason, not silence. Full rationale and the two exemptions:
    [`docs/management-commands.md`](docs/management-commands.md).

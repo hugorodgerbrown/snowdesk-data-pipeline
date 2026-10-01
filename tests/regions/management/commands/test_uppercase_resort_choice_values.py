@@ -11,6 +11,8 @@ Covers the ``uppercase_resort_choice_values`` management command (SNOW-582):
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.core.management import call_command
 
@@ -109,5 +111,8 @@ class TestUppercaseResortChoiceValuesCommand:
         call_command("uppercase_resort_choice_values", "--commit", verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
-        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        # Each line is ``<pk> <field>=<old value>``.
+        printed_pks = [
+            int(m[1]) for line in out_lines if (m := re.match(r"^(\d+) \w+=", line))
+        ]
         assert printed_pks == pks

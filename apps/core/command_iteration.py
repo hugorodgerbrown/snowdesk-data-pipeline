@@ -11,10 +11,11 @@ every call site via this module rather than copied thirteen times:
    ``.iterator()`` so memory stays bounded regardless of table size.
    Descending id ordering has a correctness benefit too — rows created while
    the command runs sort *ahead* of the cursor and are never re-visited.
-2. **Countdown output.** Print each row's id (or a caller-supplied
-   description) as it is processed, so stdout reads as a countdown to 1 on
-   a long unattended run — progress and remaining work visible at a glance
-   without a separate progress counter.
+2. **Countdown output.** Print each row's id, then a label an operator can
+   read (a region code, a bulletin's provider and day, a place name), as it
+   is processed. The id makes stdout a countdown to 1 on a long unattended
+   run; the label says what the row *is*, which a bare id never does. Every
+   caller must supply the label — ``describe`` has no default.
 
 ``iterate_rows`` covers the common case: the unit of work is a model row
 with a primary key. ``countdown`` covers the minority case where the unit of
@@ -158,21 +159,21 @@ def iterate_rows(
     queryset: Any,
     *,
     verbosity: int,
+    describe: Callable[[Any], object],
     chunk_size: int | None = None,
-    describe: Callable[[Any], object] | None = None,
 ) -> Iterator[Any]:
     """
     Stream a queryset newest-row-first, printing a countdown line per row.
 
     Orders ``queryset`` by ``-id`` and iterates it via ``.iterator()`` so the
     full result set is never materialised in memory. At ``verbosity >= 1``,
-    writes one line per row before yielding it, so stdout reads as a
-    countdown to 1 on a long-running command.
+    writes one ``<pk> <label>`` line per row before yielding it, so stdout
+    reads as a countdown to 1 that also names each row.
 
     ``queryset`` is typed ``Any`` rather than ``QuerySet[Model]`` because a
     handful of call sites stream a ``values_list(...)`` queryset (rows are
-    plain tuples, not model instances) — those callers must always pass
-    ``describe``, since a tuple has no ``.pk``.
+    plain tuples, not model instances). Such a queryset must list ``"id"``
+    first: a tuple has no ``.pk``, so the printed id is ``row[0]``.
 
     Args:
         cmd: The calling command, used for ``cmd.stdout`` so output honours
@@ -184,10 +185,11 @@ def iterate_rows(
         chunk_size: Forwarded to ``.iterator()``. Required (by Django) when
             ``queryset`` carries a ``prefetch_related`` — pass it explicitly
             at every such call site or Django raises.
-        describe: Optional callable returning the token to print for a row,
-            in place of the bare primary key (e.g. ``lambda b: b.bulletin_id``
-            for a command that already surfaces a domain id, or a
-            ``values_list`` tuple's own id element).
+        describe: Callable returning the operator-readable label printed
+            after the row's id — e.g. ``Bulletin.row_label`` or
+            ``lambda r: r.region_id``. Required: a bare id tells an operator
+            nothing about what is being changed. It must read only fields
+            the queryset already loaded, or it costs a query per row.
 
     Yields:
         Each row of ``queryset``, ordered newest id first.
@@ -200,8 +202,8 @@ def iterate_rows(
 
     for row in ordered.iterator(**iterator_kwargs):
         if verbosity >= 1:
-            token = describe(row) if describe is not None else row.pk
-            cmd.stdout.write(str(token))
+            pk = row[0] if isinstance(row, tuple) else row.pk
+            cmd.stdout.write(f"{pk} {describe(row)}")
         yield row
 
 
@@ -212,6 +214,7 @@ def countdown(
     total: int,
     verbosity: int,
     label: str,
+    describe: Callable[[_T], object] | None = None,
 ) -> Iterator[_T]:
     """
     Drive a loop over derived (non-row) items, printing a decreasing count.
@@ -219,7 +222,9 @@ def countdown(
     For loops whose unit of work has no primary key of its own — a derived
     ``(region, date)`` pair, for instance — there is nothing to print a
     ``-id`` countdown against. This prints ``"N <label> remaining"`` before
-    each item instead, counting down from ``total`` to ``1``.
+    each item instead, counting down from ``total`` to ``1``, followed by
+    ``describe(item)`` when given — pass it whenever the item can name
+    itself to an operator (a region code and a date, say).
 
     Args:
         cmd: The calling command, used for ``cmd.stdout``.
@@ -233,6 +238,8 @@ def countdown(
             suppressed at ``0``.
         label: A short noun describing one item (e.g. ``"pair(s)"``), used
             in the printed line.
+        describe: Optional callable returning an operator-readable label
+            for the item, appended to the line. Must not query per item.
 
     Yields:
         Each item of ``items``, unchanged.
@@ -241,6 +248,9 @@ def countdown(
     remaining = total
     for item in items:
         if verbosity >= 1:
-            cmd.stdout.write(f"{remaining} {label} remaining")
+            line = f"{remaining} {label} remaining"
+            if describe is not None:
+                line = f"{line} {describe(item)}"
+            cmd.stdout.write(line)
         remaining -= 1
         yield item

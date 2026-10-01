@@ -18,6 +18,8 @@ Covers:
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.core.management import call_command
 from pytest import CaptureFixture
@@ -298,7 +300,11 @@ class TestParseWetSnowCoverage:
         call_command("parse_wet_snow_coverage", verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
-        printed = [int(line) for line in out_lines if line.strip().isdigit()]
+        # Each line is ``<pk> <label>``: the bulletin_id for a values_list scan,
+        # Bulletin.row_label for a model one.
+        printed = [
+            int(m[1]) for line in out_lines if (m := re.match(r"^(\d+) \S", line))
+        ]
         assert printed == expected
 
     def test_no_countdown_lines_at_verbosity_0(

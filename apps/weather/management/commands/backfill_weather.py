@@ -139,7 +139,7 @@ class Command(BaseCommand):
             self,
             candidates,
             verbosity=verbosity,
-            describe=lambda row: f"{row.pk} {row}",
+            describe=lambda row: row.to_string(),
         )
         if limit is not None:
             # islice, not a queryset slice: iterate_rows re-orders by -id,

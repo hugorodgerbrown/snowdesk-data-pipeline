@@ -85,8 +85,15 @@ class Command(BaseCommand):
         start_date: date | None,
         end_date: date | None,
     ) -> Any:
-        """Return the distinct (region_id, date) queryset, optionally filtered."""
-        qs = RegionDayRating.objects.values_list("region_id", "date")
+        """Return distinct (region pk, region code, date) rows, optionally filtered.
+
+        The region code rides along so the countdown can name each pair to
+        the operator; it is one value per pk, so it does not change what
+        ``distinct()`` collapses.
+        """
+        qs = RegionDayRating.objects.values_list(
+            "region_id", "region__region_id", "date"
+        )
         if start_date:
             qs = qs.filter(date__gte=start_date)
         if end_date:
@@ -95,7 +102,7 @@ class Command(BaseCommand):
 
     def _process_pairs(
         self,
-        pairs: Iterator[tuple[Any, date]],
+        pairs: Iterator[tuple[Any, str, date]],
         *,
         total: int,
         commit: bool,
@@ -114,8 +121,13 @@ class Command(BaseCommand):
         processed = 0
         failed = 0
 
-        for region_id, day in countdown(
-            self, pairs, total=total, verbosity=verbosity, label="pair(s)"
+        for region_id, _region_code, day in countdown(
+            self,
+            pairs,
+            total=total,
+            verbosity=verbosity,
+            label="pair(s)",
+            describe=lambda pair: f"{pair[1]} {pair[2]}",
         ):
             if region_id not in region_cache:
                 try:

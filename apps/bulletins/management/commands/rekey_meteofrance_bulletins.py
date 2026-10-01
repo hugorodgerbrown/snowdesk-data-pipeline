@@ -363,7 +363,7 @@ class Command(BaseCommand):
             qs,
             verbosity=verbosity,
             chunk_size=chunk_size,
-            describe=lambda b: b.bulletin_id,
+            describe=Bulletin.row_label,
         ):
             new_id, reason = self._new_id_for(bulletin)
             if new_id is None:

@@ -19,6 +19,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -289,7 +290,11 @@ class TestCountdown:
         call_command("diagnose_region_coverage", verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
-        printed = [int(line) for line in out_lines if line.strip().isdigit()]
+        # Each line is ``<pk> <label>``: the bulletin_id for a values_list scan,
+        # Bulletin.row_label for a model one.
+        printed = [
+            int(m[1]) for line in out_lines if (m := re.match(r"^(\d+) \S", line))
+        ]
         assert printed == expected
 
     def test_no_countdown_lines_at_verbosity_0(

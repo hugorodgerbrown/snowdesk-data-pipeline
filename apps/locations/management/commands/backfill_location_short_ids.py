@@ -100,7 +100,7 @@ class Command(BaseCommand):
             self,
             candidates,
             verbosity=verbosity,
-            describe=lambda row: f"{row.pk} {row.to_string()}",
+            describe=lambda row: row.to_string(),
         ):
             self._backfill_one(location, taken, counts, commit=commit)
 
