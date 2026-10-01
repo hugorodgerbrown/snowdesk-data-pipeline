@@ -2,7 +2,7 @@
 name: golden-week-derived-not-committed
 description: The golden-week bulletin corpus is derived from the committed local_mirrors archives at seed time, not committed as its own fixture
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-10-01
 ---
 
 # The golden week is derived at seed time, not committed as a fixture
@@ -18,7 +18,7 @@ written to a fixture directory of its own. The week itself
 **Why.** SNOW-528 was originally scoped as a `capture_golden_week` command that
 would fetch seven days from SLF, ALBINA and Météo-France and commit the result
 as `tests/fixtures/golden_week/`. That premise was wrong: the repo already
-carries a full 2025/26 season for all three providers — 8,080 records, ~30 MB,
+carries a full 2025/26 season for all three providers — 8,080 records, ~40 MB,
 git-tracked — because `fetch_bulletins --stash` writes there and the dev-mirror
 views replay it. Capturing would have re-downloaded data the repo already has,
 and committing the result would have duplicated ~1.7 MB of it.
@@ -53,8 +53,10 @@ producing rows that no longer resemble what the pipeline would write today.
   keeping the later-published issue. The underlying synthesis is not narrowed
   here — that would change the identity of Météo-France bulletins already
   ingested by `load_meteofrance_archive`, which is a migration, not a fixture
-  change. It is tracked as SNOW-559; `_dedupe_meteofrance` should be deleted
-  when that lands.
+  change. SNOW-559 has since landed — the identifier now carries the
+  publication timestamp
+  ([`meteofrance-bulletin-identity`](meteofrance-bulletin-identity.md)) — and
+  `_dedupe_meteofrance` was deleted with it.
 - The corpus is kept strictly separate from `tests/sentinels/`. Those are one
   graded payload per structural case, enforced by a round-trip test; this is a
   realistic corpus. Merging them would leave the sentinels no longer minimal and

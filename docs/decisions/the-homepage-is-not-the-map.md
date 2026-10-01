@@ -2,7 +2,7 @@
 name: the-homepage-is-not-the-map
 description: / is a static homepage (public:home); the map is /map/ (public:map, map_page); /?<map state> 301s there; start_url /map/, id /
 status: current
-last-reviewed: 2026-09-29
+last-reviewed: 2026-10-01
 ---
 
 # The homepage is not the map

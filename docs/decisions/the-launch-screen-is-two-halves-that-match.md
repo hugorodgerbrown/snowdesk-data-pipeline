@@ -2,7 +2,7 @@
 name: the-launch-screen-is-two-halves-that-match
 description: PWA splash — apple-touch-startup-image, bin/build-pwa-splash, splash-manifest.json, the in-app launch shell; iOS never used background_color
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-10-01
 ---
 
 # The launch screen is two halves that have to match

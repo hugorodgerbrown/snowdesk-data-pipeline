@@ -2,7 +2,7 @@
 name: bulletin-fidelity-over-simplification
 description: Snowdesk renders the provider's bulletin in full and adds alongside it; the replicate-then-subtract pass was retired, not completed
 status: current
-last-reviewed: 2026-08-26
+last-reviewed: 2026-10-01
 ---
 
 # Fidelity over simplification

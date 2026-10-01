@@ -2,13 +2,14 @@
 name: route-share-pending-claim-in-session
 description: An unclaimed RouteShare token lives in request.session, which is why route_list and routes_geojson answer an anonymous request
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-10-01
 ---
 
 # A pending route-share claim lives in the session (SNOW-764)
 
 **Decision.** Following `/routes/s/<token>/` writes the token into
-`request.session["route_shares"]` and redirects to `/?route_share=<token>`.
+`request.session["route_shares"]` and redirects to `/map/?route_share=<token>`
+(the map; it was `/?route_share=<token>` until the homepage took the root).
 It does **not** claim anything. `apps.routes.views.route_list` and
 `routes_geojson` then answer for a request holding pending tokens *whether
 or not it is authenticated*, rendering those shares alongside (above) the

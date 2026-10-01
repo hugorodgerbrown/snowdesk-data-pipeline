@@ -1,8 +1,8 @@
 ---
 name: location-is-the-primitive
-description: Location is the domain primitive every place FKs to — resorts, favourites, observations; ForecastCell is a quantised fetch cell
+description: Location is the domain primitive every place FKs to — resorts, favourites, observations, region centroids; ForecastCell is gone (SNOW-762)
 status: current
-last-reviewed: 2026-08-21
+last-reviewed: 2026-10-01
 ---
 
 # Location is the primitive — supersedes location-first-information-model
@@ -13,6 +13,18 @@ accepted and corrected the same day. That document's tiers, weather-sourcing
 rule and point-versus-extent argument are carried forward here; its §4–5 —
 `NamedLocation` as a curated table beside an anonymous `ForecastPoint`, with
 identity opt-in — inverted the model and are withdrawn.
+
+> **Amended by SNOW-759/762 (2026-08-30).** The decision stands; the
+> `ForecastCell` half of the sketch below does not. SNOW-762 stripped the
+> old weather estate whole — `ForecastCell`, `ForecastCellWeather`,
+> `ForecastCellWeatherHistory`, `WeatherSnapshot` and the
+> `Location.forecast_cell` FK (`apps/locations/migrations/0003`) — and
+> SNOW-759 rebuilt weather as one `Weather` row per `(location,
+> observed_on)` keyed on `Location` directly, with no quantised cell between
+> them. The grid was measured and shared nothing. See
+> [`weather-is-one-immutable-location-row`](weather-is-one-immutable-location-row.md).
+> The `ForecastCell` passages are left as written, as the record of what
+> this decision was made against.
 
 ## Decision
 
@@ -27,7 +39,7 @@ Location                          apps/locations/
   elevation_m           looked up once via fetch_elevation
   name                  nullable; a curated place has one
   kind                  nullable; VILLAGE | MID | PEAK
-  forecast_cell → weather.ForecastCell (PROTECT)
+  forecast_cell → weather.ForecastCell (PROTECT)   — removed by SNOW-762
 ```
 
 "Immovable" means a location does not drift and nothing in the request path

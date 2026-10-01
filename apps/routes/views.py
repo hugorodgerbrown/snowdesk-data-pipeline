@@ -37,7 +37,7 @@ plus one JSON endpoint the owner's Share button calls:
 There is no full page here. ``my_routes`` (SNOW-713) rendered
 ``/account/routes/`` as the account area's own list until SNOW-803 found it
 to be a second rendering of the map's routes sheet; the view is gone and the
-URL is a permanent redirect to ``/?panel=routes``
+URL is a permanent redirect to ``/map/?panel=routes``
 (``docs/decisions/two-documents-and-a-map.md``). Authentication remains the
 only gate since SNOW-724 retired the ``routes`` rollout flag.
 

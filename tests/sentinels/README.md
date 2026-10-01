@@ -42,16 +42,19 @@ is expressed entirely through elevation bands and problem-type slots.
 ```
 tests/sentinels/
   README.md                               ← this file
+  fidelity.py                             ← the rendered/excluded path table (see below)
   test_sentinel_round_trip.py             ← parametrised smoke test
+  test_fidelity.py                        ← every rendered path reaches the page
+  test_fidelity_lint.py                   ← unit tests for the table's helpers
   slf/
     A-single-level/
       source.json    ← raw CAAML bulletin record (as stored in ndjson archive)
-      source.pdf     ← PDF published by SLF on the bulletin's validity day
-      README.md      ← bulletinID, date, region, variant justification, PDF URL
+      README.md      ← bulletinID, date, region, variant justification, how to spot-check
     B-subdivision-plus/   (same shape)
     C-split-day-multi-problem/   (same shape)
+    new-format-preview/   ← NOT a sentinel: SLF 2026/27 schema fragment, no source.json
   albina/
-    A-single-level/   (same shape)
+    A-single-level/   (same shape as slf/)
     B-elevation-band-split/
     C-split-day-multi-problem/
   meteofrance/
@@ -63,6 +66,12 @@ tests/sentinels/
     B-elevation-band-split/   (same shape)
     C-elevation-split-multi-problem/   (elevation + multi-problem; MF has no time splits)
 ```
+
+Only the Météo-France sentinels carry a `source.pdf`. Neither SLF nor ALBINA
+publishes a stable archive-PDF URL (each `A-single-level/README.md` records
+what was tried), so those directories hold `source.json` and `README.md` only.
+Every collector globs `*/*/source.json`, which is why `slf/new-format-preview/`
+— reference material for the SNOW-900 changeover — is never collected.
 
 ---
 
@@ -82,7 +91,7 @@ tests/sentinels/
    XML for MF).
 2. Create a new subdirectory under the appropriate source folder using the naming
    convention `{Variant}-{slug}` (e.g. `D-avalanche-cycle`).
-3. Add `source.json` (and `source.xml` for MF), `source.pdf`, and `README.md`
+3. Add `source.json` (and `source.xml` plus `source.pdf` for MF) and `README.md`
    following the pattern of an existing sentinel.
 4. The smoke test in `test_sentinel_round_trip.py` is fully parametrised — it will
    automatically pick up the new `source.json` and `source.xml` without any code

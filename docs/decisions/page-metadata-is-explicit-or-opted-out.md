@@ -2,7 +2,7 @@
 name: page-metadata-is-explicit-or-opted-out
 description: Every page emits page identity via includes/_page_meta.html, or opts out with sharing=False and a written reason; there is no third state
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-10-01
 ---
 
 # Page metadata is explicit, or opted out in writing

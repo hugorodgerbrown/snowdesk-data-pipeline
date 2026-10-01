@@ -2,7 +2,7 @@
 name: analytics-exempt-cacheable-api
 description: Cacheable public endpoints are exempt from PosthogContextMiddleware to prevent Vary: Cookie from defeating CDN caching
 status: current
-last-reviewed: 2026-06-22
+last-reviewed: 2026-10-01
 ---
 
 # Cacheable public endpoints exempt from PosthogContextMiddleware
@@ -58,7 +58,7 @@ which is what `_posthog_request_filter` implements.
 **Consequences.** PostHog receives no page-view events for requests to these
 paths. That is acceptable — these are anonymous data or infrastructure
 endpoints, not page views; analytics attribution of map interactions comes from
-the page-load event on the map page itself (`/`), not from individual
+the page-load event on the map page itself (`/map/`), not from individual
 data-layer requests. The
 exempt set must be kept in sync with the `@cache_control(public=True)` GET
 endpoints in `apps/public/api_urls.py` and the `Cache-Control: public` static routes

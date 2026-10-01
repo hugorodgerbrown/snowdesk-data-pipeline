@@ -2,7 +2,7 @@
 name: async-operations
 description: Catalogue of async callsites — django-tasks email backends, db_worker on Render
 status: current
-last-reviewed: 2026-06-14
+last-reviewed: 2026-10-01
 ---
 
 # Async operations

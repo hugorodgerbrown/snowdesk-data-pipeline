@@ -2,7 +2,7 @@
 name: albina-archive-pdf
 description: ALBINA archive PDF URLs — api.avalanche.report bulletins/pdf endpoint, validTime.startTime lookup, legacy static paths
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # ALBINA bulletin archive PDF URL pattern

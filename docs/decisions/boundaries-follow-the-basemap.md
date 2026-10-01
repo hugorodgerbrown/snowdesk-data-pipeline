@@ -2,7 +2,7 @@
 name: boundaries-follow-the-basemap
 description: EAWS boundary outlines follow the active basemap, not the Bulletins rows (BASEMAP_COUNTRIES, data-basemap-countries, boundaryCountryCodes)
 status: current
-last-reviewed: 2026-09-10
+last-reviewed: 2026-10-01
 ---
 
 # The boundary outlines follow the basemap, not the Bulletins rows

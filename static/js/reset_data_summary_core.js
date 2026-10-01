@@ -2,7 +2,7 @@
  * static/js/reset_data_summary_core.js — what "Reset local data" is about
  * to delete, grouped by what it costs to lose (SNOW-860).
  *
- * `/account/settings/`'s Reset local data row asks the user to approve a
+ * `/offline/`'s Reset local data row asks the user to approve a
  * deletion whose contents they could not see: `pwa_reset.js` unregisters
  * every service worker, deletes every Cache Storage bucket, drops every
  * IndexedDB database and clears both web-storage areas, and the only

@@ -2,7 +2,7 @@
 name: query-counts
 description: Query-count monitoring — monitor_query_counts baseline in perf/query_counts.txt and the X-DB-Query-Count header
 status: current
-last-reviewed: 2026-08-25
+last-reviewed: 2026-10-01
 ---
 
 # Query-count monitoring (SNOW-13)
@@ -36,9 +36,9 @@ the new baseline row.
 
 Two queries, on every page extending `public/base.html`: the
 admin-managed site banners lookup (`apps.public.banners`), which runs
-whether or not a banner exists. It is why `home` reads 7 rather than 5
-and `bulletin_historic` 9 rather than 7, and why `/help/` — a static
-page — is no longer query-free. One of the two is wasted work in the
+whether or not a banner exists. It is why `bulletin_historic` reads 9
+rather than 7, and why `home` (a static page since SNOW-1047) and `/help/`
+are not query-free. One of the two is wasted work in the
 package's own `filter_user`, fixed in an upstream PR that is open rather
 than merged; see [`docs/site-banners.md`](site-banners.md#the-cost).
 
@@ -52,8 +52,9 @@ PR so reviewers can sanity-check the new number.
 
 CI builds the database the check runs against in
 [`.github/workflows/lighthouse.yml`](../.github/workflows/lighthouse.yml):
-`migrate`, then `sync_waffle_flags --commit`, then `loaddata` +
-`seed_test_data`. That middle step mirrors
+`migrate`, then `sync_waffle_flags --commit`, then `loaddata eaws_CH`,
+`import_resorts --commit` and `seed_test_data --all --commit`. That second
+step mirrors
 [`bin/build.sh`](../bin/build.sh) and is load-bearing, not decorative.
 
 `apps/core/fixtures/waffle_flags.json` is the source of truth for which
@@ -92,9 +93,12 @@ rows, and the symptom is distinctive: **the gate fails with a reduction,
 not a regression.** Each superuser-targeted flag out of step costs 2
 queries (3 present against 1 absent), so a handful of stale rows moved
 `home` by four before SNOW-724 cut the manifest to one flag. The surface
-is smaller now — `sync_log` is the only row left, and no monitored URL
-reads it — but the failure mode is unchanged: a database whose flag rows
-disagree with the manifest measures a page no environment serves.
+is smaller now — the manifest carries three flags (`sync_log`,
+`debug_log`, `what3words`), and the one a monitored URL reads (`debug_log`,
+on every page) short-circuits before waffle for an anonymous request (see
+[feature-flags.md](feature-flags.md)) — but the failure mode is unchanged: a
+database whose flag rows disagree with the manifest measures a page no
+environment serves.
 
 A reduction looks like someone's prefetch landing, which is why the rule
 is worth stating plainly: **do not `--commit` a baseline to resolve a

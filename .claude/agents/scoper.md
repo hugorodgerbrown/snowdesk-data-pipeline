@@ -19,17 +19,18 @@ Concrete description of what a user does and sees. If there's a UI, describe the
 
 ### Acceptance criteria
 A bulleted list of testable conditions. Each one should be checkable as pass/fail. Aim for 3–7. Examples:
-- "A subscriber receives the briefing email within 2 minutes of bulletin publication"
-- "The /resorts page lists all resorts with a confirmed SLF region mapping"
-- "Bulletin parsing fails loudly (raises) on malformed CAAMLv6, does not silently skip"
+- "A verification email reaches the account's address within 2 minutes of registration"
+- "The resort page at /resorts/<slug>/ shows the danger rating of the resort's confirmed micro-region"
+- "Bulletin translation fails loudly (raises) on malformed CAAML v6, does not silently skip"
 
 ### Technical surface
 Which parts of the Snowdesk codebase this touches. Be specific:
-- Django apps affected (e.g. `bulletins`, `accounts`, `resorts`)
+- Django apps affected (e.g. `bulletins`, `accounts`, `regions` — all under `apps/`)
 - Models affected (new fields? new models? migrations needed?)
 - Templates / HTMX partials affected
-- Celery tasks affected
-- External APIs involved (SLF, discover.swiss, Anthropic, etc.)
+- Background tasks affected (django-tasks `@task` + `.enqueue()`; there is no Celery)
+- Management commands and scheduled jobs affected (`schedule.py`, `docs/management-commands.md`)
+- External APIs involved (SLF, ALBINA, Météo-France, Open-Meteo, what3words, etc.)
 
 Ground this in actual codebase exploration. Use Grep / Glob / Read to verify what exists. If you reference a model or template, it should be one you've actually seen.
 
@@ -49,7 +50,7 @@ Anything that needs the user's input before this is implementable. If there are 
 ## What good looks like
 
 - Specific over general. "Add a column to the Resort model" not "improve resort data."
-- Grounded in the codebase. "Extend `apps/bulletins/models.py` `Bulletin.parse()`" not "update the bulletin parser somewhere."
+- Grounded in the codebase. "Extend `apps/bulletins/services/slf_fetcher.py` `upsert_bulletin()`" not "update the bulletin parser somewhere."
 - Honest about ambiguity. If the ticket is genuinely unclear, the open questions section is long. Don't paper over uncertainty with confident-sounding prose.
 - Short. A typical Snowdesk feature scope is 200–500 words. If you're heading past 800 words, the ticket should probably be split.
 

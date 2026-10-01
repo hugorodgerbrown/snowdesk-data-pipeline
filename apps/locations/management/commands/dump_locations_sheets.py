@@ -1,7 +1,7 @@
 """dump_locations_sheets — export the curated location estate to its sheets.
 
 The other half of ``import_locations``. After a session of placing summits
-with the in-map location editor (``/?edit=locations`` — SNOW-755), or a
+with the in-map location editor (``/map/?edit=locations`` — SNOW-755), or a
 local ``import_locations --commit`` run, the edits live only in this
 environment's database. This command re-emits
 ``apps/locations/data/locations.tsv`` and

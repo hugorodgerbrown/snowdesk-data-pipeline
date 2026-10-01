@@ -2,7 +2,7 @@
 name: what3words-addresses-are-stored-indefinitely
 description: Location.what3words never expires — the licence's 30-day cache cap governs convert-to-coordinates, not an address derived from our own pin
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-10-01
 ---
 
 # A three word address is ours to keep

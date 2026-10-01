@@ -1,7 +1,7 @@
 """
 tests/analytics/test_schema.py — Tests for apps.analytics.schema.ALLOWED_EVENTS.
 
-Covers the SNOW-414 map-favourites allowlist addition: the three
+Covers the SNOW-414 map-favourites allowlist addition: the four
 ``map.favourite.*`` events must be members of ``ALLOWED_EVENTS`` (so the
 receiver forwards them rather than 400-ing), and a well-formed envelope
 carrying one of them passes ``parse_payload`` end-to-end. Also covers the
@@ -26,6 +26,7 @@ class TestFavouriteEventsAllowlisted:
             "map.favourite.created",
             "map.favourite.deleted",
             "map.favourite.overlay_toggled",
+            "map.favourite.shared",
         ],
     )
     def test_event_name_in_allowed_events(self, event_name: str) -> None:
@@ -38,6 +39,7 @@ class TestFavouriteEventsAllowlisted:
             "map.favourite.created",
             "map.favourite.deleted",
             "map.favourite.overlay_toggled",
+            "map.favourite.shared",
         ],
     )
     def test_parse_payload_accepts_valid_envelope(self, event_name: str) -> None:

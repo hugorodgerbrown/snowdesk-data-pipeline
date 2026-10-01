@@ -378,10 +378,11 @@ because the repository is the authority and the mock is a drawing:
                         surface in a reusable component. The tag gives the
                         same class string the partial would have; the
                         attributes stay this caller's own. The same applies to
-                        Reset and Delete below, each of which carries a
-                        binding contract the partial cannot express:
-                        ``data-testid`` here, ``data-pwa-reset-trigger`` for
-                        pwa_reset.js, and hx-post/hx-confirm for HTMX.
+                        Delete below, which carries a binding contract the
+                        partial cannot express: ``data-testid`` here and
+                        hx-post/hx-confirm for HTMX. (The Reset control, with
+                        its ``data-pwa-reset-trigger`` hook for pwa_reset.js,
+                        moved to /offline/ in SNOW-930.)
                     {% endcomment %}
                     <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <div class="min-w-0">
@@ -621,8 +622,9 @@ because the repository is the authority and the mock is a drawing:
             </div>
             {# /hx-headers wrapper #}
 
-            {# SNOW-378: the [data-pwa-reset-trigger] button above is wired by  #}
-            {# pwa_reset.js, which base.html now loads on every page (SNOW-615). #}
+            {# SNOW-378: the [data-pwa-reset-trigger] button (now on /offline/) #}
+            {# is wired by pwa_reset.js, which base.html loads on every page     #}
+            {# (SNOW-615).                                                       #}
             {# The tag that used to sit here is gone rather than duplicated:     #}
             {# browsers do not deduplicate script elements by URL, so a second   #}
             {# copy would run the IIFE twice and its                             #}

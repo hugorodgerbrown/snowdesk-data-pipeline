@@ -2,7 +2,7 @@
 name: weather-icons-are-drawn-in-house
 description: Why Snowdesk draws its own weather icons — bin/build-weather-icons, the both-backgrounds palette, the baked silhouette edge
 status: current
-last-reviewed: 2026-09-01
+last-reviewed: 2026-10-01
 ---
 
 # The weather icons are ours, generated from one vocabulary
@@ -74,4 +74,4 @@ best — at 35.1. Method and the full table:
 [`weather-icons-are-yr-not-meteoswiss`](weather-icons-are-yr-not-meteoswiss.md).
 
 See [`weather-surfaces.md`](../weather-surfaces.md) for the buckets, the
-day/night rule and the four surfaces that read them.
+day/night rule and the surfaces that read them.

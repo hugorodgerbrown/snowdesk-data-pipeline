@@ -1,6 +1,6 @@
 /*
  * static/js/reset_data_summary.js — paint the "Reset local data"
- * breakdown on /account/settings/ (SNOW-860).
+ * breakdown on /offline/ (SNOW-860; moved off /account/settings/ by SNOW-930).
  *
  * The DOM half of `reset_data_summary_core.js`, in the same shape as
  * `sync_log.js`: read what the device is holding, replace the "Loading…"

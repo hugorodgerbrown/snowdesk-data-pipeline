@@ -2,7 +2,7 @@
 name: the-slf-caaml-shape-is-detected-not-assumed-from-the-url
 description: detect_caaml_shape, customData.CH.weather, SLF_API_LEGACY_URL — why the SLF CAAML shape is read off each response, not the URL
 status: current
-last-reviewed: 2026-09-20
+last-reviewed: 2026-10-01
 ---
 
 # The SLF CAAML shape is detected, not assumed from the URL

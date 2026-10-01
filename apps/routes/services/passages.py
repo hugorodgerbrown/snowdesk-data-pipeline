@@ -96,7 +96,7 @@ by its existence.
 **AN UNMARKED ROUTE IS NOT A ROUTE WITHOUT NO-FALL GROUND.** The gate is
 a threshold on a sampled angle taken from a 10 m analysis window over a
 5 m grid, and a narrow steep passage between two gentler samples reads
-gentler than it is. The surfaces say so — the legend row and
+gentler than it is. The surfaces say so — rail two's passage bars and
 ``/help/#help-topic-slope`` — and this module is where the reason lives.
 """
 

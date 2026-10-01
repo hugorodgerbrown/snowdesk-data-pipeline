@@ -5,7 +5,7 @@
 The default OpenGraph / Twitter share card (1200×630, the
 `og:image` / `summary_large_image` ratio). It is referenced site-wide by the
 `og:image` and `twitter:image` tags in
-[`public/templates/public/base.html`](../../public/templates/public/base.html)
+[`apps/public/templates/public/base.html`](../../apps/public/templates/public/base.html)
 and used on every page that does not override the `og_tags` block.
 
 **What it shows:** a render of the Snowdesk map page — the Swiss avalanche

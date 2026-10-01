@@ -79,10 +79,10 @@ the shared ``data-panel-add``); what moved out of this file is the panel
 chrome, the budget block (``_map_downloads_header.html``) and the row
 groups (``_map_downloads_rows.html``).
 
-htmx.min.js / db.js are loaded earlier by home.html / base.html — not
+htmx.min.js / db.js are loaded earlier by map.html / base.html — not
 repeated here, and neither is inline_rename.js (SNOW-658): both this
 panel's custom areas and the favourites panel's pins rename in place on
-the row's own label, so home.html loads that module once for both.
+the row's own label, so map.html loads that module once for both.
 {% endcomment %}
 {% trans "Your downloads" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}

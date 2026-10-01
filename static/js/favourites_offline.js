@@ -2,7 +2,7 @@
  * static/js/favourites_offline.js — Offline read cache for favourites
  * (SNOW-418).
  *
- * Caches every favourite the manage page fetches — the roster
+ * Caches every favourite the map's pins sheet fetches — the roster
  * (``favourites:list``) and each opened detail card (``favourites:card``)
  * — into the ``data:favourites`` IndexedDB store (SNOW-375's ``db.js``,
  * schema v2), keyed by the favourite's uuid. When either HTMX request

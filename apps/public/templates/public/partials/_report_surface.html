@@ -2,15 +2,15 @@
 {% comment %}
 public/partials/_report_surface.html — Field-report sheet and JS (SNOW-333).
 
-Included from home.html.
+Included from map.html.
 
 The roundel button lives in _map_embed.html (inside #map so it floats above
 the season scrubber). This partial owns the viewport-anchored sheet panel
 that report.js opens, and the script tag required to drive it.
 
-Three shared modules are loaded by home.html, once each, ahead of both this
+Three shared modules are loaded by map.html, once each, ahead of both this
 partial and _favourites_surface.html (SNOW-414) — none is repeated here,
-and home.html's include ordering guarantees all three precede report.js in
+and map.html's include ordering guarantees all three precede report.js in
 document order:
 
   htmx.min.js       report.js calls htmx.ajax and the swapped-in form
@@ -59,13 +59,13 @@ Context expected:
     {% trans "Reports" as report_section_label %}
     {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label %}
 </template>
-{# SNOW-475: place_picker.js is loaded by home.html (shared with        #}
+{# SNOW-475: place_picker.js is loaded by map.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}
 {# header comment.                                                      #}
 {# SNOW-661: the panel's offline row store — written on every successful  #}
 {# list swap AND on report.js's idle warm, read back when the request      #}
 {# fails. Sits between the two scripts it talks to, and both edges are      #}
-{# document order between deferred scripts: home.html's panel_rows_cache.js #}
+{# document order between deferred scripts: map.html's panel_rows_cache.js #}
 {# is above (this registers its onWarmed hook at parse time), and report.js  #}
 {# is below (it reads window.pwaObservationsOffline). Map page only, unlike  #}
 {# favourites_offline.js, which base.html loads site-wide.                   #}

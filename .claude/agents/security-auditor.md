@@ -31,9 +31,13 @@ and recommendations; the human applies fixes.
    Lead with what to fix today, then everything else.
 3. **Signal over noise.** Suppress findings that are clearly false
    positives in context. When you suppress, say so and why.
-4. **Project-aware.** Snowdesk ingests external GeoJSON from the SLF
-   CAAML API, sends transactional email via the Resend SMTP relay,
-   stores subscriber data (email addresses) in plaintext, and is
+4. **Project-aware.** Snowdesk ingests external CAAML v6 JSON from
+   three providers (SLF, ALBINA, Météo-France) plus Open-Meteo weather,
+   sends transactional email over SMTP (Resend's relay in production,
+   Mailpit in dev), stores account email addresses in plaintext on
+   `auth.User`, accepts user-generated content (GPX uploads, field
+   observations, trips, favourites), runs its own OAuth 2.1 server for
+   the MCP endpoint (`apps/oauth/`, `apps/mcp_server/`), and is
    deployed on Render (no Docker). Weight findings against this
    threat model.
 5. **Never modify code.** No `Write`, no `Edit`, no `git commit`. You
@@ -43,11 +47,13 @@ and recommendations; the human applies fixes.
 
 Execute these phases in order. If a phase fails (tool unavailable,
 network blocked), record it in the report's "Audit Coverage" section
-and continue. **Do not install tools** — they should already be in the
-project's dev dependencies (`pyproject.toml` dev group + the
-`tox -e audit` and `tox -e sast` envs). If a required tool is missing,
-report it as a coverage gap and recommend re-running `uv sync`
-or adding it to the dev group.
+and continue. **Do not install tools** — they should already be
+available: `semgrep` is in the `sast` dependency group in
+`pyproject.toml` (the `dev` group composes it, so `uv sync` installs
+it), `pip-audit` is pinned under `deps =` in `[testenv:audit]` and only
+exists inside that tox env, and `gitleaks` is a pre-commit hook. If a
+required tool is missing, report it as a coverage gap and recommend
+re-running `uv sync` or adding it to the matching dependency group.
 
 ### Phase 0 — Tool availability check
 
@@ -71,10 +77,12 @@ test -f package.json && (command -v npm >/dev/null && echo "✅ npm available" |
 
 Notes on availability:
 
-- `semgrep` — should be in the uv dev group; runs via `tox -e sast`.
+- `semgrep` — in the `sast` dependency group; runs via `tox -e sast`.
 - `pip-audit` — runs via `tox -e audit` (which exports the uv
-  lockfile and audits it). Don't try to invoke it standalone — defer
-  to the tox env.
+  lockfile with `--no-dev` and audits the runtime set; `tox -e audit-dev`
+  covers the dev groups and `npm audit`, detection only). It is not in
+  `.venv` — the env pins it under `deps =`. Don't try to invoke it
+  standalone — defer to the tox env.
 - `gitleaks` — installed by `pre-commit` from the upstream hook repo.
   May not be on PATH outside a pre-commit run; the hook's binary is
   cached under `~/.cache/pre-commit/`. Fall back to grep if not
@@ -91,7 +99,7 @@ target the known files rather than globbing:
 ```bash
 ls -la
 test -f manage.py && echo "Django root confirmed"
-ls config/settings/             # base.py, development.py, production.py, perf.py
+ls config/settings/             # base.py, development.py, production.py, staging.py, perf.py
 test -f pyproject.toml && echo "uv project"
 test -f package.json && echo "package.json present (Tailwind + Lighthouse)"
 test -d .github/workflows && ls .github/workflows
@@ -104,10 +112,11 @@ the deploy-relevant surface.
 
 ### Phase 2 — Django configuration audit
 
-Snowdesk uses split settings (`config/settings/{base,development,production,perf}.py`).
-Treat `production.py` as authoritative for deploy posture; `base.py`
-holds shared defaults; `development.py` and `perf.py` should never
-load in production.
+Snowdesk uses split settings (`config/settings/{base,development,production,staging,perf}.py`).
+Treat `production.py` as authoritative for deploy posture; `staging.py`
+inherits its hardening (one web dyno, no task worker, so django-tasks
+runs the `ImmediateBackend` there); `base.py` holds shared defaults;
+`development.py` and `perf.py` should never load in production.
 
 Inspect for:
 
@@ -124,8 +133,10 @@ Inspect for:
   this must be set or HSTS won't fire correctly
 - `X_FRAME_OPTIONS` (default DENY)
 - `SECURE_CONTENT_TYPE_NOSNIFF`, `SECURE_REFERRER_POLICY`
-- Content Security Policy (`django-csp-plus` is wired in — check
-  `CSP_*` directives in `production.py`)
+- Content Security Policy (`django-csp-plus` is wired in — the policy
+  itself is `CSP_DEFAULTS` in `base.py`; `production.py` flips
+  `CSP_ENABLED` on and leaves `CSP_REPORT_ONLY=True` until violation
+  reports stabilise — check whether that flip has happened)
 - `DATABASES` — credentials in source, SSL mode (Render's managed
   Postgres requires `sslmode=require`)
 - `EMAIL_*` config — confirm `EMAIL_USE_TLS = True` for the Resend
@@ -158,9 +169,16 @@ directly (mirrors the tox env's args):
 ```bash
 uv run semgrep --config=p/django --config=p/python --config=p/security-audit \
   --exclude='.venv' --exclude='node_modules' --exclude='.claude' \
-  --exclude='migrations' --exclude='tests' \
+  --exclude='migrations' --exclude='tests' --exclude='docs/research' \
   --json --output=/tmp/semgrep.json --quiet 2>&1 | tail -5 || true
 ```
+
+The tox env also passes six `--exclude-rule` flags (read them off
+`[testenv:sast]` in `tox.ini`) and runs the project's own rules from
+`bin/semgrep/rules.yml` over the whole tree. A finding from one of the
+excluded rules is a known false positive for this codebase — suppress
+it and say so; a finding from `bin/semgrep/rules.yml` is a project
+rule and never a false positive.
 
 The `p/django` and `p/security-audit` rulesets cover OWASP Top 10
 patterns plus Django-specific issues (SQL injection via
@@ -245,14 +263,16 @@ priority than runtime deps (Django, requests, bleach, etc.).
 
 ### Phase 6 — HTMX-specific review
 
-Snowdesk uses HTMX heavily — partials live under
-`apps/bulletins/templates/partials/` and
-`apps/accounts/templates/partials/`, guarded by `require_htmx`. Audit:
+Snowdesk uses HTMX heavily — fragment templates live under
+`apps/<app>/templates/<app>/partials/` (`public`, `accounts`,
+`favourites`, `observations`, `routes`, `trips`), fragment routes carry
+a `partials/` prefix in each app's `urls.py`, and every fragment view
+is guarded by `require_htmx` (invariant 4 in `CLAUDE.md`). Audit:
 
 ```bash
-grep -rEn --include='*.html' '(hx-post|hx-put|hx-delete|hx-patch|hx-vals|hx-headers|hx-include|hx-swap-oob|hx-trigger)' . 2>/dev/null | head -100
-grep -rEn --include='*.py' '(HttpResponse|render)\(' apps/bulletins/ apps/accounts/ apps/public/ | grep -iE '(htmx|partial|fragment)' | head -50
-grep -rEn --include='*.py' 'csrf_exempt|mark_safe|\|safe' apps/bulletins/ apps/accounts/ apps/public/ | head -50
+grep -rEn --include='*.html' '(hx-post|hx-put|hx-delete|hx-patch|hx-vals|hx-headers|hx-include|hx-swap-oob|hx-trigger)' templates/ apps/ 2>/dev/null | head -100
+grep -rEn --include='urls.py' 'partials/' apps/ | head -80
+grep -rEn --include='*.py' 'csrf_exempt|mark_safe|\|safe' apps/ | grep -v '/tests/' | head -50
 ```
 
 Check:
@@ -284,52 +304,82 @@ Targeted review of high-value paths:
   is bounded by the API's pagination, schema validation rejects
   unexpected shapes, errors don't leak stack traces upstream.
 
-- **Resend / email delivery** — header injection in
-  `to`/`subject`/`reply_to` fields (Django's mail backend escapes
-  these but check any custom assembly), unsubscribe token unguessable
-  (`apps/accounts/services/token.py` — confirm `signing.Signer` or
-  `TimestampSigner` with a per-purpose salt), `EMAIL_USE_TLS = True`
-  in `production.py`, SMTP creds via env only.
+- **Email delivery** — header injection in `to`/`subject`/`reply_to`
+  fields (Django's mail backend escapes these but check any custom
+  assembly in `apps/accounts/services/email.py`), account-link tokens
+  unguessable (`apps/accounts/services/token.py` — `TimestampSigner`
+  with four per-purpose salts: `SALT_ACCOUNT_ACCESS`,
+  `SALT_EMAIL_VERIFICATION`, `SALT_PASSWORD_RESET`, `SALT_EMAIL_CHANGE`),
+  `EMAIL_USE_TLS` driven from env (`True` for Resend's relay in
+  production, `False` for Mailpit in dev — `base.py` holds the one
+  definition), SMTP creds via env only. Sends are dispatched through
+  django-tasks (`@task` + `.enqueue()`), never synchronously on the
+  request path (invariant 3).
 
-- **Subscriber PII** — `apps/accounts/models.py` stores
-  `email = EmailField(unique=True, db_index=True)` in plaintext. For
-  this audit: confirm emails are NOT logged at INFO level, NOT
-  exported in error reports, and NOT included in any GET-routed URL
-  (must be POST-only or token-derived). Encryption at rest is a
-  larger model change — flag as a finding only if the threat model
-  warrants it.
+- **Account PII** — the email address lives on `auth.User` (plaintext;
+  `Account` in `apps/accounts/models.py` is a OneToOne profile carrying
+  `pending_email` for an in-flight change). For this audit: confirm
+  emails are lowercased at every entry point (invariant 2), NOT logged
+  at INFO level, NOT exported in error reports, and NOT included in any
+  GET-routed URL (must be POST-only or token-derived). Encryption at
+  rest was tried and reversed (`docs/decisions/`) — do not re-raise it.
 
-- **Rate-limit coverage** — `django-ratelimit` is wired on
-  `subscribe_partial` (5/min/IP), `manage_view` POST (3/min/IP),
-  `remove_region` (10/min/IP), `delete_account` (3/min/IP),
-  `unsubscribe_view` (10/min/IP). Grep
-  [`apps/accounts/views.py`](apps/accounts/views.py) for every
-  state-changing view and flag any that lack a `@ratelimit` decorator.
+- **Rate-limit coverage** — `django-ratelimit` is wired on the
+  token-bearing and destructive account views in
+  [`apps/accounts/views.py`](apps/accounts/views.py)
+  (`reset_password_confirm_view` 10/m/IP, `change_email_confirm_view`
+  10/m/IP, `delete_account` 3/m/IP) and
+  [`apps/accounts/views_passkey.py`](apps/accounts/views_passkey.py)
+  (`passkey_auth_response`, `passkey_register_response` 10/m/IP,
+  `passkey_delete` 5/m/IP), on every write view in `favourites`,
+  `routes`, `trips`, `downloads` and `observations`, on the OAuth
+  endpoints in `apps/oauth/views.py`, and on the MCP endpoint (120/m,
+  `block=True`). Grep `apps/` for every state-changing view and flag
+  any that lack a `@ratelimit` decorator.
 
-- **Signed-token integrity** — re-derive an unsubscribe URL from a
-  known email via the project's signing helper and confirm the
-  signature is salted per-purpose (so an unsubscribe token can't be
-  reused for, e.g., account deletion). Check token TTL is enforced.
+- **Signed-token integrity** — re-derive an account-access or
+  password-reset URL via `generate_token(value, salt=...)` and confirm
+  the signature is salted per-purpose (so a verification token can't
+  be reused for, e.g., a password reset). Check `max_age` is enforced
+  by `verify_token` on every consuming view.
+
+- **OAuth server and MCP endpoint** — `apps/oauth/` is a hand-written
+  OAuth 2.1 server (no library; read
+  `docs/decisions/snowdesk-is-its-own-oauth-server.md` first). Check
+  PKCE is mandatory for public clients, authorization codes are
+  single-use and short-lived, tokens are stored hashed, the CIMD
+  client-metadata fetch has its SSRF guard, and `POST /api/mcp/`
+  rejects a missing or expired bearer token.
 
 - **Admin & auth** — Django admin URL non-default? Strong password
   policy (`AUTH_PASSWORD_VALIDATORS`)? 2FA? (Currently none — flag
   as "Low / informational" unless the admin is exposed publicly.)
 
-- **File uploads** — no upload endpoints currently exist. Grep for
-  `request.FILES` and `FileField` / `ImageField`; report a finding
-  *only* if matches appear (in which case: content-type validation,
-  size limits, storage outside web root).
+- **File uploads** — two exist, neither stores the file: `route_create`
+  in `apps/routes/views.py` parses an uploaded `.gpx` and discards it
+  (no `FileField`; the `Route` row holds the thinned geometry), and the
+  staff-only `upload_meteofrance_archive_view` in
+  `apps/bulletins/admin.py` ingests an archive NDJSON. Check both for a
+  size cap, a content-type / XML-parser hardening step (entity
+  expansion, external entities) and an error path that doesn't echo
+  file content. Grep `request.FILES`, `FileField`, `ImageField` for any
+  third.
 
 ### Phase 8 — Infra & deploy
 
-Snowdesk runs on Render with no `Dockerfile` and no `render.yaml` in
-the repo (Render service config is managed in the Render dashboard).
-The repo-side surface is `.github/workflows/`, `.gitignore`, and
-`.env.example`:
+Snowdesk runs on Render with no `Dockerfile`. `render.yaml` IS in the
+repo and Blueprint auto-sync is on — Render reads it from `main` and
+applies the services it declares (one staging web service off `main`;
+a web service, an APScheduler worker and a django-tasks worker off
+`release`). Databases and env-group contents stay dashboard-managed:
+no `databases:` block, env vars referenced by `fromGroup`, and anything
+marked `sync: false` is set by hand. The repo-side surface is
+`render.yaml`, `bin/build.sh` / `bin/build_headless.sh`,
+`.github/workflows/`, `.gitignore`, and `.env.example`:
 
 ```bash
 test -f Dockerfile && echo "WARNING: Dockerfile present (unexpected for this project)"
-test -f render.yaml && cat render.yaml
+test -f render.yaml && cat render.yaml   # check: no secret VALUES, only fromGroup / sync: false references
 ls .github/workflows/ 2>/dev/null && for f in .github/workflows/*.yml; do echo "=== $f ==="; cat "$f"; done
 test -f .gitignore && grep -iE '\.env|secret|credential|key|sqlite' .gitignore || echo "WARNING: .gitignore may not exclude secrets/db"
 test -f .env.example && cat .env.example
@@ -337,12 +387,17 @@ test -f .env.example && cat .env.example
 
 Check:
 
-- **GitHub Actions workflows** (`ci.yml`, `lighthouse.yml`,
-  `security-audit.yml`): secrets via `${{ secrets.* }}` only, never
+- **GitHub Actions workflows** (all ten: `ci.yml`, `lint-guards.yml`,
+  `js.yml`, `e2e.yml`, `lighthouse.yml`, `offline-assurance.yml`,
+  `security-audit.yml`, `dependabot-auto-merge.yml`, `release.yml`,
+  `release-sync.yml`): secrets via `${{ secrets.* }}` only, never
   literals; no `pull_request_target` with checkout of untrusted refs;
   third-party action versions pinned by SHA (or at least by exact
-  version tag); `permissions:` block scoped to least-privilege.
-- **`.gitignore`** excludes `.env`, `db.sqlite3`, `logs/*`,
+  version tag); `permissions:` block scoped to least-privilege. The
+  `dependabot-auto-merge` and `release*` workflows are the ones that
+  write to the repo — read their triggers and `permissions:` closely.
+- **`.gitignore`** excludes `.env`, `.env.*`, `/settings.ini` (the
+  worktree's throwaway `SECRET_KEY`), `db.sqlite3`, `logs/*.log`,
   `static/css/output.css` (build artefact) — flag any miss.
 - **`.env.example`** contains placeholders only (no real keys, no
   real URLs to private endpoints).

@@ -64,7 +64,7 @@
   //
   // v2 (SNOW-418): added 'data:favourites' — the first consumer of the
   // reserved data:* namespace, caching each favourite's roster/card
-  // record so the manage page can repaint offline.
+  // record so the favourites surface can repaint offline.
   // v3 (SNOW-482): added 'log:sync' — a rolling record of real server
   // round-trips backing the manage-page sync-log panel.
   // v4 (SNOW-492): added 'data:map_overlays' — cached favourites /

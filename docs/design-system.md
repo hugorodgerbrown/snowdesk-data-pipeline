@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-09-25
+last-reviewed: 2026-10-01
 ---
 
 
@@ -95,7 +95,7 @@ Exact EAWS specification colours. Do not adjust for brand reasons — these are 
 | Moderate | `#ffff00` | `#fff7b8` | `#4d4500` | `#1a1916` |
 | Considerable | `#ff9900` | `#ffe5c2` | `#5c3000` | `#1a1916` |
 | High | `#ff0000` | `#ffd9d9` | `#6b0000` | `#ffffff` |
-| Very high | `#ff0000` | `#1a0000` (inverted) | `#ffffff` | `#ffffff` |
+| Very high | `#820100` | `#1a0000` (inverted) | `#ffffff` | `#ffffff` |
 
 ### Colour — status feedback
 
@@ -106,7 +106,7 @@ Exact EAWS specification colours. Do not adjust for brand reasons — these are 
 | `--color-status-success-*` | `#d1fae5` / `#065f46` | `#14332a` / `#6ee7b7` | Success flash / badge |
 | `--color-status-info-*` | `#dbeafe` / `#1e40af` | `#1e2a4a` / `#93c5fd` | Info flash / badge |
 
-A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render-model error banners — see `src/css/main.css` for the full set.
+The info-callout ramp (`--color-callout-info-bg` / `-border` / `-text`) backs `includes/_callout.html`; there is no warning ramp — a warning callout uses the `status-warning` pair. See `src/css/main.css` for the full set.
 
 ### Radii
 
@@ -123,10 +123,12 @@ A dedicated warning-callout ramp (`--color-callout-warning-*`) exists for render
 |---|---|---|
 | `--breakpoint-tablet` | `600px` | Single-column → two-column |
 | `--breakpoint-desktop` | `960px` | Two-column → grid |
-| `--width-card-mobile` | `390px` | Single-column mobile max-width |
-| `--width-grid-max` | `1200px` | Multi-column grid max-width |
+| `--container-card-mobile` | `390px` | Single-column mobile max-width |
+| `--container-narrow` | `640px` | Bulletin column, nav inner, sheet (`max-w-narrow`) |
+| `--container-wide` | `720px` | Legal / info pages (terms, privacy) |
+| `--container-grid-max` | `1200px` | Multi-column grid max-width |
 
-Content column inside `<nav>` and primary body copy: **640px max-width**, centred (see `templates/includes/nav.html`).
+Content column inside `<nav>` and primary body copy: **640px max-width** (`max-w-narrow`), centred (see `templates/includes/nav.html`).
 
 ### Token rules
 
@@ -286,7 +288,7 @@ variants of each other — nine page shells differing by one class, three page
 titles differing by two. SNOW-672 brought them in. A page is a page; if it
 renders a title, a shell or a form field, it uses the component.
 
-**Three kinds of component, and when to reach for each:**
+**Four kinds of component, and when to reach for each:**
 
 | Kind | Use when | Example |
 |---|---|---|

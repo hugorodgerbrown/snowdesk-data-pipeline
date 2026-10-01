@@ -141,9 +141,10 @@ inherits full context. Every scoping comment has these four sections:
 
 ## Status transitions this skill owns
 
-This skill writes to Linear up to `Ready for dev`. Post-commit states
-(`In Progress`, `In Review`, `Done`) are handled by the GitHub–Linear
-integration and are not this skill's concern.
+This skill writes to Linear up to `Ready for dev`. The later states are not
+this skill's concern: `In Progress` is moved by Code via the Linear MCP when
+the branch is created, and `In Review` / `Done` by the GitHub–Linear
+integration (see docs/linear-workflow.md).
 
 | Status          | When this skill sets it                                     |
 |-----------------|-------------------------------------------------------------|

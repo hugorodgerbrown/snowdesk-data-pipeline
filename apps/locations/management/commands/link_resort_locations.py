@@ -2,7 +2,7 @@
 
 A resort's pin and a resort's weather were two unconnected things. The
 edit-resorts map overlay writes ``Resort.latitude``/``longitude`` and never
-touches ``Location``; the resort page's weather section reads
+touches ``Location``; the resort page's Forecasts section lists
 ``ResortLocation`` links, which only the separate edit-locations overlay
 creates. So a resort could be on the map for months with a hand-placed pin
 and still show no weather — production had 115 geocoded resorts and 4 with a

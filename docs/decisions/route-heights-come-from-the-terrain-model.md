@@ -2,7 +2,7 @@
 name: route-heights-come-from-the-terrain-model
 description: slope_samples heights, terrain_points, climb_totals — profile, legs, ascent/descent, track gradient on model heights
 status: current
-last-reviewed: 2026-09-29
+last-reviewed: 2026-10-01
 ---
 
 # A route's heights come from the terrain model, not the altimeter

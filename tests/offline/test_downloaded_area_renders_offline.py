@@ -21,9 +21,8 @@ detail only over downloads. "The canvas is blank" was only ever a proxy
 for "no detail is stored here", and it is the proxy that broke. The
 property is now asserted against the cache directly
 (``stored_band_tiles_at``). The reader-facing half of it — being able to
-SEE where detail ends — has no cue at all until the coverage boundary is
-drawn (SNOW-857), and that is the one respect in which SNOW-856 left the
-product worse.
+SEE where detail ends — is the downloaded-tiles overlay SNOW-857 switches
+on while the app is offline, covered in ``tests/js`` rather than here.
 
 Everything about the subject is fuzzed (``tests/offline/fuzz.py``): which
 region, under which basemap, at which zooms, and which direction "outside"
@@ -144,9 +143,9 @@ def test_outside_the_downloaded_area_no_detail_is_stored(
     pinned bucket, under any basemap.
 
     The pixel half of the promise — that a reader can SEE where detail
-    ends — cannot be tested until the coverage boundary is drawn, which is
-    SNOW-857. Until it lands the reader has no cue at all, and that is the
-    one respect in which this ticket left the product worse.
+    ends — is the downloaded-tiles overlay, which SNOW-857 switches on
+    while the app is offline; it is covered in tests/js rather than here,
+    because the hatch is a MapLibre paint property, not a basemap pixel.
     """
     subject = offline_map_page.subject
     latitude, longitude = subject.outside

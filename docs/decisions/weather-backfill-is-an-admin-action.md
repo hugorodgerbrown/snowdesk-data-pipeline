@@ -2,7 +2,7 @@
 name: weather-backfill-is-an-admin-action
 description: The Weather backfill runs inline in a capped LocationAdmin action, not on the task queue, and a backfilled row's forecast[] stays null
 status: current
-last-reviewed: 2026-09-01
+last-reviewed: 2026-10-01
 ---
 
 # The weather backfill is an inline admin action, and writes no forecast

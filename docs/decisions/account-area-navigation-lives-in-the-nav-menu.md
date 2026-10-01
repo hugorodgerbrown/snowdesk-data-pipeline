@@ -2,7 +2,7 @@
 name: account-area-navigation-lives-in-the-nav-menu
 description: No sub-nav or tab strip on /account/ pages — the nav.html dropdown is the area's only navigation, and a new page needs a menu entry
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-10-01
 ---
 
 # Account-area navigation lives in the nav menu
@@ -10,8 +10,9 @@ last-reviewed: 2026-09-03
 **Decision.** The pages under `/account/` carry **no sub-navigation of their
 own** — no tab strip, no segmented control, no group headings above the
 content. Navigation between them is the account dropdown in
-`templates/includes/nav.html`. Since SNOW-802/803 that menu holds two
-entries — Settings and Sign out — because the lists it once reached
+`templates/includes/nav.html`. Since SNOW-802/803 that menu holds Settings
+and Sign out — plus Trips, which SNOW-823 added as the one time-indexed
+exception — because the lists it once reached
 (Subscriptions, Favourites, Routes, Observations) are map sheets now
 ([`two-documents-and-a-map`](two-documents-and-a-map.md)), and the
 ruling stands unchanged: the menu *is* the navigation. Adding a destination
@@ -84,7 +85,8 @@ the honest answer to "grouped or flat?" turned out to be *neither, yet*.
   area.
 - The menu once approached the size this decision named as the point to
   revisit — three region links, five entries and sign out. SNOW-802/803
-  cut it to Settings and Sign out, so that point is far off; if it is
+  cut it to Settings and Sign out, and SNOW-823 added Trips, so that point
+  is far off; if it is
   ever reached again, grouping a vertical list is cheap — it was only ever
   expensive horizontally — so revisiting means adding rules, not
   rebuilding a strip.

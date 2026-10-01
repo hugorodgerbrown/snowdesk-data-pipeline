@@ -2,7 +2,7 @@
 name: one-basemap-per-region-download
 description: A region download holds one basemap's tiles at a time; custom areas can hold the same ground twice (SNOW-864, declined)
 status: current
-last-reviewed: 2026-09-09
+last-reviewed: 2026-10-01
 ---
 
 # A region holds one basemap; a custom area can hold the same ground twice

@@ -2,7 +2,7 @@
 name: meteofrance-bulletin-identity
 description: Météo-France bulletin_id carries the publication timestamp; the archive and live paths share the grammar but are separate identity spaces
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
 # Météo-France bulletin identity

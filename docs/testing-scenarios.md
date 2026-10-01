@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-09-07
+last-reviewed: 2026-10-01
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -35,19 +35,21 @@ last-reviewed: 2026-09-07
 
 ## Public Bulletin Site
 
-### Scenario 1: View the homepage (the map, with its intro overlay)
+### Scenario 1: View the homepage, then open the map
 
-**Goal**: Verify the homepage loads as the interactive map behind a
-dismissable landing overlay. There is no separate marketing page — the map
-*is* the homepage (SNOW-314).
+**Goal**: Verify `/` is the static homepage and `/map/` is the interactive
+map behind a dismissable landing overlay. The map was the homepage from
+SNOW-314 until the marketing page took the root — see
+[`decisions/the-homepage-is-not-the-map.md`](decisions/the-homepage-is-not-the-map.md).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Clear `localStorage` for the site, then navigate to http://localhost:8000/ | The full-frame map loads, with the `#home-intro` card centred over it |
-| 2 | Read the intro card | It shows "Welcome to Snowdesk", a tagline naming SLF (Switzerland), ALBINA (Austria, Italy) and Météo-France (France), and a "Register" inline link |
-| 3 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the map |
+| 1 | Navigate to http://localhost:8000/ | A static page loads: the "Avalanche bulletins across the Alps, on one map." heading, an "Open the map" primary button and a "How it works" secondary button, a still image of the map, and short sections on bulletins, the season, weather, routes, offline use and field reports. No MapLibre canvas, no map JavaScript |
+| 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the page |
+| 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with the `#home-intro` card centred over it |
 | 4 | Locate the intro card's controls | A "×" close button (top-right of the card) and an "Explore the map" button at the foot of it |
 | 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
+| 6 | Navigate to http://localhost:8000/?d=2026-04-08 | A 301 to `http://localhost:8000/map/?d=2026-04-08` — map state on `/` is forwarded with its query string |
 
 Out of season (today past the season end) the card also carries an
 off-season note naming the archived season's start month.
@@ -56,8 +58,7 @@ off-season note naming the archived season's start month.
 
 **Goal**: Verify `/examples/random/` serves a random bulletin inline.
 
-> Reach this URL directly — no template links to it. The homepage is the map,
-> and its intro overlay carries only the Register link and the dismiss button.
+> Reach this URL directly — no template links to it.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -138,17 +139,17 @@ off-season note naming the archived season's start month.
 ### Scenario N1: Persistent nav bar appears on every public page
 
 **Goal**: Verify `templates/includes/nav.html` is rendered consistently and
-the wordmark always links home.
+the wordmark always links to the map.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | Nav bar visible at the top with a "Snowdesk" wordmark (18px); no back link |
-| 2 | Navigate to http://localhost:8000/ (the map) | Same nav bar visible above the map frame; no back link |
+| 1 | Navigate to http://localhost:8000/ (the homepage) | Nav bar visible at the top with a "Snowdesk" wordmark (18px); no back link |
+| 2 | Navigate to http://localhost:8000/map/ | Same nav bar visible above the map frame; no back link |
 | 3 | Navigate to http://localhost:8000/CH-4115/verbier/ | Nav bar shows a left-chevron + "Map" link, a thin vertical divider, and the "Snowdesk" wordmark at a smaller size (15px) |
 | 4 | Navigate to http://localhost:8000/CH-4115/season/ | Nav bar again shows "← Map" and the wordmark |
 | 5 | Navigate to http://localhost:8000/CH-4115/ (random/recent bulletins) | Nav bar again shows "← Map" and the wordmark |
-| 6 | Click the "Snowdesk" wordmark from any of the pages above | Browser navigates to http://localhost:8000/ |
-| 7 | From a bulletin page, click the "← Map" back link | Browser navigates to http://localhost:8000/ |
+| 6 | Click the "Snowdesk" wordmark from any of the pages above | Browser navigates to http://localhost:8000/map/ |
+| 7 | From a bulletin page, click the "← Map" back link | Browser navigates to http://localhost:8000/map/ with that region and date selected |
 
 ### Scenario N2: Nav border spans the full viewport
 
@@ -175,7 +176,7 @@ and regions/resorts fixtures are loaded.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ | MapLibre basemap of Switzerland renders centred on the Alps; Swiss region polygons are overlaid and filled in danger-level colours |
+| 1 | Navigate to http://localhost:8000/map/ | MapLibre basemap of Switzerland renders centred on the Alps; Swiss region polygons are overlaid and filled in danger-level colours |
 | 2 | Locate the legend | A "Today" legend is visible with four swatch rows: "Low (1)" green-yellow, "Moderate (2)" yellow, "Considerable (3)" orange, "High (4)" red |
 | 3 | Locate the hint text | Footer hint reads "Pinch to zoom · tap a region" |
 | 4 | Check regions without today's bulletin | Rendered in grey (no_rating colour) — not missing |
@@ -188,12 +189,12 @@ resorts, and a working CTA to the bulletin page.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On http://localhost:8000/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
+| 1 | On http://localhost:8000/map/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
 | 2 | Read the sheet title | Shows the region name (e.g. "Verbier") |
 | 3 | Read the sheet body | Shows today's danger rating and any linked resort names |
 | 4 | Locate the CTA | "Read today's bulletin →" link visible at the bottom of the sheet |
 | 5 | Click the CTA | Browser navigates to the region's bulletin page for today (e.g. `/CH-4115/verbier/`) |
-| 6 | Return to / and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
+| 6 | Return to /map/ and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
 | 7 | Click the × close button on the sheet | Sheet dismisses; the region's selection outline is removed |
 
 ### Scenario M3: Regions with no bulletin render as no_rating
@@ -204,7 +205,7 @@ and the sheet reflects that.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | In the Django shell, delete today's bulletins for one region (e.g. `RegionBulletin.objects.filter(region__region_id='CH-4115', ...)`) | Bulletins removed |
-| 2 | Reload http://localhost:8000/ | That region renders in grey |
+| 2 | Reload http://localhost:8000/map/ | That region renders in grey |
 | 3 | Click the region | Sheet opens; danger rating shows as "no rating" / unavailable |
 
 ### Scenario M4: Debug mode reveals region IDs
@@ -214,9 +215,9 @@ and region IDs in the sheet.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/?debug=1 | Map loads; a small "debug · press d" pill visible top-right |
+| 1 | Navigate to http://localhost:8000/map/?debug=1 | Map loads; a small "debug · press d" pill visible top-right |
 | 2 | Click a region | Sheet shows the SLF region identifier (e.g. "CH-4115") in a monospace debug line beneath the region name |
-| 3 | Navigate to http://localhost:8000/ (without the debug flag) | Debug pill is hidden |
+| 3 | Navigate to http://localhost:8000/map/ (without the debug flag) | Debug pill is hidden |
 | 4 | Press `d` on the keyboard | Debug pill appears and the sheet's region-id line becomes visible |
 
 ---
@@ -229,7 +230,7 @@ follow the scrubbed date.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ and open the layers menu | The "Conditions" section is open (the one section that is, on a first visit) and holds a "Weather" row, unchecked |
+| 1 | Navigate to http://localhost:8000/map/ and open the layers menu | The "Conditions" section is open (the one section that is, on a first visit) and holds a "Weather" row, unchecked |
 | 2 | Click the Weather row | Row becomes checked; condition icons appear across the map, each labelled with the day's max temperature and the station's altitude on the line below |
 | 3 | Zoom out below zoom 7 | The symbols disappear entirely — a condition icon per station across a whole country is a texture, not information |
 | 4 | Zoom back in to a valley with a village and a peak close together | At low zoom only one symbol shows per cluster, and it is the LOWER station's; both appear once zoomed past ~11 |
@@ -249,7 +250,7 @@ follow the scrubbed date.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On http://localhost:8000/, click into the search input placeholder "Find a region or resort" | Input receives focus |
+| 1 | On http://localhost:8000/map/, click into the search input placeholder "Find a region or resort" | Input receives focus |
 | 2 | Type `Graubünden` | A dropdown appears below the input with up to eight results; a row for "Graubünden" is visible with a "Region" badge |
 | 3 | Click the "Graubünden" row | Dropdown closes; the map pans/zooms to the region and its bottom sheet opens with today's rating |
 
@@ -310,8 +311,8 @@ the "?" roundel brings the card back rather than jumping straight to the tour.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Clear `localStorage`, navigate to http://localhost:8000/ | Map loads with the `#home-intro` card over it |
-| 2 | Click "Explore the map" | The card clears in place. **No navigation occurs** — the URL stays `http://localhost:8000/` and the map is not reloaded. The map-help coachmark tour then opens (SNOW-535) |
+| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | Map loads with the `#home-intro` card over it |
+| 2 | Click "Explore the map" | The card clears in place. **No navigation occurs** — the URL stays `http://localhost:8000/map/` and the map is not reloaded. The map-help coachmark tour then opens (SNOW-535) |
 | 3 | Inspect `localStorage` | `snowdesk.home.intro` is set to `dismissed` |
 | 4 | Reload the page | The map loads with no intro card |
 | 5 | Repeat from step 1, but click the "×" close button (or press Escape) | The card dismisses and persists the same way — but the map-help tour does **not** open. That extra step is what distinguishes the CTA from the "×" |
@@ -319,7 +320,7 @@ the "?" roundel brings the card back rather than jumping straight to the tour.
 | 7 | Click "Explore the map" | The card clears and the coachmark tour opens on step 1 — the same route in as step 2, which is the only route in on this page |
 
 To bring the overlay back without clearing `localStorage`, load
-`http://localhost:8000/?intro=1` — it forces the panel open, survives a server
+`http://localhost:8000/map/?intro=1` — it forces the panel open, survives a server
 round-trip (unlike `#about`), and is stripped from the address bar on dismissal
 so the panel stays dismissed across a reload. It is the handle to use in QA,
 screenshots and bug reports.
@@ -347,7 +348,7 @@ pages redirect into the map's sheets.
 | 2 | Type `tester@example.com` and submit | "Check your inbox" is shown |
 | 3 | Open Mailpit at http://localhost:8025 | An email is listed for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
 | 4 | Open the email and click the account link | An "Access your account" confirm page loads (no auto sign-in on the GET); it shows a "Sign in to my account" button (SNOW-439) |
-| 5 | Click "Sign in to my account" | Browser POSTs and redirects to the map (`/?panel=favourites`, which the map consumes to `/`) with the pins sheet open; the avatar menu shows Settings and Sign out |
+| 5 | Click "Sign in to my account" | Browser POSTs and redirects to the map (`/map/?panel=favourites`, which the map consumes to `/map/`) with the pins sheet open; the avatar menu shows Settings and Sign out |
 
 ### Scenario 11: Pin a region from the map
 
@@ -398,9 +399,9 @@ pages redirect into the map's sheets.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/account/ | 301 to `/?panel=favourites`; the map opens with the pins sheet open |
-| 2 | Navigate to http://localhost:8000/account/routes/ | 301 to `/?panel=routes`; the routes sheet opens |
-| 3 | Navigate to http://localhost:8000/account/observations/ and http://localhost:8000/observations/ | Both 301 to `/?panel=reports`; the reports sheet opens |
+| 1 | Navigate to http://localhost:8000/account/ | 301 to `/map/?panel=favourites`; the map opens with the pins sheet open |
+| 2 | Navigate to http://localhost:8000/account/routes/ | 301 to `/map/?panel=routes`; the routes sheet opens |
+| 3 | Navigate to http://localhost:8000/account/observations/ and http://localhost:8000/observations/ | Both 301 to `/map/?panel=reports`; the reports sheet opens |
 | 4 | Navigate to http://localhost:8000/favourites/<uuid>/ for one of your pins | 301 to that pin's `/weather/<short_id>/` page |
 
 ### Scenario 16: The retired unsubscribe URLs are gone
@@ -451,7 +452,7 @@ docstrings cite by number — do not shift.
 |------|--------|-----------------|
 | 1 | Open a new private/incognito browser window | Fresh session with no cookies |
 | 2 | Navigate to http://localhost:8000/account/settings/ | Browser redirects to http://localhost:8000/account/sign-in/ |
-| 3 | Navigate to http://localhost:8000/account/manage/ | Browser 301s to the map (`/?panel=favourites`); the pins sheet shows its signed-out state |
+| 3 | Navigate to http://localhost:8000/account/manage/ | Browser 301s to the map (`/map/?panel=favourites`); the pins sheet shows its signed-out state |
 
 ### Scenario 21: Returning user re-authenticates via the sign-in page
 
@@ -525,9 +526,9 @@ serves the second load from cache.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Reset state, then navigate to http://localhost:8000/ | Page loads normally over the network |
+| 1 | Reset state, then navigate to http://localhost:8000/map/ | Page loads normally over the network |
 | 2 | Open DevTools → Application → Service workers | An `activated and is running` entry appears for `http://localhost:8000/` with source `sw.js`; no waiting worker |
-| 3 | Open Application → Cache storage → `snowdesk-shell-vN` | Entries include `http://localhost:8000/`, `/static/offline.html`, and the hashed CSS/JS bundles referenced by the page |
+| 3 | Open Application → Cache storage → `snowdesk-shell-<hash>` | Entries include `http://localhost:8000/map/`, `/static/offline.html`, and the hashed CSS/JS bundles referenced by the page |
 | 4 | Reload the page (Cmd+R / F5, with "Disable cache" **off**) | Network tab shows the shell entries served from `(ServiceWorker)`; Console has no SW errors |
 
 ### Scenario P2: Install prompt (Chromium desktop / Android)
@@ -549,7 +550,7 @@ from within the standalone window).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Reset state, navigate to http://localhost:8000/ and interact with the map (scroll, tap a region) until Chrome's install engagement threshold fires | The `#pwa-install-banner` slides in over the bottom-right of the viewport with a "Snowdesk" title, one-line body, and an "Install" primary CTA + `×` dismiss |
+| 1 | Reset state, navigate to http://localhost:8000/map/ and interact with the map (scroll, tap a region) until Chrome's install engagement threshold fires | The `#pwa-install-banner` slides in over the bottom-right of the viewport with a "Snowdesk" title, one-line body, and an "Install" primary CTA + `×` dismiss |
 | 2 | Click "Install" | The browser's native install dialog opens with the manifest name, icon, and screenshots (Application → Manifest lists the same); accepting installs the app and closes the tab / opens a standalone window |
 | 3 | Reopen the tab and reset state; interact again to re-fire the prompt; this time click `×` | Banner disappears and does not re-appear during this session; a `pwa.install.dismissed` event is emitted (see Application → IndexedDB → `snowdesk-pwa` → `queue:events` if telemetry is on) |
 
@@ -674,20 +675,20 @@ A client that sends no `X-Client-Version` at all is never blocked, by
 design — there is no recovery path from a blocking modal on a build the
 server cannot identify.
 
-### Scenario P7: Offline reload of a cached page (incl. /?d=YYYY-MM-DD)
+### Scenario P7: Offline reload of a cached page (incl. /map/?d=YYYY-MM-DD)
 
 > Automated: [test_pwa_lifecycle_offline.py::test_offline_reload_of_visited_date_url](../tests/e2e/test_pwa_lifecycle_offline.py)
-> and [::test_offline_reload_of_never_visited_date_url](../tests/e2e/test_pwa_lifecycle_offline.py)
-> (the SNOW-347 regression guard) — the `?d=` URL is moved client-side
-> via `history.replaceState`, the same mechanism `map.js`'s `commitDate()`
-> uses when scrubbing (MapLibre tiles don't load in headless Chromium, so
-> driving the actual scrubber UI isn't reliable here — see
+> covers step 3. Step 4 (the never-visited `?d=` value, the SNOW-347
+> regression guard) is manual since SNOW-649 — the `?d=` URL is moved
+> client-side via `history.replaceState`, the same mechanism `map.js`'s
+> `commitDate()` uses when scrubbing, and MapLibre tiles don't load in
+> headless Chromium, so driving the actual scrubber UI isn't reliable (see
 > [tests/js/test_scrubber_core.js](../tests/js/test_scrubber_core.js) and
 > [tests/js/test_map_scrubber_reveal.js](../tests/js/test_map_scrubber_reveal.js)
 > for the scrubber's own coverage).
 
 **Goal**: Verify a page that was successfully loaded online serves from
-cache when offline, including `/?d=X` variants that only exist via
+cache when offline, including `/map/?d=X` variants that only exist via
 `history.replaceState` (fixed in [PR #347](https://github.com/hugorodgerbrown/snowdesk-data-pipeline/pull/347)).
 
 **Preconditions**: Scenario P1 completed. The map page loaded at least
@@ -695,10 +696,10 @@ once online since `Clear site data`.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Load http://localhost:8000/ online; scrub the timeline so the URL becomes `/?d=2026-02-17` (any date the fixture covers) | Map renders and paints the choropleth for the selected date |
+| 1 | Load http://localhost:8000/map/ online; scrub the timeline so the URL becomes `/map/?d=2026-02-17` (any date the fixture covers) | Map renders and paints the choropleth for the selected date |
 | 2 | DevTools → Network → set throttling to **Offline** | The header's connectivity symbol (`[data-network-indicator]`) switches to the struck-through mark and `data-network-state="offline"`; nothing else moves on the page (see P8) |
-| 3 | Reload the page (Cmd+R) | The map shell renders from cache; the URL is preserved at `/?d=2026-02-17`; the choropleth paints from `/api/ratings/` (which is stale-while-revalidate cached — see the STATIC_PATHS list in `sw.js`); no "You're offline" page appears |
-| 4 | Also try reloading with a `?d=` value you did **not** visit online (e.g. `/?d=2026-03-01`) | Same behaviour — the `ignoreSearch: true` cache-match fallback in `_networkFirst` finds the cached `/` shell; the JS reinitialises to 1 March |
+| 3 | Reload the page (Cmd+R) | The map shell renders from cache; the URL is preserved at `/map/?d=2026-02-17`; the choropleth paints from `/api/ratings/` (which is stale-while-revalidate cached — see the STATIC_PATHS list in `sw.js`); no "You're offline" page appears |
+| 4 | Also try reloading with a `?d=` value you did **not** visit online (e.g. `/map/?d=2026-03-01`) | Same behaviour — the `ignoreSearch: true` cache-match fallback in `_networkFirst` finds the cached `/map/` shell; the JS reinitialises to 1 March |
 
 ### Scenario P8: Connectivity symbol + freshness toast + network-required controls
 
@@ -746,14 +747,18 @@ online at least once so the timestamp is primed.
 
 ### Scenario P9: Offline navigation to a URL never visited
 
-> Automated: [test_pwa_lifecycle_offline.py::test_offline_navigation_to_never_visited_url_shows_offline_fallback](../tests/e2e/test_pwa_lifecycle_offline.py)
+> Manual-only since SNOW-649 retired the Playwright lifecycle suite. The
+> fallback page itself is asserted in
+> [tests/public/test_offline_api.py](../tests/public/test_offline_api.py)
+> and the worker's navigation strategy in
+> [tests/js/test_sw.js](../tests/js/test_sw.js).
 
 **Goal**: Verify the branded `/static/offline.html` fallback surfaces
 when both the network and the cache miss.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Reset state, load `/` online once so the SW is controlling | SW `activated`; only `/` is in the navigation cache |
+| 1 | Reset state, load `/map/` online once so the SW is controlling | SW `activated`; only `/map/` is in the navigation cache |
 | 2 | DevTools → Network → **Offline** | The connectivity symbol goes struck-through |
 | 3 | Navigate to http://localhost:8000/some-page-never-visited/ (address bar) | The branded "You're offline" page renders — Snowdesk wordmark, "Snowdesk needs a network connection to fetch the latest bulletin.", and a "Retry" button. No stack trace, no Chrome error page |
 | 4 | Network → back online, click "Retry" | Navigation proceeds normally |
@@ -781,7 +786,7 @@ SW_KILL=true uv run python manage.py runserver
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | `curl -s http://localhost:8000/api/sw-config` | Returns JSON `{"sw_url": "/sw.js", "kill": true}` |
-| 2 | Open a new tab to http://localhost:8000/ (do not reuse a tab that has a controller from before the flip) | Page loads normally without a SW in control; DevTools → Application → Service workers reports no registration for this origin |
+| 2 | Open a new tab to http://localhost:8000/map/ (do not reuse a tab that has a controller from before the flip) | Page loads normally without a SW in control; DevTools → Application → Service workers reports no registration for this origin |
 | 3 | Reload — every subsequent navigation is a plain fetch | No `snowdesk-shell-*` cache entries are populated; no offline behaviour applies |
 | 4 | Restart the server without `SW_KILL`, reset state, reload | SW registers again as in Scenario P1 |
 
@@ -824,7 +829,7 @@ SW_URL=/sw-kill.js uv run python manage.py runserver
 
 ### Scenario P12: Reset local data (settings page button)
 
-> Automated: [tests/accounts/test_pwa_reset.py](../tests/accounts/test_pwa_reset.py)
+> Automated: [tests/public/test_pwa_reset.py](../tests/public/test_pwa_reset.py)
 > asserts the settings page carries the trigger and its copy;
 > [tests/js/test_pwa_reset.js](../tests/js/test_pwa_reset.js) covers the
 > clearing itself, including the `onblocked` IndexedDB delete that must not
@@ -833,7 +838,7 @@ SW_URL=/sw-kill.js uv run python manage.py runserver
 >
 > Two corrections from implementation. The control moved from
 > `/account/manage/` to `/account/settings/` in SNOW-667 — `/account/manage/`
-> is now a 301 to `/?panel=favourites` and has no button on it. And
+> is now a 301 to `/map/?panel=favourites` and has no button on it. And
 > `[data-pwa-reset-trigger]` is bound by `pwa_reset.js`, which gates on a
 > native `window.confirm()` dialog, not the `#pwa-reset-required` overlay:
 > that overlay is a distinct, unrelated mechanism — `db.js`'s terminal Reset

@@ -2,7 +2,7 @@
 name: what-this-device-holds-is-a-public-page
 description: /offline/, offline_page, SHELL_PAGES, pwa-user-id — the offline report, reset control and sync log are public, not settings
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # What this device holds is a public page, not an account setting

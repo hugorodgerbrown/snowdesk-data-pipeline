@@ -2,7 +2,7 @@
 name: meteofrance-mapping
 description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # MeteoFrance DPBRA → CAAML JSON mapping spec
@@ -63,13 +63,14 @@ One DPBRA XML document = one CAAML JSON bulletin dict for one massif
 covering one validity window. The translator is pure (no I/O, no DB):
 
 ```python
-def to_caaml(xml_bytes: bytes) -> dict[str, Any]: ...
+def parse_dpbra_xml(xml_bytes: bytes) -> dict[str, Any]: ...
 ```
 
 The returned dict has the same top-level keys as the SLF API response —
-`bulletinID`, `validTime`, `publicationTime`, `nextUpdate`, `lang`,
-`unscheduled`, `regions`, `dangerRatings`, `avalancheProblems`,
-`snowpackStructure`, `avalancheActivity`, `tendency`, `customData`.
+`bulletinID`, `validTime`, `publicationTime`, `lang`, `unscheduled`,
+`regions`, `dangerRatings`, `avalancheProblems`, `snowpackStructure`
+(only when `<QUALITE>/<TEXTE>` is present), `avalancheActivity`,
+`tendency`, `customData`. `nextUpdate` is never emitted (§5.1).
 Feeding it into `upsert_bulletin(raw, run)` requires no other changes;
 the existing GeoJSON-envelope wrapping, region linkage, and render-model
 build all work unchanged.
@@ -117,13 +118,15 @@ ending in `Z` — exactly the format SLF emits, exactly what
 `_parse_dt()` in `slf_fetcher.py` expects:
 
 ```python
-PARIS = ZoneInfo("Europe/Paris")
+_PARIS = ZoneInfo("Europe/Paris")
 
-def _parse(value: str) -> str:
+def _parse_local_to_utc(value: str) -> str:
     """DPBRA local-time string → CAAML JSON UTC string."""
-    dt = datetime.fromisoformat(value).replace(tzinfo=PARIS).astimezone(UTC)
+    dt = datetime.fromisoformat(value).replace(tzinfo=_PARIS).astimezone(UTC)
     return dt.isoformat().replace("+00:00", "Z")
 ```
+
+(`_parse` in the tables below is shorthand for `_parse_local_to_utc`.)
 
 The original local-time strings are preserved verbatim under
 `customData.MF.rawLocalTimes` for debugging.
@@ -139,7 +142,7 @@ The original local-time strings are preserved verbatim under
 | `validTime.startTime` | `@DATEBULLETIN` | `_parse` |
 | `validTime.endTime` | `@DATEVALIDITE` | `_parse` |
 | `publicationTime` | `@DATEDIFFUSION` | `_parse` |
-| `nextUpdate` | — | omit key (DPBRA publishes one daily, no `nextUpdate` semantic) |
+| `nextUpdate` | — | omit key (DPBRA has no `nextUpdate` semantic; see §9 item 4 on issue cadence) |
 | `unscheduled` | `@AMENDEMENT` | `xml.attrib.get("AMENDEMENT") == "true"` |
 
 ### 5.2 Regions
@@ -181,12 +184,12 @@ entries:
 split = int(risque.attrib["ALTITUDE"])
 caaml["dangerRatings"] = [
     {
-        "mainValue": _LEVEL[int(risque.attrib["RISQUE1"])],   # "low" / "moderate" / …
+        "mainValue": _DANGER_LEVEL[int(risque.attrib["RISQUE1"])],   # "low" / "moderate" / …
         "elevation": {"upperBound": str(split)},
         "validTimePeriod": "all_day",
     },
     {
-        "mainValue": _LEVEL[int(risque.attrib["RISQUE2"])],
+        "mainValue": _DANGER_LEVEL[int(risque.attrib["RISQUE2"])],
         "elevation": {"lowerBound": str(split)},
         "validTimePeriod": "all_day",
     },
@@ -194,12 +197,12 @@ caaml["dangerRatings"] = [
 
 # Single-band case (46%) — no @ALTITUDE / @RISQUE2
 caaml["dangerRatings"] = [{
-    "mainValue": _LEVEL[int(risque.attrib["RISQUE1"])],
+    "mainValue": _DANGER_LEVEL[int(risque.attrib["RISQUE1"])],
     "validTimePeriod": "all_day",
 }]
 ```
 
-`_LEVEL` is the EAWS mapping shared with SLF/ALBINA
+`_DANGER_LEVEL` is the EAWS mapping shared with SLF/ALBINA
 (1=`low`, 2=`moderate`, 3=`considerable`, 4=`high`, 5=`very_high`).
 
 `LOC1`/`LOC2` (e.g. `<2200`, `>2200`) are decorative — `@ALTITUDE` is the
@@ -297,12 +300,17 @@ be inside the problem's `<TEXTE>` body, not the bulletin's general prose.
 
 ```python
 caaml["snowpackStructure"] = {
-    "comment": qualite_texte.text.strip(),
+    "comment": format_comment_as_html(qualite_texte.text),
 }
 ```
 
 DPBRA's `<QUALITE>/<TEXTE>` is a free-text description of snow quality
 and cover — semantically the same as CAAML's `snowpackStructure.comment`.
+The key is omitted when the element is absent. `format_comment_as_html`
+turns the plain-text `Heading : body` / `* bullet` lines into the limited
+HTML the page's `snowdesk_html` filter accepts; `reformat_mf_comments`
+re-runs it over stored rows after a formatting change. The same formatter
+is applied to `avalancheActivity.comment` and the tendency comment.
 
 ### 5.8 Avalanche activity (`avalancheActivity`)
 
@@ -322,7 +330,7 @@ One CAAML `tendency` entry for J+2:
 caaml["tendency"] = [{
     "tendencyType": _evolution_from_levels(risque1_today, risque1_j2),  # "increasing" / "steady" / "decreasing"
     "highlights": cartouche.find("RisqueJ2").text.strip(),
-    "comment": cartouche.find("CommentaireRisqueJ2").text.strip(),
+    "comment": format_comment_as_html(cartouche.find("CommentaireRisqueJ2").text),
     "validTime": {
         "startTime": _parse(date_risque_j2),
         "endTime": _parse_plus_one_day(date_risque_j2),
@@ -333,7 +341,9 @@ caaml["tendency"] = [{
 `_evolution_from_levels` is a 3-way comparator on the numeric danger
 codes — DPBRA gives us a numeric next-day value (`RISQUEMAXIJ2`), which
 SLF/ALBINA don't, so the tendency for MF is more deterministic than for
-the other two providers.
+the other two providers. When `RISQUEMAXIJ2` or `DATE_RISQUE_J2` is absent
+or unparseable the list is empty rather than raising — tendency is
+non-blocking.
 
 ### 5.10 `customData.MF`
 
@@ -341,35 +351,11 @@ Everything DPBRA carries that CAAML can't represent goes here, mirroring
 the `customData.CH` (SLF) and `customData.ALBINA` (ALBINA) conventions.
 The render-model builder reads keys from this namespace when an
 MF-specific field is needed; nothing here is required for the basic
-calendar / map render:
+calendar / map render. What `_parse_custom_data_mf` emits today:
 
 ```python
 caaml["customData"] = {
     "MF": {
-        "bsh": _xml_to_dict(bsh),                # 7-day history block
-        "weatherForecast": [...],                # validity-window METEO echeances
-        "snowCover": {                           # ENNEIGEMENT + NEIGEFRAICHE
-            "date": ...,
-            "snowLineNorthM": int(...LimiteNord),
-            "snowLineSouthM": int(...LimiteSud),
-            "depthsCm": [{"altitudeM": ..., "north": ..., "south": ...}, ...],
-            "fresh24h": [{"date": ..., "minCm": ..., "maxCm": ...}, ...],
-        },
-        "j2Outlook": {
-            "maxDanger": int(risque.attrib["RISQUEMAXIJ2"]),
-            "date": risque.attrib["DATE_RISQUE_J2"],
-            "label": risque_j2.text,
-            "comment": commentaire_risque_j2.text,
-        },
-        "images": {                              # PNG asset filenames MF publishes
-            "danger": image_risque.text,
-            "aspectRose": image_pente.text,
-            "snowCover": image_enneigement.text,
-            "freshSnow": image_neige_fraiche.text,
-            "weather": image_meteo.text,
-            "sevenDay": image_seven_day.text,
-        },
-        "vigilanceUrl": "https://vigilance.meteofrance.fr/fr",
         "mfInternalId": int(root.attrib["ID"]),
         "amendment": root.attrib["AMENDEMENT"] == "true",
         "rawLocalTimes": {                       # for debugging the UTC conversion
@@ -377,13 +363,37 @@ caaml["customData"] = {
             "validTo": root.attrib["DATEVALIDITE"],
             "publishedAt": root.attrib["DATEDIFFUSION"],
         },
+        "images": {                              # PNG asset filenames MF publishes
+            "danger": image_risque.text,         # ImageRisque, or None
+            "aspectRose": image_pente.text,      # ImagePente, or None
+        },
+        "snowCover": {                           # ENNEIGEMENT, or None when absent
+            "date": ...,
+            "snowLineNorthM": int(...LimiteNord),
+            "snowLineSouthM": int(...LimiteSud),
+            "depthsCm": [{"altitudeM": ..., "north": ..., "south": ...}, ...],
+        },
+        "j2Outlook": {                           # None when RISQUEMAXIJ2 / DATE_RISQUE_J2 absent
+            "maxDanger": int(risque.attrib["RISQUEMAXIJ2"]),
+            "date": risque.attrib["DATE_RISQUE_J2"],
+            "label": risque_j2.text,
+            "comment": commentaire_risque_j2.text,
+        },
         "redundantProse": {                      # preserved for completeness; not used by render
             "accidentel": cartouche.find("ACCIDENTEL").text,
             "naturel": cartouche.find("NATUREL").text,
         },
+        "massif": root.attrib["MASSIF"].upper(), # canonical slug for the archive-PDF URL resolver
     },
 }
 ```
+
+Not carried (the spec originally listed them, the translator never emitted
+them): the `BSH` seven-day history block, the 3-hourly `METEO` forecast
+echeances, `NEIGEFRAICHE` (`fresh24h`), the four remaining image
+filenames, and the static vigilance URL. They remain available in the
+raw XML if a surface ever wants them; adding one is a translator change
+plus a row in `tests/sentinels/fidelity.py`.
 
 camelCase keys mirror the surrounding CAAML JSON convention. The `MF`
 namespace is unique (SLF uses `CH`, ALBINA uses `ALBINA` and
@@ -403,10 +413,16 @@ namespace is unique (SLF uses `CH`, ALBINA uses `ALBINA` and
 The translator raises `MeteoFranceTranslationError` (one exception class)
 on:
 
-- Missing required attribute (`@ID`, `@MASSIF`, `@DATEBULLETIN`, `@DATEVALIDITE`).
-- `@ID` not in the SNOW-179 catalogue (i.e. unknown massif).
+- Bytes that do not parse as XML.
+- Missing required attribute (`@ID`, `@MASSIF`, `@DATEBULLETIN`,
+  `@DATEVALIDITE`, `@DATEDIFFUSION`), or a non-integer `@ID`.
+- Missing `<CARTOUCHERISQUE>`, `<RISQUE>` or `<PENTE>`.
 - Danger level not in `1..5`.
-- SAT code not in `SAT_TO_EAWS` (the {1..6} keys defined in §5.4).
+- SAT code non-numeric or not in `SAT_TO_EAWS` (the {1..6} keys defined in §5.4).
+
+`@ID` is **not** checked against the SNOW-179 catalogue by the translator;
+an unknown massif surfaces one step later, when `upsert_bulletin`'s region
+lookup fails to resolve `FR-{NN}`.
 
 The orchestrator catches per-bulletin and increments
 `PipelineRun.records_failed`, matching the existing SLF/ALBINA behaviour.
@@ -434,10 +450,11 @@ maintain a static "delegated regions" set seeded from the catalogue.
 
 ## 8. Out of scope for this spec
 
-- **Render-model aggregation.** The "blank problem cards" issue lives in
-  `build_render_model`, not the translator. Address separately by teaching
-  the builder to fall back to top-level `avalancheProblems` when
-  `customData.CH.aggregation` is absent — fixes ALBINA and MF in one go.
+- **Render-model aggregation.** The "blank problem cards" issue lived in
+  `build_render_model`, not the translator. Resolved there: the
+  `MeteoFranceAdapter` (and `AlbinaAdapter`) synthesise an aggregation
+  from top-level `avalancheProblems` — see
+  [`docs/render-model.md`](render-model.md).
 - **Discovery / HTTP.** The DPBRA endpoint shape (single massif fetch URL,
   rate limits, auth header) is the orchestrator's concern.
 - **Region fixtures.** Already loaded by **SNOW-179**

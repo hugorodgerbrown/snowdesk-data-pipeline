@@ -2,7 +2,7 @@
 name: debug-log
 description: On-device debug trace — window.pwaDebugLog, log:debug store, debug_log flag (GRP_DEBUG), sw classify/pinned.search, req serve request ledger
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-10-01
 ---
 
 # Debug log (SNOW-812)
@@ -19,8 +19,10 @@ reasons that compound:
    allowlisted for caching, which pinned buckets exist, whether a tile hit
    any of them — none of that is reachable from a phone.
 2. **Every one of those decisions is a deliberately silent fallback.**
-   `static/js/map.js` has 39 `catch (_e) {}`-shaped sites and
-   `static/js/sw.js` has 27. That silence is correct — a failing cache
+   When SNOW-812 shipped, `static/js/map.js` had 39 `catch (_e) {}`-shaped
+   sites and `static/js/sw.js` had 27 (the map module has since been split
+   across `map_*.js` files, which moved rather than removed them). That
+   silence is correct — a failing cache
    probe must never break the page — and it is exactly why a broken
    offline download looks identical to a working one until the map is
    blank.
@@ -78,6 +80,11 @@ req  serve  url=/api/ratings.json   strategy=network  source=passthrough status=
 | `passthrough` | the worker issued no `respondWith` — the browser fetched it natively |
 | `cache` | the SNOW-722 read-only probe answered; the adjacent line says from where |
 | `dev-bypass` | `DEV_SHELL_BYPASS` with the opt-in off |
+
+`_debugServe` in `sw.js` is the one emitter, and its docstring is the
+authoritative list; `strategy` is one of `shell`, `navigate`, `basemap`,
+`network`, `probe` (the unclassified cross-origin probe) or `guard`
+(`_guardedRespond`'s recovery path).
 
 Two properties worth knowing before you read one:
 

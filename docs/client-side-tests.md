@@ -2,7 +2,7 @@
 name: client-side-tests
 description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop, tox -e e2e / js / js-types, JSDoc types
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Client-side test harness
@@ -34,16 +34,28 @@ Add `// @ts-check` under its header comment. `checkJs` is `false` in
 `tsconfig.json`, so a file is unchecked until someone does. That is what let
 this land green rather than red-with-a-suppression-list.
 
-Opted in today — the pure, already-unit-tested modules:
+Opted in today — nineteen files, eighteen of the twenty-nine `*_core.js`
+modules plus `pwa_network_mode.js`:
 
-`calendar_core` · `choropleth_core` · `hatch_core` · `map_viewport_core` ·
-`route_markers_core` · `scrubber_core` · `search_core` ·
-`slope_overlay_core` · `trip_deeplink_core`
+`bank_ribbon_core` · `calendar_core` ·
+`choropleth_core` · `hatch_core` · `map_viewport_core` ·
+`offline_audit_core` · `route_cursor_core` · `route_cursor_map_core` ·
+`route_leader_core` · `route_legs_core` · `route_markers_core` ·
+`route_rail_core` · `route_rail_two_core` · `route_slope_core` ·
+`scrubber_core` · `search_core` · `slope_overlay_core` ·
+`trip_deeplink_core` · `pwa_network_mode`
 
-Not yet: `basemap_download_core` (61 errors), `map_weather_core` (15),
-`layer_visibility_core` (14), `elevation_profile_core` (11). Between them
-they carry 115 of the 128 errors the first run found, which is a ticket of
-its own rather than a footnote to this one.
+Not yet — eleven core modules: `basemap_cache_core`, `basemap_download_core`,
+`basemap_manage_core` (its header mentions `@ts-check` in prose only),
+`basemap_style_core`, `country_load_core`, `elevation_profile_core`,
+`layer_visibility_core`, `map_edit_locations_core`, `map_weather_core`,
+`mutation_queue_core` and `reset_data_summary_core`. Four of those were
+deferred by SNOW-899 itself — `basemap_download_core` (61 errors),
+`map_weather_core` (15), `layer_visibility_core` (14),
+`elevation_profile_core` (11) — and between them they carried 115 of the
+128 errors the first run found, which is a ticket of its own rather than a
+footnote to this one. `grep -L '^// @ts-check' static/js/*_core.js` lists
+the current set.
 
 ### `globals.d.ts`
 
@@ -286,14 +298,15 @@ uv run tox -e e2e
 ```
 
 On first run, tox downloads Chromium (~170 MiB) via
-`playwright install chromium --with-deps`.  Subsequent runs reuse the
-cached binary.
+`playwright install chromium` in the env's `commands_pre`.  Subsequent runs
+reuse the cached binary (a machine missing Chromium's system libraries needs
+a one-off `playwright install-deps chromium`, which tox does not run).
 
 The env is **not** in the default `tox` envlist (it takes 30+ s cold and
 is opt-in only).  To run the default suite:
 
 ```bash
-uv run tox          # fmt, lint, mypy, django-checks, ds-lint, test
+uv run tox          # the default envlist — every linter, mypy, django-checks, test and js
 uv run tox -e e2e   # e2e only
 ```
 
@@ -361,7 +374,7 @@ misses the thing you actually meant to test:
   entirely — `delete navigator.serviceWorker` gets the same isolation for
   free there, since jsdom doesn't define it by default. See the "JS unit
   tests" section above.)
-- **Real** (`pwa_page` / `signed_in_page` in `conftest.py`, SNOW-389) — a
+- **Real** (`pwa_page` in `conftest.py`, SNOW-389) — a
   genuine `/sw.js` registers, activates, and controls the page, with
   `wait_for_event()` / `assert_sw_absent()` helpers for the "never stuck,
   adrift, or abandoned" invariant. Use this when the test IS about the SW
@@ -407,14 +420,15 @@ it works.  The `notifications` grant (SNOW-389) is what lets
 `self.registration.showNotification()` resolve inside `sw.js`'s `push`
 handler rather than rejecting.
 
-### `pwa_page` / `signed_in_page` (in `conftest.py`, SNOW-389)
+### `pwa_page` (in `conftest.py`, SNOW-389)
 
-Real-service-worker fixtures — see "SW-lifecycle tests: real vs
-simulated" above for when to reach for these instead of the
-simulated-SW pattern.
+The real-service-worker fixture — see "SW-lifecycle tests: real vs
+simulated" above for when to reach for it instead of the simulated-SW
+pattern. Its `signed_in_page` sibling went with the suites SNOW-649
+retired.
 
 Two guarantees (SNOW-427) make `queue:events` rows safe to assert on
-from tests using these fixtures:
+from tests using this fixture:
 
 1. The telemetry buffer **never drains** — an init-script stub answers
    `fetch` calls to `/api/telemetry` with a synthetic 503 (including
@@ -445,8 +459,11 @@ wiping any data loaded at session setup time.
 ## CI cadence
 
 The e2e workflow (`.github/workflows/e2e.yml`) runs on every pull request and
-every push to `main`, triggered by changes to `**/*.py`, `**/*.html`,
-`pyproject.toml`, `uv.lock`, `tox.ini`, or the workflow file itself.
+every push to `main` and `release`. The trigger is deliberately not
+path-filtered (a path-filtered required check never reports on commits
+outside its paths — SNOW-435 / SNOW-600); instead a `changes` job skips the
+Playwright job when a PR's diff is docs-only (`*.md`, `docs/`, `.claude/`,
+or `VERSION` alone).
 
 The Playwright binary cache is keyed on `uv.lock` so cache hits are
 common (the binary version is tied to the `playwright` package).

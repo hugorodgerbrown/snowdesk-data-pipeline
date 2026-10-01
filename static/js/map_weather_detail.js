@@ -23,7 +23,7 @@
  * and arrives as HTML, including the SVG chart. The alternative — shipping
  * the numbers and drawing them here — would need the forecast a second time
  * on the wire, put translated strings in a file `makemessages` cannot see,
- * and duplicate a panel the resort page already renders server-side.
+ * and duplicate a panel the location forecast page already renders server-side.
  */
 
 (function () {

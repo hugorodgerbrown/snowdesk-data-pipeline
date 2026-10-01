@@ -2,7 +2,7 @@
 name: self-hosted-tiles
 description: Self-hosted basemap origin tiles.snowdesk-data.info — OPENFREEMAP_STYLE_URL cutover, plus the style zoom-range trap blanking it above z14
 status: current
-last-reviewed: 2026-08-03
+last-reviewed: 2026-10-01
 ---
 
 # Runbook — self-hosted basemap origin (tiles.snowdesk-data.info)
@@ -45,8 +45,9 @@ handled already:
   XYZ `tiles` array, so it is shaped like every other basemap in the catalogue.
   There is no `pmtiles://` source and no `maplibregl.addProtocol` registration —
   that approach was tried and rejected, because a source with no tile URLs is
-  something neither `activeBasemapTileTemplate` (SNOW-521) nor the service
-  worker's offline pinning (SNOW-484) can express.
+  something neither the basemap download core's `tileSources`
+  (`static/js/basemap_download_core.js`, SNOW-521) nor the service worker's
+  offline pinning (SNOW-484) can express.
 
 ## The zoom-range trap
 
@@ -66,9 +67,10 @@ download completes, the roundel goes green, and the area is blank at the zooms
 people actually use. The download machinery is not involved.
 
 Fixed in `snowdesk-tiles` (`scripts/rewrite_style.py` +
-`TILE_MIN_ZOOM`/`TILE_MAX_ZOOM` in `scripts/config.sh`), and checked by that
-repo's `scripts/verify.sh` against the Worker's TileJSON, which reads the range
-out of the PMTiles header. Nothing in this repo can detect it.
+`TILE_MIN_ZOOM`/`TILE_MAX_ZOOM` in `scripts/config.sh` — both paths in that
+repo), and checked by that repo's `scripts/verify.sh` against the Worker's
+TileJSON, which reads the range out of the PMTiles header. Nothing in this
+repo can detect it.
 
 ## The attribution trap (SNOW-640)
 
@@ -103,7 +105,7 @@ The fix belongs in `snowdesk-tiles`, in two parts:
 ## Cutover check
 
 Once the origin is verified live (`./scripts/verify.sh` in `snowdesk-tiles`) and
-the env vars are set, load `/` and confirm:
+the env vars are set, load `/map/` and confirm:
 
 1. The basemap renders, with no CORS errors in the network panel. A CORS failure
    means the site's origin is missing from `ALLOWED_ORIGINS` in that repo's

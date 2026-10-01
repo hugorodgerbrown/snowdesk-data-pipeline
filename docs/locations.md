@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-10-01
 ---
 
 # Locations — what every coordinate in this codebase means

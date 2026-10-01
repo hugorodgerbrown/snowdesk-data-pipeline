@@ -2,7 +2,7 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-10-01
 ---
 
 # Web Push notifications
@@ -356,7 +356,7 @@ Diagnose on Render with:
 
 ```python
 from py_vapid import Vapid
-from accounts import push_config
+from apps.accounts import push_config
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import base64
 

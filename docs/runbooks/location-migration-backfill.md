@@ -2,7 +2,7 @@
 name: location-migration-backfill
 description: Backfill an environment onto the Location model — the --commit commands, Open-Meteo elevation cost, per-environment progress log
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-10-01
 ---
 
 # Runbook — bring an environment onto the Location model
@@ -30,6 +30,13 @@ management command an operator runs by hand**, per
 > rebuilt fetch walks. Its own procedure and cost sizing live in
 > [`region-centroid-backfill.md`](region-centroid-backfill.md); run that
 > one for the weather estate and this one for the location estate.
+>
+> **SNOW-771 then took the elevation call out of it.** The centroid's
+> height now comes from `MicroRegion.centroid_elevation_m` in the committed
+> fixture (resolved once by `refresh_centroid_elevations`), so
+> `link_region_centroid_locations` makes no network call at all and has no
+> `--delay`. The elevation lookup for curated rows moved to
+> `fill_location_elevations` (SNOW-732).
 
 ## Order
 
@@ -39,18 +46,18 @@ command.
 
 ## Cost
 
-One of the three calls Open-Meteo, one call per row:
+None of the three calls Open-Meteo any more:
 
 | Command | Calls | Notes |
 |---|---|---|
 | `backfill_observation_locations` | 0 | reads existing rows |
 | `import_locations` | 0 | reads two TSVs |
-| `link_region_centroid_locations` | 1 per region | **461**, one-off |
+| `link_region_centroid_locations` | 0 | coordinate and elevation both come from the fixture (SNOW-771) |
 
-`link_region_centroid_locations` is a one-off cost, not a recurring one:
-it resolves each region's centroid elevation once and stores it. The free
-tier allows 10,000/day per IP, so a full run fits inside a day's
-allowance with room to spare. The `--delay` default (1.0s) paces it.
+The one call per row is now `fill_location_elevations --commit` (step 4
+below), which resolves `elevation_m` for every curated row still at null.
+The free tier allows 10,000/day per IP, so a full run fits inside a day's
+allowance with room to spare; its `--delay` default (0.2 s) paces it.
 
 Check which tier an environment is on by reading
 `OPEN_METEO_API_BASE_URL` in its Render env group.
@@ -74,25 +81,29 @@ uv run --no-sync python manage.py backfill_observation_locations --commit
 # 2. The curated estate — four villages and their resort links.
 uv run --no-sync python manage.py import_locations --commit
 
-# 3. Anchor each micro-region to a centroid Location.
+# 3. Anchor each micro-region to a centroid Location (offline).
 uv run --no-sync python manage.py link_region_centroid_locations --commit
+
+# 4. Resolve the elevation of every curated row still at null (Open-Meteo).
+uv run --no-sync python manage.py fill_location_elevations --commit
 ```
 
-### Step 3 doubles as a curation check
+### Step 4 doubles as a curation check
 
-`link_region_centroid_locations` logs each region's resolved elevation, and
-`import_locations` rows should match the figure in that row's `note` in
-`apps/locations/data/locations.tsv`. A height far off means the coordinate
-is mis-pinned. As of 2026-08-24 the four curated villages resolve to
-Verbier 1494 m, Thyon 2144 m, Silvaplana 1815 m, Sils-Maria 1805 m — all
-matching their notes.
+`fill_location_elevations --report` compares each curated row's resolved
+height against the figure in that row's `note` in
+`apps/locations/data/locations.tsv` and prints the disagreements over 60 m,
+writing nothing. A height far off means the coordinate is mis-pinned. As of
+2026-08-24 the four curated villages resolve to Verbier 1494 m, Thyon
+2144 m, Silvaplana 1815 m, Sils-Maria 1805 m — all matching their notes.
 
 ## Verification
 
 Every micro-region with a `centre` should carry a `centroid_location`, and
 the curated villages should exist as named `Location` rows with their
-resort links. There is no user-facing surface to check until SNOW-761
-builds the weather surfaces back.
+resort links. The user-facing check is a resort page's Forecasts section
+and `/weather/<short_id>/` ([`docs/weather-surfaces.md`](../weather-surfaces.md))
+once `fetch_weather` has run.
 
 ## Progress log
 
@@ -183,7 +194,7 @@ different loop, and it does **not** run against production directly.
    seeded from fixtures or by `seed_test_data` does *not* hold the curated
    estate: it can carry its own unrelated `Location` rows, which is the
    case that bites, because the dump then looks like it worked.
-1. **Curate locally.** `/?edit=locations` as a superuser (SNOW-755): click
+1. **Curate locally.** `/map/?edit=locations` as a superuser (SNOW-755): click
    the map to place a summit, name it, classify it, and link it to every
    resort that reaches it. The editor writes to the local database only.
 2. **Write it back to git.** `dump_locations_sheets --commit`, then
@@ -198,9 +209,9 @@ different loop, and it does **not** run against production directly.
    in `build.sh`, for the same reason `import_resorts` is not: these rows
    are editable data owned by each environment's database, and a deploy
    that re-imported them would discard admin edits.
-5. **Resolve the new rows.** `link_location_forecast_cells --commit` —
-   one Open-Meteo call per new location, and the check on the curation
-   (step 4 above).
+5. **Resolve the new rows.** `fill_location_elevations --commit` — one
+   Open-Meteo call per new location; run it with `--report` first for the
+   check on the curation (step 4 above).
 
 **The dry run is the guard on step 0.** `dump_locations_sheets` with no
 `--commit` reports each sheet's change as `+added/-removed` lines. A
@@ -219,7 +230,8 @@ would delete every location the sheets do not list. Curate locally.
 ## Not part of this runbook
 
 Dropping the superseded coordinate columns from `Favourite` and
-`FieldObservation` (SNOW-714) and retiring `Resort.forecast_point`
-(SNOW-715) are separate tickets that must not ship with their backfills —
+`FieldObservation` (SNOW-714) is a separate ticket that must not ship with
+its backfill (`Resort.forecast_point`, SNOW-715's subject, went with the
+`ForecastCell` estate in SNOW-762) —
 `build.sh` auto-migrates, so a drop lands the moment its PR merges, before
 any operator can run the command that fills its replacement.

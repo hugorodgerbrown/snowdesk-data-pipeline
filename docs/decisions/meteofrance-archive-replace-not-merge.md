@@ -2,7 +2,7 @@
 name: meteofrance-archive-replace-not-merge
 description: Load-then-purge-with-guard ordering for replacing the old-grammar Météo-France archive rows; why delete-first and re-keying were rejected
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
 # Replace the legacy Météo-France archive rows, don't merge them

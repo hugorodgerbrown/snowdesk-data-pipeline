@@ -2,7 +2,7 @@
 name: geojson-feature-envelope
 description: Raw bulletins are stored wrapped in a GeoJSON Feature envelope regardless of provider
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # Raw bulletins stored in a GeoJSON Feature envelope

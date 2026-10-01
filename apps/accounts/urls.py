@@ -7,25 +7,34 @@ All URLs are mounted under the ``/account/`` prefix by the root URLconf
 
 URL map
 -------
-/account/                             hub                    301 → /?panel=favourites
+/account/                             hub                   301 → /map/?panel=favourites
 /account/settings/                    settings               GET  — settings (authed)
-/account/favourites/                  favourites             301 → /?panel=favourites
-/account/observations/                observations           301 → /?panel=reports
-/account/routes/                      routes                 301 → /?panel=routes
+/account/favourites/                  favourites            301 → /map/?panel=favourites
+/account/observations/                observations           301 → /map/?panel=reports
+/account/routes/                      routes                 301 → /map/?panel=routes
 /account/register/                    register               GET/POST — registration
 /account/verify/<token>/              verify                 GET/POST — verify email
 /account/setup/                       setup                  GET — credential setup
+/account/setup/password/              set_password           POST — set a password
+/account/reset-password/              reset_password         GET/POST — request a reset
+/account/reset-password/<token>/      reset_password_confirm GET/POST — new password
+/account/change-email/                change_email           GET/POST — request a change
+/account/change-email/<token>/        change_email_confirm   GET/POST — confirm a change
 /account/sign-in/                     sign_in                GET/POST — sign-in page
 /account/access/<token>/              account                GET/POST — access token
-/account/manage/                      manage                 301 → /?panel=favourites
+/account/manage/                      manage                301 → /map/?panel=favourites
 /account/manage/delete/               delete_account         POST HTMX
 /account/deleted/                     account_deleted        GET  — deletion done
 /account/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
 /account/sign-out/                    sign_out               POST
 /account/webauthn/auth-request/       passkey_auth_request   GET
 /account/webauthn/auth-response/      passkey_auth_response  POST
-/account/webauthn/register-request/   passkey_reg_request    GET
-/account/webauthn/register-response/  passkey_reg_response   POST
+/account/webauthn/register-request/   passkey_register_request  GET
+/account/webauthn/register-response/  passkey_register_response POST
+/account/push/register/               push_register          POST — Web Push spike
+/account/push/unregister/             push_unregister        POST
+/account/push/test/                   push_test              POST
+/account/push/subscriptions/          push_subscriptions     GET
 """
 
 from django.urls import path

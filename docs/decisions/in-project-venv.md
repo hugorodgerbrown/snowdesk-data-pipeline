@@ -2,7 +2,7 @@
 name: in-project-venv
 description: The uv virtualenv lives at .venv/ inside the repo so the pre-commit mypy/djangofmt hooks work from GUI git clients
 status: current
-last-reviewed: 2026-06-19
+last-reviewed: 2026-10-01
 ---
 
 # Virtualenv lives at .venv/ inside the repo

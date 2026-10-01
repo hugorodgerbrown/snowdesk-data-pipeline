@@ -18,5 +18,5 @@ One avalanche problem type.  No time split.
 
 ## PDF
 
-See `albina/A-single-level/README.md` — ALBINA does not publish stable archive PDF
+See [`../A-single-level/README.md`](../A-single-level/README.md) — ALBINA does not publish stable archive PDF
 URLs.  `source.pdf` is absent from this directory.

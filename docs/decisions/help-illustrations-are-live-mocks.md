@@ -2,7 +2,7 @@
 name: help-illustrations-are-live-mocks
 description: /help/ illustrations render real partials from apps/public/component_previews.py, not screenshots; inert wrappers, namespaced ids
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-10-01
 ---
 
 # Help illustrations are live mocks, not screenshots
@@ -11,7 +11,8 @@ last-reviewed: 2026-08-28
 
 ## Context
 
-`/help/` explains sixteen surfaces — the layers menu, the season heatmap,
+`/help/` explained sixteen surfaces when SNOW-744 landed (twenty topics
+today) — the layers menu, the season heatmap,
 the four panels that manage a user's own data — and until SNOW-744 it
 showed none of them. A reader learning what a split calendar tile means
 had to hold a sentence in their head, go and find the tile, and check they
@@ -82,9 +83,12 @@ the paragraph and nothing else.
 urgent — the panels' "Display on the map" switches, which `map.js` found
 by id (`#map-favourites-overlay-toggle` and friends) — but the rule
 outlives it: an illustration renders REAL components, and a live surface
-that addresses one of them by id would find the decoration. So
-`component_previews.py` gives every id it supplies a `help-illustration-…`
-prefix.
+that addresses one of them by id would find the decoration. Today
+`component_previews.py` supplies no ids at all (the `toggle_id` each panel
+entry carried went with the switch), and
+`tests/public/test_help.py::test_illustrations_render_no_panel_overlay_switch`
+asserts the real ids stay absent from the page; any id a future
+illustration does supply must carry a `help-illustration-…` prefix.
 
 **A component whose styles are not in `output.css` cannot be illustrated
 here.** `/help/` loads that stylesheet alone. The season scrubber has a

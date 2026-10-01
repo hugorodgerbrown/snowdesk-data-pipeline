@@ -35,15 +35,15 @@
  *      server-rendered panels, which show one place at a time, still make
  *      the day/night call (`is_day`).
  *
- *   2. THE LABEL IS THE SYMBOL, CAPTIONED. The WMO condition icon leads and
- *      the temperature sits under it; the station's ground elevation is
- *      deliberately absent. It was there — a symbol on a mountain map does
- *      mean less without the height it was read at — but every marker
- *      carrying one made the map unreadable at any density, and elevation
- *      earns its place on a resort page showing three points at three
- *      heights rather than here. (It is `Location.elevation_m`, not the
- *      freezing level, which has never been on the map.) Elevation still
- *      drives the cluster collapse below.
+ *   2. THE LABEL IS THE SYMBOL, CAPTIONED. The WMO condition icon leads,
+ *      the temperature sits under it, and the station's ground elevation
+ *      sits under that as a second line behind an elevation mark
+ *      (`formatElevation`, `elevationMarkFor`): two degrees at 1500 m and
+ *      two degrees at 3000 m describe different weeks, and on a map showing
+ *      both at once the number alone misleads. It is `Location.elevation_m`,
+ *      not the freezing level, which has never been on the map. A station
+ *      with no resolved elevation shows the temperature alone. Elevation
+ *      also drives the cluster collapse below.
  *
  *   3. CLUSTERING COLLAPSES TO THE LOWEST STATION, and it is a pure
  *      transform here rather than MapLibre `clusterProperties`. MapLibre's

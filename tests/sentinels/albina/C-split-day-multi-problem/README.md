@@ -24,5 +24,5 @@ The combination of a time split (`earlier` / `later`) plus two distinct avalanch
 
 ## PDF
 
-See `albina/A-single-level/README.md` — ALBINA does not publish stable archive PDF
+See [`../A-single-level/README.md`](../A-single-level/README.md) — ALBINA does not publish stable archive PDF
 URLs.  `source.pdf` is absent from this directory.

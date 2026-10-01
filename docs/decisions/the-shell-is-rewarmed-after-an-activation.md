@@ -2,7 +2,7 @@
 name: the-shell-is-rewarmed-after-an-activation
 description: sw.js activate re-warms the map page and its scripts/styles — _rewarmShell, _shellSubresources, SHELL_PAGES; a deploy broke offline open
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # The shell is re-warmed after an activation

@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # Snowdesk site structure
@@ -56,9 +56,11 @@ prefixes depend on this ordering — don't reorder
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
 | `/weather/<short_id>/` | `location_weather` | **Document two**: one location, one day (SNOW-761/789). `?date=` picks the row inside the page; the bare URL is canonical for today, the dated one for a past day (SNOW-799). Keyed on `Location.short_id` — eleven opaque characters, never the pk (SNOW-797); `/weather/<int>/` 301s. |
 | `/resorts/<slug>/` | `resort_detail` | A router, not a document (SNOW-807): the resort's own curated facts, then one link to the region's bulletin, a link per curated location to its weather page, and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
-| `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location. |
-| `/observations/` | redirect | Permanent 301 to `/?panel=reports` — the map with the reports sheet open (SNOW-804). |
-| `/trips/` | `trips.views.trip_list` | **The reader's own trips**, upcoming and past (SNOW-823). Scoped by participation, split against the trip's own date, and a trip dated today counts as upcoming. A LIST PAGE, which is an exception to [two-documents-and-a-map](decisions/two-documents-and-a-map.md) and argued there: a route and a favourite are indexed spatially and the map is that index, a trip is indexed temporally and the map has no index for that. Upcoming trips are CARDS carrying the day and time, the note, the distance/ascent/descent trio and the meeting point; past ones are rows on the subtle surface (SNOW-848). The header's "New trip" points at `/?panel=routes`, because a trip is planned from a route and `/trips/new/` 404s without one. Unpaginated; behind auth. |
+| `/offline/` | `offline_page` | What this device holds offline — the content report, the reset control and the sync log. Public since SNOW-930 ([`decisions/what-this-device-holds-is-a-public-page.md`](decisions/what-this-device-holds-is-a-public-page.md)). |
+| `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location, and for a non-owner. |
+| `/observations/` | redirect | Permanent 301 to `/map/?panel=reports` — the map with the reports sheet open (SNOW-804). |
+| `/routes/s/<token>/` | `routes.views.share_redirect` | A route's share link: follows the token onto the map, where the route is drawn dashed until the recipient claims it ([`decisions/route-share-pending-claim-in-session.md`](decisions/route-share-pending-claim-in-session.md)). |
+| `/trips/` | `trips.views.trip_list` | **The reader's own trips**, upcoming and past (SNOW-823). Scoped by participation, split against the trip's own date, and a trip dated today counts as upcoming. A LIST PAGE, which is an exception to [two-documents-and-a-map](decisions/two-documents-and-a-map.md) and argued there: a route and a favourite are indexed spatially and the map is that index, a trip is indexed temporally and the map has no index for that. Upcoming trips are CARDS carrying the day and time, the note, the distance/ascent/descent trio and the meeting point; past ones are rows on the subtle surface (SNOW-848). The header's "New trip" points at `/map/?panel=routes`, because a trip is planned from a route and `/trips/new/` 404s without one. Unpaginated; behind auth. |
 | `/trips/new/` | `trips.views.trip_new` | The authoring form for a trip planned from one of your own routes, named by `?route=<uuid>` (SNOW-820). A page rather than a fragment in the map's routes panel, whose body is re-cloned on every open. Anonymous visitors redirect to sign-in. |
 | `/trips/s/<token>/` | `trips.views.trip_share_page` | **The page behind a trip's share link** (SNOW-821). Public, rate-limited on the (token, IP) key, `Cache-Control: no-store`. Renders the same summary and map the object page does; unknown, revoked and expired tokens are one 404. Emits the full sharing set AND `noindex` — unfurling as a card is the point of the link, being findable in search would defeat the token, and `Disallow: /trips/` in robots.txt would block the unfurlers themselves. |
 | `/trips/<uuid>/` | `trips.views.trip_detail` | **One trip's own page** — the organiser's attribution, the organiser's note, the day and meeting time and point, the route drawn with a marker, the figures and the elevation profile (SNOW-820/822/845). Scoped by PARTICIPATION, so everyone who has saved the trip gets it and the controls are what differ; somebody holding the link who has not saved it gets 404 here and the share page instead, because the uuid keys the participant-scoped endpoints. **No roster since SNOW-848** — no count, no names, no going state: nobody sees who else holds a trip. A page, not a redirect into the map, because a trip is authored to be sent ([why](decisions/two-documents-and-a-map.md)). |
@@ -102,10 +104,14 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 [`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
-- `/partials/report/`, `/partials/report/form/` — field-report submission
-- `/favourites/partials/…` — create, rename, delete, resort toggle, region
-  pin toggle (SNOW-802), card, list
-- `/routes/partials/…` — create (multipart GPX upload), rename, delete, list.
+- `/partials/report/`, `/partials/report/form/`, `/partials/report/list/`,
+  `/partials/report/<uuid>/delete/` — field-report submission, the
+  reporter's own list, and delete
+- `/favourites/partials/…` — create, rename, delete, resort create and
+  toggle, region pin toggle (SNOW-802), card, list (places) and `regions/`
+  (region pins, SNOW-814)
+- `/routes/partials/…` — create (multipart GPX upload), rename, delete, list,
+  and `share/<token>/claim/` (SNOW-764, the recipient saving a shared route).
   Every list endpoint has one shape, the map sheet's (SNOW-803 retired the
   account-page variants); the surface that reaches these is open to every
   visitor and its contents to every signed-in one
@@ -122,25 +128,40 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
   plain `fetch()` for the native share sheet; only the writes above are
   fragments, so an invalid submission can come back as the form with its
   errors
+- `/downloads/partials/…` — sync, rename, forget: an account's offline
+  area definitions (SNOW-749)
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes
 
-`/api/…` JSON endpoints ([`docs/map-and-api.md`](map-and-api.md)),
-`/api/mcp/` ([`docs/mcp-server.md`](mcp-server.md)),
+`/api/…` JSON endpoints ([`docs/map-and-api.md`](map-and-api.md) for the
+map's; `/api/version` and `/api/sw-config` in [`docs/offline-map.md`](offline-map.md);
+`/api/bulletins/<id>/`, `/api/bulletins/<id>.caaml.json` and
+`/api/bulletins/share/` for the bulletin page),
+`/api/mcp/` ([`docs/mcp-server.md`](mcp-server.md)) and its OAuth server —
+`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`,
+`/oauth/authorize/`, `token/`, `register/`, `revoke/` ([`docs/oauth.md`](oauth.md)),
 `/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
-`/favourites/favourites.geojson`, plus the PWA and crawler surface served from
+`/favourites/favourites.geojson`, `/routes/routes.geojson`,
+`/routes/<uuid>/bulletin/` and `/routes/<uuid>/share/`,
+`/trips/<uuid>/route.geojson` and `/trips/s/<token>/route.geojson`,
+`/downloads/areas.json`, `/<country>/feed.rss` (per-country RSS, SNOW-396),
+`/messages/` (the site-banner dismissal endpoint, [`docs/site-banners.md`](site-banners.md)),
+`/csp/` (the CSP report receiver), plus the PWA and crawler surface served from
 `config/urls.py`: `/sw.js`, `/sw-kill.js`, `/manifest.webmanifest`,
 `/robots.txt`, `/sitemap.xml`, `/llms.txt`,
 `/llms-full.txt`, `/favicon.ico`, and the `/livez` + `/healthz` probes
-([`docs/deployment.md`](deployment.md)).
+([`docs/deployment.md`](deployment.md)). Under `DEBUG` only, `config/urls.py`
+also mounts the SLF and ALBINA replay mirrors at `/dev/slf-mirror/` and
+`/dev/albina-mirror/`.
 
 `/sitemap.xml` has four sections, defined in
 [`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
 as `SITEMAPS`: `bulletins` (regions with a bulletin valid today), `resorts`
 (every resort page), `locations` (every *named* public location's weather
 page — never a centroid, never a favourite's pin; SNOW-799) and `static`
-(the homepage, both guides, the four legal pages). SNOW-676 added `resorts`
+(the homepage, the map, both guides, `/compare/`, and the three legal pages —
+privacy, terms of service, colophon; `/terms/` is a redirect). SNOW-676 added `resorts`
 and `static` — until then the sitemap was the bulletin section alone, which
 left the resort pages invisible to search and made the whole file *empty*
 out of season, when no bulletin is valid today. Deliberately absent, with

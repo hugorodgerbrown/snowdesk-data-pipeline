@@ -57,9 +57,9 @@ important one:
   makes the rest legible.
 
 The surfaces have to carry that, because the absence of a mark is
-readable as an absence of steep ground. The legend row and
-``/help/#help-topic-slope`` say so; the colour of the line underneath is
-the part that never goes quiet.
+readable as an absence of steep ground. ``/help/#help-topic-slope`` says
+so (the legend row went with the layer); the colour of the line
+underneath is the part that never goes quiet.
 
 ## One mark per stretch, then one every ``FALL_LINE_SPACING_M``
 
@@ -75,10 +75,12 @@ arrow**, which is the common case and the one a length-based minimum
 would have dropped.
 
 Thinning further is the CLIENT's job, and MapLibre's collision engine
-does it for free — see the layer note in ``static/js/map.js``. A dropped
-arrow costs nothing, because the remaining ones say the same thing about
-the same face; that is precisely the opposite of a dropped crux ring,
-which would understate the day.
+did it for free while the ``routes-fall-lines`` layer existed (SNOW-1019
+took the arrows off both maps; the marks still travel and
+``route_slope_core.js``'s ``fallLineCollection`` still places them). A
+dropped arrow costs nothing, because the remaining ones say the same
+thing about the same face; that is precisely the opposite of a dropped
+crux ring, which would understate the day.
 
 ## A mark is an index and a bearing, never a second geometry
 

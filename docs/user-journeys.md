@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, signed-in user) and core journeys J1–J7 — two documents and a map — URL surfaces and invariants
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-10-01
 ---
 
 # User personas and core journeys
@@ -143,9 +143,10 @@ map's region panel, is offered sign-in, registers or requests an
 account-access link, and comes back to a map that remembers the region.
 
 **Entry points:**
-- The pin control in the region + date panel and the region popup
-  (`favourites/partials/_region_pin_button.html`) — a sign-in path for a
-  visitor, a toggle for a signed-in user.
+- The star roundel in the region + date panel's header
+  (`public/partials/_season_ribbon.html`, driven by
+  `static/js/map_region_panel.js`) — a sign-in path for a visitor, a
+  toggle for a signed-in user.
 - `/account/register/` and `/account/sign-in/`.
 
 **URL surface:**
@@ -156,7 +157,8 @@ account-access link, and comes back to a map that remembers the region.
   button; no state change and no sign-in on the GET (SNOW-439).
 - `POST /account/access/<token>/` — verifies the `Account`
   (`is_verified → True`, stamps `verified_at`), signs the account in and
-  lands on `/?panel=favourites` — the map with the pins sheet open.
+  lands on `/map/?panel=favourites` — the map with the pins sheet open —
+  or on the validated `?next=` the link carried (SNOW-825).
 - `POST /favourites/partials/region/<region_id>/toggle/` — pins or unpins
   the region (SNOW-802); answers `{"pinned": bool}` (SNOW-814 — the control
   is a roundel rendered once in the ribbon header, so what the caller needs
@@ -178,8 +180,9 @@ account-access link, and comes back to a map that remembers the region.
   one-time backfill from `Subscription` rows bypassed it.
 
 **Adding functionality here:**
-- The pin control is one template rendered two ways (the panel's first
-  render and the toggle's response). Keep it that way.
+- The pin control is rendered once, in the ribbon header; the toggle
+  answers `{"pinned": bool}` and the client flips the roundel. Keep it
+  that way — don't re-render the control from the response.
 - Rate limiting on account endpoints is IP-keyed via `django-ratelimit`;
   new entry points should keep that pattern.
 
@@ -192,15 +195,18 @@ account-access link, and comes back to a map that remembers the region.
 - The map's roundels open its sheets: pins, routes, reports, downloads.
 - `/account/sign-in/` — the dedicated sign-in page; a passkey present on
   the device is surfaced as a "Sign in with passkey" option.
-- The nav avatar menu — the offline-mode switch, Settings, Sign out.
+- The nav avatar menu — Trips, Settings, Sign out (SNOW-921 moved the
+  offline-mode switch out to the network menu).
 
 **URL surface:**
-- `/?panel=favourites|routes|reports` — the map with a sheet open
+- `/map/?panel=favourites|routes|reports` — the map with a sheet open
   (SNOW-803); what every retired account list page redirects to.
 - `/favourites/partials/…`, `/routes/partials/…`, `/partials/report/…`
   — the HTMX endpoints behind the sheets' rows and controls.
-- `/account/settings/` — email, passkeys, telemetry, sync log, reset
-  local data, sign out, delete account.
+- `/account/settings/` — email, passkeys, connected apps (SNOW-1035),
+  telemetry, theme, sign out, delete account. The offline-content report,
+  the reset-local-data control and the sync log moved to the public
+  `/offline/` (SNOW-930).
 - `/account/manage/delete/` — hard-delete the account.
 - `/account/manage/passkeys/<uuid>/delete/` — remove a passkey.
 - `/account/webauthn/…` — WebAuthn challenge/response endpoints.
@@ -289,9 +295,6 @@ is for.
   same fidelity rule as J1 applies to them
   ([`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md)):
   a stored bulletin is shown whole, not summarised for age.
-  (not the absolute instant) onto the page date — so a historical
-  page rendered in the evening shows what the evening looked like
-  back then.
 - The guide and examples must work for anonymous visitors with no
   prior knowledge — no jargon without an inline definition or link.
 
