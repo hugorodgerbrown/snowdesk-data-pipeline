@@ -238,6 +238,11 @@ describe('segmentPaths (SNOW-1053)', () => {
     expect(paths[1]).toEqual([[7.001, 46.0005], [7.001, 46.001], [7.002, 46.001]]);
   });
 
+  it('skips an unusable coordinate rather than drawing to it', () => {
+    const holed = [COORDS[0], null, COORDS[2], COORDS[3]];
+    expect(core.segmentPaths(SLOPE, holed)[0]).toEqual([[7.0, 46.0], [7.001, 46.0005]]);
+  });
+
   it('drops the elevation so a path stays two-dimensional', () => {
     for (const path of core.segmentPaths(SLOPE, COORDS)) {
       for (const point of path) expect(point).toHaveLength(2);

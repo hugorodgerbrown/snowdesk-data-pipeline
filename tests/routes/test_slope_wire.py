@@ -9,7 +9,8 @@ track's real coordinates instead of a straight chord between boundaries.
   - on the MERGED track ``terrain_points`` sends when the record has
     heights, a boundary's seam is that boundary's own coordinate;
   - on the UNMERGED track, the vertex before it;
-  - a boundary the merge dropped onto a vertex seams onto that vertex;
+  - a boundary the merge dropped onto a vertex seams onto that vertex,
+    but a vertex measurably PAST a boundary does not;
   - no ``seams`` key for a stride-count mismatch, a missing or invalid
     ``stride_m``, a track with no length, or a caller passing no
     coordinates;
@@ -145,6 +146,25 @@ class TestSeams:
         merged = terrain_points(track, record)
         assert len(merged) == len(track)
         assert _seams(merged, record) == list(range(len(track)))
+
+    def test_vertex_just_past_a_boundary_is_not_its_seam(self) -> None:
+        """A vertex 0.3 m past a boundary starts the next segment instead.
+
+        The merge drops a boundary within half a metre of a vertex, but
+        the seam must not reach that far: the vertex would join the
+        segment ending at the boundary, and the drawn path would run out
+        to it and double back.
+        """
+        metre = 1.0 / 111_194.9
+        track: list[list[float | None]] = [
+            [7.0, 46.0, 2000.0],
+            [7.0, 46.0 + 25.3 * metre, 2000.0],
+            [7.0, 46.0 + 60.0 * metre, 2000.0],
+        ]
+        record = _record(track)
+        merged = terrain_points(track, record)
+        assert len(merged) == len(track)  # both boundaries fell on vertices
+        assert _seams(merged, record) == [0, 0, 2]
 
     def test_mismatched_stride_count_sends_no_seams(self) -> None:
         """Coordinates the record was not sampled along get no seams."""

@@ -33,9 +33,15 @@ from apps.routes.services.bank import bank_angles
 from apps.routes.services.fall_line import fall_line_marks
 from apps.routes.services.passages import route_passages
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
-from apps.routes.services.terrain_heights import _COINCIDENT_M
 
 logger = logging.getLogger(__name__)
+
+# How far past a boundary, in metres along the track, a coordinate may
+# measure and still be taken as that boundary. Boundary coordinates are
+# stored to six decimals (``slope_segments._COORDINATE_PRECISION``), about
+# 0.08 m of error at worst, so a merged boundary re-measures within this.
+# Any backtrack it allows is under a pixel at z18 (about 0.4 m a pixel).
+_SEAM_TOLERANCE_M = 0.15
 
 
 def compact_slope(
@@ -191,11 +197,16 @@ def _seams(
     boundaries land where the record's were placed. The coordinates may be
     the stored track or ``terrain_points``' merge of it with the
     boundaries; the merged boundary points lie on the stored polyline, so
-    either walk measures the same distances to within rounding. The
-    ``_COINCIDENT_M`` tolerance absorbs that rounding — a merged boundary
-    re-measured a hair past its own distance still counts as "at" it — and
-    is the same half metre the merge drops a boundary on a vertex by, so
-    such a boundary's seam is that vertex.
+    either walk measures the same distances to within rounding.
+
+    ``_SEAM_TOLERANCE_M`` absorbs that rounding, so a merged boundary
+    re-measured a hair past its own distance is still its own seam. It is
+    deliberately far tighter than the half metre ``terrain_points`` drops
+    a boundary on a vertex by: a tolerance that wide would pull a vertex
+    lying just PAST a boundary into the segment ending there, and the
+    drawn path would run out to the vertex and double back. A vertex past
+    the tolerance falls in the next segment instead, which starts at the
+    boundary point on the line, so nothing is drawn twice.
 
     Args:
         coordinates: The feature's ``LineString`` coordinates.
@@ -225,13 +236,17 @@ def _seams(
         return None
     last = len(coordinates) - 1
     seams = [
-        min(max(bisect.bisect_right(cumulative, boundary + _COINCIDENT_M) - 1, 0), last)
+        min(
+            max(bisect.bisect_right(cumulative, boundary + _SEAM_TOLERANCE_M) - 1, 0),
+            last,
+        )
         for boundary in boundaries
     ]
     # The walk's first and last boundaries are the track's ends by
-    # construction. Pinned rather than trusted to the tolerance: a vertex
-    # within half a metre of the start, or a trailing zero-length step,
-    # would otherwise leave a coordinate outside every segment.
+    # construction. Pinned rather than trusted to float comparison: a
+    # last boundary measured a hair short of the track's end, or a
+    # trailing zero-length step, would otherwise leave a coordinate
+    # outside every segment.
     seams[0] = 0
     seams[-1] = last
     return seams
