@@ -99,7 +99,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DAY_RATING_VERSION: int = 8
+# v9 (SNOW-1054): the headline subdivision is read through. v8 re-mapped the
+# render model's display character through a table keyed on the raw CAAML
+# tokens, matched nothing, and stored "" on every row.
+DAY_RATING_VERSION: int = 9
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -114,13 +117,10 @@ _DANGER_LEVEL_TO_KEY: dict[int, str] = {
 # Used to sort elevation-band ratings from weakest to strongest.
 _DANGER_KEY_RANK: dict[str, int] = {v: k for k, v in _DANGER_LEVEL_TO_KEY.items()}
 
-# Map CAAML customData.CH.subdivision strings to the suffix stored in
-# RegionDayRating.max_subdivision / min_subdivision.
-_SUBDIVISION_SUFFIX: dict[str, str] = {
-    "minus": "-",
-    "neutral": "=",
-    "plus": "+",
-}
+# The suffixes RegionDayRating.*_subdivision may hold. The render model has
+# already resolved SLF's raw token (``minus``/``neutral``/``plus``) to one of
+# these, so they are carried through as-is; anything else stores "".
+_SUBDIVISION_SUFFIXES: frozenset[str] = frozenset({"-", "=", "+"})
 
 
 def _detect_elevation_band_split(
@@ -215,7 +215,7 @@ def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
     danger = render_model.get("danger") or {}
     key: str = danger.get("key") or "low"
     raw_sub: str = danger.get("subdivision") or ""
-    subdivision = _SUBDIVISION_SUFFIX.get(raw_sub, "")
+    subdivision = raw_sub if raw_sub in _SUBDIVISION_SUFFIXES else ""
     return key, subdivision
 
 

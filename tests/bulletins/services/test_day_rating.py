@@ -40,8 +40,11 @@ SNOW-293 — elevation-band split (Météo-France):
 
 from __future__ import annotations
 
+import copy
 import datetime
+import json
 from datetime import UTC
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -53,6 +56,7 @@ from apps.bulletins.services.day_rating import (
     _derive_albina_bands,
     _detect_elevation_band_split,
     _elevation_to_band_id,
+    _extract_headline_from_render_model,
     _resolve_am_pm_keys,
     _resolve_min_max_keys,
     apply_bulletin_day_ratings,
@@ -61,7 +65,10 @@ from apps.bulletins.services.day_rating import (
     refresh_day_ratings,
     target_day_for_valid_from,
 )
-from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    build_render_model,
+)
 from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
@@ -97,7 +104,9 @@ def _make_bulletin_for_region(
         traits: List of trait dicts to embed in render_model["traits"].
                 Defaults to an empty list (quiet-day bulletin).
         headline_key: The aggregate danger key (render_model["danger"]["key"]).
-        headline_subdivision: Raw CH subdivision string (e.g. "plus") or None.
+        headline_subdivision: The render model's display character
+                              (``"+"``, ``"="``, ``"-"``) or None — never the raw
+                              CAAML token, which the builder has already resolved.
         render_model_version: Override; defaults to RENDER_MODEL_VERSION.
         source: Bulletin source string ("slf", "albina", "meteofrance").
         danger_ratings: Optional list of per-rating dicts for
@@ -2048,3 +2057,79 @@ class TestMeteoFranceMultiIssueDay:
 
         rating = RegionDayRating.objects.get(region=region, date=day)
         assert rating.max_rating == "high"
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1054 — the subdivision survives from CAAML to RegionDayRating
+# ---------------------------------------------------------------------------
+
+_SLF_SENTINEL = (
+    Path(__file__).resolve().parents[2]
+    / "sentinels"
+    / "slf"
+    / "B-subdivision-plus"
+    / "source.json"
+)
+
+
+def _sentinel_with_subdivision(token: str) -> dict[str, Any]:
+    """Return the SLF sentinel's properties with every subdivision set to ``token``."""
+    props: dict[str, Any] = copy.deepcopy(json.loads(_SLF_SENTINEL.read_text()))
+    for rating in props["dangerRatings"]:
+        if (rating.get("customData") or {}).get("CH", {}).get("subdivision"):
+            rating["customData"]["CH"]["subdivision"] = token
+    return props
+
+
+class TestExtractHeadlineSubdivision:
+    """_extract_headline_from_render_model carries the display character through."""
+
+    @pytest.mark.parametrize("suffix", ["-", "=", "+"])
+    def test_display_character_is_kept(self, suffix: str) -> None:
+        """A render-model suffix reaches the day rating unchanged."""
+        rm = {"danger": {"key": "considerable", "subdivision": suffix}}
+        assert _extract_headline_from_render_model(rm) == ("considerable", suffix)
+
+    @pytest.mark.parametrize("value", [None, "", "plus", "neutral", "upper"])
+    def test_anything_else_is_empty(self, value: str | None) -> None:
+        """A missing subdivision, or a raw token that never belongs here, stores ""."""
+        rm = {"danger": {"key": "moderate", "subdivision": value}}
+        assert _extract_headline_from_render_model(rm) == ("moderate", "")
+
+
+@pytest.mark.django_db
+class TestSubdivisionEndToEnd:
+    """A real SLF bulletin's subdivision reaches RegionDayRating (SNOW-1054).
+
+    The day-rating tests above build render models by hand, which is how a
+    raw-token table in day_rating.py and a wrong token in render_model.py
+    both went unnoticed: every hand-built fixture agreed with the code, and
+    none agreed with SLF. These build the render model from the SLF sentinel.
+    """
+
+    @pytest.mark.parametrize(
+        ("token", "suffix"), [("minus", "-"), ("neutral", "="), ("plus", "+")]
+    )
+    def test_day_rating_carries_the_subdivision(self, token: str, suffix: str) -> None:
+        """minus / neutral / plus land as - / = / + on the stored row."""
+        rm = build_render_model(_sentinel_with_subdivision(token))
+        assert rm["danger"]["subdivision"] == suffix
+
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        day = datetime.date(2025, 11, 3)
+        _make_bulletin_for_region(
+            region,
+            datetime.datetime(2025, 11, 2, 16, 0, tzinfo=UTC),
+            datetime.datetime(2025, 11, 3, 16, 0, tzinfo=UTC),
+            traits=rm["traits"],
+            headline_key=rm["danger"]["key"],
+            headline_subdivision=rm["danger"]["subdivision"],
+            danger_ratings=rm["danger"]["ratings"],
+        )
+
+        recompute_region_day(region, day, commit=True)
+
+        rdr = RegionDayRating.objects.get(region=region, date=day)
+        assert rdr.max_subdivision == suffix
+        assert rdr.min_subdivision == suffix
+        assert rdr.version == DAY_RATING_VERSION
