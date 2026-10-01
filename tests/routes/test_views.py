@@ -1392,6 +1392,36 @@ class TestRoutesGeojsonSlope:
         assert slope["angles"] == [34.2, 41.0]
         assert len(slope["points"]) == 3
 
+    def test_the_seams_index_the_features_own_geometry(self, client: Client) -> None:
+        """SNOW-1053: one seam per boundary, into the coordinates sent."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user, points=DRIFTING_TRACK, slope_samples=drifting_track_record()
+        )
+
+        feature = client.get(GEOJSON_URL).json()["features"][0]
+        slope = feature["properties"]["slope"]
+        coordinates = feature["geometry"]["coordinates"]
+
+        assert len(slope["seams"]) == len(slope["points"])
+        assert slope["seams"][0] == 0
+        assert slope["seams"][-1] == len(coordinates) - 1
+        for boundary, seam in zip(
+            slope["points"][1:-1], slope["seams"][1:-1], strict=True
+        ):
+            assert coordinates[seam][:2] == boundary
+
+    def test_a_record_off_the_geometry_sends_no_seams(self, client: Client) -> None:
+        """Boundaries that do not fit the track fall back to chords."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, slope_samples=_slope_record({"angle_deg": 34.2}))
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert "seams" not in slope
+
     def test_an_unknown_segment_travels_as_a_null_angle(self, client: Client) -> None:
         """Sampled with no answer — distinguishable from a missing key."""
         user = UserFactory.create()

@@ -263,12 +263,14 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
         A GeoJSON Feature dict.
 
     """
-    slope = compact_slope(route.slope_samples)
     # SNOW-1043: the heights are the terrain model's wherever the record
     # has them, and the device's elsewhere — see terrain_heights. The
     # profile, the legs and the totals below all read THESE points, so
     # the three cannot disagree about which series they describe.
     points = terrain_points(route.points, route.slope_samples)
+    # SNOW-1053: the slope's ``seams`` index into THIS geometry, so the
+    # class segments are drawn along the same coordinates as the casing.
+    slope = compact_slope(route.slope_samples, coordinates=points)
     # The one rule every surface quotes ascent and descent by — the route
     # row's template reads the same property. None passes straight
     # through: "unknown", not zero.
