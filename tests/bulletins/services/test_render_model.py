@@ -193,8 +193,20 @@ class TestResolveDanger:
         )
         assert result["subdivision"] == "-"
 
-    def test_subdivision_equal(self) -> None:
-        """'equal' subdivision maps to '='."""
+    def test_subdivision_neutral(self) -> None:
+        """SLF's 'neutral' token maps to '=' (SNOW-1054)."""
+        result = _resolve_danger(
+            [
+                {
+                    "mainValue": "moderate",
+                    "customData": {"CH": {"subdivision": "neutral"}},
+                }
+            ]
+        )
+        assert result["subdivision"] == "="
+
+    def test_subdivision_equal_is_not_an_slf_token(self) -> None:
+        """'equal' is not a token SLF sends, so it resolves to None (SNOW-1054)."""
         result = _resolve_danger(
             [
                 {
@@ -203,7 +215,21 @@ class TestResolveDanger:
                 }
             ]
         )
-        assert result["subdivision"] == "="
+        assert result["subdivision"] is None
+
+    @pytest.mark.parametrize(
+        ("token", "expected"),
+        [("minus", "-"), ("neutral", "="), ("plus", "+"), (None, None)],
+    )
+    def test_per_rating_subdivision(
+        self, token: str | None, expected: str | None
+    ) -> None:
+        """Each projected rating carries its own SLF subdivision (SNOW-1054)."""
+        custom: dict[str, Any] = (
+            {"customData": {"CH": {"subdivision": token}}} if token else {}
+        )
+        result = _resolve_danger([{"mainValue": "considerable", **custom}])
+        assert result["ratings"][0]["subdivision"] == expected
 
     def test_no_subdivision_is_none(self) -> None:
         """Missing subdivision returns None (not empty string)."""
@@ -1206,11 +1232,11 @@ class TestComputeDayCharacterRoundTrip:
 
 
 class TestRenderModelVersion:
-    """Tests that RENDER_MODEL_VERSION and built version are both 8."""
+    """Tests that RENDER_MODEL_VERSION and built version are both 9."""
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 8
+        assert RENDER_MODEL_VERSION == 9
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""

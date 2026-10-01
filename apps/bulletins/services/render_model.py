@@ -160,7 +160,11 @@ logger = logging.getLogger(__name__)
 # Version
 # ---------------------------------------------------------------------------
 
-RENDER_MODEL_VERSION: int = 8
+# v9 (SNOW-1054): an SLF ``neutral`` subdivision is stored as ``"="``. v8 and
+# earlier keyed the map on ``equal``, a token SLF never sends, so every
+# neutral rating was stored as ``None`` — indistinguishable from "no
+# subdivision", which the reading guide says means "not applicable".
+RENDER_MODEL_VERSION: int = 9
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -206,9 +210,11 @@ _DANGER_NUMBER: dict[str, str] = {
     "very_high": "5",
 }
 
+# SLF's ``dangerRatings[].customData.CH.subdivision`` tokens. ``neutral`` is
+# the middle of the level; SLF has never sent ``equal`` (SNOW-1054).
 _SUBDIVISION_MAP: dict[str, str] = {
     "plus": "+",
-    "equal": "=",
+    "neutral": "=",
     "minus": "-",
 }
 
@@ -650,7 +656,7 @@ class CustomDataAdapter(Protocol):
         """
         Return the subdivision suffix for a single dangerRating entry.
 
-        The raw token (``"plus"``, ``"minus"``, ``"equal"``) is resolved to
+        The raw token (``"plus"``, ``"minus"``, ``"neutral"``) is resolved to
         the display character (``"+"``, ``"-"``, ``"="``) or ``None``.
         """
         ...

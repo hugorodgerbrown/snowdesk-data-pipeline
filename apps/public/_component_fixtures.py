@@ -2352,10 +2352,10 @@ REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "High · upper subdivision",
+        "caption": "High · upper subdivision (+)",
         "context": {
             "region": _TOOLTIP_REGION,
-            "day_rating": SimpleNamespace(max_rating=4, max_subdivision="upper"),
+            "day_rating": SimpleNamespace(max_rating=4, max_subdivision="+"),
             "bulletin_url": "/CH-VS-3431/",
             "country_name": "Switzerland",
             "target_date": _TOOLTIP_DATE,
