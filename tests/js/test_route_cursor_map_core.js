@@ -79,6 +79,50 @@ describe('segmentMidpoints', () => {
   });
 });
 
+describe('the middle of a segment that follows the track (SNOW-1053)', () => {
+  // One L-shaped segment: east 0.002° of longitude at 46°N (about 154 m),
+  // then north 0.001° of latitude (about 111 m). Its chord's average lies
+  // off the line; half its length lies on the eastward leg.
+  const COORDS = [[7.0, 46.0, 2000], [7.002, 46.0, 2010], [7.002, 46.001, 2020]];
+  const L_SLOPE = {
+    points: [[7.0, 46.0], [7.002, 46.001]],
+    angles: [31],
+    seams: [0, 2],
+  };
+
+  it('is half way along the path, not the average of the ends', () => {
+    const [lon, lat] = core.segmentMidpoints(L_SLOPE, COORDS)[0];
+    const scale = Math.cos((46 * Math.PI) / 180);
+    const half = (0.002 * scale + 0.001) / 2;
+
+    expect(lat).toBeCloseTo(46.0, 9);
+    expect(lon).toBeCloseTo(7.0 + half / scale, 9);
+  });
+
+  it('puts the cursor dot at the same place', () => {
+    const point = core.cursorPoint(L_SLOPE, 0, COORDS);
+
+    expect(point.geometry.coordinates).toEqual(core.segmentMidpoints(L_SLOPE, COORDS)[0]);
+  });
+
+  /** Assert a [lon, lat] is the chord's middle, (7.001, 46.0005). */
+  const expectChordMiddle = ([lon, lat]) => {
+    expect(lon).toBeCloseTo(7.001, 9);
+    expect(lat).toBeCloseTo(46.0005, 9);
+  };
+
+  it('is the chord\'s middle without seams', () => {
+    const { seams: _seams, ...chord } = L_SLOPE;
+
+    expectChordMiddle(core.segmentMidpoints(chord, COORDS)[0]);
+    expectChordMiddle(core.cursorPoint(chord, 0, COORDS).geometry.coordinates);
+  });
+
+  it('is the chord\'s middle with no coordinates', () => {
+    expectChordMiddle(core.segmentMidpoints(L_SLOPE)[0]);
+  });
+});
+
 describe('nearestSample', () => {
   const px = [{ x: 0, y: 0 }, { x: 30, y: 0 }, null, { x: 90, y: 0 }];
 

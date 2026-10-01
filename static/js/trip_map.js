@@ -193,7 +193,9 @@
   }
 
   /**
-   * The trip's track as one two-point LineString per sampled segment.
+   * The trip's track as one LineString per sampled segment, following
+   * the track's own coordinates where the record carries `seams`
+   * (SNOW-1053).
    *
    * SNOW-962. The snapshot carries its own copy of the terrain record
    * (`Trip.slope_samples`), and `route_slope_core.js` turns the wire form

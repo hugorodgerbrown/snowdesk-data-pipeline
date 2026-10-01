@@ -211,8 +211,10 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
-    slope = compact_slope(trip.slope_samples)
     points, ascent_m, descent_m = _trip_heights(trip)
+    # SNOW-1053: ``seams`` index into the geometry sent below, so the
+    # class segments follow the track rather than chording across it.
+    slope = compact_slope(trip.slope_samples, coordinates=points)
     return {
         "route": {
             "type": "Feature",

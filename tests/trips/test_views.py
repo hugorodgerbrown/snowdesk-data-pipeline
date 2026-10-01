@@ -303,6 +303,23 @@ class TestTripDetailPage:
         response = client.get(reverse("trips:detail", args=[trip.uuid]))
         assert 'id="trip-map-payload"' in response.content.decode()
 
+    def test_the_slope_seams_index_the_payloads_own_geometry(
+        self, client: Client
+    ) -> None:
+        """SNOW-1053: one seam per boundary, into the coordinates sent."""
+        trip = TripFactory.create(
+            points=DRIFTING_TRACK, slope_samples=drifting_track_record()
+        )
+        client.force_login(trip.created_by)
+        response = client.get(reverse("trips:detail", args=[trip.uuid]))
+        route = response.context["map_payload"]["route"]
+        slope = route["properties"]["slope"]
+        coordinates = route["geometry"]["coordinates"]
+
+        assert len(slope["seams"]) == len(slope["points"])
+        assert slope["seams"][0] == 0
+        assert slope["seams"][-1] == len(coordinates) - 1
+
     def test_the_organisers_note_is_escaped(self, client: Client) -> None:
         """Invariant 1 — no mark_safe on user-supplied content."""
         trip = TripFactory.create(description="<script>alert(1)</script>")

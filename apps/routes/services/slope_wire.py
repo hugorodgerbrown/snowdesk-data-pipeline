@@ -16,21 +16,39 @@ The stored record is the server-side truth SNOW-911 and SNOW-839 read —
 an aspect and a named unknown reason per segment. The wire form is the
 subset MapLibre paints. They are deliberately not the same shape; see
 docs/decisions/a-slope-segment-is-the-shared-record.md.
+
+``seams`` (SNOW-1053) tie the record's boundaries to the geometry the
+same feature carries, so the map can draw each slope-class segment along
+the track's real coordinates rather than as a straight 25 m chord between
+two boundaries. See ``_seams``.
 """
 
 from __future__ import annotations
 
+import bisect
 import logging
 from typing import Any
 
 from apps.routes.services.bank import bank_angles
 from apps.routes.services.fall_line import fall_line_marks
 from apps.routes.services.passages import route_passages
+from apps.routes.services.slope_segments import cumulative_distances, stride_distances
 
 logger = logging.getLogger(__name__)
 
+# How far past a boundary, in metres along the track, a coordinate may
+# measure and still be taken as that boundary. Boundary coordinates are
+# stored to six decimals (``slope_segments._COORDINATE_PRECISION``), about
+# 0.08 m of error at worst, so a merged boundary re-measures within this.
+# Any backtrack it allows is under a pixel at z18 (about 0.4 m a pixel).
+_SEAM_TOLERANCE_M = 0.15
 
-def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
+
+def compact_slope(
+    samples: dict[str, Any] | None,
+    *,
+    coordinates: list[list[float | None]] | None = None,
+) -> dict[str, Any] | None:
     """Reduce a stored slope record to what the map actually draws.
 
     THE STORED RECORD AND THE WIRE FORM ARE DELIBERATELY DIFFERENT.
@@ -94,14 +112,28 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     qualified**, and unlike ``cruxes`` that is always a complete answer:
     a passage needs no probe, so there is no "we could not look" state.
 
+    ``seams`` (SNOW-1053) are one coordinate index per boundary: the
+    last coordinate of ``coordinates`` — the geometry the SAME feature
+    carries — at or before that boundary. With them the client draws a
+    segment as its two boundary points with the coordinates between them,
+    so a class segment lies on the leg casing instead of cutting a 25 m
+    chord across a bend (up to 9.9 m off on the Hidden Valley canonical
+    track). Present only when the caller passes ``coordinates`` and the
+    stride walk can be repeated over them; absent, the client keeps
+    drawing chords, which is what an offline-cached payload from before
+    this key still does.
+
     Args:
         samples: The row's ``slope_samples``, or None if never sampled.
+        coordinates: The ``LineString`` coordinates the feature carries
+            beside this value (``terrain_points``' output), or None for a
+            caller that sends no geometry, which gets no ``seams``.
 
     Returns:
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
         ``cruxes`` where the record has them, and ``passages``,
         ``fall_lines`` and ``banks`` whenever the record could be read
-        at all. None
+        at all, and ``seams`` where ``coordinates`` allow them. None
         when there is nothing to draw — never sampled, or a record whose
         halves do not pair up (N + 1 coordinates to N angles), which
         would draw segments against the wrong ground.
@@ -124,6 +156,9 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
     passages = route_passages(samples)
     fall_lines = fall_line_marks(samples)
     banks = bank_angles(samples)
+    seams = (
+        _seams(coordinates, samples, len(points)) if coordinates is not None else None
+    )
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
@@ -144,4 +179,74 @@ def compact_slope(samples: dict[str, Any] | None) -> dict[str, Any] | None:
         # pairing check has refused, plus an empty one, which has nothing
         # to align with anyway.
         **({"banks": banks} if isinstance(banks, list) else {}),
+        # Absent rather than null when they cannot be placed: the client
+        # tests the key and falls back to chords, as it does for a
+        # payload cached before SNOW-1053.
+        **({"seams": seams} if seams is not None else {}),
     }
+
+
+def _seams(
+    coordinates: list[list[float | None]],
+    samples: dict[str, Any],
+    boundary_count: int,
+) -> list[int] | None:
+    """Return, per boundary, the last coordinate index at or before it.
+
+    Re-walks ``coordinates`` with the sampler's own two functions, so the
+    boundaries land where the record's were placed. The coordinates may be
+    the stored track or ``terrain_points``' merge of it with the
+    boundaries; the merged boundary points lie on the stored polyline, so
+    either walk measures the same distances to within rounding.
+
+    ``_SEAM_TOLERANCE_M`` absorbs that rounding, so a merged boundary
+    re-measured a hair past its own distance is still its own seam. It is
+    deliberately far tighter than the half metre ``terrain_points`` drops
+    a boundary on a vertex by: a tolerance that wide would pull a vertex
+    lying just PAST a boundary into the segment ending there, and the
+    drawn path would run out to the vertex and double back. A vertex past
+    the tolerance falls in the next segment instead, which starts at the
+    boundary point on the line, so nothing is drawn twice.
+
+    Args:
+        coordinates: The feature's ``LineString`` coordinates.
+        samples: The slope record, read for ``stride_m``.
+        boundary_count: How many boundary points the record holds.
+
+    Returns:
+        ``boundary_count`` non-decreasing indices, the first 0 and the
+        last ``len(coordinates) - 1``; or None when the stride is
+        unusable, the track has no length, or the walk lands a different
+        number of boundaries than the record holds (these are not the
+        coordinates it was sampled along).
+
+    """
+    stride_m = samples.get("stride_m")
+    if (
+        not isinstance(stride_m, int | float)
+        or isinstance(stride_m, bool)
+        or stride_m <= 0
+    ):
+        return None
+    cumulative = cumulative_distances(coordinates)
+    if not cumulative or cumulative[-1] <= 0:
+        return None
+    boundaries = stride_distances(cumulative[-1], float(stride_m))
+    if len(boundaries) != boundary_count:
+        return None
+    last = len(coordinates) - 1
+    seams = [
+        min(
+            max(bisect.bisect_right(cumulative, boundary + _SEAM_TOLERANCE_M) - 1, 0),
+            last,
+        )
+        for boundary in boundaries
+    ]
+    # The walk's first and last boundaries are the track's ends by
+    # construction. Pinned rather than trusted to float comparison: a
+    # last boundary measured a hair short of the track's end, or a
+    # trailing zero-length step, would otherwise leave a coordinate
+    # outside every segment.
+    seams[0] = 0
+    seams[-1] = last
+    return seams
