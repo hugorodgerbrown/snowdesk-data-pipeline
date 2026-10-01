@@ -11,8 +11,18 @@
  *                          angles: [34.2, null, …] }  // N
  *
  * with `null` for a segment the terrain had no answer for. This module
- * turns that into two-point LineStrings, and decides which colour bucket
- * an angle falls in.
+ * turns that into LineStrings, and decides which colour bucket an angle
+ * falls in.
+ *
+ * SEGMENTS FOLLOW THE TRACK (SNOW-1053). A segment used to be the straight
+ * chord `points[i]` → `points[i + 1]`, and the leg casing under it is drawn
+ * from the route's real coordinates, so at high zoom the two parted — by
+ * up to 9.9 m on a bend. The record now carries `seams`, one index per
+ * boundary into the feature's own `geometry.coordinates` (the last
+ * coordinate at or before that boundary), and `segmentPaths` draws a
+ * segment as its two boundary points with the coordinates between them.
+ * Without valid `seams` — a payload cached before the key, or a record
+ * the server could not place on the geometry — it falls back to the chord.
  *
  * WHO READS IT NOW. SNOW-1017 took the slope-coloured line off the home
  * map below z14 — a route there draws as its legs (route_legs_core.js,
@@ -65,6 +75,7 @@
  *   STEEP_THRESHOLD_DEG    — the angle a length is counted against
  *   classify(angle)        — a bucket index, or null for an unknown
  *   colourExpression()     — the MapLibre `step` painting a segment by class
+ *   segmentPaths(s, c)     — each segment's [lon, lat] path along c
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
  *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
@@ -269,11 +280,121 @@
   }
 
   /**
-   * The two-point LineStrings one route's slope record draws as.
+   * One route's slope record, as the server sends it.
+   *
+   * Every field is optional because it arrives from a feature property
+   * and is checked rather than trusted.
+   *
+   * @typedef {object} Slope
+   * @property {Array<Array<number>>} [points] N + 1 boundary coordinates.
+   * @property {Array<?number>} [angles] N segment angles, null unknown.
+   * @property {Array<number>} [seams] N + 1 indices into the feature's
+   *   geometry: the last coordinate at or before each boundary (SNOW-1053).
+   * @property {Array<Passage>} [passages] The no-fall passages.
+   */
+
+  /**
+   * Whether `seams` can place every boundary on `coordinates`.
+   *
+   * One per boundary, each a whole number inside the coordinates array,
+   * and never decreasing — a seam that went backwards would draw a
+   * segment over ground behind it.
+   *
+   * @param {*} seams The record's `seams`, unchecked.
+   * @param {number} boundaryCount How many boundary points the record has.
+   * @param {number} coordinateCount How many coordinates the geometry has.
+   * @returns {boolean} True when every seam is usable.
+   */
+  function validSeams(seams, boundaryCount, coordinateCount) {
+    if (!Array.isArray(seams) || seams.length !== boundaryCount) return false;
+    for (let i = 0; i < seams.length; i += 1) {
+      const seam = seams[i];
+      if (!Number.isInteger(seam) || seam < 0 || seam >= coordinateCount) return false;
+      if (i > 0 && seam < seams[i - 1]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A coordinate as a bare `[lon, lat]`, its elevation dropped.
+   *
+   * @param {Array<number>} coordinate `[lon, lat]` or `[lon, lat, ele]`.
+   * @returns {Array<number>} `[lon, lat]`.
+   */
+  function lonLat(coordinate) {
+    return [coordinate[0], coordinate[1]];
+  }
+
+  /**
+   * Whether two coordinates name the same place, elevation aside.
+   *
+   * @param {Array<number>} a A coordinate.
+   * @param {Array<number>} b Another.
+   * @returns {boolean} True when longitude and latitude are equal.
+   */
+  function samePlace(a, b) {
+    return a[0] === b[0] && a[1] === b[1];
+  }
+
+  /**
+   * The path each segment of a slope record is drawn along.
+   *
+   * With valid `seams`, segment i is `points[i]`, then every coordinate
+   * after `seams[i]` up to and including `seams[i + 1]`, then
+   * `points[i + 1]` — so it lies on the same line the leg casing is drawn
+   * from. A coordinate equal to either boundary point is left out rather
+   * than repeated: on the merged terrain track most boundaries ARE
+   * coordinates, and a doubled vertex is a zero-length step to every
+   * consumer. Elevations are dropped, so a path stays two-dimensional like
+   * the chord it replaces.
+   *
+   * Without valid `seams` every segment is the chord
+   * `[points[i], points[i + 1]]`, which is what was drawn before SNOW-1053.
+   *
+   * @param {?Slope} slope The record, unchecked beyond its shape.
+   * @param {*} coordinates The feature's `geometry.coordinates`.
+   * @returns {Array<Array<Array<number>>>} One path per segment; empty
+   *   when the record's halves do not pair up.
+   */
+  function segmentPaths(slope, coordinates) {
+    const points = slope && slope.points;
+    const angles = slope && slope.angles;
+    if (!Array.isArray(points) || !Array.isArray(angles)) return [];
+    if (points.length !== angles.length + 1) return [];
+
+    const seams = slope && slope.seams;
+    const follow = Array.isArray(coordinates)
+      && validSeams(seams, points.length, coordinates.length);
+
+    const paths = [];
+    for (let i = 0; i < angles.length; i += 1) {
+      const start = points[i];
+      const end = points[i + 1];
+      if (!follow || !seams) {
+        paths.push([start, end]);
+        continue;
+      }
+      const path = [start];
+      for (let c = seams[i] + 1; c <= seams[i + 1]; c += 1) {
+        const coordinate = coordinates[c];
+        if (!Array.isArray(coordinate)) continue;
+        if (samePlace(coordinate, start) || samePlace(coordinate, end)) continue;
+        path.push(lonLat(coordinate));
+      }
+      path.push(end);
+      paths.push(path);
+    }
+    return paths;
+  }
+
+  /**
+   * The LineStrings one route's slope record draws as.
    *
    * The record's N + 1 coordinates are shared endpoints: segment i runs
    * from `points[i]` to `points[i + 1]`. Pairing them back out here is
    * what lets the payload carry half the coordinates it otherwise would.
+   * Between the two, it follows the feature's own geometry where the
+   * record carries `seams` — see `segmentPaths`.
    *
    * Each feature carries the owning route's `uuid`, so a consumer can get
    * from the segment back to its route — `route_legs_core.js` builds the
@@ -292,8 +413,8 @@
    * module comment's three states. So does a record whose halves do not
    * pair up, which would otherwise draw segments against the wrong ground.
    *
-   * @param {?{properties?: any}} feature One route feature from the routes
-   *   payload, as served by `routes:geojson`.
+   * @param {?{properties?: any, geometry?: any}} feature One route feature
+   *   from the routes payload, as served by `routes:geojson`.
    * @returns {Array<object>} Its segment features, possibly empty.
    */
   function segmentFeatures(feature) {
@@ -310,13 +431,15 @@
 
     const identity = properties.uuid ? { uuid: properties.uuid } : {};
     const marked = passageIndices(slope.passages);
+    const geometry = feature && feature.geometry;
+    const paths = segmentPaths(slope, geometry && geometry.coordinates);
 
     const features = [];
     for (let i = 0; i < angles.length; i += 1) {
       const slopeClass = classify(angles[i]);
       features.push({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [points[i], points[i + 1]] },
+        geometry: { type: 'LineString', coordinates: paths[i] },
         // An unknown segment carries `unknown` and NO `slope_class`, and a
         // known one the reverse. Never both, never neither — the two
         // layers filter on exactly this and a segment answering to both
@@ -715,6 +838,7 @@
     STEEP_THRESHOLD_DEG: STEEP_THRESHOLD_DEG,
     classify: classify,
     colourExpression: colourExpression,
+    segmentPaths: segmentPaths,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
     cruxCollection: cruxCollection,

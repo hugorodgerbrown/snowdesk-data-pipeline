@@ -2453,8 +2453,9 @@
   // Removes the map's subscription to the open route's cursor.
   let unsubscribeRouteCursor = null;
   // SNOW-1019: the open route the map follows the cursor of — its uuid,
-  // the cursor, its parsed slope record and legs, and each segment's
-  // middle in [lon, lat] — or null. Read by the hover and the tap, which
+  // the cursor, its parsed slope record and legs, its geometry's
+  // coordinates (SNOW-1053: the segments' paths follow them), and each
+  // segment's middle in [lon, lat] — or null. Read by the hover and the tap, which
   // convert a pointer on the line into a sample index.
   let routeCursorTarget = null;
   // SNOW-1019: what the cursor's source holds — the cursor dot — as a
@@ -2534,7 +2535,8 @@
   const paintRouteCursor = (state) => {
     const core = self.pwaRouteCursorMapCore;
     const slope = routeCursorTarget ? routeCursorTarget.slope : null;
-    const point = core && state ? core.cursorPoint(slope, state.index) : null;
+    const coordinates = routeCursorTarget ? routeCursorTarget.coordinates : null;
+    const point = core && state ? core.cursorPoint(slope, state.index, coordinates) : null;
     routeCursorPointData = point
       ? { type: 'FeatureCollection', features: [point] }
       : EMPTY_ROUTE_CURSOR_FC;
@@ -2585,12 +2587,19 @@
       const slope = parseRouteProperty(props.slope);
       const legs = parseRouteProperty(props.legs);
       const core = self.pwaRouteCursorMapCore;
+      // SNOW-1053: the line the slope segments are drawn along, so the dot
+      // sits on the same path rather than on a chord across a bend.
+      const geometry = feature && feature.geometry;
+      const coordinates = geometry && Array.isArray(geometry.coordinates)
+        ? geometry.coordinates
+        : [];
       routeCursorTarget = {
         uuid: uuid,
         cursor: cursor,
         slope: slope,
         legs: Array.isArray(legs) ? legs : [],
-        midpoints: core ? core.segmentMidpoints(slope) : [],
+        coordinates: coordinates,
+        midpoints: core ? core.segmentMidpoints(slope, coordinates) : [],
       };
       lastRouteCursorIndex = cursor.state().index;
       let lastOpenLeg = cursor.state().openLeg;
@@ -2646,7 +2655,11 @@
     const core = self.pwaRouteCursorMapCore;
     if (!core || !map || !routeCursorTarget || !overlayState.routes) return null;
     const index = routeCursorTarget.cursor.state().index;
-    const point = core.cursorPoint(routeCursorTarget.slope, index);
+    const point = core.cursorPoint(
+      routeCursorTarget.slope,
+      index,
+      routeCursorTarget.coordinates,
+    );
     if (!point) return null;
     const px = map.project(point.geometry.coordinates);
     const container = map.getContainer();

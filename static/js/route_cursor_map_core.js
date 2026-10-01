@@ -11,7 +11,12 @@
  *                          angles: [ … ] }             // N
  *
  * Segment i runs from points[i] to points[i + 1], and the cursor index i
- * is drawn at the middle of its segment. Going the other way, a pointer on the map is
+ * is drawn at the middle of its segment. Since SNOW-1053 a segment follows
+ * the route's own coordinates between the two (`seams`, and
+ * `pwaRouteSlopeCore.segmentPaths`), so its middle is the point HALF WAY
+ * ALONG that path rather than the average of its ends — which, on a bend,
+ * is off the line the dot is meant to sit on. Without `seams`, or with no
+ * slope core loaded, it is the average of the ends, as before. Going the other way, a pointer on the map is
  * converted to the sample whose segment middle is nearest on SCREEN,
  * which is the question a reader's pointer asks: "which bit of line am I
  * on", in the pixels they can see.
@@ -21,8 +26,8 @@
  * answers null for it rather than guessing a position.
  *
  * Pure: no DOM, no map, and one global read — `cursorPoint` looks the
- * segment's colour up in `self.pwaRouteSlopeCore` when it is called, never
- * at parse time. map.js projects the midpoints (`map.project`) and hands
+ * segment's colour, and both it and `segmentMidpoints` the segment's path,
+ * up in `self.pwaRouteSlopeCore` when called, never at parse time. map.js projects the midpoints (`map.project`) and hands
  * the pixels in.
  *
  * ## The dot is the colour of the ground under it (SNOW-1052)
@@ -43,9 +48,9 @@
  * Exports (frozen `self.pwaRouteCursorMapCore`):
  *
  *   sampleCount(slope)                   → N, or 0 with no usable record
- *   cursorPoint(slope, index)            → Point Feature, or null; its
+ *   cursorPoint(slope, index, coords)    → Point Feature, or null; its
  *                                          `colour` is the segment's class
- *   segmentMidpoints(slope)              → [[lon, lat]] per segment
+ *   segmentMidpoints(slope, coords)      → [[lon, lat]] per segment
  *   nearestSample(midpointsPx, px, maxPx) → the nearest index, or null
  *   legAt(legs, index)                   → the leg holding an index, or null
  *   visibleRect(canvas, railTop, topInset) → the map the rails leave visible
@@ -69,8 +74,10 @@
   'use strict';
 
   /**
-   * @typedef {{points?: Array<Array<number>>, angles?: Array<?number>}} Slope
-   *   The slope record off a route feature, already parsed.
+   * @typedef {{points?: Array<Array<number>>, angles?: Array<?number>,
+   *   seams?: Array<number>}} Slope
+   *   The slope record off a route feature, already parsed. `seams`
+   *   (SNOW-1053) index each boundary into the feature's coordinates.
    */
 
   /**
@@ -103,26 +110,100 @@
   }
 
   /**
-   * The middle of each segment, in [lon, lat].
+   * The point half way along a path, by length.
    *
-   * A straight average of the two ends: a segment is 25 m, far too short
-   * for the curve of a meridian to matter.
+   * Planar, with longitude scaled by the cosine of the latitude so a
+   * degree east and a degree north weigh what they measure on the ground:
+   * a segment is about 25 m, far too short for the curve of a meridian to
+   * matter. A path with no length answers its first point.
+   *
+   * @param {Array<Array<number>>} path Usable [lon, lat] points, two or more.
+   * @returns {Array<number>} The [lon, lat] half way along it.
+   */
+  function halfway(path) {
+    const scale = Math.cos((path[0][1] * Math.PI) / 180);
+    /** @type {Array<number>} */
+    const lengths = [];
+    let total = 0;
+    for (let i = 1; i < path.length; i += 1) {
+      const dx = (path[i][0] - path[i - 1][0]) * scale;
+      const dy = path[i][1] - path[i - 1][1];
+      const length = Math.hypot(dx, dy);
+      lengths.push(length);
+      total += length;
+    }
+    if (!(total > 0)) return [path[0][0], path[0][1]];
+    let remaining = total / 2;
+    for (let i = 0; i < lengths.length; i += 1) {
+      if (remaining <= lengths[i] && lengths[i] > 0) {
+        const t = remaining / lengths[i];
+        const a = path[i];
+        const b = path[i + 1];
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      }
+      remaining -= lengths[i];
+    }
+    const last = path[path.length - 1];
+    return [last[0], last[1]];
+  }
+
+  /**
+   * The path each segment is drawn along, or null to use the chord.
    *
    * @param {?Slope} slope
+   * @param {*} coordinates The feature's `geometry.coordinates`, if any.
+   * @returns {?Array<Array<Array<number>>>} One path per segment from
+   *   `pwaRouteSlopeCore.segmentPaths`, or null with no core loaded.
+   */
+  function segmentPathsOf(slope, coordinates) {
+    const slopeCore = self.pwaRouteSlopeCore;
+    if (!slopeCore || typeof slopeCore.segmentPaths !== 'function') return null;
+    return slopeCore.segmentPaths(slope, coordinates);
+  }
+
+  /**
+   * The middle of one segment, in [lon, lat].
+   *
+   * Half way along its path where there is one, every point of it
+   * usable; the average of its two ends otherwise.
+   *
+   * @param {Array<*>} points The record's boundary points.
+   * @param {number} index The segment.
+   * @param {?Array<Array<Array<number>>>} paths Every segment's path, or
+   *   null for the chord.
+   * @returns {?Array<number>} Null where either end is not a usable point.
+   */
+  function midpointOf(points, index, paths) {
+    const a = points[index];
+    const b = points[index + 1];
+    if (!isPoint(a) || !isPoint(b)) return null;
+    const path = paths ? paths[index] : null;
+    if (Array.isArray(path) && path.length >= 2 && path.every(isPoint)) {
+      return halfway(path);
+    }
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  }
+
+  /**
+   * The middle of each segment, in [lon, lat].
+   *
+   * Half way along the segment's path when `coordinates` and the record's
+   * `seams` place it on the track (SNOW-1053); the average of its two ends
+   * otherwise — the chord the segment is then drawn as.
+   *
+   * @param {?Slope} slope
+   * @param {*} [coordinates] The feature's `geometry.coordinates`.
    * @returns {Array<?Array<number>>} One per segment; null where either end
    *   is not a usable point.
    */
-  function segmentMidpoints(slope) {
+  function segmentMidpoints(slope, coordinates) {
     const count = sampleCount(slope);
     if (!count || !slope || !slope.points) return [];
     const points = slope.points;
+    const paths = segmentPathsOf(slope, coordinates);
     /** @type {Array<?Array<number>>} */
     const out = [];
-    for (let i = 0; i < count; i += 1) {
-      const a = points[i];
-      const b = points[i + 1];
-      out.push(isPoint(a) && isPoint(b) ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : null);
-    }
+    for (let i = 0; i < count; i += 1) out.push(midpointOf(points, i, paths));
     return out;
   }
 
@@ -148,14 +229,16 @@
    *
    * @param {?Slope} slope
    * @param {?number} index
+   * @param {*} [coordinates] The feature's `geometry.coordinates`, so the
+   *   dot sits on the path the segment is drawn along (SNOW-1053).
    * @returns {?Feature} Null for a null index, no record, or an index
    *   outside the route.
    */
-  function cursorPoint(slope, index) {
+  function cursorPoint(slope, index, coordinates) {
     const count = sampleCount(slope);
     if (index === null || !Number.isInteger(index) || !count) return null;
-    if (index < 0 || index >= count) return null;
-    const middle = segmentMidpoints(slope)[index];
+    if (index < 0 || index >= count || !slope || !slope.points) return null;
+    const middle = midpointOf(slope.points, index, segmentPathsOf(slope, coordinates));
     if (!middle) return null;
     /** @type {Object<string, *>} */
     const properties = { index: index };

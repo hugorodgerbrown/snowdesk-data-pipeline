@@ -207,6 +207,80 @@ describe('segmentFeatures', () => {
   });
 });
 
+describe('segmentPaths (SNOW-1053)', () => {
+  // A bent track: five coordinates (with elevations), two boundaries
+  // between vertices and the two ends. The merged form below carries the
+  // middle boundary verbatim, as terrain_points sends it.
+  const COORDS = [
+    [7.0, 46.0, 2000],
+    [7.001, 46.0, 2010],
+    [7.001, 46.001, 2020],
+    [7.002, 46.001, 2030],
+  ];
+  const SLOPE = {
+    points: [[7.0, 46.0], [7.001, 46.0005], [7.002, 46.001]],
+    angles: [31, 36],
+    seams: [0, 1, 3],
+  };
+
+  it('draws each segment along the coordinates between its seams', () => {
+    expect(core.segmentPaths(SLOPE, COORDS)).toEqual([
+      [[7.0, 46.0], [7.001, 46.0], [7.001, 46.0005]],
+      [[7.001, 46.0005], [7.001, 46.001], [7.002, 46.001]],
+    ]);
+  });
+
+  it('does not repeat a boundary that is itself a coordinate', () => {
+    const merged = [COORDS[0], COORDS[1], [7.001, 46.0005, 2015], COORDS[2], COORDS[3]];
+    const paths = core.segmentPaths({ ...SLOPE, seams: [0, 2, 4] }, merged);
+
+    expect(paths[0]).toEqual([[7.0, 46.0], [7.001, 46.0], [7.001, 46.0005]]);
+    expect(paths[1]).toEqual([[7.001, 46.0005], [7.001, 46.001], [7.002, 46.001]]);
+  });
+
+  it('drops the elevation so a path stays two-dimensional', () => {
+    for (const path of core.segmentPaths(SLOPE, COORDS)) {
+      for (const point of path) expect(point).toHaveLength(2);
+    }
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['the wrong length', [0, 3]],
+    ['decreasing', [0, 3, 1]],
+    ['out of range', [0, 1, 4]],
+    ['negative', [-1, 1, 3]],
+    ['not whole numbers', [0, 1.5, 3]],
+  ])('falls back to the chord when the seams are %s', (_label, seams) => {
+    expect(core.segmentPaths({ ...SLOPE, seams }, COORDS)).toEqual([
+      [[7.0, 46.0], [7.001, 46.0005]],
+      [[7.001, 46.0005], [7.002, 46.001]],
+    ]);
+  });
+
+  it('falls back to the chord with no coordinates', () => {
+    expect(core.segmentPaths(SLOPE, undefined)[0]).toEqual([[7.0, 46.0], [7.001, 46.0005]]);
+  });
+
+  it('answers nothing when the halves do not pair up', () => {
+    expect(core.segmentPaths({ points: [[7, 46]], angles: [31, 36] }, COORDS)).toEqual([]);
+    expect(core.segmentPaths(null, COORDS)).toEqual([]);
+  });
+
+  it('is what segmentFeatures draws, from the feature\'s own geometry', () => {
+    const feature = {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: COORDS },
+      properties: { uuid: 'r1', slope: SLOPE },
+    };
+    const features = core.segmentFeatures(feature);
+
+    expect(features.map((f) => f.geometry.coordinates))
+      .toEqual(core.segmentPaths(SLOPE, COORDS));
+    expect(features.map((f) => f.properties.slope_class)).toEqual([1, 2]);
+  });
+});
+
 describe('colourExpression', () => {
   it('steps through the six class colours by class index', () => {
     expect(core.colourExpression()).toEqual([
