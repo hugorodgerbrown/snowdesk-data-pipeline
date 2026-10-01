@@ -2,7 +2,7 @@
 name: legs-not-slope-classes-on-the-map
 description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -74,7 +74,19 @@ with an unknown segment in grey. The leg casing and the numbered
 transitions stay at every zoom, so the legs remain countable; each
 segment carries its leg's `i`, so opening a leg on the rail dims the
 others' segments as it dims their lines. The climb dash does not carry
-over: a dash restarts on every two-point segment.
+over: a dash restarts on every segment.
+
+Each segment follows the route's own coordinates, not the straight 25 m
+chord between its two boundaries (SNOW-1053). The casing under it is
+drawn from those coordinates, so at z14 and beyond a chord left the
+casing on every bend — by up to 9.9 m on the Hidden Valley canonical
+track — and the coloured core no longer sat on the line it coloured.
+The record carries `slope.seams`, one index per boundary into the
+feature's geometry, and `segmentPaths` in `route_slope_core.js` draws
+each segment as its two boundary points with the coordinates between
+them. The cursor's dot sits half way along that path. A payload without
+`seams` — cached before the key, or one the server could not place on
+its geometry — still draws chords.
 
 The density argument below is about the zoom a route is FRAMED at,
 where the question is which part is the climb. z14 is past that: the
