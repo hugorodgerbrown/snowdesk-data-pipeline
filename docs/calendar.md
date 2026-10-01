@@ -22,7 +22,8 @@ request time.
   Equal on uniform days, unequal on variable days — the calendar tile
   renders a diagonal split fill when they differ.
 - `min_subdivision` / `max_subdivision` — the `+` / `-` / `=` suffix
-  from the source bulletin's aggregate `danger.subdivision`, or `""`.
+  from the source bulletin's aggregate `danger.subdivision`, carried
+  through as stored, or `""` when the bulletin has none.
 - `am_rating` / `pm_rating` (+ `am_subdivision` / `pm_subdivision`,
   SNOW-291) — the morning and afternoon peaks when the bulletin carries
   both `all_day`/`earlier` and `later` traits; `None` on uniform days.
@@ -32,8 +33,10 @@ request time.
   `None`.
 - `source_bulletin` — FK to the chosen `Bulletin` (nullable on
   `no_rating` days).
-- `version` — `DAY_RATING_VERSION` at compute time (currently 8); bump
-  the service constant when the aggregation policy changes.
+- `version` — `DAY_RATING_VERSION` at compute time (currently 9); bump
+  the service constant when the aggregation policy changes. v9 changed no
+  policy: it fixed the subdivision columns, which v8 and earlier stored as
+  `""` on every row (SNOW-1054).
 - `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
 
 **Aggregation policy** (v8 — see the module docstring of

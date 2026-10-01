@@ -94,7 +94,7 @@ class Command(BaseCommand):
             self,
             queryset,
             verbosity=verbosity,
-            describe=lambda r: f"{label} {r.pk}",
+            describe=lambda r: f"{label} expired {r.expires_at:%Y-%m-%d %H:%M}",
         ):
             try:
                 row.delete()

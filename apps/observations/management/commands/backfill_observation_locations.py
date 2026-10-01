@@ -102,7 +102,7 @@ class Command(BaseCommand):
             self,
             candidates,
             verbosity=verbosity,
-            describe=lambda row: f"{row.pk} {row.uuid}",
+            describe=lambda row: row.uuid,
         ):
             self._backfill_one(observation, counts, commit=commit)
 

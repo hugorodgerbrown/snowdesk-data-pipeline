@@ -373,6 +373,27 @@ class Bulletin(BaseModel):
         """
         return f"Bulletin({self.bulletin_id}, {self.issued_at:%Y-%m-%d})"
 
+    def row_label(self) -> str:
+        """Return the label a management command prints beside this row's id.
+
+        Format: ``<source> <day> <bulletin_id>``, e.g.
+        ``SLF 2026-01-20 6a1f…``. The provider and the day the bulletin
+        forecasts are what an operator recognises; the provider's own id
+        lets them find the bulletin upstream. Reads only this row's own
+        columns, so it costs no query. For a row with no ``target_date``
+        yet, ``day`` is derived from ``valid_from`` by the same rule as
+        ``target_day_for_valid_from`` — an issue from noon onwards forecasts
+        the next day — so the label matches the day a backfill would store.
+        ``source`` prints ``-`` for a row whose provider is not yet detected,
+        so the line keeps three columns.
+        """
+        from apps.bulletins.services.day_rating import (  # noqa: PLC0415 — services.day_rating imports this module at load time
+            target_day_for_valid_from,
+        )
+
+        day = self.target_date or target_day_for_valid_from(self.valid_from)
+        return f"{self.source or '-'} {day} {self.bulletin_id}"
+
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()

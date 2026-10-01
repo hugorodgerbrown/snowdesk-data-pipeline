@@ -54,26 +54,48 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    so cron/CI can detect it.
 
 6. **Stream a growable queryset — never materialise it, and count down as
-   you go (SNOW-602).** A plain `for obj in qs:` loads every matching row
+   you go, naming each row (SNOW-602, SNOW-1054).** A plain `for obj in qs:` loads every matching row
    into memory before the loop body runs once — invisible on a dev
    database, fatal on a production-sized table. Use the shared helpers in
    [`apps/core/command_iteration.py`](../apps/core/command_iteration.py)
    at every call site rather than hand-rolling the loop:
 
-   - **`iterate_rows(cmd, queryset, *, verbosity, chunk_size=None,
-     describe=None)`** — the default. Orders `queryset` by `-id` and
-     streams it via `.iterator()`, printing each row's id (or
-     `describe(row)`, for a command that already surfaces a domain id)
-     before yielding it, so stdout reads as a countdown to 1 on a long
-     run. Descending id order also means a row created mid-run sorts
+   - **`iterate_rows(cmd, queryset, *, verbosity, describe,
+     chunk_size=None)`** — the default. Orders `queryset` by `-id` and
+     streams it via `.iterator()`, printing `<id> <label>` for each row
+     before yielding it, so stdout reads as a countdown to 1 that also
+     says what each row is. `describe(row)` returns the label and is
+     **required**: an id alone means nothing to the operator watching the
+     run. Pick what they would recognise — `Bulletin.row_label`
+     (`SLF 2026-01-20 <bulletin_id>`), a region code, `Location.to_string`,
+     a resort name. The label must read only fields the queryset already
+     loaded; a label that follows a foreign key costs a query per row. A
+     `values_list` queryset must list `"id"` first, since a tuple has no
+     `.pk`. Descending id order also means a row created mid-run sorts
      *ahead* of the cursor and is never re-visited. Pass `chunk_size`
      whenever the queryset carries a `prefetch_related` — Django raises
      without it.
-   - **`countdown(cmd, items, *, total, verbosity, label)`** — for a loop
-     whose unit of work is a derived value with no primary key of its own
-     (e.g. a `(region, date)` pair from a `values_list`). Prints `"N
-     <label> remaining"` per item instead of a descending id; `total` is
-     typically a `.count()` taken before streaming `items`.
+   - **`countdown(cmd, items, *, total, verbosity, label, describe=None)`**
+     — for a loop whose unit of work is a derived value with no primary
+     key of its own (e.g. a `(region, date)` pair from a `values_list`).
+     Prints `"N <label> remaining"` per item instead of a descending id,
+     followed by `describe(item)` when given — pass it whenever the item
+     can name itself (`recompute_day_ratings` prints the region code and
+     date); `total` is typically a `.count()` taken before streaming
+     `items`.
+
+   Streaming the queryset is only half of bounded memory. Whatever a run
+   **accumulates** across rows must stay small too. `rebuild_render_models`
+   streamed its bulletins but gathered every (region, day) pair it touched
+   into a set for the day-rating refresh that follows, and each pair held
+   a full `MicroRegion` with its boundary polygon — on course for ~2 GB
+   over a full-season rebuild (SNOW-1054). Accumulate primary keys, or
+   instances loaded with only the fields the later step reads, never full
+   rows. Slim the load where it happens: a streamed queryset that prefetches
+   a relation must prefetch the slim queryset
+   (`prefetch_related(slim_regions_prefetch())`, which loads `pk` and
+   `region_id`), because chaining `.only()` onto an already-prefetched
+   manager bypasses the cache and queries once per row.
 
    Never hand-roll OFFSET/LIMIT batching to page through a queryset —
    re-querying a slice of the *same* filtered queryset on every page is
@@ -1529,6 +1551,10 @@ uv run python manage.py fetch_bulletins --source slf \
 
 # Rebuild the render model on stale bulletins (render_model_version < RENDER_MODEL_VERSION).
 # Read-only by default — pass --commit to persist (same convention as fetch_bulletins).
+# Prints "<pk> <source> <day> <bulletin_id>" per bulletin, newest first, then
+# refreshes RegionDayRating for every (region, day) the rebuilt bulletins cover.
+# A RENDER_MODEL_VERSION bump makes every bulletin stale, so --commit rebuilds
+# the whole archive; the pairs it holds for the refresh are slim (SNOW-1054).
 uv run python manage.py rebuild_render_models           # read-only
 uv run python manage.py rebuild_render_models --commit  # persist
 
@@ -1536,7 +1562,7 @@ uv run python manage.py rebuild_render_models --commit  # persist
 #   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602),
 #   --skip-day-ratings (persist render models without refreshing RegionDayRating)
 
-# Re-derive every RegionDayRating row under the current v8 policy: min/max
+# Re-derive every RegionDayRating row under the current v9 policy: min/max
 # come from an elevation-band split (distinct all_day band keys) or, failing
 # that, a time-period split (afternoon level above morning level); otherwise
 # min_rating = max_rating = headline danger key. AM/PM fields are set whenever

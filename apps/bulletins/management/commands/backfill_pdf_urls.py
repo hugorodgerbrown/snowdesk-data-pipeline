@@ -219,7 +219,9 @@ def _process_queryset(
     batch: list[Bulletin] = []
     mf_call_count = 0
 
-    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
+    for bulletin in iterate_rows(
+        cmd, qs, verbosity=verbosity, describe=Bulletin.row_label
+    ):
         raw_props = (bulletin.raw_data or {}).get("properties", {})
         try:
             is_mf = detect_source(raw_props) == Bulletin.Source.METEOFRANCE

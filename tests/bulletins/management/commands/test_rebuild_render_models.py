@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
@@ -232,6 +234,38 @@ class TestRebuildRenderModelsDayRatings:
         # Day ratings should now exist for the bulletin's covered dates.
         assert RegionDayRating.objects.filter(region=region).exists()
 
+    def test_regions_load_once_per_chunk_without_boundaries(self) -> None:
+        """Regions arrive in one slim prefetch query, not one per bulletin.
+
+        SNOW-1054: the rebuild holds a (region, day) pair per bulletin for
+        the refresh that follows, so the regions it loads must be slim, and
+        loading them must not cost a query per bulletin.
+        """
+        region = MicroRegionFactory.create(region_id="CH-chunk-test")
+        for index in range(3):
+            b = _make_bulletin(
+                render_model_version=0, bulletin_id=f"dr-chunk-{index:03d}"
+            )
+            RegionBulletinFactory.create(bulletin=b, region=region)
+
+        with CaptureQueriesContext(connection) as queries:
+            call_command(
+                "rebuild_render_models",
+                commit=True,
+                skip_day_ratings=False,
+                verbosity=0,
+            )
+
+        region_selects = [
+            q["sql"]
+            for q in queries.captured_queries
+            if q["sql"].startswith("SELECT")
+            and '"regions_microregion"' in q["sql"]
+            and '"bulletins_regionbulletin"' in q["sql"]
+        ]
+        assert len(region_selects) == 1
+        assert '"boundary"' not in region_selects[0]
+
     def test_skip_day_ratings_flag(self) -> None:
         """--skip-day-ratings prevents day-rating rows from being created."""
         region = MicroRegionFactory.create(region_id="CH-skip-test")
@@ -343,7 +377,10 @@ class TestRebuildRenderModelsStreaming:
         call_command("rebuild_render_models", commit=True, verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
+        # Each line is ``<pk> <source> <day> <bulletin_id>`` (Bulletin.row_label).
         printed = [
-            line for line in out_lines if line in {"countdown-001", "countdown-002"}
+            line.rsplit(" ", 1)[-1]
+            for line in out_lines
+            if line.rsplit(" ", 1)[-1] in {"countdown-001", "countdown-002"}
         ]
         assert printed == expected

@@ -66,6 +66,7 @@ from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import (
     day_rating_pairs,
     refresh_day_ratings,
+    slim_regions_prefetch,
 )
 from apps.bulletins.services.meteofrance_identity import (
     BULLETIN_ID_RE,
@@ -244,10 +245,10 @@ class Command(BaseCommand):
                 raise CommandError(
                     f"No bulletin found with bulletin_id={bulletin_id_arg!r}"
                 )
-            return qs.prefetch_related("regions")
+            return qs.prefetch_related(slim_regions_prefetch())
         return Bulletin.objects.filter(
             bulletin_id__startswith=_FR_PREFIX
-        ).prefetch_related("regions")
+        ).prefetch_related(slim_regions_prefetch())
 
     def _new_id_for(self, bulletin: Bulletin) -> tuple[str | None, str]:
         """Derive the new id for one row.
@@ -363,7 +364,7 @@ class Command(BaseCommand):
             qs,
             verbosity=verbosity,
             chunk_size=chunk_size,
-            describe=lambda b: b.bulletin_id,
+            describe=Bulletin.row_label,
         ):
             new_id, reason = self._new_id_for(bulletin)
             if new_id is None:

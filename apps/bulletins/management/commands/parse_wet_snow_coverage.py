@@ -150,12 +150,12 @@ class Command(BaseCommand):
         bulletin_count = 0
         problem_count = 0
 
-        rows = Bulletin.objects.values_list("id", "raw_data", "lang")
-        for _pk, raw_data, lang in iterate_rows(
+        rows = Bulletin.objects.values_list("id", "bulletin_id", "raw_data", "lang")
+        for _pk, _bulletin_id, raw_data, lang in iterate_rows(
             self,
             rows,
             verbosity=verbosity,
-            describe=lambda row: row[0],
+            describe=lambda row: row[1],
         ):
             properties = _get_properties(raw_data)
             if not properties:

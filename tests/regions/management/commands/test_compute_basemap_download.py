@@ -102,7 +102,11 @@ class TestComputeBasemapDownloadCommit:
         call_command("compute_basemap_download", "--commit", stdout=out)
 
         lines = out.getvalue().splitlines()
+        # Each line is ``<pk> <region_id>``.
         printed = [
-            line for line in lines if line in {first.region_id, second.region_id}
+            line.split(" ", 1)[1]
+            for line in lines
+            if " " in line
+            and line.split(" ", 1)[1] in {first.region_id, second.region_id}
         ]
         assert printed == expected

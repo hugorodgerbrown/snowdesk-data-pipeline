@@ -49,6 +49,8 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.day_rating import (
@@ -63,6 +65,7 @@ from apps.bulletins.services.day_rating import (
     day_rating_pairs,
     recompute_region_day,
     refresh_day_ratings,
+    slim_regions_prefetch,
     target_day_for_valid_from,
 )
 from apps.bulletins.services.render_model import (
@@ -932,6 +935,71 @@ class TestDayRatingPairs:
         pairs = day_rating_pairs([bulletin])
 
         assert pairs == {(region, target_day_for_valid_from(vf))}
+
+    def test_regions_load_without_their_boundary(self) -> None:
+        """Only pk and region_id are loaded, so a held pair stays small (SNOW-1054).
+
+        A run accumulates one region instance per (region, day); with the
+        boundary polygon loaded, a full-season rebuild held ~2 GB.
+        """
+        region = MicroRegionFactory.create(region_id="CH-3007")
+        vf = datetime.datetime(2026, 3, 5, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 5, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(region, vf, vt)
+
+        ((held, _day),) = day_rating_pairs([bulletin])
+
+        assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
+        assert "region_id" not in held.get_deferred_fields()
+
+    def test_reads_a_slim_prefetch_without_querying(self) -> None:
+        """With slim_regions_prefetch, pairs come from the cache, slim (SNOW-1054).
+
+        Chaining .only() onto a prefetched manager bypasses the cache and
+        queries once per bulletin; a full-archive rebuild would pay that
+        for every bulletin it streams.
+        """
+        region = MicroRegionFactory.create(region_id="CH-3009")
+        vf = datetime.datetime(2026, 3, 7, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 7, 17, 0, tzinfo=UTC)
+        _make_bulletin_for_region(region, vf, vt)
+        (bulletin,) = Bulletin.objects.filter(regions=region).prefetch_related(
+            slim_regions_prefetch()
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            ((held, _day),) = day_rating_pairs([bulletin])
+
+        assert len(queries) == 0
+        assert held.get_deferred_fields() >= {"boundary", "basemap_download"}
+
+    def test_refresh_from_held_pairs_reads_no_deferred_field(self) -> None:
+        """Recomputing from the slim instances never lazy-loads a deferred field.
+
+        A deferred-field read costs one query per pair, which across a
+        season would trade the memory problem for a query storm. Pins the
+        query count against the same recompute on a fully-loaded region.
+        """
+        region = MicroRegionFactory.create(region_id="CH-3008")
+        vf = datetime.datetime(2026, 3, 6, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 3, 6, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(
+            region, vf, vt, traits=[_trait(3, "dry")], headline_key="considerable"
+        )
+        day = datetime.date(2026, 3, 6)
+        ((held, _day),) = day_rating_pairs([bulletin])
+
+        with CaptureQueriesContext(connection) as full:
+            recompute_region_day(
+                MicroRegion.objects.get(pk=region.pk), day, commit=True
+            )
+        with CaptureQueriesContext(connection) as slim:
+            recompute_region_day(held, day, commit=True)
+
+        # The full-load baseline includes its own .get(); the slim run must
+        # not exceed the baseline's recompute queries.
+        assert len(slim) <= len(full) - 1
+        assert not any('"boundary"' in q["sql"] for q in slim.captured_queries)
 
 
 @pytest.mark.django_db

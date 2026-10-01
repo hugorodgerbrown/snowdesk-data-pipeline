@@ -158,7 +158,9 @@ def _process_queryset(
     failed = 0
     batch: list[Bulletin] = []
 
-    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
+    for bulletin in iterate_rows(
+        cmd, qs, verbosity=verbosity, describe=Bulletin.row_label
+    ):
         try:
             bulletin.target_date = target_day_for_valid_from(bulletin.valid_from)
         except Exception:

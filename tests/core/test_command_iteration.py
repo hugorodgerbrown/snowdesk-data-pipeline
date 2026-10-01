@@ -84,6 +84,11 @@ class _SpyQuerySet:
 # than fighting mypy over structural compatibility it can't see.
 
 
+def _label(row: Any) -> str:
+    """Return a stand-in operator label for a fake row."""
+    return f"row-{row.pk}"
+
+
 class TestIterateRows:
     """Tests for iterate_rows."""
 
@@ -92,7 +97,7 @@ class TestIterateRows:
         qs: Any = _SpyQuerySet([_Row(3), _Row(2), _Row(1)])
         cmd: Any = _FakeCommand()
 
-        list(iterate_rows(cmd, qs, verbosity=1))
+        list(iterate_rows(cmd, qs, verbosity=1, describe=_label))
 
         assert qs.order_by_calls == [("-id",)]
 
@@ -101,7 +106,7 @@ class TestIterateRows:
         qs: Any = _SpyQuerySet([_Row(3), _Row(2), _Row(1)])
         cmd: Any = _FakeCommand()
 
-        list(iterate_rows(cmd, qs, verbosity=1))
+        list(iterate_rows(cmd, qs, verbosity=1, describe=_label))
 
         assert len(qs.iterator_calls) == 1
 
@@ -110,44 +115,65 @@ class TestIterateRows:
         qs: Any = _SpyQuerySet([_Row(30), _Row(20), _Row(10)])
         cmd: Any = _FakeCommand()
 
-        pks: list[int] = [row.pk for row in iterate_rows(cmd, qs, verbosity=1)]
+        pks: list[int] = [
+            row.pk for row in iterate_rows(cmd, qs, verbosity=1, describe=_label)
+        ]
 
         assert pks == [30, 20, 10]
 
-    def test_writes_one_countdown_line_per_row_at_verbosity_1(self) -> None:
-        """Each row prints its bare pk as a countdown line by default."""
+    def test_writes_pk_then_label_per_row_at_verbosity_1(self) -> None:
+        """Each row prints ``<pk> <label>``: a countdown that names each row."""
         qs: Any = _SpyQuerySet([_Row(3), _Row(2), _Row(1)])
         cmd: Any = _FakeCommand()
 
-        list(iterate_rows(cmd, qs, verbosity=1))
+        list(iterate_rows(cmd, qs, verbosity=1, describe=_label))
 
-        assert cmd.stdout.lines == ["3", "2", "1"]
+        assert cmd.stdout.lines == ["3 row-3", "2 row-2", "1 row-1"]
 
     def test_writes_nothing_at_verbosity_0(self) -> None:
         """Countdown lines are suppressed at verbosity 0, rows still yielded."""
         qs: Any = _SpyQuerySet([_Row(3), _Row(2), _Row(1)])
         cmd: Any = _FakeCommand()
 
-        pks: list[int] = [row.pk for row in iterate_rows(cmd, qs, verbosity=0)]
+        pks: list[int] = [
+            row.pk for row in iterate_rows(cmd, qs, verbosity=0, describe=_label)
+        ]
 
         assert pks == [3, 2, 1]
         assert cmd.stdout.lines == []
 
-    def test_describe_overrides_the_printed_token(self) -> None:
-        """A describe callable replaces the bare pk in the countdown line."""
+    def test_label_follows_the_pk_never_replaces_it(self) -> None:
+        """The operator label is printed after the pk, which stays first."""
         qs: Any = _SpyQuerySet([_Row(3, "FR-01"), _Row(2, "FR-02")])
         cmd: Any = _FakeCommand()
 
         list(iterate_rows(cmd, qs, verbosity=1, describe=lambda row: row.bulletin_id))
 
-        assert cmd.stdout.lines == ["FR-01", "FR-02"]
+        assert cmd.stdout.lines == ["3 FR-01", "2 FR-02"]
+
+    def test_values_list_rows_print_their_leading_id(self) -> None:
+        """A tuple row has no .pk, so its first element (the ``id``) is printed."""
+        qs: Any = _SpyQuerySet([(7, "CH-4115"), (5, "AT-07")])  # type: ignore[list-item]
+        cmd: Any = _FakeCommand()
+
+        list(iterate_rows(cmd, qs, verbosity=1, describe=lambda row: row[1]))
+
+        assert cmd.stdout.lines == ["7 CH-4115", "5 AT-07"]
+
+    def test_describe_is_required(self) -> None:
+        """A caller cannot omit the label — a bare id tells an operator nothing."""
+        qs: Any = _SpyQuerySet([_Row(1)])
+        cmd: Any = _FakeCommand()
+
+        with pytest.raises(TypeError, match="describe"):
+            list(iterate_rows(cmd, qs, verbosity=1))  # type: ignore[call-arg]
 
     def test_chunk_size_is_forwarded(self) -> None:
         """A given chunk_size reaches .iterator() untouched."""
         qs: Any = _SpyQuerySet([_Row(1)])
         cmd: Any = _FakeCommand()
 
-        list(iterate_rows(cmd, qs, verbosity=1, chunk_size=200))
+        list(iterate_rows(cmd, qs, verbosity=1, describe=_label, chunk_size=200))
 
         assert qs.iterator_calls == [{"chunk_size": 200}]
 
@@ -156,7 +182,7 @@ class TestIterateRows:
         qs: Any = _SpyQuerySet([_Row(1)])
         cmd: Any = _FakeCommand()
 
-        list(iterate_rows(cmd, qs, verbosity=1))
+        list(iterate_rows(cmd, qs, verbosity=1, describe=_label))
 
         assert qs.iterator_calls == [{}]
 
@@ -176,6 +202,27 @@ class TestCountdown:
             "3 pair(s) remaining",
             "2 pair(s) remaining",
             "1 pair(s) remaining",
+        ]
+
+    def test_describe_names_each_item(self) -> None:
+        """With ``describe``, each line also names the item it is about to process."""
+        cmd: Any = _FakeCommand()
+        items = [("CH-4115", "2026-01-20"), ("AT-07", "2026-01-21")]
+
+        list(
+            countdown(
+                cmd,
+                items,
+                total=2,
+                verbosity=1,
+                label="pair(s)",
+                describe=lambda pair: f"{pair[0]} {pair[1]}",
+            )
+        )
+
+        assert cmd.stdout.lines == [
+            "2 pair(s) remaining CH-4115 2026-01-20",
+            "1 pair(s) remaining AT-07 2026-01-21",
         ]
 
     def test_writes_nothing_at_verbosity_0(self) -> None:
