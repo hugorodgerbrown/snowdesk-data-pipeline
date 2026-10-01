@@ -45,7 +45,7 @@ You are a senior Django code reviewer specialising in security, performance, and
 - [ ] All new models inherit `BaseModel`
 - [ ] All models have `to_string()`, `__str__`, custom queryset, `AdminModel`, explicit `ordering`
 - [ ] Services are pure functions in `apps/<app>/services/` — no business logic in views
-- [ ] Management commands follow the contract in CLAUDE.md: run with no arguments, never alter data by default (an explicit `--commit` flag for new commands, or `--dry-run` + `Proceed? [y/N]` with `--no-input` for existing ones — never both shapes in one command), respect `--verbosity`, exit non-zero on failure, and stream rows via `apps.core.command_iteration.iterate_rows`
+- [ ] Management commands follow the contract in CLAUDE.md: run with no arguments, never alter data by default (an explicit `--commit` flag for new commands, or `--dry-run` + `Proceed? [y/N]` with `--no-input` for existing ones — never both shapes in one command), respect `--verbosity`, exit non-zero on failure, and stream rows via `apps.core.command_iteration.iterate_rows` (descending pk, with a `describe` label an operator can read that touches no unloaded field). Anything accumulated across rows holds keys or `.only()` instances, never full rows (SNOW-1054)
 - [ ] `logging.getLogger(__name__)` used (not `print()`)
 - [ ] Header comment block and docstrings present on all modules and functions
 - [ ] All function arguments typed (except `*args`/`**kwargs`)

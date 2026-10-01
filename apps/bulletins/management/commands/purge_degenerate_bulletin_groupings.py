@@ -128,6 +128,7 @@ class Command(BaseCommand):
                 self,
                 BulletinGrouping.objects.degenerate(),
                 verbosity=verbosity,
+                describe=lambda g: f"{g.target_date} {','.join(g.countries or [])}",
             )
         ]
 

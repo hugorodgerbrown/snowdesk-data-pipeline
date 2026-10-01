@@ -173,7 +173,9 @@ def _process_queryset(
     failed = 0
     batch: list[Bulletin] = []
 
-    for bulletin in iterate_rows(cmd, qs, verbosity=verbosity):
+    for bulletin in iterate_rows(
+        cmd, qs, verbosity=verbosity, describe=Bulletin.row_label
+    ):
         properties = (bulletin.raw_data or {}).get("properties") or {}
         try:
             bulletin.source = detect_source(properties)

@@ -624,9 +624,10 @@ class TestReformatStreaming:
         call_command("reformat_mf_comments", commit=True, verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
+        # Each line is ``<pk> <source> <day> <bulletin_id>`` (Bulletin.row_label).
         printed = [
-            line
+            line.rsplit(" ", 1)[-1]
             for line in out_lines
-            if line in {first.bulletin_id, second.bulletin_id}
+            if line.rsplit(" ", 1)[-1] in {first.bulletin_id, second.bulletin_id}
         ]
         assert printed == expected

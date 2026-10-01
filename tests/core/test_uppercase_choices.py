@@ -14,6 +14,7 @@ persisted before the SNOW-582 migration.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from io import StringIO
 
@@ -128,5 +129,8 @@ class TestUppercaseFieldValues:
         uppercase_field_values(cmd, Resort, "geocode_source", commit=True, verbosity=1)
 
         out_lines = buf.getvalue().splitlines()
-        printed_pks = [int(line) for line in out_lines if line.strip().isdigit()]
+        # Each line is ``<pk> <field>=<old value>``.
+        printed_pks = [
+            int(m[1]) for line in out_lines if (m := re.match(r"^(\d+) \w+=", line))
+        ]
         assert printed_pks == pks

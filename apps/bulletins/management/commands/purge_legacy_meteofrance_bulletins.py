@@ -237,7 +237,7 @@ class Command(BaseCommand):
             qs,
             verbosity=verbosity,
             chunk_size=chunk_size,
-            describe=lambda b: b.bulletin_id,
+            describe=Bulletin.row_label,
         ):
             if BULLETIN_ID_RE.match(bulletin.bulletin_id):
                 new_grammar_count += 1

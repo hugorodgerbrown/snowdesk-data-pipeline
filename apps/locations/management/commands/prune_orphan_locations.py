@@ -113,7 +113,9 @@ class Command(BaseCommand):
                 # not building. Walking newest id first and deleting each row
                 # by its own pk needs neither, and prints the countdown the
                 # command contract asks for.
-                for orphan in iterate_rows(self, orphans, verbosity=verbosity):
+                for orphan in iterate_rows(
+                    self, orphans, verbosity=verbosity, describe=Location.to_string
+                ):
                     Location.objects.filter(pk=orphan.pk).delete()
 
         if verbosity >= 1:

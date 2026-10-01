@@ -160,7 +160,9 @@ class Command(BaseCommand):
         )
 
         counts = {"filled": 0, "failed": 0}
-        for location in iterate_rows(self, candidates, verbosity=verbosity):
+        for location in iterate_rows(
+            self, candidates, verbosity=verbosity, describe=Location.to_string
+        ):
             self._resolve_one(location, counts, commit=commit, delay=delay)
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)

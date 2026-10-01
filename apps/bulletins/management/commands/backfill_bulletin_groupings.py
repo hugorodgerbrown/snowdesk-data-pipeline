@@ -192,7 +192,9 @@ class Command(BaseCommand):
         skipped = 0
         failed = 0
 
-        for bulletin in iterate_rows(self, qs, verbosity=verbosity):
+        for bulletin in iterate_rows(
+            self, qs, verbosity=verbosity, describe=Bulletin.row_label
+        ):
             outcome = self._process_one(bulletin, verbosity=verbosity)
             if outcome == "created":
                 processed += 1

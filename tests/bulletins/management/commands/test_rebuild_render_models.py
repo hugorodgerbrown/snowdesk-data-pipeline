@@ -343,7 +343,10 @@ class TestRebuildRenderModelsStreaming:
         call_command("rebuild_render_models", commit=True, verbosity=1)
 
         out_lines = capsys.readouterr().out.splitlines()
+        # Each line is ``<pk> <source> <day> <bulletin_id>`` (Bulletin.row_label).
         printed = [
-            line for line in out_lines if line in {"countdown-001", "countdown-002"}
+            line.rsplit(" ", 1)[-1]
+            for line in out_lines
+            if line.rsplit(" ", 1)[-1] in {"countdown-001", "countdown-002"}
         ]
         assert printed == expected

@@ -178,7 +178,7 @@ class Command(BaseCommand):
             self,
             candidates,
             verbosity=verbosity,
-            describe=lambda row: f"{row.pk} {row.uuid}",
+            describe=lambda row: row.uuid,
         ):
             walked = self._backfill_one(trip, counts, commit=commit)
             processed += 1
