@@ -12,8 +12,8 @@ description: >-
   whole-codebase drift audit (that's `audit-code`) or a per-diff review (that's
   `code-review`).
 user-invocable: true
-# Both Linear server names: the local MCP config and the claude.ai connector
-# (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
+# Three renderings of the one Linear connector — the tool prefix differs per
+# client surface (CLI, cloud, Desktop); list all three. See .claude/README.md.
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Artifact, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 

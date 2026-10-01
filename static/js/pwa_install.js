@@ -39,9 +39,9 @@
  *                                 nudge is suppressed for 30 days
  *   pwa.install.installed_at    — ms timestamp of confirmed install
  *
- * When SNOW-375 lands, migrate these keys into the IndexedDB
- * ``meta:app`` object store; the keys are read/written through the
- * ``storage`` helpers below so the migration is a one-liner.
+ * SNOW-375's IndexedDB ``meta:app`` object store has since landed, but
+ * these keys still live in localStorage; they are read/written through
+ * the ``storage`` helpers below so a migration would be a one-liner.
  *
  * Persistent storage
  * ------------------

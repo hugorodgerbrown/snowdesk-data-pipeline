@@ -2,7 +2,7 @@
 name: day-summary
 description: day_summary.py, summary_for, classify_movement, classify_readability — the 80-cell copy matrix behind the day-character callout
 status: current
-last-reviewed: 2026-08-27
+last-reviewed: 2026-10-01
 ---
 
 # The day summary

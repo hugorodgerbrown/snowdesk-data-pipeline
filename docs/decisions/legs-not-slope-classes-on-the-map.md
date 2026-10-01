@@ -105,10 +105,12 @@ it is. The legs answer the first zoom, the classes the second.
   ([the-fall-line-arrow-is-a-bearing-per-place.md](the-fall-line-arrow-is-a-bearing-per-place.md)).
   The line follows the same rule: one statement per stretch.
 - **The classes move to the rail, not away.** The rail is where the
-  steepness of one leg can be read against distance. SNOW-1019 puts them
-  on the leg rail. Until it lands the map and the rail carry no slope
-  classes at all; that gap was accepted on 2026-09-24. The passages,
-  cruxes and arrows still say where the steep ground is.
+  steepness of one leg can be read against distance. SNOW-1019 put them
+  on rail two's band strip, closing the gap accepted on 2026-09-24 in
+  which neither the map nor the rail carried a slope class; since
+  2026-09-30 the map carries them again from z14 (above). The passages,
+  cruxes and arrows said where the steep ground was until SNOW-1019 took
+  them off the line.
 - **A selection dims the others instead of darkening the chosen leg.**
   The chosen leg keeps the colour and weight the rail uses for it, so the
   two surfaces still read as one drawing, and the rest of the route stays
@@ -137,6 +139,7 @@ it is. The legs answer the first zoom, the classes the second.
 - The legend's route key has the two leg rows. The steepness bands and
   "Not surveyed" rows are gone, and SNOW-1019 took out the passage,
   fall-line and crux rows with the marks.
-- The dimming follows `window.pwaRouteRail.cursor()`. The rail's
+- The dimming follows `window.pwaRouteRail.cursor()`, through the one
+  subscription `bindRouteCursor` in `map.js` holds. The rail's
   `close()` closes the open leg before it drops the cursor, which is how
   the map hears the rail's ×, Escape and backdrop closes.

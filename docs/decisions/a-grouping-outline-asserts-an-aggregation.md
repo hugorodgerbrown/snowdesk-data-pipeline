@@ -2,7 +2,7 @@
 name: a-grouping-outline-asserts-an-aggregation
 description: A BulletinGrouping row exists only where a bulletin covers two or more boundaried micro-regions; one region gets no outline
 status: current
-last-reviewed: 2026-09-20
+last-reviewed: 2026-10-01
 ---
 
 # A grouping outline asserts an aggregation

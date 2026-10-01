@@ -2,7 +2,7 @@
 name: a-trip-is-one-object-with-a-roster
 description: Trip is one row with a TripParticipant roster, never copied per person; the geometry is a snapshot and the meeting point a per-trip Location
 status: current
-last-reviewed: 2026-09-14
+last-reviewed: 2026-10-01
 ---
 
 # A trip is one object with a roster

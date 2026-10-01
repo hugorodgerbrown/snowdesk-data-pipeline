@@ -2,13 +2,13 @@
 name: tox-envs-install-from-uv-lock
 description: tox envs install from uv.lock via tox-uv, not bare unpinned deps lists; SAST rulesets are a deliberate live-fetched exception
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-10-01
 ---
 
 # tox envs install from `uv.lock`, not their own `deps` lists
 
 **Decision.** Every Python tox env (`test`, `django-checks`, `mypy`, `fmt`,
-`lint`, `djangofmt`, `sast`, `e2e`) uses [tox-uv](https://github.com/tox-dev/tox-uv)'s
+`lint`, `djangofmt`, `sast`, `e2e`, `offline`) uses [tox-uv](https://github.com/tox-dev/tox-uv)'s
 `uv-venv-lock-runner` instead of tox's default resolver. Each env declares
 `dependency_groups = <group>` (mapping to a purpose-scoped group in
 `pyproject.toml`'s `[dependency-groups]`) and syncs with `--frozen`, so it
@@ -33,16 +33,19 @@ silent CI failure with nothing to `git diff`.
 - `[project.dependencies]` (Django, shapely, …) is installed into every env
   automatically — bare runtime package names are no longer listed in
   `tox.ini`; only the group of *tooling* packages the env needs
-  (`dependency_groups = test|type|lint|sast|e2e`) is declared.
+  (`dependency_groups = test|type|lint|sast|e2e|offline`) is declared.
 - `uv_sync_flags = --frozen` is load-bearing: it makes a stale/out-of-sync
   `uv.lock` a hard CI failure instead of a silent re-resolve.
   `--no-default-groups` does not need to be listed explicitly — tox-uv
   defaults it to `True` whenever `dependency_groups` is set, so each env
   stays minimal (`mypy` never pulls in Playwright).
 - `runner`, `uv_sync_flags`, and `dependency_groups` are set **per env**, not
-  globally in `[testenv]` — `audit` (`skip_install`, runs `uv export`
-  directly against the default runner) and `ds-lint`/`docs-lint`/`js`
-  (no third-party Python deps) are intentionally left off the lock runner.
+  globally in `[testenv]` — the `skip_install` envs are intentionally left
+  off the lock runner: `audit` and `audit-dev` (run `uv export` directly
+  against the default runner), the seven stdlib-only lint guards
+  (`ds-lint`, `js-globals-lint`, `i18n-lint`, `docs-lint`, `e2e-lint`,
+  `fidelity-lint`, `migrations-lint`), and the Node envs `js` and
+  `js-types`.
 - CI installs `tox-uv` alongside `tox` (`pip install tox tox-uv`) in every
   workflow that runs a tox env — `tox-uv` bundles its own `uv`, so no
   separate `astral-sh/setup-uv` step is needed there.

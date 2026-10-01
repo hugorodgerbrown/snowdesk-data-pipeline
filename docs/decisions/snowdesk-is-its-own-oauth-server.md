@@ -2,7 +2,7 @@
 name: snowdesk-is-its-own-oauth-server
 description: Why the MCP endpoint is gated by a hand-written OAuth 2.1 server in apps/oauth — no library, no anonymous tier, PKCE
 status: current
-last-reviewed: 2026-09-26
+last-reviewed: 2026-10-01
 ---
 
 # Snowdesk is its own OAuth server, written by hand

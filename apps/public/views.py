@@ -12,9 +12,9 @@ URL structure:
   /<region_id>/<slug>/<date>/                Bulletin for a specific date.
   /<region_id>/season/                       Full-season page (up to 100 panels).
 
-SNOW-344: ``/map/`` is a permanent 301 redirect to ``/``; ``map_view``
-has been removed. Edit-resorts mode (``?edit=resorts``) now lives in
-``home()`` directly.
+SNOW-344 collapsed the map onto ``/``; SNOW-1047 reversed that split —
+``/`` is now the static homepage (``home()``) and the map lives at ``/map/``
+(``map_page()``), which is where the ``?edit=`` editor modes are read.
 
 Each page represents a single day, identified by the bulletin's ``valid_to``
 date.  Two bulletins may cover a day: an evening issue (valid from ~16:00 the
@@ -1587,7 +1587,7 @@ def _base_map_context(
     return {
         "basemaps": _basemaps_for_picker(),
         "default_basemap_key": settings.BASEMAP,
-        # Origin for home.html's preconnect hint. The map's style JSON and
+        # Origin for map.html's preconnect hint. The map's style JSON and
         # vector tiles are the first cross-origin bytes the page needs, and
         # nothing references that host until map.js has parsed and run — so
         # without this the DNS, TCP and TLS round trips start late and land
@@ -2173,7 +2173,7 @@ def _sw_conditional(request: HttpRequest, response: HttpResponse) -> HttpRespons
     SNOW-622: ``Cache-Control: no-cache`` means the browser revalidates on
     every page load, which is the contract these workers need — but without
     a validator there is nothing to revalidate *against*, so every load
-    re-downloaded the whole script. ``sw.js`` is ~2,000 lines. An ``ETag``
+    re-downloaded the whole script. ``sw.js`` is ~4,700 lines. An ``ETag``
     turns the unchanged case into a bodyless 304 while keeping the
     revalidation the workers depend on.
 

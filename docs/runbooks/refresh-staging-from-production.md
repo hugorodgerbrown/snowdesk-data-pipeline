@@ -2,7 +2,7 @@
 name: refresh-staging-from-production
 description: bin/sync-staging-data — production bulletins + weather to staging; run by hand, the snowdesk-staging-data-sync cron is disabled
 status: current
-last-reviewed: 2026-09-11
+last-reviewed: 2026-10-01
 ---
 
 # Runbook — refresh staging's data from production
@@ -30,15 +30,17 @@ database into crash recovery.
 | `bulletins.RegionBulletin` | `favourites.Favourite`, `observations.FieldObservation` |
 | `bulletins.RegionDayRating` | `routes.Route`, `core.RequestLog` |
 | `bulletins.BulletinGrouping` | `bulletins.BulletinShare` / `BulletinShareClick` |
-| `regions.Resort` | |
+| `regions.Resort` | `trips.Trip` / `TripParticipant` |
 | `locations.Location` *(curated rows only — see below)* | |
 | `locations.ResortLocation` | |
+| `weather.Weather` *(same curated filter — see below)* | |
 
-Four of the "not copied" tables — `favourites.Favourite`,
-`observations.FieldObservation`, `bulletins.BulletinShare` and
-`BulletinShareClick` — are **cleared on staging and left empty**, because
-they reference the copied tables. Staging's user accounts, passkeys and
-routes survive untouched.
+Six of the "not copied" tables — `favourites.Favourite`,
+`observations.FieldObservation`, `trips.Trip`, `trips.TripParticipant`,
+`bulletins.BulletinShare` and `BulletinShareClick` — are **cleared on staging
+and left empty**, because they reference the copied tables (a trip's meeting
+point is minted from user input like a favourite's pin — SNOW-819). Staging's
+user accounts, passkeys and routes survive untouched.
 
 **No user data crosses the boundary.** That is what makes the job safe to
 run unattended with no anonymisation step, and it matters more here than in
@@ -247,14 +249,14 @@ version relationship does not matter.
 Minutes, not tens of minutes: each table moves in a single `COPY`.
 
 **It clears before it loads, and the blast radius is wider than the table
-list.** Staging's own favourites, field observations and bulletin shares
+list.** Staging's own favourites, field observations, trips and bulletin shares
 reference the copied tables, so they are deleted too and are *not*
 refilled. Staging's user accounts, passkeys and routes are untouched. The
 script's `CLEAR_ONLY` array is the exhaustive list.
 
 Region centroids are released before the clear
-(`regions_microregion.centroid_location_id`) and rebuilt at the end by
-`link_region_centroid_locations --commit`, which the script runs for you.
+(`regions_microregion.centroid_location_id`) and copied back from
+production at the end, as described above — the script does this for you.
 
 ## The nightly job — currently disabled
 
@@ -365,7 +367,7 @@ share a database ([`docs/deployment.md`](../deployment.md)). The script
 clears its target, so it refuses rather than risk it. Fix the env group;
 do not work around it.
 
-### Staging's favourites and observations have gone
+### Staging's favourites, observations and trips have gone
 
 Expected. They reference the copied tables, so they are cleared with them
 and not refilled — see step 4. Staging user accounts, passkeys and routes

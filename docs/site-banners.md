@@ -2,7 +2,7 @@
 name: site-banners
 description: Admin-managed site banners — django-persistent-messages, PersistentMessage, apps/public/banners.py, _persistent_banners.html, dismissal
 status: current
-last-reviewed: 2026-09-10
+last-reviewed: 2026-10-01
 ---
 
 # Site banners
@@ -91,8 +91,9 @@ are shown rather than executed —
 ## The cost
 
 Two queries on every page that extends `public/base.html`, whether or not
-a banner exists — reflected in `perf/query_counts.txt` (`home` 5 → 7,
-`bulletin_historic` 7 → 9) and in
+a banner exists — reflected in `perf/query_counts.txt` (the map page went
+5 → 7 and `bulletin_historic` 7 → 9; the map's row is `map` now that the
+map lives at `/map/`, and `home` is the static homepage at 3) and in
 [`docs/query-counts.md`](query-counts.md).
 
 One of the two is avoidable and lives upstream.
@@ -108,4 +109,4 @@ It needs someone with write access on that repo to land it, and nobody
 here has it, so treat the second query as the standing cost rather than
 something about to go away. When a release does carry the fix: bump the
 pin and re-run `manage.py monitor_query_counts --commit`, which should
-take `home` back to 6 and `bulletin_historic` to 8.
+take `map` back to 6 and `bulletin_historic` to 8.

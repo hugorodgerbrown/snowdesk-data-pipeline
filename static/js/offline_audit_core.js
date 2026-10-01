@@ -1184,7 +1184,7 @@
       //
       // SNOW-914: the map page's OWN stylesheets, for the same reason the
       // row above asks for its own scripts. `fileCounts(r).style > 0` was
-      // "is any CSS cached", which the settings page's own stylesheet makes
+      // "is any CSS cached", which the hosting page's own stylesheet makes
       // true on the very device reading this panel — so the row said the
       // app would look right while the map's stylesheet was absent.
       if (r.mapDependencies === null || r.mapDependencies === undefined) {

@@ -2,7 +2,7 @@
 name: resorts-are-search-rows
 description: Map search shows a row per resort, not just per region, and ranks by match quality rather than EAWS region id
 status: current
-last-reviewed: 2026-08-20
+last-reviewed: 2026-10-01
 ---
 
 # Resorts are search rows, and ranking is by match quality
@@ -64,7 +64,7 @@ character narrows the set, so the best match stays pinned at the top.
 - Resort rows depend on `/api/resorts-by-region/`, fetched at boot. That leg
   degrades to `{}` on failure, so an offline or failed boot shows
   region-only rows — the pre-SNOW-697 behaviour, not an error state.
-- `.map-utility-cluster` had to move above `.map-controls-br` in the stacking
+- `#map-utility-cluster` had to move above `#map-controls-br` in the stacking
   order. Both sat at `z-index: 4`, and the cluster is a stacking context, so
   the dropdown could never rise above the bottom-right roundels — which were
   swallowing clicks on rows 2+. Single-row results had mostly hidden this.

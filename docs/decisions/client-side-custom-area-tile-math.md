@@ -2,7 +2,7 @@
 name: client-side-custom-area-tile-math
 description: Custom-area basemap download re-ports basemap_tiles.py's tile math into JS instead of a new endpoint; golden-vector parity guard
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
 # Client-side tile math for the custom-area basemap download

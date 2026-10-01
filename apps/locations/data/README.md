@@ -23,19 +23,23 @@ sorted, filtered or diffed.
 ## There is no elevation column
 
 Elevation is always derived, never supplied (`docs/locations.md`).
-`link_location_forecast_cells` resolves it from the coordinate via
-Open-Meteo, alongside the forecast cell.
+`fill_location_elevations` resolves it from the coordinate via Open-Meteo
+(SNOW-732); `import_locations` writes every other field and leaves it null.
 
-**That makes the elevation a check on the coordinate.** Run the link command
-after adding a row and compare the resolved height against the resort
-sheet's `base_elevation_m` / `top_elevation_m`. A location whose resolved
-height is nowhere near the expected figure has been mis-pinned — catch it
-here rather than on the resort page.
+**That makes the elevation a check on the coordinate.** Run
+`fill_location_elevations --report` after adding a row: it compares the
+resolved height against the figure in the row's `note` and prints the
+disagreements over 60 m. A location whose resolved height is nowhere near
+the expected figure has been mis-pinned — catch it here rather than on the
+resort page.
 
-## Coverage — deliberately partial
+## Coverage
 
-Four village rows, all elevation-verified. **No peaks or mid-stations yet**,
-and that is the open curation work rather than an oversight.
+Four village rows, all elevation-verified, and 84 `PEAK` rows — one summit
+per resort, sourced from OpenStreetMap peak nodes, each carrying its source
+node, the delta against the resort sheet's `top_elevation_m` and a
+confidence grade in its `note`. **No mid-stations yet.** The peaks were
+placed from a gazetteer rather than from memory, for the reason below.
 
 The first attempt at this tranche pinned Mont Fort and Piz Corvatsch from
 memory. The elevation check caught both: Mont Fort resolved at 2302 m
@@ -49,6 +53,6 @@ So the peaks need a curator with a gazetteer, not a plausible guess. Until
 then the resort sheet's `top_elevation_m` remains the only record of them —
 which is the state SNOW-701 exists to end, one verified row at a time.
 
-Adding a peak means: pin it, run `link_location_forecast_cells` without
-`--commit`, and check the resolved height against the resort sheet before
-committing anything.
+Adding a peak means: pin it, run `fill_location_elevations --report`, and
+check the resolved height against the resort sheet before committing
+anything.

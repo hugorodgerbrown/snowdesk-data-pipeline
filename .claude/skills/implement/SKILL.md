@@ -43,7 +43,7 @@ Resuming uses the existing branch state. No re-plan, no re-review.
 The iterative loop is kept fast by running only the quick, deterministic
 checks locally and letting CI own the slow, flaky, comprehensive ones. CI
 runs every tier below as a **required check on the PR** (`ci.yml`, `e2e.yml`,
-`js.yml`, `lighthouse.yml`, `lint-guards.yml`), so a check run locally in the
+`js.yml`, `lighthouse.yml`, `lint-guards.yml`, `security-audit.yml`), so a check run locally in the
 loop is a *duplicate* of what the PR will run anyway — its only value is
 catching a failure one round-trip earlier, which is not worth paying for the
 slow tiers on every iteration.
@@ -52,7 +52,7 @@ slow tiers on every iteration.
 
 - Targeted `uv run pytest <touched paths>` while implementing.
 - `uv run tox` — the **default envlist**, whose canonical definition is the
-  `envlist` in [`tox.ini`](tox.ini); read it there rather than trusting a copy
+  `envlist` in [`tox.ini`](../../../tox.ini); read it there rather than trusting a copy
   in this file. At the time of writing: `fmt, lint, mypy, django-checks,
   ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, migrations-lint,
   test, js`. This is the pre-push gate. It is fast and deterministic. `js`
@@ -175,8 +175,10 @@ Use the Agent tool to invoke the `implementer` subagent. Pass it:
 - The Linear ticket number & branch name
 - A reminder to consult the Linear ticket scope (in comments) and the
   approved plan from this session's context
-- An instruction to commit incrementally with conventional commit messages,
-  run tests as it goes, and report back when the plan is fully implemented
+- An instruction to commit incrementally with conventional commit messages
+  and `--author="Claude <noreply@anthropic.com>"` (the PreToolUse hook
+  refuses a commit without it), run tests as it goes, and report back when
+  the plan is fully implemented
 - If the plan touches templates or `static/js/*.js`, the checklist below
 
 The implementer runs in its own context. Its exploration and intermediate
@@ -187,13 +189,13 @@ work do not pollute the main thread.
 default envlist), so catching a violation here is cheaper than fixing it at
 review time:
 
-- Does an existing partial in `templates/includes/`, `public/templates/`, or
-  `accounts/templates/.../partials/` already render this shape? If yes, use
-  it — don't write a fresh copy.
+- Does an existing partial in `templates/includes/`, `apps/public/templates/`,
+  or `apps/<app>/templates/<app>/partials/` already render this shape? If
+  yes, use it — don't write a fresh copy.
 - Is the same shape currently inlined in another template that I'm about to
   inline again? If yes, extract a new partial and register it in
-  `public/design_tokens.py` (with a fixture in
-  `public/_component_fixtures.py`) rather than producing a second inline copy.
+  `apps/public/design_tokens.py` (with a fixture in
+  `apps/public/_component_fixtures.py`) rather than producing a second inline copy.
 - Are all colours expressed via design tokens (`bg-card`, `text-text-1`,
   `border-border`, `bg-status-*`) rather than raw Tailwind palette utilities
   (`bg-slate-200`, `text-red-600`)?
@@ -258,7 +260,7 @@ mismatch against `perf/query_counts.txt`.
   legitimate (new prefetch, new query, an N+1 introduced or removed).
   - If legitimate, re-run with `--commit` to update the baseline, then
     commit `perf/query_counts.txt` to the branch (see
-    [`docs/query-counts.md`](docs/query-counts.md)).
+    [`docs/query-counts.md`](../../../docs/query-counts.md)).
   - If unintended, the implementer needs to fix it before push — loop
     back into step 4 with the diff as a blocker. Do not push a known
     regression.

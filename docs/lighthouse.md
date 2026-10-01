@@ -2,7 +2,7 @@
 name: lighthouse
 description: Lighthouse CI budgets and the npm run lh local audit under config.settings.perf; checklist for new public pages
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # Lighthouse CI — accessibility, SEO, performance, best-practices

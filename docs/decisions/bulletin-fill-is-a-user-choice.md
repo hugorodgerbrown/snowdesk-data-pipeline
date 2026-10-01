@@ -2,7 +2,7 @@
 name: bulletin-fill-is-a-user-choice
 description: The danger choropleth is translucent at one of five user-chosen opacity steps, 0 being off — replacing the opaque pre-blended fill
 status: current
-last-reviewed: 2026-08-10
+last-reviewed: 2026-10-01
 ---
 
 # How strongly the choropleth paints is the user's call

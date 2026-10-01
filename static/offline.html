@@ -47,9 +47,10 @@
   wrongly suggest otherwise.
 
   SNOW-607 follow-up — the "Reset local data" escape hatch (spec §12.7,
-  SNOW-378). The manage page carries the only other copy of this control,
-  and it is ``@never_cache`` since SNOW-607, so it never loads offline.
-  This page does, which makes it the one surface that can reach a user in
+  SNOW-378). ``/offline/`` carries the only other copy of this control,
+  and its cached copy is principal-partitioned (SNOW-607) and present only
+  once warmed, so it cannot be relied on offline.
+  This page can, which makes it the one surface that can reach a user in
   the broken-and-offline state §12.7 exists for. The control here is the
   same mechanism, not a second one: the markup carries
   ``data-pwa-reset-trigger`` and the binding, the confirmation dialogue,

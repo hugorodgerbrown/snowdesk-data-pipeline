@@ -2,7 +2,7 @@
 name: a-native-app-is-a-shell-not-a-companion
 description: Native companion app rejected — a native build wraps the PWA (WKWebView/Capacitor); background location is its only justification
 status: draft
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # A native app is a shell, not a companion

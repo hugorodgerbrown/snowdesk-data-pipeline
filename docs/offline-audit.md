@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline-content report — offline_audit.js, offline_audit_core.js, bounded storage reads, X-SW-Principal check, AUDIT_SCRIPTS precache
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # The offline-content report (SNOW-907)
@@ -565,7 +565,7 @@ downloaded while the map drew nothing. It also has to run on
 
 The one consequence is a deliberate twelve-line restatement of
 `missingRenderDependencies` inside `offline_audit_core.js`, against the
-same contract. Importing it would mean precaching 116 KB of tile
+same contract. Importing it would mean precaching ~135 KB of tile
 arithmetic for a recovery page.
 
 **It never writes.** Every read is read-only, `caches.has` gates every
@@ -598,7 +598,7 @@ steps back to outlined, because only one of the two can work right now.
 
 ## The one action
 
-**Save the map page for offline** — `window.pwaWarmCache(['/'])`. Shown
+**Save the map page for offline** — `self.pwaWarmCache(['/map/'])`. Shown
 only with a controlling worker, a connection, and a map page that is
 actually missing for this account. It goes through the worker's own
 `warm-cache` message rather than a `cache.put` from the page because
@@ -651,7 +651,7 @@ guards on `window.pwaResetLocalData`.
 | The report model — verdicts, statuses, every degraded reading | `tests/js/test_offline_audit_core.js` |
 | The collector and the rendered DOM | `tests/js/test_offline_audit.js` |
 | Storage that hangs rather than rejecting — the bounds, the latch, the throw | `tests/js/test_offline_audit.js` ("a device whose storage stops answering") |
-| Both hosts' markup, the strings-template drift check, the precache | `tests/accounts/test_settings_offline_audit.py` |
+| Both hosts' markup, the strings-template drift check, the precache | `tests/public/test_offline_audit_panel.py` (SNOW-930 moved it out of `tests/accounts/test_settings_offline_audit.py`); the `/offline/` page itself, its endpoints and its activation warm are `tests/public/test_offline_page.py` |
 
 No Playwright test. Everything here is either arithmetic or a DOM
 assertion jsdom can make, and `tests/e2e/` is a dozen smoke tests

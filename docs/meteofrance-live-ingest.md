@@ -2,7 +2,7 @@
 name: meteofrance-live-ingest
 description: Météo-France DPBRA ingest operations — fetch_bulletins --source meteofrance, METEOFRANCE_API_KEY on Render, --local-mirror
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # Météo-France live ingest — operations guide
@@ -94,8 +94,9 @@ key.
 `METEOFRANCE_API_KEY` lives in the `Production` env-var group in the
 Render dashboard, so every production service that references
 `fromGroup: Production` in [`render.yaml`](../render.yaml) inherits it —
-both `snowdesk-website` and `snowdesk-scheduler`. There is no per-service
-override; a single dashboard edit reaches every consumer of the key.
+`snowdesk-website`, `snowdesk-scheduler` and `snowdesk-background-tasks`.
+There is no per-service override; a single dashboard edit reaches every
+consumer of the key.
 
 The key is deliberately dashboard-managed rather than declared in
 `render.yaml`: Blueprint auto-sync does not touch env-group contents, so
@@ -169,8 +170,12 @@ live path.
 - **`apps/bulletins/services/meteofrance_translator.py`** — pure DPBRA XML →
   CAAML JSON translator; no I/O. Raises `MeteoFranceDelegatedRegionError`
   or `MeteoFranceTranslationError` on bad input.
-- **`apps/bulletins/services/meteofrance_massifs.py`** — static massif-ID
-  catalogue (mirrors `METEOFRANCE_MASSIF_IDS`).
+- **`apps/bulletins/services/meteofrance_massifs.py`** — the canonical
+  massif *name* list (`ALPINE_MASSIFS`, `ALL_MASSIFS`) and the slug →
+  integer code lookup (`SLUG_TO_CODE`, `slug_to_region_id`), built from
+  `docs/research/meteofrance/massifs.json`. Used by the archive loader and
+  the offline scripts; the live fetcher's loop reads
+  `settings.METEOFRANCE_MASSIF_IDS` directly.
 - **Regression tests** — `tests/bulletins/services/test_meteofrance_fetcher.py`
   covers HTTP paths, local-mirror, delegated-region skip, idempotency,
   `on_fetched` callback, stash writer, and `latest_meteofrance_date`.

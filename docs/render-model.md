@@ -2,7 +2,7 @@
 name: render-model
 description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, CAAML fidelity guard
 status: current
-last-reviewed: 2026-08-24
+last-reviewed: 2026-10-01
 ---
 
 # Render model
@@ -17,12 +17,13 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
     - `subdivision` — SLF only: `"+"`, `"="`, `"-"`, or `None`. Always `None` for ALBINA and MeteoFrance.
     - `elevation` — projected elevation dict `{ lower, upper, treeline, treeline_side }` or `None` when the rating has no elevation bounds. `lower`/`upper` are integers or `None`; `treeline_side` records which CAAML bound carried the `"treeline"` token (`"lower"` = above treeline, `"upper"` = below treeline, or `None`).
   - **Elevation-band split** (MeteoFrance): when two or more entries share `period="all_day"` but carry distinct `key` values, the bulletin uses a Météo-France style elevation split. The Day Risk Profile panel (`_day_windows_from_rm_ratings` in `apps/public/views.py`) renders these as two separate rows with elevation captions. The calendar tile layer (`day_rating.py`) derives `min_rating`/`max_rating` from the lowest and highest band keys (v7 policy, precedence 1).
-- `traits[]` — one entry per `customData.CH.aggregation` entry; each has `{ category, time_period, title, geography, problems[], prose, danger_level }`.
+- `traits[]` — one entry per aggregation entry (SLF's `customData.CH.aggregation` verbatim; synthesised for ALBINA and Météo-France — see below); each has `{ category, time_period, title, geography, problems[], prose, danger_level, band_id, elevation }`.
   - Trait and problem ordering is taken verbatim from SLF's aggregation.
   - `category` is `"dry"` or `"wet"`, sourced directly from SLF's aggregation — not inferred.
+  - `band_id` / `elevation` are set only on ALBINA traits, whose synthesised aggregation carries an elevation band per entry; `None` for SLF and Météo-France.
   - `geography.source` is `"problems"` when aspects/elevation are present, or `"prose_only"` when the SLF prose comment is the only geographic description.
 - `metadata` — `{ publication_time, valid_from, valid_until, next_update, unscheduled, lang }`. Timestamps are ISO 8601 strings or `None`; `unscheduled` defaults to `False`; `lang` defaults to `"en"`.
-- `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[] }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`.
+- `prose` — `{ snowpack_structure, weather_review, weather_forecast, tendency[], avalanche_activity, tendency_lead }`. Scalars are HTML strings or `None`. Each tendency entry has `{ comment, tendency_type, valid_from, valid_until }`. `avalanche_activity` is always present (empty strings for SLF); `tendency_lead` is ALBINA's forecaster one-liner from `tendency[0].highlights`, `None` for the other two providers.
 
 **Versioning**: `RENDER_MODEL_VERSION = 9` (in `apps/bulletins/services/render_model.py`). Bump it and run `rebuild_render_models` whenever the output shape or builder logic changes. `BulletinQuerySet.needs_render_model_rebuild()` returns all rows with a stale version. v8 removed the duplicate top-level `snowpack_structure` key (SNOW-488) — `prose.snowpack_structure` is unchanged and remains the canonical location. v9 stores SLF's `neutral` subdivision as `"="` (SNOW-1054); v8 and earlier keyed the token map on `equal`, which SLF never sends, so every neutral rating was stored as `None`.
 
@@ -30,7 +31,7 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 
 **Validation**: `build_render_model` validates against the canonical 8-token EAWS problem-type enum (`DRY_PROBLEM_TYPES | WET_PROBLEM_TYPES`) and raises `RenderModelBuildError` on unknown types, aggregation/problem set mismatches, or empty `problemTypes`. Both lists empty is a legitimate quiet-day state (no raise).
 
-**Missing aggregation is tolerated**: when a bulletin has `avalancheProblems` but no `customData.CH.aggregation`, the builder synthesises aggregation from the problem types (grouping on `category × validTimePeriod`) rather than failing. Per the CAAML v6 schema, aggregation is a *display hint* rather than load-bearing data, and dry/wet problem types are disjoint — so the synthesis is unambiguous and cannot invent a grouping the provider contradicts. A warning is logged so operators can spot the upstream gap.
+**Aggregation per provider**: only SLF ships a `customData.CH.aggregation` block. For ALBINA and Météo-France the per-source adapter (`AlbinaAdapter`, `MeteoFranceAdapter`) synthesises one from `avalancheProblems`, grouping on `category × validTimePeriod` (`_synthesise_aggregation_from_problems`; ALBINA additionally groups by elevation band). Per the CAAML v6 schema, aggregation is a *display hint* rather than load-bearing data, and dry/wet problem types are disjoint — so the synthesis is unambiguous and cannot invent a grouping the provider contradicts. An SLF bulletin that has `avalancheProblems` but no aggregation is **not** synthesised: the builder logs an error and renders the bulletin with no traits, because that is an upstream data gap rather than a known provider shape.
 
 **On validation failure**: the caller stores `render_model = {"version": 0, "error": "...", "error_type": "..."}`. `fetch_bulletins` exits non-zero via `CommandError` when `run.records_failed > 0`. `rebuild_render_models` prints a failure summary and exits non-zero.
 

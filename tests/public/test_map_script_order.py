@@ -72,7 +72,7 @@ def _map_bundle() -> list[str]:
 
 
 def _rendered_script_filenames() -> list[str]:
-    """Every `static/js/` script the homepage renders, in document order.
+    """Every `static/js/` script the map page renders, in document order.
 
     Document order IS execution order for deferred classic scripts, which is
     what makes rendering the page the right source rather than reading the

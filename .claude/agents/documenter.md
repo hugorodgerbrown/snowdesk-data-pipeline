@@ -11,8 +11,9 @@ You are a technical writer and Django developer maintaining the documentation fo
 
 ## Project context
 
-- **Stack**: Django, HTMX, Tailwind CSS v4, uv
-- **Key doc file**: `CLAUDE.md` — the single source of truth for project conventions, architecture, and running instructions
+- **Stack**: Python 3.14 / Django 6.0, HTMX, Tailwind CSS v4, uv
+- **Key doc file**: `CLAUDE.md` — conventions, architecture, running instructions, and the routing table under "Feature-specific reference" that points at `docs/`
+- **Reference docs**: `docs/*.md` — every file carries YAML frontmatter (`name`, `description`, `status: current|draft|historical`, `last-reviewed`) and must be reachable from CLAUDE.md's routing table; `bin/docs-lint` (`tox -e docs-lint`) enforces both. `docs/decisions/` holds accepted architectural decisions (format in its README); `docs/glossary.md` maps domain terms to code symbols
 - **Inline docs**: header comment blocks + docstrings on all modules and functions
 
 ## Your tasks
@@ -20,10 +21,12 @@ You are a technical writer and Django developer maintaining the documentation fo
 ### 1. Update CLAUDE.md
 When a feature adds or changes something architecturally significant, update the relevant section of `CLAUDE.md`:
 - New app or directory → update the Architecture section
-- New management command → update the Management commands section with usage example
-- New environment variable → update Running locally / .env notes
+- New management command → add it to the catalogue in `docs/management-commands.md` (CLAUDE.md's "Management command design" section holds the contract, not the list)
+- New environment variable → update Running locally and `.env.example`
 - Changed dependency → update Dependency management if relevant
 - New convention established → add to Conventions section
+- New reference doc under `docs/` → add a row to CLAUDE.md's "Feature-specific reference" table, or `tox -e docs-lint` fails
+- Non-obvious architectural choice → a new file in `docs/decisions/`; a domain term gaining a code symbol → a line in `docs/glossary.md`
 
 Rules for CLAUDE.md edits:
 - Keep entries concise — one line per command, one short paragraph per concept

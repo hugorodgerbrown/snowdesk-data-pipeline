@@ -10,7 +10,7 @@ and rows rendered server-side and swapped in over HTMX. Mirrors
 _favourites_surface.html throughout — that file is the reference
 implementation, and the differences below are all deliberate.
 
-Included from home.html unconditionally since SNOW-724 retired the
+Included from map.html unconditionally since SNOW-724 retired the
 ``routes`` rollout flag that used to gate the whole surface. Authentication
 still decides most of what the panel shows: routes.js branches on
 ``data-routes-upload-eligible`` for the anonymous sign-in CTA.
@@ -21,7 +21,7 @@ them — "is there a list to load" — while the upload attribute above stays
 authentication, so a signed-out recipient sees the route they were sent AND
 a sign-in prompt underneath it rather than the prompt instead of it.
 
-Five shared modules are loaded once each by home.html before this partial
+Five shared modules are loaded once each by map.html before this partial
 — none is repeated here:
 
   htmx.min.js       the panel's row list and each row's Delete form.
@@ -86,7 +86,7 @@ Context expected:
 {# on its line rather than by the roundel, and the surface that replaced  #}
 {# the anchored popup activateRoute used to mount. Its own partial        #}
 {# because it carries its own body template, its own strings block and    #}
-{# two scripts of its own; included here rather than from home.html so    #}
+{# two scripts of its own; included here rather than from map.html so    #}
 {# the page's routes surface stays one include.                           #}
 {% include "public/partials/_route_detail_sheet.html" %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
@@ -189,20 +189,20 @@ Context expected:
 {# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
 {# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
 {# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —   #}
-{# SNOW-887 moved share.js to home.html: the favourites panel became its    #}
+{# SNOW-887 moved share.js to map.html: the favourites panel became its    #}
 {# second consumer on this page, and a second tag here would run the module #}
 {# twice — browsers do not deduplicate script elements by URL. Same move,   #}
 {# same reason, as SNOW-867 made for overflow_menu.js.                      #}
 {# The row's "…" menu is NOT loaded here either. SNOW-830 loaded          #}
 {# overflow_menu.js from this partial as this surface's own dependency;    #}
-{# SNOW-867 moved the tag to home.html once the downloads panel wanted one #}
+{# SNOW-867 moved the tag to map.html once the downloads panel wanted one #}
 {# too, and SNOW-887 made it three panels. What was left behind here was   #}
 {# the old comment, mid-sentence, describing a script tag that is not on   #}
 {# this page — removed by SNOW-886.                                        #}
 {# SNOW-950: the panel's offline row store — written on every successful  #}
 {# list swap AND on routes.js's idle warm, read back when the request     #}
 {# fails. Sits between the two scripts it talks to, and both edges are    #}
-{# document order between deferred scripts: home.html's                   #}
+{# document order between deferred scripts: map.html's                   #}
 {# panel_rows_cache.js is above (this registers its onWarmed hook at      #}
 {# parse time), and routes.js is below (it reads                          #}
 {# window.pwaRoutesOffline). Map page only, like                          #}

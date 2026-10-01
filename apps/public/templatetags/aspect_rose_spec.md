@@ -6,7 +6,10 @@ A Django template filter that renders an inline SVG compass rose showing active 
 
 ## Location
 
-Add to: `templatetags/card_tags.py`
+Implemented as the `aspect_rose` filter in `apps/public/templatetags/card_tags.py`
+(tests: `tests/public/test_aspect_rose.py`, `tests/public/templatetags/test_card_tags.py`).
+The sections below are the original spec; where the implementation
+settled differently it is noted inline.
 
 ## Data
 
@@ -67,9 +70,10 @@ Angle map (SVG degrees, clockwise from east = 0°):
 > attributes when the SVG is generated as a string in Python. Hardcode both
 > values.
 
-**Segment separator stroke:** `var(--color-background-primary)`, width `1.5`
-(this IS safe as a stroke attribute — it separates segments cleanly against
-the card background)
+**Segment separator stroke:** `#FFFFFF`, width `1.5`. (The spec first
+proposed `var(--color-background-primary)` here; the implementation
+hardcodes white for the same reason as the fills — the rose is a
+Python-generated string.)
 
 ## Centre dot
 
@@ -98,8 +102,8 @@ Populate `aria-label` from the active aspects list. If empty: `"Aspects: none"`.
      width="36" height="36" viewBox="0 0 36 36"
      aria-label="Aspects: NE, E, SE, S" role="img">
   <!-- 8 wedge paths, inactive first, active on top or interleaved -->
-  <path d="M18,18 L..." fill="#E8E6E0" stroke="var(--color-background-primary)" stroke-width="1.5"/>
-  <path d="M18,18 L..." fill="#BA7517" stroke="var(--color-background-primary)" stroke-width="1.5"/>
+  <path d="M18,18 L..." fill="#E8E6E0" stroke="#FFFFFF" stroke-width="1.5"/>
+  <path d="M18,18 L..." fill="#BA7517" stroke="#FFFFFF" stroke-width="1.5"/>
   <!-- ... -->
   <!-- Centre dot last (renders on top) -->
   <circle cx="18" cy="18" r="3.2" fill="#FFFFFF"/>
@@ -108,7 +112,12 @@ Populate `aria-label` from the active aspects list. If empty: `"Aspects: none"`.
 
 ## Template usage
 
-The rose sits in `.problem-tag` between the problem icon and the problem label:
+As built, the rose renders at size 32 in the aspect/elevation row of
+`apps/public/templates/public/_rating_block.html`
+(`{{ card.aspects|aspect_rose:32|safe }}`, beside the joined aspect
+list or "All aspects"). The original proposal, a `.problem-tag` slot
+between the problem icon and the problem label, is kept below for the
+record:
 
 ```django-html
 {% load card_tags %}
@@ -152,8 +161,10 @@ The rose sits in `.problem-tag` between the problem icon and the problem label:
 
 ## Data wiring
 
-`p.aspects` must be populated in `_panel_problems()`. Confirm the CAAML source
-key and add to the problem dict if not already present:
+`card.aspects` is populated by `_enrich_render_model_problem()` in
+`apps/public/views.py` (via `enrich_render_model`), from the render
+model's per-problem `aspects` list. The original note, written before
+that helper existed, read:
 
 ```python
 problems.append({

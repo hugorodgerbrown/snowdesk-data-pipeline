@@ -7,7 +7,12 @@ via the `fetch_bulletins` command.
   no auth, no date filter:
   `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`.
   Reverse-chronological; the pipeline pages until it passes the start-date
-  boundary. Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
+  boundary. The base is `settings.SLF_API_BASE_URL`; a non-empty
+  `SLF_API_LEGACY_URL` overrides it for every fetch (SNOW-900), and the
+  CAAML shape is detected per response, never assumed from the URL
+  (`detect_caaml_shape`;
+  [why](docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md)).
+  Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
 - **ALBINA** (`apps/bulletins/services/albina_fetcher.py`) — EUREGIO
   avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
   IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
@@ -28,7 +33,7 @@ sentinel before reasoning about any provider's payload shape; don't trust
 prose descriptions of the schema.
 
 A full 2025/26 season for all three providers is committed under
-`apps/bulletins/local_mirrors/*.ndjson` (~30 MB, git-tracked) — written by
+`apps/bulletins/local_mirrors/*.ndjson` (~41 MB, git-tracked) — written by
 `fetch_bulletins --stash` and replayed by the dev-mirror views. For testing
 behaviour **across** days, load the *golden week* from it with
 `seed_test_week --commit`: seven consecutive real days, all three providers,

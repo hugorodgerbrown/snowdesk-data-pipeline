@@ -99,6 +99,10 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.favourite.created",
         "map.favourite.deleted",
         "map.favourite.overlay_toggled",
+        # SNOW-887's share control on a favourite row (favourites.js) —
+        # emitted since the row gained Share but never allowlisted, so the
+        # receiver answered 400 and dropped every one.
+        "map.favourite.shared",
         # Community reports overlay (SNOW-419) — anonymised, clustered
         # FieldObservation pins on /map/. Emitted by
         # window.pwaCommunityReportsOverlay's own show/hide in

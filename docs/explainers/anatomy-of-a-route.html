@@ -256,6 +256,7 @@ footer p + p { margin-top: 10px; }
 </section>
 
 <p style="color:var(--ink-2); max-width: 44em; font-size: 15.5px;">Every picture below is a real screenshot of the running app, using the swisstopo winter basemap. The route is a demonstration loop drawn through real steep ground above Verbier, and its terrain was sampled from the same 5 m grid the app uses for everyone. For each picture, every map layer was hidden except the ones named, so it shows what a single layer adds.</p>
+<p class="caveat" style="max-width: 44em;"><b>As at mid-September 2026.</b> The six layers are still measured as described, and the figures are still the ones the app quotes. What the <em>map</em> draws has since moved: a saved route is drawn as its legs — a climb dashed, a descent solid — with the slope colours of layer 2 painted on the line only once you zoom close in, and the rings, the split line and the arrows of layers 3–5 are no longer on the map at all. The ground under a leg is read on the rail that opens below the map when you tap a route: its slope bands, the no-fall passages, and how far the ground tilts across the track, which is the question the arrows were drawn to answer.</p>
 
 <div class="principle">
   <div>
@@ -265,8 +266,8 @@ footer p + p { margin-top: 10px; }
   </div>
   <div>
     <span class="k">RULE TWO</span>
-    <h3>Height comes from the track, never from the ground</h3>
-    <p>Where the skier <em>is</em> is exactly what the uploaded file records. When a route is compared with a bulletin's elevation band, the height is the track's own recorded height. The two rules look contradictory, but they share one principle: take each figure from the thing that actually measures it.</p>
+    <h3>Position comes from the track, never from the ground</h3>
+    <p>Where the skier <em>is</em> is exactly what the uploaded file records. When a route is compared with a bulletin's elevation band, the place is the track's own recorded position; the height at that place now comes from the terrain model, because a recording device's barometer drifts over the hours of a tour, and the recorded height stands in only where the model has no ground. The two rules look contradictory, but they share one principle: take each figure from the thing that actually measures it.</p>
   </div>
 </div>
 
@@ -341,7 +342,7 @@ footer p + p { margin-top: 10px; }
     </div>
     <div class="cols">
       <div>
-        <p>When a route is saved, a background job walks the track in <b>25 m steps</b>. For each step it asks the terrain model how steep the ground is at the <em>middle</em> of that step, averaged over a 10 m window. The answers are stored with the route, one per step, together with the direction each slope faces (its aspect). The map draws nothing with the aspect yet, but layers 3–6 all depend on it.</p>
+        <p>When a route is saved, a background job walks the track in <b>25 m steps</b>. For each step it asks the terrain model how steep the ground is at the <em>middle</em> of that step, averaged over a 10 m window. The answers are stored with the route, one per step, together with the direction each slope faces (its aspect) and the model's height at each step boundary. The map draws nothing with the aspect itself, but layers 3–6 all depend on it, and so does the bank shown on the rail.</p>
         <p>The colours are the overlay's colours, value for value, plus one more. The terrain overlay can leave gentle ground clear, but a line can't go transparent without looking broken, so ground under 30° is drawn <b>sky blue</b>.</p>
         <p>The popup's height profile uses the same colours, and a second line of figures summarises the ground. Those figures are calculated once, when the route is sampled, so the popup, the routes list and the trip page always agree.</p>
         <figure class="popup-fig" style="margin-top:18px"><img src="img/anatomy-of-a-route/08-popup-full.png" alt="Route popup: Steepest 69°, 2.8 km over 30°, 12 no-fall passages, down the fall line, across the fall line, 17 key passages, and a height profile coloured by slope" loading="lazy"><figcaption>The full popup. Line two covers layers 2, 3 and 4.</figcaption></figure>
@@ -576,7 +577,7 @@ footer p + p { margin-top: 10px; }
 </section>
 
 <footer>
-  <p>Screenshots: the running app on the swisstopo winter basemap, at 2× scale. Route: “Mont Gelé west face”, a demonstration loop measured against the live terrain model. What each mark means in the app itself is in the map legend and the slope topic in Help.</p>
+  <p>Screenshots: the running app on the swisstopo winter basemap, at 2× scale, as it drew a route in mid-September 2026; the note under the introduction says what the map draws differently now. Route: “Mont Gelé west face”, a demonstration loop measured against the live terrain model. What each mark means in the app itself is in the map legend and the slope topic in Help.</p>
   <p>How an uploaded file becomes the line these layers are drawn on — what a GPX holds, what is measured before thinning, and what is kept — is taken apart in a companion page, <em>From GPX to Line</em>.</p>
   <p>Why the fall-line layer says what it says, and the drawings that were tried and put down before it, are in <em>Four Ways to Draw the Fall Line</em> — and the frame that eventually answered it, borrowed from an aircraft's attitude indicator, is in <em>Pitch and Roll on a Ski Track</em>.</p>
 </footer>

@@ -12,8 +12,8 @@ description: >
   `--no-approval`) in the args, runs end-to-end without an approval
   gate.
 user-invocable: true
-# Both Linear server names: the local MCP config and the claude.ai connector
-# (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
+# Three renderings of the one Linear connector — the tool prefix differs per
+# client surface (CLI, cloud, Desktop); list all three. See .claude/README.md.
 allowed-tools: Bash, Read, Write, EnterPlanMode, ExitPlanMode, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
@@ -171,8 +171,8 @@ heuristics for the explicit signals that allow a non-`onTrack` value.
 Re-fetch via `get_status_updates(type="project", project=..., limit=1)`
 and report the update URL back to the user.
 
-**Routine mode:** append the resulting URL to the log file from Step 6
-and emit it to stdout. There is no user to "report back" to.
+**Routine mode:** emit the resulting URL to stdout. There is no user to
+"report back" to.
 
 ## Health heuristics
 

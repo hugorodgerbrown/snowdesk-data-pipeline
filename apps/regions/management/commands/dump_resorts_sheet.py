@@ -2,7 +2,7 @@
 
 The other half of ``import_resorts``, and the direction that did not exist
 before SNOW-817. After a session of placing resort coordinates in the in-map
-editor (``/?edit=resorts``, superuser-only — SNOW-74/SNOW-724), or an admin
+editor (``/map/?edit=resorts``, superuser-only — SNOW-74/SNOW-724), or an admin
 edit, those changes live only in that environment's database. This command
 re-emits ``apps/regions/data/resorts.tsv`` from the current rows so the
 operator can ``git diff`` and commit them.

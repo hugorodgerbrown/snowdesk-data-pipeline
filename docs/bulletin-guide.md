@@ -2,7 +2,7 @@
 name: bulletin-guide
 description: How to read the SLF avalanche bulletin — danger levels, subdivisions, dry/wet hazards, aspects, elevation, day evolution
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # How to Read the Avalanche Bulletin

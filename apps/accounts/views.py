@@ -23,7 +23,8 @@ Implements the account flow built around Django's TimestampSigner:
   account_view        GET/POST — account-access ("magic link") token. GET shows
                             a confirm button (no state change, no login); POST
                             verifies the Account, logs in via Django auth, and
-                            redirects to /account/?just_confirmed=1.
+                            redirects to the validated ``?next=`` or
+                            /map/?panel=favourites.
   settings_view       GET  — the account area's one page, /account/settings/.
   delete_account      POST — HTMX: hard-delete the account and redirect to the
                             account-deleted page.
@@ -780,7 +781,7 @@ def change_email_view(request: HttpRequest) -> HttpResponse:
     confirmed.  A new address that already belongs to another account is a
     silent no-op — the response is identical, so nothing is leaked.
 
-    ``@never_cache`` for the same reason as ``manage_view``: the GET form
+    ``@never_cache`` for the reason the retired ``manage_view`` had: the GET form
     renders the account's current email address, and the POST response
     renders the address the change was sent to.
 
@@ -964,7 +965,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     (SNOW-439).  Only the POST from that page acts: it marks the ``Account``
     verified (idempotent — re-submitting does not re-stamp ``verified_at``),
     then ``django.contrib.auth.login()`` establishes the session and redirects
-    to ``/account/?just_confirmed=1``.
+    to the validated ``?next=`` or ``/map/?panel=favourites``.
 
     On a bad, tampered, or expired token — or a token for an unknown user —
     renders ``link_expired.html`` (400) for both verbs.

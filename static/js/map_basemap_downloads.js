@@ -18,7 +18,7 @@
  * are `static/js/basemap_downloaded_areas.js` now, and the functions of
  * those names left here delegate to it. Everything that WRITES a record,
  * plans an eviction, runs a download or paints on the map stayed. The
- * reason is that /account/settings/ has to state what "Reset local data"
+ * reason is that /offline/ has to state what "Reset local data"
  * is about to delete, and it must read the same list the Manage downloads
  * sheet does — which it cannot do from this file, whose bare `MAP` /
  * `COUNTRY_STATE` / `RATINGS_URL` reads only resolve on the map page.
@@ -958,7 +958,7 @@ async function basemapDownloadBudgetBytes() {
 // SNOW-860: the `meta:app` keys for the custom-area and base-layer
 // records, and the reads over them, moved to
 // `static/js/basemap_downloaded_areas.js` — the page-agnostic reader both
-// the map page and /account/settings/ now share. The WRITERS stayed here,
+// the map page and /offline/ now share. The WRITERS stayed here,
 // because they belong to the download runs this file drives; they name
 // their rows through `window.pwaBasemapAreas.CUSTOM_AREAS_KEY` /
 // `.BASE_LAYERS_KEY` so there is still exactly one definition of each key.
@@ -1619,7 +1619,7 @@ async function renameCustomArea(areaId, name) {
 
 // SNOW-860: the reader itself now lives in
 // `static/js/basemap_downloaded_areas.js`, page-agnostic, so
-// /account/settings/'s "what will Reset local data delete" breakdown reads
+// /offline/'s "what will Reset local data delete" breakdown reads
 // the SAME list the Manage downloads sheet does — the two surfaces cannot
 // disagree about what is on this device, which is the whole reason the
 // extraction happened rather than a second reader being written. This is
@@ -1630,7 +1630,7 @@ async function renameCustomArea(areaId, name) {
 //
 //   - `MAP_STRINGS` (map_state.js), so a custom area's numbered default
 //     name and the shared overview map's name arrive in the language the
-//     map page rendered. The settings page passes its own panel's copies.
+//     map page rendered. `/offline/` passes its own panel's copies.
 //   - `measurePinnedBucketBytes`, for an ORPHANED bucket with no record to
 //     read a size off. It walks every entry of the bucket, and that is
 //     work the map page absorbs and an account page should not do on load

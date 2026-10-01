@@ -2,7 +2,7 @@
 name: meteofrance-extraction-is-deterministic
 description: BRA PDF extraction reads every value off the page — never the wall clock, never fixed geometry where the page states the bound
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
 # BRA extraction reads the page, not the clock or a constant

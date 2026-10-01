@@ -484,10 +484,11 @@ class ResortLocationQuerySet(models.QuerySet["ResortLocation"]):
     def primary(self) -> "ResortLocationQuerySet":
         """Return the links a resort leads with.
 
-        The resort page's hero reads this one. It defaults to the ``BASE``
-        role, which preserves exactly today's behaviour: the page currently
-        shows village weather, and that remains the right thing to lead
-        with — it is where someone arrives.
+        The resort page's Forecasts list sorts on this flag (``-is_primary``
+        in ``apps.public.views._resort_location_links``) so the primary link
+        comes first; nothing reads this queryset method directly yet. It
+        defaults to the ``BASE`` role, and that remains the right thing to
+        lead with — it is where someone arrives.
 
         Returns:
             Filtered queryset of primary links.

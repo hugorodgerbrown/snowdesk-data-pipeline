@@ -2,7 +2,7 @@
 name: gpx-uploads-are-parsed-not-stored
 description: Uploaded .gpx files are parsed into Route.points and discarded — no FileField, no MEDIA_ROOT, no object storage
 status: current
-last-reviewed: 2026-09-23
+last-reviewed: 2026-10-01
 ---
 
 # GPX uploads are parsed, not stored (SNOW-685)
@@ -42,7 +42,7 @@ so the stored row is the authoritative artefact either way.
 The privacy arithmetic points the same way. A GPX track is location
 history; the less of it retained, and the fewer places it is retained in,
 the smaller the exposure. Simplification (see `MAX_POINTS` in
-`services/gpx.py`) already discards most of the raw fidelity by design.
+`apps/routes/services/gpx.py`) already discards most of the raw fidelity by design.
 
 ## Consequences
 

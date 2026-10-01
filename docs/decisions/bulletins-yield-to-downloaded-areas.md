@@ -2,7 +2,7 @@
 name: bulletins-yield-to-downloaded-areas
 description: REVERSED by SNOW-663 — bulletin fill vs downloaded-areas overlay exclusivity, a suppression over the opacity step; the hatch ended it
 status: historical
-last-reviewed: 2026-08-28
+last-reviewed: 2026-10-01
 ---
 
 # Bulletins yields to the downloaded-areas overlay (SNOW-656) — reversed by SNOW-663

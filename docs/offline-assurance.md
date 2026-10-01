@@ -2,7 +2,7 @@
 name: offline-assurance
 description: Weekly offline-maps suite — tests/offline/, tox -e offline, RecordingProxy, SNOWDESK_OFFLINE_SEED, #nav-offline-mode watertightness
 status: current
-last-reviewed: 2026-09-06
+last-reviewed: 2026-10-01
 ---
 
 # Offline-maps assurance (weekly)

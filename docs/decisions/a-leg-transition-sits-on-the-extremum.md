@@ -2,7 +2,7 @@
 name: a-leg-transition-sits-on-the-extremum
 description: detect_legs, _snap_to_extrema, SMOOTHING_WINDOW_M — a leg transition is moved from the smoothed turning point onto the raw high or low point
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-01
 ---
 
 # A leg transition sits on the high or low point, not beside it

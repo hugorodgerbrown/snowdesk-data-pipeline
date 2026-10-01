@@ -2,10 +2,17 @@
 name: region-downloads-clip-custom-areas-dont
 description: SNOW-583 clips region basemap downloads to their boundary; custom areas stay rectangular; drops the downloaded-areas per-region ring
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-10-01
 ---
 
 # Region downloads clip to the boundary; custom areas don't
+
+> **Partly superseded.** The clipping decision and the row-span blob shape
+> stand. Two things it mentions have since gone: SNOW-586 replaced the
+> pinned cache's 5,000-entry cap with one bucket per area and a byte budget
+> ([`per-area-pinned-basemap-caches.md`](per-area-pinned-basemap-caches.md)),
+> and SNOW-587 removed the overlay's remaining custom-area ring, leaving
+> the cached-tiles squares as its only mark.
 
 **Decision.** A region's offline-basemap download
 (`apps.regions.services.basemap_tiles.build_region_blob`) is clipped to

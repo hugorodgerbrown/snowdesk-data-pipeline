@@ -2,7 +2,7 @@
 name: bulletins-regions-split
 description: Why apps/bulletins/ and apps/regions/ are separate apps, and why apps/core/ holds the shared abstract bases
 status: current
-last-reviewed: 2026-08-09
+last-reviewed: 2026-10-01
 ---
 
 # App split: apps/bulletins/ vs apps/regions/ (with apps/core/ as neutral ground)

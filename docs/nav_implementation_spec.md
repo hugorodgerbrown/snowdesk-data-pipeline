@@ -1,8 +1,8 @@
 ---
 name: nav_implementation_spec
-description: templates/includes/nav.html partial — back_url/back_label/season_trigger parameters, auth and staff dropdowns, sync badge, full-width layout
+description: templates/includes/nav.html — back_url/back_label/season_trigger, account and staff dropdowns, network menu, sync badge
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-10-01
 ---
 
 # Navigation implementation spec
@@ -26,7 +26,8 @@ Left to right:
    standalone and drops to `text-label` when sharing the row with a back link.
 3. Optional right-aligned **Season** button (`season_trigger`), on bulletin
    pages only.
-4. The right-side cluster: sync badge, then account auth, then staff admin.
+4. The right-side cluster: sync badge, then the connectivity symbol (which
+   opens the network menu), then account auth, then staff admin.
 
 ### Right-side cluster
 
@@ -36,19 +37,34 @@ Left to right:
   queued mutation has permanently failed. It carries only `hidden` at rest;
   `inline-flex` is added by the script, so a count-zero badge never leaks a
   stray pill (SNOW-445). See [`docs/mutation-queue.md`](mutation-queue.md).
+- **Connectivity symbol and network menu** (SNOW-748, SNOW-921) — a
+  `[data-network-indicator]` `<summary>` rendered for every viewer, never
+  hidden, whose glyph, colour and accessible name `static/js/pwa_offline.js`
+  swaps between "using the network" and "not using the network", with a
+  column of `[data-traffic-arrow]` marks that light for a beat per request
+  and response. Pressing it opens the network menu —
+  `includes/_connection_panel.html`, anchored beneath it — which holds the
+  **Offline mode** switch (`[data-network-toggle]`, built on
+  `includes/_switch.html`). It is a disclosure, so it carries
+  `aria-expanded` / `aria-controls`, not `aria-pressed`.
 - **Authenticated account** — an avatar button (first letter of the email)
-  opens a dropdown holding the offline-mode switch, "Settings" and "Sign
+  opens a dropdown holding "Trips" (SNOW-823, first, because a trip is
+  indexed by when and the map has no index for that), "Settings" and "Sign
   out". Since SNOW-802/803 that is the whole menu: the region links and
   the list entries it once carried are map sheets now, and the
   `nav_subscriptions` context processor that fed the region links is gone
   ([`account-area-navigation-lives-in-the-nav-menu`](decisions/account-area-navigation-lives-in-the-nav-menu.md)).
+  The offline-mode switch sat at the top of this menu until SNOW-921 moved
+  it into the network menu above.
 - **Not authenticated** — a single "Sign in" button to `/account/sign-in/`,
   which itself carries the "Create an account" link.
 - **Staff overlay** — a cog button opens an admin dropdown (Component library,
-  Push demo, Edit map, Django admin). It is rendered *in addition to* the
+  Push demo, Edit resorts, Edit locations — one item per editable estate
+  since SNOW-755 — and Django admin). It is rendered *in addition to* the
   account avatar, so a staff user with an account sees both.
 
-Both dropdowns are native `<details>` disclosures (SNOW-616), not scripted
+All three disclosures — the network menu and the two dropdowns — are native
+`<details>` elements (SNOW-616), not scripted
 ones. Opening, closing, Enter/Space and focus all work with JavaScript
 disabled — which is what makes **Sign out** reachable without it, the one
 control a user must be able to reach on a shared or borrowed device. The

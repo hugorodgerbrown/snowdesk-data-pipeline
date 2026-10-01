@@ -62,8 +62,9 @@ the cost is CPU rather than a second pass over the tile origin — which
 **The markers are not exhaustive, and a route with none is not a safe
 route.** That is the same failure as an unshaded raster reading as "no
 steep terrain here", and it is stated on the surface rather than only
-here: the legend row links to the help topic, and the topic says to
-cross-check against the slope overlay. Duty of care resolves as it does
+here: the route's terrain lines count them (the rings themselves came off
+the map in SNOW-1019), and the help topic says to cross-check against
+the slope overlay. Duty of care resolves as it does
 everywhere else in this codebase — highlight, never suppress; this marks
 ground, it does not issue a verdict about a day.
 """

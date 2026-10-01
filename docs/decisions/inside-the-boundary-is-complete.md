@@ -2,7 +2,7 @@
 name: inside-the-boundary-is-complete
 description: Why an area download picks its content by crude rectangle, server-side (/api/area-content/, bboxes_overlap, areaBBox), never real geometry
 status: current
-last-reviewed: 2026-09-13
+last-reviewed: 2026-10-01
 ---
 
 # Inside the boundary, everything. Outside, whatever is there.

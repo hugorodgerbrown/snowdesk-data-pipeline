@@ -2,7 +2,7 @@
 name: no-integer-pks-in-urls
 description: No sequential integer PK in a URL or public feed — natural key, stored slug, short opaque id, uuid; Resort slug, Location short_id
 status: current
-last-reviewed: 2026-09-02
+last-reviewed: 2026-10-01
 ---
 
 # No integer primary keys in URLs
@@ -54,7 +54,7 @@ roughly 461 of some 540 public locations. A private pin has no name on the
 fabricated for the large majority of rows.
 
 A full uuid would work and would match `/favourites/<uuid>/`, but that page
-is being removed, and thirty-six characters is a poor canonical URL for a
+is gone (it 301s to the pin's weather page since SNOW-800), and thirty-six characters is a poor canonical URL for a
 document meant to be shared. Owner-derived paths (`/weather/ch-4115/`,
 `/weather/verbier/base/`) were considered and set aside: the weather page
 also serves the owner's own private pin, which has no owner-derived path, so

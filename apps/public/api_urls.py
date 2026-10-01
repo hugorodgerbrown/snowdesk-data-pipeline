@@ -93,8 +93,10 @@ urlpatterns = [
         api.area_content,
         name="area_content",
     ),
-    # SNOW-323: dissolved bulletin grouping boundaries keyed by date.
-    # The whole-season payload is cached client-side by map.js.
+    # SNOW-323: dissolved bulletin grouping boundaries for ONE date
+    # (``?d=`` is required). map.js fetches a day at a time and memoises
+    # each for the session — the whole-season payload went when the
+    # historical backfill pushed it past the worker's memory limit.
     path(
         "bulletin-groupings.geojson",
         api.bulletin_groupings_geojson,
@@ -113,8 +115,8 @@ urlpatterns = [
         name="resort_popup",
     ),
     # SNOW-419: community-reports overlay — anonymised, clustered
-    # FieldObservation pins from the last 48 hours. The view inline-gates
-    # on the ``community_reports`` waffle flag and 404s when inactive.
+    # FieldObservation pins from the last 48 hours. Public: no auth gate
+    # and no flag (SNOW-724 retired the rollout flags).
     path(
         "community-reports.geojson",
         api.community_reports_geojson,

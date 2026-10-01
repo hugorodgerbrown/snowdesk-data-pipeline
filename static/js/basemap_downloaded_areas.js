@@ -6,10 +6,10 @@
  * lines of map-page machinery: it reads `MAP`, `COUNTRY_STATE` and
  * `RATINGS_URL` as bare identifiers from a shared global lexical scope,
  * and carries a load-order contract with `map.js` (see its own header).
- * None of that can be loaded onto an account page — and an account page
- * is exactly what SNOW-860 needs the answer on, because
- * `/account/settings/`'s "Reset local data" row now states what the
- * reset is about to delete.
+ * None of that can be loaded onto a page with no map — and such a page
+ * is exactly what SNOW-860 needs the answer on, because `/offline/`'s
+ * (SNOW-930; `/account/settings/`'s before it) "Reset local data" row now
+ * states what the reset is about to delete.
  *
  * So the reader moved out and nothing else did. `basemapDownloadedAreas`,
  * `pinnedBucketAreaIds` and the two record reads behind them are here;
@@ -71,7 +71,7 @@
   // The English fallbacks for the two names this module fills in. The
   // translated forms are passed in by the caller (`options.strings`),
   // which is what keeps this module free of a template id: the map page
-  // reads them out of `map-strings-template` and the settings page out of
+  // reads them out of `map-strings-template` and `/offline/` out of
   // its own panel's template, and neither has to know about the other's.
   var FALLBACK_STRINGS = {
     'default-custom-name': 'Custom area %(n)s',

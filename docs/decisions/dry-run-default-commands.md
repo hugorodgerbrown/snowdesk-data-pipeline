@@ -2,7 +2,7 @@
 name: dry-run-default-commands
 description: Management commands never alter data by default — explicit --commit (preferred) or confirmed --dry-run shapes
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # Management commands are read-only by default

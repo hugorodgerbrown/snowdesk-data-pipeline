@@ -2,9 +2,10 @@
 name: audit-security
 description: |
   Run a security audit scoped to Snowdesk by invoking the security-auditor
-  agent with the project's specific threat surface pre-loaded (SLF CAAML
-  ingest, Resend email, subscription tokens, HTMX partials, Django
-  settings) — no need to describe the stack each time. Use whenever the
+  agent with the project's specific threat surface pre-loaded (CAAML
+  ingest from three providers, SMTP email via Resend's relay in production,
+  account-link tokens, UGC uploads, the OAuth 2.1 server and MCP endpoint,
+  HTMX partials, Django settings) — no need to describe the stack each time. Use whenever the
   user asks for a security audit, vulnerability scan, CVE or dependency
   check, secrets scan, pentest, or pre-deploy security review of this
   project — "/audit-security", "audit the security of this project", "check
@@ -35,19 +36,26 @@ surface pre-loaded, so you don't have to describe the stack each time.
    scope from $ARGUMENTS and the following context injected:
 
    **Snowdesk threat surface** (share with the auditor):
-   - **SLF CAAML ingest** — `bulletins/services/` fetches from
-     `aws.slf.ch` (plus Météo-France and ALBINA sources); check for SSRF,
-     unvalidated redirects, and injection via bulletin content.
-   - **Resend email** — `accounts/` sends magic-link and notification
-     emails via the Resend HTTP API; check for header injection, open
-     redirect in magic links, and rate-limit bypass.
-   - **Anthropic API** — if any view proxies model calls, check for prompt
-     injection via user-controlled input.
+   - **CAAML ingest** — `apps/bulletins/services/` fetches from
+     `aws.slf.ch`, `avalanche.report` and the Météo-France APIM; check for
+     SSRF, unvalidated redirects, and injection via bulletin content.
+   - **Email** — `apps/accounts/services/email.py` sends account-access,
+     verification, password-reset and email-change emails over Django's
+     SMTP backend (Resend's relay in production, Mailpit in dev),
+     dispatched via django-tasks; check for header injection, open
+     redirect in the links, and rate-limit bypass.
+   - **OAuth 2.1 server and MCP endpoint** — `apps/oauth/` and
+     `POST /api/mcp/`; check PKCE enforcement, hashed codes/tokens, the
+     CIMD SSRF guard, and bearer-token enforcement on every MCP call.
+   - **UGC write views** — GPX upload (`route_create` in
+     `apps/routes/views.py`, parsed and discarded), field observations,
+     favourites, trips, download areas; check size limits, rate limits and
+     owner scoping.
    - **HTMX partials** — all fragment endpoints must be guarded by
      `require_htmx`; check for missing guards and CSRF exposure.
-   - **Subscription tokens** — signed tokens for magic links and
-     unsubscribe flows; check for timing attacks, token reuse, and missing
-     expiry enforcement.
+   - **Account tokens** — `TimestampSigner` with four per-purpose salts in
+     `apps/accounts/services/token.py`; check for timing attacks, token
+     reuse, and missing expiry enforcement. There is no unsubscribe flow.
    - **Django settings** — check `DEBUG`, `ALLOWED_HOSTS`, `SECRET_KEY`
      source, `SECURE_*` headers, and `SESSION_COOKIE_SECURE` across the
      split settings layout (`config/settings/`).
@@ -58,7 +66,7 @@ surface pre-loaded, so you don't have to describe the stack each time.
 3. After the auditor completes, summarise:
    - Count of Critical / High / Medium / Low findings
    - Top 3 issues with one-line descriptions
-   - Whether any of the `## Invariants` in [CLAUDE.md](../../CLAUDE.md)
+   - Whether any of the `## Invariants` in [CLAUDE.md](../../../CLAUDE.md)
      are violated
 
 4. Ask the user if they want to create Linear tickets for any Critical or

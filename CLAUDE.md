@@ -78,7 +78,10 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
-                 (FK to auth.User), surfaced in the map's routes panel
+                 (FK to auth.User), surfaced in the map's routes panel, plus
+                 ``RouteShare``, the tokenised link whose claim COPIES a
+                 route to another account (SNOW-764), and the terrain
+                 services under services/ (slope, legs, fall line, bank)
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
                  and ``TripParticipant`` (every account that has SAVED it,
@@ -117,7 +120,10 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  Hand-written, no OAuth library — read
                  docs/decisions/snowdesk-is-its-own-oauth-server.md first
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
-    api.py       Plain JsonResponse endpoints consumed by the map page
+    api.py       Plain JsonResponse endpoints — the map's feeds, plus
+                 share-create, /api/version + sw-config, the bulletin
+                 JSON alternates, weather detail and the superuser edit
+                 endpoints
     api_urls.py  URL routing for /api/ (namespace: api:)
     debug_views.py Staff-only design-debug pages (mounted unconditionally, staff-gated — not a DEBUG gate)
 templates/       Project-level templates shared across apps
@@ -179,7 +185,7 @@ every env installs from
 When you add a new **tool** (not a runtime dependency) that a tox env needs
 — a linter, a type-checker plugin, a test-only package — add it to the
 matching purpose-scoped group in `pyproject.toml`'s `[dependency-groups]`
-(`test`, `type`, `lint`, `sast`, `e2e`; `dev` composes all of them for local
+(`test`, `type`, `lint`, `sast`, `offline`, `e2e`; `dev` composes all of them for local
 `uv sync`), then run `uv lock` to update `uv.lock`.
 
 ## Conventions
@@ -241,8 +247,10 @@ point, so don't skip pieces for "simple" models:
   mirrors the source tree; each module has a corresponding
   `test_{module_name}.py`.
 - All new code must have covering tests; the coverage target is 90%.
-- Always run tests via `uv run tox -e test` (not a bare `pytest` call) —
-  the tox env mirrors CI.
+- Run the suite via `uv run tox -e test` — the tox env mirrors CI. Never a
+  bare `pytest` (it runs whatever interpreter is on PATH; the PreToolUse
+  hook refuses it). `uv run pytest <path>` is fine for a targeted run while
+  iterating.
 - All datetime objects must have `tzinfo`.
 - Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
   never use direct instantiation (`RegionFactory(...)`). The `.create()`
@@ -360,7 +368,7 @@ URL and fails a page that is in neither state
 **HTMX** patterns:
 - Full-page views return a complete HTML response.
 - Partial/fragment views return only the inner HTML snippet; they are routed under
-  `apps/public/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
+  the owning app's `urls.py` with a `partials/` prefix and guarded by `require_htmx`.
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
 - **htmx is loaded per page, not by `public/base.html`.** A page that renders
@@ -395,8 +403,10 @@ blocks every PR that introduces a violation:
 2. **Design tokens, not raw Tailwind palette utilities.** Colours: `bg-card`,
    `text-text-1/2/3`, `border-border`, `bg-status-*` — never `bg-slate-200`,
    `text-red-600`. Radius: `rounded-card`/`-tag`/`-pill`/`-sm` — never
-   `rounded-[12px]`. Primary CTAs use `templates/includes/_button.html`, not
-   inline class strings.
+   `rounded-[12px]`. Type: the named sizes (`text-meta`/`-chip`/`-caption`/
+   `-summary`/`-label`) or the default ramp, and `leading-prose` — never
+   `text-[13px]` / `leading-[1.2]`. Primary CTAs use
+   `templates/includes/_button.html`, not inline class strings.
 3. **Hex colours belong in `src/css/main.css` `@theme`.** The only legitimate
    template-side hex values are SVG `fill`/`stroke` attributes and the PWA
    `theme-color` meta tag (which can't resolve CSS variables). This rule is
@@ -469,12 +479,13 @@ has had: the three guards above each catch one historical bug class, and
 `js-globals-lint` in particular exists to catch a read of a global nothing
 assigns, which is a misspelled identifier and exactly what a type checker
 catches for free. `checkJs` is **false** project-wide, so a file is checked
-only once someone adds `// @ts-check` to it — fourteen files today, all
-`*_core.js` modules except `pwa_network_mode.js`,
-with `basemap_download_core`, `map_weather_core`, `layer_visibility_core` and
-`elevation_profile_core` still to come (SNOW-899 landed the infrastructure and
-the cheap files; those four carry 115 of the original 128 errors between
-them). `static/js/globals.d.ts` declares the `window.pwa*` publish channel,
+only once someone adds `// @ts-check` to it — nineteen files today:
+eighteen of the twenty-nine `*_core.js` modules plus `pwa_network_mode.js`.
+Eleven core modules are still unchecked, among them the four SNOW-899
+deferred (`basemap_download_core`, `map_weather_core`,
+`layer_visibility_core`, `elevation_profile_core` — they carried 115 of the
+original 128 errors between them); `grep -L '^// @ts-check'
+static/js/*_core.js` lists the rest. `static/js/globals.d.ts` declares the `window.pwa*` publish channel,
 which is the first time that surface has been written down anywhere. It runs
 in `js.yml` rather than the `lint-guards` matrix (those jobs set up no Node)
 and is deliberately **not** in the default envlist — it would cost a second
@@ -645,8 +656,8 @@ Read these when working in the relevant area:
 | Why the weather day picker is a CSS radio group, not seven dated links (`?date=` picks the row, the picker picks inside it) | [`docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`](docs/decisions/weather-day-picker-is-a-selector-not-navigation.md) |
 | Why Snowdesk draws its own weather icons (bin/build-weather-icons, the both-backgrounds palette, the baked silhouette edge) | [`docs/decisions/weather-icons-are-drawn-in-house.md`](docs/decisions/weather-icons-are-drawn-in-house.md) |
 | Why the weather icons are Yr / MET Norway and not MeteoSwiss, AccuWeather or the Met Office (legibility measurements + the licence position for each set) | [`docs/decisions/weather-icons-are-yr-not-meteoswiss.md`](docs/decisions/weather-icons-are-yr-not-meteoswiss.md) |
-| Why the fall-line arrow is a bearing per place (fall_line.py, fall_line_marks, `fall_lines` on the wire, routes-fall-lines, the 30° gate, why an absent arrow is no claim) | [`docs/decisions/the-fall-line-arrow-is-a-bearing-per-place.md`](docs/decisions/the-fall-line-arrow-is-a-bearing-per-place.md) |
-| Why a saved route on the map is drawn as its legs, not in slope classes, and in slope classes from z14 (route_legs_core.js, routes-leg-climb / routes-leg-descent, routes-transitions, routes-slope-line, ROUTE_SLOPE_MINZOOM, slopeSegmentCollection, point_from / point_to, bindLegDimming; SNOW-1019 closed the two-rail gap; the steep-ground shadow removed) | [`docs/decisions/legs-not-slope-classes-on-the-map.md`](docs/decisions/legs-not-slope-classes-on-the-map.md) |
+| Why the fall-line arrow is a bearing per place (fall_line.py, fall_line_marks, `fall_lines` on the wire, the 30° gate, why an absent arrow is no claim; the arrow is off both maps since SNOW-1019 — rail two's bank wedges replaced it) | [`docs/decisions/the-fall-line-arrow-is-a-bearing-per-place.md`](docs/decisions/the-fall-line-arrow-is-a-bearing-per-place.md) |
+| Why a saved route on the map is drawn as its legs, not in slope classes, and in slope classes from z14 (route_legs_core.js, routes-leg-climb / routes-leg-descent, routes-transitions, routes-slope-line, ROUTE_SLOPE_MINZOOM, slopeSegmentCollection, point_from / point_to, bindRouteCursor; SNOW-1019 closed the two-rail gap; the steep-ground shadow removed) | [`docs/decisions/legs-not-slope-classes-on-the-map.md`](docs/decisions/legs-not-slope-classes-on-the-map.md) |
 | Why the bank angle is drawn signed (bank.py, bank_angle_deg, bank_angles, `roll_deg`, `banks` on the wire, bank_ribbon_core.js bankWedge / bankWedges, the level-ski wedges; bankGlyphs one wedge per segment (trackMode) and kick turns (kickTurns); lookup vs pattern, no gate, the flat array) | [`docs/decisions/the-bank-angle-is-drawn-signed.md`](docs/decisions/the-bank-angle-is-drawn-signed.md) |
 | Why rail two's readout is the track's angle and the ground's class (trackGrade, slopeTerm and the EAWS slope classes, flat under 5°, segmentGradients stopped at the leg's ends, steepShares and the leg subtitle, ROWS_FITTED and the empty fitted track row, no track words, the left-aligned readout, the staff debug rail and `/_route-terrain/<uuid>/?format=json`) | [`docs/decisions/the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md`](docs/decisions/the-rail-readout-is-the-tracks-angle-and-the-grounds-class.md) |
 | Why a leg transition is snapped onto the raw high or low point (detect_legs, _snap_to_extrema, SMOOTHING_WINDOW_M; the smoothed turning point sat 9–50 m off on every canonical track) | [`docs/decisions/a-leg-transition-sits-on-the-extremum.md`](docs/decisions/a-leg-transition-sits-on-the-extremum.md) |
@@ -669,7 +680,7 @@ Read these when working in the relevant area:
 | Why the launch screen is two halves that must match (apple-touch-startup-image, bin/build-pwa-splash, splash-manifest.json, the in-app launch shell; iOS never used background_color) | [`docs/decisions/the-launch-screen-is-two-halves-that-match.md`](docs/decisions/the-launch-screen-is-two-halves-that-match.md) |
 | Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
 | Why the base layer's zoom band follows the basemap's extent (BASE_LAYER_BANDS, baseLayerBand, z0-9 for the national styles, z0-7 for OpenFreeMap) | [`docs/decisions/the-base-layer-band-follows-the-basemap-extent.md`](docs/decisions/the-base-layer-band-follows-the-basemap-extent.md) |
-| Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, why glyphs are excluded) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
+| Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, the fixed glyph range set GLYPH_RANGES) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
 | Why an area download picks its content by crude rectangle, server-side, never real geometry (/api/area-content/, bboxes_overlap, areaBBox; the superset invariant) | [`docs/decisions/inside-the-boundary-is-complete.md`](docs/decisions/inside-the-boundary-is-complete.md) |
 | Why a region holds one basemap at a time while a custom area can hold the same ground twice (areaIdForRegion, generateCustomAreaId, confirmBasemapReplace; SNOW-864 declined) | [`docs/decisions/one-basemap-per-region-download.md`](docs/decisions/one-basemap-per-region-download.md) |
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
@@ -678,13 +689,14 @@ Read these when working in the relevant area:
 | HISTORICAL — why the update banner named the controlling worker's build (BUILD_IDENTITY, `build-identity`, controllerIdentity; removed by SNOW-1025) | [`docs/decisions/the-update-banner-names-the-worker-being-replaced.md`](docs/decisions/the-update-banner-names-the-worker-being-replaced.md) |
 | Why the update banner's first gate is the shell rather than the build (shellIsStale, the `shell` field on /api/version, reveal vs revealNow, why the unknown fails open) | [`docs/decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md`](docs/decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md) |
 | Why `activate` re-warms the map page and its scripts (_rewarmShell, _shellSubresources, SHELL_PAGES; a deploy used to leave the app unopenable offline) | [`docs/decisions/the-shell-is-rewarmed-after-an-activation.md`](docs/decisions/the-shell-is-rewarmed-after-an-activation.md) |
-| Why the offline report, reset control and sync log are a public page (/offline/, offline_page, PUBLIC_PRINCIPAL_PATHS, SHELL_PAGES) | [`docs/decisions/what-this-device-holds-is-a-public-page.md`](docs/decisions/what-this-device-holds-is-a-public-page.md) |
+| Why the offline report, reset control and sync log are a public page (/offline/, offline_page, SHELL_PAGES; the cached copy stays principal-partitioned) | [`docs/decisions/what-this-device-holds-is-a-public-page.md`](docs/decisions/what-this-device-holds-is-a-public-page.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Why a native build would be a shell around the PWA and never a companion app (DRAFT — background location is the only justification; WKAppBoundDomains risk to the offline estate) | [`docs/decisions/a-native-app-is-a-shell-not-a-companion.md`](docs/decisions/a-native-app-is-a-shell-not-a-companion.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
 | Admin-managed site banners (PersistentMessage rows, apps/public/banners.py, _persistent_banners.html, the dismissal endpoint) | [`docs/site-banners.md`](docs/site-banners.md) |
+| Why /help/ illustrations are live partials rendered from apps/public/component_previews.py, not screenshots (inert wrappers, the test_help.py id assertion) | [`docs/decisions/help-illustrations-are-live-mocks.md`](docs/decisions/help-illustrations-are-live-mocks.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |

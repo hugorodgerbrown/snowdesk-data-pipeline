@@ -1,14 +1,16 @@
 ---
 name: bulletin-target-date-vs-default-issue-selection
-description: Why Bulletin.target_date's 12:00 rule and _select_default_issue's 10:00 pivot stay separate mechanisms, not one stored column
+description: Why Bulletin.target_date's 12:00 rule and select_default_issue's 10:00 pivot stay separate mechanisms, not one stored column
 status: current
-last-reviewed: 2026-07-30
+last-reviewed: 2026-10-01
 ---
 
-# `Bulletin.target_date` and `_select_default_issue` answer different questions
+# `Bulletin.target_date` and `select_default_issue` answer different questions
 
 **Decision.** `Bulletin.target_date` (SNOW-560) and the 10:00 UTC pivot inside
-`apps/public/views.py::_select_default_issue` remain two separate mechanisms.
+`apps/bulletins/services/selection.py::select_default_issue` (imported into
+`apps/public/views.py` as `_select_default_issue`, the name used below)
+remain two separate mechanisms.
 `target_date` is a stored column, populated once at ingest time by
 `target_day_for_valid_from()`. `_select_default_issue`'s pivot is **not**
 promoted to a stored column or otherwise unified with it.
@@ -49,7 +51,7 @@ rather than deriving uniformly from `valid_from`. This was dropped:
   records agree, Météo-France 4,671/4,671 records agree. 5,864 records, zero
   disagreement.
 - Météo-France's field is not implementable for live ingest regardless:
-  `meteofrance_translator._build_custom_data_mf` does not emit a `date` key
+  `meteofrance_translator._parse_custom_data_mf` does not emit a `date` key
   on live-fetched bulletins (verified against all three MF sentinels in
   `tests/sentinels/meteofrance/`) — it exists only in the PDF-scraped
   `meteofrance_archive.ndjson`, written by `fixup_envelope`. An ingest-time
@@ -62,12 +64,15 @@ rather than deriving uniformly from `valid_from`. This was dropped:
   (`slf_fetcher.upsert_bulletin`), for all three providers and all five
   callers that route through it (`slf_fetcher`, `albina_fetcher`,
   `meteofrance_fetcher`, `meteofrance_archive_loader`, `golden_week`).
-- If SNOW-559 changes Météo-France's `valid_from` to the real issue time
-  (rather than the current placeholder), MF previous-evening issues would
-  shift `target_date` by a day relative to the archive's
-  `customData.MF.date`. `tests/bulletins/services/test_meteofrance_archive_loader.py::TestTargetDateMatchesArchiveDate`
-  pins the current agreement so that shift surfaces as a red test rather
-  than a silent drift.
+- SNOW-559 has since changed Météo-France's archive `valid_from` to the
+  real issue time (the "Rédigé le … à 16h" line) rather than the old
+  midnight placeholder. The feared shift did not materialise: a
+  previous-evening issue written at 16:00 still targets the next day,
+  which is the day the archive's `customData.MF.date` names, so the
+  agreement re-measured on 2026-10-01 is still 4,671/4,671.
+  `tests/bulletins/services/test_meteofrance_archive_loader.py::TestTargetDateMatchesArchiveDate`
+  keeps pinning it so any future drift surfaces as a red test rather
+  than silently.
 - `_select_default_issue` continues to take a `target_date` as an input
   (computed the same way it already was) and is unaffected by this change —
   it reads bulletins already known to target a given day; it does not

@@ -560,14 +560,14 @@ footer p + p { margin-top: 6px; }
           <p>The line is drawn <b>twice</b>: a wide pale casing underneath and the route colour on top. That is what keeps one colour legible over both a white winter basemap and a dark satellite one. Both widths grow with zoom, so the track is a hairline at country scale and something you can follow in a valley.</p>
           <p>From zoom 10 the ends are marked — a filled dot where the track starts, a chequered flag where it finishes. A line says where you went but nothing about which way round; these say it without a legend.</p>
           <p>A route somebody <b>shared</b> with you is drawn dashed, in a different colour, and on top. Both differences are deliberate: the dash carries the meaning for a colour-blind reader, the colour carries it at a zoom where a dash is too small to see. A route you own and a route you have been sent support different actions, and the map has to say which is which before it is tapped.</p>
-          <p>Tapping flies the map to the route's stored rectangle and opens the <b>detail sheet</b> docked below it — the same sheet the rest of the map uses. It was an anchored popup until recently, and a 320-pixel card had stopped being enough for what there is to say about a line.</p>
-          <p>The sheet holds the name, then the length, climb and drop — each omitted entirely if it isn't known — then the height profile, then the low-to-high range and the elapsed time. For a route of your own, below that sits the one thing the popup had no room for: what the day's bulletin says about this particular line, fetched for whatever date the map is showing and re-fetched when you move the scrubber. A route somebody has shared with you does not carry it until you save it — an unclaimed share is identified by its link rather than by a route of yours, and the reading is looked up per route. That half belongs to the terrain story rather than this one.</p>
+          <p>Tapping flies the map to the route's stored rectangle and opens the <b>route rail</b> below it. It was an anchored popup until recently, then a docked sheet, and a 320-pixel card had stopped being enough for what there is to say about a line.</p>
+          <p>The rail holds the name, then the length, climb and drop — each omitted entirely if it isn't known — then the height profile, cut into its legs. Its menu opens a sheet with the terrain figures and, for a route of your own, the one thing the popup had no room for: what the day's bulletin says about this particular line, fetched for whatever date the map is showing and re-fetched when you move the scrubber. A route somebody has shared with you does not carry it until you save it — an unclaimed share is identified by its link rather than by a route of yours, and the reading is looked up per route. That half belongs to the terrain story rather than this one.</p>
         </div>
         <div class="side">
           <h3>The profile</h3>
           <p style="font-size:15.5px; color:var(--ink-2)">The chart is drawn from the <b>third number of every coordinate the map already holds</b>. It needs no second request, and because the routes layer is cached on the device, it draws offline too.</p>
-          <p style="font-size:15.5px; color:var(--ink-2); margin-top:10px">It shows the heights the file recorded and nothing else. No smoothing, no terrain lookup, and — the important one — <b>no bridging a gap</b>: where the heights break, the curve breaks. A plausible straight line across missing data is the same class of error as reporting 0 m of climb for a track that recorded none.</p>
-          <p class="caveat"><b>The chart and the figures come from different copies.</b> The curve is shaped by the stored line; the totals printed beside it were measured on the full one. The lowest and highest points are honest either way — thinning can drop a point, but it cannot invent a summit that was never recorded.</p>
+          <p style="font-size:15.5px; color:var(--ink-2); margin-top:10px">Until the ground under a route has been measured, those are the heights the file recorded and nothing else; afterwards they are the terrain model's, with the recorded height standing in only where the model has no ground. Either way there is no smoothing and — the important one — <b>no bridging a gap</b>: where the heights break, the curve breaks. A plausible straight line across missing data is the same class of error as reporting 0 m of climb for a track that recorded none.</p>
+          <p class="caveat"><b>The chart and the figures come from different copies.</b> The curve is shaped by the stored line; the totals printed beside it were measured on the full one until the ground is measured, and on the terrain model's heights afterwards. The lowest and highest points are honest either way — thinning can drop a point, but it cannot invent a summit that was never recorded.</p>
         </div>
       </div>
 
@@ -730,7 +730,7 @@ footer p + p { margin-top: 6px; }
         <tr><td>Thinning the line</td><td>Server, once at upload</td><td>What your device receives is already what it will draw</td></tr>
         <tr><td>Drawing the line and its ends</td><td>Your device</td><td>Redrawn at every zoom from the coordinates it holds</td></tr>
         <tr><td>The height profile</td><td>Your device</td><td>Built from coordinates already in hand — no extra request, and it works offline</td></tr>
-        <tr><td>The figures in the detail sheet</td><td>Your device</td><td>Formatted to match the panel row exactly, down to how minutes are rounded</td></tr>
+        <tr><td>The figures on the route rail</td><td>Your device</td><td>Formatted to match the panel row exactly, down to how minutes are rounded</td></tr>
         <tr><td>The day's bulletin reading</td><td>Server, per day</td><td>It expires; held past its horizon it is reported stale rather than repainted as current</td></tr>
       </tbody>
     </table>
@@ -746,7 +746,7 @@ footer p + p { margin-top: 6px; }
 </section>
 
 <footer>
-  <p>Describes Snowdesk as at 20 September 2026. The 5 MB file limit and the 25-route cap are current settings rather than fixed properties, and may change.</p>
+  <p>Describes Snowdesk as at 1 October 2026. The 5 MB file limit and the 25-route cap are current settings rather than fixed properties, and may change.</p>
   <p>One section is marked <b style="color:var(--route)">Landing next</b>: that part is decided but not yet built. Everything else on this page describes what runs today.</p>
   <p>What the app makes of the <em>ground</em> a route crosses — steepness, aspect, the fall line, the passages worth a second look — is taken apart in a companion page, <em>Anatomy of a Route</em>.</p>
 </footer>

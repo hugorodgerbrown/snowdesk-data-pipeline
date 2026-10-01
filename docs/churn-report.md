@@ -2,7 +2,7 @@
 name: churn-report
 description: Weekly churn chart — bin/render-churn, the report-churn skill, the Snowdesk Churn Ledger artifact, what is excluded from churn and why
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-10-01
 ---
 
 # Churn report

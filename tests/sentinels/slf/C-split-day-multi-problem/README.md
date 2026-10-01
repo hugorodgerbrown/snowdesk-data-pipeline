@@ -23,5 +23,5 @@ categories (dry + wet) is the defining characteristic of variant C.
 
 ## PDF
 
-See `slf/A-single-level/README.md` — no stable URL for archived SLF PDFs is
+See [`../A-single-level/README.md`](../A-single-level/README.md) — no stable URL for archived SLF PDFs is
 discoverable from the public API.  `source.pdf` is absent from this directory.

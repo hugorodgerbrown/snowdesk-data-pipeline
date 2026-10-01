@@ -2,7 +2,7 @@
 name: the-base-layer-band-follows-the-basemap-extent
 description: The base layer's zoom band is per basemap — BASE_LAYER_BANDS, baseLayerBand, z0-9 for national styles, z0-7 for OpenFreeMap
 status: current
-last-reviewed: 2026-09-08
+last-reviewed: 2026-10-01
 ---
 
 # The base layer's band follows the basemap's extent

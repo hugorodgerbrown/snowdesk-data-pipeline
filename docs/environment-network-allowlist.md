@@ -109,7 +109,7 @@ cannot run an ALBINA or Météo-France ingest end to end.
 
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
-| `slf.ch`, `*.slf.ch` | `aws.slf.ch` (`SLF_API_URL`), `www.slf.ch` (competitor scan) | `aws.`/`www.` open, bare blocked |
+| `slf.ch`, `*.slf.ch` | `aws.slf.ch` (`SLF_API_BASE_URL`), `www.slf.ch` (competitor scan) | `aws.`/`www.` open, bare blocked |
 | `avalanche.report`, `*.avalanche.report` | `static.avalanche.report` (ALBINA bulletins), `api.avalanche.report` | open (re-probed 2026-09-30: a dry-run `fetch_bulletins --source albina --today` completed) |
 | `meteofrance.fr`, `*.meteofrance.fr` | `public-api.meteofrance.fr` (DPBRA), `portail-api.meteofrance.fr` (token), `donneespubliques.meteofrance.fr` | blocked |
 | `avalanches.org`, `*.avalanches.org` | `www.avalanches.org` — EAWS glossary and standards linked from the site and fixtures | blocked |
@@ -119,7 +119,7 @@ cannot run an ALBINA or Météo-France ingest end to end.
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
 | `open-meteo.com`, `*.open-meteo.com` | `api.`, `customer-api.`, `historical-forecast-api.`, `customer-historical-forecast-api.` — `fetch_weather` and `backfill_weather` | **intermittent, and not the policy's** (2026-09-30: roughly one request in three to `api.open-meteo.com` stalls until the client timeout, the rest answer in under a second; SLF and npm never stall. A dry-run `fetch_weather` fails one or two locations per run. Diagnosed after the pair was re-saved: `curl -v` shows the proxy answering `200 Connection Established` on every attempt, the stall is *after* the tunnel, and `__agentproxy/status` logs no failure for the host. The host resolves to one IP. So it is the egress gateway or the origin — most likely Open-Meteo's per-IP rate limit on a shared egress address — and no allowlist entry changes it) |
-| `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_URL`), the docs and terms | blocked |
+| `what3words.com`, `*.what3words.com` | `api.what3words.com` (`WHAT3WORDS_API_BASE_URL`), the docs and terms | blocked |
 | `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
 | `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
 | `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open, and in the policy since 2026-09-29 (before that it was reachable only through a platform default) |

@@ -2,7 +2,7 @@
 name: service-worker-updates-apply-silently
 description: Why a waiting SW applies silently (at once on a fresh tab, else on hide) and the banner is only for a stuck worker — pwa-shell
 status: current
-last-reviewed: 2026-09-25
+last-reviewed: 2026-10-01
 ---
 
 # Service-worker updates apply silently; the banner is for a stuck worker

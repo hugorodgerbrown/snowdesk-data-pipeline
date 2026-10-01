@@ -8,8 +8,8 @@ weather feed serves.
 
 Three consumers, one derivation:
 
-  ``build_weather_display``      the single day on the bulletin masthead,
-                                 the resort page and the favourite card.
+  ``build_weather_display``      the single day on the favourite card and
+                                 the help page's weather illustration.
   ``build_point_forecast_panel`` the multi-day outlook: the row's own day
                                  followed by every entry in ``forecast``.
                                  Drives both the day picker and the

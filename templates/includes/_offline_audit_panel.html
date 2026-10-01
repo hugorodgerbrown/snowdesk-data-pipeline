@@ -30,7 +30,7 @@ A caller must load both scripts:
 Nothing here runs on load. The report is taken when the user asks for it:
 it walks every Cache Storage bucket and opens IndexedDB, which is cheap
 but not free, and a device is in no state to be doing it on every render
-of a settings page nobody came here to audit.
+of a page nobody came here to audit.
 {% endcomment %}
 {% load i18n components %}
 
@@ -154,7 +154,7 @@ of a settings page nobody came here to audit.
         <span data-string="section-content">{% translate "Your content" %}</span>
 
         {# SNOW-922: "Offline support is installed" was "Offline mode is on", #}
-        {# which is a different thing from the account menu's Offline mode #}
+        {# which is a different thing from the network menu's Offline mode #}
         {# switch and was read as that switch by a user stranded by it. This #}
         {# row answers from serviceWorker.controlled; the switch gets the row #}
         {# below, which is new. #}

@@ -8,9 +8,9 @@
  *
  * ## Two hosts, one module
  *
- * This runs on ``/account/settings/`` (a row in the "This device" card)
+ * This runs on ``/offline/`` (SNOW-930 moved it off ``/account/settings/``)
  * and on ``static/offline.html`` (the branded fallback page). The second
- * is the point: settings is a normal Django page, and a device that
+ * is the point: ``/offline/`` is a normal Django page, and a device that
  * cannot reach the network cannot be relied on to have it cached — the
  * moment a user most needs to know what is stored is the moment the only
  * page they can open is the one telling them nothing is. So this file and

@@ -36,8 +36,12 @@ open, what's carried forward under "watching").
   valid Python 3.14 syntax ([PEP 758](https://peps.python.org/pep-0758/)),
   equivalent to `except (A, B):`, used deliberately across the codebase. It
   is not Python 2 syntax, not a `SyntaxError`, and not a bug.
-- **Apps**: `config/`, `apps/core/`, `apps/regions/`, `apps/bulletins/`,
-  `apps/accounts/`, `apps/public/`, plus `apps/analytics/` if present.
+- **Apps**: `config/`, `schedule.py`, and the fifteen packages under
+  `apps/` — `core`, `locations`, `regions`, `bulletins`, `weather`,
+  `accounts`, `favourites`, `observations`, `routes`, `trips`, `downloads`,
+  `analytics`, `mcp_server`, `oauth`, `public`. The `--cov` list in
+  `tox.ini`'s `[testenv:test]` is enumerated by hand; an app missing from
+  it is unmeasured, so cross-check it against `ls apps/` (item 16).
 - **Conventions are in `CLAUDE.md`** — read it. The invariants, model kit,
   management-command contract, and design-system rules there are the
   yardstick you measure drift against.
@@ -89,11 +93,12 @@ exercise. Ground every finding with a file path (and line where it helps).
    carry `tzinfo`. Distinguish production source from factories/tests.
 6. **Model rules** — every concrete model has: `BaseModel` ancestry, explicit
    `Meta.ordering`, `to_string()` (+ `__str__` delegating to it), a custom
-   QuerySet, an AdminModel in `<app>/admin.py`, a Factory in
-   `tests/.../factories.py`, and a test module. List each concrete model and
-   which pieces are present/absent. Known intentional exceptions
-   (`Subscriber`/`AbstractBaseUser`-constrained models) go to **watching**,
-   not spin-off.
+   QuerySet, an AdminModel in `apps/<app>/admin.py`, a Factory in
+   `tests/factories.py`, and a test module. List each concrete model and
+   which pieces are present/absent. Known intentional exceptions — the
+   three concrete models that subclass `models.Model` directly
+   (`regions.MicroRegionNeighbour`, `accounts.PasskeyCredential`,
+   `accounts.PushSubscription`) — go to **watching**, not spin-off.
 7. **No business logic in models** — no I/O, fetches, or mutations beyond
    thin accessors in model methods.
 8. **No `post_save` signals for side effects** — grep for `post_save`,
@@ -119,8 +124,14 @@ exercise. Ground every finding with a file path (and line where it helps).
 14. **Unused dependencies** — for each runtime entry in `pyproject.toml`,
     grep for an `import`/`from`. **Confirm before flagging** — some are CLI
     tools (`semgrep`, `pre-commit`, `ruff`, `djangofmt`) that are never
-    imported. Cross-check that runtime deps appear in the relevant `tox.ini`
-    `deps =` blocks.
+    imported. There is nothing to cross-check in `tox.ini`: every env
+    installs from `uv.lock` via `tox-uv`'s `uv-venv-lock-runner`, so a
+    runtime dependency only ever lives in `pyproject.toml` `[project]` and a
+    tool in the matching `[dependency-groups]` entry (`test`, `type`,
+    `lint`, `sast`, `e2e`). The dependency-free lint guards declare an
+    empty `deps =`, and the two pip-audit envs (`audit`, `audit-dev`) pin
+    `pip-audit` there with `skip_install = True`; treat any other non-empty
+    `deps =` entry as drift.
 15. **Pattern consistency** — duplicated helpers across files (multiple
     `_get_*` in views, two fetcher styles, repeated `_parse_date`). Flag,
     don't fix. Mostly **watching** or **spin-off**.

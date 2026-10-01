@@ -2,7 +2,7 @@
 name: per-area-pinned-basemap-caches
 description: One Cache Storage bucket per downloaded basemap area; custom areas are an array with a reserved legacy id (SNOW-635)
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-10-01
 ---
 
 # One pinned Cache Storage bucket per downloaded area
@@ -97,7 +97,7 @@ bytes, savedAt}`), and `generateCustomAreaId()` mints a fresh
 mirroring how a region download was already keyed on its own
 `region_id`-derived id all along. `CUSTOM_AREA_ID` ('custom') survives as
 one RESERVED legacy id: a device with a pre-SNOW-635 download has that
-area lazily migrated in place (`map.js`'s `_readCustomAreas`, run inside
+area lazily migrated in place (`map_basemap_downloads.js`'s `_readCustomAreas`, run inside
 the same boot-path read the roundel already used) keeping id `'custom'`
 and ordinal `1`, because Cache Storage has no rename and copying an
 existing bucket's thousands of entries to a new name would be real CPU

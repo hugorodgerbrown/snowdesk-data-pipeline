@@ -20,6 +20,7 @@ updates).
 │   ├── audit-map/              ← technical review of the map subsystem (used by Routine)
 │   ├── post-project-update/    ← Linear project status update (used by Routine)
 │   ├── report-churn/           ← weekly churn chart (used by Routine)
+│   ├── write-explainer/        ← a public explainer page under docs/explainers/
 │   └── create-ticket/          ← make a Linear ticket (front of the lifecycle)
 └── agents/
     ├── scoper.md               ← used by scope
@@ -72,8 +73,10 @@ commands and skills are now a unified mechanism, and the one command,
   audit-security → security-auditor
   ```
 
-  Not every skill needs an agent — `create-ticket`, `merge-prs`, `release`
-  and `post-project-update` do their work inline, and that is fine. An agent
+  Not every skill needs an agent — `create-ticket`, `merge-prs`, `release`,
+  `post-project-update`, `audit-pages`, `audit-map`, `report-churn` and
+  `write-explainer` do their work inline, and `work-on` only chains two
+  other skills; that is fine. An agent
   nothing invokes and nobody asks for is dead weight, though: delete it
   rather than rename it. (`qa` was removed on exactly those grounds: no
   caller, no use in 464 sessions.)
@@ -96,7 +99,8 @@ Three fields carry weight; the rest is prose.
   `Task` alias. To actually withhold a tool, use `disallowed-tools`.
 - **MCP grants name a configured server**: the Linear connector UUID
   `mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8`, not `mcp__linear`. Required on
-  every skill, not just Routine ones — see "Linear MCP permissions" below.
+  every skill that calls Linear (eight of the thirteen today), not just
+  Routine ones — see "MCP permissions" below.
 - **`disable-model-invocation: true` on anything with an irreversible side
   effect** (`release` deploys production, `merge-prs` squash-merges). It makes
   the skill human-only. Do **not** put it on a skill a Routine may fire —
@@ -172,9 +176,9 @@ Tickets in the wrong state cause the skill to stop and explain why.
 
 ## Skills that run unattended
 
-Two skills are invoked by scheduled Routines and run without an approval gate.
-Both live in this repo (not under `~/.claude/`) so the remote Routine
-environment can find them after cloning, and neither carries
+Three skills are invoked by scheduled Routines and run without an approval
+gate. All live in this repo (not under `~/.claude/`) so the remote Routine
+environment can find them after cloning, and none carries
 `disable-model-invocation` — that flag would block the scheduled task.
 
 - **`post-project-update`** — once a day, posts a Linear project status update.
@@ -263,7 +267,7 @@ re-verified end to end on 2026-09-05 and is correct:
 | `mcp__<server>__*` allow syntax | valid — [docs](https://code.claude.com/docs/en/permissions#mcp) say a glob is accepted after a literal `mcp__<server>__` prefix |
 | All three Linear prefixes present | yes (`mcp__Linear__*`, `mcp__claude_ai_Linear__*`, `mcp__bee16520-…__*`) |
 | Connector install id still current | yes — `ListConnectors` returns `bee16520-…`, connected |
-| Every Linear-touching skill's `allowed-tools` | all nine carry the three server names |
+| Every Linear-touching skill's `allowed-tools` | all eight carry the three server names (`audit-code`, `audit-map`, `audit-pages`, `create-ticket`, `implement`, `post-project-update`, `scope`, `work-on`); the other five never call Linear |
 | Stale server names (`linear-server`, `mcp__linear__…`) | none anywhere in `.claude/` |
 
 With all of that true, a prompt that still appears is **Gate 1**, below, which
@@ -388,8 +392,8 @@ where nobody can answer the prompt.
   pre-commit hooks instead, which protects every committer rather than only a
   Claude Code session. Beyond that, the state-machine preconditions in the
   skills cover the main drift scenarios.
-- **Sub-specialised agents.** No separate Django / frontend / Celery agents.
-  Single `implementer` until proven insufficient.
+- **Sub-specialised agents.** No separate Django / frontend / task-worker
+  agents. Single `implementer` until proven insufficient.
 - **Autonomous merging or releasing.** `merge-prs` and `release` both exist,
   but both carry `disable-model-invocation: true` — you start them, never
   Claude.

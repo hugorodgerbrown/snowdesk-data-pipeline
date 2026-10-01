@@ -2,7 +2,7 @@
 name: no-signals-for-side-effects
 description: Save-time side effects (e.g. render model build) are called inline from services, never via post_save signals
 status: current
-last-reviewed: 2026-06-10
+last-reviewed: 2026-10-01
 ---
 
 # No Django signals for side effects

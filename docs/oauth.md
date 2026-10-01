@@ -2,7 +2,7 @@
 name: oauth
 description: OAuth 2.1 for /api/mcp/ — .well-known metadata, /oauth/authorize|token|register, OAuthGrant, CIMD guard, mint_mcp_token
 status: current
-last-reviewed: 2026-09-26
+last-reviewed: 2026-10-01
 ---
 
 # OAuth for the MCP server

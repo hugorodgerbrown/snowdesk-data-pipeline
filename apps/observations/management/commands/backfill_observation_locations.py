@@ -1,7 +1,7 @@
 """backfill_observation_locations — mint a Location per existing observation.
 
-One-shot backfill for SNOW-709, and the sibling of
-``backfill_favourite_locations``. Every ``FieldObservation`` submitted
+One-shot backfill for SNOW-709, and the sibling of the since-deleted
+``backfill_favourite_locations`` (SNOW-762). Every ``FieldObservation`` submitted
 before that ticket stores its report coordinate on the row; this mints the
 ``Location`` it happened at and points the FK there.
 

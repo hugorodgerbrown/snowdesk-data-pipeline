@@ -2,7 +2,7 @@
 name: the-way-out-of-offline-mode-is-on-the-page-it-strands-you-on
 description: Offline mode switch on static/offline.html too — pwa_network_mode.js, canOpenOffline, network-use audit row, why the worker never self-heals
 status: current
-last-reviewed: 2026-09-12
+last-reviewed: 2026-10-01
 ---
 
 # The way out of Offline mode is on the page Offline mode strands you on

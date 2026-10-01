@@ -2,12 +2,13 @@
 name: map-defaults-to-today-not-the-last-rated-day
 description: Why the map defaults to today, never the last rated day (readDisplayDate, data-today); why the ceiling (latestKnownDate) follows the data
 status: current
-last-reviewed: 2026-09-12
+last-reviewed: 2026-10-01
 ---
 
 # The map defaults to today, never to the last rated day
 
-**SNOW-793.** A bare `/` shows today. `?d=` still wins outright. The
+**SNOW-793.** A bare `/map/` shows today (the map lived at `/` when this
+was written; `/` is a static homepage now). `?d=` still wins outright. The
 default is not written to the URL.
 
 This looks like a revert of SNOW-660 and is not one. The distinction is
@@ -88,9 +89,10 @@ reached — arriving fresh and stepping back to it must not differ.
 `readDisplayDate()` in `static/js/map_shared.js`, one definition:
 `readUrlDateParam() || readTodayDateParam()`. Every boot-time date read
 goes through it — `map.js`'s `currentDisplayedDate` seed and its boot
-ratings leg, both `repaintDateForStyleSwap` call sites,
-`map_season_ribbon.js`'s `dateKey` seed, `map_scrubber.js`'s boot and
-popstate paths.
+ratings leg, both `repaintDateForStyleSwap` call sites, and
+`map_season_ribbon.js`'s `dateKey` seed. `map_scrubber.js`'s boot and
+popstate paths read the two halves themselves (`readUrlDateParam()` first,
+then the scrubber's own `data-today`), with the same precedence.
 
 Today is read from the scrubber's server-rendered `data-today`, never
 from `new Date()`. The season bounds, the ribbon track and the thumb are
@@ -132,7 +134,7 @@ reads like a prohibition on both:
 
 | | Before SNOW-927 | After |
 |---|---|---|
-| Boot with a bare `/` | today | today, unchanged |
+| Boot with a bare `/map/` | today | today, unchanged |
 | Boot with `?d=` | that day, if selectable | that day, if selectable |
 | Back step onto a bare URL | today | today, unchanged |
 | The **range** a visitor may select from | archive start → **today** | archive start → **the last day the payload covers** |

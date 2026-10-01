@@ -1,11 +1,20 @@
 ---
 name: rename-subscriptions-to-accounts
 description: Rename subscriptions_* tables to accounts_*, fix django_migrations/django_content_type rows, avoid InconsistentMigrationHistory (SNOW-429)
-status: current
+status: historical
 last-reviewed: 2026-07-18
 ---
 
 # Runbook — rename the `subscriptions` app to `accounts`
+
+> **Historical.** This one-time rename was carried out for SNOW-429 and the
+> tables it names no longer exist in that shape: SNOW-514 collapsed
+> `Subscriber` into `accounts.Account`, and SNOW-805 dropped
+> `Subscription` (its rows became region pins, SNOW-802). The
+> `seed_dev_users` command and `test_data` fixture it mentions were folded
+> into `seed_test_data` (SNOW-454). Kept as the record of how the rename was
+> done; nothing here needs running again. For the current app layout see
+> [`docs/accounts.md`](../accounts.md).
 
 ## When this applies
 

@@ -2,7 +2,7 @@
 name: two-documents-and-a-map
 description: Two document pages — bulletin and weather — plus the map; regions, resorts, observations and routes are map objects; a trip is not
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-10-01
 ---
 
 # Two documents and a map
@@ -55,8 +55,10 @@ reader's own places ranked third of three.
 
 **"Notifications are a feature, not the purpose."** `Subscription` was
 justified as a notification channel and has never been one: no scheduled
-job sends a bulletin (`schedule.py` runs `fetch_bulletins`,
-`fetch_weather`, `purge_request_logs`), every sender in
+job sends a bulletin (`schedule.py` runs ingestion and housekeeping —
+`fetch_bulletins`, `fetch_weather`, `fill_what3words`, `purge_request_logs`,
+`purge_expired_oauth_tokens` and a `link_resort_locations --check` — and
+none of them sends mail), every sender in
 `apps/accounts/services/email.py` is transactional, and the only caller of
 `enqueue_push` is the staff `/account/push/test/` demo. It produces nav
 links, account cards, a subscribed-state chip and an unsubscribe token for

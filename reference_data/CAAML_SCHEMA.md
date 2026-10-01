@@ -205,6 +205,15 @@ Groups avalanche problems into display categories used by the SLF website/app.
 Found inside individual avalanche problem `customData`. A pre-formatted
 summary sentence describing the core danger zone (aspect + elevation).
 
+### `CH.subdivision`
+
+Found inside each `dangerRatings[].customData`. The SLF subdivision of a
+dry-snow danger level: `"minus"`, `"neutral"` or `"plus"` (absent on level 1
+and on wet-snow / `later` ratings). Rendered as `-`, `=`, `+` by the
+render model and `RegionDayRating`. Counts across the committed SLF
+archive (`apps/bulletins/local_mirrors/slf_archive.ndjson`): 645 `minus`,
+604 `neutral`, 527 `plus`, 625 absent.
+
 ---
 
 ## `source` (optional, not present in SLF feed)

@@ -12,7 +12,7 @@ from __future__ import annotations
 from tests.e2e.conftest import PwaPage
 
 # ---------------------------------------------------------------------------
-# P7 — offline reload of a cached page, including /?d= variants
+# P7 — offline reload of a cached page, including /map/?d= variants
 # ---------------------------------------------------------------------------
 
 
@@ -21,7 +21,7 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
 
     Navigating to the dated URL directly (rather than driving the season
     scrubber, which map.js's own commitDate() does via history.replaceState
-    with no fetch — see test_offline_reload_of_never_visited_date_url below)
+    with no fetch — the never-visited case is manual, scenario P7 step 4)
     means the SW's network-first navigate strategy caches this exact URL,
     including its query string.
     """
