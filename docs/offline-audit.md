@@ -1,8 +1,8 @@
 ---
 name: offline-audit
-description: Offline-content report — offline_audit.js, offline_audit_core.js, bounded storage reads, X-SW-Principal check, AUDIT_SCRIPTS precache
+description: Offline report — offline_audit.js, offline_audit_core.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, snowdesk-basemap-v1 browsedState
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # The offline-content report (SNOW-907)
@@ -27,6 +27,7 @@ its own half:
 | The shell's JS and CSS are in that same cache | `snowdesk-shell-<hash>` | nobody |
 | An area's tiles are in its pinned bucket | `snowdesk-basemap-pinned-<id>` | Manage downloads sheet |
 | Its style, TileJSON and sprite are too | same bucket | Manage downloads sheet |
+| What the map draws outside a download: a browsed style and its tiles | `snowdesk-basemap-v1` (passive) | the picker's grey "partly cached" dot (SNOW-722) |
 | The map's data feeds are cached | shell cache + `data:*` stores | the layers menu's sync dots |
 | Nothing is stuck unsent | `queue:mutations` | the reset panel's count |
 
@@ -186,10 +187,58 @@ answer can only ever be No is not a question worth asking.
 
 The note is also careful not to claim a blank screen, because the screen
 very often is not blank. Outside a download the map draws from
-`snowdesk-basemap-v1` — the passive browsing cache, 600 entries, trimmed
-LRU — which is real, is on screen, and is not saved. So the clause says
-that: *outside your downloads the map is not saved, and may disappear
-when the device needs the space.*
+`snowdesk-basemap-v1` — the passive browsing cache — which is real, is on
+screen, and is not saved. So the clause says that: *outside your
+downloads the map is only what you have browsed, and older areas drop out
+as you look at new ones.* It used to end "may disappear when the device
+needs the space", which was never the mechanism: Snowdesk trims that
+cache itself, oldest tiles first, by count as the user browses
+(SNOW-1060 — the cap counts tiles only, and the style documents sit
+under a 200-entry backstop). SNOW-1058 corrected it, and no copy about
+the passive cache may blame the device's storage.
+
+**With nothing downloaded, the row reads the browsing cache (SNOW-1058).**
+Reported from staging: `/offline/` said *"there is no map to show"* and
+*"Swisstopo (CH) map (on screen): No"* while the map was drawing
+Swisstopo offline behind it. The row only ever looked for a style in the
+DOWNLOAD buckets, and the map was drawing from `snowdesk-basemap-v1`.
+
+So where no ready download covers a basemap, the collector looks there
+too. It takes each basemap's style URL off the cached map page's picker
+(`data-basemap-url` beside `data-basemap-key`, read by `pageBasemaps`),
+checks `caches.has` before opening the cache — `open` creates, and the
+report never writes — lists it once, and makes one bounded `match` for the
+style and one for each TileJSON a source names. The core's
+`tileTemplatesForStyle` turns the style into tile-URL prefixes (a
+source's own `tiles`, or its cached TileJSON's, each cut at the first
+`{`; a source neither resolves — basemap.at's ESRI `root.json`, whose tile
+path `map.js` builds itself, or a TileJSON not cached — falls back to its
+URL's origin), and `browsedState` answers one of three:
+
+| Passive cache holds | `browsed[key]` | Row | Verdict with no downloads |
+|---|---|---|---|
+| The style and at least one of its tiles | `'tiles'` | **Yes**, `reason: 'browsed-only'`, with the caveat that it is only what was browsed | `verdict-browsed-only` — *"The map shows what you have looked at, but nothing is downloaded. Download the map to ensure it isn't overwritten or deleted."* |
+| The style, none of its tiles | `'style-only'` | **No**, `reason: 'style-only'` — *only the map style is saved, not the map itself* | `verdict-no-map`, as before |
+| Nothing | `'none'` | **No**, `reason: 'style'`, as before | `verdict-no-map` |
+| A read that did not come back | `null` | **unknown** — never a confident No | — |
+
+**The style alone is not a Yes.** With none of its tiles MapLibre loads
+the style and draws a background and nothing else — what SNOW-722 found
+behind the picker's green dot, and why that dot went grey. A tile is a
+passive entry with a numeric `/{z}/{x}/{y}` tail (SNOW-1060's
+`isTileShapedURL` rule, restated in the core because the audit shares no
+code with the basemap modules — it also runs on `static/offline.html`)
+that starts with one of the style's prefixes, so a tile cached for a
+DIFFERENT basemap's host does not count. The origin fallback can count a
+tile from another style on the same host; that is only more generous for
+basemaps that share hosts, and the two Swisstopo styles, which do, draw
+each other's tiles.
+
+The browsed verdict **covers** the on-screen basemap's row as well as
+`no-downloads`, so the summary does not restate a caveat the verdict has
+just said. A download still decides the row whenever one is ready, and an
+unreadable download bucket still answers unknown before the browsing
+cache is consulted at all.
 
 **A style the device holds nothing for gets no row**, unless it is the
 one on screen. A base-layer record with an empty bucket — a warm started
@@ -650,6 +699,7 @@ guards on `window.pwaResetLocalData`.
 |---|---|
 | The report model — verdicts, statuses, every degraded reading | `tests/js/test_offline_audit_core.js` |
 | The collector and the rendered DOM | `tests/js/test_offline_audit.js` |
+| The browsing-cache reading — `pageBasemaps` URLs, `tileTemplatesForStyle`, `browsedState`, the row and verdict (SNOW-1058) | `tests/js/test_offline_audit_core.js` ("the passive browsing cache"); the probe that never creates the cache is `tests/js/test_offline_audit.js` ("the browsing-cache probe") |
 | Storage that hangs rather than rejecting — the bounds, the latch, the throw | `tests/js/test_offline_audit.js` ("a device whose storage stops answering") |
 | Both hosts' markup, the strings-template drift check, the precache | `tests/public/test_offline_audit_panel.py` (SNOW-930 moved it out of `tests/accounts/test_settings_offline_audit.py`); the `/offline/` page itself, its endpoints and its activation warm are `tests/public/test_offline_page.py` |
 
