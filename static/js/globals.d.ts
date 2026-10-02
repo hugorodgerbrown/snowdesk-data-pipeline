@@ -74,6 +74,8 @@ interface Window {
   pwaRouteRailTwoCore: any;
   /** static/js/bank_ribbon_core.js — the bank's level-ski wedge geometry. */
   pwaBankRibbonCore: any;
+  /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */
+  pwaAspectWheelCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
