@@ -387,10 +387,11 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_core.js' %}"></script>
-    {# SNOW-1064: the point card — the aspect wheel (window.pwaAspectWheelCore, #}
-    {# SNOW-1063), the card's words and gradient (window.pwaRoutePointCardCore) #}
-    {# and its DOM half (window.pwaRoutePointCard), which route_rail.js         #}
-    {# attaches on open — so all three come before it.                          #}
+    {# SNOW-1064: the route panel's point header — the aspect wheel          #}
+    {# (window.pwaAspectWheelCore, SNOW-1063), its words and gradient          #}
+    {# (window.pwaRoutePointCardCore) and its DOM half                         #}
+    {# (window.pwaRoutePointCard), which route_rail.js attaches on open — so   #}
+    {# all three come before it.                                               #}
     <script defer src="{% static 'js/aspect_wheel_core.js' %}"></script>
     <script defer src="{% static 'js/route_point_card_core.js' %}"></script>
     <script defer src="{% static 'js/route_point_card.js' %}"></script>

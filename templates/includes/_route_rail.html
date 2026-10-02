@@ -1,21 +1,29 @@
 {% load i18n components %}
 {% comment %}
-includes/_route_rail.html — the route rail: the open route's name, figures
-and profile, cut at its transitions (SNOW-1018, restacked by SNOW-1065).
+includes/_route_rail.html — the route panel: the open route's profile,
+cut at its transitions, under a header for the route, a leg or a point
+(SNOW-1018, restacked by SNOW-1065, one panel since SNOW-1068).
 
-A RAIL is the card over the map's foot while a route is open
-(docs/glossary.md). There is one: SNOW-1065 retired rail two, the TERRAIN
-row, because the point card (_route_point_card.html) reads a point's
-terrain instead. One layout at every width, one column: the route's NAME
-as the title, its META LINE as the subtitle — the routes list's own
-format and strings ("12.9km · 337m ↑ · 1906m ↓ · 2h51m",
-routes/partials/_route.html), the time only when the recording has one —
-then the LANE, the elevation profile drawn as one filled shape per leg
-under one outline, with distance ticks along its foot. It shares one
-left-aligned column with the point card and is the same width
-(`--route-column-width`, static/css/map.css): 400 px on desktop, the
-map's width less its insets on a phone, where a 13 km profile's shape
-reads rather than drawing near flat across a whole desktop.
+A RAIL is the card pinned top-left while a route is open
+(docs/glossary.md). There is one: SNOW-1065 retired rail two, and
+SNOW-1068 folded the point card into it, because a point is placed by
+dragging along the profile and read in the header right above it. The
+profile is always showing; the HEADER takes one of three states:
+
+  route — the route's NAME as the title, its META LINE as the subtitle,
+          the routes list's own format and strings ("12.9km · 337m ↑ ·
+          1906m ↓ · 2h51m", routes/partials/_route.html), the time only
+          when the recording has one;
+  leg   — the title gains "• Leg 3" and the subtitle the leg's figures;
+  point — the aspect wheel and the reading (_route_point_card.html) in
+          the title and subtitle's place, and the eyebrow becomes the
+          route's name and the point's distance ("MONT FORT · 4.1 KM").
+
+Then the LANE, the elevation profile drawn as one filled shape per leg
+under one outline, with distance ticks along its foot. 400 px wide on
+desktop, the map's width less its insets on a phone
+(`--route-column-width`, static/css/map.css), where a 13 km profile's
+shape reads rather than drawing near flat across a whole desktop.
 
 PRESSING A LEG highlights it, on the map and on the profile, and dims the
 others. The title gains "• Leg 3" (`[data-route-rail-leg]`) and the
@@ -34,10 +42,11 @@ script addresses the open route's endpoints with.
 
 INSIDE #map, NOT AFTER IT. The page body is a flex column and #map is its
 growing child, so a sibling after it would take height from the map and
-resize the canvas on every open. Positioned over the map's foot instead,
-it moves the map's bottom chrome by one token: static/css/map.css raises
-`--map-bottom-row-offset` while `#map[data-route-rail-open]` is set, and
-every bottom-anchored control reads that offset already. Inside #map also
+resize the canvas on every open. Pinned top-left instead — under the
+region chip's row on desktop, on the top edge on a phone, where that row
+is withdrawn while a route is open — it moves nothing else on the map:
+opening a route, pressing a leg or placing a point changes only what the
+panel says (static/css/map.css). Inside #map also
 keeps a press on the rail from counting as a click outside the route
 detail sheet (static/js/map_sheet.js excludes #map), which would close the
 sheet and, with it, the rail.
@@ -53,7 +62,9 @@ has only that first item.
 ITS OWN CLOSE, BECAUSE ITS LIFETIME IS ITS OWN. The rail opens on a tap
 and stays open while the sheet opens and closes over it, so it cannot
 borrow the sheet's dismissal. The × beside the menu is the one control
-for it, the sheet header's × drawn the same way. It is not a second
+for it, the sheet header's × drawn the same way. While a point is placed
+it clears the point instead and keeps the route, as the first Escape
+does, and its label says so (`data-label-point`). It is not a second
 action competing for rule 5's threshold: it dismisses the surface rather
 than acting on the route, the same place every map sheet keeps its ×.
 
@@ -99,11 +110,17 @@ Context:
     <div data-row-renameable class="min-w-0">
         <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-                {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" %}
-                <p class="mt-1 text-sm font-semibold text-text-1 text-balance">
+                {# The eyebrow reads "Route", or the route's name and the     #}
+                {# point's distance while a point is placed (route_rail.js). #}
+                {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" class_extra="truncate" %}
+                {# The route and leg headers' title; hidden for a point.      #}
+                <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1 text-balance">
                     <span data-row-label data-route-rail-name></span>
                     <span data-route-rail-leg class="whitespace-nowrap"></span>
                 </p>
+                {# The point header (SNOW-1068): the wheel and the reading,   #}
+                {# in the title and meta line's place while a point is placed. #}
+                {% include "includes/_route_point_card.html" with static=False %}
                 <input
                     type="text"
                     data-row-rename-input
@@ -121,6 +138,8 @@ Context:
                     type="button"
                     data-route-rail-close
                     aria-label="{{ route_rail_close_label }}"
+                    data-label-route="{{ route_rail_close_label }}"
+                    data-label-point="{% trans 'Clear the point' %}"
                     class="{% icon_button_classes %}"
                 >
                     {% include "includes/_icon_close.html" only %}
@@ -178,6 +197,7 @@ Context:
             data-string="meta-duration"
         >{% blocktrans trimmed with figures="%(figures)s" duration="%(duration)s" %}{{ figures }} ·
                 {{ duration }}{% endblocktrans %}</span>
+        <span data-string="point-eyebrow">{% blocktrans %}%(name)s · %(distance)s{% endblocktrans %}</span>
         <span data-string="leg-suffix">{% blocktrans %}• Leg %(n)s{% endblocktrans %}</span>
         <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
         <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>

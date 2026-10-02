@@ -2463,7 +2463,7 @@
   // the current index under an open rail.
   const EMPTY_ROUTE_CURSOR_FC = Object.freeze({ type: 'FeatureCollection', features: [] });
   let routeCursorPointData = EMPTY_ROUTE_CURSOR_FC;
-  // SNOW-1019: keeping the cursor's dot out from behind the rails. True
+  // SNOW-1019: keeping the cursor's dot out from under the route panel. True
   // while THIS module writes the index (a hover or a tap on the line), so
   // follow() does not pan the map under the pointer that wrote it; true
   // while a pan is in flight, so a drag along the rail makes one pan and
@@ -2611,7 +2611,7 @@
         const index = state ? state.index : null;
         if (index !== lastRouteCursorIndex) {
           lastRouteCursorIndex = index;
-          // An index a RAIL wrote may sit behind the rails; one the map
+          // An index the PANEL wrote may sit under the panel; one the map
           // wrote is under the reader's own pointer already.
           if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
         }
@@ -2654,57 +2654,51 @@
   };
 
   /**
-   * The map the rails and the top chrome leave visible, viewport px
-   * (SNOW-1019).
-   *
-   * The canvas above the rail's measured top edge — `paddingClearingRail`'s
-   * measurement — and below the top inset: the map's edge inset while the
-   * rail is open (the controls are withdrawn), the fit padding's top,
-   * where the search pill sits, otherwise.
-   *
-   * @returns {?{left: number, top: number, right: number, bottom: number}}
-   *   Null before the canvas is laid out.
-   */
-  /**
-   * The point card's bottom edge, px below the canvas's top, while it is
-   * showing; null while it is hidden or not on the page (SNOW-1064).
+   * The route panel's bottom edge, px below the canvas's top, while it is
+   * open; null while it is closed or not on the page (SNOW-1068).
    *
    * @param {{top: number}} canvas The map container's rect.
    * @returns {?number}
    */
-  const pointCardBottom = (canvas) => {
-    const card = window.pwaRoutePointCard && window.pwaRoutePointCard.element;
-    if (!card || card.hidden || !card.getBoundingClientRect) return null;
-    const box = card.getBoundingClientRect();
+  const routePanelBottom = (canvas) => {
+    const rail = window.pwaRouteRail;
+    if (!rail || !rail.isOpen || !rail.isOpen() || !rail.element) return null;
+    if (!rail.element.getBoundingClientRect) return null;
+    const box = rail.element.getBoundingClientRect();
     if (!(box.height > 0)) return null;
     return box.bottom - canvas.top;
   };
 
+  /**
+   * The map the route panel leaves visible, viewport px (SNOW-1019,
+   * SNOW-1068).
+   *
+   * The canvas below the panel's measured bottom edge while a route is
+   * open — the panel is pinned top-left, and its whole band counts as
+   * covered across the map's width: simpler than a notch, and a dot
+   * beside the panel is still worth panning clear of it. With no panel,
+   * below the fit padding's top, where the search pill sits. Nothing
+   * covers the foot any more: the controls there are roundels, not a band.
+   *
+   * @returns {?{left: number, top: number, right: number, bottom: number}}
+   *   Null before the canvas is laid out.
+   */
   const visibleMapRect = () => {
     const core = self.pwaRouteCursorMapCore;
     const container = map && map.getContainer ? map.getContainer() : null;
     if (!core || !container || !container.getBoundingClientRect) return null;
-    const rail = window.pwaRouteRail;
-    const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
-      ? rail.element.getBoundingClientRect().top
-      : null;
     const canvas = container.getBoundingClientRect();
-    // While the rail is open the top chrome is withdrawn (static/css/
-    // map.css), so the visible map starts at the edge inset rather than
-    // under the search pill — or under the point card (SNOW-1064), which
-    // is pinned top-left while the rail is open. Its whole band counts as
-    // covered, across the map's width: simpler than a notch, and a dot
-    // beside the card is still worth panning clear of it.
-    let topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
-    const cardBottom = railTop === null ? null : pointCardBottom(canvas);
-    if (cardBottom !== null) topInset = Math.max(topInset, cardBottom + ROUTE_CURSOR_TOP_INSET_PX);
-    return core.visibleRect(canvas, railTop, topInset);
+    const panelBottom = routePanelBottom(canvas);
+    const topInset = panelBottom === null
+      ? FIT_PADDING.top
+      : panelBottom + ROUTE_CURSOR_TOP_INSET_PX;
+    return core.visibleRect(canvas, null, topInset);
   };
 
   /**
    * The cursor dot's screen point, or null when it is not VISIBLE.
    *
-   * Behind a rail or under the top chrome counts as absent, so the leader
+   * Under the route panel or the top chrome counts as absent, so the leader
    * line drops its map stop rather than point at a dot nobody can see.
    * A canvas not yet laid out has no visible rect to test against, and
    * the point stands.
@@ -2723,13 +2717,13 @@
   // pan takes. Short, and the zoom is kept: the reader is scrubbing a
   // rail, and the map only needs to keep the place in view.
   const ROUTE_CURSOR_PAN_MARGIN_PX = 24;
-  // The visible map's top edge while the rail is open, px: the map's own
-  // edge inset, since the controls above it are withdrawn then.
+  // The gap below the route panel a panned-to dot must clear, px: the
+  // map's own edge inset.
   const ROUTE_CURSOR_TOP_INSET_PX = 12;
   const ROUTE_CURSOR_PAN_MS = 250;
 
   /**
-   * Pan the map, if it must, so the cursor's dot is not behind the rails.
+   * Pan the map, if it must, so the cursor's dot is not under the route panel.
    *
    * At most one pan in flight: an index arriving mid-pan is remembered
    * and checked once when the pan lands, never queued. Skipped while the
@@ -3081,13 +3075,13 @@
       },
       // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
       // segment in slope classes, and a segment is about 4 px long, so a
-      // filled dot would cover the very segment the point card describes.
+      // filled dot would cover the very segment the point header describes.
       // There the dot becomes a RING in the segment's class colour with a
       // clear centre about one segment wide, so the line's colour under it
       // shows through. Below it the dot stays filled.
       paint: {
         // The slope class of the segment under the cursor (SNOW-1052), the
-        // colour the point card's outer ring lights; the route's own colour
+        // colour the point header's outer ring lights; the route's own colour
         // when the feature carries none.
         'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
         'circle-opacity': ['step', ['zoom'], 1, ROUTE_SLOPE_MINZOOM, 0],
@@ -6760,39 +6754,32 @@
   };
 
   /**
-   * Fit padding that frames a route into the map rail one leaves visible.
+   * Fit padding that frames a route into the map the route panel leaves
+   * visible.
    *
-   * SNOW-1018. The rail is docked over the map's foot, so a route framed
-   * without it would have its lower end drawn behind the profile of that
-   * same route. Every dimension is MEASURED — the rail's height depends on
-   * how its grid wraps at this width — and the reservation is the rail's
-   * top edge measured from the canvas's bottom. Measured once, right after
-   * the rail opens.
+   * SNOW-1018, pinned top-left since SNOW-1068: a route framed without the
+   * panel would have its upper end drawn behind the profile of that same
+   * route. The reservation is MEASURED — the panel's height depends on how
+   * its title wraps at this width — as the panel's bottom edge below the
+   * canvas's top, beyond the padding the top already has. Measured once,
+   * right after the panel opens. The whole width is reserved, not the
+   * panel's 400 px: a north-to-south tour reads top to bottom under it.
    *
    * This replaced SNOW-973's `paddingClearing`, which reserved the route
    * detail sheet instead. A tap no longer opens that sheet — it sits behind
-   * the rail's menu — so on the tap there is no sheet to frame around, and
-   * a padding for one would push the route off-centre for no one.
+   * the panel's menu — so on the tap there is no sheet to frame around.
    *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
   const paddingClearingRail = () => {
     const padding = { ...FIT_PADDING };
-    const rail = window.pwaRouteRail;
     const container = map && map.getContainer ? map.getContainer() : null;
-    if (!rail || !rail.isOpen() || !container) return padding;
-
+    if (!container) return padding;
     const canvas = container.getBoundingClientRect();
-    const box = rail.element.getBoundingClientRect();
-    if (!(canvas.height > 0) || !(box.height > 0)) return padding;
-
-    reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
-    // SNOW-1064: and the point card pinned top-left, so the route's top
-    // end is not framed under it. Only what it adds beyond the padding the
-    // top already has.
-    const cardBottom = pointCardBottom(canvas);
-    if (cardBottom !== null) {
-      reserveFitEdge(padding, 'top', 'bottom', cardBottom - padding.top, canvas.height);
+    if (!(canvas.height > 0)) return padding;
+    const panelBottom = routePanelBottom(canvas);
+    if (panelBottom !== null) {
+      reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
     }
     return padding;
   };
@@ -6861,8 +6848,8 @@
      * rest at the same scale. That is why SNOW-972 had to uncap BOTH:
      * fixing the tap alone would have made the row disagree with it.
      *
-     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves rail
-     * one docked over the map's foot (SNOW-1018), so that fit reserves the
+     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves the
+     * route panel pinned top-left (SNOW-1068), so that fit reserves the
      * room it takes (``paddingClearingRail`` above); a row press has already
      * dismissed its panel, so this one has nothing to frame around. The
      * two still agree on the question they answer — frame the track into
@@ -8691,8 +8678,9 @@
      * The FIRST tap on a route opens the rail and frames the track
      * (activateRoute). A tap on that same route while its rail is open
      * means "here", not "open it again": it places the point at the sample
-     * nearest the tap, and the point card reads it. No re-framing: the
-     * reader is pointing at a place on a track already in view.
+     * nearest the tap, and the panel's point header reads it. No
+     * re-framing: the reader is pointing at a place on a track already in
+     * view.
      *
      * It never opens a leg (SNOW-1065): a leg is pressed on the profile,
      * and placing a point closes any open one — a leg or a point, never
@@ -8721,8 +8709,8 @@
     };
 
     // SNOW-1019: a mouse moving along the open route's line moves the
-    // point, so the rail's line, the point card and the map's dot all
-    // follow the pointer. Mouse only — MapLibre fires `mousemove` for a
+    // point, so the panel's cursor line, its point header and the map's
+    // dot all follow the pointer. Mouse only — MapLibre fires `mousemove` for a
     // mouse, and a finger has the tap above. Nothing within
     // ROUTE_HOVER_PX of a segment middle leaves the cursor where it was:
     // a pointer drifting off the line to the map around it is not a
@@ -8849,10 +8837,11 @@
       }
 
       // SNOW-1065: with a route open, a tap on the map that no marker took
-      // clears the route and the point together — the rail and the point
-      // card close — and does nothing else. The region chip is withdrawn
-      // while the rail is open, so a region selected under it would be a
-      // change the reader cannot see.
+      // clears the route and the point together — the panel closes — and
+      // does nothing else. The tap was aimed at leaving the route, not at a
+      // region, and on a phone the region chip is withdrawn while the panel
+      // is open, so a region selected under it would be a change the reader
+      // cannot see.
       if (window.pwaRouteRail?.isOpen?.()) {
         window.pwaRouteRail.close();
         return;

@@ -35,8 +35,11 @@ document.body.innerHTML = `
              data-route-delete-url-template="/routes/partials/__UUID__/delete/"
              data-route-plan-trip-url="/trips/new/">
       <div data-row-renameable>
-        <span data-row-label data-route-rail-name></span>
-        <span data-route-rail-leg></span>
+        <h2 id="route-rail-eyebrow">Route</h2>
+        <p data-route-rail-title>
+          <span data-row-label data-route-rail-name></span>
+          <span data-route-rail-leg></span>
+        </p>
         <input data-row-rename-input hidden>
         <div data-route-rail-actions>
           <div data-overflow-menu>
@@ -51,7 +54,8 @@ document.body.innerHTML = `
             </ul>
           </div>
         </div>
-        <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
+        <button type="button" data-route-rail-close aria-label="Close the route profile"
+                data-label-route="Close the route profile" data-label-point="Clear the point"></button>
         <p data-route-rail-meta></p>
         <div data-route-rail-claim hidden></div>
       </div>
@@ -507,7 +511,7 @@ describe('the cursor line (SNOW-1019)', () => {
     expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(1);
   });
 
-  it('reports the rail’s top edge above its cursor, for the leader line', () => {
+  it('reports the panel’s bottom edge below its cursor, for the leader line', () => {
     window.pwaRouteRail.open(feature());
     vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
       .mockReturnValue({ left: 10, top: 100, right: 1010, bottom: 196, width: 1000, height: 96 });
@@ -519,7 +523,7 @@ describe('the cursor line (SNOW-1019)', () => {
     const point = window.pwaRouteRail.cursorPoint();
 
     expect(point.x).toBeCloseTo(10 + (5.5 / 24) * 1000);
-    expect(point.y).toBe(40);
+    expect(point.y).toBe(210);
   });
 
   it('announces opening and closing, which the leader line follows', () => {
@@ -544,26 +548,83 @@ describe('the cursor line (SNOW-1019)', () => {
   });
 });
 
-describe('the rail\'s measured height (SNOW-1019)', () => {
-  it('re-publishes the height when the rail\'s content resizes it, and announces it', () => {
+describe('the panel resizing (SNOW-1019)', () => {
+  it('announces a change in the panel\'s height, and moves nothing', () => {
     window.pwaRouteRail.open(feature());
     const heard = vi.fn();
     document.addEventListener('snowdesk:route-rail-resized', heard);
-    // A leg's title wrapped to a second line: the rail is taller.
-    Object.defineProperty(rail, 'offsetHeight', { value: 411, configurable: true });
 
     for (const { target, callback } of observed) {
       if (target === rail) callback([]);
     }
 
-    expect(mapEl.style.getPropertyValue('--route-rail-height')).toBe('411px');
     expect(heard).toHaveBeenCalledTimes(1);
+    // SNOW-1068: pinned top-left, the panel lifts nothing at the foot.
+    expect(mapEl.style.getPropertyValue('--route-rail-height')).toBe('');
     document.removeEventListener('snowdesk:route-rail-resized', heard);
-    delete rail.offsetHeight;
   });
 
   it('observes the rail itself', () => {
     expect(observed.some(({ target }) => target === rail)).toBe(true);
+  });
+});
+
+describe('the point header (SNOW-1068)', () => {
+  const eyebrow = () => document.getElementById('route-rail-eyebrow');
+  const title = () => rail.querySelector('[data-route-rail-title]');
+  const meta = () => rail.querySelector('[data-route-rail-meta]');
+  const closeButton = () => rail.querySelector('[data-route-rail-close]');
+
+  it('shows the route header with no point placed', () => {
+    window.pwaRouteRail.open(feature());
+    expect(eyebrow().textContent).toBe('Route');
+    expect(title().hidden).toBe(false);
+    expect(meta().hidden).toBe(false);
+    expect(rail.hasAttribute('data-route-rail-point')).toBe(false);
+    expect(closeButton().getAttribute('aria-label')).toBe('Close the route profile');
+  });
+
+  it('gives the title and meta line way to a point, naming it in the eyebrow', () => {
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.cursor().setIndex(5);
+    expect(rail.hasAttribute('data-route-rail-point')).toBe(true);
+    expect(title().hidden).toBe(true);
+    expect(meta().hidden).toBe(true);
+    // 5.5 of 24 segments along 620 m, to the nearest 10 m.
+    expect(eyebrow().textContent).toBe('Mont Fort · 140 m');
+    expect(closeButton().getAttribute('aria-label')).toBe('Clear the point');
+  });
+
+  it('returns to the leg header when the point clears and a leg opens', () => {
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    cursor.setIndex(5);
+    cursor.openLeg({ i: 2, from: 12, to: 23, climbing: false });
+    expect(title().hidden).toBe(false);
+    expect(eyebrow().textContent).toBe('Route');
+    expect(rail.querySelector('[data-route-rail-leg]').textContent).toBe('• Leg 2');
+  });
+
+  it('clears the point on the ×, keeping the route, then closes on the next', () => {
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    cursor.setIndex(5);
+
+    closeButton().click();
+    expect(cursor.state().index).toBeNull();
+    expect(window.pwaRouteRail.isOpen()).toBe(true);
+    expect(title().hidden).toBe(false);
+
+    closeButton().click();
+    expect(window.pwaRouteRail.isOpen()).toBe(false);
+  });
+
+  it('restores the route header when the panel closes on a point', () => {
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.cursor().setIndex(5);
+    window.pwaRouteRail.close();
+    expect(eyebrow().textContent).toBe('Route');
+    expect(title().hidden).toBe(false);
   });
 });
 

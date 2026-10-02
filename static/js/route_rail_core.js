@@ -50,6 +50,8 @@
  *   majorStep(spanM)                         → metres between labelled ticks
  *   tickUnit(spanM)                          → 'm' or 'km', once per strip
  *   ticks(spanM, units?)                     → [{d, major, label}]
+ *   pointDistance(index, sampleCount, spanM, units?) → a point's distance
+ *                                              along the route, as a label
  *   formatDuration(seconds)                  → {hours, minutes}, or null
  *   formatMetaLine(figures, strings?)        → the routes list's meta line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
@@ -232,6 +234,28 @@
       });
     }
     return out;
+  }
+
+  /**
+   * A point's distance along the route, as the point header's eyebrow
+   * shows it (SNOW-1068): the segment's midpoint as a share of the route's
+   * length, in metres to the nearest 10 under a kilometre and in
+   * kilometres to one decimal from there.
+   *
+   * @param {number} index The segment index.
+   * @param {number} sampleCount The segments the route has.
+   * @param {number} spanM The route's length, metres.
+   * @param {{m?: string, km?: string}} [units] Label templates carrying
+   *   `%(value)s`, from the partial's strings template.
+   * @returns {?string} Null for an index or a route it cannot place.
+   */
+  function pointDistance(index, sampleCount, spanM, units) {
+    if (!Number.isFinite(index) || !(sampleCount > 0) || !(spanM > 0)) return null;
+    var d = ((index + 0.5) / sampleCount) * spanM;
+    var templates = { ...DEFAULT_UNITS, ...(units || {}) };
+    var metres = Math.round(d / 10) * 10;
+    if (metres < 1000) return interpolate(templates.m, { value: String(metres) });
+    return interpolate(templates.km, { value: (d / 1000).toFixed(1) });
   }
 
   /**
@@ -517,6 +541,7 @@
     majorStep: majorStep,
     tickUnit: tickUnit,
     ticks: ticks,
+    pointDistance: pointDistance,
     formatDuration: formatDuration,
     formatMetaLine: formatMetaLine,
     legSpan: legSpan,

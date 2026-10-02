@@ -2,9 +2,10 @@
  * static/js/route_leader.js — the leader line's DOM half (SNOW-1019).
  *
  * One dashed line that ties the route cursor's two drawings together:
- * from the cursor's dot on the map down to a notch on the rail's top edge,
- * directly above the profile's cursor line (SNOW-1065 — two stops since
- * rail two was retired). The shape is route_leader_core.js's; this module
+ * from the cursor's dot on the map up to a notch on the route panel's
+ * bottom edge, directly below the profile's cursor line (SNOW-1065 — two
+ * stops since rail two was retired; up, not down, since SNOW-1068 pinned
+ * the panel top-left). The shape is route_leader_core.js's; this module
  * owns the one `<svg>` it is drawn in and decides when to redraw.
  *
  * WHERE IT LIVES. Inside `#map`, absolutely positioned over the whole of
@@ -87,8 +88,8 @@
     }
     var mapPoint = window.pwaRouteCursorMap ? window.pwaRouteCursorMap.point() : null;
     var railPoint = rail.cursorPoint ? rail.cursorPoint() : null;
-    // map.js answers null for a dot behind the rail or under the top
-    // chrome (the moment before or during the pan that brings it back).
+    // map.js answers null for a dot under the route panel
+    // (the moment before or during the pan that brings it back).
     if (!mapPoint || !railPoint) {
       clear();
       return;
@@ -100,12 +101,12 @@
     var notch = local(railPoint);
 
     path.setAttribute('d', core.leaderPath([start, notch]));
-    // The notch: a small triangle pointing down onto the rail's edge.
+    // The notch: a small triangle pointing up onto the panel's edge.
     var mark = document.createElementNS(SVG_NS, 'path');
     mark.setAttribute(
       'd',
-      'M' + (notch.x - 4) + ' ' + (notch.y - 5)
-        + ' L' + (notch.x + 4) + ' ' + (notch.y - 5)
+      'M' + (notch.x - 4) + ' ' + (notch.y + 5)
+        + ' L' + (notch.x + 4) + ' ' + (notch.y + 5)
         + ' L' + notch.x + ' ' + notch.y + ' Z',
     );
     mark.setAttribute('data-route-leader-stop', '');

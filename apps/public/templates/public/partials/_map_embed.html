@@ -1309,11 +1309,11 @@ Optional context:
                 {# SNOW-1019 took every terrain mark off the line — the      #}
                 {# fall-line arrows and the no-fall passage split — and      #}
                 {# their rows with them. The line is its legs; a point's     #}
-                {# ground is read on the point card (SNOW-1065).             #}
+                {# ground is read in the route panel (SNOW-1065, SNOW-1068). #}
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
-                        Each leg runs between two transitions, numbered along the track. Press a leg on the profile
-                        below the map to highlight it, or tap the line to read one point.
+                        Each leg runs between two transitions, numbered along the track. Press a leg on the route's
+                        profile to highlight it, or tap the line to read one point.
                     {% endblocktrans %}
                 </p>
             </section>
@@ -2051,14 +2051,11 @@ Optional context:
         <span data-string="roundel-locate">{% trans "Locate me" %}</span>
         <span data-string="roundel-drop">{% trans "Download the area around you" %}</span>
     </template>
-    {# SNOW-1018: rail one — the open route's profile, cut at its           #}
-    {# transitions. Inside #map rather than after it; the partial's header  #}
-    {# says why. Hidden until static/js/route_rail.js opens it.             #}
+    {# SNOW-1018: the route panel — the open route's profile under a route, #}
+    {# leg or point header (SNOW-1068), pinned top-left. Inside #map rather #}
+    {# than after it; the partial's header says why. Hidden until           #}
+    {# static/js/route_rail.js opens it.                                    #}
     {% include "includes/_route_rail.html" %}
-    {# SNOW-1064: the point card — one point on the open route, in words,  #}
-    {# pinned top-left. Hidden until static/js/route_point_card.js shows it #}
-    {# with the rail.                                                       #}
-    {% include "includes/_route_point_card.html" %}
 </div>
 {# SNOW-492: per-overlay "unavailable offline" toasts. Hidden by default;   #}
 {# map.js reveals the matching id (remove `hidden`, add `flex` — see        #}

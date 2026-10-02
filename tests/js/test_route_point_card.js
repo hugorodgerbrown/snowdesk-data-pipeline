@@ -1,11 +1,12 @@
 /*
  * tests/js/test_route_point_card.js — the point card's DOM half
- * (static/js/route_point_card.js, SNOW-1064).
+ * (static/js/route_point_card.js, SNOW-1064; the route panel's point
+ * header since SNOW-1068).
  *
- * The card shows empty when a route is attached, updates when the route
- * cursor moves, empties when the index clears, hides on detach, and its
- * wheel's accessible name is the two lines it shows. The × clears the
- * point and keeps the route.
+ * The header is hidden until the route cursor has an index, shows and
+ * reads the point when it does, hides again when the index clears (the
+ * panel's route or leg header returns) and on detach, and its wheel's
+ * accessible name is the two lines it shows.
  *
  * The markup below is the hooks of templates/includes/_route_point_card.html;
  * tests/public/test_route_point_card.py holds the partial to them.
@@ -22,12 +23,11 @@ import '../../static/js/route_point_card_core.js';
 
 document.body.innerHTML = `
   <div id="map">
-    <section id="route-point-card" data-route-point-card hidden data-empty>
+    <div id="route-point-card" data-route-point-card hidden>
       <span data-route-point-card-wheel></span>
       <p data-route-point-card-headline></p>
       <p data-route-point-card-ground></p>
-      <button type="button" data-route-point-card-clear hidden></button>
-    </section>
+    </div>
   </div>
 `;
 
@@ -36,7 +36,6 @@ await import('../../static/js/route_point_card.js');
 const card = document.getElementById('route-point-card');
 const headline = card.querySelector('[data-route-point-card-headline]');
 const ground = card.querySelector('[data-route-point-card-ground]');
-const clear = card.querySelector('[data-route-point-card-clear]');
 
 /**
  * A straight path heading `deg` from `start`.
@@ -97,25 +96,19 @@ describe('route_point_card.js', () => {
     window.pwaRoutePointCard.detach();
   });
 
-  it('shows empty when a route is attached', () => {
+  it('stays hidden when a route is attached with no point', () => {
     attach();
-    expect(card.hidden).toBe(false);
-    expect(card.hasAttribute('data-empty')).toBe(true);
-    expect(ground.textContent).toBe('Select a point on the route to view terrain data');
+    expect(card.hidden).toBe(true);
     expect(headline.textContent).toBe('');
-    expect(clear.hidden).toBe(true);
-    // The wheel is drawn unlit: nothing lit, no centre mark.
-    expect(card.querySelectorAll('[data-lit]')).toHaveLength(0);
-    expect(card.querySelector('[data-centre]')).toBeNull();
+    expect(ground.textContent).toBe('');
   });
 
-  it('reads the point when the cursor moves', () => {
+  it('shows and reads the point when the cursor moves', () => {
     const cursor = attach();
     cursor.setIndex(1);
-    expect(card.hasAttribute('data-empty')).toBe(false);
+    expect(card.hidden).toBe(false);
     expect(headline.textContent).toBe('Steep fall line descent');
     expect(ground.textContent).toBe('Extremely steep slope');
-    expect(clear.hidden).toBe(false);
     expect(card.querySelector('[data-lit="faces"]')).not.toBeNull();
     cursor.setIndex(2);
     expect(ground.textContent).toBe('Flat ground');
@@ -127,27 +120,22 @@ describe('route_point_card.js', () => {
     expect(wheelLabel()).toBe(`${headline.textContent}; ${ground.textContent}`);
   });
 
-  it('empties when the index clears', () => {
+  it('hides and empties when the index clears, for the route header', () => {
     const cursor = attach();
     cursor.setIndex(1);
     cursor.setIndex(null);
-    expect(card.hasAttribute('data-empty')).toBe(true);
-    expect(ground.textContent).toBe('Select a point on the route to view terrain data');
-  });
-
-  it('clears the point on its ×, keeping the route', () => {
-    const cursor = attach();
-    cursor.setIndex(1);
-    clear.click();
-    expect(cursor.state().index).toBeNull();
-    expect(card.hidden).toBe(false);
+    expect(card.hidden).toBe(true);
+    expect(headline.textContent).toBe('');
+    expect(card.querySelector('svg')).toBeNull();
   });
 
   it('hides on detach and stops following the old cursor', () => {
     const cursor = attach();
+    cursor.setIndex(1);
     window.pwaRoutePointCard.detach();
     expect(card.hidden).toBe(true);
-    cursor.setIndex(1);
-    expect(card.hasAttribute('data-empty')).toBe(true);
+    cursor.setIndex(0);
+    expect(card.hidden).toBe(true);
+    expect(headline.textContent).toBe('');
   });
 });

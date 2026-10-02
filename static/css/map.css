@@ -150,55 +150,65 @@
     --map-bottom-left-stack: calc(3 * var(--map-control-sm) + 16px);
 }
 
-/* —— The route rail (SNOW-1018, one rail since SNOW-1065) ——————————
-   The route's profile card, docked over the map's foot while a route is
-   open (templates/includes/_route_rail.html). It DISPLACES the bottom
-   chrome by moving the one token every bottom-anchored control already
-   reads, rather than by giving each control a rule of its own: the
-   bottom-left stack, the bottom-right column and #home-intro all sit on
-   --map-bottom-row-offset, so raising it by the rail's height and a gap
-   moves all of them together and none can be forgotten.
+/* —— The route panel (SNOW-1018; pinned top-left since SNOW-1068) ———————
+   The route's profile card with a route, leg or point header
+   (templates/includes/_route_rail.html), pinned top-left while a route is
+   open. It MOVES NOTHING: the bottom-left stack and the bottom-right
+   column keep one position whether a route is open or not, because the
+   panel no longer docks over the map's foot and no longer lifts
+   --map-bottom-row-offset. Opening a route, pressing a leg or placing a
+   point changes only what the panel says.
 
-   --route-rail-height is MEASURED by static/js/route_rail.js on every
-   open and written onto #map beside the attribute; the rail's height
-   depends on how its title wraps at the current width, and a constant
-   here would be a second source of truth for it. */
-#map[data-route-rail-open] {
-    --map-bottom-row-offset: calc(
-        var(--map-edge-inset-bottom) + var(--route-rail-height, 0px) + 8px
-    );
+   From 640px it sits under the region chip's row — that row's top inset,
+   its lg height and the 8px gap the map's chrome uses — in a 400px
+   column. Below 640px the row is withdrawn while a route is open (below),
+   so the panel takes the top edge, full width.
+
+   Over the canvas (3, the season ribbon's level), under the control
+   columns (4) and the utility cluster (6), whose menus may open over it. */
+.route-rail {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: var(--map-edge-inset-left);
+    width: var(--route-column-width);
+    z-index: 3;
 }
 
-/* SNOW-1019: while a route's rail is open, following that route is the
-   one thing the reader is doing, so every control floating over the map
-   is WITHDRAWN until the rail closes — at every width. On a phone the
-   bottom-right column's chevron sat over the rail's ×; withdrawing all of
-   it, rather than moving each control clear, is the decision.
+@media (min-width: 640px) {
+    .route-rail {
+        top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
+    }
+}
 
-   The five containers are the whole floating chrome of
-   public/partials/_map_embed.html:
-     #season-ribbon       — the top-left region readout, star and download;
+/* —— Route-open furniture (SNOW-1067) ——————————————————————————————
+   SNOW-1019 withdrew every floating control while a route was open, at
+   every width, when two rails filled the screen. With one panel pinned
+   top-left there is room to give them back.
+
+   From 640px: everything returns. Only #home-intro stays withdrawn — it
+   is an introduction to the map, not a control, and it sits where the
+   reader is looking at the route.
+
+   Below 640px: a phone with a route open is someone on the move, so the
+   map keeps locate, layers and routes and nothing else. Withdrawn there:
+     #season-ribbon       — the top-left region readout, star and download,
+                            whose row the panel takes;
      #map-utility-cluster — the top-right search;
      #map-legend          — the bottom-left stack: legend, help, zoom
-                            readout, date control and season scrubber;
-     #map-controls-br     — the bottom-right column: locate, basemap,
-                            layers, favourite, report, routes, the collapse
-                            chevron, and the menus they open;
-     #home-intro          — the intro card, if it is showing.
-   Kept: the canvas (gestures still pan and zoom), the rail, the point card, the leader
-   line, and the route detail sheet, which lives outside #map.
+                            readout, date control and season scrubber (the
+                            date matters only for a route on the day, which
+                            is the Tour feature's to bring back);
+     #home-intro          — the intro card, if it is showing;
+   and, in #map-controls-br, every roundel but locate, layers
+   (#basemap-pill) and routes, and the collapse chevron. The two kept
+   inside the collapsible group are shown expanded whatever its state, so
+   the three are always one tap away.
 
    `visibility: hidden` also takes the controls out of the tab order and
    the accessibility tree, which opacity alone would not. It changes after
    the fade, so the fade is seen; the return is immediate. Nothing in
    static/js sets these containers' visibility or opacity inline, so no
-   script can re-show one under this rule. The bottom-row offset above is
-   left as it was: harmless while the controls are withdrawn, and still
-   right the moment they return. */
-#map[data-route-rail-open] #season-ribbon,
-#map[data-route-rail-open] #map-utility-cluster,
-#map[data-route-rail-open] #map-legend,
-#map[data-route-rail-open] #map-controls-br,
+   script can re-show one under this rule. */
 #map[data-route-rail-open] #home-intro {
     opacity: 0;
     visibility: hidden;
@@ -206,32 +216,47 @@
     transition: opacity 150ms ease-out, visibility 0s linear 150ms;
 }
 
+@media (max-width: 639.98px) {
+    #map[data-route-rail-open] #season-ribbon,
+    #map[data-route-rail-open] #map-utility-cluster,
+    #map[data-route-rail-open] #map-legend {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 150ms ease-out, visibility 0s linear 150ms;
+    }
+
+    #map[data-route-rail-open] .map-controls-toggle,
+    #map[data-route-rail-open] .map-controls-collapsible-inner > :not(#basemap-pill):not(.map-utility-pill--route) {
+        display: none;
+    }
+
+    /* Two roundels and the gap between them, open whatever the chevron
+       last left the group as. */
+    #map[data-route-rail-open] #map-controls-collapsible {
+        height: calc(2 * var(--map-control-lg) + 8px);
+        opacity: 1;
+        margin-bottom: 0;
+    }
+
+    #map[data-route-rail-open] .map-controls-collapsible-inner {
+        transform: none;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     #map[data-route-rail-open] #season-ribbon,
     #map[data-route-rail-open] #map-utility-cluster,
     #map[data-route-rail-open] #map-legend,
-    #map[data-route-rail-open] #map-controls-br,
     #map[data-route-rail-open] #home-intro {
         transition: none;
     }
 }
 
-.route-rail {
-    position: absolute;
-    left: var(--map-edge-inset-left);
-    bottom: var(--map-edge-inset-bottom);
-    /* One left-aligned column with the point card (SNOW-1065), below. */
-    width: var(--route-column-width);
-    /* Over the canvas and the scrubber (2), under the control columns (4),
-       which the offset above lifts clear of it anyway. */
-    z-index: 3;
-}
-
 /* —— The route column (SNOW-1064) ———————————————————————————————
-   The point card and the route rail share one left-aligned column at one
-   width: 400px from the sm breakpoint, the map's width less its edge
-   insets on a phone. Held as one token so the two cannot drift apart;
-   `100%` resolves against #map, the containing block of both. */
+   The route panel's width: 400px from the sm breakpoint, the map's width
+   less its edge insets on a phone. `100%` resolves against #map, the
+   panel's containing block. */
 #map {
     --route-column-width: calc(
         100% - var(--map-edge-inset-left) - var(--map-edge-inset-right)
@@ -247,22 +272,6 @@
     }
 }
 
-/* The point card (templates/includes/_route_point_card.html), pinned
-   top-left while a route is open. It sits where the region chip's row
-   would end — the chip's top inset, its lg row and the 8px gap the map's
-   chrome uses — rather than on the chip's own line: the chip is withdrawn
-   while the rail is open (above), and keeping the card below its slot
-   means it never shares that line with anything. It never moves, so a
-   tap on the line never lands it under the finger. Level with the rail
-   (3): over the canvas, under the control columns. */
-.route-point-card {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
-    left: var(--map-edge-inset-left);
-    width: var(--route-column-width);
-    z-index: 3;
-}
-
 /* SNOW-1065: a drag along the rail's profile places the point. A
    horizontal finger drag must reach the script rather than scroll, while
    a vertical one still may: `pan-y` hands over the first and keeps the
@@ -272,10 +281,10 @@
 }
 
 /* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over
-   the whole of #map, so it can run from the cursor's dot on the map down
-   to a notch on the docked rail's top edge. The rail's own z-index (3), and appended to #map
-   after it, so it paints over the rail's card and reaches its stops
-   there; under the control columns (4) and the utility cluster (6). It
+   the whole of #map, so it can run from the cursor's dot on the map up to
+   a notch on the route panel's bottom edge (SNOW-1068). The panel's own
+   z-index (3), and appended to #map after it, so it paints over the
+   panel's card and reaches its stop there; under the control columns (4) and the utility cluster (6). It
    takes no pointer events: nothing under it may stop answering a press. */
 .route-leader {
     position: absolute;

@@ -30,7 +30,7 @@ half that fits.
         {% endblocktrans %}
     </p>
     {# SNOW-1065: a route's steepness is read on the map line from z14,   #}
-    {# coloured by the bands, and one point at a time on the point card.  #}
+    {# coloured by the bands, and one point at a time in the route panel. #}
     {# The trip page's own map colours its line by the bands too.         #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-route-colouring">
         {% blocktrans trimmed %}
@@ -51,17 +51,17 @@ half that fits.
             traverse it is the number that matters.
         {% endblocktrans %}
     </p>
-    {# SNOW-1064/1065: the point card reads one point: the track's        #}
+    {# SNOW-1064/1068: the route panel reads one point: the track's       #}
     {# steepness and how it crosses the slope, then the ground in the     #}
     {# avalanche services' words (EAWS), with flat added.                 #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-readout">
         {% blocktrans trimmed %}
-            Tap the route, or drag along its profile, to read one point. The card at the top of the map gives two
-            things: how steep the track is there and how it crosses the slope &mdash; down or up the fall line, or
-            across it &mdash; and how steep the ground is, in the words the avalanche services use &mdash; moderate
-            under 30 degrees, steep from 30, very steep from 35 and extremely steep from 40. Ground under 5 degrees
-            reads as flat. The two can differ a great deal: a track crossing an extremely steep face can itself be
-            almost level.
+            Tap the route, or drag along its profile, to read one point. The route panel&rsquo;s header, just above the
+            profile, gives two things: how steep the track is there and how it crosses the slope &mdash; down or up the
+            fall line, or across it, and which side the slope falls &mdash; and how steep the ground is, in the words
+            the avalanche services use &mdash; moderate under 30 degrees, steep from 30, very steep from 35 and
+            extremely steep from 40. Ground under 5 degrees reads as flat. The two can differ a great deal: a track
+            crossing an extremely steep face can itself be almost level.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-passages">
