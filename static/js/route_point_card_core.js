@@ -33,6 +33,13 @@
  * measured on different halves of it. There is no middle band, so every
  * point reads as one or the other.
  *
+ * A traverse also carries a SIDE (`fallSide`): which way the ground falls
+ * away from the skier, by the sign of the aspect's turn from the heading —
+ * clockwise is downhill to the right. It joins line two as "Very steep
+ * slope, falling skier's right". Relative to the skier, never a compass
+ * point, so the card still names no aspect. The fall line and turning
+ * cases carry none: the ground falls ahead or behind, not to a side.
+ *
  * The rule applies wherever an aspect exists, which is ground of 5° or
  * more. On flat or unsampled ground there is nothing to cross, and the
  * headline is the track alone: "Gentle descent", "Level track".
@@ -72,7 +79,8 @@
  *   groundWord(angle)               — the ground's EAWS class, or null
  *   angleBetween(a, b)              — two bearings' separation, 0 to 180
  *   headingDeg(path)                — a segment path's bearing, first to last
- *   headline(heading, aspect, gradient, angle) — {key, steepness}
+ *   fallSide(heading, aspect)       — 'left' or 'right', the way the ground falls
+ *   headline(heading, aspect, gradient, angle) — {key, steepness, side}
  *   segmentGradients(profile, sampleCount, spanM, legs?) — signed, per segment
  *   reading(input, strings)         — the card's words and the wheel's state
  */
@@ -109,9 +117,10 @@
   const EPSILON = 1e-6;
 
   /**
-   * A headline: which pattern, and the track's step to fill it with.
+   * A headline: which pattern, the track's step to fill it with, and on
+   * a traverse the side the ground falls away to.
    *
-   * @typedef {{key: string, steepness: ?string}} Headline
+   * @typedef {{key: string, steepness: ?string, side: ?string}} Headline
    */
 
   /**
@@ -204,6 +213,22 @@
   }
 
   /**
+   * Which side of the skier the ground falls away to.
+   *
+   * The aspect's signed turn from the heading: clockwise (east of a
+   * northward track) is the skier's right.
+   *
+   * @param {number} heading The track's bearing, degrees.
+   * @param {number} aspect The way the ground falls, degrees.
+   * @returns {string} 'right' or 'left'; 'right' straight ahead or behind,
+   *   which a traverse never is.
+   */
+  function fallSide(heading, aspect) {
+    const turn = ((((aspect - heading) % 360) + 540) % 360) - 180;
+    return turn >= 0 ? 'right' : 'left';
+  }
+
+  /**
    * The headline for one point: the track's step and how it crosses the
    * slope.
    *
@@ -213,30 +238,37 @@
    * @param {?number} gradient The track's signed gradient, degrees.
    * @param {?number} angle The ground's angle, degrees.
    * @returns {Headline} `key` names the pattern; `steepness` the track's
-   *   step, null for a pattern that carries none.
+   *   step, null for a pattern that carries none; `side` the way the
+   *   ground falls on a traverse, null otherwise.
    */
   function headline(heading, aspect, gradient, angle) {
     const grade = finite(gradient);
-    if (grade === null) return { key: 'no-height', steepness: null };
+    if (grade === null) return { key: 'no-height', steepness: null, side: null };
     const steepness = trackWord(grade);
     const level = steepness === 'level';
     const ground = finite(angle);
     const crossing = finite(heading) !== null && finite(aspect) !== null
       && ground !== null && ground >= FLAT_GROUND_DEG;
     if (!crossing) {
-      if (level) return { key: 'level', steepness: null };
-      return { key: grade > 0 ? 'climb' : 'descent', steepness: steepness };
+      if (level) return { key: 'level', steepness: null, side: null };
+      return { key: grade > 0 ? 'climb' : 'descent', steepness: steepness, side: null };
     }
-    if (level) return { key: 'level-traverse', steepness: null };
-    const d = angleBetween(/** @type {number} */ (heading), /** @type {number} */ (aspect));
+    const h = /** @type {number} */ (heading);
+    const a = /** @type {number} */ (aspect);
+    if (level) return { key: 'level-traverse', steepness: null, side: fallSide(h, a) };
+    const d = angleBetween(h, a);
     const down = d < FALL_LINE_DEG;
     const up = d > 180 - FALL_LINE_DEG;
     if ((down && grade > 0) || (up && grade < 0)) {
-      return { key: grade > 0 ? 'climb-turning' : 'descent-turning', steepness: steepness };
+      return { key: grade > 0 ? 'climb-turning' : 'descent-turning', steepness: steepness, side: null };
     }
-    if (down) return { key: 'fall-descent', steepness: steepness };
-    if (up) return { key: 'fall-climb', steepness: steepness };
-    return { key: grade > 0 ? 'rising-traverse' : 'descending-traverse', steepness: steepness };
+    if (down) return { key: 'fall-descent', steepness: steepness, side: null };
+    if (up) return { key: 'fall-climb', steepness: steepness, side: null };
+    return {
+      key: grade > 0 ? 'rising-traverse' : 'descending-traverse',
+      steepness: steepness,
+      side: fallSide(h, a),
+    };
   }
 
   /**
@@ -382,7 +414,12 @@
     const groundKey = terrain && (terrain.kind === 'unknown' || terrain.kind === 'none')
       ? null
       : groundWord(angle);
-    const groundText = fill(strings, groundKey === null ? 'ground-unknown' : `ground-${groundKey}`);
+    const slopeText = fill(strings, groundKey === null ? 'ground-unknown' : `ground-${groundKey}`);
+    // A side needs ground that faces somewhere, which a traverse always
+    // has; the guard keeps an unknown reading from claiming one.
+    const groundText = head.side && groundKey !== null && groundKey !== 'flat'
+      ? fill(strings, `ground-falling-${head.side}`, { ground: slopeText })
+      : slopeText;
     return {
       headline: headlineText,
       ground: groundText,
@@ -398,6 +435,7 @@
     groundWord: groundWord,
     angleBetween: angleBetween,
     headingDeg: headingDeg,
+    fallSide: fallSide,
     headline: headline,
     segmentGradients: segmentGradients,
     reading: reading,

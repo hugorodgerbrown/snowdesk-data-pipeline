@@ -27,6 +27,12 @@ top-left corner (SNOW-1064): the aspect wheel and two lines of words.
   gradient that disagrees with the heading reads "…, turning". The rule
   applies only where an aspect exists — ground of 5° or more; on flat or
   unsampled ground the headline is the track alone.
+- **A traverse says which side the slope falls.** Line two gains the
+  side the ground falls away to, relative to the skier — "Very steep
+  slope, falling skier's right" (`fallSide`, the sign of the aspect's
+  turn from the heading). "Skier's right" is the guidebook term, and it
+  is relative, not a compass point, so the card still names no aspect.
+  On the fall line the ground falls ahead or behind, so no side is named.
 - **The card stays put.** It sits in one corner, in one column with the
   rail, and only its contents change, so a tap never lands it under the
   finger or over the line being read.

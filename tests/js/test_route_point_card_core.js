@@ -47,6 +47,8 @@ const STRINGS = {
   'ground-very-steep': 'Very steep slope',
   'ground-extremely-steep': 'Extremely steep slope',
   'ground-unknown': 'No terrain data',
+  'ground-falling-left': "%(ground)s, falling skier's left",
+  'ground-falling-right': "%(ground)s, falling skier's right",
 };
 
 /**
@@ -144,19 +146,28 @@ describe('headingDeg', () => {
   });
 });
 
+describe('fallSide', () => {
+  it('reads a clockwise fall as the skier’s right', () => {
+    expect(core.fallSide(0, 90)).toBe('right');
+    expect(core.fallSide(0, 270)).toBe('left');
+    expect(core.fallSide(350, 20)).toBe('right');
+    expect(core.fallSide(10, 300)).toBe('left');
+  });
+});
+
 describe('headline', () => {
   // The ground falls to the east (90°) at 33°.
   const ASPECT = 90;
   const ANGLE = 33;
 
   it('reads within 45° of downhill as a fall line descent', () => {
-    expect(core.headline(90, ASPECT, -37, 42)).toEqual({ key: 'fall-descent', steepness: 'very-steep' });
-    expect(core.headline(134.9, ASPECT, -20, ANGLE)).toEqual({ key: 'fall-descent', steepness: 'moderate' });
+    expect(core.headline(90, ASPECT, -37, 42)).toEqual({ key: 'fall-descent', steepness: 'very-steep', side: null });
+    expect(core.headline(134.9, ASPECT, -20, ANGLE)).toEqual({ key: 'fall-descent', steepness: 'moderate', side: null });
   });
 
   it('reads within 45° of uphill as a fall line climb', () => {
-    expect(core.headline(270, ASPECT, 22, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'moderate' });
-    expect(core.headline(225.1, ASPECT, 8, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'gentle' });
+    expect(core.headline(270, ASPECT, 22, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'moderate', side: null });
+    expect(core.headline(225.1, ASPECT, 8, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'gentle', side: null });
   });
 
   it('reads 45° and 135° themselves as traverses', () => {
@@ -166,28 +177,28 @@ describe('headline', () => {
 
   it('picks a traverse’s direction from the gradient', () => {
     // The mockup's point B: heading 113° across ground falling north.
-    expect(core.headline(113, 0, 13.3, 32.7)).toEqual({ key: 'rising-traverse', steepness: 'gentle' });
-    expect(core.headline(0, ASPECT, -6, ANGLE)).toEqual({ key: 'descending-traverse', steepness: 'gentle' });
-    expect(core.headline(0, ASPECT, 2, ANGLE)).toEqual({ key: 'level-traverse', steepness: null });
+    expect(core.headline(113, 0, 13.3, 32.7)).toEqual({ key: 'rising-traverse', steepness: 'gentle', side: 'left' });
+    expect(core.headline(0, ASPECT, -6, ANGLE)).toEqual({ key: 'descending-traverse', steepness: 'gentle', side: 'right' });
+    expect(core.headline(0, ASPECT, 2, ANGLE)).toEqual({ key: 'level-traverse', steepness: null, side: 'right' });
   });
 
   it('says turning when the gradient disagrees with the heading', () => {
-    expect(core.headline(90, ASPECT, 6, ANGLE)).toEqual({ key: 'climb-turning', steepness: 'gentle' });
-    expect(core.headline(270, ASPECT, -12, ANGLE)).toEqual({ key: 'descent-turning', steepness: 'gentle' });
+    expect(core.headline(90, ASPECT, 6, ANGLE)).toEqual({ key: 'climb-turning', steepness: 'gentle', side: null });
+    expect(core.headline(270, ASPECT, -12, ANGLE)).toEqual({ key: 'descent-turning', steepness: 'gentle', side: null });
   });
 
   it('reads the track alone on flat or unsampled ground', () => {
-    expect(core.headline(90, null, -8, 3)).toEqual({ key: 'descent', steepness: 'gentle' });
-    expect(core.headline(90, null, 18, null)).toEqual({ key: 'climb', steepness: 'moderate' });
-    expect(core.headline(90, null, 1, null)).toEqual({ key: 'level', steepness: null });
+    expect(core.headline(90, null, -8, 3)).toEqual({ key: 'descent', steepness: 'gentle', side: null });
+    expect(core.headline(90, null, 18, null)).toEqual({ key: 'climb', steepness: 'moderate', side: null });
+    expect(core.headline(90, null, 1, null)).toEqual({ key: 'level', steepness: null, side: null });
     // An aspect on ground under 5° is ignored: flat ground faces nowhere.
-    expect(core.headline(90, ASPECT, -8, 4)).toEqual({ key: 'descent', steepness: 'gentle' });
+    expect(core.headline(90, ASPECT, -8, 4)).toEqual({ key: 'descent', steepness: 'gentle', side: null });
     // No heading, nothing to cross with.
-    expect(core.headline(null, ASPECT, -8, ANGLE)).toEqual({ key: 'descent', steepness: 'gentle' });
+    expect(core.headline(null, ASPECT, -8, ANGLE)).toEqual({ key: 'descent', steepness: 'gentle', side: null });
   });
 
   it('says so when the track has no height', () => {
-    expect(core.headline(90, ASPECT, null, ANGLE)).toEqual({ key: 'no-height', steepness: null });
+    expect(core.headline(90, ASPECT, null, ANGLE)).toEqual({ key: 'no-height', steepness: null, side: null });
   });
 });
 
@@ -277,6 +288,22 @@ describe('reading', () => {
     const words = core.reading(input({ aspects: undefined, gradient: -20 }), STRINGS);
     expect(words.headline).toBe('Moderate descent');
     expect(words.ground).toBe('No terrain data');
+  });
+
+  it('says which side the slope falls on a traverse', () => {
+    // Heading north across ground falling east, then west.
+    const right = core.reading(input({ heading: 0, gradient: -20, aspect: 2 }), STRINGS);
+    expect(right.headline).toBe('Moderate descending traverse');
+    expect(right.ground).toBe("Extremely steep slope, falling skier's right");
+    expect(right.label).toBe("Moderate descending traverse; Extremely steep slope, falling skier's right");
+    const left = core.reading(input({ heading: 0, gradient: 2, aspect: 6, angle: 33 }), STRINGS);
+    expect(left.headline).toBe('Level traverse');
+    expect(left.ground).toBe("Steep slope, falling skier's left");
+  });
+
+  it('names no side on the fall line or when turning', () => {
+    expect(core.reading(input({}), STRINGS).ground).toBe('Extremely steep slope');
+    expect(core.reading(input({ gradient: 6 }), STRINGS).ground).toBe('Extremely steep slope');
   });
 
   it('carries no degrees, headings or aspects', () => {

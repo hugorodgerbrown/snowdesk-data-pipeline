@@ -76,6 +76,8 @@
     'ground-very-steep': 'Very steep slope',
     'ground-extremely-steep': 'Extremely steep slope',
     'ground-unknown': 'No terrain data',
+    'ground-falling-left': "%(ground)s, falling skier's left",
+    'ground-falling-right': "%(ground)s, falling skier's right",
   });
 
   var wheelEl = card.querySelector('[data-route-point-card-wheel]');
