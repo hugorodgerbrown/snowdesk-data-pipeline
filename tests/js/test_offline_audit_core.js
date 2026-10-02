@@ -1132,7 +1132,9 @@ describe('resolving which basemap is on screen (SNOW-913)', () => {
       '<button class="basemap-menu-item" data-basemap-key="swisstopo_winter"></button>',
     ].join('\n');
 
-    expect(core.pageBasemaps(html)).toEqual(CATALOGUE);
+    // SNOW-1058: the catalogue also carries each key's style URL now, and
+    // these buttons carry none — so `urls` is empty, not missing.
+    expect(core.pageBasemaps(html)).toEqual(Object.assign({}, CATALOGUE, { urls: {} }));
   });
 
   it('keeps a stored choice the catalogue still offers', () => {
@@ -1824,5 +1826,318 @@ describe('the network-use row and the lock-out it diagnoses (SNOW-922)', () => {
     );
 
     expect(report.verdict.text).toBe('not set up yet');
+  });
+});
+
+describe('the passive browsing cache (SNOW-1058)', () => {
+  /*
+   * Reported from staging: `/offline/` said "there is no map to show" and
+   * "Swisstopo (CH) map (on screen): No" while the map was drawing
+   * Swisstopo offline behind it. The report looked for a style only in
+   * the DOWNLOAD buckets, and the map was drawing from
+   * `snowdesk-basemap-v1`, the cache browsing fills.
+   *
+   * The gate is the style AND at least one of its tiles. The style alone
+   * draws a background and nothing else (SNOW-722), so it stays a No.
+   */
+  const SWISSTOPO = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.basemap-winter.vt/style.json';
+  const TILEJSON = 'https://vectortiles.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/tiles.json';
+  const STYLE = {
+    version: 8,
+    sources: {
+      base: { type: 'vector', url: TILEJSON },
+      relief: {
+        type: 'raster-dem',
+        tiles: ['https://terrain.example/dem/{z}/{x}/{y}.png'],
+      },
+      places: { type: 'geojson', data: 'https://snowdesk.info/api/places.geojson' },
+    },
+  };
+  const TILEJSONS = {
+    [TILEJSON]: {
+      tiles: [
+        'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf',
+        'https://vectortiles1.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf',
+      ],
+    },
+  };
+  const COPY = {
+    'basemap-swisstopo_winter': 'Swisstopo (CH)',
+    'note-basemap-browsed-only': 'the %(name)s map is only what you have browsed',
+    'note-basemap-style-only': 'only the %(name)s map style is saved',
+    'note-basemap-unstyled': 'the %(name)s map style is not saved',
+    'note-basemap-downloads-only': 'outside your downloads the %(name)s map is browsed',
+    'notes-sentence': 'Also worth knowing: %(notes)s.',
+  };
+
+  /** No downloads, on Swisstopo, with the passive cache reading `state`. */
+  function browsing(state, overrides) {
+    return healthy(
+      Object.assign(
+        {
+          selectedBasemap: 'swisstopo_winter',
+          areas: [],
+          browsed: { swisstopo_winter: state },
+        },
+        overrides || {},
+      ),
+    );
+  }
+
+  describe('pageBasemaps', () => {
+    it('reads each picker button’s style URL', () => {
+      const html = [
+        '<div id="map" data-default-basemap-key="openfreemap_liberty"></div>',
+        '<button type="button" data-basemap-key="openfreemap_liberty"',
+        '  data-basemap-url="https://tiles.openfreemap.org/styles/liberty?v=1&amp;x=2"',
+        '  aria-checked="false"></button>',
+        `<button data-basemap-key="swisstopo_winter" data-basemap-url="${SWISSTOPO}"></button>`,
+      ].join('\n');
+
+      expect(core.pageBasemaps(html).urls).toEqual({
+        // Unescaped: the attribute's `&amp;` is not the URL the map fetched.
+        openfreemap_liberty: 'https://tiles.openfreemap.org/styles/liberty?v=1&x=2',
+        swisstopo_winter: SWISSTOPO,
+      });
+    });
+
+    it('ignores a swatch that carries a key and no URL', () => {
+      // The downloads sheet's colour swatches carry `data-basemap-key` and
+      // nothing else; a swatch is not a catalogue entry, and must not
+      // shadow the picker button that is.
+      const html = [
+        '<span data-group-swatch data-basemap-key="swisstopo_winter"></span>',
+        `<button data-basemap-key="swisstopo_winter" data-basemap-url="${SWISSTOPO}"></button>`,
+        '<span data-basemap-key="ign_plan"></span>',
+      ].join('\n');
+
+      const catalogue = core.pageBasemaps(html);
+      expect(catalogue.urls).toEqual({ swisstopo_winter: SWISSTOPO });
+      expect(catalogue.keys).toEqual(['swisstopo_winter', 'ign_plan']);
+    });
+  });
+
+  describe('tileTemplatesForStyle', () => {
+    it('takes a source’s inline tiles, cut at the first placeholder', () => {
+      expect(
+        core.tileTemplatesForStyle(
+          { sources: { r: { type: 'raster', tiles: ['https://a.example/r/{z}/{x}/{y}.png'] } } },
+          {},
+        ),
+      ).toEqual(['https://a.example/r/']);
+    });
+
+    it('reads a TileJSON-declared source through its cached TileJSON, every host', () => {
+      expect(core.tileTemplatesForStyle(STYLE, TILEJSONS, SWISSTOPO)).toEqual([
+        'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/',
+        'https://vectortiles1.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/',
+        'https://terrain.example/dem/',
+      ]);
+    });
+
+    it('falls back to the source’s origin when its tiles cannot be resolved', () => {
+      // basemap.at's ESRI root.json: the source `url` is the service root,
+      // relative to the style, and map.js builds the tile path itself.
+      const style = { sources: { esri: { type: 'vector', url: '../../' } } };
+      const tileJsons = { '../../': { name: 'not a TileJSON' } };
+      expect(
+        core.tileTemplatesForStyle(
+          style,
+          tileJsons,
+          'https://mapsneu.wien.gv.at/basemapvectorneu/root.json',
+        ),
+      ).toEqual(['https://mapsneu.wien.gv.at/']);
+    });
+
+    it('falls back to the origin when the TileJSON is not cached at all', () => {
+      expect(core.tileTemplatesForStyle(STYLE, {}, SWISSTOPO)).toEqual([
+        'https://vectortiles.geo.admin.ch/',
+        'https://terrain.example/dem/',
+      ]);
+    });
+
+    it('returns nothing for a style with no tile sources', () => {
+      expect(core.tileTemplatesForStyle({ sources: {} }, {})).toEqual([]);
+      expect(core.tileTemplatesForStyle(null, {})).toEqual([]);
+    });
+  });
+
+  describe('browsedState', () => {
+    const TILE = 'https://vectortiles1.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf';
+
+    it('is `tiles` with the style and one of its tiles cached', () => {
+      expect(core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, TILEJSON, TILE], SWISSTOPO)).toBe(
+        'tiles',
+      );
+    });
+
+    it('is `style-only` with the style and none of its tiles', () => {
+      expect(core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, TILEJSON], SWISSTOPO)).toBe(
+        'style-only',
+      );
+    });
+
+    it('is `none` with no style', () => {
+      expect(core.browsedState(null, {}, [TILE], SWISSTOPO)).toBe('none');
+    });
+
+    it('counts a tile that carries a query string', () => {
+      expect(
+        core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, `${TILE}?key=abc`], SWISSTOPO),
+      ).toBe('tiles');
+    });
+
+    it('does not count a tile from another basemap’s host', () => {
+      // The cache is shared by every style the user has previewed. A
+      // cached OpenFreeMap tile is not a Swisstopo map.
+      const other = 'https://tiles.openfreemap.org/planet/20260101/9/267/180.pbf';
+      expect(core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, other], SWISSTOPO)).toBe(
+        'style-only',
+      );
+    });
+
+    it('does not count a document on the tile host as a tile', () => {
+      // A sprite or a glyph range on the same host has no numeric triple.
+      const sprite = 'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/sprite@2x.png';
+      expect(core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, sprite], SWISSTOPO)).toBe(
+        'style-only',
+      );
+    });
+  });
+
+  describe('the basemap row', () => {
+    it('answers Yes, with the browsed caveat, when the cache holds tiles', () => {
+      const basemap = row(core.buildReport(browsing('tiles'), COPY), 'basemap:swisstopo_winter');
+      expect(basemap.status).toBe('yes');
+      expect(basemap.reason).toBe('browsed-only');
+      expect(basemap.note).toBe('the Swisstopo (CH) map is only what you have browsed');
+    });
+
+    it('answers No when only the style was browsed', () => {
+      const basemap = row(
+        core.buildReport(browsing('style-only'), COPY),
+        'basemap:swisstopo_winter',
+      );
+      expect(basemap.status).toBe('no');
+      expect(basemap.reason).toBe('style-only');
+      expect(basemap.note).toBe('only the Swisstopo (CH) map style is saved');
+    });
+
+    it('answers No, as before, when nothing was browsed', () => {
+      const basemap = row(core.buildReport(browsing('none'), COPY), 'basemap:swisstopo_winter');
+      expect(basemap.status).toBe('no');
+      expect(basemap.reason).toBe('style');
+    });
+
+    it('answers unknown, not No, when the cache read did not come back', () => {
+      const basemap = row(core.buildReport(browsing(null), COPY), 'basemap:swisstopo_winter');
+      expect(basemap.status).toBe('unknown');
+    });
+
+    it('still lets a ready download win over the browsing cache', () => {
+      const report = core.buildReport(
+        healthy({
+          selectedBasemap: 'openfreemap',
+          browsed: { openfreemap: 'style-only' },
+        }),
+        COPY,
+      );
+      expect(row(report, 'basemap:openfreemap').status).toBe('yes');
+      expect(row(report, 'basemap:openfreemap').reason).toBeUndefined();
+    });
+
+    it('leaves the downloads-only caveat as it was', () => {
+      const report = core.buildReport(
+        healthy({
+          selectedBasemap: 'x',
+          browsed: { x: 'tiles' },
+          areas: [
+            {
+              id: 'r1',
+              kind: 'region',
+              name: 'M',
+              basemapKey: 'x',
+              deps: ['https://t/style.json'],
+              bucketPresent: true,
+              entries: ['https://t/style.json', 'https://t/12/1/1.pbf'],
+            },
+          ],
+        }),
+        COPY,
+      );
+      expect(row(report, 'basemap:x').status).toBe('yes');
+      expect(row(report, 'basemap:x').reason).toBe('downloads-only');
+    });
+
+    it('still answers unknown when a download bucket did not come back', () => {
+      // The ordering is preserved: an unread download is unknown before
+      // the browsing cache is consulted at all.
+      const report = core.buildReport(
+        healthy({
+          selectedBasemap: 'x',
+          browsed: { x: 'none' },
+          areas: [
+            {
+              id: 'r1',
+              kind: 'region',
+              name: 'M',
+              basemapKey: 'x',
+              deps: ['https://t/style.json'],
+              bucketPresent: false,
+              bucketReadable: false,
+              entries: [],
+            },
+          ],
+        }),
+        COPY,
+      );
+      expect(row(report, 'basemap:x').status).toBe('unknown');
+    });
+  });
+
+  describe('the verdict', () => {
+    it('says the map shows what was browsed, and names the download', () => {
+      const report = core.buildReport(browsing('tiles'), COPY);
+      expect(report.verdict.status).toBe('warn');
+      expect(report.verdict.text).toBe('verdict-browsed-only');
+    });
+
+    it('does not restate the caveat in the summary under it', () => {
+      const report = core.buildReport(browsing('tiles'), COPY);
+      expect(report.summary).not.toContain('only what you have browsed');
+    });
+
+    it('keeps "no map to show" when only the style was browsed', () => {
+      const report = core.buildReport(browsing('style-only'), COPY);
+      expect(report.verdict.text).toBe('verdict-no-map');
+      // Not covered by the verdict, so the row's own clause still reaches
+      // the reader.
+      expect(report.summary).toContain('only the Swisstopo (CH) map style is saved');
+    });
+
+    it('keeps "no map to show" when nothing was browsed', () => {
+      expect(core.buildReport(browsing('none'), COPY).verdict.text).toBe('verdict-no-map');
+    });
+
+    it('keeps "no map to show" when the browsed basemap is not the one on screen', () => {
+      const report = core.buildReport(
+        browsing('none', { browsed: { swisstopo_winter: 'none', ign_plan: 'tiles' } }),
+        COPY,
+      );
+      expect(report.verdict.text).toBe('verdict-no-map');
+    });
+  });
+
+  it('answers the staging screenshot: nothing downloaded, Swisstopo browsed, Offline mode on', () => {
+    const report = core.buildReport(browsing('tiles', { networkMode: 'offline-forced' }), {
+      'verdict-browsed-only':
+        "The map shows what you have looked at, but nothing is downloaded. Download the map to ensure it isn't overwritten or deleted.",
+    });
+
+    expect(row(report, 'basemap:swisstopo_winter').status).toBe('yes');
+    expect(row(report, 'app-opens').status).toBe('yes');
+    expect(report.verdict.text).toBe(
+      "The map shows what you have looked at, but nothing is downloaded. Download the map to ensure it isn't overwritten or deleted.",
+    );
   });
 });

@@ -184,6 +184,12 @@
    *   (static/offline.html, nothing chosen), in which case no row claims to
    *   be the current one.
    * @property {AreaReading[]} [areas]
+   * @property {Record<string, 'tiles'|'style-only'|'none'|null>} [browsed]
+   *   SNOW-1058: what the PASSIVE browsing cache (``snowdesk-basemap-v1``)
+   *   holds for each basemap the report asks about — see ``browsedState``.
+   *   ``null`` is a read that did not come back, which answers unknown
+   *   rather than No; a key absent altogether is one nobody could look up
+   *   (no style URL to look under), and reads as nothing browsed.
    * @property {Record<string, number|null>} [stores] Row counts by store.
    * @property {Record<string, {features: number|null,
    *   principal?: string|null}>} [overlays] SNOW-914: each
@@ -424,20 +430,174 @@
    * is the one the resolution will run against — not whatever the server
    * is serving now.
    *
+   * SNOW-1058: and each key's style URL, off the same picker button
+   * (``data-basemap-url`` sits beside ``data-basemap-key`` in one tag,
+   * ``_map_embed.html``). It is the URL the map fetches its style from,
+   * so it is the key the passive browsing cache holds that style under —
+   * and without it the report cannot look there at all. Only a tag that
+   * carries BOTH counts: the downloads sheet's colour swatches carry a key
+   * and no URL, and a swatch is not a catalogue entry.
+   *
    * @param {string} html
-   * @returns {{keys: string[], fallback: string|null}}
+   * @returns {{keys: string[], fallback: string|null,
+   *   urls: Record<string, string>}}
    */
   function pageBasemaps(html) {
     var keys = /** @type {string[]} */ ([]);
-    if (typeof html !== 'string' || !html) return { keys: keys, fallback: null };
+    var urls = /** @type {Record<string, string>} */ ({});
+    if (typeof html !== 'string' || !html) return { keys: keys, fallback: null, urls: urls };
     var pattern = /data-basemap-key=["']([A-Za-z0-9_-]+)["']/gi;
     var match = pattern.exec(html);
     while (match) {
       if (keys.indexOf(match[1]) === -1) keys.push(match[1]);
       match = pattern.exec(html);
     }
+    var tags = /<[^<>]*\bdata-basemap-key=["']([A-Za-z0-9_-]+)["'][^<>]*>/gi;
+    var tag = tags.exec(html);
+    while (tag) {
+      var url = /\bdata-basemap-url=["']([^"']+)["']/i.exec(tag[0]);
+      // The template escapes the attribute, so a style URL with a query
+      // string arrives as `&amp;` — which is not the URL the map fetched.
+      if (url && !urls[tag[1]]) urls[tag[1]] = url[1].replace(/&amp;/g, '&');
+      tag = tags.exec(html);
+    }
     var fallback = /data-default-basemap-key=["']([A-Za-z0-9_-]+)["']/i.exec(html);
-    return { keys: keys, fallback: fallback ? fallback[1] : null };
+    return { keys: keys, fallback: fallback ? fallback[1] : null, urls: urls };
+  }
+
+  // SNOW-1058: a tile is a URL with a numeric `/{z}/{x}/{y}` tail, any
+  // extension or none — the rule SNOW-1060 trims the passive cache by
+  // (`basemap_cache_core.js`'s `isTileShapedURL`). Restated here rather
+  // than imported because this module shares no code with the basemap
+  // modules: it also runs on static/offline.html, which loads neither.
+  // Read off the PATH, so a tile carrying a `?key=` query still counts.
+  var TILE_SHAPED_PATH = /\/\d+\/\d+\/\d+(?:\.[A-Za-z0-9]+)?$/;
+
+  /**
+   * Whether a URL has a tile's shape (SNOW-1058) — see ``TILE_SHAPED_PATH``.
+   *
+   * @param {string} url
+   * @returns {boolean}
+   */
+  function isTileShaped(url) {
+    if (typeof url !== 'string' || !url) return false;
+    try {
+      return TILE_SHAPED_PATH.test(new URL(url, 'https://snowdesk.info').pathname);
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * A URL's origin plus ``/``, or null where it has none to give.
+   *
+   * @param {string} url
+   * @param {string} [base]
+   * @returns {string|null}
+   */
+  function originPrefix(url, base) {
+    try {
+      var parsed = base ? new URL(url, base) : new URL(url);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+      return parsed.origin + '/';
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
+   * The URL prefixes a style's tiles are fetched under (SNOW-1058).
+   *
+   * MapLibre learns a tile URL in one of two ways: a source's own
+   * ``tiles`` templates, or the ``tiles`` of the TileJSON its ``url``
+   * names. Each template is cut at its first ``{`` — everything before the
+   * ``{z}`` is fixed, so any cached tile of that source starts with it.
+   * Every host of a multi-host source is its own prefix.
+   *
+   * A source whose templates cannot be resolved falls back to its URL's
+   * ORIGIN rather than to nothing. Two real cases: an ESRI ``root.json``
+   * (basemap.at), whose source ``url`` is not a TileJSON at all — ``map.js``
+   * builds the tile path itself (``resolveBasemapStyle``) — and a TileJSON
+   * this device does not hold. Neither can be read here, and a tile on
+   * that host is still very likely this basemap's; counting it makes the
+   * answer more generous only for basemaps that share a host, which the
+   * two Swisstopo styles do and genuinely draw for each other.
+   *
+   * @param {*} style A parsed style document.
+   * @param {Record<string, *>} [tileJsonByUrl] Parsed TileJSON documents,
+   *   keyed by the source's ``url`` exactly as the style writes it.
+   * @param {string} [styleUrl] Where the style came from — the base a
+   *   relative source ``url`` resolves against.
+   * @returns {string[]}
+   */
+  function tileTemplatesForStyle(style, tileJsonByUrl, styleUrl) {
+    var prefixes = /** @type {string[]} */ ([]);
+    var add = /** @param {string|null} prefix */ function (prefix) {
+      if (prefix && prefixes.indexOf(prefix) < 0) prefixes.push(prefix);
+    };
+    var sources = style && typeof style === 'object' ? style.sources : null;
+    if (!sources || typeof sources !== 'object') return prefixes;
+    var tileJsons = tileJsonByUrl || {};
+    Object.keys(sources).forEach(function (id) {
+      var source = sources[id];
+      if (!source || typeof source !== 'object') return;
+      // GeoJSON, image and video sources are not tiles; only these three
+      // put anything in the basemap cache the map draws from.
+      if (['vector', 'raster', 'raster-dem'].indexOf(source.type) < 0) return;
+      var templates = Array.isArray(source.tiles) ? source.tiles : null;
+      if (!templates && typeof source.url === 'string') {
+        var tileJson = tileJsons[source.url];
+        if (tileJson && Array.isArray(tileJson.tiles)) templates = tileJson.tiles;
+      }
+      var resolved = 0;
+      (templates || []).forEach(/** @param {*} template */ function (template) {
+        if (typeof template !== 'string') return;
+        var cut = template.indexOf('{');
+        var prefix = cut >= 0 ? template.slice(0, cut) : template;
+        // A template whose host is itself a placeholder (`{s}`) fixes
+        // nothing worth matching on — every URL on the web would pass.
+        if (!/^https?:\/\/[^/{]+\//.test(prefix)) return;
+        add(prefix);
+        resolved += 1;
+      });
+      if (resolved === 0 && typeof source.url === 'string') {
+        add(originPrefix(source.url, styleUrl));
+      }
+    });
+    return prefixes;
+  }
+
+  /**
+   * What the passive browsing cache holds for one basemap (SNOW-1058).
+   *
+   * ``'tiles'`` is the style AND at least one tile of it: the map draws
+   * whatever ground the user has looked at. ``'style-only'`` is the style
+   * with none of its tiles — MapLibre loads, and draws a background and
+   * nothing else, which is what SNOW-722 found behind the picker's green
+   * dot. ``'none'`` is no style, and nothing draws.
+   *
+   * A tile from ANOTHER basemap's host does not count: the cache is shared
+   * between every style the user has previewed, and a cached OpenFreeMap
+   * tile is not a Swisstopo map.
+   *
+   * @param {*} style The parsed style document, or null where the cache
+   *   does not hold one.
+   * @param {Record<string, *>} tileJsonByUrl See ``tileTemplatesForStyle``.
+   * @param {string[]} passiveUrls Every URL in the passive cache.
+   * @param {string} [styleUrl]
+   * @returns {'tiles'|'style-only'|'none'}
+   */
+  function browsedState(style, tileJsonByUrl, passiveUrls, styleUrl) {
+    if (!style || typeof style !== 'object') return 'none';
+    var prefixes = tileTemplatesForStyle(style, tileJsonByUrl, styleUrl);
+    var urls = Array.isArray(passiveUrls) ? passiveUrls : [];
+    var drawn = urls.some(function (url) {
+      if (!isTileShaped(url)) return false;
+      return prefixes.some(function (prefix) {
+        return url.indexOf(prefix) === 0;
+      });
+    });
+    return drawn ? 'tiles' : 'style-only';
   }
 
   /**
@@ -1491,6 +1651,33 @@
         return areaState(area).status === 'unreadable';
       });
       if (unreadable) return { status: 'unknown' };
+      // SNOW-1058: nothing downloaded is not nothing on screen. The map
+      // draws from the passive browsing cache too, and a report that only
+      // looked in the download buckets said "No" over a Swisstopo map that
+      // was drawing offline at that moment (staging, 2026-10-01).
+      //
+      // The style alone is not a Yes: with none of its tiles MapLibre
+      // draws a background and nothing else (SNOW-722). And what IS drawn
+      // is not saved — SNOW-1060's count cap trims the oldest tiles as the
+      // user browses new ground — so the Yes carries that caveat.
+      var browsed = r.browsed && Object.prototype.hasOwnProperty.call(r.browsed, key)
+        ? r.browsed[key]
+        : undefined;
+      if (browsed === null) return { status: 'unknown' };
+      if (browsed === 'tiles') {
+        return {
+          status: 'yes',
+          reason: 'browsed-only',
+          note: fill(s(t, 'note-basemap-browsed-only'), { name: name }),
+        };
+      }
+      if (browsed === 'style-only') {
+        return {
+          status: 'no',
+          reason: 'style-only',
+          note: fill(s(t, 'note-basemap-style-only'), { name: name }),
+        };
+      }
       return {
         status: 'no',
         reason: 'style',
@@ -1500,11 +1687,15 @@
     if (!reaches) {
       // Yes WITH a caveat, not a No. The map draws — over the areas the
       // user downloaded. Everywhere else it is drawing from the passive
-      // browsing cache (`snowdesk-basemap-v1`, 600 entries, trimmed
-      // LRU), which is real, is on screen, and is not saved: it goes when
-      // the device next needs the room. The note says exactly that, and
+      // browsing cache (`snowdesk-basemap-v1`), which is real, is on
+      // screen, and is not saved. The note says exactly that, and
       // deliberately does not claim the screen will be blank — it very
       // often is not, which is what made the old No read as a lie.
+      //
+      // SNOW-1058: it used to say those tiles go "when the device needs
+      // the space". They do not — Snowdesk trims them itself, oldest
+      // first, by count as the user browses (SNOW-1060), so the note now
+      // says that instead.
       return {
         status: 'yes',
         reason: 'downloads-only',
@@ -1772,6 +1963,20 @@
       };
     }
     if (byId['no-downloads']) {
+      // SNOW-1058: nothing downloaded, but the map on screen draws from
+      // what the user has browsed. "There is no map to show" was this
+      // verdict over a map that was showing; what is true is that nothing
+      // is SAVED, and the remedy is the download. The basemap row is
+      // covered too, so the summary does not restate the same caveat one
+      // line under the sentence that just said it.
+      var current = r.selectedBasemap ? byId['basemap:' + r.selectedBasemap] : null;
+      if (current && current.status === 'yes' && current.reason === 'browsed-only') {
+        return {
+          status: 'warn',
+          text: s(t, 'verdict-browsed-only'),
+          covers: ['no-downloads', current.id],
+        };
+      }
       return { status: 'warn', text: s(t, 'verdict-no-map'), covers: ['no-downloads'] };
     }
     // Every download failing is a different answer from some of them
@@ -2046,6 +2251,9 @@
     pageDependencies: pageDependencies,
     pageDay: pageDay,
     pageBasemaps: pageBasemaps,
+    // SNOW-1058: the passive browsing cache's reading, for the collector.
+    tileTemplatesForStyle: tileTemplatesForStyle,
+    browsedState: browsedState,
     resolveBasemap: resolveBasemap,
     formatBytes: formatBytes,
     principalMatches: principalMatches,
