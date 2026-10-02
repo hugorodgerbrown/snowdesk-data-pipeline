@@ -38,13 +38,16 @@ distance ("MONT FORT · 4.1 KM").
   On the fall line the ground falls ahead or behind, so no side is named.
 - **The panel stays put.** The route panel is pinned top-left — under
   the region chip's row on desktop, on the top edge on a phone — and the
-  profile is always showing; opening a route, pressing a leg or placing
-  a point changes only what its header says (SNOW-1068). Pinned to the
-  bottom, the panel lifted the bottom controls whenever it opened; on
-  top, under the chip row, nothing on the map moves. A point is placed by
-  dragging along the profile, so the words sit directly above the finger.
-  The panel's × clears a placed point first, as the first Escape does,
-  and closes the route only once no point is placed.
+  profile is always showing; opening a route or placing a point changes
+  only what its header says (SNOW-1068). Pinned to the bottom, the panel
+  lifted the bottom controls whenever it opened; on top, under the chip
+  row, nothing on the map moves. A point is placed by a tap on the
+  profile's top line or on the route's line, so the words sit directly
+  above the place tapped. Since 2026-10-02 there is no leg selection and
+  no drag: the profile marks the point with a dot on its top line and
+  the point's elevation and distance beside the cursor line, pressing
+  the wheel clears the point and keeps the route, as the first Escape
+  does, and the panel's × always closes the route.
 
 ## Why
 

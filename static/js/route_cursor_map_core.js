@@ -2,9 +2,9 @@
  * static/js/route_cursor_map_core.js — the route cursor, placed on the map
  * (SNOW-1019).
  *
- * The route cursor (route_cursor_core.js) is one sample index and one open
- * leg, shared by the map and both rails. The rails draw
- * it by share along their own x-axis; the map draws it in GEOGRAPHY, from
+ * The route cursor (route_cursor_core.js) is one sample index, shared by
+ * the map, the route panel and the point card. The panel draws
+ * it by share along its own x-axis; the map draws it in GEOGRAPHY, from
  * the boundary points the slope record already carries:
  *
  *     properties.slope = { points: [[lon, lat], …],   // N + 1
@@ -21,9 +21,11 @@
  * which is the question a reader's pointer asks: "which bit of line am I
  * on", in the pixels they can see.
  *
- * A route with no slope record — never sampled, or a pending share, whose
- * slope is not drawn — has no sample axis at all, and every function here
- * answers null for it rather than guessing a position.
+ * A route with no slope record — never sampled — has no sample axis of
+ * its own, and every slope function here answers null for it rather than
+ * guessing a position. `shareMidpoints` is the one exception: the panel
+ * still gives such a route a cursor, sized from its legs and drawn by
+ * share of the distance, and the map matches it by share of the line.
  *
  * Pure: no DOM, no map, and one global read — `cursorPoint` looks the
  * segment's colour, and both it and `segmentMidpoints` the segment's path,
@@ -51,6 +53,9 @@
  *   cursorPoint(slope, index, coords)    → Point Feature, or null; its
  *                                          `colour` is the segment's class
  *   segmentMidpoints(slope, coords)      → [[lon, lat]] per segment
+ *   shareMidpoints(coords, count)        → [[lon, lat]] per equal share
+ *                                          of the line, for a route with
+ *                                          no slope record
  *   nearestSample(midpointsPx, px, maxPx) → the nearest index, or null
  *   legAt(legs, index)                   → the leg holding an index, or null
  *   visibleRect(canvas, railTop, topInset) → the map the rails leave visible
@@ -110,7 +115,7 @@
   }
 
   /**
-   * The point half way along a path, by length.
+   * The point a given share of the way along a path, by length.
    *
    * Planar, with longitude scaled by the cosine of the latitude so a
    * degree east and a degree north weigh what they measure on the ground:
@@ -118,9 +123,10 @@
    * matter. A path with no length answers its first point.
    *
    * @param {Array<Array<number>>} path Usable [lon, lat] points, two or more.
-   * @returns {Array<number>} The [lon, lat] half way along it.
+   * @param {number} share How far along, 0 (the start) to 1 (the end).
+   * @returns {Array<number>} The [lon, lat] that far along it.
    */
-  function halfway(path) {
+  function along(path, share) {
     const scale = Math.cos((path[0][1] * Math.PI) / 180);
     /** @type {Array<number>} */
     const lengths = [];
@@ -133,7 +139,7 @@
       total += length;
     }
     if (!(total > 0)) return [path[0][0], path[0][1]];
-    let remaining = total / 2;
+    let remaining = total * share;
     for (let i = 0; i < lengths.length; i += 1) {
       if (remaining <= lengths[i] && lengths[i] > 0) {
         const t = remaining / lengths[i];
@@ -145,6 +151,41 @@
     }
     const last = path[path.length - 1];
     return [last[0], last[1]];
+  }
+
+  /**
+   * The point half way along a path, by length.
+   *
+   * @param {Array<Array<number>>} path Usable [lon, lat] points, two or more.
+   * @returns {Array<number>} The [lon, lat] half way along it.
+   */
+  function halfway(path) {
+    return along(path, 0.5);
+  }
+
+  /**
+   * The middle of each of `count` equal shares of a line, in [lon, lat].
+   *
+   * For a route with no slope record (never sampled, 2026-10-02): its
+   * cursor still runs over `count` segments, sized from its legs, and the
+   * panel places segment i at (i + 0.5) / count of the profile's width —
+   * a share of the distance. Placing the same share along the line is the
+   * map's matching guess, so a tap on the line lands on the index the
+   * panel draws at that place.
+   *
+   * @param {*} coordinates The feature's `geometry.coordinates`.
+   * @param {number} count How many segments the cursor runs over.
+   * @returns {Array<Array<number>>} One per segment; empty with no usable
+   *   line or no count.
+   */
+  function shareMidpoints(coordinates, count) {
+    if (!Array.isArray(coordinates) || !Number.isInteger(count) || count < 1) return [];
+    const path = coordinates.filter(isPoint);
+    if (path.length < 2) return [];
+    /** @type {Array<Array<number>>} */
+    const out = [];
+    for (let i = 0; i < count; i += 1) out.push(along(path, (i + 0.5) / count));
+    return out;
   }
 
   /**
@@ -371,6 +412,7 @@
     sampleCount: sampleCount,
     cursorPoint: cursorPoint,
     segmentMidpoints: segmentMidpoints,
+    shareMidpoints: shareMidpoints,
     nearestSample: nearestSample,
     legAt: legAt,
   });

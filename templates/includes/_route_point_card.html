@@ -5,12 +5,12 @@ the open route, read in words (SNOW-1064; a header of the route panel
 since SNOW-1068).
 
 The route panel (_route_rail.html) is one card pinned top-left with the
-profile always showing and a header in one of three states: the route,
-the open leg, or a point. This partial is the third. The rail includes it
-inside its identity block and hides the title and meta line while a point
-is placed; the eyebrow becomes the route's name and the point's distance.
-Placing a point, pressing a leg or opening a route changes only what the
-panel says, so the panel never moves under the finger.
+profile always showing and a header in one of two states: the route, or a
+point. This partial is the second. The rail includes it inside its
+identity block and hides the title and meta line while a point is placed;
+the eyebrow becomes the route's name. Placing a point or opening a route
+changes only what the panel says, so the panel never moves under the
+finger.
 
 It holds the aspect wheel (aspect_wheel_core.js, SNOW-1063) at 48 px and
 two lines: the HEADLINE — the track's steepness on its own scale and how
@@ -21,8 +21,9 @@ The words come from route_point_card_core.js, and are also the wheel's
 accessible name.
 
 HIDDEN until the route cursor has an index; static/js/route_point_card.js
-shows it and fills it. The panel's × clears the point while one is placed
-and keeps the route, as the first Escape does (static/js/route_rail.js).
+shows it and fills it. THE WHEEL CLEARS THE POINT (2026-10-02): it is a
+button (`[data-route-point-card-clear]`), and pressing it keeps the route
+open, as the first Escape does. The panel's × always closes the route.
 
 The strings template carries every word the header says, under
 ``{% trans %}``, so makemessages sees them and no literal reaches the DOM
@@ -43,12 +44,20 @@ Context:
     class="mt-1 flex items-center gap-3"
 >
     {# The wheel, drawn by static/js/route_point_card.js (or, in the        #}
-    {# component library, static/js/aspect_wheel.js from data-state).       #}
-    <span
-        data-route-point-card-wheel
-        {% if state_json %}data-aspect-wheel data-size="48" data-state="{{ state_json }}"{% endif %}
-        class="block h-12 w-12 flex-none leading-none"
-    ></span>
+    {# component library, static/js/aspect_wheel.js from data-state). The   #}
+    {# button around it clears the point.                                   #}
+    <button
+        type="button"
+        data-route-point-card-clear
+        aria-label="{% trans 'Clear the point' %}"
+        class="block h-12 w-12 flex-none cursor-pointer rounded-pill leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-selected"
+    >
+        <span
+            data-route-point-card-wheel
+            {% if state_json %}data-aspect-wheel data-size="48" data-state="{{ state_json }}"{% endif %}
+            class="block h-12 w-12 leading-none"
+        ></span>
+    </button>
     <div class="min-w-0">
         <p data-route-point-card-headline class="text-sm font-semibold text-text-1 text-balance">
             {% if headline %}{{ headline }}{% endif %}

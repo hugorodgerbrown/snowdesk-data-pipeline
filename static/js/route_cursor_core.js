@@ -17,32 +17,13 @@
  * own code; nothing passes a distance or a fraction across this boundary,
  * because that conversion is exactly the one the surfaces disagree on.
  *
- * A LEG HERE IS IN SAMPLE INDICES TOO. `Leg.start` / `Leg.end` in
- * apps/routes/services/legs.py index `Route.points`, not the samples; the
- * server converts them before they reach this module, and `from` / `to`
- * are the first and last segment of the leg, both inclusive.
+ * This module owns no DOM and reads no globals. It holds one thing — the
+ * cursor `index` — and tells subscribers when it changes. It holds no
+ * selection: SNOW-1052 took band and passage selection off the rails, and
+ * leg selection went on 2026-10-02 (a point is the only thing a reader
+ * places on a route now). An index is clamped to [0, N - 1].
  *
- * This module owns no DOM and reads no globals. It holds two things —
- * the cursor `index` and the `openLeg` — and tells subscribers when they
- * change. It holds no selection: SNOW-1052 took band and passage
- * selection off the rails.
- *
- * A LEG OR A POINT, NEVER BOTH (SNOW-1065). The route has either a
- * highlighted leg or a placed point:
- *
- *   - opening a leg clears the index;
- *   - setting an index clears the open leg;
- *   - closing a leg leaves the index where it was (null, by the rule
- *     above);
- *   - an index is clamped to [0, N - 1].
- *
- * This replaced the rule that clamped the index into the open leg, which
- * existed for rail two's zoomed window; with rail two gone a leg is a
- * highlight, and a point anywhere on the route is a different question.
- * Re-opening the leg that is already open is a no-op here — the rail's
- * second press closes it with `closeLeg`.
- *
- * `null` is a real state for the index: no pointer over any surface. A
+ * `null` is a real state for the index: no point placed. A
  * non-finite number is not — it is a conversion bug in the surface that
  * sent it, and it throws.
  *
@@ -52,9 +33,8 @@
  *
  * and the cursor it returns:
  *
- *   state()                 — the current frozen `{index, openLeg}`
+ *   state()                 — the current frozen `{index}`
  *   setIndex(index | null)
- *   openLeg(leg) / closeLeg()
  *   subscribe(fn)           — returns the unsubscribe function
  */
 
@@ -64,13 +44,7 @@
   'use strict';
 
   /**
-   * @typedef {{from: number, to: number}} Leg
-   *   A leg in sample indices, both ends inclusive. Other properties the
-   *   caller put on it (`i`, `climbing`) are kept and handed back.
-   */
-
-  /**
-   * @typedef {{index: ?number, openLeg: ?Leg}} CursorState
+   * @typedef {{index: ?number}} CursorState
    */
 
   /**
@@ -112,8 +86,6 @@
    * @returns {{
    *   state: function(): CursorState,
    *   setIndex: function(?number): void,
-   *   openLeg: function(Leg): void,
-   *   closeLeg: function(): void,
    *   subscribe: function(function(CursorState): void): function(): void,
    * }}
    */
@@ -124,7 +96,7 @@
     const last = count - 1;
 
     /** @type {CursorState} */
-    let current = Object.freeze({ index: null, openLeg: null });
+    let current = Object.freeze({ index: null });
     /** @type {Set<function(CursorState): void>} */
     const subscribers = new Set();
 
@@ -132,51 +104,20 @@
      * Replace the state and tell subscribers — unless nothing changed.
      *
      * @param {?number} index The new cursor index.
-     * @param {?Leg} leg The new open leg.
      */
-    function commit(index, leg) {
-      if (index === current.index && leg === current.openLeg) return;
-      current = Object.freeze({ index: index, openLeg: leg });
+    function commit(index) {
+      if (index === current.index) return;
+      current = Object.freeze({ index: index });
       subscribers.forEach((fn) => fn(current));
     }
 
     /**
-     * Move the cursor, or clear it with `null`. A point clears the open
-     * leg; clearing the point leaves the leg as it was.
+     * Move the cursor, or clear it with `null`.
      *
      * @param {?number} index The index a surface converted its pointer to.
      */
     function setIndex(index) {
-      if (index === null) {
-        commit(null, current.openLeg);
-        return;
-      }
-      commit(clamp(toIndex(index, 'index'), 0, last), null);
-    }
-
-    /**
-     * Open a leg, clearing the point.
-     *
-     * Opening the leg that is already open is a no-op, compared by its ends
-     * rather than by identity, because a surface may rebuild the leg object
-     * from the wire on every redraw.
-     *
-     * @param {Leg} leg The leg, in sample indices.
-     */
-    function openLeg(leg) {
-      const from = toIndex(leg && leg.from, 'leg.from');
-      const to = toIndex(leg && leg.to, 'leg.to');
-      if (from < 0 || to > last || from > to) {
-        throw new RangeError(`leg [${from}, ${to}] is outside [0, ${last}]`);
-      }
-      const open = current.openLeg;
-      if (open && open.from === from && open.to === to) return;
-      commit(null, Object.freeze({ ...leg, from: from, to: to }));
-    }
-
-    /** Close the open leg. The index stays where it was. */
-    function closeLeg() {
-      commit(current.index, null);
+      commit(index === null ? null : clamp(toIndex(index, 'index'), 0, last));
     }
 
     /**
@@ -198,8 +139,6 @@
     return Object.freeze({
       state: () => current,
       setIndex: setIndex,
-      openLeg: openLeg,
-      closeLeg: closeLeg,
       subscribe: subscribe,
     });
   }

@@ -49,7 +49,6 @@
  *                               `{uuid, n, climbing}`
  *   slopeSegmentCollection(fc) — every slope-class segment, tagged with
  *                               its leg's `i` and `climbing`
- *   dimOpacity(open, on, off) — the opacity expression a selection paints
  *   hasDrawableLegs(f)        — whether every leg of a route can be sliced
  *   withDrawableLegs(fc)      — the payload with undrawable `legs` removed,
  *                               for the flat line's source
@@ -210,8 +209,7 @@
    * Sliced `coordinates[point_from..point_to]`, both ends inclusive, so a
    * leg's last coordinate is the next leg's first. Properties are the
    * owning route's `uuid` — a tap on a leg resolves back to its route —
-   * the leg's number `i`, which the selection's opacity expression
-   * matches on, and `climbing`, which picks the layer. `sampled: true`
+   * the leg's number `i`, and `climbing`, which picks the layer. `sampled: true`
    * marks a leg whose route has slope segments to draw: from z14 the map
    * paints those instead of the leg's core, and a leg without the flag
    * keeps its core at every zoom, so a route the sampler has not reached
@@ -290,13 +288,10 @@
    *
    * What the map paints a route's core with from ROUTE_SLOPE_MINZOOM
    * (docs/decisions/legs-not-slope-classes-on-the-map.md, 2026-09-30).
-   * The leg tag is what lets opening a leg on the rail dim the other legs'
-   * segments, as it dims their lines below that zoom.
    *
    * A route drawn FLAT — no legs, or legs `hasDrawableLegs` rejects —
-   * gets neither `climbing` nor `i` on its segments: it has no leg for a
-   * selection to dim it by, and `dimOpacity` reads the absent `i` as
-   * "not the open leg".
+   * gets neither `climbing` nor `i` on its segments: it has no leg to tag
+   * them with.
    *
    * The segments are `route_slope_core.js`'s: `segmentFeatures` emits one
    * feature per entry of `slope.angles`, in order, so a segment's position
@@ -344,37 +339,12 @@
     return out;
   }
 
-  /**
-   * The MapLibre opacity a selection paints a leg layer with.
-   *
-   * With a leg open, the open leg keeps `on` and every other leg — on the
-   * same route and on every other route — drops to `off`. With none open
-   * it is plain `on`, so closing a leg restores the lines exactly.
-   *
-   * @param {?{uuid?: ?string, i?: number}} open The open leg's route and
-   *   number, or null when nothing is open.
-   * @param {number} on The opacity of the open leg, and of every leg when
-   *   none is open.
-   * @param {number} off The opacity of every other leg.
-   * @returns {number|Array<*>} A number or a `case` expression.
-   */
-  function dimOpacity(open, on, off) {
-    if (!open || !open.uuid || typeof open.i !== 'number') return on;
-    return [
-      'case',
-      ['all', ['==', ['get', 'uuid'], open.uuid], ['==', ['get', 'i'], open.i]],
-      on,
-      off,
-    ];
-  }
-
   self.pwaRouteLegsCore = Object.freeze({
     LEG_CLIMB_COLOUR: LEG_CLIMB_COLOUR,
     LEG_DESCENT_COLOUR: LEG_DESCENT_COLOUR,
     legCollection: legCollection,
     transitionCollection: transitionCollection,
     slopeSegmentCollection: slopeSegmentCollection,
-    dimOpacity: dimOpacity,
     hasDrawableLegs: hasDrawableLegs,
     withDrawableLegs: withDrawableLegs,
   });

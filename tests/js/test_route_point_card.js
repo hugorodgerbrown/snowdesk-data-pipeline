@@ -5,8 +5,9 @@
  *
  * The header is hidden until the route cursor has an index, shows and
  * reads the point when it does, hides again when the index clears (the
- * panel's route or leg header returns) and on detach, and its wheel's
- * accessible name is the two lines it shows.
+ * panel's route header returns) and on detach, and its wheel's
+ * accessible name is the two lines it shows. Pressing the wheel clears
+ * the point (2026-10-02).
  *
  * The markup below is the hooks of templates/includes/_route_point_card.html;
  * tests/public/test_route_point_card.py holds the partial to them.
@@ -24,7 +25,9 @@ import '../../static/js/route_point_card_core.js';
 document.body.innerHTML = `
   <div id="map">
     <div id="route-point-card" data-route-point-card hidden>
-      <span data-route-point-card-wheel></span>
+      <button type="button" data-route-point-card-clear aria-label="Clear the point">
+        <span data-route-point-card-wheel></span>
+      </button>
       <p data-route-point-card-headline></p>
       <p data-route-point-card-ground></p>
     </div>
@@ -137,5 +140,27 @@ describe('route_point_card.js', () => {
     cursor.setIndex(0);
     expect(card.hidden).toBe(true);
     expect(headline.textContent).toBe('');
+  });
+
+  it('clears the point when the wheel is pressed, and keeps following', () => {
+    const cursor = attach();
+    cursor.setIndex(1);
+
+    card.querySelector('[data-route-point-card-clear]').click();
+
+    expect(cursor.state().index).toBeNull();
+    expect(card.hidden).toBe(true);
+    cursor.setIndex(2);
+    expect(card.hidden).toBe(false);
+  });
+
+  it('does nothing on a wheel press once detached', () => {
+    const cursor = attach();
+    cursor.setIndex(1);
+    window.pwaRoutePointCard.detach();
+
+    card.querySelector('[data-route-point-card-clear]').click();
+
+    expect(cursor.state().index).toBe(1);
   });
 });

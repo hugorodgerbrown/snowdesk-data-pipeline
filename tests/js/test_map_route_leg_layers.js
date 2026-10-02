@@ -3,8 +3,8 @@
  * and transitions, wired through map.js (SNOW-1017, replacing SNOW-910's
  * slope-coloured line), and in slope classes again from z14.
  *
- * tests/js/test_route_legs_core.js covers the slicing, the numbering and
- * the opacity expression. What is left is the wiring, and four parts of
+ * tests/js/test_route_legs_core.js covers the slicing and the numbering.
+ * What is left is the wiring, and four parts of
  * it fail SILENTLY — every layer still exists, nothing throws, and the map
  * is simply wrong:
  *
@@ -17,13 +17,12 @@
  *   - THE TAP. `routes-line` no longer draws a legged route, so the two leg
  *     layers have to be in the marker-exclusion set or every such route
  *     becomes untappable and the tap falls through to the region.
- *   - THE SELECTION. Opening a leg on the rail dims the others through the
- *     cursor; closing it has to restore them, or the map stays dimmed
- *     after the rail has gone.
  *   - THE CURSOR (SNOW-1019). The cursor index is drawn on the line from
- *     the same subscription, and a pointer on the open
- *     route's line writes the index back — a tap there opening the leg it
- *     lands in rather than re-running the first tap's framing.
+ *     the map's one subscription, and a tap on a route's line writes the
+ *     index back: the first tap opens the panel with the point already
+ *     placed, a later one moves it, and neither frames the route. Since
+ *     2026-10-02 nothing else writes it — no hover, and no leg selection,
+ *     so no layer is ever dimmed.
  *
  * SNOW-972's FRAMING invariant lives here too, because the two facts it
  * relates — where the camera comes to rest on a route, and the minzoom of
@@ -34,7 +33,7 @@
  * pattern — see its header for the rationale.
  */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
@@ -627,6 +626,23 @@ function tapLeg(layerId = 'routes-leg-descent') {
 }
 
 describe('tapping a legged route', () => {
+  it('opens the panel with the point already placed where the tap landed', () => {
+    projectLngLat = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
+    window.pwaRouteRail.close();
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+    const opened = rail.state.calls.length;
+
+    // y = 70 is nearest the second segment's middle (y = 75).
+    tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 2, y: 70 });
+
+    expect(rail.state.calls).toHaveLength(opened + 1);
+    expect(cursor.state().index).toBe(1);
+    expect(fitBoundsCalls).toEqual([]);
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
   it('opens the route the leg belongs to, from either layer', () => {
     // The leg carries the uuid and nothing else, so the whole route in the
     // rail is proof the uuid resolved back to it.
@@ -682,84 +698,30 @@ describe('tapping a legged route', () => {
   });
 });
 
-describe('opening a leg on the rail', () => {
-  /** The newest opacity set on one layer. */
+describe('no leg selection (2026-10-02)', () => {
+  /** The opacity set on one layer. */
   const opacityOf = (id) => layers.get(id).paint['line-opacity'];
 
-  it('dims every other leg, and closing it restores the lines', () => {
+  it('paints every leg at one strength, and never re-paints it for a point', () => {
     const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
     rail.state.cursor = cursor;
     tapLeg();
+    paintCalls.length = 0;
 
-    cursor.openLeg(LEGS[1]);
-    const dimmed = legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 1, 0.25);
-    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(dimmed));
-    expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(dimmed));
-    expect(opacityOf('routes-leg-casing'))
-      .toEqual(legsCore.dimOpacity({ uuid: 'sampled-route', i: 2 }, 0.55, 0.15));
-    expect(opacityOf('routes-slope-line')).toEqual(dimmed);
-    expect(opacityOf('routes-slope-unknown')).toEqual(dimmed);
+    cursor.setIndex(2);
+    cursor.setIndex(null);
 
-    cursor.closeLeg();
-    expect(opacityOf('routes-slope-line')).toBe(1);
     expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
     expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(1));
     expect(opacityOf('routes-leg-casing')).toBe(0.55);
+    expect(opacityOf('routes-slope-line')).toBe(1);
+    expect(opacityOf('routes-slope-unknown')).toBe(1);
+    expect(paintCalls.filter(([, prop]) => prop === 'line-opacity')).toEqual([]);
     rail.state.cursor = null;
   });
 
-  it('stops following the cursor once another route opens', () => {
-    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
-    rail.state.cursor = cursor;
-    tapLeg();
-    rail.state.cursor = null;
-    tapLayer('routes-line', { uuid: 'flat-route', name: 'No legs' });
-    paintCalls.length = 0;
-
-    cursor.openLeg(LEGS[0]);
-
-    expect(paintCalls).toEqual([]);
-    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
-  });
-
-  it('installs the leg layers dimmed when a basemap swap rebuilds them', async () => {
-    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
-    rail.state.cursor = cursor;
-    tapLeg();
-    cursor.openLeg(LEGS[1]);
-
-    // What setStyle leaves behind: none of our layers or sources, which
-    // forces the styledata handler past its guard and through the
-    // re-install. The rail and its open leg survive the swap.
-    for (const id of [...layers.keys()]) layers.delete(id);
-    for (const id of [...sources.keys()]) sources.delete(id);
-    paintCalls.length = 0;
-    for (const handler of mapStub.handlers.styledata || []) await handler();
-
-    expect(layers.has('routes-leg-climb')).toBe(true);
-    const open = { uuid: 'sampled-route', i: 2 };
-    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(legsCore.dimOpacity(open, 1, 0.25)));
-    expect(opacityOf('routes-leg-descent')).toEqual(coreOpacity(legsCore.dimOpacity(open, 1, 0.25)));
-    expect(opacityOf('routes-leg-casing')).toEqual(legsCore.dimOpacity(open, 0.55, 0.15));
-    // Painted at install, not patched afterwards.
-    expect(paintCalls.filter(([id]) => id.startsWith('routes-leg-'))).toEqual([]);
-
-    cursor.closeLeg();
-    rail.state.cursor = null;
-  });
-
-  it('never dims for a pending share', () => {
-    rail.state.cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
-    tapLayer('routes-line-pending', {
-      token: 'tok-pending',
-      pending: true,
-      name: 'Shared with me',
-      bounds: JSON.stringify([9.0, 45.0, 9.0, 45.015]),
-    });
-    rail.state.cursor.openLeg({ i: 1, from: 0, to: 2 });
-
-    expect(opacityOf('routes-leg-climb')).toEqual(coreOpacity(1));
-    rail.state.cursor = null;
+  it('has no dimming expression left to paint with', () => {
+    expect(legsCore.dimOpacity).toBeUndefined();
   });
 });
 
@@ -786,6 +748,45 @@ describe('a sampled route somebody shared', () => {
   });
 });
 
+describe('the first tap places the point on every kind of route (2026-10-02)', () => {
+  afterEach(() => {
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('places it on a pending share, matched by its token', () => {
+    // The share's slope record runs along the sampled route's meridian,
+    // so its segment middles project to y = 125, 75 and 25.
+    projectLngLat = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
+    window.pwaRouteRail.close();
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+
+    tapLayer('routes-line-pending', { token: 'tok-pending', pending: true }, { x: 2, y: 70 });
+
+    expect(rail.last().feature.properties.token).toBe('tok-pending');
+    expect(cursor.state().index).toBe(1);
+  });
+
+  it('places it on a route never sampled, by share of its line, and draws the dot', () => {
+    // No slope record: one leg, so one segment, whose middle is half way
+    // up the line at 46.505.
+    projectLngLat = ([lng, lat]) => ({ x: (lng - 6.0) * 10000, y: (46.51 - lat) * 10000 });
+    window.pwaRouteRail.close();
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(1);
+    rail.state.cursor = cursor;
+
+    tapLayer('routes-line', { uuid: 'stale-route' }, { x: 1, y: 40 });
+
+    expect(rail.last().feature.properties.uuid).toBe('stale-route');
+    expect(cursor.state().index).toBe(0);
+    const [dot] = sources.get('route-cursor-point').data.features;
+    expect(dot.geometry.coordinates[1]).toBeCloseTo(46.505);
+    expect(dot.properties.colour).toBeUndefined();
+    cursor.setIndex(null);
+  });
+});
+
 describe('the legend key', () => {
   it('is revealed once a legged route is drawn', () => {
     expect(document.getElementById('map-route-legs-section').hidden).toBe(false);
@@ -800,11 +801,15 @@ describe('the route cursor on the map (SNOW-1019)', () => {
    */
   const alongTheRoute = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
 
-  /** Open the sampled route on the rail with a fresh cursor. */
+  /**
+   * Open the sampled route on the rail with a fresh cursor, and clear the
+   * point the opening tap placed.
+   */
   const openSampledRoute = () => {
     const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
     rail.state.cursor = cursor;
     tapLeg();
+    cursor.setIndex(null);
     return cursor;
   };
 
@@ -866,17 +871,15 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('places the point under a tap on the open route, opening no leg (SNOW-1065)', () => {
+  it('moves the point to a tap on the open route', () => {
     projectLngLat = alongTheRoute;
     const cursor = openSampledRoute();
     const opened = rail.state.calls.length;
-    cursor.openLeg({ i: 1, from: 0, to: 0 });
+    cursor.setIndex(0);
 
-    // y = 70 is nearest the second segment's middle, in leg 2.
+    // y = 70 is nearest the second segment's middle.
     tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 2, y: 70 });
 
-    // A leg or a point, never both: the tap closed leg 1 and opened none.
-    expect(cursor.state().openLeg).toBeNull();
     expect(cursor.state().index).toBe(1);
     // Not a second first tap: no re-framing, and the rail is not reopened.
     expect(fitBoundsCalls).toEqual([]);
@@ -885,16 +888,18 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('moves the cursor on a mouse hover near the line, and not away from it', () => {
+  it('leaves the point where it is on a mouse hover over the line (2026-10-02)', () => {
     projectLngLat = alongTheRoute;
     const cursor = openSampledRoute();
 
     hover({ x: 5, y: 120 });
-    expect(cursor.state().index).toBe(0);
+    expect(cursor.state().index).toBeNull();
 
-    hover({ x: 80, y: 25 });
-    expect(cursor.state().index).toBe(0);
+    cursor.setIndex(2);
+    hover({ x: 0, y: 75 });
+    expect(cursor.state().index).toBe(2);
     projectLngLat = () => ({ x: 0, y: 0 });
+    cursor.setIndex(null);
     rail.state.cursor = null;
   });
 
@@ -927,12 +932,12 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('stops answering the pointer once the rail has let the cursor go', () => {
+  it('stops answering a tap once the rail has let the cursor go', () => {
     projectLngLat = alongTheRoute;
     const cursor = openSampledRoute();
     rail.state.cursor = null;
 
-    hover({ x: 0, y: 125 });
+    tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 0, y: 125 });
 
     expect(cursor.state().index).toBeNull();
     projectLngLat = () => ({ x: 0, y: 0 });
@@ -963,6 +968,11 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
   let railSpy;
   let cursor;
 
+  /** Tap the open route's second leg at a screen point. */
+  const tapLeg2 = (point) => {
+    tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, point);
+  };
+
   const setUp = () => {
     projectLngLat = behindTheRail;
     mapSpy = vi.spyOn(document.getElementById('map'), 'getBoundingClientRect')
@@ -971,6 +981,7 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
     rail.state.cursor = cursor;
     tapLeg();
+    cursor.setIndex(null);
     landPan();
     panCalls.length = 0;
   };
@@ -1015,9 +1026,7 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
   it('does not pan for an index the map wrote under the pointer', () => {
     setUp();
 
-    for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 75 } });
-    }
+    tapLeg2({ x: 200, y: 75 });
 
     expect(cursor.state().index).toBe(1);
     expect(panCalls).toEqual([]);
@@ -1036,18 +1045,16 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
   });
 
   it('pans for a map-written index once the panel grows over it', () => {
-    // A tap or hover on the line wrote the index where the reader could
-    // see it; then the panel grew (a point header, a title wrapping) over
-    // that place. A layout change is not a hover, so this one pans.
+    // A tap on the line wrote the index where the reader could see it;
+    // then the panel grew (a point header, a title wrapping) over that
+    // place. A layout change is not a tap, so this one pans.
     setUp();
     projectLngLat = ([lng, lat]) => ({
       x: 200 + (lng - 7.0) * 10000,
       y: 300 + (46.015 - lat) * 10000,
     });
     // Segment 1's middle projects to y = 375, inside 262–812.
-    for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 375 } });
-    }
+    tapLeg2({ x: 200, y: 375 });
     expect(cursor.state().index).toBe(1);
     expect(panCalls).toEqual([]);
 
@@ -1057,18 +1064,6 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     expect(panCalls).toHaveLength(1);
     // 375 → 400 + 12 + 24.
     expect(panCalls[0][0][1]).toBeCloseTo(-61);
-    tearDown();
-  });
-
-  it('leaves an open leg alone on a mouse hover over the line (SNOW-1065)', () => {
-    setUp();
-    cursor.openLeg({ i: 1, from: 0, to: 0 });
-
-    for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 75 } });
-    }
-
-    expect(cursor.state()).toMatchObject({ index: null, openLeg: { i: 1 } });
     tearDown();
   });
 

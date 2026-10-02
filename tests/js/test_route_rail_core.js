@@ -6,7 +6,9 @@
  * 80 km), one unit per strip, one fill per leg carrying the leg's own
  * direction, the meta line in the routes list's format with every null
  * branch, with and without a time (SNOW-1065), the duration's rounding
- * rule shared with apps/core/durations.py, and a leg's own figures.
+ * rule shared with apps/core/durations.py, and a placed point's readout:
+ * its elevation, whether a press is on the top line, and which side of
+ * the cursor line its figures go (2026-10-02).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -178,35 +180,6 @@ describe('formatMetaLine', () => {
   });
 });
 
-describe('legFigures', () => {
-  it('reads a leg’s share of the length and its gross climb and descent', () => {
-    const profile = readProfile(track(81));
-    const legs = [{ from: 0, to: 11 }, { from: 12, to: 23 }];
-    const up = core.legFigures(profile, legs[0], 24, 1000);
-    const down = core.legFigures(profile, legs[1], 24, 1000);
-    expect(up.distance_m).toBeCloseTo(500);
-    expect(up.ascent_m).toBeGreaterThan(0);
-    expect(up.descent_m).toBeCloseTo(0);
-    expect(down.descent_m).toBeCloseTo(up.ascent_m);
-  });
-
-  it('counts a counter-rise inside a descending leg', () => {
-    const coordinates = [[7.4, 46.1, 2000], [7.401, 46.1, 1900], [7.402, 46.1, 1950], [7.403, 46.1, 1800]];
-    const figures = core.legFigures(readProfile(coordinates), { from: 0, to: 2 }, 3, 300);
-    expect(figures.ascent_m).toBeCloseTo(50);
-    expect(figures.descent_m).toBeCloseTo(250);
-  });
-
-  it('has a length but no heights for a profile with no elevation', () => {
-    const flat = track(10).map((p) => [p[0], p[1]]);
-    expect(core.legFigures(readProfile(flat), { from: 0, to: 1 }, 4, 400)).toEqual({
-      distance_m: 200,
-      ascent_m: null,
-      descent_m: null,
-    });
-  });
-});
-
 describe('legPaths', () => {
   const profile = readProfile(track(81));
   const legs = [
@@ -254,27 +227,6 @@ describe('legPaths', () => {
   });
 });
 
-describe('legAt', () => {
-  const legs = [
-    { i: 1, from: 0, to: 9, climbing: true },
-    { i: 2, from: 10, to: 19, climbing: false },
-  ];
-
-  it('finds the leg under a fraction of the strip', () => {
-    expect(core.legAt(0.1, legs, 20).i).toBe(1);
-    expect(core.legAt(0.75, legs, 20).i).toBe(2);
-  });
-
-  it('clamps to the ends', () => {
-    expect(core.legAt(1, legs, 20).i).toBe(2);
-    expect(core.legAt(-0.2, legs, 20).i).toBe(1);
-  });
-
-  it('answers null with nothing to index', () => {
-    expect(core.legAt(0.5, legs, 0)).toBeNull();
-  });
-});
-
 describe('profileY', () => {
   it('is the outline\'s y at a distance, inside the box', () => {
     const profile = readProfile(track(81));
@@ -284,5 +236,62 @@ describe('profileY', () => {
     expect(top).toBeLessThan(start);
     expect(start).toBeLessThanOrEqual(core.BOX.height);
     expect(core.profileY(readProfile([]), 10)).toBeNull();
+  });
+});
+
+describe('pointElevation', () => {
+  const profile = readProfile(track(81));
+
+  it('reads the height under the cursor line, to the metre', () => {
+    // One segment: its midpoint is the track's top.
+    expect(core.pointElevation(profile, 0, 1)).toBe('1700 m');
+    // Two segments: the first's midpoint is a quarter of the way along.
+    expect(core.pointElevation(profile, 0, 2)).toBe('1600 m');
+  });
+
+  it('takes the partial\'s unit template', () => {
+    expect(core.pointElevation(profile, 0, 1, { m: '%(value)s mètres' })).toBe('1700 mètres');
+  });
+
+  it('is null with no elevation or nothing to place', () => {
+    const flat = readProfile([[7.4, 46.1, null], [7.41, 46.1, null]]);
+    expect(core.pointElevation(flat, 0, 1)).toBeNull();
+    expect(core.pointElevation(profile, null, 1)).toBeNull();
+    expect(core.pointElevation(profile, 0, 0)).toBeNull();
+    expect(core.pointElevation(null, 0, 1)).toBeNull();
+  });
+});
+
+describe('onOutline', () => {
+  const profile = readProfile(track(81));
+  // An 80 px lane: the top of the track sits 5 px down, its start 75 px.
+
+  it('takes a press on the top line, or loosely either side of it', () => {
+    expect(core.onOutline(profile, 0.5, 5, 80, 20)).toBe(true);
+    expect(core.onOutline(profile, 0.5, 24, 80, 20)).toBe(true);
+    expect(core.onOutline(profile, 0, 75, 80, 20)).toBe(true);
+  });
+
+  it('refuses a press down in the fill, away from the line', () => {
+    expect(core.onOutline(profile, 0.5, 60, 80, 20)).toBe(false);
+    expect(core.onOutline(profile, 0, 5, 80, 20)).toBe(false);
+  });
+
+  it('refuses everything with no elevation or no lane', () => {
+    const flat = readProfile([[7.4, 46.1, null], [7.41, 46.1, null]]);
+    expect(core.onOutline(flat, 0.5, 40, 80, 20)).toBe(false);
+    expect(core.onOutline(profile, 0.5, 5, 0, 20)).toBe(false);
+  });
+});
+
+describe('readoutSide', () => {
+  it('puts the figures right of the line while they fit', () => {
+    expect(core.readoutSide(100, 360, 60, 6)).toBe('right');
+    expect(core.readoutSide(294, 360, 60, 6)).toBe('right');
+  });
+
+  it('moves them left of the line near the end of the lane', () => {
+    expect(core.readoutSide(295, 360, 60, 6)).toBe('left');
+    expect(core.readoutSide(360, 360, 60, 6)).toBe('left');
   });
 });

@@ -108,6 +108,14 @@ leg or a point, never both, and a tap on the open route's line only places
 a point (it no longer opens the leg there). The map's slope classes from
 z14 are now the only place a class is drawn along the route.
 
+**2026-10-02, later the same day: no leg selection.** Hugo removed it to
+simplify the route panel: nothing selects a leg, so nothing on the map is
+ever dimmed, and `dimOpacity` is gone from `route_legs_core.js`. The legs
+stay as the drawing this decision chose, on the map and in the profile's
+fills; a tap on the line or the profile places a point, and the point is
+the one thing the cursor holds. The "selection dims the others" bullet
+below and the dimming consequence are historical.
+
 ## Why
 
 - **Density.** A track changes slope class every few segments, so a
@@ -126,7 +134,8 @@ z14 are now the only place a class is drawn along the route.
   2026-09-30 the map carries them again from z14 (above). The passages,
   cruxes and arrows said where the steep ground was until SNOW-1019 took
   them off the line (and SNOW-1066 removed cruxes altogether).
-- **A selection dims the others instead of darkening the chosen leg.**
+- **A selection dimmed the others instead of darkening the chosen leg**
+  (until leg selection was removed, 2026-10-02).
   The chosen leg keeps the colour and weight the rail uses for it, so the
   two surfaces still read as one drawing, and the rest of the route stays
   on screen as context rather than disappearing. A darker or thicker leg
@@ -154,7 +163,8 @@ z14 are now the only place a class is drawn along the route.
 - The legend's route key has the two leg rows. The steepness bands and
   "Not surveyed" rows are gone, and SNOW-1019 took out the passage,
   fall-line and crux rows with the marks.
-- The dimming follows `window.pwaRouteRail.cursor()`, through the one
-  subscription `bindRouteCursor` in `map.js` holds. The rail's
-  `close()` closes the open leg before it drops the cursor, which is how
-  the map hears the rail's ×, Escape and backdrop closes.
+- HISTORICAL: the dimming followed `window.pwaRouteRail.cursor()`,
+  through the one subscription `bindRouteCursor` in `map.js` holds. That
+  subscription now draws only the cursor's dot, and the rail's `close()`
+  clears the point before it drops the cursor, which is how the map
+  hears the rail's ×, Escape and backdrop closes.
