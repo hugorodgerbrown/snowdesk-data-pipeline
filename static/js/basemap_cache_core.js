@@ -34,10 +34,18 @@
  *     True when ``url.origin`` is a member of ``originsSet`` — the allowlist
  *     check half of ``_classifyCrossOriginGet``; the async hydration that
  *     populates ``originsSet`` stays in sw.js.
- *   trimCache(cache, max)
+ *   trimCache(cache, max, options)
  *     Trim ``cache`` down to at most ``max`` entries, oldest first
  *     (``Cache.keys()`` returns insertion order) — an LRU-by-insertion-order
- *     approximation with no per-entry timestamp bookkeeping.
+ *     approximation with no per-entry timestamp bookkeeping. SNOW-1060:
+ *     ``options.isEvictable`` narrows the count and the eviction to the
+ *     entries it accepts (the passive basemap cache passes
+ *     ``isTileShapedURL``, so the style documents are never trimmed), and
+ *     ``options.maxOther`` bounds the entries it rejects.
+ *   isTileShapedURL(url)
+ *     SNOW-1060: whether ``url`` has a tile's numeric ``/{z}/{x}/{y}`` tail,
+ *     any extension or none — the passive trim's test for "a tile, not a
+ *     style document".
  *   shouldPersist(url, response, immutableOnlyPaths)
  *     SNOW-526: false for a path in ``immutableOnlyPaths`` whose response
  *     doesn't carry an ``immutable`` ``Cache-Control`` token, true otherwise.
@@ -110,18 +118,107 @@
     return originsSet.has(url.origin);
   }
 
+  // SNOW-1060: the shape every tile URL has and no style document does — a
+  // path ending in three numeric segments, ``/{z}/{x}/{y}``, with any
+  // extension or none.
+  //
+  // Deliberately broader than basemap_download_core.js's ``TILE_ENTRY_PATH``
+  // (which also demands a known tile extension), because the two answer
+  // different questions. That one decides which entries a re-band may
+  // delete, so it errs towards "not a tile". This one decides what the
+  // passive trim COUNTS as a tile, so it errs the other way: a ``.webp``,
+  // ``.avif`` or extensionless tile from a provider that changes its style
+  // must join the tile cap, not the documents, or it would fill the
+  // documents' backstop and push the style out ahead of it.
+  //
+  // Path-only, so a rotating host, a dated tileset path, a query string or
+  // an API key never changes the answer. The documents all fail on the
+  // numeric triple:
+  //
+  //   /fonts/Noto%20Sans%20Bold/0-255.pbf   glyph range — ``0-255`` is one
+  //                                         segment, not three
+  //   /sprites/ofm_f384/ofm@2x.png          sprite — ``ofm@2x`` is not a number
+  //   /styles/liberty, …/style.json         style document
+  //   /planet, …/v1.0.0/tiles.json          TileJSON
+  const TILE_SHAPED_PATH = /\/\d+\/\d+\/\d+(?:\.[A-Za-z0-9]+)?$/;
+
+  /**
+   * Whether ``url`` has a tile's shape — a numeric ``/{z}/{x}/{y}`` tail,
+   * any extension or none (SNOW-1060).
+   *
+   * Decided from the PATH alone; see ``TILE_SHAPED_PATH`` above for why it
+   * is broader than the download core's ``isTileEntryURL``.
+   *
+   * @param {string} url A cache entry's url, absolute or relative.
+   * @returns {boolean} ``false`` for a non-string, an unparseable url, or
+   *   anything without the numeric-triple tail.
+   */
+  function isTileShapedURL(url) {
+    if (typeof url !== 'string' || !url) return false;
+    try {
+      // A base is supplied so a relative entry still parses to a path;
+      // its host is never read, and an absolute url ignores it outright.
+      return TILE_SHAPED_PATH.test(new URL(url, 'https://snowdesk.info').pathname);
+    } catch (_e) {
+      return false;
+    }
+  }
+
   /**
    * Trim ``cache`` down to at most ``max`` entries, oldest first.
    *
+   * With no ``options`` every entry counts and every entry is evictable —
+   * the plain insertion-order FIFO SNOW-484 shipped.
+   *
+   * SNOW-1060: with ``options.isEvictable``, only the entries it accepts
+   * (by url) count towards ``max``, and only they are ever deleted for it.
+   * The passive basemap cache passes ``isTileShapedURL``. MapLibre fetches
+   * the style JSON, TileJSON and sprite once per map load, so under a
+   * whole-cache FIFO a session that panned through more than ``max`` new
+   * tiles trimmed away the documents every tile depends on — nothing
+   * changed on screen, but the next offline load was blank. Counting
+   * tiles only keeps the documents however long the session runs.
+   *
+   * ``options.maxOther`` is the backstop for what that exempts: when the
+   * non-evictable entries exceed it, the oldest of them are deleted down
+   * to it, so nothing ``isEvictable`` rejects can grow without bound. With
+   * ``isTileShapedURL`` every tile format lands on the evictable side, so
+   * in practice only the documents themselves are under it — a few dozen
+   * per basemap. Ignored unless it is a finite number.
+   *
+   * ``Cache.keys()`` yields ``Request`` objects; a string key (as a test
+   * fake may use) is read as its own url.
+   *
    * @param {Cache} cache
    * @param {number} max
+   * @param {{isEvictable?: (url: string) => boolean, maxOther?: number}} [options]
    * @returns {Promise<void>}
    */
-  async function trimCache(cache, max) {
+  async function trimCache(cache, max, options) {
     const keys = await cache.keys();
-    const excess = keys.length - max;
-    if (excess <= 0) return;
-    await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+    const isEvictable = options && options.isEvictable;
+    if (typeof isEvictable !== 'function') {
+      const excess = keys.length - max;
+      if (excess <= 0) return;
+      await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+      return;
+    }
+    const evictable = [];
+    const other = [];
+    for (const key of keys) {
+      const url = typeof key === 'string' ? key : key && key.url;
+      (isEvictable(url) ? evictable : other).push(key);
+    }
+    const doomed = [];
+    if (evictable.length > max) {
+      doomed.push(...evictable.slice(0, evictable.length - max));
+    }
+    const maxOther = options.maxOther;
+    if (Number.isFinite(maxOther) && other.length > maxOther) {
+      doomed.push(...other.slice(0, other.length - maxOther));
+    }
+    if (doomed.length === 0) return;
+    await Promise.all(doomed.map((key) => cache.delete(key)));
   }
 
   /**
@@ -289,6 +386,7 @@
     classifySync: classifySync,
     isBasemapOrigin: isBasemapOrigin,
     trimCache: trimCache,
+    isTileShapedURL: isTileShapedURL,
     shouldPersist: shouldPersist,
     runPool: runPool,
     classifyFailure: classifyFailure,

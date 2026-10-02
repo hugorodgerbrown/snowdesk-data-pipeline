@@ -214,6 +214,113 @@ describe('trimCache', () => {
     await core.trimCache(cache, 10);
     expect(cache._remaining()).toEqual([]);
   });
+
+  /*
+   * SNOW-1060 — the passive basemap trim counts and evicts tiles only.
+   * ``Cache.keys()`` yields ``Request`` objects, so these keys are
+   * ``{url}`` objects rather than the bare strings above.
+   */
+  const STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.basemap-winter.vt/style.json';
+  const TILEJSON = 'https://vectortiles.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/tiles.json';
+  const SPRITE_BASE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.basemap-winter.vt/sprite';
+  const SPRITES = ['.json', '.png', '@2x.json', '@2x.png'].map((s) => SPRITE_BASE + s);
+  const GLYPHS = ['0-255', '256-511', '8192-8447'].map(
+    (r) => `https://vectortiles.geo.admin.ch/fonts/Frutiger%20Neue%20Regular/${r}.pbf`,
+  );
+  const DOCUMENTS = [STYLE, TILEJSON, ...SPRITES, ...GLYPHS];
+
+  function tiles(count) {
+    return Array.from(
+      { length: count },
+      (_, i) => `https://vectortiles0.geo.admin.ch/tiles/base.vt/14/${8500 + i}/5800.pbf`,
+    );
+  }
+
+  function asRequests(urls) {
+    return urls.map((url) => ({ url }));
+  }
+
+  function remainingUrls(cache) {
+    return cache._remaining().map((key) => key.url);
+  }
+
+  const TILES_ONLY = { isEvictable: core.isTileShapedURL, maxOther: 200 };
+
+  it('evicts the oldest tiles and keeps every document that came before them', async () => {
+    // The bug: the documents are fetched once per map load, so they are
+    // the OLDEST entries — exactly what a whole-cache FIFO deletes first.
+    const tileUrls = tiles(610);
+    const cache = fakeCache(asRequests([...DOCUMENTS, ...tileUrls]));
+    await core.trimCache(cache, 600, TILES_ONLY);
+    expect(remainingUrls(cache)).toEqual([...DOCUMENTS, ...tileUrls.slice(10)]);
+  });
+
+  it('deletes nothing while the tiles are under the cap, documents included', async () => {
+    // 595 tiles + 10 documents is 605 entries — over 600 by the old count,
+    // under it by the new one.
+    const urls = [...DOCUMENTS, ...tiles(595)];
+    const cache = fakeCache(asRequests(urls));
+    await core.trimCache(cache, 600, TILES_ONLY);
+    expect(remainingUrls(cache)).toEqual(urls);
+  });
+
+  it('counts a tile format no style ships today as a tile, never a document', async () => {
+    // The Codex finding on #1023: had .webp tiles been read as documents,
+    // 200 of them would have filled the backstop and pushed the style out
+    // ahead of them. Read by shape, they join the tile cap instead.
+    const webp = Array.from(
+      { length: 250 },
+      (_, i) => `https://tiles.example.invalid/14/8500/${5800 + i}.webp`,
+    );
+    const cache = fakeCache(asRequests([...DOCUMENTS, ...webp]));
+    await core.trimCache(cache, 200, TILES_ONLY);
+    expect(remainingUrls(cache)).toEqual([...DOCUMENTS, ...webp.slice(50)]);
+  });
+
+  it('bounds the non-tile entries with the maxOther backstop', async () => {
+    // Nothing the tile test rejects may grow without bound; the backstop
+    // trims the oldest of them and leaves the tiles alone.
+    const others = Array.from(
+      { length: 250 },
+      (_, i) => `https://tiles.example.invalid/unknown/entry-${i}.bin`,
+    );
+    const tileUrls = tiles(5);
+    const cache = fakeCache(asRequests([...others, ...tileUrls]));
+    await core.trimCache(cache, 600, TILES_ONLY);
+    expect(remainingUrls(cache)).toEqual([...others.slice(50), ...tileUrls]);
+  });
+
+  describe('isTileShapedURL', () => {
+    it.each([
+      ['https://vectortiles0.geo.admin.ch/tiles/base.vt/14/8500/5800.pbf', true],
+      ['https://tiles.openfreemap.org/planet/20260906_080001_pt/7/66/45.pbf', true],
+      ['https://mapsneu.wien.gv.at/basemapv/bmapv/3857/tile/12/1456/2145.pbf', true],
+      ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/14/8500/5800.png', true],
+      ['https://tiles.example.invalid/14/8500/5800.webp', true],
+      ['https://tiles.example.invalid/14/8500/5800', true],
+      ['https://tiles.example.invalid/7/66/45.pbf?key=abc', true],
+      ['/14/8500/5800.pbf', true],
+      [STYLE, false],
+      [TILEJSON, false],
+      ['https://tiles.openfreemap.org/styles/liberty', false],
+      ['https://tiles.openfreemap.org/planet', false],
+      ['https://mapsneu.wien.gv.at/basemapvectorneu/root.json', false],
+      ...SPRITES.map((url) => [url, false]),
+      ['https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.png', false],
+      ...GLYPHS.map((url) => [url, false]),
+      ['', false],
+      [undefined, false],
+    ])('%s → %s', (url, expected) => {
+      expect(core.isTileShapedURL(url)).toBe(expected);
+    });
+  });
+
+  it('counts a tile with a query string as a tile', async () => {
+    const keyed = 'https://vectortiles0.geo.admin.ch/tiles/base.vt/14/8499/5800.pbf?key=abc';
+    const cache = fakeCache(asRequests([STYLE, keyed, ...tiles(2)]));
+    await core.trimCache(cache, 2, TILES_ONLY);
+    expect(remainingUrls(cache)).toEqual([STYLE, ...tiles(2)]);
+  });
 });
 
 /*

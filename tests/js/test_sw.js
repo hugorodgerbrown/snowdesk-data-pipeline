@@ -94,6 +94,8 @@ const SW_EXPORTS = [
   '_warmShellFeeds',
   'BASEMAP_CACHE_TRIM_INTERVAL',
   'BASEMAP_CACHE_MAX_ENTRIES',
+  // SNOW-1060: the backstop for the documents the tile-only trim exempts.
+  'BASEMAP_CACHE_MAX_DOCUMENTS',
   '_INLINE_MUTATION_QUEUE_CORE',
   'PRINCIPAL_ANONYMOUS',
   'PRINCIPAL_UNKNOWN',
@@ -1059,6 +1061,24 @@ describe('basemap cache trim batching (SNOW-614)', () => {
 
     // Not a one-shot: the cap still holds over a long browsing session.
     expect(stub.perCacheKeys['snowdesk-basemap-v1']).toBe(3);
+  });
+
+  it('trims by tiles only, with the documents backstop (SNOW-1060)', async () => {
+    // The real core with its trim spied on: the wiring under test is that
+    // the passive trim hands over the tile predicate and the backstop, so
+    // the style documents are never counted against the tile cap.
+    const real = self.pwaBasemapCacheCore;
+    const trimCache = vi.fn(async () => {});
+    const core = { ...real, trimCache };
+    const sw = loadSw({ caches: countingCaches(), fetch: corsFetch(), core });
+
+    await fetchTiles(sw, sw.BASEMAP_CACHE_TRIM_INTERVAL);
+
+    expect(trimCache).toHaveBeenCalledTimes(1);
+    const [, max, options] = trimCache.mock.calls[0];
+    expect(max).toBe(sw.BASEMAP_CACHE_MAX_ENTRIES);
+    expect(options.isEvictable).toBe(real.isTileShapedURL);
+    expect(options.maxOther).toBe(sw.BASEMAP_CACHE_MAX_DOCUMENTS);
   });
 
   it('bounds the overshoot to one batch', () => {
