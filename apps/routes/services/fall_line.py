@@ -61,6 +61,15 @@ readable as an absence of steep ground. ``/help/#help-topic-slope`` says
 so (the legend row went with the layer); the colour of the line
 underneath is the part that never goes quiet.
 
+The noise argument is about near-LEVEL ground, not about gentle ground
+in general, and it is the ARROW the gate withholds, not the aspect.
+SNOW-976 sends the aspect per segment as well — ``aspect_sectors``,
+below — binned to eight compass sectors and cut off at
+``ASPECT_FLAT_DEG`` (5°) rather than at this gate, because the aspect
+wheel SNOW-1063 draws under the rail cursor has to say which way a
+20 degree slope faces too. Below 5° the noise argument holds and the
+sector is null.
+
 ## One mark per stretch, then one every ``FALL_LINE_SPACING_M``
 
 A mark per segment would be 600 arrows on a long tour: unreadable on
@@ -103,6 +112,7 @@ ground we may point at.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from apps.routes.services.slope_summary import segment_lengths_m
@@ -148,6 +158,20 @@ FALL_LINE_GATE_DEG = 30.0
 # with, so a much smaller spacing needs that doc revisited rather than
 # just this constant changed.
 FALL_LINE_SPACING_M = 250.0
+
+# The angle below which a segment's aspect is not sent (SNOW-976).
+#
+# Five degrees: the cut-off the route rail already calls flat
+# (``FLAT_GROUND_DEG`` in ``static/js/route_rail_two_core.js``), so the
+# wheel and the rail's readout agree on where "flat" starts. Below it a
+# 5 m grid's aspect is the bearing of a stream bank or a road cutting.
+# It is NOT ``FALL_LINE_GATE_DEG``: that gate decides where an arrow is
+# worth DRAWING; this one only where a direction exists to report.
+ASPECT_FLAT_DEG = 5.0
+
+# Eight compass sectors of 45 degrees each, centred on N, NE … NW.
+_SECTOR_COUNT = 8
+_SECTOR_WIDTH_DEG = 360.0 / _SECTOR_COUNT
 
 
 def fall_line_marks(
@@ -252,3 +276,75 @@ def _bearing_of(segment: dict[str, Any]) -> int | None:
     # and must be reported as 0 rather than as a bearing off the end of
     # the compass.
     return round(aspect_deg) % 360
+
+
+def aspect_sector(aspect_deg: Any) -> int | None:
+    """Return the compass sector an aspect falls in, 0 (N) to 7 (NW).
+
+    Sector ``k`` spans ``k × 45° ± 22.5°``, so north runs from 337.5° to
+    22.5°. A value on a boundary goes to the sector clockwise of it —
+    22.5° is NE — which is why this floors a shifted value rather than
+    calling ``round``: Python rounds halves to even, which would send
+    22.5° north and 67.5° east.
+
+    Args:
+        aspect_deg: The ground's aspect as a compass bearing, or anything
+            else a hand-written record might hold there.
+
+    Returns:
+        The sector index, or None when ``aspect_deg`` is not a number.
+
+    """
+    if not isinstance(aspect_deg, int | float) or isinstance(aspect_deg, bool):
+        return None
+    shifted = (aspect_deg + _SECTOR_WIDTH_DEG / 2) / _SECTOR_WIDTH_DEG
+    return math.floor(shifted) % _SECTOR_COUNT
+
+
+def aspect_sectors(
+    record: dict[str, Any] | None,
+    *,
+    flat_deg: float = ASPECT_FLAT_DEG,
+) -> list[int | None] | None:
+    """Return one aspect sector per segment of a slope record (SNOW-976).
+
+    The wire form ``compact_slope`` sends as ``aspects``: a flat list
+    aligned with ``angles``, the ``banks`` shape, because the aspect
+    wheel reads the segment under the rail cursor and the cursor can be
+    on any of them.
+
+    Args:
+        record: A ``Route.slope_samples`` (or ``Trip.slope_samples``)
+            value, or None for a track that has never been sampled.
+        flat_deg: The angle a segment's ground must reach for its aspect
+            to be reported. A keyword argument, so re-tuning it costs no
+            backfill (see the module docstring).
+
+    Returns:
+        One sector index (``aspect_sector``) per segment, in track order.
+        None for a segment whose angle is unknown or below ``flat_deg``,
+        or which carries no aspect. None overall when there is nothing
+        to read — never sampled, or a record whose boundaries and
+        segments do not pair up — the refusal ``bank_angles`` makes, for
+        the same reason: an aspect placed against the wrong ground.
+
+    """
+    if not record:
+        return None
+    points = record.get("points") or []
+    segments = record.get("segments") or []
+    if len(points) != len(segments) + 1 or not segments:
+        return None
+
+    sectors: list[int | None] = []
+    for segment in segments:
+        angle_deg = segment.get("angle_deg")
+        if (
+            not isinstance(angle_deg, int | float)
+            or isinstance(angle_deg, bool)
+            or angle_deg < flat_deg
+        ):
+            sectors.append(None)
+            continue
+        sectors.append(aspect_sector(segment.get("aspect_deg")))
+    return sectors
