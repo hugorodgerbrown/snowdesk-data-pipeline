@@ -241,6 +241,9 @@ function buildFixture() {
 let mapStub;
 let rail;
 
+/** The fits made while the share link was being honoured at boot. */
+let arrivalFits = [];
+
 /**
  * Tap the map at a screen position, and return what it handed the rail.
  *
@@ -305,15 +308,56 @@ beforeAll(async () => {
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/map_route_detail.js');
   rail = installRouteRailStub();
+  // Real boxes for #map and the panel, so the arrival's fit can measure
+  // the room the panel takes (jsdom lays nothing out).
+  document.getElementById('map').getBoundingClientRect = () => ({
+    top: 0, left: 0, width: 1600, height: 900, right: 1600, bottom: 900,
+  });
+  rail.element.getBoundingClientRect = () => ({
+    top: 60, left: 12, width: 400, height: 192, right: 412, bottom: 252,
+  });
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
   // Populates routesGeojsonCache and installs the three line layers.
   await window.pwaRoutesOverlay.show();
+  // The share link waits for the routes source to load; the stub's source
+  // loads silently, so say so the way MapLibre would.
+  // The boot's own load of the overlay (the share link switches it on)
+  // is still settling its fetch.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (const handler of [...(mapStub.handlers.sourcedata || [])]) {
+    handler({ sourceId: 'routes' });
+  }
+  arrivalFits = mapStub.fitBounds.mock.calls.slice();
+  delete document.getElementById('map').getBoundingClientRect;
+  delete rail.element.getBoundingClientRect;
 });
 
 beforeEach(() => {
   window.pwaTelemetry = { emit: vi.fn() };
+});
+
+describe('arriving on a share link frames the route', () => {
+  // The one path that still frames a route on opening it: the recipient
+  // has never seen this route, so the map takes them to it. A tap frames
+  // nothing (tests/js/test_map_detail_popup_exclusivity.js).
+  it('fits the shared route\'s bounds, once', () => {
+    expect(arrivalFits).toHaveLength(1);
+    expect(arrivalFits[0][0]).toEqual([[7.2, 46.0], [7.2, 46.04]]);
+  });
+
+  it('reserves the room the panel takes at the top (SNOW-1068)', () => {
+    // The panel's bottom edge, 252px below the map's top: the top padding
+    // grows from 60 to that, and the foot keeps the 40 every fit has.
+    expect(arrivalFits[0][1].padding).toEqual({
+      top: 252, right: 40, bottom: 40, left: 40,
+    });
+  });
+
+  it('frames without a zoom cap, so the route\'s marks can render (SNOW-972)', () => {
+    expect(arrivalFits[0][1]).not.toHaveProperty('maxZoom');
+  });
 });
 
 describe('the pending route layer', () => {

@@ -3104,8 +3104,10 @@
     // where it starts.
     //
     // minzoom 11: at a country scale the markers would pile onto one
-    // another and onto the start dot. The fit on a tap has no cap (activateRoute), so the camera
-    // always comes to rest far enough in for them.
+    // another and onto the start dot. The fits that frame a route — a
+    // share arrival (activateRoute) and a routes-panel row (pwaMapFocus)
+    // — have no cap, so the camera comes to rest far enough in for them.
+    // A tap frames nothing: the reader already chose the scale.
     //
     // The circle carries the position on its own; the number is a symbol
     // and needs glyphs, which a style that fails to load them leaves out
@@ -6844,12 +6846,13 @@
      * rather than a place, and a long route can only be seen whole by
      * zooming out. Duration and the zoom cap — which is to say, its
      * absence — match ``activateRoute``'s own fit, so a route framed from
-     * its panel row and the same route framed by tapping its line come to
-     * rest at the same scale. That is why SNOW-972 had to uncap BOTH:
-     * fixing the tap alone would have made the row disagree with it.
+     * its panel row and the same route framed by a share link come to rest
+     * at the same scale. That is why SNOW-972 had to uncap BOTH: fixing
+     * one alone would have made the other disagree with it. (A tap on the
+     * line frames nothing since 2026-10-02.)
      *
-     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves the
-     * route panel pinned top-left (SNOW-1068), so that fit reserves the
+     * SNOW-973 SPLIT THE PADDING, and only the padding. A share arrival
+     * leaves the route panel pinned top-left (SNOW-1068), so that fit reserves the
      * room it takes (``paddingClearingRail`` above); a row press has already
      * dismissed its panel, so this one has nothing to frame around. The
      * two still agree on the question they answer — frame the track into
@@ -8247,7 +8250,7 @@
         // arrival has no tap point to honour; SNOW-973's sheet is docked
         // to the viewport and needs no anchor at all, so the synthesised
         // centre went with the popup.
-        activateRoute(feature);
+        activateRoute(feature, { frame: true });
         return true;
       };
 
@@ -8535,8 +8538,9 @@
       ) || null;
     };
 
-    // SNOW-687: tapping a saved route frames the whole track and opens its
-    // detail. SNOW-1018 CHANGED WHAT "ITS DETAIL" IS. A tap opens rail one
+    // SNOW-687: tapping a saved route opens its detail. It also framed the
+    // whole track until 2026-10-02; now only a share arrival does (`frame`,
+    // below), because a tapped line is one the reader can already see. SNOW-1018 CHANGED WHAT "ITS DETAIL" IS. A tap opens rail one
     // — the route's profile cut at its transitions, docked over the map's
     // foot — and ONLY the rail. The rail carries what the sheet's top half
     // used to: the name, the distance/ascent/descent figures and the
@@ -8549,7 +8553,7 @@
     // So the sheet's body is built here but DEFERRED: handed to the rail as
     // `details`, a function the menu item calls.
     //
-    // The rail opens BEFORE the fit, so the fit can measure it
+    // The rail opens BEFORE the fit, when there is one, so the fit can measure it
     // (`paddingClearingRail`) — otherwise a route's lower end would be
     // drawn behind its own profile.
     //
@@ -8560,7 +8564,7 @@
     //
     // Built with createElement, never innerHTML — everything on a route
     // feature that reaches the page is either user-supplied or ours.
-    const activateRoute = (feature) => {
+    const activateRoute = (feature, { frame = false } = {}) => {
       const props = feature.properties || {};
 
       /**
@@ -8637,6 +8641,14 @@
       // draws no legs and its slope is not shown.
       bindRouteCursor(props.pending ? null : props.uuid || null);
 
+      // A TAP DOES NOT MOVE THE CAMERA (2026-10-02). The reader tapped a
+      // line they can already see, at a scale they chose; framing it threw
+      // that scale away for one they had not asked for. Only an arrival
+      // that has not seen the route yet — the share deep link — frames it.
+      // A press on a routes-panel row frames it too, through
+      // window.pwaMapFocus.bounds (static/js/row_focus.js), and never comes
+      // through here.
+      if (!frame) return;
       const bounds = readFeatureJson(props.bounds);
       if (Array.isArray(bounds) && bounds.length === 4) {
         // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
@@ -8675,8 +8687,8 @@
     /**
      * A tap on the route the rail is already open on (SNOW-1019).
      *
-     * The FIRST tap on a route opens the rail and frames the track
-     * (activateRoute). A tap on that same route while its rail is open
+     * The FIRST tap on a route opens the rail, and leaves the camera where
+     * it is (activateRoute). A tap on that same route while its rail is open
      * means "here", not "open it again": it places the point at the sample
      * nearest the tap, and the panel's point header reads it. No
      * re-framing: the reader is pointing at a place on a track already in
