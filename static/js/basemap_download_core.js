@@ -1099,6 +1099,11 @@
   // ``.jpg``/``.jpeg`` are here for completeness rather than for a basemap
   // this project ships: every current style serves ``.pbf`` vector tiles,
   // and OpenFreeMap's natural-earth source serves ``.png`` rasters.
+  //
+  // SNOW-1060: DUPLICATED in basemap_cache_core.js, where the service
+  // worker's passive trim uses it to keep the style documents. The pages
+  // load this file and only the worker loads that one, so they cannot
+  // share it; tests/js/test_tile_entry_parity.js fails if the copies drift.
   const TILE_ENTRY_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|jpg|jpeg)$/i;
 
   /**
