@@ -2,7 +2,7 @@
 name: the-fall-line-arrow-is-a-bearing-per-place
 description: fall_line.py, fall_line_marks, fall_lines on the wire, routes-fall-lines — the downhill arrow on a route, steep ground only
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # The fall-line arrow is a bearing per place, not an aspect per segment
@@ -28,7 +28,9 @@ descent. Four constraints:
 - **A bearing per PLACE.** The wire carries `fall_lines`: a list of
   `{"i": 12, "deg": 112}` — a segment index into the `angles` array the
   client already holds, and a whole compass degree. Never the
-  per-segment aspect the record stores.
+  per-segment aspect the record stores. (Since SNOW-976 a binned
+  per-segment `aspects` array travels beside it for another reader — see
+  the next section. The marks do not read it.)
 - **Derived at read time**, in `apps/routes/services/fall_line.py`, with
   both thresholds as keyword arguments. Nothing new is stored.
 - **Steep ground only.** `FALL_LINE_GATE_DEG` is 30°, the number
@@ -64,6 +66,17 @@ looking. Spacing them is not a payload optimisation that happens to look
 better, it is the only legible form of the mark — which is why the
 spacing lives on the server beside the gate rather than in a client that
 would have to be trusted to thin consistently on two surfaces.
+
+**SNOW-976 sent a per-segment aspect after all, for a different reader.**
+The aspect wheel (SNOW-1063) shows which way the ground faces under the
+rail cursor, on moderate ground as well as steep, so `compact_slope` now
+sends `aspects`: one eight-sector index per segment (0 = N … 7 = NW),
+null below 5° or where unknown, about 1.3 kB on the 638-segment Col de la
+Chaux canonical tour. That is not the array this section rejected: it is
+a sector rather than the stored degree, it is read one segment at a time
+under a cursor rather than drawn 600 times along the line, and its
+payload is that of a digit. The arrows are unaffected — still a bearing
+per place, at the 30° gate, spaced 250 m, derived from the stored degree.
 
 ### Read time, because a stored mark list would freeze both constants
 
@@ -128,7 +141,10 @@ asymmetry is what lets the server keep one spacing rule for every zoom.
 
 **Send a flat `aspects` array beside `angles`.** The doubled payload the
 shared-record decision rejects, and a drawing nobody can read. Both, at
-once.
+once. Rejected as the source of the ARROWS, which is still the case;
+SNOW-976 later sent a binned `aspects` array for the aspect wheel, which
+draws one segment at a time — see "Per-segment aspect is the payload the
+record was designed to avoid" above.
 
 **Draw an arrow on every segment, thinning client-side.** Two surfaces
 would each need the thinning rule, and two implementations of it would

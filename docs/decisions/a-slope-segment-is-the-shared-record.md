@@ -2,7 +2,7 @@
 name: a-slope-segment-is-the-shared-record
 description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # A slope segment is the shared record, and it samples the ground
@@ -36,8 +36,9 @@ Five rules go with it:
   `{points, angles}` with a null angle for an unknown, and the key is
   **omitted entirely** for a route that has never been sampled. What
   rides alongside is derived rather than reduced — `passages` (SNOW-964),
-  `fall_lines` and `banks` (SNOW-1021) — and never the per-segment aspect
-  itself.
+  `fall_lines`, `banks` (SNOW-1021) and `aspects` (SNOW-976). The
+  per-segment aspect travels only as `aspects`, an eight-sector index,
+  never as the stored degree.
 - **A run in which every sample was `UNAVAILABLE` stores nothing.**
 
 ## Why
@@ -87,7 +88,11 @@ the presence of `legs` instead, for the same reason; the trip map adds its
 flat `trip-route-line` only when `isSlopeColoured` finds no segments to
 paint.)
 
-### The per-segment aspect is stored and not sent
+### The per-segment aspect is stored, and sent only as a sector
+
+This section was titled "The per-segment aspect is stored and not sent"
+until SNOW-976; the reasoning below is kept as written, and the last
+paragraph records what changed.
 
 `sample_slope` computes the angle and the aspect from one kernel, so the
 bearing is free at sampling time and would cost a second full pass over the
@@ -129,6 +134,24 @@ zoomed leg, where `{i, deg}` marks would cost five times the bytes for
 nearly the same count: about 2.4 kB on the 15 km tour. The aspect itself
 still does not travel
 ([the-bank-angle-is-drawn-signed](the-bank-angle-is-drawn-signed.md)).
+
+**SNOW-976 sent the aspect after all, binned, and the two sentences above
+that say it "still never travels" and "still does not travel" were true
+until then.** The aspect wheel (SNOW-1063) shows which way the ground
+faces under the rail cursor, and the cursor sits on 20° ground as often
+as on 38°: the arrows' 30° gate would leave the wheel blank there. So
+`compact_slope` sends `aspects`, a flat list aligned with `angles`, one
+**sector index** per segment — 0 for N through 7 for NW, sector *k*
+spanning *k* × 45° ± 22.5° — derived by `aspect_sectors` in
+`apps/routes/services/fall_line.py`. It is null where the angle is
+unknown, below `ASPECT_FLAT_DEG` (5°, the rail's own flat ground, where
+an aspect is a stream bank's bearing) or where the segment has no aspect.
+The payload objection is answered by the binning: a single digit per
+segment is about two bytes, 1.3 kB on the 638-segment Col de la Chaux
+canonical tour against 2.0 kB for its `banks`, where the stored degree
+to one decimal would have been the doubled payload this section rejects.
+The degree itself still stays on the server, and the fall-line marks are
+unchanged: a bearing per place, at 30°, spaced 250 m.
 
 ### The sample points have to travel
 
