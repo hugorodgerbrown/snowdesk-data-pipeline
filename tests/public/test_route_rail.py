@@ -1,6 +1,6 @@
 """
-tests/public/test_route_rail.py — the route rail as the map page ships it
-(SNOW-1018; one rail since SNOW-1065).
+tests/public/test_route_rail.py — the route panel as the map page ships it
+(SNOW-1018; one rail since SNOW-1065, pinned top-left since SNOW-1068).
 
 What the page carries before any route is open: the rail itself, hidden and
 inside ``#map``, one column — the name, the meta line, the profile — its
@@ -341,43 +341,119 @@ class TestTheActionsAreAMenu:
         assert " hx-" not in _rail(_home(client))
 
 
-# SNOW-1019: the floating map controls withdrawn while a route is open.
+# SNOW-1067: the floating map controls while a route is open — all of them
+# on desktop, locate, layers and routes on a phone (SNOW-1019 withdrew them
+# all, at every width).
 _MAP_CSS = Path(__file__).resolve().parents[2] / "static" / "css" / "map.css"
-_WITHDRAWN = (
+_WITHDRAWN_ON_A_PHONE = (
     "season-ribbon",
     "map-utility-cluster",
     "map-legend",
-    "map-controls-br",
     "home-intro",
 )
+_PHONE_QUERY = "@media (max-width: 639.98px)"
 
 
-def _withdrawn_selectors() -> set[str]:
-    """The ids the rail-open rule hides, read off the stylesheet.
+def _rules(css: str) -> list[tuple[str, str]]:
+    """Every innermost rule in a stylesheet, as (selector, body) pairs.
+
+    Args:
+        css: The stylesheet's text.
+
+    Returns:
+        Each rule's selector, its leading comment dropped, and its body.
+
+    """
+    return [
+        (selector.split("*/")[-1].strip(), body)
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+    ]
+
+
+def _split_phone_blocks(css: str) -> tuple[str, str]:
+    """Separate the phone-width blocks from the rest of the stylesheet.
+
+    Args:
+        css: The stylesheet's text.
+
+    Returns:
+        ``(phone, rest)``: the contents of every ``max-width: 639.98px``
+        block, and the stylesheet without them.
+
+    """
+    phone: list[str] = []
+    rest: list[str] = []
+    cursor = 0
+    while (start := css.find(_PHONE_QUERY, cursor)) != -1:
+        rest.append(css[cursor:start])
+        depth = 0
+        index = css.index("{", start)
+        open_at = index
+        while True:
+            if css[index] == "{":
+                depth += 1
+            elif css[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        phone.append(css[open_at + 1 : index])
+        cursor = index + 1
+    rest.append(css[cursor:])
+    return "".join(phone), "".join(rest)
+
+
+def _withdrawn_ids(css: str) -> set[str]:
+    """The ids a route-open rule hides, read off a stylesheet fragment.
+
+    Args:
+        css: The fragment.
 
     Returns:
         Every ``#id`` in a ``#map[data-route-rail-open] #id`` selector of a
         rule that sets ``visibility: hidden``.
 
     """
-    css = _MAP_CSS.read_text(encoding="utf-8")
     ids: set[str] = set()
-    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+    for selectors, body in _rules(css):
         if "visibility: hidden" not in body:
             continue
         ids.update(re.findall(r"#map\[data-route-rail-open\]\s+#([\w-]+)", selectors))
     return ids
 
 
-class TestTheMapControlsWithdrawWhileARouteIsOpen:
-    """Following a route is the one thing the reader is doing."""
+class TestTheRouteOpenFurniture:
+    """Desktop keeps every control; a phone keeps three (SNOW-1067)."""
 
-    def test_every_floating_container_is_withdrawn(self) -> None:
-        """The stylesheet hides all five while the rail is open."""
-        assert set(_WITHDRAWN) <= _withdrawn_selectors()
+    def test_a_phone_withdraws_the_top_row_the_stack_and_the_intro(self) -> None:
+        """Below 640 px the region row, search, the left stack and the intro go."""
+        phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
+        hidden = _withdrawn_ids(phone) | {"home-intro"}
+        assert set(_WITHDRAWN_ON_A_PHONE) <= hidden
+        assert "map-controls-br" not in _withdrawn_ids(phone)
+
+    def test_a_phone_keeps_locate_layers_and_routes(self) -> None:
+        """Every other roundel and the chevron leave the column."""
+        phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
+        rules = _rules(phone)
+        hidden = [sel for sel, body in rules if "display: none" in body]
+        joined = " ".join(hidden)
+        assert ".map-controls-toggle" in joined
+        assert ":not(#basemap-pill):not(.map-utility-pill--route)" in joined
+        # Locate sits outside the collapsible group, so nothing there hides it.
+        assert "#locate-toggle" not in joined
+        assert "map-utility-pill--locate" not in joined
+        # The two inside the group are shown open whatever its state.
+        opened = dict(rules)["#map[data-route-rail-open] #map-controls-collapsible"]
+        assert "calc(2 * var(--map-control-lg) + 8px)" in opened
+
+    def test_desktop_withdraws_nothing_but_the_intro(self) -> None:
+        """From 640 px every control returns; the intro card is not a control."""
+        _phone, rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
+        assert _withdrawn_ids(rest) == {"home-intro"}
 
     def test_the_containers_exist_in_the_map_partials(self) -> None:
-        """A renamed container would leave its controls over the rail.
+        """A renamed container would leave its controls over the panel.
 
         Read from the templates rather than a rendered page: the season
         ribbon and the intro card are conditional, and the test database
@@ -389,31 +465,49 @@ class TestTheMapControlsWithdrawWhileARouteIsOpen:
             for name in ("_map_embed.html", "_season_ribbon.html")
         )
 
-        for container in _WITHDRAWN:
+        for container in (*_WITHDRAWN_ON_A_PHONE, "map-controls-br", "basemap-pill"):
             assert re.search(rf'id="{container}"', source), container
+        assert "map-utility-pill--route" in source
 
-    def test_the_rail_its_leader_and_the_route_sheet_stay(self) -> None:
+    def test_the_panel_its_leader_and_the_route_sheet_stay(self) -> None:
         """What the reader is using now is never among the hidden."""
-        hidden = _withdrawn_selectors()
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        hidden = _withdrawn_ids(css)
 
         for kept in ("route-rail", "route-detail-sheet", "map"):
             assert kept not in hidden, kept
-        css = _MAP_CSS.read_text(encoding="utf-8")
         assert "[data-route-rail-open] .route-leader" not in css
         assert "[data-route-rail-open] .route-rail" not in css
 
-    def test_the_rail_shares_the_point_cards_column(self) -> None:
-        """One left-aligned column, one width token, for both (SNOW-1065)."""
-        css = _MAP_CSS.read_text(encoding="utf-8")
-        rules = dict(
-            (sel.split("*/")[-1].strip(), body)
-            for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
-        )
 
-        for selector in (".route-rail", ".route-point-card"):
-            assert "width: var(--route-column-width)" in rules[selector], selector
-        assert "right:" not in rules[".route-rail"]
-        assert "touch-action: pan-y" in rules[".route-rail-lane"]
+class TestThePanelIsPinnedTopLeft:
+    """One panel, top-left, moving nothing (SNOW-1068)."""
+
+    def test_the_panel_sits_at_the_top_under_the_chip_row_from_640px(self) -> None:
+        """The top edge on a phone; under the region chip's row on desktop."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        rail_rules = [body for sel, body in _rules(css) if sel == ".route-rail"]
+        assert len(rail_rules) == 2
+        phone_rule, desktop_rule = rail_rules
+        assert "top: calc(env(safe-area-inset-top, 0px) + 12px)" in phone_rule
+        assert "bottom:" not in phone_rule
+        assert "width: var(--route-column-width)" in phone_rule
+        assert "right:" not in phone_rule
+        assert "var(--map-control-lg) + 8px" in desktop_rule
+
+    def test_the_bottom_controls_are_not_lifted(self) -> None:
+        """The panel no longer raises --map-bottom-row-offset."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        for selector, body in _rules(css):
+            if "data-route-rail-open" in selector:
+                assert "--map-bottom-row-offset" not in body, selector
+        assert "--route-rail-height" not in css
+
+    def test_the_point_card_is_no_separate_surface(self) -> None:
+        """Its words and wheel are the panel's point header now."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        assert ".route-point-card" not in css
+        assert "touch-action: pan-y" in dict(_rules(css))[".route-rail-lane"]
 
 
 class TestTheComponentLibraryVariant:

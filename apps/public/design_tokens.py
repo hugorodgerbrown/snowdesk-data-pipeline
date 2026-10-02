@@ -1552,19 +1552,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="route-rail",
         label="Route rail",
         description=(
-            "The route rail (SNOW-1018; one rail since SNOW-1065 retired "
-            "rail two): the card docked over the map's foot while a route "
-            "is open, in one 400 px left-aligned column with the point "
-            "card. One layout at every width: the route's name as the "
-            "title, its figures as the subtitle in the routes list's meta "
-            "line ('12.9km · 337m ↑ · 1906m ↓ · 2h51m'), then the "
-            "elevation profile as one filled shape per leg under one "
-            "outline, with distance ticks; the '…' menu (Terrain, then the "
-            "routes row's four in its order) and × at the top right. "
-            "Pressing a leg highlights it: the title gains '• Leg 3' and "
-            "the subtitle becomes the leg's own figures; pressing it again "
-            "restores them. A drag along the profile places a point. "
-            "Rendered once, empty and hidden, and filled by "
+            "The route panel (SNOW-1018; one rail since SNOW-1065, one "
+            "panel pinned top-left since SNOW-1068): the open route's "
+            "profile under a header in one of three states, 400 px wide "
+            "under the region chip's row on desktop and full width on a "
+            "phone's top edge. Route: the name as the title and its "
+            "figures in the routes list's meta line ('12.9km · 337m ↑ · "
+            "1906m ↓ · 2h51m'). Leg: the title gains '• Leg 3' and the "
+            "subtitle the leg's own figures. Point: the point header (the "
+            "aspect wheel and the reading) in their place, the eyebrow "
+            "naming the route and the point's distance, and the × clearing "
+            "the point. The profile is always shown, one filled shape per "
+            "leg under one outline with distance ticks, so a drag along it "
+            "reads in the header directly above. The '…' menu (Terrain, "
+            "then the routes row's four in its order) and × at the top "
+            "right. Rendered once, empty and hidden, and filled by "
             "static/js/route_rail.js, so this page shows the shell alone."
         ),
         kind="components",
@@ -1587,10 +1589,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "missing terrain data fills it grey. The inner ring is filled "
             "on the track scale (SNOW-1064) — level under 5° in a lighter "
             "blue, then gentle, moderate, steep and very steep — so its "
-            "colour agrees with the point card's word for the track; the "
+            "colour agrees with the point header's word for the track; the "
             "outer ring keeps the slope classes. Drawn by "
             "static/js/aspect_wheel.js through aspect_wheel_core.js; "
-            "mounted on the map in the point card."
+            "mounted on the map in the route panel's point header."
         ),
         kind="components",
         partial="includes/_aspect_wheel.html",
@@ -1599,19 +1601,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
     ),
     FoundationCategory(
         slug="point-card",
-        label="Point card",
+        label="Point header",
         description=(
             "One point on the open route, read in words (SNOW-1064): the "
-            "aspect wheel at 48 px and two lines, pinned to the map's "
-            "top-left corner while a route is open and sharing one "
-            "400 px column with the route rail. The headline is the "
+            "aspect wheel at 48 px and two lines, shown in the route "
+            "panel's header while a point is placed (SNOW-1068). The "
+            "headline is the "
             "track's steepness on its own scale (level, gentle, moderate, "
             "steep, very steep) and how it crosses the slope — a fall line "
             "descent or climb within 45° of the fall line, a rising, level "
             "or descending traverse otherwise, '…, turning' when the "
             "gradient disagrees with the heading. Line two names the "
-            "ground in the EAWS words. No degrees, headings or aspects. "
-            "Empty until a point is placed; the × clears the point. "
+            "ground in the EAWS words, with the side the slope falls on a "
+            "traverse ('falling skier's right'). No degrees, headings or "
+            "aspects. Hidden until a point is placed; the panel's × clears "
+            "the point. "
             "Filled on the map by static/js/route_point_card.js from "
             "route_point_card_core.js; the states here are rendered "
             "server-side with the words the core writes."

@@ -59,6 +59,29 @@ describe('niceStep', () => {
   });
 });
 
+describe('pointDistance', () => {
+  it('reads the segment middle as a share of the route, in metres under a km', () => {
+    // 5.5 of 24 segments along 620 m is 142 m, to the nearest 10.
+    expect(core.pointDistance(5, 24, 620)).toBe('140 m');
+  });
+
+  it('switches to kilometres to one decimal from 1000 m', () => {
+    expect(core.pointDistance(99, 100, 12900)).toBe('12.8 km');
+    // 996 m rounds to 1000 m, which reads as a kilometre, not "1000 m".
+    expect(core.pointDistance(0, 1, 1992)).toBe('1.0 km');
+  });
+
+  it('uses the strings template’s units', () => {
+    expect(core.pointDistance(0, 1, 5000, { km: '%(value)s km' })).toBe('2.5 km');
+  });
+
+  it('places nothing it cannot', () => {
+    expect(core.pointDistance(null, 24, 620)).toBeNull();
+    expect(core.pointDistance(1, 0, 620)).toBeNull();
+    expect(core.pointDistance(1, 24, 0)).toBeNull();
+  });
+});
+
 describe('ticks', () => {
   it('labels every major in one unit for the whole strip', () => {
     const labels = core.ticks(12900).filter((t) => t.major).map((t) => t.label);

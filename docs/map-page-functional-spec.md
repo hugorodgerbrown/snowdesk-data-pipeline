@@ -331,18 +331,23 @@ return along the line itself from z14. A route with no elevation has no legs
 and keeps the flat line
 ([why](decisions/legs-not-slope-classes-on-the-map.md)).
 
-**The map's controls withdraw while a route is open (SNOW-1019).**
-While a route's rail is open, following that route is the one thing
-the reader is doing, so every control floating over the map fades out
-and cannot be reached: the region readout with its star and download at
-the top left, search at the top right, the legend, help, date and
-scrubber stack at the bottom left, the control column at the bottom
-right, and the intro card. They come back when the rail closes. The map
-itself still pans and zooms by gesture, and the rail, the point card, the leader line
-and the route detail sheet stay.
+**The route panel and the map's controls while a route is open
+(SNOW-1068, SNOW-1067).** The route panel — the profile under a header
+for the route, the open leg or a placed point — is pinned top-left: under
+the region readout's row on desktop, 400 px wide, and across the top edge
+on a phone. Opening a route, pressing a leg or placing a point changes
+only what the panel says, so nothing on the map moves. On desktop every
+control stays. On a phone, where a route is followed on the move, only
+locate-me, layers and routes stay, in the bottom-right corner; the region
+readout's row, search, the legend, help, date and scrubber stack and the
+rest of the control column withdraw, and come back when the panel closes.
+The date matters on a route only when it is today, which belongs to the
+Tour feature, not this panel. The intro card withdraws at every width.
+The map itself still pans and zooms by gesture, and the panel, the leader
+line and the route detail sheet stay.
 
 **The route cursor on the map (SNOW-1019).** While a route's rail is
-open, the map, the rail and the point card share one cursor, which
+open, the map and the route panel share one cursor, which
 holds a leg or a point and never both (SNOW-1065): opening a leg clears
 the point, and placing a point closes the leg. The point is a dot on the
 line, filled in the slope-class colour of the segment under it, or grey
@@ -353,12 +358,12 @@ than 6 px along the lane places a point with any pointer; a press without
 movement presses the leg. A tap on the open route's line only places the
 point — it no longer opens the leg there — and the first tap on a route
 still opens the rail and frames the track. A tap on the map that no marker
-takes, while a route is open, closes the rail (and so the point card) and
+takes, while a route is open, closes the panel and
 does nothing else. Escape closes the open leg, then clears a point, then
-closes the rail. Closing the rail clears the dot. All of it is hidden
+closes the panel; the panel's × clears a placed point first, then closes. Closing the rail clears the dot. All of it is hidden
 with the routes overlay.
 A dashed leader line in the route colour runs from the dot on the map to
-a small down-pointing notch on the rail's top edge, directly above the
+a small up-pointing notch on the panel's bottom edge, directly below the
 profile's cursor line, so one place can be followed across the map and
 the profile. It is hidden while the map has no point.
 When the rail moves the cursor to a place the rail covers, the map pans,

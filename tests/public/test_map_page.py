@@ -1811,10 +1811,11 @@ def test_the_route_key_has_no_row_for_marks_the_map_no_longer_draws() -> None:
     assert "Key passage" not in key
     assert "No-fall passage" not in key
     assert "point the way the ground falls" not in key
-    # What the key sends the reader to instead: the profile below the map,
-    # whose legs highlight on a press (SNOW-1065).
+    # What the key sends the reader to instead: the route's profile, whose
+    # legs highlight on a press (SNOW-1065) — pinned top-left since
+    # SNOW-1068, so the key no longer says where.
     assert "profile to highlight it" in key
-    assert "below the map" in key
+    assert "below the map" not in key
 
 
 @pytest.mark.django_db

@@ -472,7 +472,7 @@ describe('framing a route around the rail (SNOW-1018)', () => {
   it('opens the rail BEFORE the fit, and no sheet', () => {
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 740, left: 16, width: 1568, height: 144 }),
+      rect({ top: 60, left: 12, width: 400, height: 192 }),
     );
 
     tapTheRoute(mapStub);
@@ -481,34 +481,34 @@ describe('framing a route around the rail (SNOW-1018)', () => {
     expect(fits[0].sheetOpen).toBe(false);
   });
 
-  it('reserves the room the rail takes at the bottom', () => {
+  it('reserves the room the panel takes at the top (SNOW-1068)', () => {
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 740, left: 16, width: 1568, height: 144 }),
+      rect({ top: 60, left: 12, width: 400, height: 192 }),
     );
 
     tapTheRoute(mapStub);
 
-    // The rail's top edge to the map's bottom — 160px, its height plus the
-    // inset it sits above — on top of the 40 every fit starts with.
+    // The panel's bottom edge, 252px below the map's top: the top padding
+    // grows from 60 to that, and the foot keeps the 40 every fit has.
     expect(fits[0].opts.padding).toEqual({
-      top: 60, right: 40, bottom: 200, left: 40,
+      top: 252, right: 40, bottom: 40, left: 40,
     });
   });
 
-  it('clamps a rail that would swallow the map', () => {
-    // MapLibre throws outright when the padding exceeds the canvas; a rail
+  it('clamps a panel that would swallow the map', () => {
+    // MapLibre throws outright when the padding exceeds the canvas; a panel
     // wrapped tall on a short phone must degrade to a usable fit.
     layOut(
       rect({ top: 0, left: 0, width: 390, height: 500 }),
-      rect({ top: 150, left: 8, width: 374, height: 340 }),
+      rect({ top: 12, left: 12, width: 366, height: 340 }),
     );
 
     tapTheRoute(mapStub);
 
     const padding = fits[0].opts.padding;
     // 40% of the 500px canvas, and no more.
-    expect(padding.bottom).toBe(200);
+    expect(padding.top).toBe(200);
     expect(padding.top + padding.bottom).toBeLessThan(500);
   });
 
@@ -519,7 +519,7 @@ describe('framing a route around the rail (SNOW-1018)', () => {
     // against each route mark's own minzoom.
     layOut(
       rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 740, left: 16, width: 1568, height: 144 }),
+      rect({ top: 60, left: 12, width: 400, height: 192 }),
     );
 
     tapTheRoute(mapStub);

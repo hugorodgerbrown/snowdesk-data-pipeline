@@ -1496,12 +1496,14 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Point card (SNOW-1064) -------------------------------------------------------
+# Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
 # One point on the open route, read in words: the aspect wheel at 48 px and
 # two lines — the headline (the track's steepness on its own scale and how
-# it crosses the slope) and the ground in the EAWS words. The lines here are
-# what route_point_card_core.js's ``reading`` writes for each state; on the
-# map the card is filled client-side from the route cursor.
+# it crosses the slope) and the ground in the EAWS words, with the side the
+# slope falls on a traverse. The lines here are what
+# route_point_card_core.js's ``reading`` writes for each state; on the map
+# the header is filled client-side from the route cursor, and hidden while
+# no point is placed.
 
 
 def _point_card_variant(
@@ -1510,7 +1512,7 @@ def _point_card_variant(
     headline: str = "",
     ground: str = "",
 ) -> dict[str, Any]:
-    """Return one point-card variant; no headline renders the empty card."""
+    """Return one point-header variant."""
     return {
         "caption": caption,
         "context": {
@@ -1523,16 +1525,6 @@ def _point_card_variant(
 
 
 POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
-    _point_card_variant(
-        "Empty — a route is open and no point is placed",
-        {
-            "track": [],
-            "gradeDeg": None,
-            "prev": None,
-            "next": None,
-            "terrain": {"kind": "flat"},
-        },
-    ),
     _point_card_variant(
         "Fall line descent — 37° down a 42° face",
         {
@@ -1567,7 +1559,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
         },
         "Gentle rising traverse",
-        "Steep slope",
+        "Steep slope, falling skier's left",
     ),
     _point_card_variant(
         "Descending traverse — 9° across a 28° face",
@@ -1579,7 +1571,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
         },
         "Gentle descending traverse",
-        "Moderate slope",
+        "Moderate slope, falling skier's right",
     ),
     _point_card_variant(
         "Level traverse — under 5° across a 36° face",
@@ -1591,7 +1583,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
         },
         "Level traverse",
-        "Very steep slope",
+        "Very steep slope, falling skier's right",
     ),
     _point_card_variant(
         "Turning — the track climbs while heading downhill",

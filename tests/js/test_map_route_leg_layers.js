@@ -959,15 +959,16 @@ describe('the route cursor on the map (SNOW-1019)', () => {
 });
 
 describe('keeping the cursor dot in view (SNOW-1019)', () => {
-  // A 375 × 812 phone canvas with the rail's top at 300: the visible map
-  // is y 60 (under the top chrome) to 300.
+  // A 375 × 812 phone canvas with the route panel pinned to its top
+  // (SNOW-1068), its bottom edge at 250: the visible map is y 262 (the
+  // panel's foot plus the 12 px inset) to 812.
   const CANVAS = { left: 0, top: 0, right: 375, bottom: 812, width: 375, height: 812 };
-  const RAIL = { left: 0, top: 300, right: 375, bottom: 812, width: 375, height: 512 };
-  // The three segment middles project to y = 425, 375 and 325 — all
-  // behind the rail — at x = 200.
+  const RAIL = { left: 12, top: 12, right: 363, bottom: 250, width: 351, height: 238 };
+  // The three segment middles project to y = 125, 75 and 25 — all under
+  // the panel — at x = 200.
   const behindTheRail = ([lng, lat]) => ({
     x: 200 + (lng - 7.0) * 10000,
-    y: 300 + (46.015 - lat) * 10000,
+    y: (46.015 - lat) * 10000,
   });
 
   /** Land the pan in flight, as MapLibre's moveend would. */
@@ -1002,41 +1003,18 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     railSpy.mockRestore();
   };
 
-  it('pans a dot a rail moved behind the rail back into view, keeping the zoom', () => {
+  it('pans a dot out from under the panel, keeping the zoom', () => {
     setUp();
 
     cursor.setIndex(0);
 
     expect(panCalls).toHaveLength(1);
     const [[dx, dy], options] = panCalls[0];
-    // 425 → 300 − 24.
+    // 125 → 250 + 12 + 24.
     expect(dx).toBe(0);
-    expect(dy).toBeCloseTo(149);
+    expect(dy).toBeCloseTo(-161);
     expect(options).not.toHaveProperty('zoom');
     tearDown();
-  });
-
-  it('pans a dot out from under the point card (SNOW-1064)', () => {
-    setUp();
-    // The card covers y 60–200. With the map shifted, segment 2's middle
-    // projects to y = 75: clear of the top inset, but under the card.
-    projectLngLat = ([lng, lat]) => ({
-      x: 100 + (lng - 7.0) * 10000,
-      y: 50 + (46.015 - lat) * 10000,
-    });
-    const card = document.createElement('section');
-    card.getBoundingClientRect = () => ({ left: 12, top: 60, right: 362, bottom: 200, width: 350, height: 140 });
-    window.pwaRoutePointCard = { element: card };
-    try {
-      cursor.setIndex(2);
-
-      expect(panCalls).toHaveLength(1);
-      // Down, so the dot lands below the card's foot plus the margins.
-      expect(panCalls[0][0][1]).toBeLessThan(0);
-    } finally {
-      delete window.pwaRoutePointCard;
-      tearDown();
-    }
   });
 
   it('makes one pan for a scrub, not a queue', () => {
@@ -1057,7 +1035,7 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     setUp();
 
     for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 375 } });
+      handler({ point: { x: 200, y: 75 } });
     }
 
     expect(cursor.state().index).toBe(1);
@@ -1076,28 +1054,28 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     tearDown();
   });
 
-  it('pans for a map-written index once the rail grows over it', () => {
+  it('pans for a map-written index once the panel grows over it', () => {
     // A tap or hover on the line wrote the index where the reader could
-    // see it; then the rail grew (a title wrapping) over that place. A
-    // layout change is not a hover, so this one pans.
+    // see it; then the panel grew (a point header, a title wrapping) over
+    // that place. A layout change is not a hover, so this one pans.
     setUp();
     projectLngLat = ([lng, lat]) => ({
       x: 200 + (lng - 7.0) * 10000,
-      y: 100 + (46.015 - lat) * 10000,
+      y: 300 + (46.015 - lat) * 10000,
     });
-    // Segment 1's middle projects to y = 175, inside 60–300.
+    // Segment 1's middle projects to y = 375, inside 262–812.
     for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 175 } });
+      handler({ point: { x: 200, y: 375 } });
     }
     expect(cursor.state().index).toBe(1);
     expect(panCalls).toEqual([]);
 
-    railSpy.mockReturnValue({ ...RAIL, top: 120 });
+    railSpy.mockReturnValue({ ...RAIL, bottom: 400, height: 388 });
     document.dispatchEvent(new CustomEvent('snowdesk:route-rail-resized'));
 
     expect(panCalls).toHaveLength(1);
-    // 175 → 120 − 24.
-    expect(panCalls[0][0][1]).toBeCloseTo(79);
+    // 375 → 400 + 12 + 24.
+    expect(panCalls[0][0][1]).toBeCloseTo(-61);
     tearDown();
   });
 
@@ -1106,14 +1084,14 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     cursor.openLeg({ i: 1, from: 0, to: 0 });
 
     for (const handler of mapStub.handlers.mousemove || []) {
-      handler({ point: { x: 200, y: 175 } });
+      handler({ point: { x: 200, y: 75 } });
     }
 
     expect(cursor.state()).toMatchObject({ index: null, openLeg: { i: 1 } });
     tearDown();
   });
 
-  it('gives the leader no map stop while the dot is behind the rail', () => {
+  it('gives the leader no map stop while the dot is under the panel', () => {
     setUp();
     for (const handler of mapStub.handlers.dragstart || []) handler();
 

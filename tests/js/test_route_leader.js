@@ -3,7 +3,7 @@
  * (static/js/route_leader.js, SNOW-1019).
  *
  * Hidden with no cursor index; two stops, the map's dot and a notch on the
- * rail's top edge (SNOW-1065, since rail two went); hidden with no map
+ * panel's bottom edge (SNOW-1065, SNOW-1068); hidden with no map
  * point; cleared when the rail closes; and the map's camera listener bound
  * once however many times a rail opens. Both surfaces' screen points are
  * stubbed — each surface's own point is tested beside it.
@@ -74,16 +74,20 @@ describe('the leader line', () => {
     expect(svg.style.display).toBe('none');
   });
 
-  it('runs from the map to a notch on the rail', () => {
+  it('runs up from the map to a notch on the panel', () => {
+    // SNOW-1068: the panel is pinned top-left, so its bottom edge (y 300)
+    // is above the map's dot.
+    points.map = { x: 100, y: 500 };
     openRail().setIndex(4);
     window.pwaRouteLeader.redraw();
 
     expect(svg.style.display).toBe('');
-    expect(leaderPath()).toBe('M100 50 C100 175, 120 175, 120 300');
+    expect(leaderPath()).toBe('M100 500 C100 400, 120 400, 120 300');
     expect(leaderPath().match(/C/g)).toHaveLength(1);
-    // The notch: a triangle whose point sits on the rail's edge.
+    // The notch: a triangle pointing up, its point on the panel's edge.
     expect(stops()).toHaveLength(1);
-    expect(stops()[0].getAttribute('d')).toBe('M116 295 L124 295 L120 300 Z');
+    expect(stops()[0].getAttribute('d')).toBe('M116 305 L124 305 L120 300 Z');
+    points.map = { x: 100, y: 50 };
   });
 
   it('is hidden when the map\'s dot is covered', () => {
