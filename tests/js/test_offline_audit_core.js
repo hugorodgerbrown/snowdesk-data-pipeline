@@ -1946,12 +1946,12 @@ describe('the passive browsing cache (SNOW-1058)', () => {
           tileJsons,
           'https://mapsneu.wien.gv.at/basemapvectorneu/root.json',
         ),
-      ).toEqual(['site:wien.gv.at']);
+      ).toEqual(['site:wien.gv.at/']);
     });
 
     it('falls back to the site when the TileJSON is not cached at all', () => {
       expect(core.tileTemplatesForStyle(STYLE, {}, SWISSTOPO)).toEqual([
-        'site:geo.admin.ch',
+        'site:geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/',
         'https://terrain.example/dem/',
       ]);
     });
@@ -1970,6 +1970,15 @@ describe('the passive browsing cache (SNOW-1058)', () => {
       // on `vectortiles0`-`4`. An exact-origin fallback read this as
       // style-only — a confident No over a map that draws.
       expect(core.browsedState(STYLE, {}, [SWISSTOPO, TILE], SWISSTOPO)).toBe('tiles');
+    });
+
+    it('keeps the site fallback to its source’s directory, not the whole domain', () => {
+      // Codex on #1025: the slope overlay is also on geo.admin.ch and its
+      // tiles sit in the same passive cache. With the TileJSON missing, a
+      // domain-only fallback read one of them as Swisstopo ground.
+      const slope =
+        'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/14/8500/5800.png';
+      expect(core.browsedState(STYLE, {}, [SWISSTOPO, slope], SWISSTOPO)).toBe('style-only');
     });
 
     it('keeps the site fallback to its own site', () => {

@@ -231,13 +231,22 @@ code with the basemap modules — it also runs on `static/offline.html`)
 that starts with one of the style's prefixes, so a tile cached for a
 DIFFERENT basemap's host does not count. A source whose tiles cannot be
 resolved — an ESRI service root, or a TileJSON this device does not hold
-or cannot parse — falls back to its URL's **site** (the hostname less its
-first label: `vectortiles.geo.admin.ch` → `geo.admin.ch`), not its exact
-origin, because tile hosts are routinely siblings of the TileJSON's
-(`vectortiles0`–`4`), and an origin fallback read them as absent. The
-fallback can count a tile from another style on the same site; that is
-only more generous for basemaps that share one, and the two Swisstopo
-styles, which do, draw each other's tiles.
+or cannot parse — falls back to its URL's **site and directory**: the
+hostname less its first label, under the source's own path
+(`vectortiles.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/` → any
+`*.geo.admin.ch` host under `/tiles/ch.swisstopo.base.vt/v1.0.0/`). Not
+the exact origin, because tile hosts are routinely siblings of the
+TileJSON's (`vectortiles0`–`4`), and an origin fallback read them as
+absent. Not the bare domain either, because `geo.admin.ch` also serves
+the slope overlay into the same passive cache, and a domain-only match
+read a slope tile as basemap ground. The fallback can still count a tile
+from another style under the same directory; that is only more generous
+for basemaps that share one, and they genuinely draw each other's tiles.
+
+The style and TileJSON are matched **exactly**, query included, because
+that is how `sw.js`'s `_basemapStaleWhileRevalidate` serves them offline:
+a style cached under another query is not one the worker would hand
+MapLibre.
 
 The browsed verdict **covers** the on-screen basemap's row as well as
 `no-downloads`, so the summary does not restate a caveat the verdict has

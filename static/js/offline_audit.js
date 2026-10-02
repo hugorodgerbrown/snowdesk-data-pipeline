@@ -1198,9 +1198,11 @@
 
     // `null` is the bound's fallback and `undefined` a genuine miss, the
     // distinction `readShellEntries` draws for the same reason: only the
-    // second is evidence of absence. `ignoreSearch` as the picker's own
-    // probe (map_layer_sync_status.js) matches the style, so a style URL
-    // the provider decorates with a query is still found.
+    // second is evidence of absence. The match is EXACT, query included,
+    // because that is how sw.js's `_basemapStaleWhileRevalidate` serves it
+    // offline (`cache.match(request)`): an older style cached under a
+    // different query is not one the worker would hand MapLibre, and
+    // reading it would put a Yes over a style that does not load.
     //
     // `unparsedIsMiss` is for the TileJSON reads. A source `url` that is
     // not a TileJSON at all (basemap.at's ESRI service root) can still match
@@ -1212,7 +1214,7 @@
         budget,
         'passive.match',
         function () {
-          return cache.match(url, { ignoreSearch: true }).then(function (response) {
+          return cache.match(url).then(function (response) {
             if (!response) return undefined;
             return unparsedIsMiss
               ? response.json().catch(function () {

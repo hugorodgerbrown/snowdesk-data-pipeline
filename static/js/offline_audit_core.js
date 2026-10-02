@@ -489,16 +489,28 @@
   }
 
   /**
-   * The SITE a source URL's tiles are expected on, as a ``site:<domain>``
+   * Where a source URL's tiles are expected, as a ``site:<domain><dir>``
    * marker, or null where the URL has none to give (SNOW-1058).
    *
-   * The source's own hostname with its first label dropped, once it has
-   * three or more: ``vectortiles.geo.admin.ch`` → ``geo.admin.ch``. Not the
-   * exact origin, because a TileJSON routinely names tile hosts that are
-   * siblings of its own — Swisstopo's sits on ``vectortiles.geo.admin.ch``
-   * and serves its tiles from ``vectortiles0``–``vectortiles4`` — and an
-   * origin fallback would read every one of them as another basemap's,
-   * which is a confident No over a map that draws.
+   * The DOMAIN is the source's hostname with its first label dropped, once
+   * it has three or more: ``vectortiles.geo.admin.ch`` → ``geo.admin.ch``.
+   * Not the exact origin, because a TileJSON routinely names tile hosts
+   * that are siblings of its own — Swisstopo's sits on
+   * ``vectortiles.geo.admin.ch`` and serves its tiles from
+   * ``vectortiles0``–``vectortiles4`` — and an origin fallback would read
+   * every one of them as another basemap's: a confident No over a map that
+   * draws.
+   *
+   * The DIRECTORY is the source URL's path up to its last ``/``, kept
+   * because the domain alone is far too wide: ``geo.admin.ch`` also serves
+   * the slope overlay (``wmts.geo.admin.ch/…/{z}/{x}/{y}.png``), whose
+   * tiles sit in the same passive cache, and a domain-only match read one
+   * of them as this basemap's ground — a false Yes. The tiles of every
+   * style shipped share their source's directory: Swisstopo's TileJSON is
+   * ``…/tiles/ch.swisstopo.base.vt/v1.0.0/tiles.json`` and its tiles
+   * ``…/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf``; basemap.at's
+   * ESRI service root is the directory its ``tile/{z}/{y}/{x}.pbf`` hangs
+   * off.
    *
    * @param {string} url
    * @param {string} [base]
@@ -511,7 +523,8 @@
       var labels = parsed.hostname.split('.');
       var ip = /^\d+$/.test(labels[labels.length - 1]);
       var site = !ip && labels.length >= 3 ? labels.slice(1).join('.') : parsed.hostname;
-      return 'site:' + site;
+      var dir = parsed.pathname.slice(0, parsed.pathname.lastIndexOf('/') + 1) || '/';
+      return 'site:' + site + dir;
     } catch (_err) {
       return null;
     }
@@ -519,8 +532,8 @@
 
   /**
    * Whether ``url`` falls under one of ``tileTemplatesForStyle``'s
-   * prefixes — a literal URL prefix, or a ``site:<domain>`` marker matching
-   * that domain and every subdomain of it.
+   * prefixes — a literal URL prefix, or a ``site:<domain><dir>`` marker
+   * matching that domain or any subdomain of it, under that directory.
    *
    * @param {string} url
    * @param {string} prefix
@@ -528,10 +541,15 @@
    */
   function underPrefix(url, prefix) {
     if (prefix.indexOf('site:') !== 0) return url.indexOf(prefix) === 0;
-    var site = prefix.slice(5);
+    var marker = prefix.slice(5);
+    var slash = marker.indexOf('/');
+    var site = slash < 0 ? marker : marker.slice(0, slash);
+    var dir = slash < 0 ? '/' : marker.slice(slash);
     try {
-      var host = new URL(url).hostname;
-      return host === site || host.slice(-(site.length + 1)) === '.' + site;
+      var parsed = new URL(url);
+      var host = parsed.hostname;
+      var onSite = host === site || host.slice(-(site.length + 1)) === '.' + site;
+      return onSite && parsed.pathname.indexOf(dir) === 0;
     } catch (_err) {
       return false;
     }

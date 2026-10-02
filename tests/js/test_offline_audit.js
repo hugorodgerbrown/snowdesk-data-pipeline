@@ -398,6 +398,24 @@ describe('the browsing-cache probe (SNOW-1058)', () => {
     expect(readings.browsed).toEqual({ swisstopo_winter: 'style-only' });
   });
 
+  it('matches the style exactly, query included, as the worker serves it', async () => {
+    // Codex on #1025: sw.js serves a basemap entry with an exact
+    // `cache.match(request)`, so a style cached under another query is not
+    // one MapLibre would get offline, and must not read as browsed.
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: `${STYLE_URL}?v=old`, json: STYLE },
+        { url: TILEJSON_URL, json: TILEJSON },
+        { url: 'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf' },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'none' });
+  });
+
   it('treats a TileJSON that will not parse as absent, not as unread', async () => {
     // basemap.at's source `url` is an ESRI service root, not a TileJSON:
     // whatever is cached under it fails to parse. That is the absence of
