@@ -5,10 +5,13 @@
  * Two concentric eight-sector compass rings, north up. The OUTER ring is
  * the terrain: the sector the ground faces is lit, filled with the slope
  * class of the ground's angle. The INNER ring is the track: the sector it
- * heads in is lit, filled with the slope class of the track's own absolute
- * gradient on the same scale. The segments either side show in the inner
- * ring at 35% opacity, and a centre triangle says climbing (up) or
- * descending (down); a level track draws a bar instead.
+ * heads in is lit, filled on the TRACK SCALE (`trackFill`, SNOW-1064) —
+ * level under 5°, gentle under 15°, moderate under 25°, steep under 35°,
+ * very steep from 35° — because on the EAWS slope classes nearly every
+ * skin track would read "under 30°" and draw blue, and the point card's
+ * words name the track on this scale. The segments either side show in the
+ * inner ring at 35% opacity, and a centre triangle says climbing (up) or
+ * descending (down); a level track (under `LEVEL_DEG`, 5°) draws a bar.
  *
  * THE DATA. The aspect comes from `slope.aspects` (SNOW-976): one sector
  * index per segment, aligned with `angles`, null where the angle is
@@ -16,7 +19,8 @@
  * own path (`segmentPaths` in route_slope_core.js) — the bearing of its
  * first step and of its last, so a segment that turns inside itself lights
  * two sectors rather than one averaged between them. The gradient is rail
- * two's `segmentGradients`, signed, positive where the track rises.
+ * point card's `segmentGradients` (route_point_card_core.js), signed,
+ * positive where the track rises.
  *
  * FOUR TERRAIN STATES, and they must not collapse:
  *
@@ -31,9 +35,10 @@
  *                 the ground is level.
  *
  * Colours are `var(--token)` strings, because the wheel is inline SVG and
- * can read custom properties. The slope classes are route_slope_core.js's
- * CLASSES table, read at call time rather than copied, so the wheel cannot
- * drift from the line and the legend.
+ * can read custom properties. The outer ring's slope classes are
+ * route_slope_core.js's CLASSES table, read at call time rather than
+ * copied, so the wheel cannot drift from the line and the legend. The
+ * inner ring's five track steps are `TRACK_STEPS` below.
  *
  * No user-facing literal lives here. `wheelLabel` and `headingLine` take a
  * strings object from the caller — read from the partial's `<template>`
@@ -45,6 +50,8 @@
  *
  *   SIZE_MIN / SIZE_MAX   — the size clamp, in CSS px
  *   LEVEL_DEG             — below this absolute gradient a track is level
+ *   TRACK_STEPS           — the track scale: [upper bound, token] per step
+ *   trackFill(gradient)   — the inner ring's fill for a gradient
  *   sectorOf(deg)         — a compass bearing's sector, 0 (N) to 7 (NW)
  *   bearingDeg(a, b)      — the forward azimuth from a to b, [lon, lat]
  *   headingSectors(path)  — a segment path's heading sectors, deduplicated
@@ -65,8 +72,28 @@
   /** The largest size the wheel draws at, in CSS px. */
   const SIZE_MAX = 200;
 
-  /** Below this absolute gradient, in degrees, the track is level. */
-  const LEVEL_DEG = 2;
+  /**
+   * Below this absolute gradient, in degrees, the track is level: the
+   * track scale's first step, and "Level" on the point card (SNOW-1064).
+   */
+  const LEVEL_DEG = 5;
+
+  /**
+   * The track scale (SNOW-1064): each step's exclusive upper bound in
+   * degrees of absolute gradient, and the token it fills with. The last
+   * step has no bound. The point card's `trackWord` reads the same bounds
+   * (route_point_card_core.js), so a ring's colour and the card's word
+   * always name the same step.
+   *
+   * @type {ReadonlyArray<[number, string]>}
+   */
+  const TRACK_STEPS = /** @type {ReadonlyArray<[number, string]>} */ (Object.freeze([
+    Object.freeze([LEVEL_DEG, '--color-track-level']),
+    Object.freeze([15, '--color-slope-gentle']),
+    Object.freeze([25, '--color-slope-30']),
+    Object.freeze([35, '--color-slope-35']),
+    Object.freeze([Infinity, '--color-slope-40']),
+  ]));
 
   /** Below this size, in CSS px, the centre is left empty. */
   const CENTRE_MIN_SIZE = 36;
@@ -318,6 +345,24 @@
   }
 
   /**
+   * The fill token for a track gradient on the track scale (SNOW-1064).
+   *
+   * The inner ring's colour: the outer ring keeps `classFill`, because it
+   * names the ground and the ground is classed by EAWS.
+   *
+   * @param {?number} gradient Degrees, signed or absolute, or null.
+   * @returns {string} `var(--token)`; the unknown token for a null
+   *   gradient.
+   */
+  function trackFill(gradient) {
+    const value = finite(gradient);
+    if (value === null) return classFill(null);
+    const steep = Math.abs(value);
+    const step = TRACK_STEPS.find((entry) => steep < entry[0]) || TRACK_STEPS[TRACK_STEPS.length - 1];
+    return `var(${step[1]})`;
+  }
+
+  /**
    * A number rounded for SVG markup.
    *
    * @param {number} value A coordinate or length.
@@ -482,7 +527,7 @@
 
     const track = Array.isArray(state.track) ? state.track : [];
     const grade = finite(state.gradeDeg);
-    const trackFill = classFill(grade === null ? null : Math.abs(grade));
+    const headingFill = trackFill(grade);
 
     // Where the previous and next segments head the same way, one sector
     // carries both, in the steeper of the two gradients.
@@ -501,10 +546,10 @@
 
     for (let k = 0; k < 8; k += 1) {
       if (track.indexOf(k) !== -1) {
-        sector(inner, k, INNER_RING, trackFill, ' data-ring="track" data-lit="heading"');
+        sector(inner, k, INNER_RING, headingFill, ' data-ring="track" data-lit="heading"');
         keylineOf(k, INNER_RING, KEYLINE_OPACITY);
       } else if (k in neighbours) {
-        sector(inner, k, INNER_RING, classFill(neighbours[k]),
+        sector(inner, k, INNER_RING, trackFill(neighbours[k]),
           ` data-ring="track" data-lit="neighbour" fill-opacity="${NEIGHBOUR_OPACITY}"`);
         keylineOf(k, INNER_RING, KEYLINE_OPACITY * NEIGHBOUR_OPACITY);
       } else {
@@ -617,6 +662,8 @@
     SIZE_MIN: SIZE_MIN,
     SIZE_MAX: SIZE_MAX,
     LEVEL_DEG: LEVEL_DEG,
+    TRACK_STEPS: TRACK_STEPS,
+    trackFill: trackFill,
     sectorOf: sectorOf,
     bearingDeg: bearingDeg,
     headingSectors: headingSectors,

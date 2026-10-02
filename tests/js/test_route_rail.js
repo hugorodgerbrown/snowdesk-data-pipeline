@@ -674,6 +674,42 @@ describe('lifetime', () => {
     expect(rail.hidden).toBe(true);
   });
 
+  it('clears a placed point on the first Escape and closes on the next (SNOW-1064)', () => {
+    window.pwaRouteRail.open(feature());
+    const cursor = window.pwaRouteRail.cursor();
+    cursor.setIndex(5);
+
+    pressEscape();
+
+    expect(cursor.state().index).toBeNull();
+    expect(rail.hidden).toBe(false);
+
+    pressEscape();
+
+    expect(rail.hidden).toBe(true);
+  });
+
+  it('attaches the point card on open and detaches it on close (SNOW-1064)', () => {
+    const calls = [];
+    window.pwaRoutePointCard = {
+      attach: (options) => calls.push(['attach', options]),
+      detach: () => calls.push(['detach']),
+    };
+    try {
+      window.pwaRouteRail.open(feature());
+      const attached = calls.find((call) => call[0] === 'attach');
+      expect(attached[1].cursor).toBe(window.pwaRouteRail.cursor());
+      expect(attached[1].sampleCount).toBe(24);
+      expect(attached[1].spanM).toBe(620);
+      expect(attached[1].legs).toHaveLength(2);
+      calls.length = 0;
+      window.pwaRouteRail.close();
+      expect(calls).toEqual([['detach']]);
+    } finally {
+      delete window.pwaRoutePointCard;
+    }
+  });
+
   it('leaves Escape to an open sheet', () => {
     window.pwaRouteRail.open(feature());
     sheet.removeAttribute('hidden');

@@ -2055,6 +2055,10 @@ Optional context:
     {# transitions. Inside #map rather than after it; the partial's header  #}
     {# says why. Hidden until static/js/route_rail.js opens it.             #}
     {% include "includes/_route_rail.html" %}
+    {# SNOW-1064: the point card — one point on the open route, in words,  #}
+    {# pinned top-left. Hidden until static/js/route_point_card.js shows it #}
+    {# with the rail.                                                       #}
+    {% include "includes/_route_point_card.html" %}
 </div>
 {# SNOW-492: per-overlay "unavailable offline" toasts. Hidden by default;   #}
 {# map.js reveals the matching id (remove `hidden`, add `flex` — see        #}

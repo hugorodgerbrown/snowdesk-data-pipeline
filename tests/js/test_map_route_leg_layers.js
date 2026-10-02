@@ -850,6 +850,22 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     expect(colour[1]).toEqual(['get', 'colour']);
   });
 
+  it('draws the dot as a ring with a clear centre from z14 (SNOW-1064)', () => {
+    const paint = layers.get('routes-cursor-point').paint;
+    // Filled below z14, clear from it, so the class colour under it shows.
+    expect(paint['circle-opacity']).toEqual(['step', ['zoom'], 1, 14, 0]);
+    // The ring is the segment's class colour; below z14 the stroke is the halo.
+    expect(paint['circle-stroke-color'][3]).toBe(14);
+    expect(paint['circle-stroke-color'][4][1]).toEqual(['get', 'colour']);
+    expect(paint['circle-stroke-width']).toEqual(['step', ['zoom'], 2, 14, 3]);
+    const halo = layers.get('routes-cursor-point-halo');
+    expect(halo.minzoom).toBe(14);
+    expect(halo.source).toBe('route-cursor-point');
+    const ids = [...layers.keys()];
+    expect(ids.indexOf('routes-cursor-point-halo')).toBe(ids.indexOf('routes-cursor-point') - 1);
+    expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-cursor-point-halo');
+  });
+
   it('draws no selection stretch (SNOW-1052)', () => {
     expect(sources.has('route-cursor-selection')).toBe(false);
     expect(layers.has('routes-cursor-selection')).toBe(false);

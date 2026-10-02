@@ -19,7 +19,8 @@
  * over it — it is not registered with window.pwaMapOverlays, which would
  * close it the moment the sheet it opened announced itself. It closes on
  * its own × (`[data-route-rail-close]`), on Escape when nothing else is
- * open to take that Escape and no leg is open, on a claim or a delete, and
+ * open to take that Escape and no leg or point is open, on a claim or a
+ * delete, and
  * it is refilled in place when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
@@ -38,6 +39,11 @@
  * it, the raised fill (src/css/main.css, `.route-rail-leg`) — follows the
  * CURSOR, not the click, so when rail two closes a leg from its own side
  * this rail un-presses without being told.
+ *
+ * THE POINT CARD (SNOW-1064). `open` attaches the point card
+ * (route_point_card.js) to the new cursor, with the arrays it reads the
+ * point's words from, and `close` detaches it, so the card opens and closes
+ * with the rail.
  *
  * THE CURSOR LINE (SNOW-1019). The cursor index is drawn across the lane
  * as a vertical line (`[data-route-rail-cursor]`), placed by share, and a
@@ -579,6 +585,22 @@
         onResize: publishHeight,
       });
     }
+    // SNOW-1064: the point card opens with the rail and reads its cursor.
+    if (window.pwaRoutePointCard) {
+      if (cursor) {
+        window.pwaRoutePointCard.attach({
+          cursor: cursor,
+          slope: slope,
+          coordinates: coordinates,
+          profile: profile,
+          legs: legs,
+          sampleCount: sampleCount,
+          spanM: spanM,
+        });
+      } else {
+        window.pwaRoutePointCard.detach();
+      }
+    }
     fillMenu();
     fillClaim(props.pending ? opts.claim || null : null);
     paintState(cursor ? cursor.state() : null);
@@ -607,6 +629,7 @@
       cursor.closeLeg();
     }
     if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
+    if (window.pwaRoutePointCard) window.pwaRoutePointCard.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     cursor = null;
@@ -771,7 +794,8 @@
 
   // ---- lifetime ---------------------------------------------------------
 
-  // Escape closes the open leg first, and the rail on the next one — but
+  // Escape closes the open leg first, then clears a placed point, and
+  // closes the rail on the next one — but
   // only an Escape nothing else was open to take. The sheets close on Escape from their own document listeners
   // (map_sheet.js), and overflow_menu.js takes one in the capture phase
   // for an open menu, so by the time this listener runs the surface that
@@ -793,6 +817,12 @@
     if (event.key !== 'Escape' || escapeWasTaken || rail.hidden) return;
     if (cursor && cursor.state().openLeg) {
       cursor.closeLeg();
+      return;
+    }
+    // SNOW-1064: a point placed on the route clears first, as the point
+    // card's × does, and keeps the route; the next Escape closes it.
+    if (cursor && cursor.state().index !== null) {
+      cursor.setIndex(null);
       return;
     }
     close();

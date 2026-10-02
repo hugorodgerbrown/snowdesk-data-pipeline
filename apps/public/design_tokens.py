@@ -59,6 +59,7 @@ from apps.public._component_fixtures import (
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
@@ -534,6 +535,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
             Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
+            Token(
+                "--color-track-level", "Level track (wheel, under 5°)", "#bae6fd", None
+            ),
             Token("--color-crux-ring", "Key passage (marker)", "#1a1916", None),
             Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
             Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
@@ -1580,13 +1584,41 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "and next segments' headings at 35%. The centre triangle "
             "points up for a climb and down for a descent; a level track "
             "draws a bar. Flat ground leaves the outer ring unlit, and "
-            "missing terrain data fills it grey. Drawn by "
-            "static/js/aspect_wheel.js through aspect_wheel_core.js; not "
-            "yet mounted on a route surface."
+            "missing terrain data fills it grey. The inner ring is filled "
+            "on the track scale (SNOW-1064) — level under 5° in a lighter "
+            "blue, then gentle, moderate, steep and very steep — so its "
+            "colour agrees with the point card's word for the track; the "
+            "outer ring keeps the slope classes. Drawn by "
+            "static/js/aspect_wheel.js through aspect_wheel_core.js; "
+            "mounted on the map in the point card."
         ),
         kind="components",
         partial="includes/_aspect_wheel.html",
         variants=ASPECT_WHEEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="point-card",
+        label="Point card",
+        description=(
+            "One point on the open route, read in words (SNOW-1064): the "
+            "aspect wheel at 48 px and two lines, pinned to the map's "
+            "top-left corner while a route is open and sharing one "
+            "400 px column with the route rail. The headline is the "
+            "track's steepness on its own scale (level, gentle, moderate, "
+            "steep, very steep) and how it crosses the slope — a fall line "
+            "descent or climb within 45° of the fall line, a rising, level "
+            "or descending traverse otherwise, '…, turning' when the "
+            "gradient disagrees with the heading. Line two names the "
+            "ground in the EAWS words. No degrees, headings or aspects. "
+            "Empty until a point is placed; the × clears the point. "
+            "Filled on the map by static/js/route_point_card.js from "
+            "route_point_card_core.js; the states here are rendered "
+            "server-side with the words the core writes."
+        ),
+        kind="components",
+        partial="includes/_route_point_card.html",
+        variants=POINT_CARD_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(

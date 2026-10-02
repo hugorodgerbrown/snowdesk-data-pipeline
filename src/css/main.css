@@ -428,6 +428,18 @@
   --color-slope-gentle: #38bdf8;   /* <30°              */
   --color-slope-unknown: #94a3b8;  /* sampled, no answer */
 
+  /* —— the track scale's first step (SNOW-1064) ——
+     The aspect wheel's INNER ring names the track on its
+     own five-step scale (level < 5°, gentle < 15°,
+     moderate < 25°, steep < 35°, very steep), reusing
+     gentle, 30, 35 and 40 above for the upper four. A
+     level track needs a step of its own below gentle, so
+     it is the same blue, lighter: on the scale's cool end
+     and plainly "less" than gentle. Wheel only; no line
+     or legend paints it.
+     ————————————————————————————————————————— */
+  --color-track-level: #bae6fd;    /* track under 5°    */
+
   /* —— the crux ring (SNOW-911) ——
      A marker, not a band, and so deliberately NOT on the
      scale above: the ring says WHERE to look and the line

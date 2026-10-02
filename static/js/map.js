@@ -3049,6 +3049,24 @@
       type: 'geojson',
       data: routeCursorPointData,
     });
+    // SNOW-1064: the ring's white under-stroke from ROUTE_SLOPE_MINZOOM,
+    // so a ring in the 30–35° yellow still reads over the yellow line it
+    // sits on. Below the minzoom the filled dot carries its own halo.
+    map.addLayer({
+      id: 'routes-cursor-point-halo',
+      type: 'circle',
+      source: 'route-cursor-point',
+      minzoom: ROUTE_SLOPE_MINZOOM,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+      },
+      paint: {
+        'circle-opacity': 0,
+        'circle-radius': 7,
+        'circle-stroke-color': ROUTE_CURSOR_HALO,
+        'circle-stroke-width': 5.5,
+      },
+    });
     map.addLayer({
       id: 'routes-cursor-point',
       type: 'circle',
@@ -3056,14 +3074,25 @@
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
       },
+      // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
+      // segment in slope classes, and a segment is about 4 px long, so a
+      // filled dot would cover the very segment the point card describes.
+      // There the dot becomes a RING in the segment's class colour with a
+      // clear centre about one segment wide, so the line's colour under it
+      // shows through. Below it the dot stays filled.
       paint: {
-        // The slope class of the segment under the cursor (SNOW-1052), so
-        // the dot matches the band under rail two's cursor line; the
-        // route's own colour when the feature carries none.
+        // The slope class of the segment under the cursor (SNOW-1052), the
+        // colour the point card's outer ring lights; the route's own colour
+        // when the feature carries none.
         'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
-        'circle-radius': 6,
-        'circle-stroke-color': ROUTE_CURSOR_HALO,
-        'circle-stroke-width': 2,
+        'circle-opacity': ['step', ['zoom'], 1, ROUTE_SLOPE_MINZOOM, 0],
+        'circle-radius': ['step', ['zoom'], 6, ROUTE_SLOPE_MINZOOM, 7],
+        'circle-stroke-color': [
+          'step', ['zoom'],
+          ROUTE_CURSOR_HALO,
+          ROUTE_SLOPE_MINZOOM, ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+        ],
+        'circle-stroke-width': ['step', ['zoom'], 2, ROUTE_SLOPE_MINZOOM, 3],
       },
     });
     syncRouteLegLegend();

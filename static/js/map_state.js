@@ -233,6 +233,7 @@ const OVERLAY_LAYERS = Object.freeze({
     'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
     'routes-slope-line', 'routes-slope-unknown',
     'routes-transitions', 'routes-transition-labels',
+    'routes-cursor-point-halo',
     'routes-cursor-point',
   ],
   // SNOW-691: the raster alone. The coverage outline that rode alongside it

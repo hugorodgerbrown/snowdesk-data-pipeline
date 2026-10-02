@@ -226,6 +226,42 @@
     z-index: 3;
 }
 
+/* —— The route column (SNOW-1064) ———————————————————————————————
+   The point card and the route rail share one left-aligned column at one
+   width: 400px from the sm breakpoint, the map's width less its edge
+   insets on a phone. Held as one token so the two cannot drift apart;
+   `100%` resolves against #map, the containing block of both. */
+#map {
+    --route-column-width: calc(
+        100% - var(--map-edge-inset-left) - var(--map-edge-inset-right)
+    );
+}
+
+@media (min-width: 640px) {
+    #map {
+        --route-column-width: min(
+            400px,
+            calc(100% - var(--map-edge-inset-left) - var(--map-edge-inset-right))
+        );
+    }
+}
+
+/* The point card (templates/includes/_route_point_card.html), pinned
+   top-left while a route is open. It sits where the region chip's row
+   would end — the chip's top inset, its lg row and the 8px gap the map's
+   chrome uses — rather than on the chip's own line: the chip is withdrawn
+   while the rail is open (above), and keeping the card below its slot
+   means it never shares that line with anything. It never moves, so a
+   tap on the line never lands it under the finger. Level with the rail
+   (3): over the canvas, under the control columns. */
+.route-point-card {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
+    left: var(--map-edge-inset-left);
+    width: var(--route-column-width);
+    z-index: 3;
+}
+
 /* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over
    the whole of #map, so it can run from the cursor's dot on the map down
    into the docked rails. The rail's own z-index (3), and appended to #map

@@ -76,6 +76,8 @@ interface Window {
   pwaBankRibbonCore: any;
   /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */
   pwaAspectWheelCore: any;
+  /** static/js/route_point_card_core.js — the point card's words and gradient. */
+  pwaRoutePointCardCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
@@ -104,6 +106,8 @@ interface Window {
   pwaRouteRail: any;
   /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
   pwaRouteRailTwo: any;
+  /** static/js/route_point_card.js — the point card on the map; attach/detach. */
+  pwaRoutePointCard: any;
   /** static/js/route_leader.js — the leader line from the map to the rails. */
   pwaRouteLeader: any;
   /** static/js/map.js — the route cursor's screen point on the map. */
