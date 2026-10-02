@@ -306,7 +306,7 @@
    *
    * @param {{index: number, paths: *, gradients: *, angles: *,
    *   aspects?: *}} input `paths` from `segmentPaths`, `gradients` from
-   *   rail two's `segmentGradients`, `angles` and `aspects` from the
+   *   route_point_card_core.js's `segmentGradients`, `angles` and `aspects` from the
    *   slope record.
    * @returns {WheelState} The state.
    */

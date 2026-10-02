@@ -1552,17 +1552,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="route-rail",
         label="Route rail",
         description=(
-            "Rail one (SNOW-1018): the strip docked over the map's foot "
-            "while a route is open. Three columns — the identity block "
-            "(eyebrow, name, figures, a × and the actions as a '…' menu — "
-            "Terrain, which opens the route detail sheet, then "
-            "the routes row's four in its order), the lane (the elevation "
-            "profile as one "
-            "filled shape per leg under one outline, with distance ticks), "
-            "and a readout naming the open leg. Pressing a leg opens it on "
-            "the route cursor; pressing it again closes it. Rendered once, "
-            "empty and hidden, and filled by static/js/route_rail.js, so "
-            "this page shows the shell alone."
+            "The route rail (SNOW-1018; one rail since SNOW-1065 retired "
+            "rail two): the card docked over the map's foot while a route "
+            "is open, in one 400 px left-aligned column with the point "
+            "card. One layout at every width: the route's name as the "
+            "title, its figures as the subtitle in the routes list's meta "
+            "line ('12.9km · 337m ↑ · 1906m ↓ · 2h51m'), then the "
+            "elevation profile as one filled shape per leg under one "
+            "outline, with distance ticks; the '…' menu (Terrain, then the "
+            "routes row's four in its order) and × at the top right. "
+            "Pressing a leg highlights it: the title gains '• Leg 3' and "
+            "the subtitle becomes the leg's own figures; pressing it again "
+            "restores them. A drag along the profile places a point. "
+            "Rendered once, empty and hidden, and filled by "
+            "static/js/route_rail.js, so this page shows the shell alone."
         ),
         kind="components",
         partial="includes/_route_rail.html",

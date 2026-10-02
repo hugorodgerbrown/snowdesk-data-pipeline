@@ -34,14 +34,14 @@
  *
  * The cursor's feature carries `colour`: the hex of its segment's slope
  * class, `pwaRouteSlopeCore.CLASSES[classify(angle)].hex`, which mirrors
- * the `--color-slope-*` token rail two fills that band with — so the dot
- * on the map and the band under rail two's cursor line are one colour. A
+ * the `--color-slope-*` token the map's z14 slope line draws that segment
+ * in — so the dot and the line under it are one colour. A
  * segment the terrain had no answer for takes `UNKNOWN_COLOUR`, as the
  * line does. With no slope core loaded it carries no `colour`, and map.js
  * falls back to the route's own colour.
  *
  * Nothing here draws a stretch of line. SNOW-1052 removed band and
- * passage selection from rail two, and with it the highlighted stretch
+ * passage selection from rail two (itself retired by SNOW-1065), and with it the highlighted stretch
  * (`selectionLine`) the map drew for a selection; the map draws the
  * cursor's dot and nothing else.
  *

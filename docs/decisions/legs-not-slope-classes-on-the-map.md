@@ -26,8 +26,8 @@ teal dashed line, with no legs and no markers. The trip page
 the map now, and off the trip map too, with their legend rows. The crux
 marks are deferred to a later ticket; the server's crux probe
 (`apps/routes/services/cruxes.py`) and the `cruxes` key on the slope
-record are unchanged. The bank ribbon on rail two replaced the arrows.
-The no-fall passages remain the one terrain mark on the line.
+record are unchanged. The bank ribbon on rail two replaced the arrows
+(rail two was retired by SNOW-1065). The no-fall passages remain the one terrain mark on the line.
 
 **2026-10-02 (SNOW-1066).** The deferred crux is not coming back.
 Snowdesk keeps no route-level crux: `apps/routes/services/cruxes.py` is
@@ -40,7 +40,8 @@ keys, unread.
 **2026-09-24, later (SNOW-1019).** The passage split line is off both
 maps too, with its legend row. The line on the map is now its legs, the
 numbered transitions and the start and end markers, and nothing else.
-The passages are shown on rail two only, as bars under the bank ribbon;
+The passages were shown on rail two only, as bars under the bank ribbon
+(retired by SNOW-1065, so no surface draws them now);
 `passages` still travels on the slope record and the detail sheet still
 names them.
 
@@ -61,8 +62,8 @@ it meets the rules above that they failed. It is one statement per
 stretch, not per 25 m segment. It is drawn on steep ground only, so a
 route with none carries no extra line. And it says where the exposure is
 and which way it drops, which nothing else on the map does at the zoom a
-route is framed at: the legs say up or down, the rail's bank ribbon says
-which way the ground tilts only once a reader opens it.
+route is framed at: the legs say up or down, the rail's bank ribbon (retired
+by SNOW-1065) said which way the ground tilts only once a reader opened it.
 
 **2026-09-30.** The steep-ground shadow is off the map, with its
 source, layer and `steepRuns` / `steepShadowCollection`. At the zooms a
@@ -101,6 +102,12 @@ where the question is which part is the climb. z14 is past that: the
 reader has zoomed in on a stretch, and the question there is how steep
 it is. The legs answer the first zoom, the classes the second.
 
+**2026-10-02 (SNOW-1065).** Rail two is deleted and there is one rail.
+Pressing a leg dims the others on the map and profile; the cursor holds a
+leg or a point, never both, and a tap on the open route's line only places
+a point (it no longer opens the leg there). The map's slope classes from
+z14 are now the only place a class is drawn along the route.
+
 ## Why
 
 - **Density.** A track changes slope class every few segments, so a
@@ -114,7 +121,7 @@ it is. The legs answer the first zoom, the classes the second.
   The line follows the same rule: one statement per stretch.
 - **The classes move to the rail, not away.** The rail is where the
   steepness of one leg can be read against distance. SNOW-1019 put them
-  on rail two's band strip, closing the gap accepted on 2026-09-24 in
+  on rail two's band strip (retired by SNOW-1065), closing the gap accepted on 2026-09-24 in
   which neither the map nor the rail carried a slope class; since
   2026-09-30 the map carries them again from z14 (above). The passages,
   cruxes and arrows said where the steep ground was until SNOW-1019 took

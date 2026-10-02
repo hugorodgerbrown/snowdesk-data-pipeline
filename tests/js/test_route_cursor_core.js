@@ -1,12 +1,12 @@
 /*
- * tests/js/test_route_cursor_core.js — the cursor shared by the map and
- * both rails (static/js/route_cursor_core.js, SNOW-1016).
+ * tests/js/test_route_cursor_core.js — the cursor shared by the map, the
+ * rail and the point card (static/js/route_cursor_core.js, SNOW-1016).
  *
- * Pure state: index arithmetic, clamping at the route's and the open leg's
- * ends, and when subscribers are called. The case most worth
- * holding is the leg clamp — a drag off the end of rail two must not move
- * the cursor on rail one or the map outside the open leg, and nothing but a
- * test would notice it doing so on a leg that ends near the route's end.
+ * Pure state: index arithmetic, clamping at the route's ends, and when
+ * subscribers are called. The case most worth holding is SNOW-1065's
+ * exclusivity — a leg or a point, never both: opening a leg clears the
+ * point and placing a point closes the leg, so the map can never show a
+ * highlighted leg and a point card reading somewhere else at once.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -64,32 +64,37 @@ describe('setIndex', () => {
 describe('an open leg', () => {
   const leg = { i: 2, from: 30, to: 59, climbing: false };
 
-  it('clamps the cursor to both ends of the leg', () => {
+  it('clears the point when it opens (SNOW-1065)', () => {
+    cursor.setIndex(45);
     cursor.openLeg(leg);
-    cursor.setIndex(10);
-    expect(cursor.state().index).toBe(30);
+    expect(cursor.state()).toEqual({ index: null, openLeg: leg });
+  });
+
+  it('closes when a point is placed, anywhere on the route', () => {
+    cursor.openLeg(leg);
     cursor.setIndex(80);
-    expect(cursor.state().index).toBe(59);
-  });
-
-  it('pulls an out-of-range cursor into the leg when it opens', () => {
-    cursor.setIndex(90);
-    cursor.openLeg(leg);
-    expect(cursor.state().index).toBe(59);
-  });
-
-  it('leaves a cleared cursor cleared when it opens', () => {
-    cursor.openLeg(leg);
-    expect(cursor.state().index).toBeNull();
-  });
-
-  it('keeps the cursor where it was when the leg closes', () => {
+    expect(cursor.state()).toEqual({ index: 80, openLeg: null });
     cursor.openLeg(leg);
     cursor.setIndex(45);
+    expect(cursor.state()).toEqual({ index: 45, openLeg: null });
+  });
+
+  it('stays open when the point is cleared', () => {
+    cursor.openLeg(leg);
+    cursor.setIndex(null);
+    expect(cursor.state().openLeg).toEqual(leg);
+  });
+
+  it('switches to another leg', () => {
+    cursor.openLeg(leg);
+    cursor.openLeg({ i: 3, from: 60, to: 99, climbing: true });
+    expect(cursor.state().openLeg.i).toBe(3);
+  });
+
+  it('leaves the cleared point cleared when it closes', () => {
+    cursor.openLeg(leg);
     cursor.closeLeg();
-    expect(cursor.state().index).toBe(45);
-    cursor.setIndex(80);
-    expect(cursor.state().index).toBe(80);
+    expect(cursor.state()).toEqual({ index: null, openLeg: null });
   });
 
   it('hands back the leg with the properties it was given', () => {
@@ -135,16 +140,14 @@ describe('subscribe', () => {
   });
 
   it('is not called for a set that changes nothing', () => {
-    cursor.setIndex(42);
     cursor.openLeg({ from: 30, to: 59 });
     const fn = vi.fn();
     cursor.subscribe(fn);
 
-    cursor.setIndex(42);
-    cursor.setIndex(42.2);
-    cursor.openLeg({ from: 30, to: 59, i: 2 });
-    cursor.setIndex(90); // clamps to 59, which is a change
-    cursor.setIndex(95); // clamps to 59 again, which is not
+    cursor.openLeg({ from: 30, to: 59, i: 2 }); // the same leg, rebuilt
+    cursor.setIndex(250); // clamps to 99 and closes the leg: a change
+    cursor.setIndex(300); // clamps to 99 again, which is not
+    cursor.setIndex(99.2);
 
     expect(fn).toHaveBeenCalledTimes(1);
   });

@@ -174,7 +174,7 @@ class TestRouteDuration:
         """Whole minutes, padded: "4h05m" must not be misread as "4h5m".
 
         Rounding rather than truncating, so 59.6 minutes does not read as
-        59 — the same rule static/js/map.js's formatDuration follows, and
+        59 — the same rule static/js/route_rail_core.js's formatDuration follows, and
         the reason the two must match is that the popup and the panel row
         show the same figure for the same route.
         """
@@ -188,7 +188,7 @@ class TestRouteDuration:
         """An exact half-minute rounds UP, as JavaScript's Math.round does.
 
         This is the one input class where the builtin ``round`` would not
-        agree with static/js/map.js's formatDuration: it is banker's
+        agree with static/js/route_rail_core.js's formatDuration: it is banker's
         rounding, so it breaks a .5 tie to the EVEN number and
         ``round(270.5)`` is 270 where ``Math.round(270.5)`` is 271. The
         popup and the panel row would then disagree by a minute about the

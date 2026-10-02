@@ -107,7 +107,7 @@ def compact_slope(
     which way the ground faces under the rail cursor, and the cursor sits
     on moderate ground as often as on steep: the 30 degree arrow gate
     would leave the wheel blank on a 20 degree slope. The cut-off is
-    ``ASPECT_FLAT_DEG`` (5°), the rail's own flat ground, below which the
+    ``ASPECT_FLAT_DEG`` (5°), the point card's flat ground, below which the
     aspect is noise. It is sent as a SECTOR INDEX, 0 (N) to 7 (NW), not
     as degrees, because the wheel draws eight sectors and nothing on the
     page reads a finer bearing — the arrows keep their own whole degree.

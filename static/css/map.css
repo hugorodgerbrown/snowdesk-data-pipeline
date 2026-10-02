@@ -150,8 +150,8 @@
     --map-bottom-left-stack: calc(3 * var(--map-control-sm) + 16px);
 }
 
-/* —— Rail one (SNOW-1018) ————————————————————————————————————
-   The route's profile strip, docked over the map's foot while a route is
+/* —— The route rail (SNOW-1018, one rail since SNOW-1065) ——————————
+   The route's profile card, docked over the map's foot while a route is
    open (templates/includes/_route_rail.html). It DISPLACES the bottom
    chrome by moving the one token every bottom-anchored control already
    reads, rather than by giving each control a rule of its own: the
@@ -161,7 +161,7 @@
 
    --route-rail-height is MEASURED by static/js/route_rail.js on every
    open and written onto #map beside the attribute; the rail's height
-   depends on how its grid wraps at the current width, and a constant
+   depends on how its title wraps at the current width, and a constant
    here would be a second source of truth for it. */
 #map[data-route-rail-open] {
     --map-bottom-row-offset: calc(
@@ -169,10 +169,10 @@
     );
 }
 
-/* SNOW-1019: while a route's rails are open, following that route is the
+/* SNOW-1019: while a route's rail is open, following that route is the
    one thing the reader is doing, so every control floating over the map
    is WITHDRAWN until the rail closes — at every width. On a phone the
-   bottom-right column's chevron sat over rail one's ×; withdrawing all of
+   bottom-right column's chevron sat over the rail's ×; withdrawing all of
    it, rather than moving each control clear, is the decision.
 
    The five containers are the whole floating chrome of
@@ -185,7 +185,7 @@
                             layers, favourite, report, routes, the collapse
                             chevron, and the menus they open;
      #home-intro          — the intro card, if it is showing.
-   Kept: the canvas (gestures still pan and zoom), the rails, the leader
+   Kept: the canvas (gestures still pan and zoom), the rail, the point card, the leader
    line, and the route detail sheet, which lives outside #map.
 
    `visibility: hidden` also takes the controls out of the tab order and
@@ -219,8 +219,9 @@
 .route-rail {
     position: absolute;
     left: var(--map-edge-inset-left);
-    right: var(--map-edge-inset-right);
     bottom: var(--map-edge-inset-bottom);
+    /* One left-aligned column with the point card (SNOW-1065), below. */
+    width: var(--route-column-width);
     /* Over the canvas and the scrubber (2), under the control columns (4),
        which the offset above lifts clear of it anyway. */
     z-index: 3;
@@ -262,9 +263,17 @@
     z-index: 3;
 }
 
+/* SNOW-1065: a drag along the rail's profile places the point. A
+   horizontal finger drag must reach the script rather than scroll, while
+   a vertical one still may: `pan-y` hands over the first and keeps the
+   second. */
+.route-rail-lane {
+    touch-action: pan-y;
+}
+
 /* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over
    the whole of #map, so it can run from the cursor's dot on the map down
-   into the docked rails. The rail's own z-index (3), and appended to #map
+   to a notch on the docked rail's top edge. The rail's own z-index (3), and appended to #map
    after it, so it paints over the rail's card and reaches its stops
    there; under the control columns (4) and the utility cluster (6). It
    takes no pointer events: nothing under it may stop answering a press. */

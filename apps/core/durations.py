@@ -10,10 +10,10 @@ two surfaces disagreeing about the same number, which is exactly the
 failure ``Route.duration_hm``'s docstring was written to prevent.
 
 The rule is also mirrored in JavaScript — ``formatDuration`` in
-``static/js/map.js`` — because the map popup formats client-side from a
-seconds figure on the wire. That copy cannot be removed by extracting this
-one, so the agreement between the two is held by tests rather than by
-sharing code.
+``static/js/route_rail_core.js`` — because the route rail's meta line
+(SNOW-1065) formats client-side from a seconds figure on the wire. That
+copy cannot be removed by extracting this one, so the agreement between
+the two is held by tests rather than by sharing code.
 """
 
 from __future__ import annotations

@@ -160,9 +160,9 @@ FALL_LINE_SPACING_M = 250.0
 
 # The angle below which a segment's aspect is not sent (SNOW-976).
 #
-# Five degrees: the cut-off the route rail already calls flat
-# (``FLAT_GROUND_DEG`` in ``static/js/route_rail_two_core.js``), so the
-# wheel and the rail's readout agree on where "flat" starts. Below it a
+# Five degrees: the cut-off the point card calls flat ground
+# (``groundWord`` in ``static/js/route_point_card_core.js``), so the
+# wheel and the card's words agree on where "flat" starts. Below it a
 # 5 m grid's aspect is the bearing of a stream bank or a road cutting.
 # It is NOT ``FALL_LINE_GATE_DEG``: that gate decides where an arrow is
 # worth DRAWING; this one only where a direction exists to report.

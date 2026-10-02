@@ -592,8 +592,8 @@ describe('the transition markers', () => {
 
 describe('the marks SNOW-1019 took off the map', () => {
   it('installs no fall-line arrow or passage split, though the record carries them', () => {
-    // The bank ribbon on rail two replaced the arrows, and the no-fall
-    // passages are bars on rail two.
+    // Rail two's bank ribbon replaced the arrows and drew the no-fall
+    // passages as bars; rail two went with SNOW-1065 and neither came back.
     // SLOPE still carries `fall_lines` and `passages`, so this holds the
     // marks off rather than passing for want of data.
     const ids = [...layers.keys(), ...sources.keys()];
@@ -885,15 +885,17 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('opens the leg under a tap on the open route and moves the cursor there', () => {
+  it('places the point under a tap on the open route, opening no leg (SNOW-1065)', () => {
     projectLngLat = alongTheRoute;
     const cursor = openSampledRoute();
     const opened = rail.state.calls.length;
+    cursor.openLeg({ i: 1, from: 0, to: 0 });
 
     // y = 70 is nearest the second segment's middle, in leg 2.
     tapLayer('routes-leg-descent', { uuid: 'sampled-route', i: 2, climbing: false }, { x: 2, y: 70 });
 
-    expect(cursor.state().openLeg).toMatchObject({ i: 2, from: 1, to: 2 });
+    // A leg or a point, never both: the tap closed leg 1 and opened none.
+    expect(cursor.state().openLeg).toBeNull();
     expect(cursor.state().index).toBe(1);
     // Not a second first tap: no re-framing, and the rail is not reopened.
     expect(fitBoundsCalls).toEqual([]);
@@ -1053,7 +1055,7 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
 
   it('pans for a map-written index once the rail grows over it', () => {
     // A tap or hover on the line wrote the index where the reader could
-    // see it; then rail two opened and the rail grew over that place. A
+    // see it; then the rail grew (a title wrapping) over that place. A
     // layout change is not a hover, so this one pans.
     setUp();
     projectLngLat = ([lng, lat]) => ({
@@ -1076,19 +1078,15 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     tearDown();
   });
 
-  it('pans after a tap on the line opens a leg over the tapped place', async () => {
-    // The tap wrote the index (no pan for that alone), but it also opened a
-    // leg, and rail two now covers the place: checked once the index lands.
+  it('leaves an open leg alone on a mouse hover over the line (SNOW-1065)', () => {
     setUp();
+    cursor.openLeg({ i: 1, from: 0, to: 0 });
 
-    tapLayer('routes-leg-climb', { uuid: 'sampled-route', i: 1, climbing: true }, { x: 200, y: 425 });
-    expect(cursor.state().openLeg).toMatchObject({ i: 1 });
-    expect(cursor.state().index).toBe(0);
-    expect(panCalls).toEqual([]);
+    for (const handler of mapStub.handlers.mousemove || []) {
+      handler({ point: { x: 200, y: 175 } });
+    }
 
-    await Promise.resolve();
-
-    expect(panCalls).toHaveLength(1);
+    expect(cursor.state()).toMatchObject({ index: null, openLeg: { i: 1 } });
     tearDown();
   });
 

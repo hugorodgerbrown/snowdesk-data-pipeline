@@ -1370,11 +1370,11 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Route rail (SNOW-1018) -------------------------------------------------------
-# Rail one is rendered once, empty and hidden, and filled by
+# The route rail is rendered once, empty and hidden, and filled by
 # static/js/route_rail.js for whichever route is open — this page runs no
 # interaction JS, so the one variant shows the empty shell: the eyebrow,
-# the actions menu (every item, as an owned route has them), the × and the
-# (blank) lane, rendered `static` — visible and in
+# the actions menu (every item, as an owned route has them), the ×, the
+# (blank) title and meta line and the (blank) lane, rendered `static` — visible and in
 # normal flow rather than hidden and docked over a map that is not here.
 # The URL templates are placeholders; nothing here posts.
 

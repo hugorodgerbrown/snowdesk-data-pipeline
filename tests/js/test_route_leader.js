@@ -2,10 +2,11 @@
  * tests/js/test_route_leader.js — the leader line's DOM half
  * (static/js/route_leader.js, SNOW-1019).
  *
- * Hidden with no cursor index; two stops without rail two, three with;
- * cleared when the rail closes; and the map's camera listener bound once
- * however many times a rail opens. The three surfaces' screen points are
- * stubbed — each surface's own `cursorPoint` is tested beside it.
+ * Hidden with no cursor index; two stops, the map's dot and a notch on the
+ * rail's top edge (SNOW-1065, since rail two went); hidden with no map
+ * point; cleared when the rail closes; and the map's camera listener bound
+ * once however many times a rail opens. Both surfaces' screen points are
+ * stubbed — each surface's own point is tested beside it.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,8 +20,7 @@ const onChange = vi.fn(() => () => {});
 /** What each surface answers for its point; a test may change them. */
 const points = {
   map: { x: 100, y: 50 },
-  railOne: { x: 120, y: 300 },
-  railTwo: null,
+  rail: { x: 120, y: 300 },
 };
 /** The rail stub's state. */
 const railState = { open: false, cursor: null };
@@ -29,9 +29,8 @@ window.pwaRouteCursorMap = { point: () => points.map, onChange };
 window.pwaRouteRail = {
   isOpen: () => railState.open,
   cursor: () => railState.cursor,
-  cursorPoint: () => points.railOne,
+  cursorPoint: () => points.rail,
 };
-window.pwaRouteRailTwo = { cursorPoint: () => points.railTwo };
 
 await import('../../static/js/route_leader.js');
 
@@ -59,7 +58,6 @@ function closeRail() {
 }
 
 beforeEach(() => {
-  points.railTwo = null;
   closeRail();
 });
 
@@ -76,39 +74,21 @@ describe('the leader line', () => {
     expect(svg.style.display).toBe('none');
   });
 
-  it('runs from the map to rail one when rail two is closed', () => {
+  it('runs from the map to a notch on the rail', () => {
     openRail().setIndex(4);
     window.pwaRouteLeader.redraw();
 
     expect(svg.style.display).toBe('');
     expect(leaderPath()).toBe('M100 50 C100 175, 120 175, 120 300');
+    expect(leaderPath().match(/C/g)).toHaveLength(1);
+    // The notch: a triangle whose point sits on the rail's edge.
     expect(stops()).toHaveLength(1);
+    expect(stops()[0].getAttribute('d')).toBe('M116 295 L124 295 L120 300 Z');
   });
 
-  it('runs on to rail two when it is open', () => {
-    points.railTwo = { x: 140, y: 420 };
-    openRail().setIndex(4);
-    window.pwaRouteLeader.redraw();
-
-    expect(leaderPath().match(/C/g)).toHaveLength(2);
-    expect(stops()).toHaveLength(2);
-  });
-
-  it('joins the two rails alone when the map\'s dot is covered', () => {
-    // map.js answers null for a dot behind the rails; the leader drops
-    // that stop rather than point at something nobody can see.
-    points.map = null;
-    points.railTwo = { x: 140, y: 420 };
-    openRail().setIndex(4);
-    window.pwaRouteLeader.redraw();
-
-    expect(svg.style.display).toBe('');
-    expect(leaderPath()).toBe('M120 300 C120 360, 140 360, 140 420');
-    expect(stops()).toHaveLength(2);
-    points.map = { x: 100, y: 50 };
-  });
-
-  it('is hidden with no map point and rail two closed', () => {
+  it('is hidden when the map\'s dot is covered', () => {
+    // map.js answers null for a dot behind the rail; a line with one end
+    // points at nothing.
     points.map = null;
     openRail().setIndex(4);
     window.pwaRouteLeader.redraw();

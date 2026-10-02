@@ -56,8 +56,8 @@
  * read off the heights rail one's profile draws — the terrain model's
  * since SNOW-1043 — and stopped at the leg's ends, so the first segment
  * down from a col is not averaged with the climb behind it. It moved here
- * from rail two (route_rail_two_core.js) with SNOW-1064, the gradient's
- * only reader once rail two is gone.
+ * from rail two with SNOW-1064, the gradient's only reader once rail two
+ * went (SNOW-1065).
  *
  * No user-facing literal lives here: `reading` takes a strings object
  * read from the partial's `<template>` through `window.pwaStrings`, so

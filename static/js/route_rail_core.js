@@ -32,15 +32,17 @@
  * kilometre apart, kilometres otherwise — so a strip never reads "500 m,
  * 1 km, 1.5 km".
  *
- * ## The figure lines
+ * ## The meta line
  *
- * Rail one's own header (SNOW-1045) reads as rail two's card: one line for
- * the vertical (`formatRouteVertical`, "Ascend 366 m · descend 1,934 m")
- * and one for the horizontal (`formatRouteHorizontal`, "12.9 km · 3.5 km
- * steep terrain"). A null figure is OMITTED, never shown as zero: a route
- * whose GPX carried no elevation has an unknown ascent, not a flat one
- * (Route.ascent_m's docstring). (`formatFigures`, the ▲/▼ line rail two's
- * card read, went with SNOW-1044's card.)
+ * The rail's subtitle (SNOW-1065) is the routes list's meta line,
+ * `formatMetaLine`: "12.9km · 337m ↑ · 1906m ↓ · 2h51m", with the
+ * panel's strings and null rules. A null figure is OMITTED, never shown as
+ * zero: a route whose GPX carried no elevation has an unknown ascent, not
+ * a flat one (Route.ascent_m's docstring). While a leg is highlighted the
+ * subtitle is that leg's figures in the same format (`legFigures`): gross
+ * ascent and descent read off the profile, and no time. The two-line
+ * header SNOW-1045 gave the rail, and its steep-terrain figure, went with
+ * rail two.
  *
  * Exports (frozen `self.pwaRouteRailCore`):
  *
@@ -48,12 +50,13 @@
  *   majorStep(spanM)                         → metres between labelled ticks
  *   tickUnit(spanM)                          → 'm' or 'km', once per strip
  *   ticks(spanM, units?)                     → [{d, major, label}]
- *   formatRouteVertical(figures, strings?)   → rail one's ascend/descend line
- *   formatRouteHorizontal(figures, strings?) → rail one's length/steep line
+ *   formatDuration(seconds)                  → {hours, minutes}, or null
+ *   formatMetaLine(figures, strings?)        → the routes list's meta line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
+ *   legFigures(profile, leg, sampleCount, spanM) → a leg's length and gross
+ *                                              ascent and descent
  *   clipRun(run, start, end)                 → a run clipped to [start, end],
- *                                              its ends interpolated (rail
- *                                              two clips its leg with it)
+ *                                              its ends interpolated
  *   legPaths(profile, legs, sampleCount, box) → one fill per leg + outline
  *   legAt(fraction, legs, sampleCount)       → the leg under an x fraction
  *   profileY(profile, d, box?)               → the outline's y at distance d
@@ -127,13 +130,18 @@
   /** The English units, the fallback when no strings are passed. */
   var DEFAULT_UNITS = Object.freeze({ m: '%(value)s m', km: '%(value)s km' });
 
-  /** The English templates for rail one's two lines (SNOW-1045). */
-  var DEFAULT_ROUTE_LINES = Object.freeze({
-    'route-ascend': 'Ascend %(m)s m',
-    'route-descend': 'descend %(m)s m',
-    'route-length': '%(km)s km',
-    'route-steep': '%(km)s km steep terrain',
-    'figure-separator': ' · ',
+  /**
+   * The English templates for the meta line (SNOW-1065): the routes
+   * panel's msgids, byte for byte.
+   */
+  var DEFAULT_META_LINE = Object.freeze({
+    'meta-km': '%(km)skm',
+    'meta-both': '%(km)skm · %(ascent)sm ↑ · %(descent)sm ↓',
+    'meta-ascent': '%(km)skm · %(ascent)sm ↑',
+    'meta-descent': '%(km)skm · %(descent)sm ↓',
+    'meta-hm': '%(hours)sh%(minutes)sm',
+    'meta-m': '%(minutes)sm',
+    'meta-duration': '%(figures)s · %(duration)s',
   });
 
   /**
@@ -235,64 +243,67 @@
   }
 
   /**
-   * Whole metres with a thousands separator: 1934 → "1,934".
+   * A recording's elapsed time, split for the meta line: whole minutes
+   * rounded half up; an empty hours figure under an hour, with the minutes
+   * unpadded, and padded minutes above it ("4h05m").
    *
-   * @param {number} metres
-   * @returns {string}
+   * The rule is `split_hours_minutes` in apps/core/durations.py, which the
+   * routes panel renders from; `Math.round` already rounds a .5 up, the
+   * tie Python's builtin `round` would break the other way.
+   *
+   * @param {*} seconds The elapsed time, seconds.
+   * @returns {?{hours: string, minutes: string}} Null when unknown.
    */
-  function wholeMetres(metres) {
-    return Math.round(metres).toLocaleString('en-GB');
+  function formatDuration(seconds) {
+    if (!isKnown(seconds) || seconds <= 0) return null;
+    var total = Math.round(seconds / 60);
+    var hours = Math.floor(total / 60);
+    var minutes = total % 60;
+    if (!hours) return { hours: '', minutes: String(minutes) };
+    return { hours: String(hours), minutes: String(minutes).padStart(2, '0') };
   }
 
   /**
-   * Rail one's vertical line: `Ascend 366 m · descend 1,934 m`.
+   * The routes list's meta line (SNOW-1065): "12.9km · 337m ↑ · 1906m ↓ ·
+   * 2h51m".
    *
-   * A null side is omitted, never shown as zero; both null gives ''.
+   * The same strings and the same null rules as the routes panel's row
+   * (apps/routes/templates/routes/partials/_route.html), so one route reads
+   * the same in both places: the distance always; ascent and descent each
+   * only when known, never as zero; the elapsed time only when the
+   * recording has one. Kilometres to one decimal and whole metres with no
+   * separator, as the panel's `floatformat` filters write them.
    *
-   * @param {{ascent_m?: ?number, descent_m?: ?number}} figures
+   * @param {{distance_m?: ?number, ascent_m?: ?number, descent_m?: ?number,
+   *   duration_s?: ?number}} figures The route's figures, or a leg's (which
+   *   has no duration).
    * @param {Object<string, string>} [strings] Templates keyed as
-   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
-   * @returns {string}
+   *   `DEFAULT_META_LINE`, from the partial's strings template.
+   * @returns {string} The line; '' with no distance.
    */
-  function formatRouteVertical(figures, strings) {
-    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
+  function formatMetaLine(figures, strings) {
+    var t = { ...DEFAULT_META_LINE, ...(strings || {}) };
     var f = figures || {};
-    /** @type {Array<string>} */
-    var parts = [];
-    if (isKnown(f.ascent_m)) {
-      parts.push(interpolate(t['route-ascend'], { m: wholeMetres(f.ascent_m) }));
+    if (!isKnown(f.distance_m)) return '';
+    var km = (f.distance_m / 1000).toFixed(1);
+    var up = isKnown(f.ascent_m) ? Math.round(f.ascent_m).toFixed(0) : null;
+    var down = isKnown(f.descent_m) ? Math.round(f.descent_m).toFixed(0) : null;
+    var line;
+    if (up !== null && down !== null) {
+      line = interpolate(t['meta-both'], { km: km, ascent: up, descent: down });
+    } else if (up !== null) {
+      line = interpolate(t['meta-ascent'], { km: km, ascent: up });
+    } else if (down !== null) {
+      line = interpolate(t['meta-descent'], { km: km, descent: down });
+    } else {
+      line = interpolate(t['meta-km'], { km: km });
     }
-    if (isKnown(f.descent_m)) {
-      parts.push(interpolate(t['route-descend'], { m: wholeMetres(f.descent_m) }));
-    }
-    return parts.join(t['figure-separator']);
-  }
-
-  /**
-   * Rail one's horizontal line: `12.9 km · 3.5 km steep terrain`.
-   *
-   * `steep_m` is the ground of 30° or more summed over the whole route
-   * (the feed's `terrain.steep_m`). An unsampled route has none, and the
-   * steep part is then omitted rather than read as zero; a sampled route
-   * with no steep ground keeps `0.0 km steep terrain`.
-   *
-   * @param {{distance_m?: ?number, steep_m?: ?number}} figures
-   * @param {Object<string, string>} [strings] Templates keyed as
-   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
-   * @returns {string}
-   */
-  function formatRouteHorizontal(figures, strings) {
-    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
-    var f = figures || {};
-    /** @type {Array<string>} */
-    var parts = [];
-    if (isKnown(f.distance_m)) {
-      parts.push(interpolate(t['route-length'], { km: (f.distance_m / 1000).toFixed(1) }));
-    }
-    if (isKnown(f.steep_m)) {
-      parts.push(interpolate(t['route-steep'], { km: (f.steep_m / 1000).toFixed(1) }));
-    }
-    return parts.join(t['figure-separator']);
+    var duration = formatDuration(f.duration_s);
+    if (!duration) return line;
+    var spelt = duration.hours
+      ? interpolate(t['meta-hm'], duration)
+      : interpolate(t['meta-m'], duration);
+    return interpolate(t['meta-duration'], { figures: line, duration: spelt });
   }
 
   /**
@@ -350,6 +361,46 @@
       if (p.d > end) break;
     }
     return out;
+  }
+
+  /**
+   * A leg's figures for the rail's header while it is highlighted
+   * (SNOW-1065): its length, gross ascent and gross descent.
+   *
+   * The distance is the leg's share of the route's length, so it agrees
+   * with the ticks. Ascent and descent sum the profile's own steps inside
+   * the leg — the heights the profile draws — so a descending leg with a
+   * counter-rise still climbs. Both are null for a leg with no elevation.
+   * A leg has no duration: track points carry no timestamps.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {Leg} leg The leg, in sample indices.
+   * @param {number} sampleCount N, the length of `slope.angles`.
+   * @param {number} spanM The route's length, the rail's `distance_m`.
+   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number}}
+   */
+  function legFigures(profile, leg, sampleCount, spanM) {
+    var distance = sampleCount > 0 && spanM > 0
+      ? ((leg.to - leg.from + 1) / sampleCount) * spanM
+      : null;
+    if (!profile || !profile.hasElevation || !(profile.distanceM > 0) || !(sampleCount > 0)) {
+      return { distance_m: distance, ascent_m: null, descent_m: null };
+    }
+    var span = legSpan(leg, sampleCount, profile.distanceM);
+    var ascent = 0;
+    var descent = 0;
+    var seen = false;
+    profile.runs.forEach(function (run) {
+      var piece = clipRun(run, span[0], span[1]);
+      for (var i = 1; i < piece.length; i += 1) {
+        seen = true;
+        var step = piece[i].e - piece[i - 1].e;
+        if (step > 0) ascent += step;
+        else descent -= step;
+      }
+    });
+    if (!seen) return { distance_m: distance, ascent_m: null, descent_m: null };
+    return { distance_m: distance, ascent_m: ascent, descent_m: descent };
   }
 
   /**
@@ -466,9 +517,10 @@
     majorStep: majorStep,
     tickUnit: tickUnit,
     ticks: ticks,
-    formatRouteVertical: formatRouteVertical,
-    formatRouteHorizontal: formatRouteHorizontal,
+    formatDuration: formatDuration,
+    formatMetaLine: formatMetaLine,
     legSpan: legSpan,
+    legFigures: legFigures,
     clipRun: clipRun,
     legPaths: legPaths,
     legAt: legAt,

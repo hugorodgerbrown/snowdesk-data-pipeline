@@ -59,6 +59,7 @@ and every point reads more clearly as one or the other.
   45° and 135° edges carry up to 22.5° of rounding. Sending a bearing
   would sharpen the edges without changing the rule.
 - `segmentGradients` lives in `route_point_card_core.js`, its one reader;
-  it is the same window, stopped at a leg's ends, rail two used.
+  it is the same window, stopped at a leg's ends, rail two used (rail two
+  was retired by SNOW-1065).
 - A new surface that describes a point uses `trackWord` / `groundWord`
   and the track scale rather than inventing its own words.

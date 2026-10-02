@@ -1,18 +1,22 @@
 """
-tests/public/test_route_rail.py — rail one as the map page ships it (SNOW-1018).
+tests/public/test_route_rail.py — the route rail as the map page ships it
+(SNOW-1018; one rail since SNOW-1065).
 
 What the page carries before any route is open: the rail itself, hidden and
-inside ``#map``, its eyebrow, its strings template, its actions as ONE
+inside ``#map``, one column — the name, the meta line, the profile — its
+eyebrow, its strings template (the meta line's strings byte for byte the
+routes panel's, so one route reads the same in both), its actions as ONE
 ``[data-overflow-menu]`` rather than loose icons (design-system rule 5) —
-Terrain first, then the routes row's four in its order — its
-own × close, a pending share's claim slot, rail two's row (SNOW-1019) hidden
-with its strings, and the scripts that fill both, in order. What the rails
-do once open is tests/js/test_route_rail.js's and test_route_rail_two.js's.
+Terrain first, then the routes row's four in its order — its own × close,
+a pending share's claim slot, no trace of rail two or its staff debug rail,
+and the scripts that fill it, in order. What the rail does once open is
+tests/js/test_route_rail.js's.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -21,7 +25,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.routes.models import Route
-from tests.factories import UserFactory
+from tests.factories import RouteFactory, UserFactory
 
 # The rail's own markup: from its opening tag to the end of the section.
 _RAIL_RE = re.compile(r'<section\s+id="route-rail".*?</section>', re.S)
@@ -98,14 +102,20 @@ class TestTheRailShipsWithTheMap:
 
         assert re.search(r'id="route-rail-eyebrow"\s*>\s*Route\s*<', rail)
 
-    def test_it_carries_the_vertical_and_horizontal_lines(self, client: Client) -> None:
-        """SNOW-1045: two figure lines, vertical first, in place of one."""
+    def test_it_is_one_column_name_meta_then_profile(self, client: Client) -> None:
+        """SNOW-1065: one layout at every width — title, subtitle, lane."""
         rail = _rail(_home(client))
 
-        assert "data-route-rail-figures" not in rail
-        assert rail.index("data-route-rail-vertical") < rail.index(
-            "data-route-rail-horizontal"
+        assert "sm:grid-cols-" not in _opening_tag(rail)
+        assert (
+            rail.index("data-route-rail-name")
+            < rail.index("data-route-rail-leg")
+            < rail.index("data-route-rail-meta")
+            < rail.index("data-route-rail-lane")
         )
+        # The two figure lines SNOW-1045 gave it, and their steep figure.
+        assert "data-route-rail-vertical" not in rail
+        assert "data-route-rail-horizontal" not in rail
 
     def test_it_carries_its_strings_template(self, client: Client) -> None:
         """Every user-facing string route_rail.js writes comes from here."""
@@ -121,19 +131,58 @@ class TestTheRailShipsWithTheMap:
         assert {
             "leg-climb",
             "leg-descent",
+            "leg-suffix",
             "unit-km",
-            "route-ascend",
-            "route-descend",
-            "route-length",
-            "route-steep",
+            "meta-km",
+            "meta-both",
+            "meta-ascent",
+            "meta-descent",
+            "meta-hm",
+            "meta-m",
+            "meta-duration",
         } <= keys
-        # SNOW-1045: rail one's header no longer writes the ▲/▼ figures line.
         assert keys.isdisjoint(
-            {"figure-distance", "figure-ascent", "figure-descent", "figure-range"}
+            {"route-ascend", "route-descend", "route-length", "route-steep"}
         )
-        assert "Ascend %(m)s m" in block.group(1)
-        assert "descend %(m)s m" in block.group(1)
-        assert "%(km)s km steep terrain" in block.group(1)
+
+    def test_its_meta_strings_are_the_routes_panels(self, client: Client) -> None:
+        """The rail's subtitle matches the routes list's line for a route.
+
+        The rail formats in JavaScript from the strings rendered here; the
+        panel renders server-side with the same msgids. Each rail string,
+        with its placeholders filled from a route's own figures, must read
+        exactly as the panel's row does for that route.
+        """
+        rail = _rail(_home(client))
+        strings = {
+            key: " ".join(value.split())
+            for key, value in re.findall(
+                r'data-string="(meta-[^"]+)"\s*>(.*?)</span>', rail, re.S
+            )
+        }
+        user = UserFactory.create()
+        route = RouteFactory.create(
+            user=user,
+            distance_m=12900,
+            ascent_m=337,
+            descent_m=1906,
+            started_at=datetime(2026, 2, 1, 8, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 2, 1, 10, 51, tzinfo=UTC),
+        )
+        ascent, descent = route.climb
+        figures = strings["meta-both"] % {
+            "km": "12.9",
+            "ascent": f"{ascent:.0f}",
+            "descent": f"{descent:.0f}",
+        }
+        expected = strings["meta-duration"] % {
+            "figures": figures,
+            "duration": strings["meta-hm"] % {"hours": "2", "minutes": "51"},
+        }
+        row = render_to_string("routes/partials/_route.html", {"route": route})
+
+        assert expected == f"12.9km · {ascent:.0f}m ↑ · {descent:.0f}m ↓ · 2h51m"
+        assert expected in " ".join(row.split())
 
     def test_the_endpoints_are_templated_on_the_uuid(self, client: Client) -> None:
         """The script addresses whichever route is open by substitution."""
@@ -149,19 +198,15 @@ class TestTheRailShipsWithTheMap:
             assert "__UUID__" in value.group(1)
         assert f'data-route-plan-trip-url="{reverse("trips:new")}"' in tag
 
-    def test_the_scripts_load_cursor_then_cores_then_rail_two_then_rail(
-        self, client: Client
-    ) -> None:
-        """Rail one attaches rail two, which reads the three cores before it."""
+    def test_the_scripts_load_cursor_then_cores_then_rail(self, client: Client) -> None:
+        """The rail reads its cores and the point card's, which load first."""
         page = _home(client)
         order = [
             page.index(f"js/{name}")
             for name in (
                 "route_cursor_core.js",
                 "route_rail_core.js",
-                "bank_ribbon_core.js",
-                "route_rail_two_core.js",
-                "route_rail_two.js",
+                "route_point_card.js",
                 "route_rail.js",
                 "route_leader_core.js",
                 "route_leader.js",
@@ -169,286 +214,41 @@ class TestTheRailShipsWithTheMap:
         ]
 
         assert order == sorted(order)
-
-
-@pytest.mark.django_db
-class TestRailTwoShipsInsideRailOne:
-    """Rail two is a hidden row of rail one's grid until a leg opens."""
-
-    def test_the_row_is_hidden_and_laid_on_rail_ones_columns(
-        self, client: Client
-    ) -> None:
-        """Hidden, and a subgrid spanning every column rail one has."""
-        rail = _rail(_home(client))
-
-        row = re.search(r"<div\s+data-route-rail-two\b[^>]*>", rail)
-        assert row is not None
-        assert re.search(r"\shidden\s", row.group(0))
-        assert "col-span-full" in row.group(0)
-        assert "grid-cols-subgrid" in row.group(0)
-
-    def test_the_lane_is_one_focusable_slider(self, client: Client) -> None:
-        """Bands are not tab stops; the lane is, with the arrow keys."""
-        rail = _rail(_home(client))
-
-        lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
-        assert lane is not None
-        assert 'role="slider"' in lane.group(0)
-        assert 'tabindex="0"' in lane.group(0)
-        # Real pixels: a stretched lane would misdraw the bank ribbon's lean.
-        assert "preserveAspectRatio" not in lane.group(0)
-
-    def test_the_empty_lane_carries_the_leg_picker_layer(self, client: Client) -> None:
-        """SNOW-1033: a hidden layer over the lane, in a positioned cell."""
-        rail = _rail(_home(client))
-
-        layer = re.search(r"<div[^>]*data-route-rail-two-legs[^>]*>", rail)
-        assert layer is not None
-        assert re.search(r"\shidden\s", layer.group(0))
-        assert "absolute" in layer.group(0)
-        assert "h-11" in layer.group(0)
-        # The cell holding the lane and the layer is the layer's anchor.
-        cell = re.search(
-            r'<div class="([^"]*)">\s*<svg[^>]*data-route-rail-two-lane', rail
-        )
-        assert cell is not None
-        assert "relative" in cell.group(1).split()
-
-    def test_its_eyebrow_names_the_terrain(self, client: Client) -> None:
-        """Rail two is headed "Terrain"; the leg's own name is its title."""
-        rail = _rail(_home(client))
-
-        assert re.search(r'id="route-rail-two-eyebrow"\s*>\s*Terrain\s*<', rail)
-
-    def test_it_has_its_own_close_and_zoom_controls(self, client: Client) -> None:
-        """×, − and + — each a bare icon button with a translated name."""
-        rail = _rail(_home(client))
-
-        for hook, label in (
-            ("data-route-rail-two-close", "Close the leg"),
-            ('data-route-rail-two-zoom="out"', "Zoom out"),
-            ('data-route-rail-two-zoom="in"', "Zoom in"),
+        for gone in (
+            "bank_ribbon_core.js",
+            "route_rail_two_core.js",
+            "route_rail_two.js",
         ):
-            button = re.search(rf"<button[^>]*{hook}[^>]*>", rail)
-            assert button is not None
-            assert f'aria-label="{label}"' in button.group(0)
-
-    def test_it_carries_its_own_strings_template(self, client: Client) -> None:
-        """Every string route_rail_two.js writes, one per slope class."""
-        rail = _rail(_home(client))
-        block = re.search(
-            r'<template id="route-rail-two-strings-template">(.*?)</template>',
-            rail,
-            re.S,
-        )
-        assert block is not None
-        keys = set(re.findall(r'data-string="([^"]+)"', block.group(1)))
-
-        assert {
-            "two-lane-label",
-            "two-hint",
-            "class-slope-gentle",
-            "class-slope-30",
-            "class-slope-35",
-            "class-slope-40",
-            "class-slope-45",
-            "class-slope-50",
-            "class-unknown",
-            "two-placeholder",
-            "leg-climb",
-            "leg-descent",
-            "leg-ascend",
-            "leg-descend",
-            "leg-over",
-            "leg-crosses-very",
-            "leg-crosses-extremely",
-            "leg-crosses-both",
-            "track-kick-turn",
-            "track-falls-left",
-            "track-falls-right",
-            "grade-ascent",
-            "grade-descent",
-            "grade-level",
-            "slope-flat",
-            "slope-moderate",
-            "slope-steep",
-            "slope-very-steep",
-            "slope-extremely-steep",
-            "readout-point",
-            "readout-no-fall",
-        } <= keys
-        # SNOW-1024 retired the side-suffixed slope lines and the
-        # uphill / downhill traverse terms; SNOW-1044 the attitude words,
-        # the zoom placeholder and the ▲/▼ figures line. The 2026-09-30
-        # pass retired the track words (the row's blocks and the readout's
-        # leading word), the slope-and-bank readout and the subtitle's
-        # lengths. SNOW-1052 retired the selection's band and passage
-        # readouts with the selection.
-        assert keys.isdisjoint(
-            {
-                "readout-band",
-                "readout-passage",
-                "leg-length",
-                "leg-length-steep",
-                "track-gentle",
-                "track-skin",
-                "track-traverse",
-                "track-steep",
-                "track-bootpack",
-                "readout-slope",
-                "readout-slope-bank",
-                "readout-slope-bank-left",
-                "readout-slope-bank-right",
-                "readout-slope-left",
-                "readout-slope-right",
-                "attitude-downhill-traverse",
-                "attitude-uphill-traverse",
-                "attitude-flat",
-                "attitude-fall-line",
-                "attitude-traverse",
-                "two-bank-zoom",
-                "figure-distance",
-                "figure-ascent",
-                "figure-descent",
-                "figure-range",
-            }
-        )
-
-    def test_its_card_strings_read_as_agreed(self, client: Client) -> None:
-        """The title's vertical and length, the subtitle and the readout."""
-        rail = _rail(_home(client))
-        block = re.search(
-            r'<template id="route-rail-two-strings-template">(.*?)</template>',
-            rail,
-            re.S,
-        )
-        assert block is not None
-        strings = {
-            key: " ".join(value.split())
-            for key, value in re.findall(
-                r'data-string="([^"]+)">(.*?)</span>', block.group(1), re.S
-            )
-        }
-
-        assert strings["leg-ascend"] == "Leg %(i)s — ascend %(m)s m"
-        assert strings["leg-descend"] == "Leg %(i)s — descend %(m)s m"
-        assert strings["leg-over"] == "%(title)s over %(km)s km"
-        assert strings["leg-crosses-both"] == (
-            "Crosses very steep, extremely steep terrain"
-        )
-        # The readout: the track's own angle, then the ground's EAWS class.
-        assert strings["readout-point"] == "%(grade)s · %(slope)s"
-        assert strings["readout-no-fall"] == "%(point)s · no-fall passage"
-        assert strings["two-hint"] == "Drag or tap to read a point."
-        assert [strings[f"grade-{way}"] for way in ("ascent", "descent", "level")] == [
-            "%(deg)s° ascent",
-            "%(deg)s° descent",
-            "level",
-        ]
-        assert [
-            strings[f"slope-{term}"]
-            for term in ("flat", "moderate", "steep", "very-steep", "extremely-steep")
-        ] == [
-            "flat",
-            "moderate slope",
-            "steep slope",
-            "very steep slope",
-            "extremely steep slope",
-        ]
-
-    def test_it_has_no_distance_scale(self, client: Client) -> None:
-        """SNOW-1024: rail two's ticks and km labels are gone."""
-        rail = _rail(_home(client))
-
-        assert "data-route-rail-two-ticks" not in rail
-
-    def test_its_readout_sits_in_the_lane_cell(self, client: Client) -> None:
-        """Two columns, and the readout left-aligned under the lane."""
-        rail = _rail(_home(client))
-
-        assert "data-route-rail-readout" not in rail
-        assert "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]" in rail
-        assert "data-route-rail-two-readout-box" in rail
-        # It stays at the lane's left edge: no stem follows the cursor, and
-        # the script sets no position on it.
-        assert "data-route-rail-two-stem" not in rail
-        readout = re.search(r"<div[^>]*data-route-rail-two-readout(?!-)[^>]*>", rail)
-        assert readout is not None
-        assert {"inset-x-0", "text-left"} <= set(
-            re.search(r'class="([^"]*)"', readout.group(0)).group(1).split()  # type: ignore[union-attr]
-        )
-        # The 44 px lane the leg picker stands in; an open leg sizes it.
-        lane = re.search(r"<svg[^>]*data-route-rail-two-lane[^>]*>", rail)
-        assert lane is not None
-        assert "h-11" in lane.group(0)
-
-    def test_its_title_has_the_cells_whole_width(self, client: Client) -> None:
-        """Under the eyebrow and the buttons, not beside them."""
-        rail = _rail(_home(client))
-
-        title = rail.index("data-route-rail-two-title")
-        assert rail.index("data-route-rail-two-close") < title
-        assert title < rail.index("data-route-rail-two-figures")
+            assert f"js/{gone}" not in page
 
 
 @pytest.mark.django_db
-class TestTheDebugRailIsStaffOnly:
-    """Every figure behind a wedge, for staff, under rail two."""
+class TestRailTwoIsGone:
+    """SNOW-1065 retired rail two and the staff debug rail drawn in it."""
 
-    def test_an_anonymous_visitor_gets_none(self, client: Client) -> None:
-        """No element, so the script fetches nothing."""
-        assert "data-route-rail-debug" not in _rail(_home(client))
-
-    def test_a_signed_in_user_gets_none(self, client: Client) -> None:
-        """Signed in is not staff (the factory's users are, unless told)."""
-        client.force_login(UserFactory.create(is_staff=False))
-
-        assert "data-route-rail-debug" not in _rail(_home(client))
-
-    def test_staff_get_the_rail_and_its_fields(self, client: Client) -> None:
-        """Ten fields, in the order the rail shows them."""
-        client.force_login(UserFactory.create(is_staff=True))
+    @pytest.mark.parametrize("staff", [False, True])
+    def test_no_rail_two_markup_for_anyone(self, client: Client, staff: bool) -> None:
+        """No row, no strings template, no debug fields — staff included."""
+        client.force_login(UserFactory.create(is_staff=staff))
         rail = _rail(_home(client))
 
-        assert re.findall(r'data-route-rail-debug-field="([^"]+)"', rail) == [
-            "sample",
-            "km",
-            "heights",
-            "aspect",
-            "angle",
-            "bearing",
-            "track",
-            "smoothed",
-            "bank",
-            "fall",
-        ]
-        labels = [
-            " ".join(label.split())
-            for label in re.findall(r"<dt[^>]*>(.*?)</dt>", rail, re.S)
-        ]
-        assert labels == [
-            "Sample",
-            "Along route",
-            "Elevation",
-            "Slope aspect",
-            "Slope angle",
-            "Track direction",
-            "Track angle (50 m)",
-            "Track angle (125 m)",
-            "Banking",
-            "Track to Fall line",
-        ]
+        assert "data-route-rail-two" not in rail
+        assert "route-rail-two-strings-template" not in rail
+        assert "data-route-rail-debug" not in rail
+        assert "data-route-rail-window" not in rail
 
-    def test_it_reads_the_staff_terrain_table(self, client: Client) -> None:
-        """The URL the script fills with the open route's uuid."""
+    def test_the_staff_terrain_json_stays(self, client: Client) -> None:
+        """The server half of the debug rail is kept for later use."""
         client.force_login(UserFactory.create(is_staff=True))
-        rail = _rail(_home(client))
+        route = RouteFactory.create()
 
-        template = reverse(
-            "public:route_terrain",
-            kwargs={"route_uuid": "00000000-0000-0000-0000-000000000000"},
+        response = client.get(
+            reverse("public:route_terrain", kwargs={"route_uuid": route.uuid})
+            + "?format=json"
         )
-        assert f'data-url-template="{template}?format=json"' in rail
+
+        assert response.status_code == 200
+        assert "rows" in response.json()
 
 
 @pytest.mark.django_db
@@ -601,6 +401,19 @@ class TestTheMapControlsWithdrawWhileARouteIsOpen:
         css = _MAP_CSS.read_text(encoding="utf-8")
         assert "[data-route-rail-open] .route-leader" not in css
         assert "[data-route-rail-open] .route-rail" not in css
+
+    def test_the_rail_shares_the_point_cards_column(self) -> None:
+        """One left-aligned column, one width token, for both (SNOW-1065)."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        rules = dict(
+            (sel.split("*/")[-1].strip(), body)
+            for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        )
+
+        for selector in (".route-rail", ".route-point-card"):
+            assert "width: var(--route-column-width)" in rules[selector], selector
+        assert "right:" not in rules[".route-rail"]
+        assert "touch-action: pan-y" in rules[".route-rail-lane"]
 
 
 class TestTheComponentLibraryVariant:

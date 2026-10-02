@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # bin/record-rail-fixtures — write the routes feed's view of two canonical
-# tracks as JSON fixtures for rail two's Vitest suite.
+# tracks as JSON fixtures for the Vitest suites (rail two's, until SNOW-1065
+# retired it; the point card's gradient tests read them now).
 #
-# SNOW-1044. Rail two's track rail reads `slope.angles`, `slope.banks`, the
+# SNOW-1044. Rail two's track rail read `slope.angles`, `slope.banks`, the
 # legs and the geometry's z — the terrain model's heights since SNOW-1043 —
 # exactly as the routes feed serves them. Its kick-turn and stretch tests
 # run against real tours, so this writes, for each track named in TRACKS,

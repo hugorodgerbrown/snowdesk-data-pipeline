@@ -2156,9 +2156,9 @@
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
-  // SNOW-1019 took the fall-line arrows off the map: the bank ribbon on
-  // rail two replaced them. The server still sends `fall_lines` on the
-  // slope record; nothing here draws them.
+  // SNOW-1019 took the fall-line arrows off the map (the bank ribbon that
+  // replaced them went with rail two, SNOW-1065). The server still sends
+  // `fall_lines` on the slope record; nothing here draws them.
 
   /**
    * Register the start dot and finish flag, unless the style already holds
@@ -2466,7 +2466,7 @@
   // SNOW-1019: keeping the cursor's dot out from behind the rails. True
   // while THIS module writes the index (a hover or a tap on the line), so
   // follow() does not pan the map under the pointer that wrote it; true
-  // while a pan is in flight, so a scrub along rail two makes one pan and
+  // while a pan is in flight, so a drag along the rail makes one pan and
   // not a queue; true while the reader drags the map, which a pan would
   // fight; and whether an index arrived during a pan, so the dot is
   // checked once more when it lands.
@@ -2604,11 +2604,6 @@
       let lastOpenLeg = cursor.state().openLeg;
       const follow = (state) => {
         const leg = state && state.openLeg;
-        // A leg opening brings rail two up over the map's foot, which can
-        // cover a dot that was in view a moment ago — including one the
-        // map itself wrote with a tap. A layout change is not a hover, so
-        // this check runs whoever wrote the index.
-        const legOpened = !!leg && leg !== lastOpenLeg;
         lastOpenLeg = leg || null;
         openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
         applyLegDimming();
@@ -2619,16 +2614,6 @@
           // An index a RAIL wrote may sit behind the rails; one the map
           // wrote is under the reader's own pointer already.
           if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
-        }
-        // Checked after the write in progress: a tap on the line opens the
-        // leg and THEN sets the index, and the check is for where the
-        // index ends up, against the rail rail two has just grown.
-        if (legOpened) {
-          Promise.resolve().then(() => {
-            if (routeCursorTarget && routeCursorTarget.cursor.state().index !== null) {
-              keepRouteCursorInView();
-            }
-          });
         }
       };
       unsubscribeRouteCursor = cursor.subscribe(follow);
@@ -2761,8 +2746,8 @@
     map.panBy([offset.x, offset.y], { duration: ROUTE_CURSOR_PAN_MS });
   };
 
-  // SNOW-1019: the rail changed height (rail two opening, its readout
-  // growing a line). The dot may now sit under it, whoever wrote the
+  // SNOW-1019: the rail changed height (a leg's title wrapping to a second
+  // line). The dot may now sit under it, whoever wrote the
   // index — so the check runs regardless of the source, keeping only the
   // one-pan-in-flight and no-pan-while-dragging guards.
   document.addEventListener('snowdesk:route-rail-resized', () => {
@@ -8677,15 +8662,13 @@
      *
      * The FIRST tap on a route opens the rail and frames the track
      * (activateRoute). A tap on that same route while its rail is open
-     * means "here", not "open it again": it moves the cursor to the sample
-     * nearest the tap and opens the leg holding it, if that leg is not
-     * the one already open — and rail two scrolls there, since it follows
-     * the cursor. No re-framing: the reader is pointing at a place on a
-     * track already in view.
+     * means "here", not "open it again": it places the point at the sample
+     * nearest the tap, and the point card reads it. No re-framing: the
+     * reader is pointing at a place on a track already in view.
      *
-     * The leg is opened BEFORE the index is set, because the cursor clamps
-     * an index into the open leg: set first, an index on another leg would
-     * be pulled back to the old leg's end.
+     * It never opens a leg (SNOW-1065): a leg is pressed on the profile,
+     * and placing a point closes any open one — a leg or a point, never
+     * both (route_cursor_core.js).
      *
      * @param {object} feature The tapped line feature.
      * @param {?{x: number, y: number}} point The tap, in screen px.
@@ -8700,15 +8683,9 @@
       // it however long the segments are at this zoom: no distance cap.
       const index = routeSampleAt(point);
       if (index === null) return true;
-      const { cursor, legs } = routeCursorTarget;
-      const leg = self.pwaRouteCursorMapCore.legAt(legs, index);
-      const open = cursor.state().openLeg;
       mapWritesRouteIndex = true;
       try {
-        if (leg && !(open && open.from === leg.from && open.to === leg.to)) {
-          cursor.openLeg(leg);
-        }
-        cursor.setIndex(index);
+        routeCursorTarget.cursor.setIndex(index);
       } finally {
         mapWritesRouteIndex = false;
       }
@@ -8716,15 +8693,18 @@
     };
 
     // SNOW-1019: a mouse moving along the open route's line moves the
-    // cursor, so rail one's line, rail two's window and the map's dot all
+    // point, so the rail's line, the point card and the map's dot all
     // follow the pointer. Mouse only — MapLibre fires `mousemove` for a
     // mouse, and a finger has the tap above. Nothing within
     // ROUTE_HOVER_PX of a segment middle leaves the cursor where it was:
     // a pointer drifting off the line to the map around it is not a
-    // reading of the route.
+    // reading of the route. SNOW-1065: and nothing while a leg is open —
+    // placing a point closes the leg, so a hover would undo the press
+    // that highlighted it the moment the mouse crossed the line.
     const ROUTE_HOVER_PX = 24;
     map.on('mousemove', (e) => {
       if (!routeCursorLive() || !e || !e.point) return;
+      if (routeCursorTarget.cursor.state().openLeg) return;
       const index = routeSampleAt(e.point, ROUTE_HOVER_PX);
       if (index === null) return;
       mapWritesRouteIndex = true;
@@ -8837,6 +8817,16 @@
       const marker = markerUnderPoint(e.point);
       if (marker) {
         activateMarker(marker, e.point);
+        return;
+      }
+
+      // SNOW-1065: with a route open, a tap on the map that no marker took
+      // clears the route and the point together — the rail and the point
+      // card close — and does nothing else. The region chip is withdrawn
+      // while the rail is open, so a region selected under it would be a
+      // change the reader cannot see.
+      if (window.pwaRouteRail?.isOpen?.()) {
+        window.pwaRouteRail.close();
         return;
       }
 

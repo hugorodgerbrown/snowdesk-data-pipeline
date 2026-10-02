@@ -311,32 +311,31 @@ class TestHelpPageFlagGating:
         ):
             assert testid in content, testid
 
-    def test_slope_panel_explains_what_the_rails_draw(self, client: Client) -> None:
-        """SNOW-1019: the slope bands, the bank wedges and the no-fall bars.
+    def test_slope_panel_explains_how_a_route_is_read(self, client: Client) -> None:
+        """SNOW-1065: the coloured line, the point card and the passages.
 
-        A route's steepness is read on rail two, not on the map line, so
-        the panel sends the reader there: the bands and the rule that their
-        colour is the GROUND's steepness, the readout's two figures and the
-        avalanche services' words for the ground, the wedges and their
-        caveat that no wedge is no claim, and the bars with the caveat that
-        an unmarked route is not a route without no-fall ground.
+        Rail two, and with it the band strip, the bank wedges and the
+        passage bars, is gone, so the panel sends the reader to the map
+        line's colours, the point card's two lines — with the avalanche
+        services' words for the ground — and the route detail's passages,
+        with the caveat that an unmarked route is not a route without
+        no-fall ground.
         """
         content = client.get(reverse("public:help")).content
         for testid in (
             b"help-slope-route-colouring",
             b"help-slope-readout",
-            b"help-slope-bank-ribbon",
-            b"help-slope-bank-averaged",
             b"help-slope-passages",
             b"help-slope-passages-smoothed",
         ):
             assert testid in content, testid
-        assert b"read on the rail below the map" in content
-        assert b"no wedge is never a" in content
-        # The readout's classes are the avalanche services', with their
+        for gone in (b"help-slope-bank-ribbon", b"help-slope-bank-averaged"):
+            assert gone not in content
+        assert b"second rail" not in content
+        # The ground's classes are the avalanche services', with their
         # thresholds said out loud.
         assert b"very steep from 35 and extremely steep from 40" in content
-        assert b"Ground under 5 degrees reads as flat." in content
+        assert b"Ground under 5 degrees reads" in content
         assert b"An unmarked route is not a route without no-fall ground." in content
 
     def test_slope_panel_describes_no_mark_the_map_no_longer_draws(

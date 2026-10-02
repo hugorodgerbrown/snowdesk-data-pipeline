@@ -1,11 +1,12 @@
 /*
- * tests/js/test_route_rail_core.js — rail one's pure half
+ * tests/js/test_route_rail_core.js — the route rail's pure half
  * (static/js/route_rail_core.js, SNOW-1018).
  *
  * The tick step at the three spans the ticket names (500 m, 12.9 km,
  * 80 km), one unit per strip, one fill per leg carrying the leg's own
- * direction, and rail one's vertical and horizontal figure lines
- * (SNOW-1045).
+ * direction, the meta line in the routes list's format with every null
+ * branch, with and without a time (SNOW-1065), the duration's rounding
+ * rule shared with apps/core/durations.py, and a leg's own figures.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -93,70 +94,93 @@ describe('ticks', () => {
   });
 });
 
-describe('formatRouteVertical', () => {
-  it('writes ascend · descend with a thousands separator', () => {
-    expect(core.formatRouteVertical({ ascent_m: 365.6, descent_m: 1934.2 })).toBe(
-      'Ascend 366 m · descend 1,934 m',
-    );
+describe('formatDuration', () => {
+  it.each([
+    [10260, { hours: '2', minutes: '51' }],
+    [14700, { hours: '4', minutes: '05' }],
+    [2460, { hours: '', minutes: '41' }],
+    // 59.6 minutes rounds to the hour rather than reading as 59.
+    [3576, { hours: '1', minutes: '00' }],
+    // An exact half-minute rounds UP, as split_hours_minutes does.
+    [16230, { hours: '4', minutes: '31' }],
+  ])('splits %s s', (seconds, expected) => {
+    expect(core.formatDuration(seconds)).toEqual(expected);
   });
 
-  it('omits a null side rather than showing zero', () => {
-    expect(core.formatRouteVertical({ ascent_m: null, descent_m: 1934 })).toBe(
-      'descend 1,934 m',
-    );
-    expect(core.formatRouteVertical({ ascent_m: 366 })).toBe('Ascend 366 m');
-  });
-
-  it('is empty when both sides are unknown', () => {
-    expect(core.formatRouteVertical({ ascent_m: null, descent_m: null })).toBe('');
-    expect(core.formatRouteVertical(undefined)).toBe('');
-  });
-
-  it('keeps a genuine zero', () => {
-    expect(core.formatRouteVertical({ ascent_m: 0, descent_m: 0 })).toBe(
-      'Ascend 0 m · descend 0 m',
-    );
-  });
-
-  it('takes the templates it is given', () => {
-    expect(
-      core.formatRouteVertical(
-        { ascent_m: 366, descent_m: 12 },
-        { 'route-ascend': 'Up %(m)s m', 'route-descend': 'down %(m)s m' },
-      ),
-    ).toBe('Up 366 m · down 12 m');
+  it.each([null, undefined, 0, -5, Number.NaN])('has no duration for %s', (seconds) => {
+    expect(core.formatDuration(seconds)).toBeNull();
   });
 });
 
-describe('formatRouteHorizontal', () => {
-  it('writes the length and the steep terrain to one decimal', () => {
-    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: 3460 })).toBe(
-      '12.9 km · 3.5 km steep terrain',
+describe('formatMetaLine', () => {
+  const figures = { distance_m: 12900, ascent_m: 337, descent_m: 1906 };
+
+  it('writes the routes list’s line', () => {
+    expect(core.formatMetaLine(figures)).toBe('12.9km · 337m ↑ · 1906m ↓');
+  });
+
+  it('appends the time when the recording has one', () => {
+    expect(core.formatMetaLine({ ...figures, duration_s: 10260 })).toBe(
+      '12.9km · 337m ↑ · 1906m ↓ · 2h51m',
+    );
+    expect(core.formatMetaLine({ ...figures, duration_s: 2460 })).toBe(
+      '12.9km · 337m ↑ · 1906m ↓ · 41m',
     );
   });
 
-  it('omits the steep part for an unsampled route', () => {
-    expect(core.formatRouteHorizontal({ distance_m: 12900, steep_m: null })).toBe('12.9 km');
-    expect(core.formatRouteHorizontal({ distance_m: 12900 })).toBe('12.9 km');
+  it('omits an unknown side rather than showing zero', () => {
+    expect(core.formatMetaLine({ ...figures, ascent_m: null })).toBe('12.9km · 1906m ↓');
+    expect(core.formatMetaLine({ ...figures, descent_m: null })).toBe('12.9km · 337m ↑');
+    expect(core.formatMetaLine({ distance_m: 12900, duration_s: 600 })).toBe('12.9km · 10m');
   });
 
-  it('keeps zero steep terrain', () => {
-    expect(core.formatRouteHorizontal({ distance_m: 5000, steep_m: 0 })).toBe(
-      '5.0 km · 0.0 km steep terrain',
+  it('keeps a genuine zero', () => {
+    expect(core.formatMetaLine({ distance_m: 800, ascent_m: 0, descent_m: 41.6 })).toBe(
+      '0.8km · 0m ↑ · 42m ↓',
     );
   });
 
-  it('is empty when nothing is known', () => {
-    expect(core.formatRouteHorizontal({})).toBe('');
+  it('is empty with no distance', () => {
+    expect(core.formatMetaLine({ ascent_m: 10 })).toBe('');
+    expect(core.formatMetaLine(null)).toBe('');
   });
 
   it('takes the templates it is given', () => {
     expect(
-      core.formatRouteHorizontal(
-        { distance_m: 1000, steep_m: 500 },
-        { 'route-steep': '%(km)s km raide' },
+      core.formatMetaLine(
+        { ...figures, duration_s: 600 },
+        { 'meta-both': '%(km)s km, +%(ascent)s/-%(descent)s', 'meta-duration': '%(figures)s (%(duration)s)' },
       ),
-    ).toBe('1.0 km · 0.5 km raide');
+    ).toBe('12.9 km, +337/-1906 (10m)');
+  });
+});
+
+describe('legFigures', () => {
+  it('reads a leg’s share of the length and its gross climb and descent', () => {
+    const profile = readProfile(track(81));
+    const legs = [{ from: 0, to: 11 }, { from: 12, to: 23 }];
+    const up = core.legFigures(profile, legs[0], 24, 1000);
+    const down = core.legFigures(profile, legs[1], 24, 1000);
+    expect(up.distance_m).toBeCloseTo(500);
+    expect(up.ascent_m).toBeGreaterThan(0);
+    expect(up.descent_m).toBeCloseTo(0);
+    expect(down.descent_m).toBeCloseTo(up.ascent_m);
+  });
+
+  it('counts a counter-rise inside a descending leg', () => {
+    const coordinates = [[7.4, 46.1, 2000], [7.401, 46.1, 1900], [7.402, 46.1, 1950], [7.403, 46.1, 1800]];
+    const figures = core.legFigures(readProfile(coordinates), { from: 0, to: 2 }, 3, 300);
+    expect(figures.ascent_m).toBeCloseTo(50);
+    expect(figures.descent_m).toBeCloseTo(250);
+  });
+
+  it('has a length but no heights for a profile with no elevation', () => {
+    const flat = track(10).map((p) => [p[0], p[1]]);
+    expect(core.legFigures(readProfile(flat), { from: 0, to: 1 }, 4, 400)).toEqual({
+      distance_m: 200,
+      ascent_m: null,
+      descent_m: null,
+    });
   });
 });
 

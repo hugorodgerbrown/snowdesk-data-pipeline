@@ -73,9 +73,9 @@
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
  * SNOW-1019 took the fall-line arrows and no-fall passage split line off
- * this map, as off the map page: the bank ribbon replaced the arrows, and
- * the passages are drawn as bars on the map page's rail two. The snapshot
- * still carries both records.
+ * this map, as off the map page (where rail two's bank ribbon and passage
+ * bars stood in for them until SNOW-1065 retired it). The snapshot still
+ * carries both records.
  *
  * Everything above is a pure function of the payload, so it is unit-tested
  * directly (tests/js/test_trip_map.js) with no browser and no WebGL.

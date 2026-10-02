@@ -361,6 +361,21 @@ describe('tapping a saved route', () => {
     expect(tapAt(LINE_Y)).toBeDefined();
   });
 
+  it('closes an open rail on a tap on empty map, and does nothing else (SNOW-1065)', () => {
+    rail.reset();
+    rail.state.open = true;
+    for (const handler of mapStub.handlers.click || []) {
+      handler({
+        point: { x: 10, y: LINE_Y + 60 },
+        lngLat: { lng: 7.0, lat: 46.01 },
+        originalEvent: { target: document.body },
+      });
+    }
+
+    expect(rail.state.open).toBe(false);
+    expect(rail.last()).toBeNull();
+  });
+
   it('does nothing when the routes layer is not installed', () => {
     // The overlay is lazy-installed and defaults off; querying a layer that
     // does not exist throws in MapLibre, so it must be filtered out first.

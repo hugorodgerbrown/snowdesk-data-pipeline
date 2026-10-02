@@ -12,7 +12,8 @@ last-reviewed: 2026-10-02
 > (`trip-route-fall-lines`). The bank ribbon on rail two replaced it: a
 > tick per place leaning by how far the ground tilts across the track,
 > which answers "does the track cut across this face or run down it" on
-> the axis the reader is already reading. The data still travels —
+> the axis the reader is already reading. SNOW-1065 later retired rail two
+> and its ribbon too, so nothing draws the direction now. The data still travels —
 > `fall_line_marks` still runs and `fall_lines` is still on the slope
 > record — and `fallLineCollection` in `route_slope_core.js` and
 > `fallLineArrowPixels` in `route_markers_core.js` are kept, though no

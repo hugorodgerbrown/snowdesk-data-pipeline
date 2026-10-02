@@ -387,14 +387,6 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_core.js' %}"></script>
-    {# SNOW-1019: rail two, the open leg. The bank's level-ski wedges        #}
-    {# (window.pwaBankRibbonCore, SNOW-1021/1031), rail two's pure half      #}
-    {# (window.pwaRouteRailTwoCore) and its DOM half                         #}
-    {# (window.pwaRouteRailTwo), which route_rail.js attaches on open — so   #}
-    {# all three come before it.                                             #}
-    <script defer src="{% static 'js/bank_ribbon_core.js' %}"></script>
-    <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
-    <script defer src="{% static 'js/route_rail_two.js' %}"></script>
     {# SNOW-1064: the point card — the aspect wheel (window.pwaAspectWheelCore, #}
     {# SNOW-1063), the card's words and gradient (window.pwaRoutePointCardCore) #}
     {# and its DOM half (window.pwaRoutePointCard), which route_rail.js         #}
@@ -404,7 +396,7 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/route_point_card.js' %}"></script>
     <script defer src="{% static 'js/route_rail.js' %}"></script>
     {# SNOW-1019: the leader line — a dashed line from the route cursor's    #}
-    {# dot on the map to rail one's cursor and on to rail two's. Its pure    #}
+    {# dot on the map to a notch on the rail's top edge (SNOW-1065). Its pure #}
     {# half (window.pwaRouteLeaderCore) and its DOM half                     #}
     {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
     <script defer src="{% static 'js/route_leader_core.js' %}"></script>

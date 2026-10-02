@@ -1,11 +1,11 @@
 /*
- * static/js/route_cursor_core.js — one cursor shared by the map and both
- * rails (SNOW-1016).
+ * static/js/route_cursor_core.js — one cursor shared by the map, the rail
+ * and the point card (SNOW-1016).
  *
- * The map, rail one and rail two are three drawings of the same route, and
- * they are only worth having together if a place on one is the same place
- * on the others. That needs one shared coordinate, and a DISTANCE is not
- * it: the elevation profile's x-axis is summed distance along the
+ * The map and the rail are two drawings of the same route, and they are
+ * only worth having together if a place on one is the same place on the
+ * other (rail two was a third until SNOW-1065 removed it). That needs one
+ * shared coordinate, and a DISTANCE is not it: the elevation profile's x-axis is summed distance along the
  * simplified geometry, while the sampler's segments are strides along its
  * own walk, and the two disagree by a chord per switchback
  * (apps/routes/services/slope_summary.py, "two length sources").
@@ -23,19 +23,24 @@
  * are the first and last segment of the leg, both inclusive.
  *
  * This module owns no DOM and reads no globals. It holds two things —
- * the cursor `index` and the `openLeg` — clamps them, and tells
- * subscribers when they change. It holds no selection: SNOW-1052 took
- * band and passage selection off rail two, so every gesture there only
- * moves the index.
+ * the cursor `index` and the `openLeg` — and tells subscribers when they
+ * change. It holds no selection: SNOW-1052 took band and passage
+ * selection off the rails.
  *
- * Clamping:
+ * A LEG OR A POINT, NEVER BOTH (SNOW-1065). The route has either a
+ * highlighted leg or a placed point:
  *
- *   - an index is clamped to [0, N - 1];
- *   - while a leg is open it is also clamped to [leg.from, leg.to], so a
- *     drag off the end of rail two cannot move the cursor on rail one or
- *     the map outside the open leg;
- *   - opening a leg pulls an out-of-range cursor into it rather than
- *     rejecting the leg; closing a leg leaves the cursor where it was.
+ *   - opening a leg clears the index;
+ *   - setting an index clears the open leg;
+ *   - closing a leg leaves the index where it was (null, by the rule
+ *     above);
+ *   - an index is clamped to [0, N - 1].
+ *
+ * This replaced the rule that clamped the index into the open leg, which
+ * existed for rail two's zoomed window; with rail two gone a leg is a
+ * highlight, and a point anywhere on the route is a different question.
+ * Re-opening the leg that is already open is a no-op here — the rail's
+ * second press closes it with `closeLeg`.
  *
  * `null` is a real state for the index: no pointer over any surface. A
  * non-finite number is not — it is a conversion bug in the surface that
@@ -136,29 +141,21 @@
     }
 
     /**
-     * Clamp an index to the route and, if one is open, to the open leg.
-     *
-     * @param {number} index An integer index.
-     * @param {?Leg} leg The open leg, if any.
-     * @returns {number}
-     */
-    function bound(index, leg) {
-      const clamped = clamp(index, 0, last);
-      return leg ? clamp(clamped, leg.from, leg.to) : clamped;
-    }
-
-    /**
-     * Move the cursor, or clear it with `null`.
+     * Move the cursor, or clear it with `null`. A point clears the open
+     * leg; clearing the point leaves the leg as it was.
      *
      * @param {?number} index The index a surface converted its pointer to.
      */
     function setIndex(index) {
-      const next = index === null ? null : bound(toIndex(index, 'index'), current.openLeg);
-      commit(next, current.openLeg);
+      if (index === null) {
+        commit(null, current.openLeg);
+        return;
+      }
+      commit(clamp(toIndex(index, 'index'), 0, last), null);
     }
 
     /**
-     * Open a leg, pulling the cursor into it if it lies outside.
+     * Open a leg, clearing the point.
      *
      * Opening the leg that is already open is a no-op, compared by its ends
      * rather than by identity, because a surface may rebuild the leg object
@@ -174,13 +171,10 @@
       }
       const open = current.openLeg;
       if (open && open.from === from && open.to === to) return;
-
-      const next = Object.freeze({ ...leg, from: from, to: to });
-      const index = current.index === null ? null : bound(current.index, next);
-      commit(index, next);
+      commit(null, Object.freeze({ ...leg, from: from, to: to }));
     }
 
-    /** Close the open leg. The cursor stays where it was. */
+    /** Close the open leg. The index stays where it was. */
     function closeLeg() {
       commit(current.index, null);
     }

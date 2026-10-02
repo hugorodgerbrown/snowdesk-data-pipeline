@@ -1,16 +1,17 @@
 /*
- * tests/js/test_route_rail.js — rail one's DOM half
- * (static/js/route_rail.js, SNOW-1018).
+ * tests/js/test_route_rail.js — the route rail's DOM half
+ * (static/js/route_rail.js, SNOW-1018; one rail since SNOW-1065).
  *
- * The assertion the ticket names: pressing a leg opens it on the route
- * cursor, with `aria-pressed` following the CURSOR rather than the click —
- * so a leg closed from rail two's side un-presses here too. Since
- * SNOW-1019 pressing the open leg again moves rail two's window there
- * instead of closing it, rail one brackets what rail two shows, and
- * Escape closes the leg before the rail. Around it: one path per leg with its direction, an
- * unsampled route still cut into legs, a pending share without its
- * menu, the rail closing with the detail sheet, and Delete confirming
- * before it posts.
+ * The assertions SNOW-1065 names: the subtitle is the routes list's meta
+ * line, with the time only when the recording has one; pressing a leg
+ * opens it on the route cursor, swaps the title to "… • Leg N" and the
+ * subtitle to the leg's own figures, and pressing it again restores both;
+ * a leg or a point, never both, so a hover leaves an open leg alone and a
+ * drag along the lane places a point. `aria-pressed` follows the CURSOR
+ * rather than the click, so a leg closed from elsewhere un-presses here
+ * too. Around it: one path per leg with its direction, an unsampled route
+ * still cut into legs, a pending share without its menu, the rail closing
+ * with the detail sheet, and Delete confirming before it posts.
  *
  * The markup below is the hooks of templates/includes/_route_rail.html;
  * tests/public/test_route_rail.py holds the partial itself to them.
@@ -23,8 +24,6 @@ import '../../static/js/route_cursor_core.js';
 import '../../static/js/elevation_profile_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_rail_core.js';
-import '../../static/js/bank_ribbon_core.js';
-import '../../static/js/route_rail_two_core.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -37,6 +36,7 @@ document.body.innerHTML = `
              data-route-plan-trip-url="/trips/new/">
       <div data-row-renameable>
         <span data-row-label data-route-rail-name></span>
+        <span data-route-rail-leg></span>
         <input data-row-rename-input hidden>
         <div data-route-rail-actions>
           <div data-overflow-menu>
@@ -52,24 +52,11 @@ document.body.innerHTML = `
           </div>
         </div>
         <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
-        <p data-route-rail-vertical></p>
-        <p data-route-rail-horizontal></p>
+        <p data-route-rail-meta></p>
         <div data-route-rail-claim hidden></div>
       </div>
       <svg data-route-rail-lane></svg>
       <div data-route-rail-ticks></div>
-      <div data-route-rail-two hidden>
-        <p data-route-rail-two-title></p>
-        <button type="button" data-route-rail-two-zoom="out" aria-label="Zoom out"></button>
-        <button type="button" data-route-rail-two-zoom="in" aria-label="Zoom in"></button>
-        <button type="button" data-route-rail-two-close aria-label="Close the leg"></button>
-        <p data-route-rail-two-figures></p>
-        <svg data-route-rail-two-lane role="slider" tabindex="0"></svg>
-        <div data-route-rail-two-readout-box>
-          <span data-route-rail-two-stem hidden></span>
-          <div data-route-rail-two-readout></div>
-        </div>
-      </div>
       <form data-route-rail-csrf hidden>
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
       </form>
@@ -93,13 +80,13 @@ window.ResizeObserver = class {
   disconnect() {}
 };
 
-await import('../../static/js/route_rail_two.js');
 await import('../../static/js/route_rail.js');
 
 const rail = document.getElementById('route-rail');
 const mapEl = document.getElementById('map');
 const sheet = document.getElementById('route-detail-sheet');
-const railTwo = rail.querySelector('[data-route-rail-two]');
+const meta = rail.querySelector('[data-route-rail-meta]');
+const legSuffix = rail.querySelector('[data-route-rail-leg]');
 
 /**
  * A 24-segment route: a climb over segments 0-11 and a descent over 12-23.
@@ -190,23 +177,19 @@ describe('open', () => {
     ]);
   });
 
-  it('writes the name, the vertical line and the horizontal line', () => {
+  it('writes the name and the routes list’s meta line', () => {
     window.pwaRouteRail.open(
-      feature({
-        ascent_m: 366,
-        descent_m: 1934,
-        distance_m: 12900,
-        terrain: { surveyed_m: 12900, steep_m: 3460 },
-      }),
+      feature({ ascent_m: 337, descent_m: 1906, distance_m: 12900, duration_s: 10260 }),
     );
 
     expect(rail.querySelector('[data-route-rail-name]').textContent).toBe('Mont Fort');
-    expect(rail.querySelector('[data-route-rail-vertical]').textContent).toBe(
-      'Ascend 366 m · descend 1,934 m',
-    );
-    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe(
-      '12.9 km · 3.5 km steep terrain',
-    );
+    expect(meta.textContent).toBe('12.9km · 337m ↑ · 1906m ↓ · 2h51m');
+  });
+
+  it('leaves the time off a recording with none', () => {
+    window.pwaRouteRail.open(feature({ ascent_m: 337, descent_m: 1906, distance_m: 12900 }));
+
+    expect(meta.textContent).toBe('12.9km · 337m ↑ · 1906m ↓');
   });
 
   it('labels its ticks in one unit', () => {
@@ -247,14 +230,19 @@ describe('open', () => {
     expect(legPaths()).toHaveLength(2);
   });
 
-  it('hands a pending share’s slope record to rail two', () => {
-    // A share carries the same slope record as an owned route; nulling it
-    // opened rail two with no bands, no ribbon and no passages.
-    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(railTwo.hidden).toBe(false);
-    expect(railTwo.querySelectorAll('.route-rail-two-band').length).toBeGreaterThan(0);
+  it('hands a pending share’s slope record to the point card', () => {
+    // A share carries the same slope record as an owned route.
+    const calls = [];
+    window.pwaRoutePointCard = {
+      attach: (options) => calls.push(options),
+      detach: () => {},
+    };
+    try {
+      window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+      expect(calls[0].slope.angles).toHaveLength(24);
+    } finally {
+      delete window.pwaRoutePointCard;
+    }
   });
 
   it('draws the outline alone for a route with no legs', () => {
@@ -309,42 +297,22 @@ describe('open', () => {
     expect(slot.children).toHaveLength(0);
   });
 
-  it('reads the steep terrain from a stringified terrain summary', () => {
-    // A feature MapLibre hands back carries its nested properties as JSON.
-    window.pwaRouteRail.open(
-      feature({ terrain: JSON.stringify({ surveyed_m: 620, steep_m: 0 }) }),
-    );
-
-    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe(
-      '0.6 km · 0.0 km steep terrain',
-    );
-  });
-
-  it('omits the steep terrain when none of the route was surveyed', () => {
-    // Wholly outside the terrain coverage: zero steep is not a finding.
-    window.pwaRouteRail.open(feature({ terrain: { surveyed_m: 0, steep_m: 0 } }));
-
-    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe('0.6 km');
-  });
-
-  it('omits the steep terrain for an unsampled route', () => {
-    window.pwaRouteRail.open(feature({ terrain: undefined }));
-
-    expect(rail.querySelector('[data-route-rail-horizontal]').textContent).toBe('0.6 km');
-  });
-
   it('omits an unknown ascent rather than showing zero', () => {
     window.pwaRouteRail.open(feature({ ascent_m: null }));
 
-    expect(rail.querySelector('[data-route-rail-vertical]').textContent).toBe(
-      'descend 200 m',
-    );
+    expect(meta.textContent).toBe('0.6km · 200m ↓');
+  });
+
+  it('drops the steep-terrain figure (SNOW-1065)', () => {
+    window.pwaRouteRail.open(feature({ terrain: { surveyed_m: 620, steep_m: 300 } }));
+
+    expect(meta.textContent).not.toMatch(/steep/);
   });
 });
 
 describe('pressing a leg', () => {
-  it('opens it on the cursor, and rail two with it', () => {
-    window.pwaRouteRail.open(feature());
+  it('opens it on the cursor and swaps the header to the leg', () => {
+    window.pwaRouteRail.open(feature({ duration_s: 3600 }));
     const [first] = legPaths();
 
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -354,45 +322,43 @@ describe('pressing a leg', () => {
       to: 11,
     });
     expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(railTwo.hidden).toBe(false);
-    expect(railTwo.hasAttribute('data-empty')).toBe(false);
+    expect(legSuffix.textContent).toBe('• Leg 1');
+    // Half the route's 620 m, the whole 200 m climb, no descent and no
+    // time: track points carry no timestamps.
+    expect(meta.textContent).toBe('0.3km · 200m ↑ · 0m ↓');
   });
 
-  it('moves rail two’s window when the open leg is pressed, without closing it', () => {
-    window.pwaRouteRail.open(feature());
+  it('closes when the open leg is pressed again, restoring the header', () => {
+    window.pwaRouteRail.open(feature({ duration_s: 3600 }));
     const [first] = legPaths();
-    const railLane = rail.querySelector('[data-route-rail-lane]');
-    vi.spyOn(railLane, 'getBoundingClientRect').mockReturnValue({
-      left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80, x: 0, y: 0,
-    });
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    // Zoom rail two in to its six-sample floor, so there is a window to move.
-    const zoomIn = railTwo.querySelector('[data-route-rail-two-zoom="in"]');
-    zoomIn.click();
-    zoomIn.click();
-    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 3, to: 9 });
 
-    // x = 100 of 1000 is sample 2 of 24.
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    expect(window.pwaRouteRail.cursor().state().openLeg).not.toBeNull();
-    expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(window.pwaRouteRailTwo.view()).toEqual({ from: 0, to: 6 });
+    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
+    expect(first.getAttribute('aria-pressed')).toBe('false');
+    expect(legSuffix.textContent).toBe('');
+    expect(meta.textContent).toBe('0.6km · 200m ↑ · 200m ↓ · 1h00m');
   });
 
-  it('shows rail two empty while no leg is open, and again once it closes', () => {
-    // SNOW-1024: rail one has no readout; rail two's placeholder says
-    // what to press.
+  it('clears a placed point when it opens', () => {
     window.pwaRouteRail.open(feature());
-    expect(rail.querySelector('[data-route-rail-readout]')).toBeNull();
-    expect(railTwo.hidden).toBe(false);
-    expect(railTwo.hasAttribute('data-empty')).toBe(true);
+    window.pwaRouteRail.cursor().setIndex(5);
 
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(railTwo.hasAttribute('data-empty')).toBe(false);
+    legPaths()[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    window.pwaRouteRail.cursor().closeLeg();
-    expect(railTwo.hasAttribute('data-empty')).toBe(true);
+    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
+    expect(rail.querySelector('[data-route-rail-cursor]')).toBeNull();
+  });
+
+  it('closes when a point is placed', () => {
+    window.pwaRouteRail.open(feature());
+    legPaths()[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    window.pwaRouteRail.cursor().setIndex(5);
+
+    expect(legPaths()[1].getAttribute('aria-pressed')).toBe('false');
+    expect(legSuffix.textContent).toBe('');
   });
 
   it('moves the open leg when another is pressed', () => {
@@ -405,6 +371,7 @@ describe('pressing a leg', () => {
     expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(2);
     expect(first.getAttribute('aria-pressed')).toBe('false');
     expect(second.getAttribute('aria-pressed')).toBe('true');
+    expect(legSuffix.textContent).toBe('• Leg 2');
   });
 
   it('answers Enter from the keyboard', () => {
@@ -427,70 +394,17 @@ describe('pressing a leg', () => {
   });
 });
 
-describe('rail two', () => {
-  it('is bracketed on rail one while it shows part of the leg', () => {
-    window.pwaRouteRail.open(feature());
-    const [first] = legPaths();
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    const bracket = () => rail.querySelector('[data-route-rail-window]');
-
-    // A 12-sample leg opens whole: nothing to bracket.
-    expect(bracket()).toBeNull();
-
-    railTwo.querySelector('[data-route-rail-two-zoom="in"]').click();
-    const view = window.pwaRouteRailTwo.view();
-    expect(Number(bracket().getAttribute('x'))).toBeCloseTo((view.from / 24) * 1000);
-    expect(Number(bracket().getAttribute('width'))).toBeCloseTo(
-      ((view.to - view.from) / 24) * 1000,
-    );
-
-    railTwo.querySelector('[data-route-rail-two-zoom="out"]').click();
-    expect(bracket()).toBeNull();
-  });
-
-  it('keeps the bracket and the pressed leg live while rail two pans (SNOW-1024)', async () => {
-    window.pwaRouteRail.open(feature());
-    const [first] = legPaths();
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    const twoLane = railTwo.querySelector('[data-route-rail-two-lane]');
-    railTwo.querySelector('[data-route-rail-two-zoom="in"]').click();
-    const before = window.pwaRouteRailTwo.view();
-
-    // A horizontal wheel pans rail two's window by a quarter of its span.
-    twoLane.dispatchEvent(new WheelEvent('wheel', {
-      bubbles: true, cancelable: true, deltaX: 150, clientX: 300,
-    }));
-    // A pan redraws on the next animation frame.
-    await new Promise((resolve) => { window.requestAnimationFrame(resolve); });
-
-    const after = window.pwaRouteRailTwo.view();
-    expect(after.from).toBeGreaterThan(before.from);
-    const bracket = rail.querySelector('[data-route-rail-window]');
-    expect(Number(bracket.getAttribute('x'))).toBeCloseTo((after.from / 24) * 1000);
-    expect(first.getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('closes on Escape before the rail does', () => {
+describe('Escape', () => {
+  it('closes the open leg before the rail', () => {
     window.pwaRouteRail.open(feature());
     legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     pressEscape();
     expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(railTwo.hasAttribute('data-empty')).toBe(true);
     expect(rail.hidden).toBe(false);
 
     pressEscape();
     expect(rail.hidden).toBe(true);
-  });
-
-  it('hides with the rail', () => {
-    window.pwaRouteRail.open(feature());
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    window.pwaRouteRail.close();
-
-    expect(railTwo.hidden).toBe(true);
-    expect(window.pwaRouteRailTwo.view()).toBeNull();
   });
 });
 
@@ -499,16 +413,19 @@ describe('the cursor line (SNOW-1019)', () => {
   const cursorLine = () => rail.querySelector('[data-route-rail-cursor]');
 
   /**
-   * Move a pointer over rail one's lane.
+   * Fire a pointer event on the rail's lane.
    *
+   * @param {string} type The event type.
    * @param {string} pointerType 'mouse' or 'touch'.
    * @param {number} clientX The pointer's x.
    */
-  const moveOverLane = (pointerType, clientX) => {
-    const event = new MouseEvent('pointermove', { bubbles: true, clientX });
+  const pointerOnLane = (type, pointerType, clientX) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX });
     Object.defineProperty(event, 'pointerType', { value: pointerType });
+    Object.defineProperty(event, 'pointerId', { value: 7 });
     rail.querySelector('[data-route-rail-lane]').dispatchEvent(event);
   };
+  const moveOverLane = (pointerType, clientX) => pointerOnLane('pointermove', pointerType, clientX);
 
   it('draws the cursor index by share, and hides on null', () => {
     window.pwaRouteRail.open(feature());
@@ -537,7 +454,7 @@ describe('the cursor line (SNOW-1019)', () => {
     expect(window.pwaRouteRail.cursor().state().index).toBe(12);
   });
 
-  it('holds a hover to the open leg', () => {
+  it('leaves an open leg alone on a hover (SNOW-1065)', () => {
     window.pwaRouteRail.open(feature());
     vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
       .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
@@ -545,22 +462,50 @@ describe('the cursor line (SNOW-1019)', () => {
 
     moveOverLane('mouse', 900);
 
-    expect(window.pwaRouteRail.cursor().state().index).toBe(11);
+    expect(window.pwaRouteRail.cursor().state()).toMatchObject({ index: null, openLeg: { i: 1 } });
   });
 
-  it('reports where its cursor meets the profile, for the leader line', () => {
+  it('places the point on a drag along the lane, and swallows its click', () => {
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const [first] = legPaths();
+
+    pointerOnLane('pointerdown', 'touch', 100);
+    pointerOnLane('pointermove', 'touch', 104); // under the drag threshold
+    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
+    pointerOnLane('pointermove', 'touch', 600); // 600 of 1000: sample 14
+    pointerOnLane('pointerup', 'touch', 600);
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(window.pwaRouteRail.cursor().state()).toEqual({ index: 14, openLeg: null });
+  });
+
+  it('leaves a press that does not move to the leg it lands on', () => {
+    window.pwaRouteRail.open(feature());
+    const [first] = legPaths();
+
+    pointerOnLane('pointerdown', 'touch', 100);
+    pointerOnLane('pointerup', 'touch', 102);
+    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(1);
+  });
+
+  it('reports the rail’s top edge above its cursor, for the leader line', () => {
     window.pwaRouteRail.open(feature());
     vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
       .mockReturnValue({ left: 10, top: 100, right: 1010, bottom: 196, width: 1000, height: 96 });
+    vi.spyOn(rail, 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 40, right: 1020, bottom: 210, width: 1020, height: 170 });
     expect(window.pwaRouteRail.cursorPoint()).toBeNull();
 
     window.pwaRouteRail.cursor().setIndex(5);
     const point = window.pwaRouteRail.cursorPoint();
 
     expect(point.x).toBeCloseTo(10 + (5.5 / 24) * 1000);
-    // On the climb, so above the lane's floor and below its top.
-    expect(point.y).toBeGreaterThan(100);
-    expect(point.y).toBeLessThan(196);
+    expect(point.y).toBe(40);
   });
 
   it('announces opening and closing, which the leader line follows', () => {
@@ -590,7 +535,7 @@ describe('the rail\'s measured height (SNOW-1019)', () => {
     window.pwaRouteRail.open(feature());
     const heard = vi.fn();
     document.addEventListener('snowdesk:route-rail-resized', heard);
-    // Rail two's readout grew a line: the rail is taller than at open.
+    // A leg's title wrapped to a second line: the rail is taller.
     Object.defineProperty(rail, 'offsetHeight', { value: 411, configurable: true });
 
     for (const { target, callback } of observed) {

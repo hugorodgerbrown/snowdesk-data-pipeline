@@ -1,15 +1,15 @@
 /*
  * static/js/route_leader.js — the leader line's DOM half (SNOW-1019).
  *
- * One dashed line that ties the route cursor's three drawings together:
- * from the cursor's dot on the map, down to where rail one's cursor line
- * meets its profile, and on to rail two's while a leg is open. The shape
- * is route_leader_core.js's; this module owns the one `<svg>` it is drawn
- * in and decides when to redraw.
+ * One dashed line that ties the route cursor's two drawings together:
+ * from the cursor's dot on the map down to a notch on the rail's top edge,
+ * directly above the profile's cursor line (SNOW-1065 — two stops since
+ * rail two was retired). The shape is route_leader_core.js's; this module
+ * owns the one `<svg>` it is drawn in and decides when to redraw.
  *
  * WHERE IT LIVES. Inside `#map`, absolutely positioned over the whole of
  * it, because the rail is inside `#map` too — one layer covers the map
- * and both rails, and every stop is converted into its coordinates. It
+ * and the rail, and both stops are converted into its coordinates. It
  * takes no pointer events (`.route-leader` in static/css/map.css), so
  * nothing under it stops working.
  *
@@ -18,20 +18,15 @@
  * its geometry:
  *
  *   - the map: `window.pwaRouteCursorMap.point()` (map.js);
- *   - rail one: `window.pwaRouteRail.cursorPoint()`;
- *   - rail two: `window.pwaRouteRailTwo.cursorPoint()`, null while it is
- *     hidden.
+ *   - the rail: `window.pwaRouteRail.cursorPoint()`.
  *
- * It is hidden when the cursor has no index or the rail is closed. With
- * no map point — the routes overlay off, a route with no slope record, or
- * a dot the rails cover — it drops the map stop and joins rail one to
- * rail two, and is hidden only when rail two is closed as well.
+ * It is hidden when the cursor has no index, the rail is closed, or the
+ * map has no point to offer — the routes overlay off, a route with no
+ * slope record, or a dot the rail covers. A line with one end is no line.
  *
  * WHEN IT REDRAWS. On a cursor change (its own subscription to the open
- * route's cursor), a camera move or map resize, a rail-two redraw (a pan
- * or a zoom moves rail two's cursor point without the cursor changing), a
- * window resize, a change in the rail's height, and the rail opening or
- * closing — at most once per
+ * route's cursor), a camera move or map resize, a window resize, a change
+ * in the rail's height, and the rail opening or closing — at most once per
  * animation frame. Every listener is bound once; a rail open only swaps
  * the cursor subscription.
  *
@@ -91,33 +86,30 @@
       return;
     }
     var mapPoint = window.pwaRouteCursorMap ? window.pwaRouteCursorMap.point() : null;
-    var railOne = rail.cursorPoint ? rail.cursorPoint() : null;
-    var railTwo = window.pwaRouteRailTwo && window.pwaRouteRailTwo.cursorPoint
-      ? window.pwaRouteRailTwo.cursorPoint()
-      : null;
-    // The map stop is optional: map.js answers null for a dot behind the
-    // rails or under the top chrome (the moment before or during the pan
-    // that brings it back), and the line then joins the two rails alone.
-    var railStops = [railOne, railTwo].filter(Boolean);
-    if (!railOne || (!mapPoint && railStops.length < 2)) {
+    var railPoint = rail.cursorPoint ? rail.cursorPoint() : null;
+    // map.js answers null for a dot behind the rail or under the top
+    // chrome (the moment before or during the pan that brings it back).
+    if (!mapPoint || !railPoint) {
       clear();
       return;
     }
     var origin = mapEl.getBoundingClientRect();
     /** @param {{x: number, y: number}} p */
     var local = function (p) { return { x: p.x - origin.left, y: p.y - origin.top }; };
-    var stops = (mapPoint ? [mapPoint] : []).concat(railStops).map(local);
+    var start = local(mapPoint);
+    var notch = local(railPoint);
 
-    path.setAttribute('d', core.leaderPath(stops));
-    nodes.replaceChildren();
-    railStops.map(local).forEach(function (stop) {
-      var node = document.createElementNS(SVG_NS, 'circle');
-      node.setAttribute('cx', String(stop.x));
-      node.setAttribute('cy', String(stop.y));
-      node.setAttribute('r', '2.5');
-      node.setAttribute('data-route-leader-stop', '');
-      nodes.appendChild(node);
-    });
+    path.setAttribute('d', core.leaderPath([start, notch]));
+    // The notch: a small triangle pointing down onto the rail's edge.
+    var mark = document.createElementNS(SVG_NS, 'path');
+    mark.setAttribute(
+      'd',
+      'M' + (notch.x - 4) + ' ' + (notch.y - 5)
+        + ' L' + (notch.x + 4) + ' ' + (notch.y - 5)
+        + ' L' + notch.x + ' ' + notch.y + ' Z',
+    );
+    mark.setAttribute('data-route-leader-stop', '');
+    nodes.replaceChildren(mark);
     svg.style.display = '';
   }
 
@@ -156,7 +148,6 @@
   }
 
   document.addEventListener('snowdesk:route-rail-changed', follow);
-  document.addEventListener('snowdesk:route-rail-two-drawn', schedule);
   document.addEventListener('snowdesk:route-rail-resized', schedule);
   window.addEventListener('resize', schedule);
 
