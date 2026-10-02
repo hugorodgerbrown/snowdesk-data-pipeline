@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # PWA shell
@@ -557,7 +557,18 @@ The SW classifies every fetch into one of four buckets:
   vector-tile + sprite + glyph requests; 600 gives headroom while
   bounding on-disk growth) via a simple oldest-first LRU trim
   (`Cache.keys()` returns insertion order — no byte-size accounting; see
-  "Out of scope" below). This is the passive, opportunistic cache for
+  "Out of scope" below). Since SNOW-1060 the 600 counts **tiles only**
+  (`isTileEntryURL`, the numeric `/{z}/{x}/{y}.{ext}` tail) and only tiles
+  are evicted for it. The style JSON, TileJSON, sprite files and glyph
+  ranges are exempt, bounded only by a `BASEMAP_CACHE_MAX_DOCUMENTS` (200)
+  backstop. The reason: MapLibre fetches those documents once per map
+  load, so they are always the oldest entries, and a whole-cache FIFO
+  trimmed them away during any session that panned through more than 600
+  new tiles. Nothing changed on screen, but the next offline load was
+  blank because every tile it held had lost the style that draws it. The
+  backstop exists so an unrecognised tile format (`.webp`, say) misread as
+  a document cannot grow without bound; real documents are a few dozen
+  per basemap. This is the passive, opportunistic cache for
   whatever the user has actually browsed — distinct from the byte-budget
   eviction the DELIBERATE "Download basemap" pinned buckets use (SNOW-586,
   below), which this passive cache has no part in. On a `BASEMAP_CACHE`
@@ -714,7 +725,9 @@ page was cached under, and not otherwise. See
 Deliberately not implemented: byte-based accounting for the PASSIVE
 `BASEMAP_CACHE` (the count-based LRU cap above is still its only eviction
 mechanism, and still count- not byte-based — this is genuinely
-out of scope, unlike the sentence this one replaces). SNOW-586 DID add
+out of scope, unlike the sentence this one replaces). Since SNOW-1060
+that cap counts tiles only; the style documents sit outside it under
+their own 200-entry backstop (see above). SNOW-586 DID add
 byte-based accounting, but only for the pinned, deliberate-download
 buckets — see "Download budget and whole-area eviction" below; the
 passive cache's cheaper insertion-order trim is unaffected and still the
