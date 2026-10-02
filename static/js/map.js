@@ -8513,14 +8513,13 @@
     // foot — and ONLY the rail. The rail carries what the sheet's top half
     // used to: the name, the distance/ascent/descent figures and the
     // elevation profile. The route detail sheet (SNOW-973) is one press
-    // further, behind the rail's "Terrain and bulletin" menu item, and now
-    // holds the two things the rail does not: the terrain lines below and
-    // the day's bulletin reading, which map_route_detail.js fetches.
+    // further, behind the rail's "Terrain" menu item, and holds what the
+    // rail does not: the terrain lines below. SNOW-1062 took the day's
+    // bulletin reading out of it — the day's danger is a map layer
+    // (SNOW-979), not an attribute of a route.
     //
     // So the sheet's body is built here but DEFERRED: handed to the rail as
-    // `details`, a function the menu item calls. The day is read INSIDE it,
-    // at press time, because the scrubber may have moved between the tap
-    // and the press, and the reading has to answer for the day on screen.
+    // `details`, a function the menu item calls.
     //
     // The rail opens BEFORE the fit, so the fit can measure it
     // (`paddingClearingRail`) — otherwise a route's lower end would be
@@ -8559,10 +8558,8 @@
         // The core is in home.html's DEFERRED group, so it is not
         // guaranteed to exist when this runs — the same reason
         // ``routeLegsFor`` and ``flatOwnedRouteFilter`` test for their
-        // cores rather than assuming them. Without the core the sheet loses its
-        // terrain line and keeps the bulletin reading, which is the right
-        // degradation: the figures are an addition to a sheet that stands
-        // on its own without them.
+        // cores rather than assuming them. Without the core the sheet has
+        // no terrain line to show.
         const slopeCore = self.pwaRouteSlopeCore;
         const terrainLines = slopeCore
           ? slopeCore.summaryLines(readFeatureJson(props.terrain))
@@ -8625,16 +8622,8 @@
             || (props.token && f.properties.token === props.token)),
       );
 
-      // `uuid` is absent for a pending share, which is what tells the
-      // sheet not to ask for a reading: routes:bulletin is owner-scoped,
-      // and a recipient who has not saved the route yet would only be
-      // shown a 404's failure line.
       window.pwaRouteRail?.open(cachedFeature || feature, {
-        details: () => window.pwaRouteDetail?.open({
-          node: buildDetailBody(),
-          uuid: props.uuid || null,
-          day: currentDisplayedDate,
-        }),
+        details: () => window.pwaRouteDetail?.open({ node: buildDetailBody() }),
         claim: props.pending ? buildRouteClaimCta(props.token) : null,
       });
       // SNOW-1017: follow the new cursor, so a leg opened on the rail dims

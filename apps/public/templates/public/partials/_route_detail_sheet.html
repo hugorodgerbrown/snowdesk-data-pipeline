@@ -1,15 +1,18 @@
 {% load i18n static %}
 {% comment %}
 public/partials/_route_detail_sheet.html — the docked panel behind rail
-one's "Terrain and bulletin" menu item (SNOW-973; SNOW-1018).
+one's "Terrain" menu item (SNOW-973; SNOW-1018).
 
 SNOW-1018: A TAP NO LONGER OPENS THIS. A tap on a saved route opens rail
 one (templates/includes/_route_rail.html), which took this sheet's top
 half — the name, the distance/ascent/descent figures and the elevation
 profile. The sheet opens from the rail's menu and keeps what the rail does
-not show: the terrain lines and the day's bulletin reading. The history
-below explains why the detail left the popup for a sheet; the sheet then
-lost its figures to the rail.
+not show: the terrain lines. The history below explains why the detail
+left the popup for a sheet; the sheet then lost its figures to the rail.
+
+SNOW-1062 took the day's bulletin reading out of the sheet. The day's
+danger is a map layer (SNOW-979), drawn on the ground around the route
+rather than judged along it, so nothing here depends on the date.
 
 Included from _routes_surface.html, beside the routes PANEL's own sheet.
 Two sheets, two surfaces: #route-sheet is the list of the user's routes,
@@ -28,14 +31,8 @@ use, so a route's figures are not a reason to reshape those. They keep
 the popup; a route gets the sheet the other five surfaces already use,
 with the map flown to the track above it.
 
-The sheet is also the first surface with room for the route's BULLETIN
-READING — where the line crosses the ground each of the day's avalanche
-problems names — which has been built and shown for trips since SNOW-839
-and never for a route.
-
-Shaped on _weather_detail.html, which is the closest precedent: the only
-other sheet opened by a MAP TAP rather than a roundel, and the only other
-one that injects server-rendered HTML. Hence ``scroll_body=True`` with the
+Shaped on _weather_detail.html, the only other sheet opened from the map
+rather than a roundel. Hence ``scroll_body=True`` with the
 header pinned and ``flex-1 overflow-y-auto min-h-0`` on the body — a map
 overlay that grows with its content pushes its own header off screen.
 
@@ -51,13 +48,12 @@ it would need a hook in the shared header partial and would read as a
 second title beside the panel's icon.
 
 Context expected:
-  (None. map_route_detail.js reads the endpoint template off #map's
-  data-route-bulletin-url-template, which _map_embed.html renders.)
+  (None.)
 {% endcomment %}
 {% trans "Route detail" as route_detail_aria_label %}
 {# ``sm:w-[28rem]`` — wider than the 24rem every other sheet takes, and #}
 {# the reason the width is a parameter at all: this body is a column of #}
-{# figures, a chart and the day's bulletin rows rather than a list.     #}
+{# terrain lines rather than a list.                                    #}
 {% include "includes/_overlay_sheet.html" with id="route-detail-sheet" aria_label=route_detail_aria_label scroll_body=True width="sm:w-[28rem]" %}
 <template id="route-detail-template">
     {% trans "Route" as route_detail_title %}
@@ -67,32 +63,7 @@ Context expected:
             {# map.js builds the terrain lines and puts them here. The   #}
             {# figures and the profile moved to rail one (SNOW-1018).    #}
             <div data-route-detail-figures></div>
-            {# routes:bulletin's rendered fragment, or the one line that #}
-            {# says why there isn't one.                                 #}
-            <div data-route-detail-bulletin></div>
         </div>
     </div>
 </template>
-{# SNOW-620: the module's own user-facing strings. makemessages never scans #}
-{# JavaScript, so a literal in the module ships as English to every locale; #}
-{# read back with window.pwaStrings.read(). See docs/i18n.md.               #}
-<template id="route-detail-strings-template">
-    <span data-string="loading">{% trans "Loading this day's bulletin…" %}</span>
-    <span data-string="failed">{% trans "This day's bulletin couldn't be loaded — check your connection." %}</span>
-    {# ``%(time)s`` is substituted by name in JS (window.pwaStrings), the #}
-    {# same shape includes/_favourites_offline_strings.html uses.        #}
-    <span data-string="cached-as-of">
-        {% blocktrans trimmed %}
-            Showing a saved reading — as of %(time)s.
-        {% endblocktrans %}
-    </span>
-    {# Past the response's own X-Data-Unsafe-After horizon. A bulletin   #}
-    {# reading two days old must not be repainted as a current one, so   #}
-    {# the rows are dropped and this sentence stands in their place —    #}
-    {# the rule favourites_offline.js applies to a cached danger rating. #}
-    <span
-        data-string="expired"
-    >{% trans "This saved reading has expired — reconnect to read this day's bulletin." %}</span>
-</template>
-<script defer src="{% static 'js/routes_bulletin_offline.js' %}"></script>
 <script defer src="{% static 'js/map_route_detail.js' %}"></script>

@@ -4,7 +4,7 @@ tests/public/test_route_rail.py — rail one as the map page ships it (SNOW-1018
 What the page carries before any route is open: the rail itself, hidden and
 inside ``#map``, its eyebrow, its strings template, its actions as ONE
 ``[data-overflow-menu]`` rather than loose icons (design-system rule 5) —
-Terrain and bulletin first, then the routes row's four in its order — its
+Terrain first, then the routes row's four in its order — its
 own × close, a pending share's claim slot, rail two's row (SNOW-1019) hidden
 with its strings, and the scripts that fill both, in order. What the rails
 do once open is tests/js/test_route_rail.js's and test_route_rail_two.js's.
@@ -480,14 +480,14 @@ class TestTheActionsAreAMenu:
     def test_the_order_leads_with_details_then_the_routes_rows(
         self, client: Client
     ) -> None:
-        """Terrain and bulletin → Plan a trip → Share → Rename → Delete."""
+        """Terrain → Plan a trip → Share → Rename → Delete."""
         menu = _MENU_RE.search(_rail(_home(client)))
         assert menu is not None
 
         positions = [
             menu.group(0).index(label)
             for label in (
-                "Terrain and bulletin",
+                "Terrain",
                 "Plan a trip",
                 "Share",
                 "Rename",

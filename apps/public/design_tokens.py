@@ -37,7 +37,6 @@ from django.conf import settings
 
 from apps.public._component_fixtures import (
     BULLETIN_HEADLINE_VARIANTS,
-    BULLETIN_READINGS_VARIANTS,
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
     CARD_VARIANTS,
@@ -1554,7 +1553,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "Rail one (SNOW-1018): the strip docked over the map's foot "
             "while a route is open. Three columns — the identity block "
             "(eyebrow, name, figures, a × and the actions as a '…' menu — "
-            "Terrain and bulletin, which opens the route detail sheet, then "
+            "Terrain, which opens the route detail sheet, then "
             "the routes row's four in its order), the lane (the elevation "
             "profile as one "
             "filled shape per leg under one outline, with distance ticks), "
@@ -1579,26 +1578,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="favourites/partials/_favourite_problem.html",
         variants=FAVOURITE_PROBLEM_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
-        slug="bulletin-readings",
-        label="Bulletin readings along a line",
-        description=(
-            "Where a stored track crosses the ground each of the day's "
-            "avalanche problems names (SNOW-839), one block per region and "
-            "longest stretch first. TWO SURFACES since SNOW-973: the trip "
-            "page renders it for the trip's own date, the map's route "
-            "detail panel for the day the scrubber is showing. It states "
-            "facts about the TRACK and carries no score — read the "
-            "partial's own header before adding one. Two variants: the "
-            "ordinary two-region reading, and the pair of empty states, "
-            "which are different claims (a region published nothing vs. a "
-            "line that enters no problem the bulletin names)."
-        ),
-        kind="components",
-        partial="includes/_bulletin_readings.html",
-        variants=BULLETIN_READINGS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -143,7 +143,7 @@ map's; `/api/version` and `/api/sw-config` in [`docs/offline-map.md`](offline-ma
 `/oauth/authorize/`, `token/`, `register/`, `revoke/` ([`docs/oauth.md`](oauth.md)),
 `/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
 `/favourites/favourites.geojson`, `/routes/routes.geojson`,
-`/routes/<uuid>/bulletin/` and `/routes/<uuid>/share/`,
+`/routes/<uuid>/share/`,
 `/trips/<uuid>/route.geojson` and `/trips/s/<token>/route.geojson`,
 `/downloads/areas.json`, `/<country>/feed.rss` (per-country RSS, SNOW-396),
 `/messages/` (the site-banner dismissal endpoint, [`docs/site-banners.md`](site-banners.md)),

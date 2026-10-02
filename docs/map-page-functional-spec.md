@@ -371,15 +371,12 @@ phone). Framing first and opening over the result is what put the eastern
 end of a long route behind the panel describing it. The reservation is
 measured rather than declared, and capped at 40% of the map in any one
 direction, so a tall panel on a short screen degrades to a usable fit. It
-carries the route's name, distance
-and ascent, the terrain lines, the elevation profile, and what each
-region's bulletin says about the line **on the day the scrubber is
-showing**, which the popup never had room for. That reading **follows the
-day**: the scrubber sits inside the map, which never dismisses an open
-sheet, so moving it re-fetches the panel's bulletin half for the new day
-rather than leaving yesterday's reading on screen. The figures are
-untouched — a route's distance, ascent and terrain do not move with the
-calendar. The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
+carries the route's name, distance and ascent, the terrain lines and the
+elevation profile. **Nothing in it depends on the day.** It also showed
+what each region's bulletin said about the line on the scrubbed day
+(SNOW-973) until SNOW-1062 removed that: the day's danger is a map layer
+(SNOW-979), drawn on the ground around the route rather than judged along
+it. The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
 *below* the point markers: where a favourite star or a report flag sits on
 top of a line, the pin wins, because a pin is a smaller and more
 deliberate target.

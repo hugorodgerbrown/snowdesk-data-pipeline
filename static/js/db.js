@@ -30,11 +30,6 @@
  *   data:panel_rows  the rendered rows of a map UGC panel, kept so the
  *                     panel can repaint itself offline (SNOW-661;
  *                     keyPath: 'key', one row per panel)
- *   data:route_bulletins
- *                    one saved route's reading of one day's bulletin,
- *                     with the freshness envelope it was served under
- *                     (SNOW-973; keyPath: 'key', one row per
- *                     (route, day))
  *   data:*           reserved namespace for further cached server-data
  *                     copies; added on demand by consumers.
  *
@@ -87,13 +82,17 @@
   // per (route, day), and the day in the key is what stops a cached reading
   // being repainted under a date it does not belong to. Its rows carry the
   // response's freshness envelope, which no other data:* row does — a
-  // bulletin reading expires where a cached track does not. See
-  // routes_bulletin_offline.js.
-  const DB_VERSION = 7;
+  // bulletin reading expires where a cached track does not.
+  // v8 (SNOW-1062): REMOVED 'data:route_bulletins'. The route detail panel
+  // no longer reads the day's bulletin — the day's danger is a map layer
+  // (SNOW-979) — so nothing writes or reads the store, and a device that
+  // holds rows drops them on upgrade. See RETIRED_STORES.
+  const DB_VERSION = 8;
 
   // Static store definitions (name → createObjectStore options). Any
-  // store present here is created at version 1 and never removed.
-  // Additions bump DB_VERSION and land a new branch in _runMigrations.
+  // store present here is created by _runMigrations when it is missing.
+  // Additions bump DB_VERSION; removals bump it and move the name to
+  // RETIRED_STORES below.
   const STORES = Object.freeze({
     'queue:mutations': { keyPath: 'id', autoIncrement: true },
     'queue:events': { keyPath: 'id', autoIncrement: true },
@@ -119,14 +118,16 @@
     // thing it lists because a row here is a response body, not a record:
     // see observations_offline.js for why the markup is what is kept.
     'data:panel_rows': { keyPath: 'key' },
-    // SNOW-973 (v7) — one route's reading of one day's bulletin, keyed
-    // '<uuid>:<YYYY-MM-DD>'. Like the row above it is a response BODY
-    // rather than a record, and unlike every other data:* row it carries
-    // the freshness envelope it was served under: see
-    // routes_bulletin_offline.js for why a reading expires and a track
-    // does not.
-    'data:route_bulletins': { keyPath: 'key' },
   });
+
+  // Stores a past version created and this one deletes on upgrade. A name
+  // stays here for good: a device can skip versions, and whichever version
+  // it upgrades from, the store must not survive.
+  //
+  // SNOW-1062 (v8) — 'data:route_bulletins', SNOW-973's per-(route, day)
+  // copy of a route's bulletin reading. The reading is gone, and a stale
+  // copy of a forecast is the one kind of row that must not linger.
+  const RETIRED_STORES = Object.freeze(['data:route_bulletins']);
 
   // Session state — single-page-load lifetime.
   let _dbPromise = null;
@@ -183,8 +184,9 @@
 
   /**
    * Apply the schema for the requested version. Idempotent — re-running
-   * against a DB already at the target version is a no-op because
-   * createObjectStore is guarded by objectStoreNames.contains().
+   * against a DB already at the target version is a no-op because both
+   * createObjectStore and deleteObjectStore are guarded by
+   * objectStoreNames.contains().
    *
    * @param {IDBDatabase} db
    */
@@ -192,6 +194,11 @@
     for (const [name, opts] of Object.entries(STORES)) {
       if (!db.objectStoreNames.contains(name)) {
         db.createObjectStore(name, opts);
+      }
+    }
+    for (const name of RETIRED_STORES) {
+      if (db.objectStoreNames.contains(name)) {
+        db.deleteObjectStore(name);
       }
     }
   }

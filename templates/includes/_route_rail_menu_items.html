@@ -6,7 +6,7 @@ rail one, as menu items (SNOW-1018).
 includes/_overflow_menu.html's `items_template` slot, reached from
 includes/_route_rail.html.
 
-THE ROUTES ROW'S ORDER, AFTER ONE ITEM OF ITS OWN. Terrain and bulletin
+THE ROUTES ROW'S ORDER, AFTER ONE ITEM OF ITS OWN. Terrain
 → rule → Plan a trip → Share → rule → Rename → Delete. The last four are
 exactly routes/partials/_route_row_menu_items.html's: design-system rule
 4 puts an action where the user already learned it is, and the rail
@@ -47,7 +47,7 @@ holds one, named in the heading beside the trigger.
         class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
     >
         {% include "includes/_icon_route.html" with size=17 only %}
-        {% trans "Terrain and bulletin" %}
+        {% trans "Terrain" %}
     </button>
 </li>
 <li aria-hidden="true" data-route-rail-owner class="my-1 border-t border-border"></li>

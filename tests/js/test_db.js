@@ -36,6 +36,9 @@ const V5_STORES = [...V4_STORES, 'log:debug'];
 const V6_STORES = [...V5_STORES, 'data:panel_rows'];
 // SNOW-973 (schema v7) — added alongside the nine version-6 stores above.
 const V7_STORES = [...V6_STORES, 'data:route_bulletins'];
+// SNOW-1062 (schema v8) — removed data:route_bulletins, leaving the nine
+// version-6 stores.
+const V8_STORES = [...V6_STORES];
 
 /**
  * Delete the PWA database and wait for the deletion to actually complete.
@@ -66,10 +69,10 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('fresh open', () => {
-  it('creates all ten stores at version 7', async () => {
+  it('creates all nine stores at version 8', async () => {
     const db = await window.pwaDb.open();
-    expect(db.version).toBe(7);
-    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V7_STORES].sort());
+    expect(db.version).toBe(8);
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V8_STORES].sort());
   });
 });
 
@@ -216,8 +219,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -226,8 +229,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -236,8 +239,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -251,8 +254,8 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
@@ -265,23 +268,34 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v6 DB (nine stores) gains data:route_bulletins', async () => {
-    // SNOW-973: the store the map's route detail panel repaints its
-    // bulletin reading from offline. Created generically by
-    // _runMigrations — the point of the case is that a device already on
-    // v6 reaches v7 without losing the rows it seeded there, not that a
-    // new branch was written.
+  it('a pre-existing v6 DB (nine stores) reaches v8 unchanged', async () => {
+    // v7 added data:route_bulletins and v8 removed it, so a device that
+    // skipped v7 ends with the store set it already had.
     const seeded = await seedLegacyDb(6, V6_STORES);
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(7);
-    expect(result.names).toEqual([...V7_STORES].sort());
+    expect(result.version).toBe(8);
+    expect(result.names).toEqual([...V8_STORES].sort());
+    expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
+  });
+
+  it('a pre-existing v7 DB loses data:route_bulletins and keeps the rest', async () => {
+    // SNOW-1062: the route detail panel no longer reads the day's
+    // bulletin, and a stale copy of a forecast must not linger on the
+    // device. The other stores' rows survive the upgrade.
+    const seeded = await seedLegacyDb(7, V7_STORES);
+    expect(seeded).toBe(1);
+
+    const result = await openViaDbJsAndRead();
+    expect(result.version).toBe(8);
+    expect(result.names).not.toContain('data:route_bulletins');
+    expect(result.names).toEqual([...V8_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 });

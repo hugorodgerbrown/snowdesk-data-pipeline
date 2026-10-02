@@ -50,7 +50,7 @@ export function installRouteRailStub() {
     state,
     element,
     last: () => state.calls.at(-1) || null,
-    // What a press on the rail's "Terrain and bulletin" item does.
+    // What a press on the rail's "Terrain" item does.
     openDetails: () => state.calls.at(-1).options.details(),
     reset: () => {
       state.open = false;
