@@ -627,42 +627,23 @@ function tapLeg(layerId = 'routes-leg-descent') {
 }
 
 describe('tapping a legged route', () => {
-  it('frames it without a zoom cap, so its marks can render', () => {
-    // SNOW-972. A region is tens of kilometres across; a route is often
-    // one or two, so a borrowed cap stopped a route reaching a legible size.
-    tapLeg();
-
-    expect(fitBoundsOptions.at(-1)).not.toHaveProperty('maxZoom');
-  });
-
-  it('frames it far enough in for every mark drawn on it, markers included', () => {
-    // THE INVARIANT, read off the layers as installed rather than naming
-    // any of them: a mark added later, or moved a step further in, is
-    // covered here without this test being touched.
-    tapLeg();
-    const options = fitBoundsOptions.at(-1);
-
-    const marks = [...layers.values()].filter(
-      (layer) => (layer.type === 'symbol' || layer.type === 'circle')
-        && layer.source !== 'routes'
-        && String(layer.id).startsWith('routes-')
-        && typeof layer.minzoom === 'number',
-    );
-    // A guard on the guard: with no marks found this would pass vacuously.
-    expect(marks.map((layer) => layer.id)).toContain('routes-transitions');
-
-    const deepest = Math.max(...marks.map((layer) => layer.minzoom));
-    expect(options.maxZoom === undefined || options.maxZoom >= deepest).toBe(true);
-  });
-
   it('opens the route the leg belongs to, from either layer', () => {
-    // The bbox is on the ROUTE feature and not on the leg, so framing it
-    // is proof the uuid resolved back to the whole route.
+    // The leg carries the uuid and nothing else, so the whole route in the
+    // rail is proof the uuid resolved back to it.
     tapLeg('routes-leg-descent');
-    expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
+    expect(rail.last().feature.properties.uuid).toBe('sampled-route');
 
     tapLeg('routes-leg-climb');
-    expect(fitBoundsCalls).toEqual([[[7.0, 46.0], [7.0, 46.015]]]);
+    expect(rail.last().feature.properties.uuid).toBe('sampled-route');
+  });
+
+  it('leaves the camera where it is: the reader can already see the line', () => {
+    // The framing invariants (no zoom cap, deep enough for every mark)
+    // moved with the fit to the share-link arrival,
+    // tests/js/test_map_route_share.js.
+    tapLeg();
+
+    expect(fitBoundsCalls).toEqual([]);
   });
 
   it('does not query the transition layers, which add no route', () => {

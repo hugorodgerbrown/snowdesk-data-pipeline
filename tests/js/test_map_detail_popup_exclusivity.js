@@ -38,7 +38,7 @@
  * its own in tests/js/test_favourites.js).
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
@@ -352,54 +352,15 @@ describe('a saved route opens rail one, and not the sheet (SNOW-1018)', () => {
     expect(rail.last().options.claim).toBeNull();
   });
 
-  it('fits the viewport to the route bounds', () => {
+  it('leaves the camera where it is, because the line was already in view', () => {
+    // A tap is on a line the reader can see, at a scale they chose; a fit
+    // would throw that scale away. Only a share-link arrival frames the
+    // route (tests/js/test_map_route_share.js), and a routes-panel row
+    // frames it through window.pwaMapFocus (tests/js/test_map_focus_bridge.js).
     tapTheRoute(mapStub);
 
-    expect(fits).toHaveLength(1);
-    // MapLibre's fitBounds takes [[west, south], [east, north]] — the stored
-    // bbox is the flat [minLon, minLat, maxLon, maxLat] GeoJSON shape, so a
-    // wrong unpacking here would frame the wrong rectangle.
-    expect(fits[0].bounds).toEqual([[7.5, 46.1], [7.54, 46.14]]);
-  });
-
-  it('survives bounds arriving as a JSON string', () => {
-    // MapLibre serialises non-scalar feature properties, so a bbox read back
-    // from queryRenderedFeatures can be a string rather than an array
-    // depending on how the source was loaded. Both have to work.
-    hitFeatures = [{
-      ...ROUTE_FEATURE,
-      properties: { ...ROUTE_FEATURE.properties, bounds: '[7.5,46.1,7.54,46.14]' },
-    }];
-    tapTheMap(mapStub);
-
-    expect(fits[0].bounds).toEqual([[7.5, 46.1], [7.54, 46.14]]);
     expect(rail.last()).not.toBeNull();
-  });
-
-  it('still opens the rail when bounds are unusable', () => {
-    // A route whose bbox cannot be read is a route the user can still be
-    // told about — skip the fit, keep the detail. Throwing here would take
-    // the tap out entirely.
-    hitFeatures = [{
-      ...ROUTE_FEATURE,
-      properties: { ...ROUTE_FEATURE.properties, bounds: 'not-json' },
-    }];
-
-    expect(() => tapTheMap(mapStub)).not.toThrow();
     expect(fits).toHaveLength(0);
-    expect(rail.last()).not.toBeNull();
-  });
-
-  it('frames with the plain padding when nothing can be measured', () => {
-    // jsdom lays nothing out, so every rect is zero — the same answer a
-    // `display: none` rail or a pre-layout measurement gives. A fit that
-    // reserved space against a zero-height box would push the route off
-    // centre for a strip that occupies nothing.
-    tapTheRoute(mapStub);
-
-    expect(fits[0].opts.padding).toEqual({
-      top: 60, right: 40, bottom: 40, left: 40,
-    });
   });
 });
 
@@ -442,89 +403,6 @@ describe('the sheet, opened from the rail\'s menu', () => {
 
   it('registers under its own DOM id', () => {
     expect(window.pwaMapOverlays.names()).toContain('route-detail-sheet');
-  });
-});
-
-describe('framing a route around the rail (SNOW-1018)', () => {
-  /** A DOMRect-shaped literal; jsdom returns all zeros without one. */
-  function rect({ top, left, width, height }) {
-    return {
-      top, left, width, height, right: left + width, bottom: top + height,
-    };
-  }
-
-  /**
-   * Give #map and the rail real boxes, the way a browser would.
-   *
-   * @param {object} mapBox The map container's rect.
-   * @param {object} railBox The rail's rect, once it is open.
-   */
-  function layOut(mapBox, railBox) {
-    document.getElementById('map').getBoundingClientRect = () => mapBox;
-    rail.element.getBoundingClientRect = () => railBox;
-  }
-
-  afterEach(() => {
-    delete document.getElementById('map').getBoundingClientRect;
-    delete rail.element.getBoundingClientRect;
-  });
-
-  it('opens the rail BEFORE the fit, and no sheet', () => {
-    layOut(
-      rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 12, width: 400, height: 192 }),
-    );
-
-    tapTheRoute(mapStub);
-
-    expect(fits[0].railOpen).toBe(true);
-    expect(fits[0].sheetOpen).toBe(false);
-  });
-
-  it('reserves the room the panel takes at the top (SNOW-1068)', () => {
-    layOut(
-      rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 12, width: 400, height: 192 }),
-    );
-
-    tapTheRoute(mapStub);
-
-    // The panel's bottom edge, 252px below the map's top: the top padding
-    // grows from 60 to that, and the foot keeps the 40 every fit has.
-    expect(fits[0].opts.padding).toEqual({
-      top: 252, right: 40, bottom: 40, left: 40,
-    });
-  });
-
-  it('clamps a panel that would swallow the map', () => {
-    // MapLibre throws outright when the padding exceeds the canvas; a panel
-    // wrapped tall on a short phone must degrade to a usable fit.
-    layOut(
-      rect({ top: 0, left: 0, width: 390, height: 500 }),
-      rect({ top: 12, left: 12, width: 366, height: 340 }),
-    );
-
-    tapTheRoute(mapStub);
-
-    const padding = fits[0].opts.padding;
-    // 40% of the 500px canvas, and no more.
-    expect(padding.top).toBe(200);
-    expect(padding.top + padding.bottom).toBeLessThan(500);
-  });
-
-  it('reserves space without reintroducing a zoom cap', () => {
-    // SNOW-972's invariant, restated where it could most easily be lost:
-    // padding frames into less map, which zooms OUT, and is not a floor.
-    // tests/js/test_map_route_slope_layers.js holds the full version
-    // against each route mark's own minzoom.
-    layOut(
-      rect({ top: 0, left: 0, width: 1600, height: 900 }),
-      rect({ top: 60, left: 12, width: 400, height: 192 }),
-    );
-
-    tapTheRoute(mapStub);
-
-    expect(fits[0].opts).not.toHaveProperty('maxZoom');
   });
 });
 
