@@ -2,16 +2,16 @@
  * tests/js/test_route_rail.js — the route rail's DOM half
  * (static/js/route_rail.js, SNOW-1018; one rail since SNOW-1065).
  *
- * The assertions SNOW-1065 names: the subtitle is the routes list's meta
- * line, with the time only when the recording has one; pressing a leg
- * opens it on the route cursor, swaps the title to "… • Leg N" and the
- * subtitle to the leg's own figures, and pressing it again restores both;
- * a leg or a point, never both, so a hover leaves an open leg alone and a
- * drag along the lane places a point. `aria-pressed` follows the CURSOR
- * rather than the click, so a leg closed from elsewhere un-presses here
- * too. Around it: one path per leg with its direction, an unsampled route
- * still cut into legs, a pending share without its menu, the rail closing
- * with the detail sheet, and Delete confirming before it posts.
+ * The subtitle is the routes list's meta line, with the time only when
+ * the recording has one (SNOW-1065). Points only (2026-10-02): a tap on
+ * the profile's top line — loosely — places the point, a tap down in the
+ * fill does not, and nothing drags, hovers or presses a leg. A placed
+ * point draws the cursor line with a dot on the outline and its
+ * elevation and distance beside it, moving to the line's left when they
+ * would not fit. The × always closes the route. Around it: one path per
+ * leg with its direction, an unsampled route still cut into legs, a
+ * pending share without its menu, the rail closing with the detail sheet,
+ * and Delete confirming before it posts.
  *
  * The markup below is the hooks of templates/includes/_route_rail.html;
  * tests/public/test_route_rail.py holds the partial itself to them.
@@ -38,7 +38,6 @@ document.body.innerHTML = `
         <h2 id="route-rail-eyebrow">Route</h2>
         <p data-route-rail-title>
           <span data-row-label data-route-rail-name></span>
-          <span data-route-rail-leg></span>
         </p>
         <input data-row-rename-input hidden>
         <div data-route-rail-actions>
@@ -54,12 +53,18 @@ document.body.innerHTML = `
             </ul>
           </div>
         </div>
-        <button type="button" data-route-rail-close aria-label="Close the route profile"
-                data-label-route="Close the route profile" data-label-point="Clear the point"></button>
+        <button type="button" data-route-rail-close aria-label="Close the route profile"></button>
         <p data-route-rail-meta></p>
         <div data-route-rail-claim hidden></div>
       </div>
-      <svg data-route-rail-lane></svg>
+      <div>
+        <svg data-route-rail-lane></svg>
+        <div data-route-rail-readout hidden>
+          <span data-route-rail-dot></span>
+          <span data-route-rail-elevation></span>
+          <span data-route-rail-distance></span>
+        </div>
+      </div>
       <div data-route-rail-ticks></div>
       <form data-route-rail-csrf hidden>
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
@@ -90,7 +95,37 @@ const rail = document.getElementById('route-rail');
 const mapEl = document.getElementById('map');
 const sheet = document.getElementById('route-detail-sheet');
 const meta = rail.querySelector('[data-route-rail-meta]');
-const legSuffix = rail.querySelector('[data-route-rail-leg]');
+const lane = rail.querySelector('[data-route-rail-lane]');
+const readout = rail.querySelector('[data-route-rail-readout]');
+const dot = rail.querySelector('[data-route-rail-dot]');
+const elevationLabel = rail.querySelector('[data-route-rail-elevation]');
+const distanceLabel = rail.querySelector('[data-route-rail-distance]');
+
+/**
+ * Lay the lane out at 1000 × 80 px from the viewport's corner. The test
+ * route's outline is then 75 px down at both ends and 5 px down at the
+ * middle, its top.
+ */
+function layOutLane() {
+  vi.spyOn(lane, 'getBoundingClientRect')
+    .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+}
+
+/**
+ * Fire a mouse or pointer event on an element of the lane.
+ *
+ * @param {string} type The event type.
+ * @param {number} clientX The pointer's x.
+ * @param {number} clientY The pointer's y.
+ * @param {Element} [target] What was pressed. Defaults to the lane.
+ * @param {string} [pointerType] For a pointer event, 'mouse' or 'touch'.
+ */
+function onLane(type, clientX, clientY, target = lane, pointerType = 'mouse') {
+  const event = new MouseEvent(type, { bubbles: true, clientX, clientY, buttons: 1 });
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  Object.defineProperty(event, 'pointerId', { value: 7 });
+  target.dispatchEvent(event);
+}
 
 /**
  * A 24-segment route: a climb over segments 0-11 and a descent over 12-23.
@@ -175,10 +210,12 @@ describe('open', () => {
       'true',
       'false',
     ]);
-    expect(legPaths().map((p) => p.getAttribute('aria-label'))).toEqual([
-      'Leg 1 — climb',
-      'Leg 2 — descent',
-    ]);
+    // A drawing only: nothing to press or focus (2026-10-02).
+    for (const path of legPaths()) {
+      expect(path.hasAttribute('role')).toBe(false);
+      expect(path.hasAttribute('tabindex')).toBe(false);
+      expect(path.hasAttribute('aria-pressed')).toBe(false);
+    }
   });
 
   it('writes the name and the routes list’s meta line', () => {
@@ -314,122 +351,78 @@ describe('open', () => {
   });
 });
 
-describe('pressing a leg', () => {
-  it('opens it on the cursor and swaps the header to the leg', () => {
-    window.pwaRouteRail.open(feature({ duration_s: 3600 }));
-    const [first] = legPaths();
+describe('tapping the profile (2026-10-02)', () => {
+  const index = () => window.pwaRouteRail.cursor().state().index;
 
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(window.pwaRouteRail.cursor().state().openLeg).toMatchObject({
-      i: 1,
-      from: 0,
-      to: 11,
-    });
-    expect(first.getAttribute('aria-pressed')).toBe('true');
-    expect(legSuffix.textContent).toBe('• Leg 1');
-    // Half the route's 620 m, the whole 200 m climb, no descent and no
-    // time: track points carry no timestamps.
-    expect(meta.textContent).toBe('0.3km · 200m ↑ · 0m ↓');
-  });
-
-  it('closes when the open leg is pressed again, restoring the header', () => {
-    window.pwaRouteRail.open(feature({ duration_s: 3600 }));
-    const [first] = legPaths();
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(first.getAttribute('aria-pressed')).toBe('false');
-    expect(legSuffix.textContent).toBe('');
-    expect(meta.textContent).toBe('0.6km · 200m ↑ · 200m ↓ · 1h00m');
-  });
-
-  it('clears a placed point when it opens', () => {
+  it('places the point under a tap on the top line', () => {
     window.pwaRouteRail.open(feature());
-    window.pwaRouteRail.cursor().setIndex(5);
+    layOutLane();
 
-    legPaths()[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    // 500 of 1000 is sample 12 of 24; the top of the track is 5 px down.
+    onLane('click', 500, 5);
 
-    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
-    expect(rail.querySelector('[data-route-rail-cursor]')).toBeNull();
+    expect(index()).toBe(12);
   });
 
-  it('closes when a point is placed', () => {
+  it('takes a tap loosely either side of the line, and on a leg fill', () => {
     window.pwaRouteRail.open(feature());
-    legPaths()[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    layOutLane();
 
-    window.pwaRouteRail.cursor().setIndex(5);
+    onLane('click', 500, 22);
+    expect(index()).toBe(12);
 
-    expect(legPaths()[1].getAttribute('aria-pressed')).toBe('false');
-    expect(legSuffix.textContent).toBe('');
+    // The left end's outline is 75 px down; the fill under it is a leg's.
+    onLane('click', 20, 62, legPaths()[0]);
+    expect(index()).toBe(0);
   });
 
-  it('moves the open leg when another is pressed', () => {
+  it('places nothing for a tap down in the fill, away from the line', () => {
     window.pwaRouteRail.open(feature());
-    const [first, second] = legPaths();
+    layOutLane();
 
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    second.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    onLane('click', 500, 70, legPaths()[1]);
 
-    expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(2);
-    expect(first.getAttribute('aria-pressed')).toBe('false');
-    expect(second.getAttribute('aria-pressed')).toBe('true');
-    expect(legSuffix.textContent).toBe('• Leg 2');
+    expect(index()).toBeNull();
   });
 
-  it('answers Enter from the keyboard', () => {
+  it('moves a placed point to the next tap on the line', () => {
     window.pwaRouteRail.open(feature());
-    const [, second] = legPaths();
+    layOutLane();
+    onLane('click', 500, 5);
 
-    second.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    onLane('click', 20, 75);
 
-    expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(2);
+    expect(index()).toBe(0);
   });
 
-  it('un-presses when the leg is closed from another surface', () => {
+  it('places nothing on a drag or a hover', () => {
     window.pwaRouteRail.open(feature());
-    const [first] = legPaths();
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    layOutLane();
 
-    window.pwaRouteRail.cursor().closeLeg();
+    onLane('pointerdown', 100, 70, lane, 'touch');
+    onLane('pointermove', 600, 60, lane, 'touch');
+    onLane('pointerup', 600, 60, lane, 'touch');
+    onLane('pointermove', 500, 5);
+    onLane('mousemove', 500, 5);
 
-    expect(first.getAttribute('aria-pressed')).toBe('false');
+    expect(index()).toBeNull();
   });
-});
 
-describe('Escape', () => {
-  it('closes the open leg before the rail', () => {
+  it('shows a mouse the pointer only over the line', () => {
     window.pwaRouteRail.open(feature());
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    layOutLane();
 
-    pressEscape();
-    expect(window.pwaRouteRail.cursor().state().openLeg).toBeNull();
-    expect(rail.hidden).toBe(false);
+    onLane('mousemove', 500, 5);
+    expect(lane.style.cursor).toBe('pointer');
 
-    pressEscape();
-    expect(rail.hidden).toBe(true);
+    onLane('mousemove', 500, 70);
+    expect(lane.style.cursor).toBe('');
   });
 });
 
 describe('the cursor line (SNOW-1019)', () => {
   /** @returns {?Element} The cursor line, if drawn. */
   const cursorLine = () => rail.querySelector('[data-route-rail-cursor]');
-
-  /**
-   * Fire a pointer event on the rail's lane.
-   *
-   * @param {string} type The event type.
-   * @param {string} pointerType 'mouse' or 'touch'.
-   * @param {number} clientX The pointer's x.
-   */
-  const pointerOnLane = (type, pointerType, clientX, buttons = 1) => {
-    const event = new MouseEvent(type, { bubbles: true, clientX, buttons });
-    Object.defineProperty(event, 'pointerType', { value: pointerType });
-    Object.defineProperty(event, 'pointerId', { value: 7 });
-    rail.querySelector('[data-route-rail-lane]').dispatchEvent(event);
-  };
-  const moveOverLane = (pointerType, clientX) => pointerOnLane('pointermove', pointerType, clientX, 0);
 
   it('draws the cursor index by share, and hides on null', () => {
     window.pwaRouteRail.open(feature());
@@ -443,72 +436,6 @@ describe('the cursor line (SNOW-1019)', () => {
 
     window.pwaRouteRail.cursor().setIndex(null);
     expect(cursorLine()).toBeNull();
-  });
-
-  it('moves the cursor on a mouse hover, and not on a touch', () => {
-    window.pwaRouteRail.open(feature());
-    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
-      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
-
-    moveOverLane('touch', 500);
-    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
-
-    // 500 of 1000 is sample 12 of 24.
-    moveOverLane('mouse', 500);
-    expect(window.pwaRouteRail.cursor().state().index).toBe(12);
-  });
-
-  it('leaves an open leg alone on a hover (SNOW-1065)', () => {
-    window.pwaRouteRail.open(feature());
-    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
-      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100 }));
-
-    moveOverLane('mouse', 900);
-
-    expect(window.pwaRouteRail.cursor().state()).toMatchObject({ index: null, openLeg: { i: 1 } });
-  });
-
-  it('places the point on a drag along the lane, and swallows its click', () => {
-    window.pwaRouteRail.open(feature());
-    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
-      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    const [first] = legPaths();
-
-    pointerOnLane('pointerdown', 'touch', 100);
-    pointerOnLane('pointermove', 'touch', 104); // under the drag threshold
-    expect(window.pwaRouteRail.cursor().state().index).toBeNull();
-    pointerOnLane('pointermove', 'touch', 600); // 600 of 1000: sample 14
-    pointerOnLane('pointerup', 'touch', 600);
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(window.pwaRouteRail.cursor().state()).toEqual({ index: 14, openLeg: null });
-  });
-
-  it('forgets a press released off the lane before it became a drag', () => {
-    // The pointerup landed outside the lane, so only a buttonless move
-    // tells it the press is over; a mouse coming back must not drag.
-    window.pwaRouteRail.open(feature());
-    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
-      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    pointerOnLane('pointerdown', 'mouse', 100);
-    pointerOnLane('pointermove', 'mouse', 600, 0);
-
-    expect(window.pwaRouteRail.cursor().state()).toMatchObject({ index: null, openLeg: { i: 1 } });
-  });
-
-  it('leaves a press that does not move to the leg it lands on', () => {
-    window.pwaRouteRail.open(feature());
-    const [first] = legPaths();
-
-    pointerOnLane('pointerdown', 'touch', 100);
-    pointerOnLane('pointerup', 'touch', 102);
-    first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(window.pwaRouteRail.cursor().state().openLeg.i).toBe(1);
   });
 
   it('reports the panel’s bottom edge below its cursor, for the leader line', () => {
@@ -544,7 +471,71 @@ describe('the cursor line (SNOW-1019)', () => {
 
     window.pwaRouteRail.close();
 
-    expect(cursor.state()).toEqual({ index: null, openLeg: null });
+    expect(cursor.state()).toEqual({ index: null });
+  });
+});
+
+describe('the point\'s readout (2026-10-02)', () => {
+  it('puts a dot on the outline, the elevation above and the distance below', () => {
+    window.pwaRouteRail.open(feature());
+    expect(readout.hidden).toBe(true);
+
+    window.pwaRouteRail.cursor().setIndex(11);
+
+    expect(readout.hidden).toBe(false);
+    // Sample 11 of 24 sits at 11.5 / 24 of the track: just short of the
+    // top, at 1500 + 38.3 × 5 m.
+    expect(elevationLabel.textContent).toBe('1692 m');
+    expect(distanceLabel.textContent).toBe('300 m');
+    expect(dot.hidden).toBe(false);
+    expect(parseFloat(dot.style.left)).toBeCloseTo((11.5 / 24) * 100, 2);
+    expect(parseFloat(dot.style.top)).toBeLessThan(10);
+  });
+
+  it('sits right of the line while the figures fit', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+    vi.spyOn(elevationLabel, 'getBoundingClientRect').mockReturnValue({ width: 60 });
+
+    window.pwaRouteRail.cursor().setIndex(11);
+
+    expect(readout.getAttribute('data-side')).toBe('right');
+    expect(elevationLabel.style.left).toBe('calc(47.917% + 9px)');
+    expect(elevationLabel.style.right).toBe('');
+    expect(distanceLabel.style.left).toBe('calc(47.917% + 9px)');
+  });
+
+  it('moves left of the line near the end, where they would not fit', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+    vi.spyOn(elevationLabel, 'getBoundingClientRect').mockReturnValue({ width: 60 });
+
+    window.pwaRouteRail.cursor().setIndex(23);
+
+    expect(readout.getAttribute('data-side')).toBe('left');
+    expect(elevationLabel.style.right).toBe('calc(2.083% + 9px)');
+    expect(elevationLabel.style.left).toBe('');
+  });
+
+  it('keeps the distance but drops the dot and height with no elevation', () => {
+    const flat = feature();
+    flat.geometry.coordinates = flat.geometry.coordinates.map(([lon, lat]) => [lon, lat]);
+    window.pwaRouteRail.open(flat);
+
+    window.pwaRouteRail.cursor().setIndex(11);
+
+    expect(distanceLabel.textContent).toBe('300 m');
+    expect(elevationLabel.hidden).toBe(true);
+    expect(dot.hidden).toBe(true);
+  });
+
+  it('hides when the point clears', () => {
+    window.pwaRouteRail.open(feature());
+    window.pwaRouteRail.cursor().setIndex(11);
+
+    window.pwaRouteRail.cursor().setIndex(null);
+
+    expect(readout.hidden).toBe(true);
   });
 });
 
@@ -584,38 +575,25 @@ describe('the point header (SNOW-1068)', () => {
     expect(closeButton().getAttribute('aria-label')).toBe('Close the route profile');
   });
 
-  it('gives the title and meta line way to a point, naming it in the eyebrow', () => {
+  it('gives the title and meta line way to a point, naming the route in the eyebrow', () => {
     window.pwaRouteRail.open(feature());
     window.pwaRouteRail.cursor().setIndex(5);
     expect(rail.hasAttribute('data-route-rail-point')).toBe(true);
     expect(title().hidden).toBe(true);
     expect(meta().hidden).toBe(true);
-    // 5.5 of 24 segments along 620 m, to the nearest 10 m.
-    expect(eyebrow().textContent).toBe('Mont Fort · 140 m');
-    expect(closeButton().getAttribute('aria-label')).toBe('Clear the point');
+    // The point's distance is beside the cursor line now, not here.
+    expect(eyebrow().textContent).toBe('Mont Fort');
+    expect(closeButton().getAttribute('aria-label')).toBe('Close the route profile');
   });
 
-  it('returns to the leg header when the point clears and a leg opens', () => {
-    window.pwaRouteRail.open(feature());
-    const cursor = window.pwaRouteRail.cursor();
-    cursor.setIndex(5);
-    cursor.openLeg({ i: 2, from: 12, to: 23, climbing: false });
-    expect(title().hidden).toBe(false);
-    expect(eyebrow().textContent).toBe('Route');
-    expect(rail.querySelector('[data-route-rail-leg]').textContent).toBe('• Leg 2');
-  });
-
-  it('clears the point on the ×, keeping the route, then closes on the next', () => {
+  it('closes the route on the ×, even with a point placed', () => {
     window.pwaRouteRail.open(feature());
     const cursor = window.pwaRouteRail.cursor();
     cursor.setIndex(5);
 
     closeButton().click();
+
     expect(cursor.state().index).toBeNull();
-    expect(window.pwaRouteRail.isOpen()).toBe(true);
-    expect(title().hidden).toBe(false);
-
-    closeButton().click();
     expect(window.pwaRouteRail.isOpen()).toBe(false);
   });
 
@@ -671,19 +649,19 @@ describe('lifetime', () => {
     expect(window.pwaRouteRail.cursor()).toBeNull();
   });
 
-  it('closes the open leg before it lets the cursor go', () => {
-    // SNOW-1017: the map follows the cursor to dim every leg but the open
-    // one, and never sees the rail's own ×, Escape or backdrop closes. So
-    // close() has to say `openLeg: null` to whoever is still listening.
+  it('clears the point before it lets the cursor go', () => {
+    // The map follows the cursor to draw its dot, and never sees the
+    // rail's own ×, Escape or backdrop closes. So close() has to say
+    // `index: null` to whoever is still listening.
     window.pwaRouteRail.open(feature());
     const cursor = window.pwaRouteRail.cursor();
     const heard = [];
-    cursor.subscribe((state) => heard.push(state.openLeg));
-    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cursor.subscribe((state) => heard.push(state.index));
+    cursor.setIndex(5);
 
     window.pwaRouteRail.close();
 
-    expect(heard.map((leg) => (leg ? leg.i : null))).toEqual([1, null]);
+    expect(heard).toEqual([5, null]);
   });
 
   it('closes on Escape when nothing else is open', () => {

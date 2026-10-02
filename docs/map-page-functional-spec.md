@@ -316,8 +316,8 @@ slate and a descent solid in fuchsia, the two colours the rail
 uses. From z11 a
 numbered circle marks each transition, 1 to legs − 1 along the track, so
 a number on the map is the boundary between the same two legs on the
-rail. Pressing a leg on the rail highlights it on the map and the profile
-and dims every other leg until it is closed.
+rail. Legs are a drawing only: nothing selects one (leg selection was
+removed on 2026-10-02).
 The line carries no terrain marks. SNOW-1019 took the no-fall passage
 split line and the fall-line arrows off this map and the trip map, and
 SNOW-1065 deleted rail two, where the passages and the bank ribbon were
@@ -333,9 +333,9 @@ and keeps the flat line
 
 **The route panel and the map's controls while a route is open
 (SNOW-1068, SNOW-1067).** The route panel — the profile under a header
-for the route, the open leg or a placed point — is pinned top-left: under
-the region readout's row on desktop, 400 px wide, and across the top edge
-on a phone. Opening a route, pressing a leg or placing a point changes
+for the route or a placed point — is pinned top-left: under the region
+readout's row on desktop, 400 px wide, and across the top edge on a
+phone. Opening a route or placing a point changes
 only what the panel says, so nothing on the map moves. On desktop every
 control stays. On a phone, where a route is followed on the move, only
 locate-me, layers and routes stay, in the bottom-right corner; the region
@@ -346,25 +346,32 @@ Tour feature, not this panel. The intro card withdraws at every width.
 The map itself still pans and zooms by gesture, and the panel, the leader
 line and the route detail sheet stay.
 
-**The route cursor on the map (SNOW-1019).** While a route's rail is
-open, the map and the route panel share one cursor, which
-holds a leg or a point and never both (SNOW-1065): opening a leg clears
-the point, and placing a point closes the leg. The point is a dot on the
-line, filled in the slope-class colour of the segment under it, or grey
-where the terrain had no answer. A mouse moving along the open route's
-line moves the point (within about 24 px of the line), and so does a
-mouse over the rail's lane, but only while no leg is open. A drag of more
-than 6 px along the lane places a point with any pointer; a press without
-movement presses the leg. A tap on the open route's line only places the
-point — it no longer opens the leg there — and the first tap on a route
-still opens the rail. That tap leaves the camera where it is: the reader
-tapped a line they can already see, at a scale they chose. Picking the
-route from the routes panel, or arriving on a share link, frames the
-whole track. A tap on the map that no marker
-or weather symbol takes, while a route is open, closes the panel and
-does nothing else. Escape closes the open leg, then clears a point, then
-closes the panel; the panel's × clears a placed point first, then closes. Closing the rail clears the dot. All of it is hidden
-with the routes overlay.
+**The route cursor on the map (SNOW-1019; points only since
+2026-10-02).** While a route's rail is open, the map and the route panel
+share one cursor, which holds a point or nothing. The point is a dot on
+the line, filled in the slope-class colour of the segment under it, or
+grey where the terrain had no answer. A tap places it, and nothing else
+does: a tap on a route's line places it at the nearest spot on the
+track, and a tap on the profile's top line places it at that distance.
+The profile's target is the line, loosely, about 20 px either side of
+it; a tap lower down in the fill does nothing. The first tap on a route
+opens the panel with the point already placed where it landed; a later
+tap moves it. There is no leg selection, no drag along the profile, and
+no hover: a mouse over the line or the profile leaves the point where it
+was. A tap leaves the camera where it is: the reader tapped a line they
+can already see, at a scale they chose. Picking the route from the
+routes panel, or arriving on a share link, frames the whole track.
+
+On the profile a placed point is a vertical line with a dot where it
+crosses the top line, the point's elevation at the top of the line and
+its distance from the start at the bottom, both to its right and
+left-aligned; near the end of the route, where they would not fit, they
+move to its left, right-aligned. Pressing the aspect wheel in the point
+header clears the point and keeps the route open. A tap on the map that
+no marker or weather symbol takes, while a route is open, closes the
+panel and does nothing else. Escape clears a point, then closes the
+panel; the panel's × always closes it. Closing the rail clears the dot.
+All of it is hidden with the routes overlay.
 A dashed leader line in the route colour runs from the dot on the map to
 a small up-pointing notch on the panel's bottom edge, directly below the
 profile's cursor line, so one place can be followed across the map and

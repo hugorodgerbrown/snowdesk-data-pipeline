@@ -6,19 +6,21 @@
  * The rail attaches the header when a route opens (route_rail.js's `open`)
  * and detaches it when the route closes. While attached it follows the
  * route cursor (route_cursor_core.js): with no index it is hidden and the
- * panel shows the route or the open leg, and with one it shows that
- * segment's wheel and words, while the rail hides its own title and meta
- * line in its place (route_rail.js's `paintState`). Every surface that
- * places a point already writes the cursor: a tap on the open route's
- * line and a mouse over it (map.js), and a drag or hover along the
- * profile (route_rail.js). Nothing here is placement.
+ * panel shows the route, and with one it shows that segment's wheel and
+ * words, while the rail hides its own title and meta line in its place
+ * (route_rail.js's `paintState`). Every surface that places a point
+ * already writes the cursor: a tap on the route's line (map.js) and a tap
+ * on the profile (route_rail.js). Nothing here is placement.
  *
  * The per-route arrays — each segment's path and gradient — are worked out
  * once on attach, so a cursor move is one lookup and one redraw. All the
  * arithmetic and the words are route_point_card_core.js's; all the copy is
  * the partial's strings template.
  *
- * Clearing the point is the panel's × and Escape (route_rail.js).
+ * CLEARING THE POINT is a press on the wheel (2026-10-02): the wheel sits
+ * in a button (`[data-route-point-card-clear]`) that sets the cursor's
+ * index to null, which hides this header and brings the route's back.
+ * Escape does the same (route_rail.js). The panel's × closes the route.
  *
  * Depends on i18n_strings.js, route_slope_core.js, aspect_wheel_core.js
  * and route_point_card_core.js, loaded before it.
@@ -70,6 +72,7 @@
   });
 
   var wheelEl = card.querySelector('[data-route-point-card-wheel]');
+  var clearEl = card.querySelector('[data-route-point-card-clear]');
   var headlineEl = card.querySelector('[data-route-point-card-headline]');
   var groundEl = card.querySelector('[data-route-point-card-ground]');
 
@@ -92,7 +95,7 @@
     wheelEl.innerHTML = wheel.aspectWheelSvg({ size: WHEEL_SIZE, state: state, label: label });
   }
 
-  /** Hide the header and empty it, for the panel's route or leg header. */
+  /** Hide the header and empty it, for the panel's route header. */
   function clear() {
     card.hidden = true;
     if (wheelEl) wheelEl.innerHTML = '';
@@ -161,6 +164,12 @@
     cursor = null;
     route = null;
     clear();
+  }
+
+  if (clearEl) {
+    clearEl.addEventListener('click', function () {
+      if (cursor) cursor.setIndex(null);
+    });
   }
 
   clear();

@@ -214,25 +214,6 @@ describe('slopeSegmentCollection', () => {
   });
 });
 
-describe('dimOpacity', () => {
-  it('matches the open leg of the open route, and dims the rest', () => {
-    expect(core.dimOpacity({ uuid: 'r-1', i: 2 }, 1, 0.25)).toEqual([
-      'case',
-      ['all', ['==', ['get', 'uuid'], 'r-1'], ['==', ['get', 'i'], 2]],
-      1,
-      0.25,
-    ]);
-  });
-
-  it('is plain `on` when nothing is open', () => {
-    expect(core.dimOpacity(null, 0.55, 0.15)).toBe(0.55);
-  });
-
-  it('is plain `on` for a leg with no route to match', () => {
-    expect(core.dimOpacity({ uuid: null, i: 1 }, 1, 0.25)).toBe(1);
-  });
-});
-
 describe('hasDrawableLegs', () => {
   it('is true when every leg slices the geometry', () => {
     expect(core.hasDrawableLegs(routes().features[0])).toBe(true);

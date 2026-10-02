@@ -109,10 +109,11 @@ class TestTheRailShipsWithTheMap:
         assert "sm:grid-cols-" not in _opening_tag(rail)
         assert (
             rail.index("data-route-rail-name")
-            < rail.index("data-route-rail-leg")
             < rail.index("data-route-rail-meta")
             < rail.index("data-route-rail-lane")
         )
+        # Leg selection, and the title's " • Leg 3", went on 2026-10-02.
+        assert "data-route-rail-leg" not in rail
         # The two figure lines SNOW-1045 gave it, and their steep figure.
         assert "data-route-rail-vertical" not in rail
         assert "data-route-rail-horizontal" not in rail
@@ -129,9 +130,7 @@ class TestTheRailShipsWithTheMap:
         keys = set(re.findall(r'data-string="([^"]+)"', block.group(1)))
 
         assert {
-            "leg-climb",
-            "leg-descent",
-            "leg-suffix",
+            "unit-m",
             "unit-km",
             "meta-km",
             "meta-both",
@@ -141,6 +140,9 @@ class TestTheRailShipsWithTheMap:
             "meta-m",
             "meta-duration",
         } <= keys
+        assert keys.isdisjoint(
+            {"leg-climb", "leg-descent", "leg-suffix", "point-eyebrow"}
+        )
         assert keys.isdisjoint(
             {"route-ascend", "route-descend", "route-length", "route-steep"}
         )
@@ -316,7 +318,29 @@ class TestTheActionsAreAMenu:
         close = re.search(r"<button[^>]*data-route-rail-close[^>]*>", rail)
         assert close is not None
         assert 'aria-label="Close the route profile"' in close.group(0)
+        # 2026-10-02: it always closes; the wheel clears a point.
+        assert "data-label-point" not in close.group(0)
         assert "data-route-rail-close" not in menu.group(0)
+
+    def test_the_point_readout_sits_over_the_lane(self, client: Client) -> None:
+        """The dot and the two figures, hidden until a point is placed."""
+        rail = _rail(_home(client))
+        readout = re.search(
+            r"<div[^>]*data-route-rail-readout[^>]*>(.*?)</div>", rail, re.S
+        )
+        assert readout is not None
+
+        assert re.search(r"\shidden[\s>]", readout.group(0).split(">")[0] + ">")
+        assert "pointer-events-none" in readout.group(0)
+        for hook in (
+            "data-route-rail-dot",
+            "data-route-rail-elevation",
+            "data-route-rail-distance",
+        ):
+            assert hook in readout.group(1)
+        assert rail.index("data-route-rail-lane") < rail.index(
+            "data-route-rail-readout"
+        )
 
     def test_the_claim_slot_ships_hidden(self, client: Client) -> None:
         """Filled and shown by route_rail.js for a pending share only."""
@@ -507,7 +531,9 @@ class TestThePanelIsPinnedTopLeft:
         """Its words and wheel are the panel's point header now."""
         css = _MAP_CSS.read_text(encoding="utf-8")
         assert ".route-point-card" not in css
-        assert "touch-action: pan-y" in dict(_rules(css))[".route-rail-lane"]
+        # 2026-10-02: nothing drags along the lane, so it hands no touch
+        # gesture to the script; a tap is a click.
+        assert ".route-rail-lane" not in dict(_rules(css))
 
 
 class TestTheComponentLibraryVariant:

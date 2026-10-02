@@ -1556,24 +1556,12 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 
 /* —— The rail's leg fills (SNOW-1018) ————————————
    static/js/route_rail.js draws one <path class="route-rail-leg"> per
-   leg and marks it `data-climbing` and, while it is the open leg,
-   `aria-pressed="true"`. Both are data-attribute selectors, which a
-   utility class cannot express. The open leg's fill is raised rather
-   than recoloured, so it still reads as the same climb or descent. */
-.route-rail-leg {
-    fill-opacity: 0.22;
-    cursor: pointer;
-    transition: fill-opacity 120ms ease-out;
-}
+   leg and marks it `data-climbing`, a data-attribute selector a utility
+   class cannot express. The fills are a drawing only: leg selection was
+   removed on 2026-10-02, and a tap on the profile places a point. */
+.route-rail-leg { fill-opacity: 0.22; }
 .route-rail-leg[data-climbing="true"]  { fill: var(--color-route-rail-climb); }
 .route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
-.route-rail-leg:hover { fill-opacity: 0.36; }
-.route-rail-leg[aria-pressed="true"] { fill-opacity: 0.6; }
-/* A mouse or touch press focuses the leg (it is a tabindex path) and the
-   browser would ring its bounding box; only keyboard focus is marked, and
-   by the fill below rather than by an outline. */
-.route-rail-leg:focus { outline: none; }
-.route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and

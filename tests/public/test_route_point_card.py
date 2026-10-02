@@ -48,8 +48,20 @@ def test_the_partial_renders_hidden_with_every_hook() -> None:
     ):
         assert hook in body
     # SNOW-1068: no card chrome and no × of its own — the panel has both.
-    assert "data-route-point-card-clear" not in body
     assert "rounded-card" not in body.split("<template")[0]
+    assert "_icon_close" not in body and "<svg" not in body.split("<template")[0]
+
+
+def test_the_wheel_is_the_button_that_clears_the_point() -> None:
+    """2026-10-02: pressing the wheel clears the point and keeps the route."""
+    body = render_to_string("includes/_route_point_card.html", {})
+    button = re.search(
+        r"<button[^>]*data-route-point-card-clear[^>]*>(.*?)</button>", body, re.S
+    )
+    assert button is not None
+    assert 'type="button"' in button.group(0)
+    assert 'aria-label="Clear the point"' in button.group(0)
+    assert "data-route-point-card-wheel" in button.group(1)
 
 
 def test_the_partial_carries_every_word_in_its_strings_template() -> None:

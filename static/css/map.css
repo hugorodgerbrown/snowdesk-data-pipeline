@@ -272,12 +272,16 @@
     }
 }
 
-/* SNOW-1065: a drag along the rail's profile places the point. A
-   horizontal finger drag must reach the script rather than scroll, while
-   a vertical one still may: `pan-y` hands over the first and keeps the
-   second. */
-.route-rail-lane {
-    touch-action: pan-y;
+/* The figures beside the profile's cursor line (2026-10-02) sit over the
+   profile's fill and outline, so each carries a halo in the card's own
+   colour to stay legible on both. A text-shadow stack takes a colour
+   token here; there is no utility for a multi-offset halo. */
+.route-rail-readout [data-route-rail-elevation],
+.route-rail-readout [data-route-rail-distance] {
+    text-shadow:
+        0 0 2px var(--color-card),
+        0 0 2px var(--color-card),
+        0 0 4px var(--color-card);
 }
 
 /* SNOW-1019: the leader line (static/js/route_leader.js) — one svg over

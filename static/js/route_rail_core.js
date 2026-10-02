@@ -38,11 +38,16 @@
  * `formatMetaLine`: "12.9km · 337m ↑ · 1906m ↓ · 2h51m", with the
  * panel's strings and null rules. A null figure is OMITTED, never shown as
  * zero: a route whose GPX carried no elevation has an unknown ascent, not
- * a flat one (Route.ascent_m's docstring). While a leg is highlighted the
- * subtitle is that leg's figures in the same format (`legFigures`): gross
- * ascent and descent read off the profile, and no time. The two-line
- * header SNOW-1045 gave the rail, and its steep-terrain figure, went with
- * rail two.
+ * a flat one (Route.ascent_m's docstring). The two-line header SNOW-1045
+ * gave the rail, and its steep-terrain figure, went with rail two.
+ *
+ * ## A placed point's readout
+ *
+ * A point placed on the route is drawn on the profile as a vertical line
+ * with a dot where it crosses the outline, and two figures beside it
+ * (2026-10-02): the elevation at the top (`pointElevation`) and the
+ * distance from the start at the bottom (`pointDistance`). They sit right
+ * of the line, left-aligned, unless they would not fit (`readoutSide`).
  *
  * Exports (frozen `self.pwaRouteRailCore`):
  *
@@ -55,13 +60,17 @@
  *   formatDuration(seconds)                  → {hours, minutes}, or null
  *   formatMetaLine(figures, strings?)        → the routes list's meta line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
- *   legFigures(profile, leg, sampleCount, spanM) → a leg's length and gross
- *                                              ascent and descent
  *   clipRun(run, start, end)                 → a run clipped to [start, end],
  *                                              its ends interpolated
  *   legPaths(profile, legs, sampleCount, box) → one fill per leg + outline
- *   legAt(fraction, legs, sampleCount)       → the leg under an x fraction
  *   profileY(profile, d, box?)               → the outline's y at distance d
+ *   pointElevation(profile, index, sampleCount, units?) → a point's
+ *                                              elevation, as a label
+ *   onOutline(profile, fraction, offsetY, laneHeight, tolerance, box?)
+ *                                            → whether a press is on the
+ *                                              top line, loosely
+ *   readoutSide(x, laneWidth, readoutWidth, gap) → which side of the
+ *                                              cursor line its figures go
  *   BOX                                      → the lane's user-space box
  */
 
@@ -237,8 +246,8 @@
   }
 
   /**
-   * A point's distance along the route, as the point header's eyebrow
-   * shows it (SNOW-1068): the segment's midpoint as a share of the route's
+   * A point's distance along the route, as the profile's readout shows it
+   * (the eyebrow until 2026-10-02): the segment's midpoint as a share of the route's
    * length, in metres to the nearest 10 under a kilometre and in
    * kilometres to one decimal from there.
    *
@@ -388,46 +397,6 @@
   }
 
   /**
-   * A leg's figures for the rail's header while it is highlighted
-   * (SNOW-1065): its length, gross ascent and gross descent.
-   *
-   * The distance is the leg's share of the route's length, so it agrees
-   * with the ticks. Ascent and descent sum the profile's own steps inside
-   * the leg — the heights the profile draws — so a descending leg with a
-   * counter-rise still climbs. Both are null for a leg with no elevation.
-   * A leg has no duration: track points carry no timestamps.
-   *
-   * @param {Profile} profile A `readProfile` result.
-   * @param {Leg} leg The leg, in sample indices.
-   * @param {number} sampleCount N, the length of `slope.angles`.
-   * @param {number} spanM The route's length, the rail's `distance_m`.
-   * @returns {{distance_m: ?number, ascent_m: ?number, descent_m: ?number}}
-   */
-  function legFigures(profile, leg, sampleCount, spanM) {
-    var distance = sampleCount > 0 && spanM > 0
-      ? ((leg.to - leg.from + 1) / sampleCount) * spanM
-      : null;
-    if (!profile || !profile.hasElevation || !(profile.distanceM > 0) || !(sampleCount > 0)) {
-      return { distance_m: distance, ascent_m: null, descent_m: null };
-    }
-    var span = legSpan(leg, sampleCount, profile.distanceM);
-    var ascent = 0;
-    var descent = 0;
-    var seen = false;
-    profile.runs.forEach(function (run) {
-      var piece = clipRun(run, span[0], span[1]);
-      for (var i = 1; i < piece.length; i += 1) {
-        seen = true;
-        var step = piece[i].e - piece[i - 1].e;
-        if (step > 0) ascent += step;
-        else descent -= step;
-      }
-    });
-    if (!seen) return { distance_m: distance, ascent_m: null, descent_m: null };
-    return { distance_m: distance, ascent_m: ascent, descent_m: descent };
-  }
-
-  /**
    * One fill per leg, plus one outline of the whole track.
    *
    * @param {Profile} profile A `readProfile` result.
@@ -490,11 +459,31 @@
   }
 
   /**
+   * The profile's elevation at one distance, interpolated between the two
+   * points either side of it.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} d A distance on the profile's own axis.
+   * @returns {?number} Null where the profile has no elevation at `d`.
+   */
+  function elevationAt(profile, d) {
+    if (!profile || !profile.hasElevation) return null;
+    for (var r = 0; r < profile.runs.length; r += 1) {
+      var run = profile.runs[r];
+      for (var i = 1; i < run.length; i += 1) {
+        if (d < run[i - 1].d || d > run[i].d) continue;
+        return between(run[i - 1], run[i], d).e;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Where the outline sits at one distance, in the lane's user space.
    *
-   * The y `legPaths` draws at `d`, interpolated between the two points
-   * either side of it — where the cursor line meets the profile, which is
-   * where the leader line (route_leader.js) attaches to this rail.
+   * The y `legPaths` draws at `d` — where the cursor line meets the
+   * profile, which is where the dot marking the point's elevation sits
+   * (2026-10-02).
    *
    * @param {Profile} profile A `readProfile` result.
    * @param {number} d A distance on the profile's own axis.
@@ -503,37 +492,79 @@
    */
   function profileY(profile, d, box) {
     var b = box || BOX;
-    if (!profile || !profile.hasElevation) return null;
+    var e = elevationAt(profile, d);
+    if (e === null) return null;
     var minEle = /** @type {number} */ (profile.minEle);
     var range = /** @type {number} */ (profile.maxEle) - minEle;
     var floor = b.height - PAD_Y;
     var usable = b.height - PAD_Y * 2;
-    for (var r = 0; r < profile.runs.length; r += 1) {
-      var run = profile.runs[r];
-      for (var i = 1; i < run.length; i += 1) {
-        if (d < run[i - 1].d || d > run[i].d) continue;
-        var e = between(run[i - 1], run[i], d).e;
-        return range ? floor - ((e - minEle) / range) * usable : b.height / 2;
-      }
-    }
-    return null;
+    return range ? floor - ((e - minEle) / range) * usable : b.height / 2;
   }
 
   /**
-   * The leg under a point on the strip.
+   * The elevation of a placed point, as the profile's readout shows it
+   * (2026-10-02): the height the outline is drawn at under the cursor
+   * line, to the nearest metre.
    *
-   * @param {number} fraction How far along the strip, 0 to 1.
-   * @param {Array<Leg>} legs The route's legs.
-   * @param {number} sampleCount N, the length of `slope.angles`.
-   * @returns {?Leg}
+   * Read off the profile at the segment's midpoint by share — where the
+   * cursor line and its dot sit — so the figure is the height the dot
+   * marks.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} index The segment index.
+   * @param {number} sampleCount The segments the route has.
+   * @param {{m?: string, km?: string}} [units] Label templates carrying
+   *   `%(value)s`, from the partial's strings template.
+   * @returns {?string} Null where the profile has no elevation there.
    */
-  function legAt(fraction, legs, sampleCount) {
-    if (!(sampleCount > 0) || !Array.isArray(legs)) return null;
-    var index = Math.min(sampleCount - 1, Math.max(0, Math.floor(fraction * sampleCount)));
-    for (var i = 0; i < legs.length; i += 1) {
-      if (index >= legs[i].from && index <= legs[i].to) return legs[i];
-    }
-    return null;
+  function pointElevation(profile, index, sampleCount, units) {
+    if (!profile || !Number.isFinite(index) || !(sampleCount > 0)) return null;
+    var e = elevationAt(profile, ((index + 0.5) / sampleCount) * profile.distanceM);
+    if (e === null) return null;
+    var templates = { ...DEFAULT_UNITS, ...(units || {}) };
+    return interpolate(templates.m, { value: String(Math.round(e)) });
+  }
+
+  /**
+   * Whether a press on the lane is on the profile's top line (2026-10-02).
+   *
+   * The target is the outline, loosely: anything within `tolerance` px of
+   * it, above or below, at the press's x. A press lower down, in the
+   * fill near the ticks, is not a reading of the profile and places
+   * nothing — a finger resting at the foot of the panel should not send
+   * the point somewhere.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} fraction How far along the lane, 0 to 1.
+   * @param {number} offsetY The press's y, px from the lane's top edge.
+   * @param {number} laneHeight The lane's rendered height, px.
+   * @param {number} tolerance How far from the outline still counts, px.
+   * @param {Box} [box] The user-space box. Defaults to `BOX`.
+   * @returns {boolean} False where the profile has no elevation.
+   */
+  function onOutline(profile, fraction, offsetY, laneHeight, tolerance, box) {
+    var b = box || BOX;
+    if (!profile || !(profile.distanceM > 0) || !(laneHeight > 0)) return false;
+    var y = profileY(profile, fraction * profile.distanceM, b);
+    if (y === null) return false;
+    return Math.abs(offsetY - (y / b.height) * laneHeight) <= tolerance;
+  }
+
+  /**
+   * Which side of the cursor line the readout sits on (2026-10-02).
+   *
+   * The right, left-aligned, whenever it fits between the line and the
+   * lane's right edge; otherwise the left, right-aligned, so a point near
+   * the end of the route never has its figures clipped.
+   *
+   * @param {number} x The cursor line's x, px from the lane's left edge.
+   * @param {number} laneWidth The lane's width, px.
+   * @param {number} readoutWidth The wider of the two labels, px.
+   * @param {number} gap The space between the line and the labels, px.
+   * @returns {'right'|'left'}
+   */
+  function readoutSide(x, laneWidth, readoutWidth, gap) {
+    return x + gap + readoutWidth <= laneWidth ? 'right' : 'left';
   }
 
   self.pwaRouteRailCore = Object.freeze({
@@ -545,11 +576,12 @@
     formatDuration: formatDuration,
     formatMetaLine: formatMetaLine,
     legSpan: legSpan,
-    legFigures: legFigures,
     clipRun: clipRun,
     legPaths: legPaths,
-    legAt: legAt,
     profileY: profileY,
+    pointElevation: pointElevation,
+    onOutline: onOutline,
+    readoutSide: readoutSide,
     BOX: BOX,
   });
 })();

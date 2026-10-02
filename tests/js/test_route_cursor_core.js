@@ -3,10 +3,9 @@
  * rail and the point card (static/js/route_cursor_core.js, SNOW-1016).
  *
  * Pure state: index arithmetic, clamping at the route's ends, and when
- * subscribers are called. The case most worth holding is SNOW-1065's
- * exclusivity — a leg or a point, never both: opening a leg clears the
- * point and placing a point closes the leg, so the map can never show a
- * highlighted leg and a point card reading somewhere else at once.
+ * subscribers are called. The cursor holds a point and nothing else:
+ * leg selection was removed on 2026-10-02, and the API that opened a leg
+ * went with it.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,8 +22,8 @@ beforeEach(() => {
 });
 
 describe('createRouteCursor', () => {
-  it('starts with no cursor and no leg', () => {
-    expect(cursor.state()).toEqual({ index: null, openLeg: null });
+  it('starts with no point', () => {
+    expect(cursor.state()).toEqual({ index: null });
   });
 
   it.each([0, -1, 2.5, NaN, undefined])('rejects a segment count of %s', (count) => {
@@ -61,64 +60,19 @@ describe('setIndex', () => {
   });
 });
 
-describe('an open leg', () => {
-  const leg = { i: 2, from: 30, to: 59, climbing: false };
-
-  it('clears the point when it opens (SNOW-1065)', () => {
-    cursor.setIndex(45);
-    cursor.openLeg(leg);
-    expect(cursor.state()).toEqual({ index: null, openLeg: leg });
-  });
-
-  it('closes when a point is placed, anywhere on the route', () => {
-    cursor.openLeg(leg);
-    cursor.setIndex(80);
-    expect(cursor.state()).toEqual({ index: 80, openLeg: null });
-    cursor.openLeg(leg);
-    cursor.setIndex(45);
-    expect(cursor.state()).toEqual({ index: 45, openLeg: null });
-  });
-
-  it('stays open when the point is cleared', () => {
-    cursor.openLeg(leg);
-    cursor.setIndex(null);
-    expect(cursor.state().openLeg).toEqual(leg);
-  });
-
-  it('switches to another leg', () => {
-    cursor.openLeg(leg);
-    cursor.openLeg({ i: 3, from: 60, to: 99, climbing: true });
-    expect(cursor.state().openLeg.i).toBe(3);
-  });
-
-  it('leaves the cleared point cleared when it closes', () => {
-    cursor.openLeg(leg);
-    cursor.closeLeg();
-    expect(cursor.state()).toEqual({ index: null, openLeg: null });
-  });
-
-  it('hands back the leg with the properties it was given', () => {
-    cursor.openLeg(leg);
-    expect(cursor.state().openLeg).toEqual(leg);
-  });
-
-  it.each([
-    [{ from: -1, to: 10 }, RangeError],
-    [{ from: 90, to: 100 }, RangeError],
-    [{ from: 20, to: 10 }, RangeError],
-    [{ from: NaN, to: 10 }, TypeError],
-    [null, TypeError],
-  ])('rejects the leg %j', (bad, error) => {
-    expect(() => cursor.openLeg(bad)).toThrow(error);
-  });
-});
-
 describe('no selection (SNOW-1052)', () => {
   it('has no select or clearSelection and no selection key', () => {
     expect(cursor.select).toBeUndefined();
     expect(cursor.clearSelection).toBeUndefined();
     cursor.setIndex(12);
     expect('selection' in cursor.state()).toBe(false);
+  });
+
+  it('has no leg to open, and no openLeg key (2026-10-02)', () => {
+    expect(cursor.openLeg).toBeUndefined();
+    expect(cursor.closeLeg).toBeUndefined();
+    cursor.setIndex(12);
+    expect('openLeg' in cursor.state()).toBe(false);
   });
 });
 
@@ -130,7 +84,7 @@ describe('subscribe', () => {
     cursor.setIndex(42);
 
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(fn).toHaveBeenCalledWith({ index: 42, openLeg: null });
+    expect(fn).toHaveBeenCalledWith({ index: 42 });
   });
 
   it('is not called on subscription', () => {
@@ -140,12 +94,10 @@ describe('subscribe', () => {
   });
 
   it('is not called for a set that changes nothing', () => {
-    cursor.openLeg({ from: 30, to: 59 });
     const fn = vi.fn();
     cursor.subscribe(fn);
 
-    cursor.openLeg({ from: 30, to: 59, i: 2 }); // the same leg, rebuilt
-    cursor.setIndex(250); // clamps to 99 and closes the leg: a change
+    cursor.setIndex(250); // clamps to 99: a change
     cursor.setIndex(300); // clamps to 99 again, which is not
     cursor.setIndex(99.2);
 
@@ -157,7 +109,6 @@ describe('subscribe', () => {
     cursor.subscribe(fn);
 
     cursor.setIndex(null);
-    cursor.closeLeg();
 
     expect(fn).not.toHaveBeenCalled();
   });
