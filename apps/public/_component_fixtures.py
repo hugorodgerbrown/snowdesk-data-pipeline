@@ -1392,6 +1392,110 @@ ROUTE_RAIL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Aspect wheel (SNOW-1063) -----------------------------------------------------
+# One route segment's heading (inner ring) and the way the ground under it
+# faces (outer ring), drawn client-side by static/js/aspect_wheel.js from
+# the state below — ``wheelState``'s shape in static/js/aspect_wheel_core.js.
+# Sectors run 0 (N) to 7 (NW); ``gradeDeg`` is the track's own gradient,
+# positive climbing. Eight states at 48 px, then the first again at 120 px.
+
+
+def _aspect_wheel_variant(
+    caption: str, state: dict[str, Any], size: int = 48
+) -> dict[str, Any]:
+    """Return one aspect-wheel variant with its state JSON-encoded."""
+    return {
+        "caption": caption,
+        "context": {"state_json": json.dumps(state), "size": size},
+    }
+
+
+_FALL_LINE_DESCENT: dict[str, Any] = {
+    "track": [4],
+    "gradeDeg": -31,
+    "prev": {"sector": 3, "gradeDeg": -28},
+    "next": {"sector": 5, "gradeDeg": -33},
+    "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 34},
+}
+
+ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _aspect_wheel_variant(
+        "Fall-line descent — heading S down a 34° S face", _FALL_LINE_DESCENT
+    ),
+    _aspect_wheel_variant(
+        "Traverse — heading E across a 36° S face, near level",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": {"sector": 1, "gradeDeg": -5},
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 36},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Climbing the fall line — heading N up a 31° S face",
+        {
+            "track": [0],
+            "gradeDeg": 27,
+            "prev": {"sector": 7, "gradeDeg": 24},
+            "next": {"sector": 1, "gradeDeg": 26},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Turn inside the segment — NW then NE, both sectors lit",
+        {
+            "track": [7, 1],
+            "gradeDeg": 12,
+            "prev": {"sector": 6, "gradeDeg": 10},
+            "next": {"sector": 2, "gradeDeg": 14},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 33},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Flat ground — outer ring unlit",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": None,
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "flat"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "No terrain data — outer ring grey",
+        {
+            "track": [5],
+            "gradeDeg": -14,
+            "prev": {"sector": 4, "gradeDeg": -12},
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Level track — a bar, not a triangle",
+        {
+            "track": [6],
+            "gradeDeg": 0.8,
+            "prev": {"sector": 5, "gradeDeg": 1.2},
+            "next": {"sector": 7, "gradeDeg": -0.5},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 28},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Route start — no previous segment",
+        {
+            "track": [3],
+            "gradeDeg": 8,
+            "prev": None,
+            "next": {"sector": 4, "gradeDeg": 9},
+            "terrain": {"kind": "faces", "sector": 6, "slopeDeg": 22},
+        },
+    ),
+    _aspect_wheel_variant("Fall-line descent at 120 px", _FALL_LINE_DESCENT, size=120),
+)
+
+
 # UGC panel + row (SNOW-658) ---------------------------------------------------
 # The skeleton and row shape shared by the three map panels that manage a
 # user's own data — downloads, favourites, field observations. Hugo's "Map

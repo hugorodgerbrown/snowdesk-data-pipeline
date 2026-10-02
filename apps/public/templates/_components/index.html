@@ -36,6 +36,14 @@ Context:
     needs to be fully operable here.
     {% endcomment %}
     <script src="{% static 'js/hourly_chart_legend.js' %}" defer></script>
+    {% comment %}
+    The aspect wheel (SNOW-1063) is drawn client-side from each host's
+    state: the slope-class table, the core and the renderer, in that
+    order. i18n_strings.js is already loaded by public/base.html.
+    {% endcomment %}
+    <script src="{% static 'js/route_slope_core.js' %}" defer></script>
+    <script src="{% static 'js/aspect_wheel_core.js' %}" defer></script>
+    <script src="{% static 'js/aspect_wheel.js' %}" defer></script>
 {% endblock %}
 {% block nav %}{% endblock %}
 {% block site_footer %}{% endblock %}
