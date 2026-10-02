@@ -75,8 +75,8 @@ the stride and declines on a boundary-count mismatch) falls back to the
 stored track rather than to a height placed against the wrong ground.
 
 **Elevation is still read at the recorder's coordinate.** This does not
-reverse `bulletin_join`'s rule that where the skier stood comes from the
-track. The coordinate is the recorder's; only the height at it is the
+reverse `bulletin_join`'s rule (removed by SNOW-1062) that where the
+skier stood comes from the track. The coordinate is the recorder's; only the height at it is the
 model's.
 
 ## Consequences

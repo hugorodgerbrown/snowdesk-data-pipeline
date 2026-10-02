@@ -41,7 +41,7 @@ document.body.innerHTML = `
         <div data-route-rail-actions>
           <div data-overflow-menu>
             <ul role="menu">
-              <li><button role="menuitem" data-route-rail-details>Terrain and bulletin</button></li>
+              <li><button role="menuitem" data-route-rail-details>Terrain</button></li>
               <li aria-hidden="true" data-route-rail-owner></li>
               <li data-route-rail-owner><a role="menuitem" data-route-rail-plan-trip>Plan a trip</a></li>
               <li data-route-rail-owner><button role="menuitem" data-route-rail-share>Share</button></li>
@@ -272,14 +272,14 @@ describe('open', () => {
     );
 
     expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(false);
-    expect(visibleMenuItems()).toEqual(['Terrain and bulletin']);
+    expect(visibleMenuItems()).toEqual(['Terrain']);
   });
 
   it('offers every item for an owned route, details first', () => {
     window.pwaRouteRail.open(feature(), { details: vi.fn() });
 
     expect(visibleMenuItems()).toEqual([
-      'Terrain and bulletin',
+      'Terrain',
       'Plan a trip',
       'Share',
       'Rename',
@@ -621,7 +621,7 @@ describe('the details item', () => {
   it('is hidden when there is no sheet to open', () => {
     window.pwaRouteRail.open(feature());
 
-    expect(visibleMenuItems()).not.toContain('Terrain and bulletin');
+    expect(visibleMenuItems()).not.toContain('Terrain');
   });
 });
 

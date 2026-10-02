@@ -93,7 +93,6 @@ from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
-from apps.routes.services.route_bulletin import display_readings
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
@@ -272,34 +271,6 @@ def _trip_heights(
     """
     ascent_m, descent_m = trip.climb
     return terrain_points(trip.points, trip.slope_samples), ascent_m, descent_m
-
-
-def _bulletin_readings(trip: Trip) -> list[dict[str, Any]]:
-    """Return what each region's bulletin says about this trip's line.
-
-    A thin call into ``display_readings``, which SNOW-973 moved to
-    ``apps.routes.services.route_bulletin`` so the map's route detail
-    panel could render the same rows. The wrapper stays because a trip
-    supplies the three arguments from ITSELF, and its date is the whole
-    reason this panel belongs on a trip page: a trip is planned for a
-    day, where a route is read on whichever day the surface showing it
-    is showing.
-
-    Args:
-        trip: The trip, for its geometry, its terrain record and its DATE.
-
-    Returns:
-        One entry per region the line crosses, longest stretch first, or
-        an empty list when the trip has never been sampled — in which
-        case the panel does not render at all rather than claiming the
-        line meets nothing.
-
-    """
-    return display_readings(
-        terrain_points(trip.points, trip.slope_samples),
-        trip.slope_samples,
-        trip.date,
-    )
 
 
 def _basemap_context() -> dict[str, Any]:
@@ -622,11 +593,6 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
-        # SNOW-839: where this day's line meets this day's bulletin.
-        # DERIVED ON EVERY VIEW and stored nowhere — the one thing on this
-        # page that is not the organiser's snapshot, and the one that
-        # changes twice a day.
-        "bulletin_readings": _bulletin_readings(trip),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
         # scoped per ORIGIN, so a trip page reads

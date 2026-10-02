@@ -16,7 +16,7 @@
  * surface again, and stays in the matrix where it always was.
  *
  * SNOW-1018 MOVED THE SHEET ONE PRESS FURTHER. A tap opens rail one and
- * only the rail; the sheet opens from the rail's "Terrain and bulletin"
+ * only the rail; the sheet opens from the rail's "Terrain"
  * item, which calls the `details` function map.js handed the rail. The
  * rail is a recording stub here (tests/js/_route_rail_stub.js), so the
  * sheet's exclusivity is tested from that call — the same sheet, reached

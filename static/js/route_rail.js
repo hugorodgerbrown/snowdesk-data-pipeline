@@ -10,12 +10,10 @@
  *
  * THE SHEET IS BEHIND THE MENU. The route detail sheet (SNOW-973) used to
  * open on the same tap. The rail took its top half — name, figures,
- * profile — and the sheet keeps the terrain lines and the day's bulletin
- * reading, one press away on the menu's "Terrain and bulletin" item. The
- * sheet's body is built by map.js, which owns the map state it reads, and
- * handed over as `options.details`: a function this module calls on that
- * press, never at open, so the reading asks for the day the map is showing
- * when the reader asks for it.
+ * profile — and the sheet keeps the terrain lines, one press away on the
+ * menu's "Terrain" item. The sheet's body is built by map.js, which owns
+ * the map state it reads, and handed over as `options.details`: a function
+ * this module calls on that press, never at open.
  *
  * ITS OWN LIFETIME. The rail stays open while the sheet opens and closes
  * over it — it is not registered with window.pwaMapOverlays, which would
@@ -59,7 +57,7 @@
  * Only a route with no legs at all — no elevation, or too short — gets the
  * outline alone, with nothing to press.
  *
- * THE ACTIONS. Terrain and bulletin calls `options.details`; Plan a trip
+ * THE ACTIONS. Terrain calls `options.details`; Plan a trip
  * is a link; Share and Rename reuse window.pwaShare and
  * window.pwaRowRenameCommit exactly as the routes panel does; Delete
  * confirms and posts to routes:delete. Each change announces
@@ -503,7 +501,7 @@
    *   The route feature from the routes GeoJSON cache.
    * @param {{details?: function(): *, claim?: ?Node}} [options]
    *   `details` opens the route detail sheet, called on the menu's
-   *   Terrain and bulletin item; `claim` is a pending share's Save
+   *   Terrain item; `claim` is a pending share's Save
    *   control, seated in the identity block.
    * @returns {boolean} Whether the rail opened.
    */

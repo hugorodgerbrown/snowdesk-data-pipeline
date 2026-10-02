@@ -98,10 +98,6 @@
     'data:favourites',
     'data:map_overlays',
     'data:panel_rows',
-    // SNOW-973. A store absent from this list is a store the report
-    // cannot see, which is how a user would be told they hold nothing
-    // for a surface that repaints perfectly well.
-    'data:route_bulletins',
   ];
 
   // How long to wait for the worker to name its own cache version before

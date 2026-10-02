@@ -23,6 +23,11 @@ caller here works at the scale of a mountain range or smaller — a 750 m
 forecast-cell reuse threshold, a 25 km observation radius, a GPX leg between
 consecutive trackpoints — where the error is far below the precision of the
 coordinates being compared.
+
+``octant_for`` (SNOW-1062) names the compass octant a bearing falls in. It
+moved here from ``apps.routes.services.bulletin_join`` when that module was
+removed: the terrain-class tileset (SNOW-987) encodes aspect in the same
+eight octants and tests its boundaries against this rule.
 """
 
 from __future__ import annotations
@@ -185,7 +190,7 @@ def initial_bearing_deg(
         The bearing in ``[0, 360)``, or **None for coincident points**.
         ``atan2(0, 0)`` is ``0.0``, so the arithmetic would happily
         answer "due north" for a chord that has no direction at all —
-        the guess ``apps.routes.services.bulletin_join``'s ``octant_for``
+        the guess ``octant_for`` below
         refuses to make for the same reason. Not a theoretical case: a
         stored coordinate is rounded to six decimal places, so a track
         that doubles back on itself can produce two identical boundaries.
@@ -202,3 +207,31 @@ def initial_bearing_deg(
         phi_2
     ) * math.cos(delta_lambda)
     return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+# The eight compass octants, in the order a bearing walks them from north.
+# The CAAML enum's own spellings (``sample_data/openapi.json``), so an
+# octant is the string a bulletin uses and never a translation of it.
+OCTANTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+# Degrees of bearing each octant spans. 360 / 8.
+_OCTANT_DEG = 45.0
+
+
+def octant_for(aspect_deg: float | None) -> str | None:
+    """Return the compass octant a bearing falls in.
+
+    Args:
+        aspect_deg: A compass bearing in degrees, or None.
+
+    Returns:
+        One of ``OCTANTS``, or None when there is no bearing. The bands
+        are centred on their own name — N is 337.5 to 22.5 — because that
+        is what a bulletin means by "north facing", rather than the
+        22.5-degree-offset reading that would put due north on a boundary.
+
+    """
+    if aspect_deg is None:
+        return None
+    index = int(((aspect_deg % 360.0) + _OCTANT_DEG / 2) // _OCTANT_DEG) % len(OCTANTS)
+    return OCTANTS[index]
