@@ -484,8 +484,8 @@ has had: the three guards above each catch one historical bug class, and
 `js-globals-lint` in particular exists to catch a read of a global nothing
 assigns, which is a misspelled identifier and exactly what a type checker
 catches for free. `checkJs` is **false** project-wide, so a file is checked
-only once someone adds `// @ts-check` to it — nineteen files today:
-eighteen of the twenty-nine `*_core.js` modules plus `pwa_network_mode.js`.
+only once someone adds `// @ts-check` to it — twenty files today:
+nineteen of the thirty `*_core.js` modules plus `pwa_network_mode.js`.
 Eleven core modules are still unchecked, among them the four SNOW-899
 deferred (`basemap_download_core`, `map_weather_core`,
 `layer_visibility_core`, `elevation_profile_core` — they carried 115 of the
