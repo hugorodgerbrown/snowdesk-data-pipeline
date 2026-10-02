@@ -1201,13 +1201,24 @@
     // second is evidence of absence. `ignoreSearch` as the picker's own
     // probe (map_layer_sync_status.js) matches the style, so a style URL
     // the provider decorates with a query is still found.
-    var readJson = function (url) {
+    //
+    // `unparsedIsMiss` is for the TileJSON reads. A source `url` that is
+    // not a TileJSON at all (basemap.at's ESRI service root) can still match
+    // a cached response, and its body failing to parse is not a read that
+    // did not come back: it is the absence of a TileJSON, which sends the
+    // core to its site fallback instead of turning the whole row unknown.
+    var readJson = function (url, unparsedIsMiss) {
       return bounded(
         budget,
         'passive.match',
         function () {
           return cache.match(url, { ignoreSearch: true }).then(function (response) {
-            return response ? response.json() : undefined;
+            if (!response) return undefined;
+            return unparsedIsMiss
+              ? response.json().catch(function () {
+                  return undefined;
+                })
+              : response.json();
           });
         },
         null,
@@ -1240,13 +1251,13 @@
           absolute = null;
         }
         if (!absolute) continue;
-        var tileJson = await readJson(absolute);
+        var tileJson = await readJson(absolute, true);
         if (tileJson === null) {
           unread = true;
           break;
         }
         // A miss is left out, and the core falls back to the source's
-        // origin — see `tileTemplatesForStyle`.
+        // site — see `tileTemplatesForStyle`.
         if (tileJson) tileJsons[source.url] = tileJson;
       }
       result[key] = unread ? null : core.browsedState(style, tileJsons, passiveUrls, styleUrl);

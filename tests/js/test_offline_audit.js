@@ -398,6 +398,25 @@ describe('the browsing-cache probe (SNOW-1058)', () => {
     expect(readings.browsed).toEqual({ swisstopo_winter: 'style-only' });
   });
 
+  it('treats a TileJSON that will not parse as absent, not as unread', async () => {
+    // basemap.at's source `url` is an ESRI service root, not a TileJSON:
+    // whatever is cached under it fails to parse. That is the absence of
+    // a TileJSON, so the core's site fallback answers rather than the
+    // whole row going to unknown.
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: STYLE_URL, json: STYLE },
+        { url: TILEJSON_URL, body: '<html>not a TileJSON</html>' },
+        { url: 'https://vectortiles3.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf' },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'tiles' });
+  });
+
   it('asks nothing of a basemap whose style URL it cannot know', async () => {
     // static/offline.html with no cached map page: no picker to read a
     // URL off, so nothing to look the style up under.

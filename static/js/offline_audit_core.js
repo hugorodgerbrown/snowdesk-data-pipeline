@@ -489,19 +489,51 @@
   }
 
   /**
-   * A URL's origin plus ``/``, or null where it has none to give.
+   * The SITE a source URL's tiles are expected on, as a ``site:<domain>``
+   * marker, or null where the URL has none to give (SNOW-1058).
+   *
+   * The source's own hostname with its first label dropped, once it has
+   * three or more: ``vectortiles.geo.admin.ch`` → ``geo.admin.ch``. Not the
+   * exact origin, because a TileJSON routinely names tile hosts that are
+   * siblings of its own — Swisstopo's sits on ``vectortiles.geo.admin.ch``
+   * and serves its tiles from ``vectortiles0``–``vectortiles4`` — and an
+   * origin fallback would read every one of them as another basemap's,
+   * which is a confident No over a map that draws.
    *
    * @param {string} url
    * @param {string} [base]
    * @returns {string|null}
    */
-  function originPrefix(url, base) {
+  function sitePrefix(url, base) {
     try {
       var parsed = base ? new URL(url, base) : new URL(url);
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-      return parsed.origin + '/';
+      var labels = parsed.hostname.split('.');
+      var ip = /^\d+$/.test(labels[labels.length - 1]);
+      var site = !ip && labels.length >= 3 ? labels.slice(1).join('.') : parsed.hostname;
+      return 'site:' + site;
     } catch (_err) {
       return null;
+    }
+  }
+
+  /**
+   * Whether ``url`` falls under one of ``tileTemplatesForStyle``'s
+   * prefixes — a literal URL prefix, or a ``site:<domain>`` marker matching
+   * that domain and every subdomain of it.
+   *
+   * @param {string} url
+   * @param {string} prefix
+   * @returns {boolean}
+   */
+  function underPrefix(url, prefix) {
+    if (prefix.indexOf('site:') !== 0) return url.indexOf(prefix) === 0;
+    var site = prefix.slice(5);
+    try {
+      var host = new URL(url).hostname;
+      return host === site || host.slice(-(site.length + 1)) === '.' + site;
+    } catch (_err) {
+      return false;
     }
   }
 
@@ -515,13 +547,16 @@
    * Every host of a multi-host source is its own prefix.
    *
    * A source whose templates cannot be resolved falls back to its URL's
-   * ORIGIN rather than to nothing. Two real cases: an ESRI ``root.json``
+   * SITE (``sitePrefix``) rather than to nothing. Two real cases: an ESRI ``root.json``
    * (basemap.at), whose source ``url`` is not a TileJSON at all — ``map.js``
    * builds the tile path itself (``resolveBasemapStyle``) — and a TileJSON
    * this device does not hold. Neither can be read here, and a tile on
-   * that host is still very likely this basemap's; counting it makes the
-   * answer more generous only for basemaps that share a host, which the
-   * two Swisstopo styles do and genuinely draw for each other.
+   * that site is still very likely this basemap's; counting it makes the
+   * answer more generous only for basemaps that share a site, which the
+   * two Swisstopo styles do and genuinely draw for each other. The site,
+   * not the exact origin, because the tile hosts are routinely siblings of
+   * the source's (``vectortiles0``–``4`` under ``vectortiles``), and an
+   * origin fallback read them as absent — a false No.
    *
    * @param {*} style A parsed style document.
    * @param {Record<string, *>} [tileJsonByUrl] Parsed TileJSON documents,
@@ -561,7 +596,7 @@
         resolved += 1;
       });
       if (resolved === 0 && typeof source.url === 'string') {
-        add(originPrefix(source.url, styleUrl));
+        add(sitePrefix(source.url, styleUrl));
       }
     });
     return prefixes;
@@ -594,7 +629,7 @@
     var drawn = urls.some(function (url) {
       if (!isTileShaped(url)) return false;
       return prefixes.some(function (prefix) {
-        return url.indexOf(prefix) === 0;
+        return underPrefix(url, prefix);
       });
     });
     return drawn ? 'tiles' : 'style-only';

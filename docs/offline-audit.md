@@ -229,10 +229,15 @@ passive entry with a numeric `/{z}/{x}/{y}` tail (SNOW-1060's
 `isTileShapedURL` rule, restated in the core because the audit shares no
 code with the basemap modules — it also runs on `static/offline.html`)
 that starts with one of the style's prefixes, so a tile cached for a
-DIFFERENT basemap's host does not count. The origin fallback can count a
-tile from another style on the same host; that is only more generous for
-basemaps that share hosts, and the two Swisstopo styles, which do, draw
-each other's tiles.
+DIFFERENT basemap's host does not count. A source whose tiles cannot be
+resolved — an ESRI service root, or a TileJSON this device does not hold
+or cannot parse — falls back to its URL's **site** (the hostname less its
+first label: `vectortiles.geo.admin.ch` → `geo.admin.ch`), not its exact
+origin, because tile hosts are routinely siblings of the TileJSON's
+(`vectortiles0`–`4`), and an origin fallback read them as absent. The
+fallback can count a tile from another style on the same site; that is
+only more generous for basemaps that share one, and the two Swisstopo
+styles, which do, draw each other's tiles.
 
 The browsed verdict **covers** the on-screen basemap's row as well as
 `no-downloads`, so the summary does not restate a caveat the verdict has

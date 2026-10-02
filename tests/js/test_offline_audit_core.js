@@ -1935,7 +1935,7 @@ describe('the passive browsing cache (SNOW-1058)', () => {
       ]);
     });
 
-    it('falls back to the source’s origin when its tiles cannot be resolved', () => {
+    it('falls back to the source’s site when its tiles cannot be resolved', () => {
       // basemap.at's ESRI root.json: the source `url` is the service root,
       // relative to the style, and map.js builds the tile path itself.
       const style = { sources: { esri: { type: 'vector', url: '../../' } } };
@@ -1946,12 +1946,12 @@ describe('the passive browsing cache (SNOW-1058)', () => {
           tileJsons,
           'https://mapsneu.wien.gv.at/basemapvectorneu/root.json',
         ),
-      ).toEqual(['https://mapsneu.wien.gv.at/']);
+      ).toEqual(['site:wien.gv.at']);
     });
 
-    it('falls back to the origin when the TileJSON is not cached at all', () => {
+    it('falls back to the site when the TileJSON is not cached at all', () => {
       expect(core.tileTemplatesForStyle(STYLE, {}, SWISSTOPO)).toEqual([
-        'https://vectortiles.geo.admin.ch/',
+        'site:geo.admin.ch',
         'https://terrain.example/dem/',
       ]);
     });
@@ -1964,6 +1964,18 @@ describe('the passive browsing cache (SNOW-1058)', () => {
 
   describe('browsedState', () => {
     const TILE = 'https://vectortiles1.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf';
+
+    it('counts a sibling tile host when the TileJSON is not cached (site fallback)', () => {
+      // The reviewer's case: the TileJSON sits on `vectortiles`, the tiles
+      // on `vectortiles0`-`4`. An exact-origin fallback read this as
+      // style-only — a confident No over a map that draws.
+      expect(core.browsedState(STYLE, {}, [SWISSTOPO, TILE], SWISSTOPO)).toBe('tiles');
+    });
+
+    it('keeps the site fallback to its own site', () => {
+      const other = 'https://tiles.openfreemap.org/planet/20260906_080001_pt/9/267/180.pbf';
+      expect(core.browsedState(STYLE, {}, [SWISSTOPO, other], SWISSTOPO)).toBe('style-only');
+    });
 
     it('is `tiles` with the style and one of its tiles cached', () => {
       expect(core.browsedState(STYLE, TILEJSONS, [SWISSTOPO, TILEJSON, TILE], SWISSTOPO)).toBe(
