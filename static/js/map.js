@@ -2665,6 +2665,21 @@
    * @returns {?{left: number, top: number, right: number, bottom: number}}
    *   Null before the canvas is laid out.
    */
+  /**
+   * The point card's bottom edge, px below the canvas's top, while it is
+   * showing; null while it is hidden or not on the page (SNOW-1064).
+   *
+   * @param {{top: number}} canvas The map container's rect.
+   * @returns {?number}
+   */
+  const pointCardBottom = (canvas) => {
+    const card = window.pwaRoutePointCard && window.pwaRoutePointCard.element;
+    if (!card || card.hidden || !card.getBoundingClientRect) return null;
+    const box = card.getBoundingClientRect();
+    if (!(box.height > 0)) return null;
+    return box.bottom - canvas.top;
+  };
+
   const visibleMapRect = () => {
     const core = self.pwaRouteCursorMapCore;
     const container = map && map.getContainer ? map.getContainer() : null;
@@ -2673,11 +2688,17 @@
     const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
       ? rail.element.getBoundingClientRect().top
       : null;
+    const canvas = container.getBoundingClientRect();
     // While the rail is open the top chrome is withdrawn (static/css/
     // map.css), so the visible map starts at the edge inset rather than
-    // under the search pill.
-    const topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
-    return core.visibleRect(container.getBoundingClientRect(), railTop, topInset);
+    // under the search pill — or under the point card (SNOW-1064), which
+    // is pinned top-left while the rail is open. Its whole band counts as
+    // covered, across the map's width: simpler than a notch, and a dot
+    // beside the card is still worth panning clear of it.
+    let topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
+    const cardBottom = railTop === null ? null : pointCardBottom(canvas);
+    if (cardBottom !== null) topInset = Math.max(topInset, cardBottom + ROUTE_CURSOR_TOP_INSET_PX);
+    return core.visibleRect(canvas, railTop, topInset);
   };
 
   /**
@@ -6766,6 +6787,13 @@
     if (!(canvas.height > 0) || !(box.height > 0)) return padding;
 
     reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
+    // SNOW-1064: and the point card pinned top-left, so the route's top
+    // end is not framed under it. Only what it adds beyond the padding the
+    // top already has.
+    const cardBottom = pointCardBottom(canvas);
+    if (cardBottom !== null) {
+      reserveFitEdge(padding, 'top', 'bottom', cardBottom - padding.top, canvas.height);
+    }
     return padding;
   };
 

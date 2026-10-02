@@ -674,6 +674,12 @@
 
   lane.addEventListener('pointermove', function (event) {
     if (!cursor || !(sampleCount > 0)) return;
+    // A press released off the lane before it became a drag never sent
+    // this lane its pointerup (capture is taken only once it IS a drag),
+    // so a move with no button held ends it here.
+    if (press && press.id === event.pointerId && !press.dragging && event.buttons === 0) {
+      press = null;
+    }
     if (press && press.id === event.pointerId) {
       if (!press.dragging && Math.abs(event.clientX - press.x) > DRAG_PX) {
         press.dragging = true;
@@ -706,6 +712,7 @@
     press = null;
   }
   lane.addEventListener('pointerup', endPress);
+  lane.addEventListener('lostpointercapture', endPress);
   lane.addEventListener('pointercancel', function (event) {
     endPress(event);
     swallowClick = false;

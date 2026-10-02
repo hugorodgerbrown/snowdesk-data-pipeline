@@ -419,13 +419,13 @@ describe('the cursor line (SNOW-1019)', () => {
    * @param {string} pointerType 'mouse' or 'touch'.
    * @param {number} clientX The pointer's x.
    */
-  const pointerOnLane = (type, pointerType, clientX) => {
-    const event = new MouseEvent(type, { bubbles: true, clientX });
+  const pointerOnLane = (type, pointerType, clientX, buttons = 1) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX, buttons });
     Object.defineProperty(event, 'pointerType', { value: pointerType });
     Object.defineProperty(event, 'pointerId', { value: 7 });
     rail.querySelector('[data-route-rail-lane]').dispatchEvent(event);
   };
-  const moveOverLane = (pointerType, clientX) => pointerOnLane('pointermove', pointerType, clientX);
+  const moveOverLane = (pointerType, clientX) => pointerOnLane('pointermove', pointerType, clientX, 0);
 
   it('draws the cursor index by share, and hides on null', () => {
     window.pwaRouteRail.open(feature());
@@ -480,6 +480,20 @@ describe('the cursor line (SNOW-1019)', () => {
     first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(window.pwaRouteRail.cursor().state()).toEqual({ index: 14, openLeg: null });
+  });
+
+  it('forgets a press released off the lane before it became a drag', () => {
+    // The pointerup landed outside the lane, so only a buttonless move
+    // tells it the press is over; a mouse coming back must not drag.
+    window.pwaRouteRail.open(feature());
+    vi.spyOn(rail.querySelector('[data-route-rail-lane]'), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 80, width: 1000, height: 80 });
+    legPaths()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    pointerOnLane('pointerdown', 'mouse', 100);
+    pointerOnLane('pointermove', 'mouse', 600, 0);
+
+    expect(window.pwaRouteRail.cursor().state()).toMatchObject({ index: null, openLeg: { i: 1 } });
   });
 
   it('leaves a press that does not move to the leg it lands on', () => {

@@ -1016,6 +1016,29 @@ describe('keeping the cursor dot in view (SNOW-1019)', () => {
     tearDown();
   });
 
+  it('pans a dot out from under the point card (SNOW-1064)', () => {
+    setUp();
+    // The card covers y 60–200. With the map shifted, segment 2's middle
+    // projects to y = 75: clear of the top inset, but under the card.
+    projectLngLat = ([lng, lat]) => ({
+      x: 100 + (lng - 7.0) * 10000,
+      y: 50 + (46.015 - lat) * 10000,
+    });
+    const card = document.createElement('section');
+    card.getBoundingClientRect = () => ({ left: 12, top: 60, right: 362, bottom: 200, width: 350, height: 140 });
+    window.pwaRoutePointCard = { element: card };
+    try {
+      cursor.setIndex(2);
+
+      expect(panCalls).toHaveLength(1);
+      // Down, so the dot lands below the card's foot plus the margins.
+      expect(panCalls[0][0][1]).toBeLessThan(0);
+    } finally {
+      delete window.pwaRoutePointCard;
+      tearDown();
+    }
+  });
+
   it('makes one pan for a scrub, not a queue', () => {
     setUp();
 
