@@ -1802,8 +1802,8 @@ class TestRoutesGeojsonFallLines:
     def test_a_gentle_route_carries_an_empty_list(self, client: Client) -> None:
         """Nothing qualified is a complete answer, and is said out loud.
 
-        The aspect is present on every segment and is deliberately not
-        sent: an arrow on ground the colour scale calls gentle is a
+        The aspect is present on every segment and deliberately draws
+        no arrow: an arrow on ground the colour scale calls gentle is a
         bearing off a stream bank.
         """
         user = UserFactory.create()
@@ -1820,24 +1820,30 @@ class TestRoutesGeojsonFallLines:
 
         assert slope["fall_lines"] == []
 
-    def test_the_per_segment_aspect_itself_is_never_sent(self, client: Client) -> None:
-        """A bearing per PLACE, not an aspect per segment.
+    def test_the_aspect_travels_as_a_sector_not_a_degree(self, client: Client) -> None:
+        """A bearing per PLACE for the arrows, a sector per segment beside.
 
-        The distinction the decision doc's payload objection turns on: a
-        flat ``aspects`` array beside ``angles`` would roughly double a
-        payload the offline cache holds, and would be 600 arrows nobody
-        could read.
+        Until SNOW-976 no per-segment aspect was sent: the arrows are a
+        bearing per place, and a flat array of degrees would have cost
+        the payload the decision doc rejects. The aspect wheel reads
+        the ground under the rail cursor on moderate ground too, so
+        ``aspects`` now travels — as an eight-sector index, never the
+        stored degree, and the marks still carry no aspect field.
         """
         user = UserFactory.create()
         client.force_login(user)
         RouteFactory.create(
             user=user,
-            slope_samples=_slope_record({"angle_deg": 38.0, "aspect_deg": 205.0}),
+            slope_samples=_slope_record(
+                {"angle_deg": 38.0, "aspect_deg": 205.0},
+                {"angle_deg": 20.0, "aspect_deg": 92.0},
+                {"angle_deg": 3.0, "aspect_deg": 92.0},
+            ),
         )
 
         slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
 
-        assert "aspects" not in slope
+        assert slope["aspects"] == [5, 2, None]
         assert all("aspect_deg" not in mark for mark in slope["fall_lines"])
 
     def test_a_never_sampled_route_carries_no_slope_key_and_so_no_marks(

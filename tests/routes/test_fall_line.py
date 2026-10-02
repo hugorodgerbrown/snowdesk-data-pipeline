@@ -30,9 +30,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from apps.routes.services.fall_line import (
+    ASPECT_FLAT_DEG,
     FALL_LINE_GATE_DEG,
     FALL_LINE_SPACING_M,
+    aspect_sector,
+    aspect_sectors,
     fall_line_marks,
 )
 from apps.routes.services.slope_summary import STEEP_THRESHOLD_DEG
@@ -298,3 +303,86 @@ class TestTheBearing:
         """
         marks = fall_line_marks(_record([40.0, 40.0], aspects=[None, 130.0]))
         assert marks == [{"i": 1, "deg": 130}]
+
+
+class TestAspectSector:
+    """Which of eight compass sectors an aspect falls in (SNOW-976)."""
+
+    @pytest.mark.parametrize(
+        ("aspect_deg", "sector"),
+        [
+            (0.0, 0),
+            (22.4, 0),
+            (22.5, 1),
+            (67.5, 2),
+            (90, 2),
+            (180.0, 4),
+            (225.0, 5),
+            (337.4, 7),
+            (337.5, 0),
+            (359.7, 0),
+            (360.0, 0),
+        ],
+    )
+    def test_bins_to_the_sector_centred_on_it(
+        self, aspect_deg: float, sector: int
+    ) -> None:
+        """Sector k spans k × 45° ± 22.5°; a boundary goes clockwise.
+
+        22.5 and 67.5 are the cases ``round`` gets wrong: it rounds a
+        half to even, which would send one boundary anticlockwise and the
+        next clockwise.
+        """
+        assert aspect_sector(aspect_deg) == sector
+
+    @pytest.mark.parametrize("value", [None, "90", True, float("nan"), float("inf")])
+    def test_a_non_number_has_no_sector(self, value: Any) -> None:
+        """A hand-written record's junk is refused, not read as north."""
+        assert aspect_sector(value) is None
+
+
+class TestAspectSectors:
+    """One sector per segment, null where there is no direction to report."""
+
+    def test_the_flat_cut_off_is_the_rail_s_flat_ground(self) -> None:
+        """Five degrees, ``FLAT_GROUND_DEG`` in route_rail_two_core.js."""
+        assert ASPECT_FLAT_DEG == 5.0
+
+    def test_aligns_with_the_segments(self) -> None:
+        """One entry per segment, in track order, gentle ground included.
+
+        The 20 degree segment is below the fall-line gate and still
+        carries its sector: the wheel reads moderate ground too.
+        """
+        record = _record([20.0, 40.0, 12.0], aspects=[180.0, 45.0, 300.0])
+        assert aspect_sectors(record) == [4, 1, 7]
+
+    def test_is_null_below_the_flat_cut_off(self) -> None:
+        """An aspect on near-level ground is the bearing of a stream bank."""
+        record = _record([4.9, 5.0], aspects=[90.0, 90.0])
+        assert aspect_sectors(record) == [None, 2]
+
+    def test_is_null_for_an_unknown_segment(self) -> None:
+        """Unsurveyed ground faces nowhere we may report."""
+        assert aspect_sectors(_record([None, 30.0])) == [None, 2]
+
+    def test_is_null_for_a_segment_with_no_aspect(self) -> None:
+        """A null aspect stays null rather than reading as due north."""
+        assert aspect_sectors(_record([30.0], aspects=[None])) == [None]
+
+    def test_the_cut_off_is_a_keyword_argument(self) -> None:
+        """Re-tuning it is free, the rule every gate in this module keeps."""
+        record = _record([20.0, 40.0])
+        assert aspect_sectors(record, flat_deg=30.0) == [None, 2]
+
+    def test_refuses_a_record_with_nothing_to_read(self) -> None:
+        """Never sampled, or no segments: nothing to align with."""
+        assert aspect_sectors(None) is None
+        assert aspect_sectors({}) is None
+        assert aspect_sectors({"points": [[7.0, 46.0]], "segments": []}) is None
+
+    def test_refuses_a_record_whose_halves_do_not_pair_up(self) -> None:
+        """An aspect placed against the wrong ground is the failure."""
+        record = _record([30.0, 30.0])
+        record["points"] = record["points"][:-1]
+        assert aspect_sectors(record) is None
