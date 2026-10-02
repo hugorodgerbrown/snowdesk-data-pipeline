@@ -89,6 +89,12 @@
   var ROOT_SELECTOR = '[data-offline-audit]';
   var SHELL_CACHE_PREFIX = 'snowdesk-shell-';
   var PINNED_CACHE_PREFIX = 'snowdesk-basemap-pinned-';
+  // SNOW-1058: the PASSIVE browsing cache — `sw.js`'s `BASEMAP_CACHE`,
+  // which `_basemapStaleWhileRevalidate` fills as the user looks at the
+  // map and SNOW-1060 trims by tile count. Named here rather than read
+  // from the worker for the reason every other name in this block is:
+  // this file reads storage directly, and must run without the worker.
+  var PASSIVE_BASEMAP_CACHE = 'snowdesk-basemap-v1';
   var DB_NAME = 'snowdesk-pwa-v1';
 
   // The stores whose depth the report states. Not every store in db.js:
@@ -309,8 +315,15 @@
     'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
     'note-basemap-unstyled':
       'the %(name)s map style is not saved, so nothing drawn on it will appear',
+    // SNOW-1058: the passive cache is trimmed by Snowdesk's own count cap
+    // as the user browses (SNOW-1060), not by the device running short of
+    // room — so none of these three says "when the device needs the space".
     'note-basemap-downloads-only':
-      'outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space',
+      'outside your downloads the %(name)s map is only what you have browsed, and older areas drop out as you look at new ones',
+    'note-basemap-browsed-only':
+      'the %(name)s map is only what you have browsed — it is not saved, and older areas drop out as you look at new ones',
+    'note-basemap-style-only':
+      'only the %(name)s map style is saved, not the map itself — download the map to see it offline',
     'note-area-incomplete':
       '%(name)s will not draw until you sync it from the map’s Manage downloads sheet',
     'note-area-missing':
@@ -378,6 +391,9 @@
     'verdict-other-account':
       'The saved app belongs to another account. Open the map once while connected.',
     'verdict-no-map': 'The app opens, but there is no map to show in it.',
+    'verdict-browsed-only':
+      'The map shows what you have looked at, but nothing is downloaded. ' +
+      "Download the map to ensure it isn't overwritten or deleted.",
     'verdict-downloads-broken': 'The app opens, but none of your downloads will draw.',
     'verdict-failed': 'This check could not run on this device.',
 
@@ -1107,6 +1123,143 @@
   }
 
   /**
+   * What the passive browsing cache holds for each basemap asked about
+   * (SNOW-1058).
+   *
+   * The report looked only in the download buckets, so a device with
+   * nothing downloaded was told "there is no map to show" over a map that
+   * was drawing from `snowdesk-basemap-v1` at that moment. This is the
+   * missing half: per basemap, is its style here, and is at least one of
+   * its tiles — the core's ``browsedState`` decides, from what is read
+   * here.
+   *
+   * The same discipline as ``readBucket``: ``caches.has`` before
+   * ``caches.open``, because ``open`` CREATES the cache it is asked for
+   * and a diagnostic must not write. The listing is taken ONCE and shared
+   * by every basemap; after it, one bounded ``match`` for each style and
+   * one for each TileJSON its sources name. Every read is under the
+   * budget, and every read that does not come back makes that basemap
+   * ``null`` — unknown — never ``'none'``: "nothing browsed" is a claim,
+   * and a timeout is not evidence for it.
+   *
+   * @param {string[]} keys The basemaps to answer for.
+   * @param {Record<string, string>} styleUrls Each key's style URL, off
+   *   the cached map page's picker. A key with no URL is skipped and
+   *   absent from the result: there is nowhere to look it up.
+   * @param {Object} budget
+   * @returns {Promise<Record<string, 'tiles'|'style-only'|'none'|null>>}
+   */
+  async function readBrowsed(keys, styleUrls, budget) {
+    var core = self.pwaOfflineAuditCore;
+    var result = /** @type {Record<string, *>} */ ({});
+    var asked = keys.filter(function (key, index) {
+      return keys.indexOf(key) === index && styleUrls && styleUrls[key];
+    });
+    if (!asked.length || !core) return result;
+    var all = function (value) {
+      asked.forEach(function (key) {
+        result[key] = value;
+      });
+      return result;
+    };
+    if (!self.caches || typeof self.caches.has !== 'function') return all(null);
+    var has = await bounded(
+      budget,
+      'passive.has',
+      function () {
+        return self.caches.has(PASSIVE_BASEMAP_CACHE);
+      },
+      null,
+    );
+    if (has === null) return all(null);
+    // Never browsed at all, and read as such — without opening it.
+    if (!has) return all('none');
+    var cache = await bounded(
+      budget,
+      'passive.open',
+      function () {
+        return self.caches.open(PASSIVE_BASEMAP_CACHE);
+      },
+      null,
+    );
+    if (!cache) return all(null);
+    var requests = await bounded(
+      budget,
+      'passive.keys',
+      function () {
+        return cache.keys();
+      },
+      null,
+    );
+    if (!requests) return all(null);
+    var passiveUrls = requests.map(function (request) {
+      return request.url;
+    });
+
+    // `null` is the bound's fallback and `undefined` a genuine miss, the
+    // distinction `readShellEntries` draws for the same reason: only the
+    // second is evidence of absence. `ignoreSearch` as the picker's own
+    // probe (map_layer_sync_status.js) matches the style, so a style URL
+    // the provider decorates with a query is still found.
+    var readJson = function (url) {
+      return bounded(
+        budget,
+        'passive.match',
+        function () {
+          return cache.match(url, { ignoreSearch: true }).then(function (response) {
+            return response ? response.json() : undefined;
+          });
+        },
+        null,
+      );
+    };
+
+    for (var i = 0; i < asked.length; i += 1) {
+      var key = asked[i];
+      var styleUrl = styleUrls[key];
+      var style = await readJson(styleUrl);
+      if (style === null) {
+        result[key] = null;
+        continue;
+      }
+      if (!style || typeof style !== 'object') {
+        result[key] = 'none';
+        continue;
+      }
+      var tileJsons = {};
+      var unread = false;
+      var sources = style.sources && typeof style.sources === 'object' ? style.sources : {};
+      var ids = Object.keys(sources);
+      for (var j = 0; j < ids.length; j += 1) {
+        var source = sources[ids[j]];
+        if (!source || typeof source.url !== 'string' || Array.isArray(source.tiles)) continue;
+        var absolute = null;
+        try {
+          absolute = new URL(source.url, styleUrl).toString();
+        } catch (_err) {
+          absolute = null;
+        }
+        if (!absolute) continue;
+        var tileJson = await readJson(absolute);
+        if (tileJson === null) {
+          unread = true;
+          break;
+        }
+        // A miss is left out, and the core falls back to the source's
+        // origin — see `tileTemplatesForStyle`.
+        if (tileJson) tileJsons[source.url] = tileJson;
+      }
+      result[key] = unread ? null : core.browsedState(style, tileJsons, passiveUrls, styleUrl);
+      if (budget.latched) {
+        // Whatever is left is unread, not absent.
+        for (var k = i + 1; k < asked.length; k += 1) result[asked[k]] = null;
+        break;
+      }
+    }
+    return result;
+  }
+
+  /**
    * The downloaded areas this device has records for, normalised.
    *
    * Three record shapes become one: a region (keyed by ``region_id``, its
@@ -1657,6 +1810,25 @@
       );
     }
 
+    // SNOW-913: the style on screen, resolved before the browsing-cache
+    // read below needs it.
+    var current = selectedBasemap(panel, shell.mapBasemaps);
+    // SNOW-1058: and what the passive browsing cache holds for it, and for
+    // every basemap a download names — the same set the core makes rows
+    // for. The style URLs come off the cached map page's own picker.
+    var browsedKeys = (current ? [current] : []).concat(
+      areas
+        .map(function (area) {
+          return area.basemapKey;
+        })
+        .filter(Boolean),
+    );
+    var browsed = await readBrowsed(
+      browsedKeys,
+      shell.mapBasemaps && shell.mapBasemaps.urls ? shell.mapBasemaps.urls : {},
+      budget,
+    );
+
     var recordedIds = new Set(
       areas.map(function (area) {
         return area.id;
@@ -1777,10 +1949,13 @@
       // SNOW-913: the style on screen. The basemap rows are otherwise a
       // roll-up of what the device has STORED, which is a different
       // question from the one the reader is asking.
-      selectedBasemap: selectedBasemap(panel, shell.mapBasemaps),
+      selectedBasemap: current,
       currentPrincipal: typeof currentPrincipal === 'string' ? currentPrincipal : null,
       mapPath: mapPath,
       areas: areas,
+      // SNOW-1058: what the map can draw from the passive browsing cache,
+      // per basemap. `null` is a read that did not come back.
+      browsed: browsed,
       // Whether Cache Storage answered at all. The rows about the saved
       // page, the bulletins and the boot feeds are all read out of it, and
       // a device that could not be asked has not been checked — see
