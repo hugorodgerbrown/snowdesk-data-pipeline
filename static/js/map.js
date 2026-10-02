@@ -8836,17 +8836,6 @@
         return;
       }
 
-      // SNOW-1065: with a route open, a tap on the map that no marker took
-      // clears the route and the point together — the panel closes — and
-      // does nothing else. The tap was aimed at leaving the route, not at a
-      // region, and on a phone the region chip is withdrawn while the panel
-      // is open, so a region selected under it would be a change the reader
-      // cannot see.
-      if (window.pwaRouteRail?.isOpen?.()) {
-        window.pwaRouteRail.close();
-        return;
-      }
-
       // SNOW-761: a weather symbol owns its tap the same way a marker does,
       // and is checked in the same place — before the region fill, so a
       // tap on a symbol does not also select the region under it. The
@@ -8868,6 +8857,17 @@
           );
           return;
         }
+      }
+
+      // SNOW-1065: with a route open, a tap on the map that no marker and no
+      // weather symbol took clears the route and the point together — the
+      // panel closes — and does nothing else. The tap was aimed at leaving the route, not at a
+      // region, and on a phone the region chip is withdrawn while the panel
+      // is open, so a region selected under it would be a change the reader
+      // cannot see.
+      if (window.pwaRouteRail?.isOpen?.()) {
+        window.pwaRouteRail.close();
+        return;
       }
 
       // No marker claimed the tap. Resolve region intent from the fill layer

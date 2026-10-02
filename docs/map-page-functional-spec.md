@@ -358,7 +358,7 @@ than 6 px along the lane places a point with any pointer; a press without
 movement presses the leg. A tap on the open route's line only places the
 point — it no longer opens the leg there — and the first tap on a route
 still opens the rail and frames the track. A tap on the map that no marker
-takes, while a route is open, closes the panel and
+or weather symbol takes, while a route is open, closes the panel and
 does nothing else. Escape closes the open leg, then clears a point, then
 closes the panel; the panel's × clears a placed point first, then closes. Closing the rail clears the dot. All of it is hidden
 with the routes overlay.

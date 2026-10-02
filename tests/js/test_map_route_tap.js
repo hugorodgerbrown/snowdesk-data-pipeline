@@ -87,6 +87,16 @@ let installedLayers = new Set(['routes-line', 'routes-line-casing']);
 /** Whether a favourite pin sits under the exact tap point. */
 let favouriteUnderPoint = false;
 
+/** Whether a weather symbol sits under the exact tap point. */
+let weatherUnderPoint = false;
+
+/** A weather symbol, which owns its tap the way a marker does (SNOW-761). */
+const WEATHER_FEATURE = {
+  layer: { id: 'weather-point' },
+  geometry: { type: 'Point', coordinates: [7.0, 46.01] },
+  properties: { short_id: 'wx1' },
+};
+
 /**
  * Minimal MapLibre stub whose hit test behaves like a 1.5px line.
  *
@@ -166,6 +176,7 @@ function stubMapLibre() {
       // needed and almost never got.
       const hits = [];
       if (favouriteUnderPoint && wants('favourites-pin')) hits.push(FAVOURITE_FEATURE);
+      if (weatherUnderPoint && wants('weather-point')) hits.push(WEATHER_FEATURE);
       if (wants('routes-line') && geometry.y === LINE_Y) hits.push(ROUTE_FEATURE);
       return hits;
     },
@@ -286,6 +297,7 @@ beforeAll(async () => {
 beforeEach(() => {
   installedLayers = new Set(['routes-line', 'routes-line-casing']);
   favouriteUnderPoint = false;
+  weatherUnderPoint = false;
   ROUTE_FEATURE.properties.uuid = '11111111-2222-3333-4444-555555555555';
 });
 
@@ -374,6 +386,27 @@ describe('tapping a saved route', () => {
 
     expect(rail.state.open).toBe(false);
     expect(rail.last()).toBeNull();
+  });
+
+  it('leaves an open rail alone when the tap lands on a weather symbol', () => {
+    installedLayers = new Set(['routes-line', 'routes-line-casing', 'weather-point']);
+    weatherUnderPoint = true;
+    const open = vi.fn();
+    window.pwaWeatherDetail = { open };
+    rail.reset();
+    rail.state.open = true;
+    for (const handler of mapStub.handlers.click || []) {
+      handler({
+        point: { x: 10, y: LINE_Y + 60 },
+        lngLat: { lng: 7.0, lat: 46.01 },
+        originalEvent: { target: document.body },
+      });
+    }
+
+    expect(open).toHaveBeenCalledOnce();
+    expect(open.mock.calls[0][0]).toBe('wx1');
+    expect(rail.state.open).toBe(true);
+    delete window.pwaWeatherDetail;
   });
 
   it('does nothing when the routes layer is not installed', () => {
