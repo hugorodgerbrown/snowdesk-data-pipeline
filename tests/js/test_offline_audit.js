@@ -48,9 +48,12 @@ function installCachesStub(buckets) {
       const entries = buckets[name] || [];
       return {
         keys: async () => entries.map((entry) => ({ url: entry.url })),
-        match: async (request) => {
+        match: async (request, options) => {
           const url = typeof request === 'string' ? request : request.url;
-          const found = entries.filter((entry) => entry.url === url)[0];
+          // SNOW-1058: `ignoreSearch`, which the browsing-cache read asks
+          // for, compares the URLs with their queries dropped.
+          const bare = (value) => (options && options.ignoreSearch ? value.split('?')[0] : value);
+          const found = entries.filter((entry) => bare(entry.url) === bare(url))[0];
           if (!found) return undefined;
           // SNOW-912: a body as well as headers. The collector reads the
           // map page's HTML to learn which modules that page boots from,
@@ -61,6 +64,8 @@ function installCachesStub(buckets) {
               if (found.onText) found.onText();
               return found.body || '';
             },
+            // SNOW-1058: the passive cache's style and TileJSON documents.
+            json: async () => (found.json !== undefined ? found.json : JSON.parse(found.body || '')),
             clone: () => response,
           };
           return response;
@@ -324,6 +329,157 @@ describe('the pinned-bucket probe', () => {
 
     expect(readings.areas[0].bucketPresent).toBe(true);
     expect(readings.areas[0].entries).toHaveLength(2);
+  });
+});
+
+describe('the browsing-cache probe (SNOW-1058)', () => {
+  /*
+   * The map draws from `snowdesk-basemap-v1` whatever has been
+   * downloaded, and the report never looked there — so a device with
+   * nothing downloaded was told there was no map while one was drawing.
+   * The same rule as the pinned buckets above holds: `caches.has` before
+   * `caches.open`, because a report that creates the cache it is asking
+   * about has changed what it is diagnosing.
+   */
+  const ORIGIN = window.location.origin;
+  const STYLE_URL = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.basemap-winter.vt/style.json';
+  const TILEJSON_URL = 'https://vectortiles.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/tiles.json';
+  const MAP_PAGE = {
+    url: `${ORIGIN}/map/`,
+    headers: { 'X-SW-Principal': 'anonymous' },
+    body:
+      '<div id="map" data-default-basemap-key="swisstopo_winter"></div>' +
+      `<button data-basemap-key="swisstopo_winter" data-basemap-url="${STYLE_URL}"></button>`,
+  };
+  const STYLE = { version: 8, sources: { base: { type: 'vector', url: TILEJSON_URL } } };
+  const TILEJSON = {
+    tiles: ['https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf'],
+  };
+
+  it('reads "none" without creating a cache that is not there', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [MAP_PAGE] });
+
+    const readings = await audit.collect();
+
+    expect(readings.selectedBasemap).toBe('swisstopo_winter');
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'none' });
+    expect(cachesStub.has).toHaveBeenCalledWith('snowdesk-basemap-v1');
+    expect(cachesStub.opened).not.toContain('snowdesk-basemap-v1');
+  });
+
+  it('reads "tiles" off a cached style, its TileJSON and one tile', async () => {
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: STYLE_URL, json: STYLE },
+        { url: TILEJSON_URL, json: TILEJSON },
+        { url: 'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf' },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'tiles' });
+    const report = window.pwaOfflineAuditCore.buildReport(readings, {});
+    expect(report.verdict.text).toBe('verdict-browsed-only');
+  });
+
+  it('reads "style-only" when none of the style’s tiles is cached', async () => {
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: STYLE_URL, json: STYLE },
+        { url: TILEJSON_URL, json: TILEJSON },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'style-only' });
+  });
+
+  it('matches the style exactly, query included, as the worker serves it', async () => {
+    // Codex on #1025: sw.js serves a basemap entry with an exact
+    // `cache.match(request)`, so a style cached under another query is not
+    // one MapLibre would get offline, and must not read as browsed.
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: `${STYLE_URL}?v=old`, json: STYLE },
+        { url: TILEJSON_URL, json: TILEJSON },
+        { url: 'https://vectortiles0.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf' },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'none' });
+  });
+
+  it('treats a TileJSON that will not parse as absent, not as unread', async () => {
+    // basemap.at's source `url` is an ESRI service root, not a TileJSON:
+    // whatever is cached under it fails to parse. That is the absence of
+    // a TileJSON, so the core's site fallback answers rather than the
+    // whole row going to unknown.
+    installCachesStub({
+      'snowdesk-shell-abc': [MAP_PAGE],
+      'snowdesk-basemap-v1': [
+        { url: STYLE_URL, json: STYLE },
+        { url: TILEJSON_URL, body: '<html>not a TileJSON</html>' },
+        { url: 'https://vectortiles3.geo.admin.ch/tiles/ch.swisstopo.base.vt/v1.0.0/9/267/180.pbf' },
+      ],
+    });
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({ swisstopo_winter: 'tiles' });
+  });
+
+  it('asks nothing of a basemap whose style URL it cannot know', async () => {
+    // static/offline.html with no cached map page: no picker to read a
+    // URL off, so nothing to look the style up under.
+    window.localStorage.setItem('snowdesk.map.basemap', 'swisstopo_winter');
+    installCachesStub({});
+
+    const readings = await audit.collect();
+
+    expect(readings.browsed).toEqual({});
+    expect(cachesStub.has).not.toHaveBeenCalledWith('snowdesk-basemap-v1');
+  });
+
+  describe('when a read does not come back', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reads a timed-out match as unknown, never as nothing browsed', async () => {
+      const stub = installCachesStub({ 'snowdesk-shell-abc': [MAP_PAGE] });
+      const open = stub.open;
+      stub.has = vi.fn(async (name) => name === 'snowdesk-basemap-v1');
+      stub.open = vi.fn(async (name) => {
+        if (name !== 'snowdesk-basemap-v1') return open(name);
+        return {
+          keys: async () => [{ url: STYLE_URL }],
+          match: () => new Promise(() => {}),
+        };
+      });
+
+      const pending = audit.collect();
+      await vi.advanceTimersByTimeAsync(120000);
+      const readings = await pending;
+
+      expect(readings.browsed).toEqual({ swisstopo_winter: null });
+      expect(readings.degraded.timedOut).toContain('passive.match');
+      const report = window.pwaOfflineAuditCore.buildReport(readings, {});
+      const row = report.sections
+        .flatMap((section) => section.checks)
+        .filter((check) => check.id === 'basemap:swisstopo_winter')[0];
+      expect(row.status).toBe('unknown');
+    });
   });
 });
 
