@@ -2,7 +2,7 @@
 name: route-heights-come-from-the-terrain-model
 description: slope_samples heights, terrain_points, climb_totals — profile, legs, ascent/descent, track gradient on model heights
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # A route's heights come from the terrain model, not the altimeter
@@ -85,7 +85,8 @@ model's.
   `backfill_route_slope_samples` / `backfill_trip_slope_samples` re-walks
   it; both select a record lacking `heights`.
 - An outage during the height pass omits the key entirely, as the crux
-  pass does, so the row stays a backfill candidate. A `null` is only ever
+  pass did before SNOW-1066 removed it, so the row stays a backfill
+  candidate. A `null` is only ever
   a permanent "no ground here".
 - Ground outside the model's coverage keeps the device's height SHAPE on
   the model's datum (the Chamonix track's 11 uncovered boundaries). The

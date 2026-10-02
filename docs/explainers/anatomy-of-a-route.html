@@ -256,7 +256,7 @@ footer p + p { margin-top: 10px; }
 </section>
 
 <p style="color:var(--ink-2); max-width: 44em; font-size: 15.5px;">Every picture below is a real screenshot of the running app, using the swisstopo winter basemap. The route is a demonstration loop drawn through real steep ground above Verbier, and its terrain was sampled from the same 5 m grid the app uses for everyone. For each picture, every map layer was hidden except the ones named, so it shows what a single layer adds.</p>
-<p class="caveat" style="max-width: 44em;"><b>As at mid-September 2026.</b> The six layers are still measured as described, and the figures are still the ones the app quotes. What the <em>map</em> draws has since moved: a saved route is drawn as its legs — a climb dashed, a descent solid — with the slope colours of layer 2 painted on the line only once you zoom close in, and the rings, the split line and the arrows of layers 3–5 are no longer on the map at all. The ground under a leg is read on the rail that opens below the map when you tap a route: its slope bands, the no-fall passages, and how far the ground tilts across the track, which is the question the arrows were drawn to answer.</p>
+<p class="caveat" style="max-width: 44em;"><b>As at mid-September 2026.</b> The six layers are still measured as described, and the figures are still the ones the app quotes. What the <em>map</em> draws has since moved: a saved route is drawn as its legs — a climb dashed, a descent solid — with the slope colours of layer 2 painted on the line only once you zoom close in, and the rings, the split line and the arrows of layers 3–5 are no longer on the map at all. The key passages of layer 3 were removed altogether on 2 October 2026, and the bulletin reading of layer 6 the same day. The ground under a leg is read on the rail that opens below the map when you tap a route: its slope bands, the no-fall passages, and how far the ground tilts across the track, which is the question the arrows were drawn to answer.</p>
 
 <div class="principle">
   <div>
@@ -387,6 +387,7 @@ footer p + p { margin-top: 10px; }
   <div>
     <header><h2>Key passages: the ground above you</h2><span class="tickets">14 September 2026</span></header>
     <p class="q">Where could the slope above me release onto me?</p>
+    <p><b>Removed on 2 October 2026.</b> Routes no longer carry key passages: saving a route no longer looks for them, the app no longer sends them, and the route's detail no longer counts them. Where the dangerous ground is will instead be shown by a daily avalanche terrain layer on the map, which shades the steep ground the day's bulletin warns about around the route rather than marking points along it. This section describes what was built.</p>
     <div class="figs">
       <figure><img src="img/anatomy-of-a-route/05-cruxes.jpg" alt="The coloured route with small hollow rings at intervals along it" loading="lazy"><figcaption>Rings appear from zoom 11. This route has <b>17</b>.</figcaption></figure>
       <figure class="detail"><img src="img/anatomy-of-a-route/05-cruxes-detail.jpg" alt="Close-up of rings on the coloured line" loading="lazy"><figcaption>A ring can sit on a blue (gentle) stretch. That's the case they exist for.</figcaption></figure>
@@ -529,7 +530,7 @@ footer p + p { margin-top: 10px; }
         <tr><td>One flat purple line</td><td>The route has never been sampled</td><td>"We checked the terrain"</td></tr>
         <tr><td>Grey dashed stretch</td><td>Sampled, but the terrain model had no answer (the reason is stored)</td><td>Gentle ground</td></tr>
         <tr><td>Blue stretch</td><td>Measured under 30° over a 10 m window</td><td>No steep ground within reach (check for rings)</td></tr>
-        <tr><td>No rings</td><td>Neither the ground underfoot nor anything checked uphill reached 35°, or rings weren't calculated yet</td><td>A safe route</td></tr>
+        <tr><td>No rings (removed 2 October 2026)</td><td>Neither the ground underfoot nor anything checked uphill reached 35°, or rings weren't calculated yet</td><td>A safe route</td></tr>
         <tr><td>No split</td><td>No sample reached 50° after 10 m averaging</td><td>No no-fall ground</td></tr>
         <tr><td>No arrow</td><td>Under 30°, or between two arrows 250 m apart</td><td>Flat ground</td></tr>
         <tr><td>No bulletin overlap</td><td>No stretch matched a problem's aspect and height band</td><td>A good day to go</td></tr>
@@ -552,7 +553,7 @@ footer p + p { margin-top: 10px; }
         <tr><td>Height profile</td><td>The heights in the track</td><td><span class="pill derived">on your device</span></td></tr>
         <tr><td>Slope colours</td><td>The terrain model, every 25 m</td><td><span class="pill stored">kept, when saved</span></td></tr>
         <tr><td>Summary figures</td><td>Those same measurements</td><td><span class="pill stored">kept, when saved</span></td></tr>
-        <tr><td>Key passages</td><td>Those measurements, plus extra uphill lookups</td><td><span class="pill stored">kept, when saved</span></td></tr>
+        <tr><td>Key passages (removed 2 October 2026)</td><td>Those measurements, plus extra uphill lookups</td><td><span class="pill stored">kept, when saved</span></td></tr>
         <tr><td>No-fall passages</td><td>The kept angles</td><td><span class="pill derived">on request</span></td></tr>
         <tr><td>Fall line</td><td>The kept aspects</td><td><span class="pill derived">on request</span></td></tr>
         <tr><td>Bulletin overlap</td><td>The kept aspects, the track's heights, that day's bulletin</td><td><span class="pill derived">on request</span> <span class="pill never">saved on your device, expires</span></td></tr>

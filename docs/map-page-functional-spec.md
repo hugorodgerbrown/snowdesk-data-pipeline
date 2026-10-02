@@ -318,9 +318,11 @@ numbered circle marks each transition, 1 to legs − 1 along the track, so
 a number on the map is the boundary between the same two legs on the
 rail. Opening a leg on the rail dims every other leg until it is closed.
 The line carries no terrain marks. SNOW-1019 took the no-fall passage
-split line, the crux rings and the fall-line arrows off this map and the
-trip map: the passages are drawn as bars on rail two, the bank ribbon on
-rail two replaced the arrows, and the crux is deferred. A route shared
+split line and the fall-line arrows off this map and the trip map: the
+passages are drawn as bars on rail two, and the bank ribbon on rail two
+replaced the arrows. Routes carry no crux: SNOW-1066 removed route-level
+cruxes, and where the dangerous ground is is the daily avalanche terrain
+layer's question (SNOW-979). A route shared
 with the reader and not yet saved stays a teal dashed line with no legs. The
 slope-class colours SNOW-910 painted along the line left the map; they
 return on the leg rail (SNOW-1019). A route with no elevation has no legs

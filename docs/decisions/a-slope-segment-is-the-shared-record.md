@@ -101,8 +101,9 @@ bulletin's aspect bands.
 
 Sending the aspect per segment would roughly double the payload for a 15 km
 tour — 600 segments — on a feed the offline cache holds. So the stored
-record is the server-side truth that SNOW-911 (cruxes) and SNOW-839
-(bulletin scoring) read, and the wire form is the subset the map paints.
+record is the server-side truth that SNOW-839 (bulletin scoring) and the
+derived wire keys read — SNOW-911's cruxes read it too, until SNOW-1066
+removed route cruxes — and the wire form is the subset the map paints.
 They are deliberately not the same shape, and `compact_slope` in
 `apps/routes/services/slope_wire.py` is the one place the reduction
 happens — it moved out of `apps/routes/views.py` in SNOW-962, when the

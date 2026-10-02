@@ -2,7 +2,7 @@
 name: legs-not-slope-classes-on-the-map
 description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -28,6 +28,14 @@ marks are deferred to a later ticket; the server's crux probe
 (`apps/routes/services/cruxes.py`) and the `cruxes` key on the slope
 record are unchanged. The bank ribbon on rail two replaced the arrows.
 The no-fall passages remain the one terrain mark on the line.
+
+**2026-10-02 (SNOW-1066).** The deferred crux is not coming back.
+Snowdesk keeps no route-level crux: `apps/routes/services/cruxes.py` is
+deleted, sampling no longer writes `cruxes` or a per-segment `crux` flag,
+the slope wire no longer sends `cruxes`, and the detail sheet's
+key-passage count is gone. Where the dangerous ground is will be the
+daily avalanche terrain layer's job (SNOW-979). Old records keep their
+keys, unread.
 
 **2026-09-24, later (SNOW-1019).** The passage split line is off both
 maps too, with its legend row. The line on the map is now its legs, the
@@ -110,7 +118,7 @@ it is. The legs answer the first zoom, the classes the second.
   which neither the map nor the rail carried a slope class; since
   2026-09-30 the map carries them again from z14 (above). The passages,
   cruxes and arrows said where the steep ground was until SNOW-1019 took
-  them off the line.
+  them off the line (and SNOW-1066 removed cruxes altogether).
 - **A selection dims the others instead of darkening the chosen leg.**
   The chosen leg keeps the colour and weight the rail uses for it, so the
   two surfaces still read as one drawing, and the rest of the route stays

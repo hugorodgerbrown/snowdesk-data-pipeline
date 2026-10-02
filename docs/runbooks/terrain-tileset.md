@@ -19,8 +19,8 @@ and the Worker applies unchanged.
 *read*. Django fetches a tile and decodes Int16 heights out of it to answer
 "what is the height at this coordinate, and therefore what is the slope
 angle" — the question SNOW-910 (colouring a route line by the slope it
-crosses), SNOW-911 (crux marking) and SNOW-839 (scoring a route against the
-bulletin) all need, and the one a pre-rendered raster cannot answer. MapLibre
+crosses), SNOW-964 (no-fall passages) and SNOW-839 (scoring a route against
+the bulletin) all need, and the one a pre-rendered raster cannot answer. MapLibre
 can paint the slope overlay; nothing can read a value back out of it.
 
 So the two terrain surfaces are unrelated in everything but subject:
