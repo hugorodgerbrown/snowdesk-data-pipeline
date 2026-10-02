@@ -36,6 +36,7 @@ from typing import Any
 from django.conf import settings
 
 from apps.public._component_fixtures import (
+    ASPECT_WHEEL_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
@@ -1566,6 +1567,27 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="includes/_route_rail.html",
         variants=ROUTE_RAIL_VARIANTS,
         panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="aspect-wheel",
+        label="Aspect wheel",
+        description=(
+            "One route segment's heading and the way the ground under it "
+            "faces (SNOW-1063): two eight-sector compass rings, north up. "
+            "The outer ring lights the sector the ground faces, in the "
+            "slope class of its angle; the inner ring lights the heading, "
+            "in the class of the track's own gradient, with the previous "
+            "and next segments' headings at 35%. The centre triangle "
+            "points up for a climb and down for a descent; a level track "
+            "draws a bar. Flat ground leaves the outer ring unlit, and "
+            "missing terrain data fills it grey. Drawn by "
+            "static/js/aspect_wheel.js through aspect_wheel_core.js; not "
+            "yet mounted on a route surface."
+        ),
+        kind="components",
+        partial="includes/_aspect_wheel.html",
+        variants=ASPECT_WHEEL_VARIANTS,
+        panel_layout="two-col",
     ),
     FoundationCategory(
         slug="favourite-problem",
