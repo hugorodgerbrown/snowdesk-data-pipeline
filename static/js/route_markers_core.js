@@ -39,7 +39,6 @@
  *   endpointsGeojson(routesCollection)
  *   startDotPixels(r, g, b)
  *   finishFlagPixels(r, g, b)
- *   cruxRingPixels()
  *   fallLineArrowPixels()
  */
 
@@ -71,10 +70,6 @@
   const POLE_TOP = 5;
   const POLE_BOTTOM = 35;
 
-  /** The crux ring's outer radius and stroke, in device pixels. */
-  const CRUX_RADIUS = 13;
-  const CRUX_STROKE = 3;
-
   /**
    * The fall-line arrow, in device pixels: tip, the head's base, the
    * tail, and the two half-widths.
@@ -84,10 +79,6 @@
    * from there and the bearing it is given is a compass bearing. Drawing
    * it any other way round would make every arrow wrong by a constant,
    * which is the class of bug that looks plausible on screen.
-   *
-   * Shorter than the crux ring is wide (26 px) and much narrower, so the
-   * two read as different marks where they co-occur — which is often,
-   * since any ground over 50 degrees was ringed at 35.
    */
   const ARROW_TIP_Y = 6;
   const ARROW_HEAD_Y = 21;
@@ -314,50 +305,6 @@
   }
 
   /**
-   * The crux marker: an open ring, hollow, with nothing inside it.
-   *
-   * SNOW-911. It sits ON the coloured line rather than beside it, so the
-   * middle is left empty: a filled disc would hide the very segment
-   * colour the reader is being sent to look at, and the whole marker says
-   * "look here" rather than "here is a thing".
-   *
-   * **NO COLOUR OF ITS OWN.** Every pixel is opaque white and the layer
-   * registers it `sdf: true`, which keeps only the alpha mask and lets
-   * `icon-color` paint it — so the ring's colour is a paint property one
-   * line away from the layer rather than baked into pixel data. That is
-   * also why this cannot be a two-tone glyph: an SDF image collapses to
-   * its silhouette, which is the trap `finishFlagPixels` documents and
-   * avoids by NOT being an SDF.
-   *
-   * Antialiasing is deliberate. A hard-edged ring at 26 device pixels
-   * reads as a polygon; the fractional coverage at the boundary is what
-   * makes it a circle, and an SDF's alpha channel carries it exactly.
-   *
-   * @returns {{width: number, height: number, data: Uint8ClampedArray}} A
-   *   MapLibre StyleImage.
-   */
-  function cruxRingPixels() {
-    const data = blank();
-    const centre = SIZE / 2 - 0.5;
-    const inner = CRUX_RADIUS - CRUX_STROKE;
-
-    for (let y = 0; y < SIZE; y += 1) {
-      for (let x = 0; x < SIZE; x += 1) {
-        const dx = x - centre;
-        const dy = y - centre;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        // Coverage falls off over one pixel at each edge of the stroke,
-        // which is what an antialiased circle is.
-        const outerAlpha = Math.min(1, Math.max(0, CRUX_RADIUS - distance));
-        const innerAlpha = Math.min(1, Math.max(0, distance - inner));
-        const alpha = Math.min(outerAlpha, innerAlpha);
-        if (alpha > 0) put(data, x, y, [255, 255, 255, Math.round(alpha * 255)]);
-      }
-    }
-    return { width: SIZE, height: SIZE, data: data };
-  }
-
-  /**
    * The fall-line mark: an arrow pointing the way the ground falls.
    *
    * A head and a short shaft rather than a bare triangle. At 20 CSS
@@ -366,14 +313,14 @@
    * glance, which matters because the reader is being asked to compare
    * its direction with the direction of the TRACK it sits on.
    *
-   * **NO COLOUR OF ITS OWN**, the `cruxRingPixels` rule: every pixel is
-   * opaque white and the layer registers it `sdf: true`, so `icon-color`
-   * paints it and the ink stays one paint property away from the layer.
+   * **NO COLOUR OF ITS OWN.** Every pixel is opaque white and the layer
+   * registers it `sdf: true`, so `icon-color` paints it and the ink stays
+   * one paint property away from the layer.
    * That also means it cannot be two-tone — an SDF keeps only the alpha
    * mask — which is the trap `finishFlagPixels` documents.
    *
-   * Antialiased across the boundary, for `cruxRingPixels`' reason: at
-   * these sizes the fractional coverage is what stops a sloped edge
+   * Antialiased across the boundary: at these sizes the fractional
+   * coverage is what stops a sloped edge
    * reading as a staircase, and an SDF's alpha channel carries it
    * exactly.
    *
@@ -407,7 +354,6 @@
     endpointsGeojson: endpointsGeojson,
     startDotPixels: startDotPixels,
     finishFlagPixels: finishFlagPixels,
-    cruxRingPixels: cruxRingPixels,
     fallLineArrowPixels: fallLineArrowPixels,
   });
 })();

@@ -345,7 +345,7 @@ class TestAspectSectors:
     """One sector per segment, null where there is no direction to report."""
 
     def test_the_flat_cut_off_is_the_rail_s_flat_ground(self) -> None:
-        """Five degrees, ``FLAT_GROUND_DEG`` in route_rail_two_core.js."""
+        """Five degrees, the point card's flat ground (route_point_card_core.js)."""
         assert ASPECT_FLAT_DEG == 5.0
 
     def test_aligns_with_the_segments(self) -> None:

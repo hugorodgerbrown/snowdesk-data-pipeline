@@ -428,18 +428,17 @@
   --color-slope-gentle: #38bdf8;   /* <30°              */
   --color-slope-unknown: #94a3b8;  /* sampled, no answer */
 
-  /* —— the crux ring (SNOW-911) ——
-     A marker, not a band, and so deliberately NOT on the
-     scale above: the ring says WHERE to look and the line
-     under it already says how steep that ground is.
-     Borrowing a scale colour would make it read as a
-     sixth class. Near-black, which is the one ink
-     readable over all six of them — the ring is drawn
-     over the coloured line it marks. Mirrored as a
-     literal in map.js (ROUTE_CRUX_COLOUR), which cannot
-     read a custom property in a MapLibre paint property.
+  /* —— the track scale's first step (SNOW-1064) ——
+     The aspect wheel's INNER ring names the track on its
+     own five-step scale (level < 5°, gentle < 15°,
+     moderate < 25°, steep < 35°, very steep), reusing
+     gentle, 30, 35 and 40 above for the upper four. A
+     level track needs a step of its own below gentle, so
+     it is the same blue, lighter: on the scale's cool end
+     and plainly "less" than gentle. Wheel only; no line
+     or legend paints it.
      ————————————————————————————————————————— */
-  --color-crux-ring: #1a1916;
+  --color-track-level: #bae6fd;    /* track under 5°    */
 
   /* —— the no-fall passage's core (SNOW-964) ——
      A passage is drawn as a SPLIT line: the band
@@ -452,11 +451,10 @@
      `transparent` is not an option: MapLibre cannot
      punch a hole through one line layer to another, so
      a transparent core would reveal the dark casing
-     and read as a shadow rather than a gap. #ffffff is
-     avoided because it is the crux ring's halo, and
-     the two marks co-occur on nearly every passage —
-     anything over 50° has already been flagged a crux
-     at 35°.
+     and read as a shadow rather than a gap. A shade
+     off #ffffff rather than pure white, kept from when
+     pure white was another marker's halo (the crux
+     ring, removed by SNOW-1066).
 
      Mirrored as a literal in route_slope_core.js
      (PASSAGE_CORE_COLOUR / PASSAGE_CORE_TOKEN), which
@@ -468,18 +466,15 @@
   /* —— the fall-line arrow ——
      A small arrow on a saved route, pointing the way
      the ground under it FALLS. A mark rather than a
-     band, so off the scale above for the crux ring's
-     reason — a marker tinted from the ramp reads as a
-     further class of ground.
+     band, so off the scale above: a marker tinted from
+     the ramp reads as a further class of ground.
 
-     The ring's own value, and named separately on
-     purpose. The two are one family of mark and should
-     look like it, but they can be re-inked
-     independently, and a token named for one mark that
-     two marks read is the drift SNOW-969 spent two
-     tickets closing. `--color-route-line-casing`
-     already carries this value under a third name on
-     the same reasoning.
+     Near-black, the one ink readable over every class
+     on the line, and named for this mark alone: a
+     token named for one mark that two marks read is
+     the drift SNOW-969 spent two tickets closing.
+     `--color-route-line-casing` already carries this
+     value under another name on the same reasoning.
 
      Mirrored as a literal in route_slope_core.js
      (FALL_LINE_COLOUR / FALL_LINE_TOKEN), which is
@@ -1559,7 +1554,7 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 
-/* —— Rail one's leg fills (SNOW-1018) ————————————
+/* —— The rail's leg fills (SNOW-1018) ————————————
    static/js/route_rail.js draws one <path class="route-rail-leg"> per
    leg and marks it `data-climbing` and, while it is the open leg,
    `aria-pressed="true"`. Both are data-attribute selectors, which a
@@ -1579,62 +1574,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    by the fill below rather than by an outline. */
 .route-rail-leg:focus { outline: none; }
 .route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
-
-/* —— Rail two's lane (SNOW-1019) ————————————————
-   static/js/route_rail_two.js pans and pinch-zooms the lane itself, so
-   the browser must not take a touch on it as a page scroll or a zoom:
-   `touch-action: none` hands every pointer to the script. A press on a
-   band or a passage bar moves the cursor there; nothing is selected
-   (SNOW-1052 removed the `data-selected` rules with the selection). A
-   press or a drag reads a point, so the pointer is a crosshair rather
-   than a grab hand, and a band or bar has no hover of its own. */
-.route-rail-two-lane {
-    touch-action: none;
-    cursor: crosshair;
-    user-select: none;
-}
-/* The empty row (SNOW-1024) holds no leg, so there is nothing to read. */
-[data-route-rail-two][data-empty] .route-rail-two-lane { cursor: default; }
-/* A press on the lane focuses it; the ring is for keyboard focus only. */
-.route-rail-two-lane:focus:not(:focus-visible) { outline: none; }
-.route-rail-two-lane:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-/* —— Rail two's leg picker (SNOW-1033) ——————————
-   static/js/route_rail_two.js lays one <button class="route-rail-two-leg">
-   per leg over the empty lane, marked `data-climbing` like rail one's leg
-   fills, with a 24 px `.route-rail-two-leg-fill` inside carrying the leg
-   number. A data-attribute selector picks the colour, which a utility
-   cannot: the fill is rail one's leg colour at a tint, the number the same
-   colour darkened towards the text ink. `.route-rail-two-leg-solid` is the
-   pressed segment's full colour, which the opening motion fades in. */
-.route-rail-two-leg {
-    --route-rail-two-leg-colour: var(--color-route-rail-descent);
-    --route-rail-two-leg-tint: 22%;
-    cursor: pointer;
-}
-.route-rail-two-leg[data-climbing="true"] {
-    --route-rail-two-leg-colour: var(--color-route-rail-climb);
-}
-.route-rail-two-leg-fill {
-    background-color: color-mix(
-        in srgb,
-        var(--route-rail-two-leg-colour) var(--route-rail-two-leg-tint),
-        transparent
-    );
-    color: color-mix(in srgb, var(--route-rail-two-leg-colour) 70%, var(--color-text-1));
-    transition: background-color 120ms ease-out;
-}
-.route-rail-two-leg-solid { background-color: var(--route-rail-two-leg-colour); }
-.route-rail-two-leg:hover { --route-rail-two-leg-tint: 36%; }
-/* The ring is for keyboard focus only, and goes round the coloured part
-   rather than the full-height tap area. */
-.route-rail-two-leg:focus { outline: none; }
-.route-rail-two-leg:focus-visible .route-rail-two-leg-fill {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 1px;
-}
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and

@@ -42,10 +42,8 @@ RECORD: dict[str, Any] = {
     "grid": "snowdesk-terrain-5m-3035",
     "points": [[7.0, 46.0], [7.0, 46.01]],
     "segments": [{"angle_deg": 34.2, "aspect_deg": 180.0}],
-    # A CURRENT record carries ``cruxes`` even when nothing was flagged
-    # (SNOW-911) — the key's presence is what marks the row up to date.
-    "cruxes": [],
-    # And ``heights`` since SNOW-1043, one per boundary, on the same rule.
+    # A CURRENT record carries ``heights`` (SNOW-1043), one per boundary
+    # — the key's presence is what marks the row up to date.
     "heights": [2000.0, 2010.0],
 }
 
@@ -55,7 +53,6 @@ def _route_record(angle_deg: float) -> dict[str, Any]:
     return {
         **RECORD,
         "segments": [{"angle_deg": angle_deg, "aspect_deg": 180.0}],
-        "cruxes": [],
     }
 
 
@@ -217,21 +214,19 @@ class TestReadOnlyByDefault:
         # of these need the origin at all.
         assert "1 trip(s) would inherit" in output
 
-    def test_a_record_written_before_cruxes_is_a_candidate_again(self) -> None:
-        """SNOW-911 added a key; the key's presence is what marks a row
-        current, and an empty list inside it is an answer.
-        """
-        legacy = {k: v for k, v in RECORD.items() if k != "cruxes"}
+    def test_a_record_without_cruxes_is_current(self) -> None:
+        """SNOW-1066 removed cruxes, so their key no longer selects a row."""
+        assert "cruxes" not in RECORD
         TripFactory.create(
-            points=MERIDIAN_TRACK, point_count=2, slope_samples=legacy, route=None
+            points=MERIDIAN_TRACK, point_count=2, slope_samples=RECORD, route=None
         )
 
         output = _run()
 
-        assert "1 trip(s)" in output
+        assert "0 trip(s)" in output
 
     def test_a_record_written_before_heights_is_a_candidate_again(self) -> None:
-        """SNOW-1043 added a key, selected on exactly as ``cruxes`` is."""
+        """SNOW-1043 added a key; its presence marks a row current."""
         legacy = {k: v for k, v in RECORD.items() if k != "heights"}
         TripFactory.create(
             points=MERIDIAN_TRACK, point_count=2, slope_samples=legacy, route=None
@@ -242,7 +237,11 @@ class TestReadOnlyByDefault:
         assert "1 trip(s)" in output
 
     def test_a_route_record_without_heights_is_not_inherited(self) -> None:
-        """The same convergence rule as a record without ``cruxes``."""
+        """Inheriting one would never converge.
+
+        The trip would still be missing the key the candidate queryset
+        selects on, so it would be re-copied on every run for ever.
+        """
         organiser = UserFactory.create()
         route = RouteFactory.create(
             user=organiser,
@@ -264,34 +263,6 @@ class TestReadOnlyByDefault:
         trip.refresh_from_db()
         assert trip.slope_samples is not None
         assert "heights" in trip.slope_samples
-
-    def test_a_stale_route_record_is_not_inherited(self) -> None:
-        """Inheriting one would never converge.
-
-        The trip would still be missing the key the candidate queryset
-        selects on, so it would be re-copied on every run for ever.
-        """
-        organiser = UserFactory.create()
-        route = RouteFactory.create(
-            user=organiser,
-            points=MERIDIAN_TRACK,
-            slope_samples={k: v for k, v in RECORD.items() if k != "cruxes"},
-        )
-        trip = TripFactory.create(
-            created_by=organiser,
-            route=route,
-            points=MERIDIAN_TRACK,
-            point_count=2,
-            slope_samples=None,
-        )
-
-        with patch(_BUILDER, return_value=RECORD) as builder:
-            _run("--commit")
-
-        builder.assert_called_once()
-        trip.refresh_from_db()
-        assert trip.slope_samples is not None
-        assert "cruxes" in trip.slope_samples
 
     def test_a_sampled_trip_is_not_a_candidate(self) -> None:
         """Idempotent — a second run selects only what the first missed."""

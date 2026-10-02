@@ -2,7 +2,7 @@
 name: terrain-unknown-is-a-reason-not-a-null
 description: sample_height and sample_slope return a TerrainUnknown — outside_coverage, no_data, unavailable — never None; a 204 is the coverage answer
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # A terrain unknown is a reason, never a null
@@ -32,7 +32,8 @@ Roughly half the grid's rectangle is ground no source covers — swissALTI3D
 fills 27,331 of the 53,760 tile slots its bbox spans, because Switzerland
 is a diagonal country in an axis-aligned box. Every consumer of this
 service paints its answer: SNOW-910 colours a route line by steepness,
-SNOW-911 marks its cruxes, SNOW-839 scores it against the bulletin. A
+SNOW-964 finds its no-fall passages, SNOW-839 scores it against the
+bulletin. (SNOW-911 marked cruxes too, until SNOW-1066 removed them.) A
 `None` reaching any of them is one `or 0` away from a green line over
 unsurveyed ground, and the reader has no way to tell that apart from a
 measured 0 degrees on a valley floor. The two must be different values, and

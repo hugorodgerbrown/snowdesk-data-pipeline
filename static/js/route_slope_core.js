@@ -78,8 +78,6 @@
  *   segmentPaths(s, c)     — each segment's [lon, lat] path along c
  *   segmentFeatures(f)     — one OWNED route feature -> its segments
  *   segmentCollection(fc)  — a routes FeatureCollection -> all of them
- *   cruxCollection(fc)     — its crux markers as Points (SNOW-911)
- *   cruxCount(f)           — how many one route carries
  *   fallLineCollection(fc) — its fall-line arrows as Points
  *   summaryLines(terrain)  — the same record in words (SNOW-961)
  *   passageLines(f)        — its no-fall passages in words (SNOW-964)
@@ -171,10 +169,9 @@
    *
    * `transparent` is not an option: MapLibre cannot punch a hole through
    * one line layer to another, so a transparent core would reveal the
-   * dark casing under the route and read as a shadow. `#ffffff` is
-   * avoided because it is the crux ring's halo, and the two marks
-   * co-occur on nearly every passage — any segment over 50° has already
-   * fired `is_crux` at 35°.
+   * dark casing under the route and read as a shadow. A shade off
+   * `#ffffff` rather than pure white, kept from when pure white was
+   * another marker's halo (the crux ring, removed by SNOW-1066).
    *
    * Mirrors `--color-passage-core` in `src/css/main.css`; the literal is
    * here because a MapLibre paint property cannot read a custom
@@ -188,19 +185,15 @@
   /**
    * The fall-line arrow's ink.
    *
-   * The crux ring's near-black, value for value, and deliberately not a
-   * hue of its own. The two are ONE FAMILY of mark — each says where to
-   * look or which way to look, and neither says anything about how steep
-   * the ground is — and the whole reason the ring borrows nothing from
-   * the scale is that a marker tinted from the ramp reads as a further
-   * class of ground. A third colour would make an arrow look like a
-   * seventh band.
+   * Near-black, and deliberately not a hue of its own. An arrow says
+   * which way to look, not how steep the ground is, and a marker tinted
+   * from the ramp reads as a further class of ground — a colour of its
+   * own would make an arrow look like a seventh band.
    *
-   * It has a token of its own rather than reading `--color-crux-ring`,
-   * because the two marks can be re-inked independently and a token
-   * named for one mark but used by two is exactly the drift SNOW-969
-   * spent two tickets closing. `--color-route-line-casing` already
-   * carries this same value under a third name, on the same reasoning.
+   * It has a token of its own because a token named for one mark but
+   * used by two is exactly the drift SNOW-969 spent two tickets closing.
+   * `--color-route-line-casing` already carries this same value under
+   * another name, on the same reasoning.
    *
    * Registered `sdf: true` in `map.js`, so this value reaches the map as
    * `icon-color` rather than as pixel data — the arrow itself is an
@@ -447,7 +440,7 @@
         //
         // SNOW-964's `passage` joins the KNOWN branch only, and is set
         // to `true` or left off entirely — never `false`, the rule
-        // `_mark_cruxes` follows server-side. The server never names an
+        // the server's passage pass follows. The server never names an
         // unknown segment in a passage, and this is the second place
         // that holds: a feature cannot carry both.
         properties: slopeClass === null
@@ -552,8 +545,8 @@
    * @typedef {object} TerrainLine
    * @property {string} key The `data-string` key in the surface partial.
    * @property {{km?: string, m?: string, deg?: string, count?: string}} params
-   *   Its values. `count` is the marker counts' — SNOW-911's cruxes,
-   *   built in `map.js`, and SNOW-964's passages below — and a direction
+   *   Its values. `count` is the marker count — SNOW-964's passages
+   *   below — and a direction
    *   descriptor interpolates nothing at all, so every key is optional.
    */
 
@@ -632,63 +625,6 @@
   }
 
   /**
-   * Every route's crux markers, as one Point FeatureCollection.
-   *
-   * SNOW-911. The server groups a run of flagged segments into ONE
-   * coordinate (`apps/routes/services/cruxes.py`), so this only unpacks
-   * what it was given — a client that re-grouped would be a second
-   * opinion about how many passages a track has.
-   *
-   * A PENDING ROUTE PRODUCES NOTHING, the same rule `segmentFeatures`
-   * follows and for the same reason: a followed share's one line says
-   * "this one is not yours yet", and hanging markers off it would spend
-   * that line on a second message. It also keeps a non-owner's feature
-   * from carrying anything but its token.
-   *
-   * Always a valid collection, even when nothing is marked — `setData`
-   * throws on a null.
-   *
-   * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
-   * @returns {{type: string, features: Array<object>}} The markers.
-   */
-  function cruxCollection(geojson) {
-    const features = (geojson && geojson.features) || [];
-    const markers = [];
-    for (let i = 0; i < features.length; i += 1) {
-      const properties = (features[i] && features[i].properties) || {};
-      if (properties.pending) continue;
-      const cruxes = (properties.slope && properties.slope.cruxes) || [];
-      if (!Array.isArray(cruxes)) continue;
-      for (let j = 0; j < cruxes.length; j += 1) {
-        const point = cruxes[j];
-        if (!Array.isArray(point) || point.length < 2) continue;
-        markers.push({
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [point[0], point[1]] },
-          properties: properties.uuid ? { uuid: properties.uuid } : {},
-        });
-      }
-    }
-    return { type: 'FeatureCollection', features: markers };
-  }
-
-  /**
-   * How many cruxes one route feature carries.
-   *
-   * @param {?{properties?: object}} feature One route Feature.
-   * @returns {number} The count, 0 when the route has none and 0 when it
-   *   has never been sampled — the popup tells those apart by whether it
-   *   has a `terrain` summary at all, not by this number.
-   */
-  function cruxCount(feature) {
-    const properties = /** @type {{slope?: {cruxes?: Array<*>}}} */ (
-      (feature && feature.properties) || {}
-    );
-    const cruxes = properties.slope && properties.slope.cruxes;
-    return Array.isArray(cruxes) ? cruxes.length : 0;
-  }
-
-  /**
    * One fall-line mark, as the server sends it.
    *
    * Both fields are optional because this arrives from a feature
@@ -707,9 +643,8 @@
    * MIDPOINT, which is where the aspect was sampled — the "sample at the
    * midpoints" rule in
    * docs/decisions/a-slope-segment-is-the-shared-record.md. Placing it
-   * on the named boundary instead, as `cruxCollection` does for its own
-   * reasons, would put the arrow a dozen metres from the ground it
-   * describes.
+   * on a boundary instead would put the arrow a dozen metres from the
+   * ground it describes.
    *
    * A straight average of the two boundary coordinates, not a
    * great-circle midpoint: over one 25 m stride the two differ by well
@@ -790,7 +725,7 @@
    * has frozen, and putting them in the summary would be the first step
    * towards storing them.
    *
-   * OMITTED ENTIRELY AT ZERO, the `cruxCount` rule. "0 no-fall passages"
+   * OMITTED ENTIRELY AT ZERO. "0 no-fall passages"
    * claims the algorithm looked and found none, which is exactly the
    * reading `/help/#help-topic-slope` exists to prevent: a narrow steep
    * passage between two gentler samples reads gentler than it is.
@@ -841,8 +776,6 @@
     segmentPaths: segmentPaths,
     segmentFeatures: segmentFeatures,
     segmentCollection: segmentCollection,
-    cruxCollection: cruxCollection,
-    cruxCount: cruxCount,
     fallLineCollection: fallLineCollection,
     summaryLines: summaryLines,
     passageLines: passageLines,

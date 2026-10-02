@@ -313,9 +313,13 @@ describe('fallLineArrowPixels — the fall-line mark', () => {
   it('leaves the buffer above the tip and below the tail empty', () => {
     const image = core.fallLineArrowPixels();
 
-    // The arrow is shorter than the crux ring is wide, so the two read
-    // as different marks where they co-occur — which is most passages.
     expect(alpha(image, 20, 2)).toBe(0);
     expect(alpha(image, 20, 38)).toBe(0);
+  });
+});
+
+describe('the crux ring (SNOW-1066)', () => {
+  it('is no longer built: route-level cruxes were removed', () => {
+    expect(core).not.toHaveProperty('cruxRingPixels');
   });
 });

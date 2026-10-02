@@ -1,8 +1,9 @@
 """backfill_trip_slope_samples — give existing trips the ground they cross.
 
 Backfill for SNOW-962, and for every later ticket that adds a key to the
-record — SNOW-911's ``cruxes`` is the first, SNOW-1043's ``heights`` the
-second.
+record — SNOW-1043's ``heights`` is the one it currently selects on.
+(SNOW-911's ``cruxes`` was once a second; SNOW-1066 removed cruxes, so a
+record without that key is no longer a candidate.)
 
 Every ``Trip`` created before SNOW-962 has a null ``slope_samples``, which
 means NEVER SAMPLED and draws the trip page's line and height profile
@@ -32,11 +33,10 @@ Migration ``0003`` adds the column and nothing else.
 
 **Two kinds of candidate.** A null is a trip nothing has sampled. A
 record missing a key is one written before the ticket that added it: no
-``cruxes`` (SNOW-911) draws its colours but none of its markers, and no
 ``heights`` (SNOW-1043) draws its profile and figures off the recording
-device's drifting altimeter — and nothing else would ever add either. A
-record carrying both keys is current even when the lists inside are
-empty or hold nulls, because those are answers.
+device's drifting altimeter — and nothing else would ever add it. A
+record carrying the key is current even when the list inside holds
+nulls, because those are answers.
 
 **Null stays honest.** A trip that comes back with nothing learnable is
 left null rather than written as a record of nothing, so a later run
@@ -146,14 +146,11 @@ class Command(BaseCommand):
         # ``select_related`` because the copy path reads the source route
         # for all but a handful of rows.
         # Two kinds of candidate, as the routes command has: a null is a
-        # trip nothing has sampled, and a record missing ``cruxes`` or
-        # ``heights`` is one written before SNOW-911 or SNOW-1043. A record
-        # carrying both is current even when a list inside is empty — that
-        # is "nothing was flagged" — or holds nulls — "no ground there".
+        # trip nothing has sampled, and a record missing ``heights`` is one
+        # written before SNOW-1043. A record carrying it is current even
+        # when the list inside holds nulls — "no ground there".
         candidates = Trip.objects.filter(
-            Q(slope_samples__isnull=True)
-            | ~Q(slope_samples__has_key="cruxes")
-            | ~Q(slope_samples__has_key="heights")
+            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="heights")
         ).select_related("route")
         total = candidates.count()
 
@@ -225,7 +222,7 @@ class Command(BaseCommand):
         # worth inheriting: the trip would still be missing the key this
         # command selects on, so it would be re-copied on every run and
         # never converge. Walking answers it once.
-        if "cruxes" not in route.slope_samples or "heights" not in route.slope_samples:
+        if "heights" not in route.slope_samples:
             return None
         record: dict[str, Any] = route.slope_samples
         return record

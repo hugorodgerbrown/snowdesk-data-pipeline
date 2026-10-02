@@ -29,18 +29,17 @@ half that fits.
             particular aspect and elevation.
         {% endblocktrans %}
     </p>
-    {# SNOW-1019: a route's steepness is read on the rails, not on the  #}
-    {# map line, which is drawn as its legs (SNOW-1017). The trip page's #}
-    {# own map still colours its line by the bands.                     #}
+    {# SNOW-1065: a route's steepness is read on the map line from z14,   #}
+    {# coloured by the bands, and one point at a time in the route panel. #}
+    {# The trip page's own map colours its line by the bands too.         #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-route-colouring">
         {% blocktrans trimmed %}
-            A saved route&rsquo;s steepness is read on the rail below the map. Open a leg and the second rail draws a
-            strip of slope bands in the same classes, one band for each stretch of the same class, under the leg&rsquo;s
-            height profile; on a trip&rsquo;s page the route line itself is coloured by them. Either way the colour is
-            the steepness of the GROUND, never of the track: a skin track zigzagging up a steep face climbs gently along
-            its own length, and colouring it by its own gradient would make a serious slope look easy. Where a band is
-            grey and dashed, the terrain data does not cover it &mdash; that is the same coverage limit described below,
-            and it never means the ground is gentle.
+            A saved route&rsquo;s steepness is read on the map: zoom in close and the route line itself is coloured in
+            the same classes, one colour for each stretch of the same class; on a trip&rsquo;s page the line is coloured
+            the same way. Either way the colour is the steepness of the GROUND, never of the track: a skin track
+            zigzagging up a steep face climbs gently along its own length, and colouring it by its own gradient would
+            make a serious slope look easy. Where the line is grey and dashed, the terrain data does not cover it
+            &mdash; that is the same coverage limit described below, and it never means the ground is gentle.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-flat-on-steep">
@@ -52,38 +51,25 @@ half that fits.
             traverse it is the number that matters.
         {% endblocktrans %}
     </p>
-    {# The readout under rail two: the track's own angle and the ground's #}
-    {# class, in the avalanche services' words (EAWS), with flat added.   #}
+    {# SNOW-1064/1068: the route panel reads one point: the track's       #}
+    {# steepness and how it crosses the slope, then the ground in the     #}
+    {# avalanche services' words (EAWS), with flat added.                 #}
     <p class="mb-3 last:mb-0" data-testid="help-slope-readout">
         {% blocktrans trimmed %}
-            Drag along the second rail to read one point. The line under it gives two things: the angle of the track
-            there, as an ascent or a descent, and how steep the ground is, in the words the avalanche services use
-            &mdash; moderate under 30 degrees, steep from 30, very steep from 35 and extremely steep from 40. Ground
-            under 5 degrees reads as flat. The two can differ a great deal: a track crossing an extremely steep face can
-            itself be almost level. Under a leg&rsquo;s title, a line names the very steep and extremely steep ground
-            that leg crosses, however short.
-        {% endblocktrans %}
-    </p>
-    {# SNOW-1019: the bank ribbon, which replaced the fall-line arrows,  #}
-    {# and the no-fall bars. The map line carries no terrain marks now — #}
-    {# no crux rings, arrows or split line — so these rail marks are     #}
-    {# where the reader meets them. Wedges since SNOW-1031, and drawn     #}
-    {# only once the rail is zoomed in far enough to hold them.           #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-bank-ribbon">
-        {% blocktrans trimmed %}
-            Zoom into the second rail, or double-tap it, and a row of small wedges appears under the bands, one for
-            every 25 metres of track. Each shows how far the ground tilts across the track: a flat line where the track
-            runs straight up or down the slope, a tall wedge where it cuts across a steep face, with the paler half on
-            the side the ground falls away. Switchbacks show as wedges falling one way and then the other. Where the
-            tilt is not known there is no wedge, and no wedge is never a claim that the ground is level.
+            Tap the route, or drag along its profile, to read one point. The route panel&rsquo;s header, just above the
+            profile, gives two things: how steep the track is there and how it crosses the slope &mdash; down or up the
+            fall line, or across it, and which side the slope falls &mdash; and how steep the ground is, in the words
+            the avalanche services use &mdash; moderate under 30 degrees, steep from 30, very steep from 35 and
+            extremely steep from 40. Ground under 5 degrees reads as flat. The two can differ a great deal: a track
+            crossing an extremely steep face can itself be almost level.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-passages">
         {% blocktrans trimmed %}
-            Under the bands, a bar marks each no-fall passage: a stretch where the ground you are standing on is over 50
-            degrees, where a slip does not stop. Press a bar to select it and read its length. The route&rsquo;s detail
-            names how many there are and what the track does with the slope: down the fall line, up it, or across it. A
-            rising traverse of 50 degree ground is marked like any other, because it is no place to fall either.
+            A route&rsquo;s detail, under Terrain in its menu, names each no-fall passage: a stretch where the ground
+            you are standing on is over 50 degrees, where a slip does not stop. It says how many there are and what the
+            track does with the slope: down the fall line, up it, or across it. A rising traverse of 50 degree ground is
+            counted like any other, because it is no place to fall either.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
@@ -96,7 +82,7 @@ half that fits.
             fault in the map.
         {% endblocktrans %}
     </p>
-    {# SNOW-964: and the caveat the passage bars cannot carry. About      #}
+    {# SNOW-964: and the caveat the passage count cannot carry. About      #}
     {# the ROUTE SAMPLING — a 10 m analysis window walked every 25 m —    #}
     {# and deliberately not a restatement of the raster paragraph above,  #}
     {# which is a different measurement of a different thing.             #}
@@ -105,18 +91,8 @@ half that fits.
             <strong>An unmarked route is not a route without no-fall ground.</strong> A route&rsquo;s steepness is
             sampled every 25 metres, and each sample is the average slope over about ten metres of hillside, so a narrow
             steep passage between two gentler samples is smoothed away before anything measures it. The same goes the
-            other way: a stretch marked as no-fall may be a few metres of rock in the middle of an easy slope. The marks
-            say where to look, and nothing more than that.
-        {% endblocktrans %}
-    </p>
-    {# And the caveat the wedges cannot carry: the tilt is read from one #}
-    {# direction per ten metres of hillside, which is a different         #}
-    {# averaging from the ANGLE's in the paragraph above.                 #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-bank-averaged">
-        {% blocktrans trimmed %}
-            A wedge&rsquo;s tilt comes from one downhill direction for about ten metres of hillside, so it describes the
-            shape of the slope rather than the ground at your feet. On a rolling face, a gully, or a ridge the real fall
-            line swings either side of it within a ski length, and on convex ground it changes as you cross.
+            other way: a stretch named as no-fall may be a few metres of rock in the middle of an easy slope. The
+            passages say where to look, and nothing more than that.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">

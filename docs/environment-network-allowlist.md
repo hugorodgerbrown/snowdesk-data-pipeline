@@ -424,7 +424,7 @@ the tiles actually come from.
 
 | Domain | Why it matters |
 |---|---|
-| `tiles.snowdesk-data.info` | **Both of our own tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at, which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a crux, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
+| `tiles.snowdesk-data.info` | **Both of our own tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at, which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
 | `vectortiles.geo.admin.ch` | swisstopo winter/light: the style JSON, sprite, glyphs and both source TileJSONs — **the style document only** |
 | `vectortiles0.geo.admin.ch` … `vectortiles4.geo.admin.ch` | The five numbered shards the swisstopo TileJSONs point the **tiles themselves** at (`SWISSTOPO_TILE_SHARDS`). Allowlisting the unsharded host alone loads the style and no map — the same trap SNOW-833 hit with the CSP, which has no wildcard for a subdomain prefix either |
 | `wmts.geo.admin.ch` | The slope-angle raster overlay's WMTS tiles (`SLOPE_TILE_URL`) — a different host from the vector basemap, and the one SNOW-691 added |

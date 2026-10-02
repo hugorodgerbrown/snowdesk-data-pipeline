@@ -70,12 +70,10 @@ interface Window {
   pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
-  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, readout. */
-  pwaRouteRailTwoCore: any;
-  /** static/js/bank_ribbon_core.js — the bank's level-ski wedge geometry. */
-  pwaBankRibbonCore: any;
   /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */
   pwaAspectWheelCore: any;
+  /** static/js/route_point_card_core.js — the point card's words and gradient. */
+  pwaRoutePointCardCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
@@ -102,8 +100,8 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
-  /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
-  pwaRouteRailTwo: any;
+  /** static/js/route_point_card.js — the point card on the map; attach/detach. */
+  pwaRoutePointCard: any;
   /** static/js/route_leader.js — the leader line from the map to the rails. */
   pwaRouteLeader: any;
   /** static/js/map.js — the route cursor's screen point on the map. */

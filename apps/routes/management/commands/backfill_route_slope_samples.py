@@ -1,8 +1,9 @@
 """backfill_route_slope_samples — sample the terrain under existing routes.
 
 Backfill for SNOW-910, and for every later ticket that adds a key to the
-record — SNOW-911's ``cruxes`` is the first, SNOW-1043's ``heights`` the
-second.
+record — SNOW-1043's ``heights`` is the one it currently selects on.
+(SNOW-911's ``cruxes`` was once a second; SNOW-1066 removed cruxes, so a
+record without that key is no longer a candidate.)
 
 Every ``Route`` uploaded before SNOW-910 has a null ``slope_samples``,
 which means NEVER SAMPLED and draws as a flat line; this walks each of
@@ -17,12 +18,10 @@ nothing else.
 
 **Two kinds of candidate.** The queryset selects rows whose
 ``slope_samples`` is null — never sampled — and rows whose record is
-missing a key a later ticket added: no ``cruxes`` is one sampled before
-SNOW-911 and so drawing its colours but none of its markers, and no
-``heights`` is one sampled before SNOW-1043 and so drawing its profile,
-legs and totals off the recording device's drifting altimeter. A record
-carrying both keys is current even when the lists inside are empty or
-hold nulls, because those are answers ("nothing was flagged", "no ground
+missing a key a later ticket added: no ``heights`` is one sampled before
+SNOW-1043 and so drawing its profile, legs and totals off the recording
+device's drifting altimeter. A record carrying the key is current even
+when the list inside holds nulls, because those are answers ("no ground
 there").
 
 **Null stays honest.** A row that comes back with nothing
@@ -141,18 +140,14 @@ class Command(BaseCommand):
         #
         # TWO KINDS OF CANDIDATE, and the second is why this command is
         # not one-shot after all. A null is a route nothing has sampled.
-        # A record with no ``cruxes`` key is one sampled before SNOW-911,
-        # which draws its colours but none of its markers — and nothing
-        # else would ever add them, because the sampler runs at upload.
+        # A record with no ``heights`` key is one sampled before
+        # SNOW-1043: it serves the device's heights, and nothing else
+        # would ever add the model's, because the sampler runs at upload.
         # A record IS current when it carries the key, even if the list
-        # inside is empty: that is "nothing was flagged", which is an
-        # answer. SNOW-1043's ``heights`` is the same shape of candidate
-        # for the same reason — a record without it serves the device's
-        # heights, and only a re-walk adds the model's.
+        # inside holds nulls: that is "no ground there", which is an
+        # answer.
         candidates = Route.objects.filter(
-            Q(slope_samples__isnull=True)
-            | ~Q(slope_samples__has_key="cruxes")
-            | ~Q(slope_samples__has_key="heights")
+            Q(slope_samples__isnull=True) | ~Q(slope_samples__has_key="heights")
         )
         total = candidates.count()
 

@@ -2156,9 +2156,8 @@
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
-  // SNOW-1019 took the crux rings (SNOW-911) and the fall-line arrows off
-  // the map: the crux is deferred to a later ticket, and the bank ribbon
-  // on rail two replaced the arrows. The server still sends `cruxes` and
+  // SNOW-1019 took the fall-line arrows off the map (the bank ribbon that
+  // replaced them went with rail two, SNOW-1065). The server still sends
   // `fall_lines` on the slope record; nothing here draws them.
 
   /**
@@ -2464,10 +2463,10 @@
   // the current index under an open rail.
   const EMPTY_ROUTE_CURSOR_FC = Object.freeze({ type: 'FeatureCollection', features: [] });
   let routeCursorPointData = EMPTY_ROUTE_CURSOR_FC;
-  // SNOW-1019: keeping the cursor's dot out from behind the rails. True
+  // SNOW-1019: keeping the cursor's dot out from under the route panel. True
   // while THIS module writes the index (a hover or a tap on the line), so
   // follow() does not pan the map under the pointer that wrote it; true
-  // while a pan is in flight, so a scrub along rail two makes one pan and
+  // while a pan is in flight, so a drag along the rail makes one pan and
   // not a queue; true while the reader drags the map, which a pan would
   // fight; and whether an index arrived during a pan, so the dot is
   // checked once more when it lands.
@@ -2605,11 +2604,6 @@
       let lastOpenLeg = cursor.state().openLeg;
       const follow = (state) => {
         const leg = state && state.openLeg;
-        // A leg opening brings rail two up over the map's foot, which can
-        // cover a dot that was in view a moment ago — including one the
-        // map itself wrote with a tap. A layout change is not a hover, so
-        // this check runs whoever wrote the index.
-        const legOpened = !!leg && leg !== lastOpenLeg;
         lastOpenLeg = leg || null;
         openLegOnMap = leg && typeof leg.i === 'number' ? { uuid: uuid, i: leg.i } : null;
         applyLegDimming();
@@ -2617,19 +2611,9 @@
         const index = state ? state.index : null;
         if (index !== lastRouteCursorIndex) {
           lastRouteCursorIndex = index;
-          // An index a RAIL wrote may sit behind the rails; one the map
+          // An index the PANEL wrote may sit under the panel; one the map
           // wrote is under the reader's own pointer already.
           if (index !== null && !mapWritesRouteIndex) keepRouteCursorInView();
-        }
-        // Checked after the write in progress: a tap on the line opens the
-        // leg and THEN sets the index, and the check is for where the
-        // index ends up, against the rail rail two has just grown.
-        if (legOpened) {
-          Promise.resolve().then(() => {
-            if (routeCursorTarget && routeCursorTarget.cursor.state().index !== null) {
-              keepRouteCursorInView();
-            }
-          });
         }
       };
       unsubscribeRouteCursor = cursor.subscribe(follow);
@@ -2670,13 +2654,31 @@
   };
 
   /**
-   * The map the rails and the top chrome leave visible, viewport px
-   * (SNOW-1019).
+   * The route panel's bottom edge, px below the canvas's top, while it is
+   * open; null while it is closed or not on the page (SNOW-1068).
    *
-   * The canvas above the rail's measured top edge — `paddingClearingRail`'s
-   * measurement — and below the top inset: the map's edge inset while the
-   * rail is open (the controls are withdrawn), the fit padding's top,
-   * where the search pill sits, otherwise.
+   * @param {{top: number}} canvas The map container's rect.
+   * @returns {?number}
+   */
+  const routePanelBottom = (canvas) => {
+    const rail = window.pwaRouteRail;
+    if (!rail || !rail.isOpen || !rail.isOpen() || !rail.element) return null;
+    if (!rail.element.getBoundingClientRect) return null;
+    const box = rail.element.getBoundingClientRect();
+    if (!(box.height > 0)) return null;
+    return box.bottom - canvas.top;
+  };
+
+  /**
+   * The map the route panel leaves visible, viewport px (SNOW-1019,
+   * SNOW-1068).
+   *
+   * The canvas below the panel's measured bottom edge while a route is
+   * open — the panel is pinned top-left, and its whole band counts as
+   * covered across the map's width: simpler than a notch, and a dot
+   * beside the panel is still worth panning clear of it. With no panel,
+   * below the fit padding's top, where the search pill sits. Nothing
+   * covers the foot any more: the controls there are roundels, not a band.
    *
    * @returns {?{left: number, top: number, right: number, bottom: number}}
    *   Null before the canvas is laid out.
@@ -2685,21 +2687,18 @@
     const core = self.pwaRouteCursorMapCore;
     const container = map && map.getContainer ? map.getContainer() : null;
     if (!core || !container || !container.getBoundingClientRect) return null;
-    const rail = window.pwaRouteRail;
-    const railTop = rail && rail.isOpen && rail.isOpen() && rail.element
-      ? rail.element.getBoundingClientRect().top
-      : null;
-    // While the rail is open the top chrome is withdrawn (static/css/
-    // map.css), so the visible map starts at the edge inset rather than
-    // under the search pill.
-    const topInset = railTop === null ? FIT_PADDING.top : ROUTE_CURSOR_TOP_INSET_PX;
-    return core.visibleRect(container.getBoundingClientRect(), railTop, topInset);
+    const canvas = container.getBoundingClientRect();
+    const panelBottom = routePanelBottom(canvas);
+    const topInset = panelBottom === null
+      ? FIT_PADDING.top
+      : panelBottom + ROUTE_CURSOR_TOP_INSET_PX;
+    return core.visibleRect(canvas, null, topInset);
   };
 
   /**
    * The cursor dot's screen point, or null when it is not VISIBLE.
    *
-   * Behind a rail or under the top chrome counts as absent, so the leader
+   * Under the route panel or the top chrome counts as absent, so the leader
    * line drops its map stop rather than point at a dot nobody can see.
    * A canvas not yet laid out has no visible rect to test against, and
    * the point stands.
@@ -2718,13 +2717,13 @@
   // pan takes. Short, and the zoom is kept: the reader is scrubbing a
   // rail, and the map only needs to keep the place in view.
   const ROUTE_CURSOR_PAN_MARGIN_PX = 24;
-  // The visible map's top edge while the rail is open, px: the map's own
-  // edge inset, since the controls above it are withdrawn then.
+  // The gap below the route panel a panned-to dot must clear, px: the
+  // map's own edge inset.
   const ROUTE_CURSOR_TOP_INSET_PX = 12;
   const ROUTE_CURSOR_PAN_MS = 250;
 
   /**
-   * Pan the map, if it must, so the cursor's dot is not behind the rails.
+   * Pan the map, if it must, so the cursor's dot is not under the route panel.
    *
    * At most one pan in flight: an index arriving mid-pan is remembered
    * and checked once when the pan lands, never queued. Skipped while the
@@ -2762,8 +2761,8 @@
     map.panBy([offset.x, offset.y], { duration: ROUTE_CURSOR_PAN_MS });
   };
 
-  // SNOW-1019: the rail changed height (rail two opening, its readout
-  // growing a line). The dot may now sit under it, whoever wrote the
+  // SNOW-1019: the rail changed height (a leg's title wrapping to a second
+  // line). The dot may now sit under it, whoever wrote the
   // index — so the check runs regardless of the source, keeping only the
   // one-pan-in-flight and no-pan-while-dragging guards.
   document.addEventListener('snowdesk:route-rail-resized', () => {
@@ -3049,6 +3048,24 @@
       type: 'geojson',
       data: routeCursorPointData,
     });
+    // SNOW-1064: the ring's white under-stroke from ROUTE_SLOPE_MINZOOM,
+    // so a ring in the 30–35° yellow still reads over the yellow line it
+    // sits on. Below the minzoom the filled dot carries its own halo.
+    map.addLayer({
+      id: 'routes-cursor-point-halo',
+      type: 'circle',
+      source: 'route-cursor-point',
+      minzoom: ROUTE_SLOPE_MINZOOM,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+      },
+      paint: {
+        'circle-opacity': 0,
+        'circle-radius': 7,
+        'circle-stroke-color': ROUTE_CURSOR_HALO,
+        'circle-stroke-width': 5.5,
+      },
+    });
     map.addLayer({
       id: 'routes-cursor-point',
       type: 'circle',
@@ -3056,14 +3073,25 @@
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
       },
+      // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
+      // segment in slope classes, and a segment is about 4 px long, so a
+      // filled dot would cover the very segment the point header describes.
+      // There the dot becomes a RING in the segment's class colour with a
+      // clear centre about one segment wide, so the line's colour under it
+      // shows through. Below it the dot stays filled.
       paint: {
-        // The slope class of the segment under the cursor (SNOW-1052), so
-        // the dot matches the band under rail two's cursor line; the
-        // route's own colour when the feature carries none.
+        // The slope class of the segment under the cursor (SNOW-1052), the
+        // colour the point header's outer ring lights; the route's own colour
+        // when the feature carries none.
         'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
-        'circle-radius': 6,
-        'circle-stroke-color': ROUTE_CURSOR_HALO,
-        'circle-stroke-width': 2,
+        'circle-opacity': ['step', ['zoom'], 1, ROUTE_SLOPE_MINZOOM, 0],
+        'circle-radius': ['step', ['zoom'], 6, ROUTE_SLOPE_MINZOOM, 7],
+        'circle-stroke-color': [
+          'step', ['zoom'],
+          ROUTE_CURSOR_HALO,
+          ROUTE_SLOPE_MINZOOM, ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+        ],
+        'circle-stroke-width': ['step', ['zoom'], 2, ROUTE_SLOPE_MINZOOM, 3],
       },
     });
     syncRouteLegLegend();
@@ -6227,7 +6255,7 @@
   //
   // SNOW-1017 took the colouring off the map — a route draws as its legs
   // whether or not it is sampled — and SNOW-1019 took the record's last
-  // marks (passages, crux rings, fall-line arrows) off it too. The refetch
+  // marks (passages, fall-line arrows) off it too. The refetch
   // still matters: the rail's slope bands, bank ribbon and passage bars,
   // and the map's cursor, all read the record it brings.
   //
@@ -6726,33 +6754,33 @@
   };
 
   /**
-   * Fit padding that frames a route into the map rail one leaves visible.
+   * Fit padding that frames a route into the map the route panel leaves
+   * visible.
    *
-   * SNOW-1018. The rail is docked over the map's foot, so a route framed
-   * without it would have its lower end drawn behind the profile of that
-   * same route. Every dimension is MEASURED — the rail's height depends on
-   * how its grid wraps at this width — and the reservation is the rail's
-   * top edge measured from the canvas's bottom. Measured once, right after
-   * the rail opens.
+   * SNOW-1018, pinned top-left since SNOW-1068: a route framed without the
+   * panel would have its upper end drawn behind the profile of that same
+   * route. The reservation is MEASURED — the panel's height depends on how
+   * its title wraps at this width — as the panel's bottom edge below the
+   * canvas's top, beyond the padding the top already has. Measured once,
+   * right after the panel opens. The whole width is reserved, not the
+   * panel's 400 px: a north-to-south tour reads top to bottom under it.
    *
    * This replaced SNOW-973's `paddingClearing`, which reserved the route
    * detail sheet instead. A tap no longer opens that sheet — it sits behind
-   * the rail's menu — so on the tap there is no sheet to frame around, and
-   * a padding for one would push the route off-centre for no one.
+   * the panel's menu — so on the tap there is no sheet to frame around.
    *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
   const paddingClearingRail = () => {
     const padding = { ...FIT_PADDING };
-    const rail = window.pwaRouteRail;
     const container = map && map.getContainer ? map.getContainer() : null;
-    if (!rail || !rail.isOpen() || !container) return padding;
-
+    if (!container) return padding;
     const canvas = container.getBoundingClientRect();
-    const box = rail.element.getBoundingClientRect();
-    if (!(canvas.height > 0) || !(box.height > 0)) return padding;
-
-    reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - box.top, canvas.height);
+    if (!(canvas.height > 0)) return padding;
+    const panelBottom = routePanelBottom(canvas);
+    if (panelBottom !== null) {
+      reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
+    }
     return padding;
   };
 
@@ -6820,8 +6848,8 @@
      * rest at the same scale. That is why SNOW-972 had to uncap BOTH:
      * fixing the tap alone would have made the row disagree with it.
      *
-     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves rail
-     * one docked over the map's foot (SNOW-1018), so that fit reserves the
+     * SNOW-973 SPLIT THE PADDING, and only the padding. A tap leaves the
+     * route panel pinned top-left (SNOW-1068), so that fit reserves the
      * room it takes (``paddingClearingRail`` above); a row press has already
      * dismissed its panel, so this one has nothing to frame around. The
      * two still agree on the question they answer — frame the track into
@@ -8564,38 +8592,15 @@
         const terrainLines = slopeCore
           ? slopeCore.summaryLines(readFeatureJson(props.terrain))
           : [];
-        // SNOW-911: how many passages the terrain flagged, on the same
-        // line as the figures rather than a line of its own — it is one
-        // more fact about the ground, and a line carrying a single short
-        // count would read as more important than the steepness beside it.
-        //
-        // OMITTED AT ZERO. "0 key passages" is a claim that the algorithm
-        // looked and found nothing, which is exactly the reading
-        // /help/#help-topic-slope exists to prevent: the markers are not
-        // exhaustive, and a route with none is not a safe route.
         // Parsed ONCE and shared with the passage lines below: the slope
         // record is the largest property on the feature, and it arrives as
         // a JSON string that both readers would otherwise parse
         // separately.
         const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
-        // SNOW-964: the no-fall passages, pushed BEFORE the crux count so
-        // the line reads in the order the eye takes the map in — the
-        // colour under the track, then the split across it, then the ring
-        // around it.
-        //
-        // The two marks land on nearly the same ground (anything over 50°
-        // was already flagged a crux at 35°), so the words have to keep
-        // them apart: the ring says the terrain around you can release,
-        // the split says you are on it.
+        // SNOW-964: the no-fall passages, on the same line as the figures
+        // rather than a line of their own — one more fact about the ground.
         if (slopeCore?.passageLines) {
           terrainLines.push(...slopeCore.passageLines(slopeFeature));
-        }
-        const cruxes = slopeCore?.cruxCount ? slopeCore.cruxCount(slopeFeature) : 0;
-        if (cruxes > 0) {
-          terrainLines.push({
-            key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',
-            params: { count: String(cruxes) },
-          });
         }
         if (terrainLines.length) {
           const terrainMeta = document.createElement('div');
@@ -8651,12 +8656,9 @@
         //
         // What made it a defect rather than a preference is that the
         // marks drawn ON a route have minzooms of their own — the
-        // transition markers at 11, and the crux rings did too until
-        // SNOW-1019 took them off — so the
+        // transition markers at 11 — so the
         // camera came to rest BELOW the zoom at which the things the
-        // panel was describing in words could render at all. The panel
-        // said "3 key passages" over a map that had decided not to show
-        // them.
+        // panel was describing in words could render at all.
         //
         // `tests/js/test_map_route_leg_layers.js` holds the invariant
         // against every route mark's own minzoom rather than against the
@@ -8675,15 +8677,14 @@
      *
      * The FIRST tap on a route opens the rail and frames the track
      * (activateRoute). A tap on that same route while its rail is open
-     * means "here", not "open it again": it moves the cursor to the sample
-     * nearest the tap and opens the leg holding it, if that leg is not
-     * the one already open — and rail two scrolls there, since it follows
-     * the cursor. No re-framing: the reader is pointing at a place on a
-     * track already in view.
+     * means "here", not "open it again": it places the point at the sample
+     * nearest the tap, and the panel's point header reads it. No
+     * re-framing: the reader is pointing at a place on a track already in
+     * view.
      *
-     * The leg is opened BEFORE the index is set, because the cursor clamps
-     * an index into the open leg: set first, an index on another leg would
-     * be pulled back to the old leg's end.
+     * It never opens a leg (SNOW-1065): a leg is pressed on the profile,
+     * and placing a point closes any open one — a leg or a point, never
+     * both (route_cursor_core.js).
      *
      * @param {object} feature The tapped line feature.
      * @param {?{x: number, y: number}} point The tap, in screen px.
@@ -8698,15 +8699,9 @@
       // it however long the segments are at this zoom: no distance cap.
       const index = routeSampleAt(point);
       if (index === null) return true;
-      const { cursor, legs } = routeCursorTarget;
-      const leg = self.pwaRouteCursorMapCore.legAt(legs, index);
-      const open = cursor.state().openLeg;
       mapWritesRouteIndex = true;
       try {
-        if (leg && !(open && open.from === leg.from && open.to === leg.to)) {
-          cursor.openLeg(leg);
-        }
-        cursor.setIndex(index);
+        routeCursorTarget.cursor.setIndex(index);
       } finally {
         mapWritesRouteIndex = false;
       }
@@ -8714,15 +8709,18 @@
     };
 
     // SNOW-1019: a mouse moving along the open route's line moves the
-    // cursor, so rail one's line, rail two's window and the map's dot all
-    // follow the pointer. Mouse only — MapLibre fires `mousemove` for a
+    // point, so the panel's cursor line, its point header and the map's
+    // dot all follow the pointer. Mouse only — MapLibre fires `mousemove` for a
     // mouse, and a finger has the tap above. Nothing within
     // ROUTE_HOVER_PX of a segment middle leaves the cursor where it was:
     // a pointer drifting off the line to the map around it is not a
-    // reading of the route.
+    // reading of the route. SNOW-1065: and nothing while a leg is open —
+    // placing a point closes the leg, so a hover would undo the press
+    // that highlighted it the moment the mouse crossed the line.
     const ROUTE_HOVER_PX = 24;
     map.on('mousemove', (e) => {
       if (!routeCursorLive() || !e || !e.point) return;
+      if (routeCursorTarget.cursor.state().openLeg) return;
       const index = routeSampleAt(e.point, ROUTE_HOVER_PX);
       if (index === null) return;
       mapWritesRouteIndex = true;
@@ -8859,6 +8857,17 @@
           );
           return;
         }
+      }
+
+      // SNOW-1065: with a route open, a tap on the map that no marker and no
+      // weather symbol took clears the route and the point together — the
+      // panel closes — and does nothing else. The tap was aimed at leaving the route, not at a
+      // region, and on a phone the region chip is withdrawn while the panel
+      // is open, so a region selected under it would be a change the reader
+      // cannot see.
+      if (window.pwaRouteRail?.isOpen?.()) {
+        window.pwaRouteRail.close();
+        return;
       }
 
       // No marker claimed the tap. Resolve region intent from the fill layer

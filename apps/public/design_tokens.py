@@ -59,6 +59,7 @@ from apps.public._component_fixtures import (
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
@@ -517,12 +518,10 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             "last four are the route line's own — a line cannot go blank "
             "where the raster does without reading as a break, and a "
             "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
-            "The last three are MARKS drawn over that line rather than "
+            "The last two are MARKS drawn over that line rather than "
             "bands of it, and borrow no colour from the scale on purpose: "
             "a marker tinted from the ramp reads as a further class of "
-            "ground (SNOW-911, SNOW-964). The fall-line arrow shares the "
-            "crux ring's value under a name of its own — one family of "
-            "mark, two marks that can be re-inked apart."
+            "ground (SNOW-964)."
         ),
         kind="swatches",
         swatch_columns=5,
@@ -534,7 +533,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
             Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
-            Token("--color-crux-ring", "Key passage (marker)", "#1a1916", None),
+            Token(
+                "--color-track-level", "Level track (wheel, under 5°)", "#bae6fd", None
+            ),
             Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
             Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
         ),
@@ -1551,17 +1552,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="route-rail",
         label="Route rail",
         description=(
-            "Rail one (SNOW-1018): the strip docked over the map's foot "
-            "while a route is open. Three columns — the identity block "
-            "(eyebrow, name, figures, a × and the actions as a '…' menu — "
-            "Terrain, which opens the route detail sheet, then "
-            "the routes row's four in its order), the lane (the elevation "
-            "profile as one "
-            "filled shape per leg under one outline, with distance ticks), "
-            "and a readout naming the open leg. Pressing a leg opens it on "
-            "the route cursor; pressing it again closes it. Rendered once, "
-            "empty and hidden, and filled by static/js/route_rail.js, so "
-            "this page shows the shell alone."
+            "The route panel (SNOW-1018; one rail since SNOW-1065, one "
+            "panel pinned top-left since SNOW-1068): the open route's "
+            "profile under a header in one of three states, 400 px wide "
+            "under the region chip's row on desktop and full width on a "
+            "phone's top edge. Route: the name as the title and its "
+            "figures in the routes list's meta line ('12.9km · 337m ↑ · "
+            "1906m ↓ · 2h51m'). Leg: the title gains '• Leg 3' and the "
+            "subtitle the leg's own figures. Point: the point header (the "
+            "aspect wheel and the reading) in their place, the eyebrow "
+            "naming the route and the point's distance, and the × clearing "
+            "the point. The profile is always shown, one filled shape per "
+            "leg under one outline with distance ticks, so a drag along it "
+            "reads in the header directly above. The '…' menu (Terrain, "
+            "then the routes row's four in its order) and × at the top "
+            "right. Rendered once, empty and hidden, and filled by "
+            "static/js/route_rail.js, so this page shows the shell alone."
         ),
         kind="components",
         partial="includes/_route_rail.html",
@@ -1580,13 +1586,43 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "and next segments' headings at 35%. The centre triangle "
             "points up for a climb and down for a descent; a level track "
             "draws a bar. Flat ground leaves the outer ring unlit, and "
-            "missing terrain data fills it grey. Drawn by "
-            "static/js/aspect_wheel.js through aspect_wheel_core.js; not "
-            "yet mounted on a route surface."
+            "missing terrain data fills it grey. The inner ring is filled "
+            "on the track scale (SNOW-1064) — level under 5° in a lighter "
+            "blue, then gentle, moderate, steep and very steep — so its "
+            "colour agrees with the point header's word for the track; the "
+            "outer ring keeps the slope classes. Drawn by "
+            "static/js/aspect_wheel.js through aspect_wheel_core.js; "
+            "mounted on the map in the route panel's point header."
         ),
         kind="components",
         partial="includes/_aspect_wheel.html",
         variants=ASPECT_WHEEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="point-card",
+        label="Point header",
+        description=(
+            "One point on the open route, read in words (SNOW-1064): the "
+            "aspect wheel at 48 px and two lines, shown in the route "
+            "panel's header while a point is placed (SNOW-1068). The "
+            "headline is the "
+            "track's steepness on its own scale (level, gentle, moderate, "
+            "steep, very steep) and how it crosses the slope — a fall line "
+            "descent or climb within 45° of the fall line, a rising, level "
+            "or descending traverse otherwise, '…, turning' when the "
+            "gradient disagrees with the heading. Line two names the "
+            "ground in the EAWS words, with the side the slope falls on a "
+            "traverse ('falling skier's right'). No degrees, headings or "
+            "aspects. Hidden until a point is placed; the panel's × clears "
+            "the point. "
+            "Filled on the map by static/js/route_point_card.js from "
+            "route_point_card_core.js; the states here are rendered "
+            "server-side with the words the core writes."
+        ),
+        kind="components",
+        partial="includes/_route_point_card.html",
+        variants=POINT_CARD_VARIANTS,
         panel_layout="two-col",
     ),
     FoundationCategory(

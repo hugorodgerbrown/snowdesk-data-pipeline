@@ -978,8 +978,7 @@ def drifting_track_record() -> dict[str, object]:
 
     Returns:
         A record of the shape ``build_slope_samples`` writes: five
-        boundaries, four gentle segments, an empty crux list, a summary
-        and the model's ``heights``.
+        boundaries, four gentle segments and the model's ``heights``.
 
     """
     boundaries = [
@@ -992,6 +991,5 @@ def drifting_track_record() -> dict[str, object]:
         "grid": "snowdesk-terrain-5m-3035",
         "points": boundaries,
         "segments": [{"angle_deg": 12.0, "aspect_deg": 180.0}] * 4,
-        "cruxes": [],
         "heights": [2000.0, 2010.0, 2020.0, 2030.0, 2040.0],
     }

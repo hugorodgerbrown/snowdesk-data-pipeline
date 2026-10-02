@@ -817,7 +817,11 @@ where today's persistent weak layer sits" is a sentence only a
 bulletin-first product can write, in a geography where nobody writes it
 yet. Note the corollary: don't try to build Whympr's 100,000-route
 library, and do read WhiteRisk's crux presentation carefully before
-designing ours.
+designing ours. **2026-10 update (SNOW-1066):** Snowdesk built a static
+route-level crux (SNOW-911) and then removed it; it keeps no route crux.
+Where the dangerous ground is will be decided by the daily avalanche
+terrain layer (SNOW-979), so WhiteRisk's flagged cruxes have no
+counterpart on our side and the compare page claims none.
 **2026-08-19 scan update:** the France-only piece of this idea is now live
 twice over — [Yéti](#skitourenguru--yéti) (Petzl Foundation-backed) does
 route-vs-bulletin risk colour-coding using the Météo-France bulletin

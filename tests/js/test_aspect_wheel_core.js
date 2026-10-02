@@ -5,7 +5,8 @@
  * Sector edges and the forward azimuth; a turn inside a segment lighting
  * two sectors; neighbours deduplicated against the current heading and
  * absent at either end of the route; the four terrain kinds and how each
- * draws the outer ring; the centre's bar against triangle at the 2° edge,
+ * draws the outer ring; the inner ring on the track scale (SNOW-1064) with the outer ring on
+ * the slope classes; the centre's bar against triangle at the 5° edge,
  * the triangle's direction and the empty centre below 36 px; the 2 px gap
  * from 96 px; and the label and line built from a strings object.
  */
@@ -203,7 +204,44 @@ describe('wheelState', () => {
   });
 });
 
+describe('trackFill', () => {
+  it.each([
+    [0, 'var(--color-track-level)'],
+    [4.9, 'var(--color-track-level)'],
+    [5, 'var(--color-slope-gentle)'],
+    [-14.9, 'var(--color-slope-gentle)'],
+    [15, 'var(--color-slope-30)'],
+    [24.9, 'var(--color-slope-30)'],
+    [-25, 'var(--color-slope-35)'],
+    [34.9, 'var(--color-slope-35)'],
+    [35, 'var(--color-slope-40)'],
+    [-60, 'var(--color-slope-40)'],
+  ])('fills a %s° track with %s', (gradient, token) => {
+    expect(core.trackFill(gradient)).toBe(token);
+  });
+
+  it('fills an unknown gradient with the unknown token', () => {
+    expect(core.trackFill(null)).toBe('var(--color-slope-unknown)');
+  });
+
+  it('starts the level step at LEVEL_DEG', () => {
+    expect(core.LEVEL_DEG).toBe(5);
+    expect(core.TRACK_STEPS[0][0]).toBe(core.LEVEL_DEG);
+  });
+});
+
 describe('aspectWheelSvg', () => {
+  it('fills the inner ring on the track scale and the outer on the slope classes', () => {
+    // A 13° climb across 33° ground: gentle on the track scale, and the
+    // 30–35° class on the ground's — the mockup's point B.
+    const state = { ...FACES, gradeDeg: 13, terrain: { kind: 'faces', sector: 0, slopeDeg: 33 } };
+    const svg = parse(core.aspectWheelSvg({ size: 48, state }));
+    expect(svg.querySelector('[data-lit="heading"]')?.getAttribute('fill')).toBe('var(--color-slope-gentle)');
+    expect(svg.querySelector('[data-lit="faces"]')?.getAttribute('fill')).toBe('var(--color-slope-30)');
+    const level = parse(core.aspectWheelSvg({ size: 48, state: { ...state, gradeDeg: 3 } }));
+    expect(level.querySelector('[data-lit="heading"]')?.getAttribute('fill')).toBe('var(--color-track-level)');
+  });
+
   it('is an image with its label', () => {
     const svg = parse(core.aspectWheelSvg({ size: 48, state: FACES, label: 'A "wheel"' }));
     expect(svg.getAttribute('role')).toBe('img');
@@ -224,7 +262,8 @@ describe('aspectWheelSvg', () => {
     expect(faces[0].getAttribute('fill')).toBe('var(--color-slope-30)');
     const heading = svg.querySelectorAll('[data-ring="track"][data-lit="heading"]');
     expect(heading).toHaveLength(1);
-    expect(heading[0].getAttribute('fill')).toBe('var(--color-slope-gentle)');
+    // FACES descends at 25°: steep on the track scale, not gentle.
+    expect(heading[0].getAttribute('fill')).toBe('var(--color-slope-35)');
     expect(svg.querySelectorAll('[fill="var(--color-card-hover)"]')).toHaveLength(14);
   });
 
@@ -256,7 +295,7 @@ describe('aspectWheelSvg', () => {
     const svg = parse(core.aspectWheelSvg({ size: 48, state }));
     const neighbours = svg.querySelectorAll('[data-lit="neighbour"]');
     expect(neighbours).toHaveLength(2);
-    expect(neighbours[0].getAttribute('fill')).toBe('var(--color-slope-35)');
+    expect(neighbours[0].getAttribute('fill')).toBe('var(--color-slope-40)');
     expect(neighbours[0].getAttribute('fill-opacity')).toBe('0.35');
     expect(neighbours[1].getAttribute('fill')).toBe('var(--color-slope-gentle)');
   });
@@ -278,10 +317,10 @@ describe('aspectWheelSvg', () => {
     expect(svg.querySelectorAll('[data-lit="heading"]')).toHaveLength(2);
   });
 
-  it('draws a bar at 1.9° and a triangle at 2.0°', () => {
-    const level = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 1.9 } }));
+  it('draws a bar at 4.9° and a triangle at 5.0°', () => {
+    const level = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 4.9 } }));
     expect(level.querySelector('[data-centre]')?.getAttribute('data-centre')).toBe('level');
-    const climb = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 2.0 } }));
+    const climb = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 5.0 } }));
     expect(climb.querySelector('[data-centre]')?.getAttribute('data-centre')).toBe('climbing');
   });
 

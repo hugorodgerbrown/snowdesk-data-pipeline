@@ -12,7 +12,8 @@ last-reviewed: 2026-10-02
 > (`trip-route-fall-lines`). The bank ribbon on rail two replaced it: a
 > tick per place leaning by how far the ground tilts across the track,
 > which answers "does the track cut across this face or run down it" on
-> the axis the reader is already reading. The data still travels —
+> the axis the reader is already reading. SNOW-1065 later retired rail two
+> and its ribbon too, so nothing draws the direction now. The data still travels —
 > `fall_line_marks` still runs and `fall_lines` is still on the slope
 > record — and `fallLineCollection` in `route_slope_core.js` and
 > `fallLineArrowPixels` in `route_markers_core.js` are kept, though no
@@ -44,8 +45,9 @@ descent. Four constraints:
 
 ### The colour cannot say which way a face runs
 
-SNOW-910 colours the ground under the track, SNOW-911 rings the passages
-where the ground around it can release, SNOW-964 splits the line where
+SNOW-910 colours the ground under the track, SNOW-911 rang the passages
+where the ground around it can release (removed by SNOW-1066), SNOW-964
+splits the line where
 the track is on no-fall ground. A traverse across a 40° face and a
 descent of the same face get identical treatment on all three, and on the
 ground they are not the same day out. SNOW-964 does name the
@@ -101,9 +103,10 @@ whatever the arrows say or fail to say, the band colour is still there.
 
 ### The arrow may be dropped; the ring may not
 
-`routes-fall-lines` is the only route mark with `icon-allow-overlap:
-false`. A crux ring dropped by the collision engine understates the day,
-which is why those ignore collision entirely. An arrow dropped at z12
+`routes-fall-lines` was the only route mark with `icon-allow-overlap:
+false`. A crux ring dropped by the collision engine understated the day,
+which is why those ignored collision entirely (the rings came off the map
+in SNOW-1019, and SNOW-1066 removed cruxes from routes). An arrow dropped at z12
 costs nothing: the survivors say the same thing about the same face. That
 asymmetry is what lets the server keep one spacing rule for every zoom.
 
@@ -149,7 +152,8 @@ record was designed to avoid" above.
 **Draw an arrow on every segment, thinning client-side.** Two surfaces
 would each need the thinning rule, and two implementations of it would
 eventually disagree about how many passages a face has — the reasoning
-`cruxes` already follows in refusing to re-group client-side.
+`cruxes` followed in refusing to re-group client-side, before SNOW-1066
+removed them.
 
 **Scale the arrow, or fade it, by steepness.** The line under it already
 carries the angle, in a palette the legend explains and the raster

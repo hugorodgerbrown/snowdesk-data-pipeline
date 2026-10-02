@@ -1,0 +1,90 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_route_point_card.html — the point header: one point on
+the open route, read in words (SNOW-1064; a header of the route panel
+since SNOW-1068).
+
+The route panel (_route_rail.html) is one card pinned top-left with the
+profile always showing and a header in one of three states: the route,
+the open leg, or a point. This partial is the third. The rail includes it
+inside its identity block and hides the title and meta line while a point
+is placed; the eyebrow becomes the route's name and the point's distance.
+Placing a point, pressing a leg or opening a route changes only what the
+panel says, so the panel never moves under the finger.
+
+It holds the aspect wheel (aspect_wheel_core.js, SNOW-1063) at 48 px and
+two lines: the HEADLINE — the track's steepness on its own scale and how
+it crosses the slope ("Very steep fall line descent") — and the GROUND in
+the EAWS words ("Extremely steep slope"), with the side the slope falls
+on a traverse. No degrees, headings or aspects: the map shows direction.
+The words come from route_point_card_core.js, and are also the wheel's
+accessible name.
+
+HIDDEN until the route cursor has an index; static/js/route_point_card.js
+shows it and fills it. The panel's × clears the point while one is placed
+and keeps the route, as the first Escape does (static/js/route_rail.js).
+
+The strings template carries every word the header says, under
+``{% trans %}``, so makemessages sees them and no literal reaches the DOM
+from JavaScript (i18n-lint).
+
+Context:
+    static : bool, optional — render visible, for the component library,
+             which runs no JS to reveal it.
+    state_json, headline, ground : optional — a filled header for the
+             component library: the wheel's state JSON-encoded and the two
+             lines as route_point_card_core.js's ``reading`` would write
+             them.
+{% endcomment %}
+<div
+    data-route-point-card
+    {% if not static %}id="route-point-card" hidden{% endif %}
+    aria-live="polite"
+    class="mt-1 flex items-center gap-3"
+>
+    {# The wheel, drawn by static/js/route_point_card.js (or, in the        #}
+    {# component library, static/js/aspect_wheel.js from data-state).       #}
+    <span
+        data-route-point-card-wheel
+        {% if state_json %}data-aspect-wheel data-size="48" data-state="{{ state_json }}"{% endif %}
+        class="block h-12 w-12 flex-none leading-none"
+    ></span>
+    <div class="min-w-0">
+        <p data-route-point-card-headline class="text-sm font-semibold text-text-1 text-balance">
+            {% if headline %}{{ headline }}{% endif %}
+        </p>
+        <p data-route-point-card-ground class="mt-0.5 text-summary text-text-3 text-balance">
+            {% if ground %}{{ ground }}{% endif %}
+        </p>
+    </div>
+</div>
+<template id="route-point-card-strings-template">
+    <span data-string="label">{% blocktrans %}%(headline)s; %(ground)s{% endblocktrans %}</span>
+    <span data-string="steepness-gentle">{% trans "Gentle" context "track steepness" %}</span>
+    <span data-string="steepness-moderate">{% trans "Moderate" context "track steepness" %}</span>
+    <span data-string="steepness-steep">{% trans "Steep" context "track steepness" %}</span>
+    <span data-string="steepness-very-steep">{% trans "Very steep" context "track steepness" %}</span>
+    <span data-string="headline-fall-descent">{% blocktrans %}%(steepness)s fall line descent{% endblocktrans %}</span>
+    <span data-string="headline-fall-climb">{% blocktrans %}%(steepness)s fall line climb{% endblocktrans %}</span>
+    <span data-string="headline-rising-traverse">{% blocktrans %}%(steepness)s rising traverse{% endblocktrans %}</span>
+    <span
+        data-string="headline-descending-traverse"
+    >{% blocktrans %}%(steepness)s descending traverse{% endblocktrans %}</span>
+    <span data-string="headline-level-traverse">{% trans "Level traverse" %}</span>
+    <span data-string="headline-climb-turning">{% blocktrans %}%(steepness)s climb, turning{% endblocktrans %}</span>
+    <span
+        data-string="headline-descent-turning"
+    >{% blocktrans %}%(steepness)s descent, turning{% endblocktrans %}</span>
+    <span data-string="headline-climb">{% blocktrans %}%(steepness)s climb{% endblocktrans %}</span>
+    <span data-string="headline-descent">{% blocktrans %}%(steepness)s descent{% endblocktrans %}</span>
+    <span data-string="headline-level">{% trans "Level track" %}</span>
+    <span data-string="headline-no-height">{% trans "No height data" %}</span>
+    <span data-string="ground-flat">{% trans "Flat ground" %}</span>
+    <span data-string="ground-moderate">{% trans "Moderate slope" %}</span>
+    <span data-string="ground-steep">{% trans "Steep slope" %}</span>
+    <span data-string="ground-very-steep">{% trans "Very steep slope" %}</span>
+    <span data-string="ground-extremely-steep">{% trans "Extremely steep slope" %}</span>
+    <span data-string="ground-unknown">{% trans "No terrain data" %}</span>
+    <span data-string="ground-falling-left">{% blocktrans %}%(ground)s, falling skier's left{% endblocktrans %}</span>
+    <span data-string="ground-falling-right">{% blocktrans %}%(ground)s, falling skier's right{% endblocktrans %}</span>
+</template>

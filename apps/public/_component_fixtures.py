@@ -1370,11 +1370,11 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Route rail (SNOW-1018) -------------------------------------------------------
-# Rail one is rendered once, empty and hidden, and filled by
+# The route rail is rendered once, empty and hidden, and filled by
 # static/js/route_rail.js for whichever route is open — this page runs no
 # interaction JS, so the one variant shows the empty shell: the eyebrow,
-# the actions menu (every item, as an owned route has them), the × and the
-# (blank) lane, rendered `static` — visible and in
+# the actions menu (every item, as an owned route has them), the ×, the
+# (blank) title and meta line and the (blank) lane, rendered `static` — visible and in
 # normal flow rather than hidden and docked over a map that is not here.
 # The URL templates are placeholders; nothing here posts.
 
@@ -1423,7 +1423,7 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
         "Fall-line descent — heading S down a 34° S face", _FALL_LINE_DESCENT
     ),
     _aspect_wheel_variant(
-        "Traverse — heading E across a 36° S face, near level",
+        "Traverse — heading E across a 36° S face, level (under 5°)",
         {
             "track": [2],
             "gradeDeg": -4,
@@ -1493,6 +1493,134 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     ),
     _aspect_wheel_variant("Fall-line descent at 120 px", _FALL_LINE_DESCENT, size=120),
+)
+
+
+# Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
+# One point on the open route, read in words: the aspect wheel at 48 px and
+# two lines — the headline (the track's steepness on its own scale and how
+# it crosses the slope) and the ground in the EAWS words, with the side the
+# slope falls on a traverse. The lines here are what
+# route_point_card_core.js's ``reading`` writes for each state; on the map
+# the header is filled client-side from the route cursor, and hidden while
+# no point is placed.
+
+
+def _point_card_variant(
+    caption: str,
+    state: dict[str, Any],
+    headline: str = "",
+    ground: str = "",
+) -> dict[str, Any]:
+    """Return one point-header variant."""
+    return {
+        "caption": caption,
+        "context": {
+            "static": True,
+            "state_json": json.dumps(state),
+            "headline": headline,
+            "ground": ground,
+        },
+    }
+
+
+POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    _point_card_variant(
+        "Fall line descent — 37° down a 42° face",
+        {
+            "track": [2],
+            "gradeDeg": -37,
+            "prev": {"sector": 2, "gradeDeg": -37},
+            "next": {"sector": 4, "gradeDeg": -26},
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
+        },
+        "Very steep fall line descent",
+        "Extremely steep slope",
+    ),
+    _point_card_variant(
+        "Fall line climb — 22° up a 31° face",
+        {
+            "track": [0],
+            "gradeDeg": 22,
+            "prev": {"sector": 7, "gradeDeg": 20},
+            "next": {"sector": 1, "gradeDeg": 23},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+        "Moderate fall line climb",
+        "Steep slope",
+    ),
+    _point_card_variant(
+        "Rising traverse — 13° across a 33° north face",
+        {
+            "track": [3],
+            "gradeDeg": 13,
+            "prev": {"sector": 2, "gradeDeg": 6},
+            "next": {"sector": 4, "gradeDeg": 3},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
+        },
+        "Gentle rising traverse",
+        "Steep slope, falling skier's left",
+    ),
+    _point_card_variant(
+        "Descending traverse — 9° across a 28° face",
+        {
+            "track": [2],
+            "gradeDeg": -9,
+            "prev": {"sector": 1, "gradeDeg": -8},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
+        },
+        "Gentle descending traverse",
+        "Moderate slope, falling skier's right",
+    ),
+    _point_card_variant(
+        "Level traverse — under 5° across a 36° face",
+        {
+            "track": [6],
+            "gradeDeg": 2,
+            "prev": None,
+            "next": {"sector": 6, "gradeDeg": 1},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
+        },
+        "Level traverse",
+        "Very steep slope, falling skier's right",
+    ),
+    _point_card_variant(
+        "Turning — the track climbs while heading downhill",
+        {
+            "track": [2, 3],
+            "gradeDeg": 6,
+            "prev": {"sector": 1, "gradeDeg": 9},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
+        },
+        "Gentle climb, turning",
+        "Steep slope",
+    ),
+    _point_card_variant(
+        "Flat ground — the track alone",
+        {
+            "track": [2],
+            "gradeDeg": -8,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "flat"},
+        },
+        "Gentle descent",
+        "Flat ground",
+    ),
+    _point_card_variant(
+        "No terrain data — the ground was not sampled",
+        {
+            "track": [5],
+            "gradeDeg": 1,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+        "Level track",
+        "No terrain data",
+    ),
 )
 
 

@@ -2,7 +2,7 @@
 name: client-side-tests
 description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop, tox -e e2e / js / js-types, JSDoc types
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # Client-side test harness
@@ -37,11 +37,11 @@ this land green rather than red-with-a-suppression-list.
 Opted in today — nineteen files, eighteen of the twenty-nine `*_core.js`
 modules plus `pwa_network_mode.js`:
 
-`bank_ribbon_core` · `calendar_core` ·
+`aspect_wheel_core` · `calendar_core` ·
 `choropleth_core` · `hatch_core` · `map_viewport_core` ·
 `offline_audit_core` · `route_cursor_core` · `route_cursor_map_core` ·
 `route_leader_core` · `route_legs_core` · `route_markers_core` ·
-`route_rail_core` · `route_rail_two_core` · `route_slope_core` ·
+`route_point_card_core` · `route_rail_core` · `route_slope_core` ·
 `scrubber_core` · `search_core` · `slope_overlay_core` ·
 `trip_deeplink_core` · `pwa_network_mode`
 

@@ -101,8 +101,9 @@ bulletin's aspect bands.
 
 Sending the aspect per segment would roughly double the payload for a 15 km
 tour — 600 segments — on a feed the offline cache holds. So the stored
-record is the server-side truth that SNOW-911 (cruxes) and SNOW-839
-(bulletin scoring) read, and the wire form is the subset the map paints.
+record is the server-side truth that SNOW-839 (bulletin scoring) and the
+derived wire keys read — SNOW-911's cruxes read it too, until SNOW-1066
+removed route cruxes — and the wire form is the subset the map paints.
 They are deliberately not the same shape, and `compact_slope` in
 `apps/routes/services/slope_wire.py` is the one place the reduction
 happens — it moved out of `apps/routes/views.py` in SNOW-962, when the
@@ -130,7 +131,7 @@ not a drawing anybody can read
 from the angle, the aspect and the chord bearing by
 `apps/routes/services/bank.py` — one whole degree per segment, aligned
 with `angles`, null for an unknown. It is sent flat rather than as thinned
-marks because the bank ribbon draws a tick about every other segment on a
+marks because the bank ribbon (retired by SNOW-1065) drew a tick about every other segment on a
 zoomed leg, where `{i, deg}` marks would cost five times the bytes for
 nearly the same count: about 2.4 kB on the 15 km tour. The aspect itself
 still does not travel
@@ -145,7 +146,7 @@ as on 38°: the arrows' 30° gate would leave the wheel blank there. So
 **sector index** per segment — 0 for N through 7 for NW, sector *k*
 spanning *k* × 45° ± 22.5° — derived by `aspect_sectors` in
 `apps/routes/services/fall_line.py`. It is null where the angle is
-unknown, below `ASPECT_FLAT_DEG` (5°, the rail's own flat ground, where
+unknown, below `ASPECT_FLAT_DEG` (5°, the point card's flat ground, where
 an aspect is a stream bank's bearing) or where the segment has no aspect.
 The payload objection is answered by the binning: a single digit per
 segment is about two bytes, 1.3 kB on the 638-segment Col de la Chaux

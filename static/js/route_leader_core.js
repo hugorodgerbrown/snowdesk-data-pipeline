@@ -1,18 +1,19 @@
 /*
  * static/js/route_leader_core.js — the leader line's path (SNOW-1019).
  *
- * The leader is a dashed line from the route cursor's dot on the map down
- * to rail one's cursor and on to rail two's, so the eye can follow one
- * place across the three drawings of the route. This module is its shape
- * and nothing else: the SVG path `d` through two or three screen points.
+ * The leader is a dashed line from the route cursor's dot on the map up
+ * to a notch on the route panel's bottom edge below the profile's cursor
+ * line (SNOW-1065, SNOW-1068), so the eye can follow one place across the two drawings of
+ * the route. This module is its shape and nothing else: the SVG path `d`
+ * through its screen points (two today; it takes any number).
  * static/js/route_leader.js is the DOM half.
  *
  * Each segment is one cubic whose tangents are VERTICAL at both ends —
  * control points `(a.x, mid.y)` and `(b.x, mid.y)` with mid.y halfway
- * between the ends — so the line leaves each stop straight down and
- * arrives at the next straight down, bending once between. A straight
- * diagonal would cross the rails' own marks at an angle; this meets each
- * cursor line along its own direction.
+ * between the ends — so the line leaves each stop vertically and arrives
+ * at the next vertically, bending once between. A straight diagonal would
+ * meet the panel's edge at an angle; this arrives straight up, in line
+ * with the profile's cursor line above it.
  *
  * Exports (frozen `self.pwaRouteLeaderCore`):
  *

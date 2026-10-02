@@ -21,6 +21,10 @@ It also covers ``aspects`` (SNOW-976): one sector per segment, aligned
 with ``angles`` on a canonical track, present whenever the record can be
 read.
 
+And that ``cruxes`` is never sent (SNOW-1066): not for a new record, and
+not for a stored one that still carries the key and per-segment ``crux``
+flags from before cruxes were removed.
+
 The remaining keys ``compact_slope`` sends are covered by the view tests
 and by the modules that derive them.
 """
@@ -274,3 +278,37 @@ class TestAspects:
         record["points"] = record["points"][:-1]
         assert compact_slope(record) is None
         assert compact_slope(None) is None
+
+
+class TestCruxesAreNotSent:
+    """Route-level cruxes were removed (SNOW-1066); none reach the wire."""
+
+    def test_a_current_record_sends_no_cruxes(self) -> None:
+        """A record written since SNOW-1066 has no key to send."""
+        slope = compact_slope(_record(_TRACK))
+        assert slope is not None
+        assert "cruxes" not in slope
+
+    def test_a_stored_record_with_cruxes_is_served_without_them(self) -> None:
+        """Old rows keep their ``cruxes`` key; it is simply not read."""
+        record = _record(_TRACK)
+        record["cruxes"] = [record["points"][1]]
+        record["segments"][0]["crux"] = True
+
+        slope = compact_slope(record)
+
+        assert slope is not None
+        assert "cruxes" not in slope
+        assert "crux" not in json.dumps(slope)
+        # Everything else is still served from the same record.
+        assert slope["angles"] == [20.0] * len(record["segments"])
+
+    def test_a_canonical_record_sampled_with_cruxes_sends_none(self) -> None:
+        """The committed Hidden Valley record predates SNOW-1066."""
+        record = json.loads((_RECORDS / "hidden-valley.json").read_text())
+        assert "cruxes" in record
+
+        slope = compact_slope(record)
+
+        assert slope is not None
+        assert "cruxes" not in slope
