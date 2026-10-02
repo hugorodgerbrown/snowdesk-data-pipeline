@@ -2491,6 +2491,12 @@ async function _warmCache(urls, options) {
  * safe in the pinned bucket. The area quietly decays into geometry with no
  * labels — which is what "the map only partially loaded" looked like.
  *
+ * SNOW-1060 narrowed that: the passive trim now counts and evicts tiles only,
+ * so glyphs no longer fall to the 600-entry cap. They can still fall to the
+ * ``BASEMAP_CACHE_MAX_DOCUMENTS`` backstop, and the passive cache is never a
+ * durable home for anything, so promoting them into the pinned bucket still
+ * earns its place.
+ *
  * SNOW-847 makes this a SECOND line rather than the only one. The download
  * now fetches a fixed range set outright (``glyphURLs``,
  * basemap_download_core.js), so the case this function was written for — an
