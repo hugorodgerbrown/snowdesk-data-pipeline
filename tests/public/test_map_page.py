@@ -1853,3 +1853,55 @@ class TestFakeLocationGate:
         """DEBUG is the other half — a dev server has no superuser to hand."""
         with override_settings(DEBUG=True):
             assert self._flag(client) == "true"
+
+
+class TestTheMapPageFitsTheScreen:
+    """The map page is exactly as tall as the area it is laid out in.
+
+    ``min-height: 100dvh`` came out one status bar too tall in the iOS
+    home-screen app, where the page starts below a black-translucent status
+    bar but 100dvh still measures the whole screen; the page then scrolled,
+    the nav off the top and the footer under the home indicator. The body
+    is now a fixed ``height: 100%`` of html, which resolves against the
+    area the page is actually laid out in.
+    """
+
+    CSS = (Path(settings.BASE_DIR) / "static" / "css" / "map.css").read_text()
+
+    def _body(self, selector: str) -> str:
+        """Return the body of the rule whose selector is exactly ``selector``.
+
+        Args:
+            selector: The rule's selector list, as written.
+
+        Returns:
+            The declarations between its braces.
+
+        """
+        rules: list[tuple[str, str]] = re.findall(r"([^{}]+)\{([^{}]*)\}", self.CSS)
+        for found, body in rules:
+            if " ".join(found.split("*/")[-1].split()) == selector:
+                return body
+        raise AssertionError(f"no rule for {selector!r} in map.css")
+
+    @pytest.mark.django_db
+    def test_the_map_page_body_carries_the_class(self) -> None:
+        """/map/'s body is the one the rules below size."""
+        content = Client().get(reverse("public:map")).content.decode()
+        body_tag = re.search(r"<body[^>]*>", content)
+        assert body_tag is not None
+        assert "map-fullscreen" in body_tag.group(0)
+        assert "min-h-screen" not in body_tag.group(0)
+
+    def test_html_and_body_take_the_laid_out_height(self) -> None:
+        """html and the map page's body are height: 100%, a fixed height."""
+        body = self._body(
+            "html:has(> body.map-fullscreen), html:has(> body.map-fullscreen) > body"
+        )
+        assert re.search(r"(^|;|\s)height:\s*100%", body)
+
+    def test_no_viewport_unit_minimum_can_push_the_page_taller(self) -> None:
+        """The fallback is a height, not a 100dvh minimum."""
+        body = self._body(".map-fullscreen")
+        assert "min-height" not in body
+        assert re.search(r"(^|;|\s)height:\s*100dvh", body)

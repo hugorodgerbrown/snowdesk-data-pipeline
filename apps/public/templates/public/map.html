@@ -26,9 +26,10 @@ in addition to the shared map assets.
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
 
-{# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
-{# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
-{# and the site footer stay within the visible viewport on mobile.          #}
+{# SNOW-314: full-viewport map surface — sized to the page's own height   #}
+{# (via .map-fullscreen in map.css) instead of the default min-h-screen, so #}
+{# the nav, the map and the site footer fit the screen exactly on a phone,  #}
+{# in Safari and in the home-screen app alike.                              #}
 {% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
 
 {% block extra_head %}
