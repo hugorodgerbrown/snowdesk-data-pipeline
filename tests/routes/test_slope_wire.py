@@ -17,6 +17,10 @@ track's real coordinates instead of a straight chord between boundaries.
   - the Hidden Valley canonical track, merged and unmerged: the seams are
     a partition of its coordinates into segments.
 
+It also covers ``aspects`` (SNOW-976): one sector per segment, aligned
+with ``angles`` on a canonical track, present whenever the record can be
+read.
+
 The remaining keys ``compact_slope`` sends are covered by the view tests
 and by the modules that derive them.
 """
@@ -233,3 +237,40 @@ class TestHiddenValley:
         for boundary, seam in zip(record["points"], seams, strict=True):
             if tuple(boundary) in kept:
                 assert merged[seam][:2] == boundary
+
+
+class TestAspects:
+    """The per-segment aspect sector on the wire (SNOW-976)."""
+
+    def test_aligns_with_the_angles_on_a_canonical_track(self) -> None:
+        """One sector or null per segment, Hidden Valley's 276 of them."""
+        record = json.loads((_RECORDS / "hidden-valley.json").read_text())
+        slope = compact_slope(record)
+        assert slope is not None
+        assert len(slope["aspects"]) == len(slope["angles"])
+        assert all(
+            sector is None or (isinstance(sector, int) and 0 <= sector <= 7)
+            for sector in slope["aspects"]
+        )
+        # Null exactly where the angle is unknown or flat, or there is
+        # no aspect to bin.
+        for angle, segment, sector in zip(
+            slope["angles"], record["segments"], slope["aspects"], strict=True
+        ):
+            readable = angle is not None and angle >= 5.0
+            assert (sector is not None) == (
+                readable and segment.get("aspect_deg") is not None
+            )
+
+    def test_is_present_on_any_readable_record(self) -> None:
+        """A record with no aspect at all still sends the key, all null."""
+        slope = compact_slope(_record(_TRACK, heights=False))
+        assert slope is not None
+        assert slope["aspects"] == [None] * len(slope["angles"])
+
+    def test_is_absent_when_there_is_nothing_to_draw(self) -> None:
+        """No slope payload, no aspects: the whole value is None."""
+        record = _record(_TRACK, heights=False)
+        record["points"] = record["points"][:-1]
+        assert compact_slope(record) is None
+        assert compact_slope(None) is None
