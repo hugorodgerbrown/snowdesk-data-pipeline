@@ -40,13 +40,12 @@
  *     approximation with no per-entry timestamp bookkeeping. SNOW-1060:
  *     ``options.isEvictable`` narrows the count and the eviction to the
  *     entries it accepts (the passive basemap cache passes
- *     ``isTileEntryURL``, so the style documents are never trimmed), and
+ *     ``isTileShapedURL``, so the style documents are never trimmed), and
  *     ``options.maxOther`` bounds the entries it rejects.
- *   isTileEntryURL(url)
- *     SNOW-1060: whether ``url`` names a tile rather than a style document
- *     (style JSON, TileJSON, sprite, glyph range). The same definition as
- *     basemap_download_core.js's — see the comment above it here for why
- *     there are two copies.
+ *   isTileShapedURL(url)
+ *     SNOW-1060: whether ``url`` has a tile's numeric ``/{z}/{x}/{y}`` tail,
+ *     any extension or none — the passive trim's test for "a tile, not a
+ *     style document".
  *   shouldPersist(url, response, immutableOnlyPaths)
  *     SNOW-526: false for a path in ``immutableOnlyPaths`` whose response
  *     doesn't carry an ``immutable`` ``Cache-Control`` token, true otherwise.
@@ -119,47 +118,47 @@
     return originsSet.has(url.origin);
   }
 
-  // SNOW-1060: the tail every tile URL the basemap styles emit has, and
-  // that no document they emit has — ``/{z}/{x}/{y}.{ext}``, three numeric
-  // path segments and a tile extension.
+  // SNOW-1060: the shape every tile URL has and no style document does — a
+  // path ending in three numeric segments, ``/{z}/{x}/{y}``, with any
+  // extension or none.
   //
-  // DUPLICATED in basemap_download_core.js on purpose. The pages (map.html,
-  // offline.html) load the download core and never this one; only the
-  // service worker loads this file, via ``importScripts``. Sharing one
-  // definition would mean adding a script to the map shell, its precache
-  // and the offline audit's page-dependency check — more risk than the
-  // bug warranted. tests/js/test_tile_entry_parity.js runs one truth table
-  // against both copies, so drift fails the build.
+  // Deliberately broader than basemap_download_core.js's ``TILE_ENTRY_PATH``
+  // (which also demands a known tile extension), because the two answer
+  // different questions. That one decides which entries a re-band may
+  // delete, so it errs towards "not a tile". This one decides what the
+  // passive trim COUNTS as a tile, so it errs the other way: a ``.webp``,
+  // ``.avif`` or extensionless tile from a provider that changes its style
+  // must join the tile cap, not the documents, or it would fill the
+  // documents' backstop and push the style out ahead of it.
   //
-  // Host-independent and path-only on purpose: the hosts rotate,
-  // OpenFreeMap's tileset path carries a dated build id, and a tile may
-  // arrive with a query string or an API key appended. What it must get
-  // right is the NEAR MISSES, which all fail on the numeric triple:
+  // Path-only, so a rotating host, a dated tileset path, a query string or
+  // an API key never changes the answer. The documents all fail on the
+  // numeric triple:
   //
   //   /fonts/Noto%20Sans%20Bold/0-255.pbf   glyph range — ``0-255`` is one
   //                                         segment, not three
   //   /sprites/ofm_f384/ofm@2x.png          sprite — ``ofm@2x`` is not a number
-  //   /styles/liberty                       style document — no extension
-  //   /planet, /basemapvectorneu/root.json  TileJSON
-  const TILE_ENTRY_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|jpg|jpeg)$/i;
+  //   /styles/liberty, …/style.json         style document
+  //   /planet, …/v1.0.0/tiles.json          TileJSON
+  const TILE_SHAPED_PATH = /\/\d+\/\d+\/\d+(?:\.[A-Za-z0-9]+)?$/;
 
   /**
-   * Whether ``url`` names a TILE rather than one of the documents that
-   * draw it (SNOW-1060; the definition is SNOW-929's).
+   * Whether ``url`` has a tile's shape — a numeric ``/{z}/{x}/{y}`` tail,
+   * any extension or none (SNOW-1060).
    *
-   * Decided from the PATH alone, so a query string, a fragment or an API
-   * key never changes the answer — see ``TILE_ENTRY_PATH`` above.
+   * Decided from the PATH alone; see ``TILE_SHAPED_PATH`` above for why it
+   * is broader than the download core's ``isTileEntryURL``.
    *
    * @param {string} url A cache entry's url, absolute or relative.
    * @returns {boolean} ``false`` for a non-string, an unparseable url, or
-   *   anything without the numeric-triple tail — "not provably a tile".
+   *   anything without the numeric-triple tail.
    */
-  function isTileEntryURL(url) {
+  function isTileShapedURL(url) {
     if (typeof url !== 'string' || !url) return false;
     try {
       // A base is supplied so a relative entry still parses to a path;
       // its host is never read, and an absolute url ignores it outright.
-      return TILE_ENTRY_PATH.test(new URL(url, 'https://snowdesk.info').pathname);
+      return TILE_SHAPED_PATH.test(new URL(url, 'https://snowdesk.info').pathname);
     } catch (_e) {
       return false;
     }
@@ -173,19 +172,19 @@
    *
    * SNOW-1060: with ``options.isEvictable``, only the entries it accepts
    * (by url) count towards ``max``, and only they are ever deleted for it.
-   * The passive basemap cache passes ``isTileEntryURL``. MapLibre fetches
+   * The passive basemap cache passes ``isTileShapedURL``. MapLibre fetches
    * the style JSON, TileJSON and sprite once per map load, so under a
    * whole-cache FIFO a session that panned through more than ``max`` new
    * tiles trimmed away the documents every tile depends on — nothing
    * changed on screen, but the next offline load was blank. Counting
    * tiles only keeps the documents however long the session runs.
    *
-   * ``options.maxOther`` is the backstop for what that exempts. An
-   * unrecognised tile format (``.webp``, say, if a provider changes its
-   * style) would be classed as a document and would otherwise grow
-   * without bound; when the non-evictable entries exceed ``maxOther``,
-   * the oldest of them are deleted down to it. Ignored unless it is a
-   * finite number.
+   * ``options.maxOther`` is the backstop for what that exempts: when the
+   * non-evictable entries exceed it, the oldest of them are deleted down
+   * to it, so nothing ``isEvictable`` rejects can grow without bound. With
+   * ``isTileShapedURL`` every tile format lands on the evictable side, so
+   * in practice only the documents themselves are under it — a few dozen
+   * per basemap. Ignored unless it is a finite number.
    *
    * ``Cache.keys()`` yields ``Request`` objects; a string key (as a test
    * fake may use) is read as its own url.
@@ -387,7 +386,7 @@
     classifySync: classifySync,
     isBasemapOrigin: isBasemapOrigin,
     trimCache: trimCache,
-    isTileEntryURL: isTileEntryURL,
+    isTileShapedURL: isTileShapedURL,
     shouldPersist: shouldPersist,
     runPool: runPool,
     classifyFailure: classifyFailure,

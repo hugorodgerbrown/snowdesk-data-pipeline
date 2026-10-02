@@ -558,7 +558,8 @@ The SW classifies every fetch into one of four buckets:
   bounding on-disk growth) via a simple oldest-first LRU trim
   (`Cache.keys()` returns insertion order — no byte-size accounting; see
   "Out of scope" below). Since SNOW-1060 the 600 counts **tiles only**
-  (`isTileEntryURL`, the numeric `/{z}/{x}/{y}.{ext}` tail) and only tiles
+  (`isTileShapedURL`, the numeric `/{z}/{x}/{y}` tail, any extension or
+  none) and only tiles
   are evicted for it. The style JSON, TileJSON, sprite files and glyph
   ranges are exempt, bounded only by a `BASEMAP_CACHE_MAX_DOCUMENTS` (200)
   backstop. The reason: MapLibre fetches those documents once per map
@@ -566,9 +567,11 @@ The SW classifies every fetch into one of four buckets:
   trimmed them away during any session that panned through more than 600
   new tiles. Nothing changed on screen, but the next offline load was
   blank because every tile it held had lost the style that draws it. The
-  backstop exists so an unrecognised tile format (`.webp`, say) misread as
-  a document cannot grow without bound; real documents are a few dozen
-  per basemap. This is the passive, opportunistic cache for
+  tile test reads the path's shape, not its extension, so a tile format
+  no style ships today (`.webp`, say) still counts as a tile and can never
+  fill the backstop and push the style out. The backstop only stops
+  anything the test rejects from growing without bound; real documents
+  are a few dozen per basemap. This is the passive, opportunistic cache for
   whatever the user has actually browsed — distinct from the byte-budget
   eviction the DELIBERATE "Download basemap" pinned buckets use (SNOW-586,
   below), which this passive cache has no part in. On a `BASEMAP_CACHE`

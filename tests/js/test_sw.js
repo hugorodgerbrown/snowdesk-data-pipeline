@@ -1077,7 +1077,7 @@ describe('basemap cache trim batching (SNOW-614)', () => {
     expect(trimCache).toHaveBeenCalledTimes(1);
     const [, max, options] = trimCache.mock.calls[0];
     expect(max).toBe(sw.BASEMAP_CACHE_MAX_ENTRIES);
-    expect(options.isEvictable).toBe(real.isTileEntryURL);
+    expect(options.isEvictable).toBe(real.isTileShapedURL);
     expect(options.maxOther).toBe(sw.BASEMAP_CACHE_MAX_DOCUMENTS);
   });
 

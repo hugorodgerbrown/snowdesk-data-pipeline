@@ -286,11 +286,13 @@ const BASEMAP_CACHE = 'snowdesk-basemap-v1';
 // the next offline load was blank. See ``_trimPassiveBasemap``.
 const BASEMAP_CACHE_MAX_ENTRIES = 600;
 
-// SNOW-1060: the backstop for the entries the tile-only cap exempts. Real
-// documents are a few dozen per basemap (one style, one to three TileJSON,
-// four sprite files, the glyph ranges the style uses), so 200 is well clear
-// of them across every style — it exists so an unrecognised tile format
-// (``.webp``, say) misclassified as a document can't grow without bound.
+// SNOW-1060: the backstop for the entries the tile-only cap exempts. Every
+// tile format counts as a tile (``isTileShapedURL`` reads the numeric
+// ``/{z}/{x}/{y}`` tail, whatever the extension), so what sits under this is
+// the documents themselves: a few dozen per basemap (one style, one to three
+// TileJSON, four sprite files, the glyph ranges the style uses). 200 is well
+// clear of them across every style; it exists only so that nothing the tile
+// test rejects can grow without bound.
 const BASEMAP_CACHE_MAX_DOCUMENTS = 200;
 
 // SNOW-614: how many passive basemap puts may land between two trims.
@@ -501,9 +503,9 @@ async function _trimBasemapCacheEvery(cache) {
  */
 async function _trimPassiveBasemap(cache) {
   const core = self.pwaBasemapCacheCore;
-  if (core && core.isTileEntryURL) {
+  if (core && core.isTileShapedURL) {
     return core.trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES, {
-      isEvictable: core.isTileEntryURL,
+      isEvictable: core.isTileShapedURL,
       maxOther: BASEMAP_CACHE_MAX_DOCUMENTS,
     });
   }
