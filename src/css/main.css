@@ -440,19 +440,6 @@
      ————————————————————————————————————————— */
   --color-track-level: #bae6fd;    /* track under 5°    */
 
-  /* —— the crux ring (SNOW-911) ——
-     A marker, not a band, and so deliberately NOT on the
-     scale above: the ring says WHERE to look and the line
-     under it already says how steep that ground is.
-     Borrowing a scale colour would make it read as a
-     sixth class. Near-black, which is the one ink
-     readable over all six of them — the ring is drawn
-     over the coloured line it marks. Mirrored as a
-     literal in map.js (ROUTE_CRUX_COLOUR), which cannot
-     read a custom property in a MapLibre paint property.
-     ————————————————————————————————————————— */
-  --color-crux-ring: #1a1916;
-
   /* —— the no-fall passage's core (SNOW-964) ——
      A passage is drawn as a SPLIT line: the band
      colour widened, with this run down its centre. It
@@ -464,11 +451,10 @@
      `transparent` is not an option: MapLibre cannot
      punch a hole through one line layer to another, so
      a transparent core would reveal the dark casing
-     and read as a shadow rather than a gap. #ffffff is
-     avoided because it is the crux ring's halo, and
-     the two marks co-occur on nearly every passage —
-     anything over 50° has already been flagged a crux
-     at 35°.
+     and read as a shadow rather than a gap. A shade
+     off #ffffff rather than pure white, kept from when
+     pure white was another marker's halo (the crux
+     ring, removed by SNOW-1066).
 
      Mirrored as a literal in route_slope_core.js
      (PASSAGE_CORE_COLOUR / PASSAGE_CORE_TOKEN), which
@@ -480,18 +466,15 @@
   /* —— the fall-line arrow ——
      A small arrow on a saved route, pointing the way
      the ground under it FALLS. A mark rather than a
-     band, so off the scale above for the crux ring's
-     reason — a marker tinted from the ramp reads as a
-     further class of ground.
+     band, so off the scale above: a marker tinted from
+     the ramp reads as a further class of ground.
 
-     The ring's own value, and named separately on
-     purpose. The two are one family of mark and should
-     look like it, but they can be re-inked
-     independently, and a token named for one mark that
-     two marks read is the drift SNOW-969 spent two
-     tickets closing. `--color-route-line-casing`
-     already carries this value under a third name on
-     the same reasoning.
+     Near-black, the one ink readable over every class
+     on the line, and named for this mark alone: a
+     token named for one mark that two marks read is
+     the drift SNOW-969 spent two tickets closing.
+     `--color-route-line-casing` already carries this
+     value under another name on the same reasoning.
 
      Mirrored as a literal in route_slope_core.js
      (FALL_LINE_COLOUR / FALL_LINE_TOKEN), which is

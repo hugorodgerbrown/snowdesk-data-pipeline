@@ -2156,10 +2156,9 @@
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
   const ROUTE_END_ICON = 'route-finish-flag';
-  // SNOW-1019 took the crux rings (SNOW-911) and the fall-line arrows off
-  // the map: the crux is deferred to a later ticket, and the bank ribbon
-  // on rail two replaced the arrows. The server still sends `cruxes` and
-  // `fall_lines` on the slope record; nothing here draws them.
+  // SNOW-1019 took the fall-line arrows off the map: the bank ribbon on
+  // rail two replaced them. The server still sends `fall_lines` on the
+  // slope record; nothing here draws them.
 
   /**
    * Register the start dot and finish flag, unless the style already holds
@@ -6256,7 +6255,7 @@
   //
   // SNOW-1017 took the colouring off the map — a route draws as its legs
   // whether or not it is sampled — and SNOW-1019 took the record's last
-  // marks (passages, crux rings, fall-line arrows) off it too. The refetch
+  // marks (passages, fall-line arrows) off it too. The refetch
   // still matters: the rail's slope bands, bank ribbon and passage bars,
   // and the map's cursor, all read the record it brings.
   //
@@ -8593,38 +8592,15 @@
         const terrainLines = slopeCore
           ? slopeCore.summaryLines(readFeatureJson(props.terrain))
           : [];
-        // SNOW-911: how many passages the terrain flagged, on the same
-        // line as the figures rather than a line of its own — it is one
-        // more fact about the ground, and a line carrying a single short
-        // count would read as more important than the steepness beside it.
-        //
-        // OMITTED AT ZERO. "0 key passages" is a claim that the algorithm
-        // looked and found nothing, which is exactly the reading
-        // /help/#help-topic-slope exists to prevent: the markers are not
-        // exhaustive, and a route with none is not a safe route.
         // Parsed ONCE and shared with the passage lines below: the slope
         // record is the largest property on the feature, and it arrives as
         // a JSON string that both readers would otherwise parse
         // separately.
         const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
-        // SNOW-964: the no-fall passages, pushed BEFORE the crux count so
-        // the line reads in the order the eye takes the map in — the
-        // colour under the track, then the split across it, then the ring
-        // around it.
-        //
-        // The two marks land on nearly the same ground (anything over 50°
-        // was already flagged a crux at 35°), so the words have to keep
-        // them apart: the ring says the terrain around you can release,
-        // the split says you are on it.
+        // SNOW-964: the no-fall passages, on the same line as the figures
+        // rather than a line of their own — one more fact about the ground.
         if (slopeCore?.passageLines) {
           terrainLines.push(...slopeCore.passageLines(slopeFeature));
-        }
-        const cruxes = slopeCore?.cruxCount ? slopeCore.cruxCount(slopeFeature) : 0;
-        if (cruxes > 0) {
-          terrainLines.push({
-            key: cruxes === 1 ? 'route-terrain-crux-one' : 'route-terrain-cruxes',
-            params: { count: String(cruxes) },
-          });
         }
         if (terrainLines.length) {
           const terrainMeta = document.createElement('div');
@@ -8680,12 +8656,9 @@
         //
         // What made it a defect rather than a preference is that the
         // marks drawn ON a route have minzooms of their own — the
-        // transition markers at 11, and the crux rings did too until
-        // SNOW-1019 took them off — so the
+        // transition markers at 11 — so the
         // camera came to rest BELOW the zoom at which the things the
-        // panel was describing in words could render at all. The panel
-        // said "3 key passages" over a map that had decided not to show
-        // them.
+        // panel was describing in words could render at all.
         //
         // `tests/js/test_map_route_leg_layers.js` holds the invariant
         // against every route mark's own minzoom rather than against the

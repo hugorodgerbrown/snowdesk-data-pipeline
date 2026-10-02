@@ -143,6 +143,10 @@ class TestComparePageIsHonest:
     page — it breaks its reason to exist.
     """
 
+    def test_makes_no_crux_claim(self, page: str) -> None:
+        """SNOW-1066 removed route-level cruxes; the page names none."""
+        assert "crux" not in page.lower()
+
     def test_discloses_that_snowdesk_publishes_it(self, page: str) -> None:
         """The conflict of interest is stated, not implied."""
         assert "published by Snowdesk, which is one of the products" in page

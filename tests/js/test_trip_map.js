@@ -438,13 +438,11 @@ describe('installLayers — the marks a trip map draws (SNOW-1019)', () => {
     };
   }
 
-  it('draws no crux ring, fall-line arrow or passage split, though the snapshot carries all three', () => {
-    // Taken off both maps by SNOW-1019: the crux is deferred, the bank
-    // ribbon replaced the arrows, and the passages are bars on the map
-    // page's rail two. The records still travel, which is what makes this
+  it('draws no fall-line arrow or passage split, though the snapshot carries both', () => {
+    // Taken off both maps by SNOW-1019: the bank ribbon replaced the
+    // arrows, and the passages are bars on the map page's rail two. The records still travel, which is what makes this
     // worth holding — the marks could come back unnoticed.
     const p = sampled([40, 52]);
-    p.route.properties.slope.cruxes = [[7.4, 46.1]];
     p.route.properties.slope.fall_lines = [{ i: 1, deg: 205 }];
     p.route.properties.slope.passages = [{ from: 1, to: 1, m: 25, fall_line: 'climbing' }];
     const map = recordingMap();
@@ -453,8 +451,7 @@ describe('installLayers — the marks a trip map draws (SNOW-1019)', () => {
 
     const ids = [...map.sources, ...map.layers];
     expect(ids).toContain('trip-route-slope-line');
-    expect(ids.filter((id) => /crux|fall-line|passage/.test(id))).toEqual([]);
-    expect(core).not.toHaveProperty('routeCruxSourceData');
+    expect(ids.filter((id) => /fall-line|passage/.test(id))).toEqual([]);
     expect(core).not.toHaveProperty('routeFallLineSourceData');
   });
 });

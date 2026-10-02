@@ -591,13 +591,13 @@ describe('the transition markers', () => {
 });
 
 describe('the marks SNOW-1019 took off the map', () => {
-  it('installs no crux ring, fall-line arrow or passage split, though the record carries them', () => {
-    // The crux is deferred to a later ticket, the bank ribbon on rail two
-    // replaced the arrows, and the no-fall passages are bars on rail two.
+  it('installs no fall-line arrow or passage split, though the record carries them', () => {
+    // The bank ribbon on rail two replaced the arrows, and the no-fall
+    // passages are bars on rail two.
     // SLOPE still carries `fall_lines` and `passages`, so this holds the
     // marks off rather than passing for want of data.
     const ids = [...layers.keys(), ...sources.keys()];
-    const marks = /crux|fall-line|passage/;
+    const marks = /fall-line|passage/;
 
     expect(SLOPE.fall_lines).toHaveLength(1);
     expect(SLOPE.passages).toHaveLength(1);

@@ -88,8 +88,7 @@ did it for free while the ``routes-fall-lines`` layer existed (SNOW-1019
 took the arrows off both maps; the marks still travel and
 ``route_slope_core.js``'s ``fallLineCollection`` still places them). A
 dropped arrow costs nothing, because the remaining ones say the same
-thing about the same face; that is precisely the opposite of a dropped
-crux ring, which would understate the day.
+thing about the same face.
 
 ## A mark is an index and a bearing, never a second geometry
 
@@ -211,7 +210,7 @@ def fall_line_marks(
         compass degree in ``[0, 360)``.
 
         An empty list means nothing qualified, which — like a passage
-        list and unlike ``cruxes`` — is always a complete answer: the
+        list — is always a complete answer: the
         marks are derivable from the record at any constants, so there is
         no "we could not look" state to encode.
 

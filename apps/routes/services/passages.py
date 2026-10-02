@@ -41,10 +41,8 @@ above away again.
 
 ## A passage list is never incomplete
 
-This is the thing ``cruxes`` cannot say. A crux can be ABSENT because a
-probe outage voided the pass, which is why that key is omitted rather
-than emptied. A passage needs no probe: it is fully derivable from the
-record at any constants, at any time. So an empty list here means
+A passage needs no probe: it is fully derivable from the record at any
+constants, at any time. So an empty list here means
 "nothing qualified" and never "we could not look", and there is no third
 state to encode.
 

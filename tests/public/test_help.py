@@ -358,6 +358,12 @@ class TestHelpPageFlagGating:
         assert b"the line splits" not in content
         assert b"Small arrows along a saved route" not in content
 
+    def test_slope_panel_says_nothing_about_cruxes(self, client: Client) -> None:
+        """SNOW-1066 removed route-level cruxes; no copy may describe them."""
+        content = client.get(reverse("public:help")).content.decode().lower()
+        assert "crux" not in content
+        assert "key passage" not in content
+
     def test_slope_panel_explains_a_flat_traverse_drawn_steep(
         self, client: Client
     ) -> None:

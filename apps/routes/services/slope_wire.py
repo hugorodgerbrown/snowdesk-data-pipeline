@@ -71,13 +71,10 @@ def compact_slope(
     Args:
         samples: The row's ``slope_samples``, or None if never sampled.
 
-    ``cruxes`` (SNOW-911) travel as the COORDINATES ALONE. The angle that
-    flagged one stays server-side: a marker says "look here", and a number
-    beside it would invite the reader to compare two rings and treat the
-    larger as the more dangerous — a severity claim a max-in-an-arc does
-    not support. The key is absent rather than empty for a record written
-    before cruxes existed, so "nothing was flagged" and "nothing looked"
-    stay apart on the client exactly as they do one level up.
+    A record sampled before SNOW-1066 may still hold a ``cruxes`` list
+    (SNOW-911). It is NOT sent: Snowdesk keeps no route-level crux, and
+    where the dangerous ground is is the daily avalanche terrain layer's
+    question (SNOW-979). The stored key is left in place and ignored.
 
     ``fall_lines`` are the fall-line marks — which way the ground under
     the track falls, at a point every few hundred metres of steep ground.
@@ -128,8 +125,8 @@ def compact_slope(
     the client already holds — never a second copy of the geometry, which
     could disagree with the first — the length in metres, and a word for
     what the track does with the fall line. **Empty means nothing
-    qualified**, and unlike ``cruxes`` that is always a complete answer:
-    a passage needs no probe, so there is no "we could not look" state.
+    qualified**, and that is always a complete answer: a passage needs
+    no probe, so there is no "we could not look" state.
 
     ``seams`` (SNOW-1053) are one coordinate index per boundary: the
     last coordinate of ``coordinates`` — the geometry the SAME feature
@@ -150,7 +147,7 @@ def compact_slope(
 
     Returns:
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
-        ``cruxes`` where the record has them, and ``passages``,
+        ``passages``,
         ``fall_lines``, ``banks`` and ``aspects`` whenever the record
         could be read at all, and ``seams`` where ``coordinates`` allow
         them. None when there is nothing to draw — never sampled, or a record whose
@@ -171,7 +168,6 @@ def compact_slope(
         )
         return None
 
-    cruxes = samples.get("cruxes")
     passages = route_passages(samples)
     fall_lines = fall_line_marks(samples)
     banks = bank_angles(samples)
@@ -182,13 +178,10 @@ def compact_slope(
     return {
         "points": points,
         "angles": [segment.get("angle_deg") for segment in segments],
-        **({"cruxes": cruxes} if isinstance(cruxes, list) else {}),
-        # The ``cruxes`` rule verbatim, and it reads the same because the
-        # two keys mean different things by their absence: a missing
-        # ``cruxes`` is an outage, a missing ``passages`` is a record this
-        # function has already refused above. ``route_passages`` can only
-        # answer None on a record the pairing check has rejected, so in
-        # practice the key is always present here.
+        # A missing ``passages`` is a record this function has already
+        # refused above. ``route_passages`` can only answer None on a
+        # record the pairing check has rejected, so in practice the key is
+        # always present here.
         **({"passages": passages} if isinstance(passages, list) else {}),
         # The ``passages`` rule a third time, and the same note applies:
         # ``fall_line_marks`` can only answer None on a record the

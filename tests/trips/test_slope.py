@@ -32,7 +32,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
+from apps.locations.services.terrain import TerrainSlope
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share
@@ -50,28 +50,6 @@ _GRID_FIXTURE = (
 # A short meridian track: two coordinates about 1.1 km apart, which is
 # enough to hold several 25 m strides.
 MERIDIAN_TRACK = [[7.0, 46.0, 1000.0], [7.0, 46.01, 1200.0]]
-
-
-@pytest.fixture(autouse=True)
-def _silent_crux_probes() -> Any:
-    """Answer every SNOW-911 uphill probe with "we did not see".
-
-    ``apps.routes.services.cruxes`` imports ``sample_slope`` itself, so
-    patching the walk's copy does not reach the probes, and an unpatched
-    one would walk out to the real tile origin from a unit test. What the
-    probes conclude is ``tests/routes/test_cruxes.py``'s subject.
-    """
-    with patch(
-        "apps.routes.services.cruxes.sample_slope",
-        return_value=TerrainSlope(
-            angle_deg=None,
-            aspect_deg=None,
-            window_m=10.0,
-            unknown=TerrainUnknown.OUTSIDE_COVERAGE,
-            source=None,
-        ),
-    ):
-        yield
 
 
 def _grid() -> TerrainGrid:
@@ -323,13 +301,13 @@ class TestTripMapPayload:
 class TestTheTerrainHelpLink:
     """The way from a mark on this page to what the mark means (SNOW-968).
 
-    The trip page draws three readings of the terrain — the slope colours
-    on the line and the profile, the crux rings, and the no-fall split
-    line — and unlike the map it has no legend to explain any of them.
-    This is also the page the GROUP reads rather than the planner, so it
-    is the one least able to assume the reader has met the marks before.
-    One link to the help topic that holds all three, and that carries the
-    caveat neither marker can: neither is a full list.
+    The trip page draws two readings of the terrain — the slope colours
+    on the line and the profile, and the no-fall split line — and unlike
+    the map it has no legend to explain either. This is also the page the
+    GROUP reads rather than the planner, so it is the one least able to
+    assume the reader has met the marks before. One link to the help
+    topic that holds both, and that carries the caveat the passage mark
+    cannot: it is not a full list.
     """
 
     def _sampled(self) -> Trip:

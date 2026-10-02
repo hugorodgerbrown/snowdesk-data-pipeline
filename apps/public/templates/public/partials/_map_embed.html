@@ -1307,8 +1307,8 @@ Optional context:
                     ></span>{% trans "Descending" %}
                 </div>
                 {# SNOW-1019 took every terrain mark off the line — the      #}
-                {# fall-line arrows, the crux rings and the no-fall passage  #}
-                {# split — and their rows with them. The line is its legs;   #}
+                {# fall-line arrows and the no-fall passage split — and      #}
+                {# their rows with them. The line is its legs;               #}
                 {# the ground under a leg is read on rail two.               #}
                 <p class="map-legend-attribution">
                     {% blocktrans trimmed %}
@@ -2402,25 +2402,11 @@ Optional context:
     <span data-string="route-terrain-unsurveyed-km">{% blocktrans %}%(km)skm not surveyed{% endblocktrans %}</span>
     <span data-string="route-terrain-unsurveyed-m">{% blocktrans %}%(m)sm not surveyed{% endblocktrans %}</span>
     <span data-string="route-terrain-unsurveyed-all">{% trans "Terrain not surveyed" %}</span>
-    {# SNOW-911: how many passages on this route have terrain around them  #}
-    {# capable of releasing a slab. Two forms and not one pluralised       #}
-    {# string, because a locale's plural rules are not English's and       #}
-    {# "%(count)s key passage(s)" would put a bracket in the product.      #}
-    {#                                                                      #}
-    {# OMITTED AT ZERO by map.js, not rendered as "0": the markers are not  #}
-    {# exhaustive, so "none found" must never read as "none there". That is #}
-    {# what /help/#help-topic-slope says at length and what the legend row  #}
-    {# below links to.                                                      #}
-    <span data-string="route-terrain-crux-one">{% trans "1 key passage" %}</span>
-    <span data-string="route-terrain-cruxes">{% blocktrans %}%(count)s key passages{% endblocktrans %}</span>
     {# SNOW-964: the no-fall passages — the stretches where the TRACK is  #}
-    {# on ground over 50°. Two count forms, on the pair rule above, then  #}
-    {# one word per direction present.                                    #}
-    {#                                                                     #}
-    {# THE RING AND THE SPLIT SAY DIFFERENT THINGS, and the copy has to    #}
-    {# keep them apart because they land on nearly the same ground: the    #}
-    {# ring above says the terrain AROUND you can release, this says you   #}
-    {# are ON it. "No-fall" is the touring word for exactly that and is    #}
+    {# on ground over 50°. Two count forms and not one pluralised string, #}
+    {# because a locale's plural rules are not English's, then one word   #}
+    {# per direction present. OMITTED AT ZERO by map.js, not rendered as  #}
+    {# "0". "No-fall" is the touring word for being ON that ground and is #}
     {# what the legend row uses.                                          #}
     {#                                                                     #}
     {# The direction is a WORD and never a number. The fall line is        #}

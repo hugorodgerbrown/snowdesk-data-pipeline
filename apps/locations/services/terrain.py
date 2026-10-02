@@ -25,11 +25,11 @@ paints and no Python reads back.
 
 **AN UNKNOWN IS A REASON, NEVER A NULL.** Roughly half the grid's rectangle
 is ground no source covers, and the origin answers ``204 No Content``
-there. Every caller — SNOW-910 colouring a route by steepness, SNOW-911
-marking its cruxes, SNOW-839 scoring it against the bulletin — depends on
-"we do not know" being impossible to confuse with "gentle". A bare ``None``
-is the shape that gets mistaken for zero, coerced with ``or 0``, and
-painted green. So nothing here returns one: a result carries either a
+there. Every caller — SNOW-910 colouring a route by steepness, SNOW-964
+finding its no-fall passages, SNOW-839 scoring it against the bulletin —
+depends on "we do not know" being impossible to confuse with "gentle". A
+bare ``None`` is the shape that gets mistaken for zero, coerced with
+``or 0``, and painted green. So nothing here returns one: a result carries either a
 figure and the source it came from, or one of three named reasons. See
 docs/decisions/terrain-unknown-is-a-reason-not-a-null.md.
 

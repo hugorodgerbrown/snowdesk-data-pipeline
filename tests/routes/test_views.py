@@ -1663,11 +1663,36 @@ class TestRoutesGeojsonLegs:
 
 
 @pytest.mark.django_db
+class TestRoutesGeojsonCruxes:
+    """Route-level cruxes are gone from the feed (SNOW-1066)."""
+
+    def test_a_stored_record_with_cruxes_is_served_without_them(
+        self, client: Client
+    ) -> None:
+        """An old row keeps its ``cruxes`` key; the feed never sends it."""
+        user = UserFactory.create()
+        client.force_login(user)
+        record = _slope_record(
+            {"angle_deg": 41.0, "aspect_deg": 90.0, "crux": True},
+            {"angle_deg": 20.0, "aspect_deg": 90.0},
+        )
+        points = record["points"]
+        assert isinstance(points, list)
+        record["cruxes"] = [points[0]]
+        RouteFactory.create(user=user, slope_samples=record)
+
+        slope = client.get(GEOJSON_URL).json()["features"][0]["properties"]["slope"]
+
+        assert "cruxes" not in slope
+        assert slope["angles"] == [41.0, 20.0]
+
+
+@pytest.mark.django_db
 class TestRoutesGeojsonPassages:
     """The no-fall passages on a route feature (SNOW-964).
 
-    Derived on every read rather than stored, so the states here are not
-    ``cruxes``': there is no "we could not look". A record that can be
+    Derived on every read rather than stored, so there is no "we could
+    not look" state. A record that can be
     read at all carries the key, and an empty list means nothing
     qualified.
 

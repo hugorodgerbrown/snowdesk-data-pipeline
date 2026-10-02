@@ -1757,19 +1757,19 @@ def test_the_no_fall_passage_strings_are_rendered_and_mirrored() -> None:
 
 
 @pytest.mark.django_db
-def test_the_passage_wording_separates_the_split_from_the_ring() -> None:
-    """The two marks co-occur, so the copy has to say different things.
+def test_the_route_terrain_strings_carry_passages_and_no_cruxes() -> None:
+    """The sheet's terrain line names no-fall passages, never cruxes.
 
-    Any segment over 50 degrees was already flagged a crux at 35, so
-    nearly every passage carries a ring as well. The ring's words say the
-    terrain AROUND you can release; the passage's say you are ON it.
+    SNOW-1066 removed route-level cruxes, so the "key passage" count and
+    its two string keys are gone; the no-fall passage wording stays.
     """
     content = Client().get(reverse("public:map")).content.decode()
     template = content.split('id="map-strings-template"', 1)[1]
     strings = template.split("</template>", 1)[0]
 
     assert "no-fall passage" in strings
-    assert "key passage" in strings
+    assert "key passage" not in strings
+    assert "route-terrain-crux" not in strings
     assert "down the fall line" in strings
     assert "up the fall line" in strings
     assert "across the fall line" in strings

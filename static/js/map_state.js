@@ -225,9 +225,9 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-1019's route-cursor dot appends on those terms once more: a
   // mark on a route the reader has switched off would be a mark on
   // nothing. SNOW-1052 removed the two selection-stretch layers.
-  // SNOW-1019 also took SNOW-911's 'routes-cruxes', the fall-line
-  // arrows' 'routes-fall-lines' and SNOW-964's two passage layers off the
-  // map, and out of this list: the line carries no terrain marks.
+  // SNOW-1019 also took the fall-line arrows' 'routes-fall-lines' and
+  // SNOW-964's two passage layers off the map, and out of this list: the
+  // line carries no terrain marks.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
     'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
@@ -467,21 +467,10 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'route-terrain-unsurveyed-km': '%(km)skm not surveyed',
   'route-terrain-unsurveyed-m': '%(m)sm not surveyed',
   'route-terrain-unsurveyed-all': 'Terrain not surveyed',
-  // SNOW-911: how many passages on this route have terrain around them
-  // capable of releasing. Two forms rather than one pluralised string,
-  // because a locale's plural rules are not English's and a "%(count)s
-  // key passage(s)" would be a bracket in the product.
-  //
-  // "Key passage" and not "crux": the domain word is right in a guidebook
-  // and opaque on a map popup, and the marker's job is to send a reader
-  // to /help/#help-topic-slope, which is where the caveats are.
-  'route-terrain-crux-one': '1 key passage',
-  'route-terrain-cruxes': '%(count)s key passages',
   // SNOW-964: the no-fall passages — where the TRACK is on ground over
-  // 50°, which is a different claim from the ring above and has to read
-  // as one. The ring says the terrain AROUND you can release; this says
-  // you are ON it. The two co-occur on nearly every passage, since
-  // anything over 50° was already flagged a crux at 35°.
+  // 50°. Two forms rather than one pluralised string, because a locale's
+  // plural rules are not English's and a "%(count)s no-fall passage(s)"
+  // would be a bracket in the product.
   //
   // The direction is a word, never a number: the fall line is measured
   // from one 25 m chord of a recorded track, which supports "this

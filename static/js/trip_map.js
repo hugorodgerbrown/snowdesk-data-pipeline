@@ -72,11 +72,10 @@
  *   readBasemaps(doc)             → the {key: url} catalogue, or null
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
- * SNOW-1019 took the crux rings, fall-line arrows and no-fall passage
- * split line off this map, as off the map page: the crux is deferred to a
- * later ticket, the bank ribbon replaced the arrows, and the passages are
- * drawn as bars on the map page's rail two. The snapshot still carries
- * all three records.
+ * SNOW-1019 took the fall-line arrows and no-fall passage split line off
+ * this map, as off the map page: the bank ribbon replaced the arrows, and
+ * the passages are drawn as bars on the map page's rail two. The snapshot
+ * still carries both records.
  *
  * Everything above is a pure function of the payload, so it is unit-tested
  * directly (tests/js/test_trip_map.js) with no browser and no WebGL.
@@ -724,7 +723,7 @@
     // about the payload arithmetic could ever have seen.
     ensureMeetingIcon: ensureMeetingIcon,
     // SNOW-1019. Exported for its test: the one place that can show the
-    // crux rings and fall-line arrows stay off this map.
+    // fall-line arrows stay off this map.
     installLayers: installLayers,
     // SNOW-829. The catalogue read and the resolution built on it. The
     // arithmetic itself lives in `basemap_style_core.js` and is tested
