@@ -114,8 +114,9 @@ never touches a row.
 **This section closed with "Nothing draws it", and the fall-line arrows
 are what made that false** — recorded here rather than quietly replaced,
 the way SNOW-962's reversal of the trip-column decision is recorded
-below. What has NOT changed is the sentence above it: the per-segment
-aspect still never travels. The arrows are a **bearing per place** —
+below. What had NOT changed then was the sentence above it: the
+per-segment aspect still did not travel (SNOW-976 changed that too — see
+the reversal below). The arrows are a **bearing per place** —
 `fall_lines`, a handful of `{i, deg}` marks spaced along the steep
 ground, about a kilobyte on that same 15 km tour — derived at read time
 by `apps/routes/services/fall_line.py` on the `passages` terms. A flat

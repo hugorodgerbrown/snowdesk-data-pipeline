@@ -54,8 +54,9 @@ def compact_slope(
     THE STORED RECORD AND THE WIRE FORM ARE DELIBERATELY DIFFERENT.
     ``Route.slope_samples`` is the server-side truth SNOW-911 and SNOW-839
     read, and it carries an aspect and a named unknown reason per segment.
-    The map needs neither in that form: it paints one colour per angle band and one
-    dashed treatment for every unknown, whatever the reason. On a 15 km
+    The map needs neither in that form: it paints one colour per angle
+    band and one dashed treatment for every unknown, whatever the
+    reason. On a 15 km
     tour that is several hundred segments, and sending the full record
     would roughly double a payload the offline cache has to hold.
 
@@ -151,8 +152,8 @@ def compact_slope(
         ``{"points": [[lon, lat], …], "angles": [34.2, None, …]}``, plus
         ``cruxes`` where the record has them, and ``passages``,
         ``fall_lines``, ``banks`` and ``aspects`` whenever the record
-        could be read at all, and ``seams`` where ``coordinates`` allow them. None
-        when there is nothing to draw — never sampled, or a record whose
+        could be read at all, and ``seams`` where ``coordinates`` allow
+        them. None when there is nothing to draw — never sampled, or a record whose
         halves do not pair up (N + 1 coordinates to N angles), which
         would draw segments against the wrong ground.
 

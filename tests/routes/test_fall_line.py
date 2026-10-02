@@ -335,7 +335,7 @@ class TestAspectSector:
         """
         assert aspect_sector(aspect_deg) == sector
 
-    @pytest.mark.parametrize("value", [None, "90", True])
+    @pytest.mark.parametrize("value", [None, "90", True, float("nan"), float("inf")])
     def test_a_non_number_has_no_sector(self, value: Any) -> None:
         """A hand-written record's junk is refused, not read as north."""
         assert aspect_sector(value) is None

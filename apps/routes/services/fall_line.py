@@ -292,10 +292,15 @@ def aspect_sector(aspect_deg: Any) -> int | None:
             else a hand-written record might hold there.
 
     Returns:
-        The sector index, or None when ``aspect_deg`` is not a number.
+        The sector index, or None when ``aspect_deg`` is not a finite
+        number.
 
     """
-    if not isinstance(aspect_deg, int | float) or isinstance(aspect_deg, bool):
+    if (
+        not isinstance(aspect_deg, int | float)
+        or isinstance(aspect_deg, bool)
+        or not math.isfinite(aspect_deg)
+    ):
         return None
     shifted = (aspect_deg + _SECTOR_WIDTH_DEG / 2) / _SECTOR_WIDTH_DEG
     return math.floor(shifted) % _SECTOR_COUNT
