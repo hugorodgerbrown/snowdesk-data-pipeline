@@ -33,7 +33,7 @@
  * pattern — see its header for the rationale.
  */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/map_overlay_exclusivity.js';
@@ -745,6 +745,45 @@ describe('a sampled route somebody shared', () => {
     const { feature } = rail.last();
     expect(feature.properties.token).toBe('tok-pending');
     expect(feature.geometry.coordinates.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the first tap places the point on every kind of route (2026-10-02)', () => {
+  afterEach(() => {
+    projectLngLat = () => ({ x: 0, y: 0 });
+    rail.state.cursor = null;
+  });
+
+  it('places it on a pending share, matched by its token', () => {
+    // The share's slope record runs along the sampled route's meridian,
+    // so its segment middles project to y = 125, 75 and 25.
+    projectLngLat = ([lng, lat]) => ({ x: (lng - 7.0) * 10000, y: (46.015 - lat) * 10000 });
+    window.pwaRouteRail.close();
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
+    rail.state.cursor = cursor;
+
+    tapLayer('routes-line-pending', { token: 'tok-pending', pending: true }, { x: 2, y: 70 });
+
+    expect(rail.last().feature.properties.token).toBe('tok-pending');
+    expect(cursor.state().index).toBe(1);
+  });
+
+  it('places it on a route never sampled, by share of its line, and draws the dot', () => {
+    // No slope record: one leg, so one segment, whose middle is half way
+    // up the line at 46.505.
+    projectLngLat = ([lng, lat]) => ({ x: (lng - 6.0) * 10000, y: (46.51 - lat) * 10000 });
+    window.pwaRouteRail.close();
+    const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(1);
+    rail.state.cursor = cursor;
+
+    tapLayer('routes-line', { uuid: 'stale-route' }, { x: 1, y: 40 });
+
+    expect(rail.last().feature.properties.uuid).toBe('stale-route');
+    expect(cursor.state().index).toBe(0);
+    const [dot] = sources.get('route-cursor-point').data.features;
+    expect(dot.geometry.coordinates[1]).toBeCloseTo(46.505);
+    expect(dot.properties.colour).toBeUndefined();
+    cursor.setIndex(null);
   });
 });
 

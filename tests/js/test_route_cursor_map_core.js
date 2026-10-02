@@ -123,6 +123,32 @@ describe('the middle of a segment that follows the track (SNOW-1053)', () => {
   });
 });
 
+describe('shareMidpoints (2026-10-02)', () => {
+  const { shareMidpoints } = core;
+
+  it('places each segment at the middle of its equal share of the line', () => {
+    // A straight line north, 0.04° long, in four shares.
+    const line = [[7.0, 46.0, 1500], [7.0, 46.01, 1600], [7.0, 46.04, 1900]];
+    const middles = shareMidpoints(line, 4);
+
+    expect(middles).toHaveLength(4);
+    expect(middles.map((m) => m[1])).toEqual([
+      expect.closeTo(46.005), expect.closeTo(46.015),
+      expect.closeTo(46.025), expect.closeTo(46.035),
+    ]);
+    expect(middles.every((m) => m[0] === 7.0)).toBe(true);
+  });
+
+  it.each([
+    ['no line', null, 3],
+    ['one point', [[7.0, 46.0]], 3],
+    ['no count', [[7.0, 46.0], [7.0, 46.01]], 0],
+    ['a fractional count', [[7.0, 46.0], [7.0, 46.01]], 1.5],
+  ])('answers nothing for %s', (_label, line, count) => {
+    expect(shareMidpoints(line, count)).toEqual([]);
+  });
+});
+
 describe('nearestSample', () => {
   const px = [{ x: 0, y: 0 }, { x: 30, y: 0 }, null, { x: 90, y: 0 }];
 

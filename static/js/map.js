@@ -2487,6 +2487,35 @@
   };
 
   /**
+   * The dot for one cursor index on the open route, or null.
+   *
+   * From the slope record where the route has one (in its segment's
+   * class colour); otherwise from the share midpoint `bindRouteCursor`
+   * placed for a route never sampled, with no `colour`, so the layer
+   * falls back to the route's own (2026-10-02).
+   *
+   * @param {?number} index The cursor's index.
+   * @returns {?object} A Point Feature, or null.
+   */
+  const routeCursorFeature = (index) => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || !routeCursorTarget || index === null || index === undefined) return null;
+    const point = core.cursorPoint(
+      routeCursorTarget.slope,
+      index,
+      routeCursorTarget.coordinates,
+    );
+    if (point || core.sampleCount(routeCursorTarget.slope)) return point;
+    const middle = routeCursorTarget.midpoints[index];
+    if (!middle) return null;
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: middle },
+      properties: { index: index },
+    };
+  };
+
+  /**
    * Put the cursor's index on the map (SNOW-1019).
    *
    * Writes it into module state first, so a source installed later — a
@@ -2498,10 +2527,7 @@
    * @returns {void}
    */
   const paintRouteCursor = (state) => {
-    const core = self.pwaRouteCursorMapCore;
-    const slope = routeCursorTarget ? routeCursorTarget.slope : null;
-    const coordinates = routeCursorTarget ? routeCursorTarget.coordinates : null;
-    const point = core && state ? core.cursorPoint(slope, state.index, coordinates) : null;
+    const point = state ? routeCursorFeature(state.index) : null;
     routeCursorPointData = point
       ? { type: 'FeatureCollection', features: [point] }
       : EMPTY_ROUTE_CURSOR_FC;
@@ -2519,9 +2545,19 @@
    *
    * Called after every `pwaRouteRail.open`. Drops the previous route's
    * subscription first — the rail made a new cursor for this route and the
-   * old one will never speak again. With no cursor (a pending share, or a
-   * route too short to hold a segment) or no uuid, there is nothing to
-   * follow: the cursor marks are cleared.
+   * old one will never speak again. With no cursor (a route too short to
+   * hold a segment) or no identity, there is nothing to follow: the cursor
+   * marks are cleared.
+   *
+   * A route is identified by its uuid, or by its share token when it is a
+   * pending share, which a non-owner is never handed a uuid for
+   * (2026-10-02): its panel has a cursor like any other, so a tap on its
+   * line places the point too.
+   *
+   * A route never sampled has no slope record to place segments by; its
+   * midpoints are equal shares of the line instead, over the same count
+   * the panel sizes its cursor from (the legs' extent), so a tap still
+   * lands on an index and the dot is still drawn.
    *
    * The rail's `close()` clears the index before it lets the cursor go
    * (route_rail.js), so a close from the rail's own ×, Escape or backdrop
@@ -2532,17 +2568,21 @@
    * never touches it again, so it emits nothing more, and the listener
    * left on it is inert until this function replaces it.
    *
-   * @param {?string} uuid The opened route's uuid.
+   * @param {{uuid: ?string, token: ?string}} identity The opened route's
+   *   uuid, or a pending share's token.
    * @returns {void}
    */
-  const bindRouteCursor = (uuid) => {
+  const bindRouteCursor = (identity) => {
     if (unsubscribeRouteCursor) unsubscribeRouteCursor();
     unsubscribeRouteCursor = null;
     routeCursorTarget = null;
     const cursor = window.pwaRouteRail?.cursor ? window.pwaRouteRail.cursor() : null;
-    if (cursor && uuid) {
+    const uuid = identity.uuid || null;
+    const token = uuid ? null : identity.token || null;
+    if (cursor && (uuid || token)) {
       const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
-        (f) => f && f.properties && f.properties.uuid === uuid,
+        (f) => f && f.properties
+          && (uuid ? f.properties.uuid === uuid : f.properties.token === token),
       );
       const props = (feature && feature.properties) || {};
       const slope = parseRouteProperty(props.slope);
@@ -2554,13 +2594,23 @@
       const coordinates = geometry && Array.isArray(geometry.coordinates)
         ? geometry.coordinates
         : [];
+      const legList = Array.isArray(legs) ? legs : [];
+      const lastLeg = legList.length ? legList[legList.length - 1] : null;
+      let midpoints = [];
+      if (core && core.sampleCount(slope)) {
+        midpoints = core.segmentMidpoints(slope, coordinates);
+      } else if (core && lastLeg && Number.isInteger(lastLeg.to)) {
+        // The count route_rail.js sizes the cursor from, for the same route.
+        midpoints = core.shareMidpoints(coordinates, lastLeg.to + 1);
+      }
       routeCursorTarget = {
         uuid: uuid,
+        token: token,
         cursor: cursor,
         slope: slope,
-        legs: Array.isArray(legs) ? legs : [],
+        legs: legList,
         coordinates: coordinates,
-        midpoints: core ? core.segmentMidpoints(slope, coordinates) : [],
+        midpoints: midpoints,
       };
       lastRouteCursorIndex = cursor.state().index;
       const follow = (state) => {
@@ -2592,14 +2642,8 @@
    *   route, no index, the routes overlay off or no slope record.
    */
   const routeCursorRawPoint = () => {
-    const core = self.pwaRouteCursorMapCore;
-    if (!core || !map || !routeCursorTarget || !overlayState.routes) return null;
-    const index = routeCursorTarget.cursor.state().index;
-    const point = core.cursorPoint(
-      routeCursorTarget.slope,
-      index,
-      routeCursorTarget.coordinates,
-    );
+    if (!map || !routeCursorTarget || !overlayState.routes) return null;
+    const point = routeCursorFeature(routeCursorTarget.cursor.state().index);
     if (!point) return null;
     const px = map.project(point.geometry.coordinates);
     const container = map.getContainer();
@@ -8588,8 +8632,11 @@
       });
       // SNOW-1019: follow the new cursor, so its index is drawn on the
       // line and a tap on the line moves it. A pending share has no uuid
-      // and is never followed: it draws no legs and its slope is not shown.
-      bindRouteCursor(props.pending ? null : props.uuid || null);
+      // and is followed by its token (2026-10-02): it draws no legs, but
+      // its panel has a point like any other route's.
+      bindRouteCursor(props.pending
+        ? { uuid: null, token: props.token || null }
+        : { uuid: props.uuid || null, token: null });
 
       // A TAP DOES NOT MOVE THE CAMERA (2026-10-02). The reader tapped a
       // line they can already see, at a scale they chose; framing it threw
@@ -8655,10 +8702,13 @@
      *   panel is open and following this route.
      */
     const tapOpenRoute = (feature, point) => {
-      const uuid = feature.properties?.uuid;
-      if (!uuid || !point || !routeCursorLive() || routeCursorTarget.uuid !== uuid) {
-        return false;
-      }
+      const props = feature.properties || {};
+      if (!point || !routeCursorLive()) return false;
+      // A pending share is matched by its token: it has no uuid.
+      const same = routeCursorTarget.uuid
+        ? props.uuid === routeCursorTarget.uuid
+        : !!props.token && props.token === routeCursorTarget.token;
+      if (!same) return false;
       // The line was hit within the tap slop, so the nearest sample is on
       // it however long the segments are at this zoom: no distance cap.
       const index = routeSampleAt(point);
