@@ -1951,6 +1951,18 @@ html:has(> body.map-fullscreen) > body {
     color: var(--color-text-2);
 }
 
+/* The component library's stand-in for the bottom-left stack
+   (_map_zoom_control_demo.html): a box whose foot is where the date row
+   would be, so the flyout's two offsets land it where they do on /map/. */
+.map-zoom-control-demo {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 168px;
+    padding-bottom: calc(var(--map-control-sm) + 8px);
+}
+
 .map-legend-title {
     font-weight: 500;
     color: var(--color-text-2);
