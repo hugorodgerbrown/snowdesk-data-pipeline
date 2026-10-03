@@ -58,6 +58,20 @@ the colour is made in the browser:
 - In MapLibre 4.7.1 a protocol handler that resolves with a falsy `data`
   leaves the tile pending forever, so "nothing here" is a transparent (or
   hatched) bitmap, never an empty answer.
+- **A failed tile fetch draws nothing, not the hatch.** A network error or
+  a non-OK status other than 204 says nothing about the ground, so the
+  handler paints the tile transparent and does not cache it; the next pass
+  over that tile retries. The hatch is reserved for a real 204 inside
+  `COVERAGE_BOUNDS` and for B = 255 pixels — the only two cases where the
+  survey itself says "no data".
+- **Known limit: canvas readback noise.** The decode reads pixels back with
+  `getImageData`. Browsers and extensions that perturb canvas readback to
+  defeat fingerprinting — Firefox with `privacy.resistFingerprinting`, and
+  some privacy extensions — add noise to those bytes, which corrupts the
+  decoded heights and octants: the filter then tints the wrong ground with
+  no error anywhere. There is no reliable way to detect it from the page;
+  it is accepted, and noted here so a "wrong slopes highlighted" report
+  from such a browser is recognised.
 - `setTiles` reloads the source, so a filter change can flash the layer
   briefly while tiles repaint.
 - `COVERAGE_BOUNDS` in `terrain_filter_core.js` is the swissALTI3D extent

@@ -4363,11 +4363,17 @@
   /**
    * The class pixels for one tile, or null where there is nothing to draw.
    *
-   * A 204 inside the coverage rectangle is ground the survey has no data
-   * for, so it becomes a whole tile of no-data pixels (hatched); outside
-   * the rectangle it is simply nothing. A 204 is cached like any tile; a
-   * failed request is not, so the next pass tries again. An abort is
-   * re-thrown: MapLibre cancelled the tile and expects the rejection.
+   * Only a real 204 INSIDE the coverage rectangle means the survey has no
+   * data there, so only that becomes a whole tile of no-data pixels
+   * (hatched); a 204 outside the rectangle is simply nothing. Both are
+   * cached like any tile.
+   *
+   * A failed request — a network error, or any non-OK status other than
+   * 204 — says nothing about the ground, so it draws NOTHING (null, painted
+   * transparent) rather than the hatch, which would claim the survey has no
+   * data where the request merely failed. It is not cached, so the next
+   * pass over that tile tries again. An abort is re-thrown: MapLibre
+   * cancelled the tile and expects the rejection.
    *
    * @param {{z: number, x: number, y: number}} tile
    * @param {AbortSignal} signal
@@ -4377,9 +4383,6 @@
     const key = `${tile.z}/${tile.x}/${tile.y}`;
     const cached = terrainClassCache.get(key);
     if (cached !== undefined) return cached;
-    const empty = TERRAIN_CORE.tileInCoverage(tile.z, tile.x, tile.y)
-      ? TERRAIN_CORE.noDataTile()
-      : null;
     let response;
     try {
       response = await fetch(
@@ -4388,13 +4391,16 @@
       );
     } catch (err) {
       if (signal.aborted) throw err;
-      return empty;
+      return null;
     }
     if (response.status === 204) {
+      const empty = TERRAIN_CORE.tileInCoverage(tile.z, tile.x, tile.y)
+        ? TERRAIN_CORE.noDataTile()
+        : null;
       terrainClassCache.set(key, empty);
       return empty;
     }
-    if (!response.ok) return empty;
+    if (!response.ok) return null;
     const pixels = await decodeTerrainClassTile(await response.blob());
     terrainClassCache.set(key, pixels);
     return pixels;
