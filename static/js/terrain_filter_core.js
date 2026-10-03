@@ -117,7 +117,7 @@
    * MapLibre from requesting tiles outside the survey and drives the sheet's
    * "outside coverage" line.
    */
-  const COVERAGE_BOUNDS = Object.freeze([5.95, 45.72, 10.5, 47.83]);
+  const COVERAGE_BOUNDS = Object.freeze([5.9503666, 45.7213375, 10.4998461, 47.8216742]);
 
   /** The slope thresholds a reader can pick, in degrees. */
   const SLOPE_LADDER = Object.freeze([30, 35, 40, 45, 50]);

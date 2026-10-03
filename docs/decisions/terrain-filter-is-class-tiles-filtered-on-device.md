@@ -75,7 +75,7 @@ the colour is made in the browser:
 - `setTiles` reloads the source, so a filter change can flash the layer
   briefly while tiles repaint.
 - `COVERAGE_BOUNDS` in `terrain_filter_core.js` is the build's bbox,
-  `[5.95, 45.72, 10.5, 47.83]`, which the cutter writes as `tiles.json`
+  `[5.9503666, 45.7213375, 10.4998461, 47.8216742]`, as published in `tiles.json`
   `bounds`. A rebuild over a different bbox has to change both. A 204 inside
   it is hatched, outside it transparent, so ground in France and Italy that
   falls inside the rectangle reads as no data.
