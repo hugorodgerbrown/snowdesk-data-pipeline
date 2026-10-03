@@ -428,6 +428,25 @@
   --color-slope-gentle: #38bdf8;   /* <30°              */
   --color-slope-unknown: #94a3b8;  /* sampled, no answer */
 
+  /* —— the terrain filter (SNOW-978) ——
+     --color-terrain-match: ground that matches the reader's
+       aspect / slope / elevation filter. The same blue as
+       --color-accent's light value, but its own token: the
+       map paints it from a literal in terrain_filter_core.js
+       (pixels are written on the device, and a pixel cannot
+       read a CSS variable), and a test holds the two equal.
+       Painted at about 45% so contours and hillshade read
+       through it. NOT mirrored for dark mode — the map's
+       basemap does not change with the theme either.
+
+     --color-terrain-nodata: the hatch over ground the tiles
+       carry no data for, so blank on the map never has to
+       mean "no data". Mirrored in terrain_filter_core.js on
+       the same terms.
+     ————————————————————————————————————————— */
+  --color-terrain-match: #2563eb;
+  --color-terrain-nodata: #475569;
+
   /* —— the track scale's first step (SNOW-1064) ——
      The aspect wheel's INNER ring names the track on its
      own five-step scale (level < 5°, gentle < 15°,

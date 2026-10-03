@@ -1802,6 +1802,24 @@ html:has(> body.map-fullscreen) > body {
 .map-legend-swatch--slope-45 { background: var(--color-slope-45); }
 .map-legend-swatch--slope-50 { background: var(--color-slope-50); }
 
+/* SNOW-978: the terrain filter's key — in the legend and in the filter
+   sheet's own key. The match swatch carries the map's 45% so the key shows
+   the tint as it reads over ground; the no-data swatch is the hatch, drawn
+   as a gradient for the same reason the downloaded-areas swatch is. */
+.map-legend-swatch--terrain-match {
+    background: color-mix(in srgb, var(--color-terrain-match) 45%, transparent);
+    border-color: var(--color-terrain-match);
+}
+.map-legend-swatch--terrain-nodata {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--color-terrain-nodata) 0,
+        var(--color-terrain-nodata) 1.5px,
+        transparent 1.5px,
+        transparent 4px
+    );
+}
+
 /* SNOW-1017: the route's two kinds of leg, drawn as the lines they are —
    a climb dashed, a descent solid, in the rail's two colours. A gradient
    rather than a border-style, so each keeps the square footprint every
