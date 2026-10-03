@@ -30,7 +30,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import Client, override_settings
 
-from config.settings.base import basemap_origin, csp_defaults
+from config.settings.base import basemap_origin, csp_defaults, optional_basemap_origin
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
 ENFORCING_HEADER = "Content-Security-Policy"
@@ -276,6 +276,59 @@ def test_slope_tile_origin_is_derived_from_the_configured_template() -> None:
     """
     assert settings.SLOPE_TILE_ORIGIN == basemap_origin(settings.SLOPE_TILE_URL)
     assert settings.SLOPE_TILE_URL.startswith(f"{settings.SLOPE_TILE_ORIGIN}/")
+
+
+@pytest.mark.django_db
+def test_csp_allows_terrain_class_origin_in_connect_and_img_src() -> None:
+    """SNOW-978: the terrain-class tile origin reaches connect-src AND img-src.
+
+    The map's protocol handler ``fetch()``es each class tile and decodes it
+    with ``createImageBitmap``, so both directives must name the origin.
+    """
+    origin = "https://tiles.example.test"
+    tile_origin = basemap_origin(settings.OPENFREEMAP_STYLE_URL)
+    with override_settings(
+        CSP_DEFAULTS=csp_defaults(tile_origin, terrain_class_origin=origin),
+    ):
+        clear_cache()
+        try:
+            policy = _csp(Client().get("/"))
+        finally:
+            clear_cache()
+
+    connect_src = policy.split("connect-src")[1].split(";")[0]
+    img_src = policy.split("img-src")[1].split(";")[0]
+    assert origin in connect_src
+    assert origin in img_src
+
+
+def test_csp_defaults_omit_the_terrain_class_origin_when_unset() -> None:
+    """No terrain-class origin means no extra token in either directive."""
+    policy = csp_defaults("https://tiles.example.test", terrain_class_origin=None)
+    assert policy["img-src"] == ["'self'", "data:"]
+    assert None not in policy["connect-src"]
+
+
+def test_an_empty_terrain_class_url_derives_no_origin_and_does_not_raise() -> None:
+    """SNOW-978: ``TERRAIN_CLASS_TILE_URL`` defaults to "" — the feature off.
+
+    ``basemap_origin("")`` raises ``ImproperlyConfigured``, so the setting
+    goes through ``optional_basemap_origin``; an empty value yields None
+    and a set one is still held to the absolute-URL guard, including a
+    local http origin with a port (the dev fixture's shape).
+    """
+    assert optional_basemap_origin("") is None
+    assert (
+        optional_basemap_origin(
+            "http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png"
+        )
+        == "http://localhost:3000"
+    )
+    with pytest.raises(ImproperlyConfigured):
+        optional_basemap_origin("tiles.example.test/{z}/{x}/{y}.png")
+    assert settings.TERRAIN_CLASS_TILE_ORIGIN == optional_basemap_origin(
+        settings.TERRAIN_CLASS_TILE_URL
+    )
 
 
 def test_openfreemap_style_url_validation_failure_mode() -> None:
