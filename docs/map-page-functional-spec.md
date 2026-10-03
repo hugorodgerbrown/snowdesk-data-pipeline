@@ -542,8 +542,8 @@ held with no network, and the server never learns what anyone filters for.
 Contract and rationale:
 [decisions/terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
 Tiles exist at z12–14 and are overzoomed above. Viewed tiles are cached by
-the service worker like basemap tiles, because their origin is a registered
-basemap origin.
+the service worker like basemap tiles: `map.js` seeds the class-tile origin
+into the worker's basemap origins, beside the slope origin.
 
 **The editorial line is on `/help/#help-topic-terrain-filter`**, linked from
 the legend and the sheet: terrain only, no runout zones, not a hazard

@@ -272,7 +272,16 @@
       Object.values(BASEMAP_OPTIONS)
         .filter((url) => typeof url === 'string' && url)
         .map((url) => new URL(url).origin)
-        .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : []),
+        .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : [])
+        // SNOW-978: the class tiles are fetched from the page, so the worker
+        // caches them only if their origin is on this list. No basemap entry
+        // supplies tiles.snowdesk-data.info, so it is seeded here as the
+        // slope origin is.
+        .concat(
+          TERRAIN_FILTER_ELIGIBLE
+            ? [new URL(TERRAIN_CLASS_TILE_URL, window.location.href).origin]
+            : [],
+        ),
     );
     const registerBasemapOrigins = (registration) => {
       const origins = [...basemapOrigins];
@@ -342,7 +351,12 @@
       const remember = (url) => {
         if (typeof url !== 'string' || !url) return;
         try {
-          basemapOrigins.add(new URL(url, window.location.href).origin);
+          const parsed = new URL(url, window.location.href);
+          // SNOW-978: a custom-protocol source (terrainfilter://) has the
+          // opaque origin "null"; the worker never sees those requests.
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            basemapOrigins.add(parsed.origin);
+          }
         } catch (_err) {
           // A template with a placeholder where the host goes is not a
           // URL we can read an origin from; nothing to record.

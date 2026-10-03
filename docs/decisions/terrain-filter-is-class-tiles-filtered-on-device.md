@@ -80,9 +80,12 @@ the colour is made in the browser:
 - `TERRAIN_CLASS_TILE_URL` defaults to empty — the feature is off until an
   operator sets it, and the CSP origin is derived only when it is set
   (`optional_basemap_origin`).
-- The class tiles' origin is already a registered service-worker basemap
-  origin, so viewed tiles are cached like basemap tiles. Nothing extends or
-  fights that.
+- `static/js/map.js` seeds the class tiles' origin into the service worker's
+  basemap origins, beside the slope origin. No basemap entry supplies
+  `tiles.snowdesk-data.info`, so without the seed the worker treats the
+  tiles as network-only. With it, viewed tiles are cached like basemap tiles
+  and repaint after an offline reload. This is passive caching, not an
+  offline download.
 - Local development uses the DEBUG-only synthetic tiles in
   `apps/public/dev_terrain_class.py`
   (`TERRAIN_CLASS_TILE_URL=http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png`),
