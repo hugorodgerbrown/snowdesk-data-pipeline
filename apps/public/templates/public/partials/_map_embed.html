@@ -137,6 +137,11 @@ Optional context:
     {# template would be an invitation to install the layer anyway.            #}
     {% if slope_layer_eligible %}data-slope-tile-url="{{ slope_tile_url }}"{% endif %}
     data-slope-layer-eligible="{{ slope_layer_eligible|yesno:'true,false' }}"
+    {# SNOW-978: the terrain filter's class-tile template, on the same terms #}
+    {# as slope's: emitted only while settings.TERRAIN_CLASS_TILE_URL is set, #}
+    {# which is the feature's on switch (it defaults to empty).               #}
+    {% if terrain_filter_eligible %}data-terrain-class-tile-url="{{ terrain_class_tile_url }}"{% endif %}
+    data-terrain-filter-eligible="{{ terrain_filter_eligible|yesno:'true,false' }}"
     {# HACK MODE (feature discovery): may this request spoof its position   #}
     {# with ?loc=? Superusers and local development only — see              #}
     {# apps.public.views._fake_location_allowed for why the field report is #}
@@ -240,6 +245,23 @@ Optional context:
         {# window.snowdeskMap.zoom_level (see zoom exposure in map.js).        #}
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
+    {# SNOW-978: the terrain filter, repeated in words while it is on —      #}
+    {# "N, NE, NW · 35°+ · above 2,400 m" — so a tinted map always says what #}
+    {# it is tinted for. A tap opens the filter's sheet. Text written by      #}
+    {# static/js/terrain_filter_sheet.js from its strings template.           #}
+    {% if terrain_filter_eligible %}
+        <button
+            type="button"
+            id="map-terrain-filter-chip"
+            class="map-terrain-filter-chip rounded-pill border border-border bg-card px-3 py-1.5 text-chip text-text-1 shadow-glass hover-affordance"
+            aria-label='{% trans "Terrain filter — change the filter" %}'
+            data-terrain-filter-open
+            hidden
+        >
+            <span class="map-legend-swatch map-legend-swatch--terrain-match" aria-hidden="true"></span>
+            <span data-terrain-filter-chip-text></span>
+        </button>
+    {% endif %}
     {# SNOW-475: fixed centre pin for touch-friendly placement. Shown by     #}
     {# place_picker.js while placing a favourite/observation; the map pans   #}
     {# underneath it and the coord is read from the map centre.              #}
@@ -977,6 +999,35 @@ Optional context:
                                 </button>
                             </li>
                         {% endif %}
+                        {# SNOW-978: the terrain filter. An ACTION row, the only one  #}
+                        {# in this menu: it always opens the filter's sheet, which    #}
+                        {# holds the on/off switch, the criteria and the "zoom in" /  #}
+                        {# "outside coverage" reasons — one action per row. So it has #}
+                        {# no checkbox and no aria-checked; while the filter is on    #}
+                        {# its second line carries a short summary ("3 aspects ·      #}
+                        {# 35°+"), and map_basemap_picker.js counts it as a layer on  #}
+                        {# by asking window.pwaTerrainFilter rather than the row.     #}
+                        {% if terrain_filter_eligible %}
+                            <li role="none">
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    class="basemap-menu-item basemap-menu-item--sheet hover-affordance"
+                                    data-terrain-filter-open
+                                    aria-haspopup="dialog"
+                                    aria-controls="map-terrain-filter-sheet"
+                                >
+                                    <span class="basemap-menu-item-text">
+                                        <span data-row-label>{% trans "Terrain filter…" %}</span>
+                                        <span
+                                            class="basemap-menu-item-detail"
+                                            data-terrain-filter-summary
+                                            hidden
+                                        ></span>
+                                    </span>
+                                </button>
+                            </li>
+                        {% endif %}
                         {# SNOW-570/587 drew one translucent square per tile held   #}
                         {# in the pinned basemap cache. SNOW-645 moved it into the  #}
                         {# "Manage downloads" sheet; SNOW-904 brings it back here,  #}
@@ -1255,6 +1306,26 @@ Optional context:
                             aria-hidden="true"
                         ></span>{% trans "Over 50°" %}
                     </div>
+                </section>
+            {% endif %}
+            {# SNOW-978: the terrain filter's key. Gated with the filter, and  #}
+            {# hidden until it is on (terrain_filter_sheet.js) — a key for a   #}
+            {# tint that is not on the map is noise. The heading leads to the  #}
+            {# help topic's caveats: terrain only, no runout, not a verdict.   #}
+            {% if terrain_filter_eligible %}
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-terrain-filter"
+                    data-terrain-filter-legend
+                    hidden
+                >
+                    <div class="map-legend-title">
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-terrain-filter"
+                        >{% trans "Terrain filter" %}</a>
+                    </div>
+                    {% include "includes/_terrain_filter_key.html" %}
                 </section>
             {% endif %}
             {% comment %}

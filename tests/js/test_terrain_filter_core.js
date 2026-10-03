@@ -295,7 +295,6 @@ describe('summarise', () => {
     'elevation-above': 'above %(min)s m',
     'elevation-below': 'below %(max)s m',
     'elevation-range': '%(min)s–%(max)s m',
-    separator: ' · ',
     'compass-0': 'N', 'compass-1': 'NE', 'compass-7': 'NW',
   };
 

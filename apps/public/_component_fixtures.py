@@ -1299,6 +1299,13 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Terrain filter key ----------------------------------------------------------
+# SNOW-978: the map's terrain-filter colour key. No parameters — one variant.
+TERRAIN_FILTER_KEY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default", "context": {}},
+)
+
+
 # Theme preference -------------------------------------------------------------
 # The settings page's light/dark/system radio group. It takes no parameters, so
 # there is exactly one variant — the library entry exists to make the control

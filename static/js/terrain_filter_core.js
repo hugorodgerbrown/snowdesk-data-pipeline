@@ -507,7 +507,8 @@
         parts.push(fill(strings['elevation-below'], { max: num(hi) }));
       }
     }
-    return parts.join(strings.separator);
+    // A middle dot between parts — a glyph, not a word, so not a string.
+    return parts.join(' · ');
   }
 
   /**

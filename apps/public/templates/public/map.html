@@ -264,6 +264,11 @@ in addition to the shared map assets.
     {# the map roundel (#map-custom-download-control) now, not the       #}
     {# layers menu's old "Manage downloads…" row — that row is gone.     #}
     {% include "public/partials/_map_downloads_sheet.html" %}
+    {# SNOW-978: the terrain filter's sheet — opened by the layers menu's    #}
+    {# "Terrain filter…" row and the map chip. Only for an eligible page.    #}
+    {% if terrain_filter_eligible %}
+        {% include "public/partials/_map_terrain_filter_sheet.html" %}
+    {% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -331,6 +336,13 @@ in addition to the shared map assets.
     {# time, so it has no place in the temporal-dead-zone ordering the       #}
     {# bundle exists to protect.                                            #}
     <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# SNOW-978: the terrain filter's pure half (window.pwaTerrainFilterCore) #}
+    {# — the class-tile pixel contract, the classifier and painter, the       #}
+    {# filter's storage shape and its summary in words. map.js reads it from  #}
+    {# installTerrainFilterLayer and at the top of its terrain-filter block,  #}
+    {# not inside the bundle's temporal-dead-zone run, so it sits here with   #}
+    {# the other cores (tests/js/test_terrain_filter_core.js).                 #}
+    <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
     {# SNOW-761: the weather overlay's pure transforms                       #}
     {# (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the #}
     {# temperature-and-altitude label, the date projection and the           #}
@@ -469,6 +481,13 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# SNOW-978: the terrain filter's sheet, map chip and menu-row summary.  #}
+    {# Talks only to window.pwaTerrainFilter, which map.js publishes at      #}
+    {# parse time — hence after the bundle, and outside its contiguous run   #}
+    {# (no bundle module reads it). Only for an eligible page.               #}
+    {% if terrain_filter_eligible %}
+        <script defer src="{% static 'js/terrain_filter_sheet.js' %}"></script>
+    {% endif %}
     {# HACK MODE (feature discovery): the drop-zone control — one-tap        #}
     {# "download the ground around me". Outside the map bundle (nothing in    #}
     {# the bundle reads it), so its tag sits BELOW the bundle's contiguous    #}

@@ -1,0 +1,25 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_terrain_filter_key.html — the terrain filter's colour key (SNOW-978).
+
+Two rows: the tint matching ground is painted with, and the hatch over
+ground the tiles carry no data for. Rendered twice on the map page — in the
+map legend, and inside the filter's own sheet, because on a phone with a
+route open the legend is hidden and the sheet has to explain its own
+colours. One partial so the two cannot drift.
+
+The swatches are .map-legend-swatch--terrain-* (static/css/map.css), painted
+from --color-terrain-match / --color-terrain-nodata in src/css/main.css —
+the same two values static/js/terrain_filter_core.js paints the map with.
+
+No parameters.
+{% endcomment %}
+<div class="map-legend-row">
+    <span
+        class="map-legend-swatch map-legend-swatch--terrain-match"
+        aria-hidden="true"
+    ></span>{% trans "Matches the filter" %}
+</div>
+<div class="map-legend-row">
+    <span class="map-legend-swatch map-legend-swatch--terrain-nodata" aria-hidden="true"></span>{% trans "No data" %}
+</div>
