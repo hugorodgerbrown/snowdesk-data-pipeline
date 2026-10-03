@@ -69,24 +69,17 @@ def test_the_partial_carries_every_word_in_its_strings_template() -> None:
     body = render_to_string("includes/_route_point_card.html", {})
     assert '<template id="route-point-card-strings-template">' in body
     keys = (
-        ["label", "ground-falling-left", "ground-falling-right"]
-        + [f"steepness-{s}" for s in ("gentle", "moderate", "steep", "very-steep")]
+        ["label", "join", "label-join", "heading-pair", "label-heading-pair"]
+        + [f"compass-{n}" for n in range(8)]
         + [
-            f"headline-{h}"
-            for h in (
-                "fall-descent",
-                "fall-climb",
-                "rising-traverse",
-                "descending-traverse",
-                "level-traverse",
-                "climb-turning",
-                "descent-turning",
-                "climb",
-                "descent",
-                "level",
-                "no-height",
-            )
+            f"steepness-{s}"
+            for s in ("level", "gentle", "moderate", "steep", "very-steep")
         ]
+        + [
+            f"kind-{k}"
+            for k in ("ascent", "descent", "traverse", "fall-line", "switchback")
+        ]
+        + ["headline-no-height"]
         + [
             f"ground-{g}"
             for g in (
@@ -96,6 +89,10 @@ def test_the_partial_carries_every_word_in_its_strings_template() -> None:
                 "very-steep",
                 "extremely-steep",
                 "unknown",
+                "falling-left",
+                "falling-right",
+                "falling-left-then-right",
+                "falling-right-then-left",
             )
         ]
     )
@@ -110,12 +107,12 @@ def test_a_filled_card_shows_its_two_lines() -> None:
         {
             "static": True,
             "state_json": json.dumps({"track": [2], "gradeDeg": -37}),
-            "headline": "Very steep fall line descent",
+            "headline": "E • Very steep • fall line",
             "ground": "Extremely steep slope",
         },
     )
     assert 'id="route-point-card"' not in body
-    assert "Very steep fall line descent" in body
+    assert "E • Very steep • fall line" in body
     assert "Extremely steep slope" in body
     assert "data-aspect-wheel" in body
 
@@ -128,6 +125,18 @@ def test_the_map_page_renders_the_header_inside_the_panel() -> None:
     panel = body.split('id="route-rail"', 1)[1].split("</section>", 1)[0]
     assert panel.index("data-route-rail-title") < panel.index('id="route-point-card"')
     assert panel.index('id="route-point-card"') < panel.index("data-route-rail-meta")
+
+
+@pytest.mark.django_db
+def test_the_header_spans_the_panel_below_the_buttons() -> None:
+    """The header follows the buttons' row, not beside them (SNOW-1069).
+
+    In the eyebrow's column it stopped at the buttons' left edge, and
+    ``text-balance`` split a long ground line into two even halves.
+    """
+    body = Client().get(reverse("public:map")).content.decode()
+    panel = body.split('id="route-rail"', 1)[1].split("</section>", 1)[0]
+    assert panel.index("data-route-rail-close") < panel.index('id="route-point-card"')
     positions = [
         body.index("js/aspect_wheel_core"),
         body.index("js/route_point_card_core"),
@@ -138,24 +147,25 @@ def test_the_map_page_renders_the_header_inside_the_panel() -> None:
 
 
 def test_the_fixtures_cover_every_family() -> None:
-    """Each headline family, a side, flat ground and no terrain data."""
+    """Each kind, a turning heading, a side, both sides, flat and no terrain."""
     headlines = [v["context"]["headline"] for v in POINT_CARD_VARIANTS]
     assert all(headlines)
     joined = " | ".join(headlines)
     for phrase in (
-        "fall line descent",
-        "fall line climb",
-        "rising traverse",
-        "descending traverse",
-        "Level traverse",
-        "turning",
-        "Gentle descent",
-        "Level track",
+        "• fall line",
+        "• traverse",
+        "• switchback",
+        "• ascent",
+        "• descent",
+        "Level • traverse",
+        "• Level",
+        " → ",
     ):
         assert phrase in joined, phrase
     grounds = {v["context"]["ground"] for v in POINT_CARD_VARIANTS}
     assert {"Flat ground", "No terrain data"} <= grounds
-    assert any("falling skier's" in g for g in grounds)
+    assert any(g.endswith("falling skier's left") for g in grounds)
+    assert any(", then " in g for g in grounds)
 
 
 def test_the_registry_panel_renders_every_state(staff_client: Client) -> None:
@@ -166,4 +176,4 @@ def test_the_registry_panel_renders_every_state(staff_client: Client) -> None:
     assert response.status_code == 200
     body = response.content.decode()
     assert body.count("data-route-point-card-headline") == 2 * len(POINT_CARD_VARIANTS)
-    assert "Very steep fall line descent" in body
+    assert "S → NE • Gentle • switchback" in body

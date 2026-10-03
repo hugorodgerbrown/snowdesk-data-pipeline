@@ -10,8 +10,11 @@
  * very steep from 35° — because on the EAWS slope classes nearly every
  * skin track would read "under 30°" and draw blue, and the point card's
  * words name the track on this scale. The segments either side show in the
- * inner ring at 35% opacity, and a centre triangle says climbing (up) or
- * descending (down); a level track (under `LEVEL_DEG`, 5°) draws a bar.
+ * inner ring at 35% opacity. The CENTRE MARK grades the track
+ * (SNOW-1069): one, two or three chevrons for gentle, moderate, and steep
+ * or very steep, pointing up for a climb and down for a descent; a level
+ * track (under `LEVEL_DEG`, 5°) draws a bar. The point card's headline
+ * names the step in words and leaves up or down to this mark.
  *
  * THE DATA. The aspect comes from `slope.aspects` (SNOW-976): one sector
  * index per segment, aligned with `angles`, null where the angle is
@@ -436,9 +439,27 @@
     return Math.min(SIZE_MAX, Math.max(SIZE_MIN, size));
   }
 
+  /** The most chevrons the centre draws: steep and very steep share it. */
+  const MAX_CHEVRONS = 3;
+
   /**
-   * The centre mark: a triangle for a climb or a descent, a bar for a
-   * level track, nothing below 36 px or without a gradient.
+   * How many chevrons a gradient's step draws: gentle one, moderate two,
+   * steep and very steep three; level none.
+   *
+   * @param {number} grade The signed gradient, degrees.
+   * @returns {number} 0 to `MAX_CHEVRONS`.
+   */
+  function chevronCount(grade) {
+    const steep = Math.abs(grade);
+    const step = TRACK_STEPS.findIndex((entry) => steep < entry[0]);
+    return Math.min(MAX_CHEVRONS, step === -1 ? TRACK_STEPS.length - 1 : step);
+  }
+
+  /**
+   * The centre mark: a bar for a level track, and stacked chevrons for a
+   * climb (pointing up) or a descent (down), one per track step from
+   * gentle to steep (SNOW-1069). Nothing below 36 px or without a
+   * gradient.
    *
    * @param {?number} grade The signed gradient.
    * @param {number} size The clamped size, in CSS px.
@@ -448,18 +469,25 @@
     if (size < CENTRE_MIN_SIZE || grade === null) return '';
     const unit = 100 / size;
     const half = Math.max(3.2, size * 0.034) * unit;
-    if (Math.abs(grade) < LEVEL_DEG) {
+    const count = chevronCount(grade);
+    if (count === 0) {
       const tall = 1.5 * unit;
       return `<rect data-centre="level" x="${fmt(50 - half)}" y="${fmt(50 - tall / 2)}"`
         + ` width="${fmt(half * 2)}" height="${fmt(tall)}" fill="${INK}"/>`;
     }
-    const height = 1.25 * half;
     const up = grade > 0;
-    const apex = up ? 50 - height / 2 : 50 + height / 2;
-    const base = up ? 50 + height / 2 : 50 - height / 2;
-    return `<path data-centre="${up ? 'climbing' : 'descending'}"`
-      + ` d="M${fmt(50)} ${fmt(apex)}L${fmt(50 + half)} ${fmt(base)}`
-      + `L${fmt(50 - half)} ${fmt(base)}Z" fill="${INK}"/>`;
+    const rise = 0.65 * half;
+    const step = 0.7 * half;
+    const total = rise + (count - 1) * step;
+    let d = '';
+    for (let k = 0; k < count; k += 1) {
+      const apex = up ? 50 - total / 2 + k * step : 50 + total / 2 - k * step;
+      const base = up ? apex + rise : apex - rise;
+      d += `M${fmt(50 - half)} ${fmt(base)}L${fmt(50)} ${fmt(apex)}L${fmt(50 + half)} ${fmt(base)}`;
+    }
+    return `<path data-centre="${up ? 'climbing' : 'descending'}" data-chevrons="${count}"`
+      + ` d="${d}" fill="none" stroke="${INK}" stroke-width="${fmt(1.25 * unit)}"`
+      + ' stroke-linecap="round" stroke-linejoin="round"/>';
   }
 
   /**

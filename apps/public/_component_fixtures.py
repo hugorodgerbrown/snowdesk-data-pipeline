@@ -1498,12 +1498,12 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
 # One point on the open route, read in words: the aspect wheel at 48 px and
-# two lines — the headline (the track's steepness on its own scale and how
-# it crosses the slope) and the ground in the EAWS words, with the side the
-# slope falls on a traverse. The lines here are what
-# route_point_card_core.js's ``reading`` writes for each state; on the map
-# the header is filled client-side from the route cursor, and hidden while
-# no point is placed.
+# two lines — the headline (heading • the track's steepness on its own scale
+# • how it lies on the slope, SNOW-1069) and the ground in the EAWS words,
+# with the side the slope falls on a traverse, or both sides across a
+# switchback. The lines here are what route_point_card_core.js's
+# ``reading`` writes for each state; on the map the header is filled
+# client-side from the route cursor, and hidden while no point is placed.
 
 
 def _point_card_variant(
@@ -1534,7 +1534,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": -26},
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
         },
-        "Very steep fall line descent",
+        "E • Very steep • fall line",
         "Extremely steep slope",
     ),
     _point_card_variant(
@@ -1546,7 +1546,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 1, "gradeDeg": 23},
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
         },
-        "Moderate fall line climb",
+        "N • Moderate • fall line",
         "Steep slope",
     ),
     _point_card_variant(
@@ -1558,7 +1558,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": 3},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
         },
-        "Gentle rising traverse",
+        "SE • Gentle • traverse",
         "Steep slope, falling skier's left",
     ),
     _point_card_variant(
@@ -1570,7 +1570,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
         },
-        "Gentle descending traverse",
+        "E • Gentle • traverse",
         "Moderate slope, falling skier's right",
     ),
     _point_card_variant(
@@ -1582,11 +1582,23 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 6, "gradeDeg": 1},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
         },
-        "Level traverse",
+        "W • Level • traverse",
         "Very steep slope, falling skier's right",
     ),
     _point_card_variant(
-        "Turning — the track climbs while heading downhill",
+        "Switchback — Col de la Chaux, 13° up through a turn on a 35° face",
+        {
+            "track": [4, 1],
+            "gradeDeg": 13.28,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
+        },
+        "S → NE • Gentle • switchback",
+        "Very steep slope, falling skier's right, then left",
+    ),
+    _point_card_variant(
+        "Climbing while heading downhill — a turn inside the segment",
         {
             "track": [2, 3],
             "gradeDeg": 6,
@@ -1594,7 +1606,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
         },
-        "Gentle climb, turning",
+        "E → SE • Gentle • ascent",
         "Steep slope",
     ),
     _point_card_variant(
@@ -1606,7 +1618,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "flat"},
         },
-        "Gentle descent",
+        "E • Gentle • descent",
         "Flat ground",
     ),
     _point_card_variant(
@@ -1618,7 +1630,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "unknown"},
         },
-        "Level track",
+        "SW • Level",
         "No terrain data",
     ),
 )
