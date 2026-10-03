@@ -111,13 +111,13 @@
   const TILE_SIZE = 256;
 
   /**
-   * The tileset's coverage, `[west, south, east, north]` — the swissALTI3D
-   * extent (Switzerland and Liechtenstein) as a WGS84 rectangle. To be
-   * confirmed against the published `terrain-class/v1/tiles.json` `bounds`
-   * once the real tiles are live; it keeps MapLibre from requesting tiles
-   * outside the survey and drives the sheet's "outside coverage" line.
+   * The tileset's coverage, `[west, south, east, north]` — the bbox the
+   * snowdesk-tiles build lists swissALTI3D squares over, which its cutter
+   * writes unchanged as `terrain-class/v1/tiles.json` `bounds`. It keeps
+   * MapLibre from requesting tiles outside the survey and drives the sheet's
+   * "outside coverage" line.
    */
-  const COVERAGE_BOUNDS = Object.freeze([5.9, 45.8, 10.6, 47.9]);
+  const COVERAGE_BOUNDS = Object.freeze([5.95, 45.72, 10.5, 47.83]);
 
   /** The slope thresholds a reader can pick, in degrees. */
   const SLOPE_LADDER = Object.freeze([30, 35, 40, 45, 50]);

@@ -74,9 +74,11 @@ the colour is made in the browser:
   from such a browser is recognised.
 - `setTiles` reloads the source, so a filter change can flash the layer
   briefly while tiles repaint.
-- `COVERAGE_BOUNDS` in `terrain_filter_core.js` is the swissALTI3D extent
-  as a rectangle; confirm it against the published `tiles.json` bounds. A
-  204 inside it is hatched, outside it transparent.
+- `COVERAGE_BOUNDS` in `terrain_filter_core.js` is the build's bbox,
+  `[5.95, 45.72, 10.5, 47.83]`, which the cutter writes as `tiles.json`
+  `bounds`. A rebuild over a different bbox has to change both. A 204 inside
+  it is hatched, outside it transparent, so ground in France and Italy that
+  falls inside the rectangle reads as no data.
 - `TERRAIN_CLASS_TILE_URL` defaults to empty — the feature is off until an
   operator sets it, and the CSP origin is derived only when it is set
   (`optional_basemap_origin`).
