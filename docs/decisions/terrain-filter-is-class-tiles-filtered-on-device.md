@@ -12,9 +12,12 @@ drawn from **terrain-class tiles** whose pixels are facts, not colours, and
 the colour is made in the browser:
 
 - Tiles: `TERRAIN_CLASS_TILE_URL`, published by the snowdesk-tiles repo
-  (SNOW-987) at `tiles.snowdesk-data.info/terrain-class/v1/{z}/{x}/{y}.png`,
-  z12–14, with `terrain-class/v1/tiles.json` carrying the encoding, zoom
-  range, bounds and the "© swisstopo" attribution.
+  (SNOW-987) at `tiles.snowdesk-data.info/terrain-class/<version>/{z}/{x}/{y}.png`,
+  z12–14, with `terrain-class/<version>/tiles.json` carrying the encoding,
+  zoom range, bounds and the "© swisstopo" attribution. The version segment is
+  snowdesk-tiles' `TERRAIN_CLASS_VERSION`, bumped on every rebuild because the
+  tiles are cached immutable for a year. It is v2 since the first build's z14
+  tiles were corrupt, and the setting has to name the current one.
 - **Pixel contract.** Opaque 256 px PNG, alpha always 255.
   R,G = height in whole metres, uint16 big-endian. B = `octant << 5 | band`
   — octant N=0, NE=1 … NW=7 with N covering 337.5–22.5° (the split
