@@ -6,8 +6,8 @@
  * The header is hidden until the route cursor has an index, shows and
  * reads the point when it does, hides again when the index clears (the
  * panel's route header returns) and on detach, and its wheel's
- * accessible name is the two lines it shows. Pressing the wheel clears
- * the point (2026-10-02).
+ * accessible name is the two lines it shows, read with commas for the
+ * bullets (SNOW-1069). Pressing the wheel clears the point (2026-10-02).
  *
  * The markup below is the hooks of templates/includes/_route_point_card.html;
  * tests/public/test_route_point_card.py holds the partial to them.
@@ -110,17 +110,17 @@ describe('route_point_card.js', () => {
     const cursor = attach();
     cursor.setIndex(1);
     expect(card.hidden).toBe(false);
-    expect(headline.textContent).toBe('Steep fall line descent');
+    expect(headline.textContent).toBe('E • Steep • fall line');
     expect(ground.textContent).toBe('Extremely steep slope');
     expect(card.querySelector('[data-lit="faces"]')).not.toBeNull();
     cursor.setIndex(2);
     expect(ground.textContent).toBe('Flat ground');
   });
 
-  it('names the wheel with the words it shows', () => {
+  it('names the wheel with the words it shows, read aloud', () => {
     const cursor = attach();
     cursor.setIndex(1);
-    expect(wheelLabel()).toBe(`${headline.textContent}; ${ground.textContent}`);
+    expect(wheelLabel()).toBe(`E, Steep, fall line; ${ground.textContent}`);
   });
 
   it('hides and empties when the index clears, for the route header', () => {

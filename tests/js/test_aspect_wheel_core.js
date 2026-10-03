@@ -6,9 +6,10 @@
  * two sectors; neighbours deduplicated against the current heading and
  * absent at either end of the route; the four terrain kinds and how each
  * draws the outer ring; the inner ring on the track scale (SNOW-1064) with the outer ring on
- * the slope classes; the centre's bar against triangle at the 5° edge,
- * the triangle's direction and the empty centre below 36 px; the 2 px gap
- * from 96 px; and the label and line built from a strings object.
+ * the slope classes; the centre's bar against chevrons at the 5° edge,
+ * the chevrons' count, direction and fit, and the empty centre below
+ * 36 px; the 2 px gap from 96 px; and the label and line built from a
+ * strings object.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -269,7 +270,7 @@ describe('aspectWheelSvg', () => {
 
   it('draws a keyline on each lit sector', () => {
     const svg = parse(core.aspectWheelSvg({ size: 48, state: FACES }));
-    const keylines = svg.querySelectorAll('[stroke="var(--color-text-1)"]');
+    const keylines = svg.querySelectorAll('[stroke="var(--color-text-1)"]:not([data-centre])');
     expect(keylines).toHaveLength(2);
     expect(keylines[0].getAttribute('stroke-opacity')).toBe('0.55');
   });
@@ -317,19 +318,35 @@ describe('aspectWheelSvg', () => {
     expect(svg.querySelectorAll('[data-lit="heading"]')).toHaveLength(2);
   });
 
-  it('draws a bar at 4.9° and a triangle at 5.0°', () => {
+  it('draws a bar at 4.9° and a chevron at 5.0°', () => {
     const level = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 4.9 } }));
     expect(level.querySelector('[data-centre]')?.getAttribute('data-centre')).toBe('level');
     const climb = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 5.0 } }));
     expect(climb.querySelector('[data-centre]')?.getAttribute('data-centre')).toBe('climbing');
   });
 
-  it('points the triangle up for a climb and down for a descent', () => {
+  it.each([
+    [5, 1],
+    [-14.9, 1],
+    [15, 2],
+    [24.9, 2],
+    [-25, 3],
+    [35, 3],
+    [62, 3],
+  ])('grades a %s° track with %s chevrons (SNOW-1069)', (gradeDeg, count) => {
+    const svg = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg } }));
+    const mark = svg.querySelector('[data-centre]');
+    expect(mark?.getAttribute('data-chevrons')).toBe(String(count));
+    expect((mark?.getAttribute('d') || '').match(/M/g)).toHaveLength(count);
+    expect(mark?.getAttribute('fill')).toBe('none');
+  });
+
+  it('points the chevrons up for a climb and down for a descent', () => {
     /**
-     * The apex and base y of the centre triangle.
+     * The first chevron's base and apex y.
      *
      * @param {number} gradeDeg The gradient.
-     * @returns {Array<number>} [apex y, base y].
+     * @returns {Array<number>} [base y, apex y].
      */
     function ys(gradeDeg) {
       const svg = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg } }));
@@ -337,18 +354,29 @@ describe('aspectWheelSvg', () => {
       const numbers = d.match(/-?\d+(\.\d+)?/g)?.map(Number) || [];
       return [numbers[1], numbers[3]];
     }
-    const [upApex, upBase] = ys(12);
+    const [upBase, upApex] = ys(12);
     expect(upApex).toBeLessThan(upBase);
-    const [downApex, downBase] = ys(-12);
+    const [downBase, downApex] = ys(-12);
     expect(downApex).toBeGreaterThan(downBase);
+    const svg = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: -12 } }));
+    expect(svg.querySelector('[data-centre]')?.getAttribute('data-centre')).toBe('descending');
   });
 
-  it('sizes the triangle from max(3.2, size × 0.034) px', () => {
+  it('sizes the chevrons from max(3.2, size × 0.034) px', () => {
     const svg = parse(core.aspectWheelSvg({ size: 200, state: FACES }));
     const d = svg.querySelector('[data-centre]')?.getAttribute('d') || '';
     const numbers = d.match(/-?\d+(\.\d+)?/g)?.map(Number) || [];
     // 6.8 px half-width at 200 px is 3.4 viewBox units.
-    expect(numbers[2] - 50).toBeCloseTo(3.4, 3);
+    expect(numbers[4] - 50).toBeCloseTo(3.4, 3);
+  });
+
+  it('keeps three chevrons inside the inner ring at 48 px', () => {
+    const svg = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, gradeDeg: 40 } }));
+    const d = svg.querySelector('[data-centre]')?.getAttribute('d') || '';
+    const numbers = d.match(/-?\d+(\.\d+)?/g)?.map(Number) || [];
+    for (let i = 0; i < numbers.length; i += 2) {
+      expect(Math.hypot(numbers[i] - 50, numbers[i + 1] - 50)).toBeLessThan(18);
+    }
   });
 
   it('leaves the centre empty below 36 px', () => {

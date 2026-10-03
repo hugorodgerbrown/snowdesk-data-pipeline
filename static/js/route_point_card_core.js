@@ -1,60 +1,86 @@
 /*
  * static/js/route_point_card_core.js — the point card's pure half: the
- * words for one point on a saved route (SNOW-1064).
+ * words for one point on a saved route (SNOW-1064; headings and
+ * turns and switchbacks since SNOW-1069).
  *
- * The point card (templates/includes/_route_point_card.html) is pinned to
- * the map's top-left corner while a route is open. It holds the aspect
- * wheel (aspect_wheel_core.js) and two lines of words, and this module
- * is where the words come from. It says WHAT IT IS LIKE to be on the track
- * at that point, and nothing the map already shows: no degrees, no
- * headings, no aspects (docs/decisions/the-point-card-names-the-experience.md).
+ * The point header (templates/includes/_route_point_card.html) is the
+ * route panel's header while a point is placed. It holds the aspect wheel
+ * (aspect_wheel_core.js) and two lines of words, and this module is where
+ * the words come from (docs/decisions/the-point-card-names-the-experience.md).
  *
- * ## The headline: the track's steepness and how it crosses the slope
+ * ## The headline: heading • steepness • kind
  *
- * The track has its own five-step scale (`trackWord`), because on the EAWS
- * slope classes almost every skin track is "moderate": level under 5°,
- * gentle under 15°, moderate under 25°, steep under 35°, very steep from
- * 35°. The bounds are the aspect wheel's `TRACK_STEPS`, so the inner
- * ring's colour and the headline's word always name the same step.
+ * "S → NE • Gentle • turn". Three parts, joined pairwise by the
+ * strings' `join` (a template, because the strings reader trims, so a
+ * bare " • " would lose its spaces):
  *
- * How it crosses the slope (`headline`) compares the track's heading with
- * the way the ground falls — the segment's aspect, its downhill direction.
- * d is the angle between the two, 0° straight down the fall line and 180°
- * straight up it:
+ *   HEADING    — the compass point the segment heads in, or the first and
+ *                last steps' points joined by an arrow where it turns:
+ *                the inner ring's own sectors (`headingSectors`), so the
+ *                words name exactly what the ring lights (SNOW-1069).
+ *   STEEPNESS  — the track's step on its own scale (`trackWord`), because
+ *                on the EAWS slope classes almost every skin track is
+ *                "moderate": level under 5°, gentle under 15°, moderate
+ *                under 25°, steep under 35°, very steep from 35°. The
+ *                bounds are the aspect wheel's `TRACK_STEPS`, so the inner
+ *                ring's colour and the word always name the same step.
+ *   KIND       — ascent, descent, traverse, fall line, turn or
+ *                switchback
+ *                (`kindOf`). Up or down is the wheel's centre mark, not a
+ *                word, so the kind names only how the track lies on the
+ *                slope.
  *
- *   d under 45°        — a fall line descent;
- *   d over 135°        — a fall line climb;
- *   anything between   — a traverse: rising, level or descending, by the
- *                        track's own gradient.
+ * How the track lies on the slope (`headline`) compares its chord with the
+ * way the ground falls — the segment's aspect, its downhill direction. d
+ * is the angle between the two, 0° straight down the fall line and 180°
+ * straight up it: under 45° or over 135° is the fall line, anything
+ * between a traverse. A gradient that disagrees with the heading — climbing
+ * within 45° of downhill — has turned inside the segment, and reads as the
+ * plain ascent or descent.
  *
- * A gradient that disagrees with the heading — climbing within 45° of
- * downhill, or descending within 45° of uphill — reads "…, turning": the
- * track turned inside the 25 m segment, so its heading and its rise were
- * measured on different halves of it. There is no middle band, so every
- * point reads as one or the other.
+ * ## Turns: the segment's two ends (SNOW-1069)
  *
- * A traverse also carries a SIDE (`fallSide`): which way the ground falls
- * away from the skier, by the sign of the aspect's turn from the heading —
- * clockwise is downhill to the right. It joins line two as "Very steep
- * slope, falling skier's right". Relative to the skier, never a compass
- * point, so the card still names no aspect. The fall line and turning
- * cases carry none: the ground falls ahead or behind, not to a side.
+ * One chord cannot say that a segment turned, and on a skin track the
+ * kick turns are 50 m apart: a 25 m segment often holds one. A segment
+ * whose first and last steps head into different compass sectors — the
+ * ring lighting two sectors, adjoining or not — turned. A wobble that
+ * stays inside one sector (359° to 1°) did not. What a turning segment is
+ * called depends on the slope (`kindOf`):
  *
- * The rule applies wherever an aspect exists, which is ground of 5° or
- * more. On flat or unsampled ground there is nothing to cross, and the
- * headline is the track alone: "Gentle descent", "Level track".
+ *   - climbing, and the side the ground falls differs between the first
+ *     step and the last (`turnOf`): the track crossed the fall line, a
+ *     SWITCHBACK, and line two gives both sides: "Steep slope, falling
+ *     skier's left, then right";
+ *   - descending, and either end heads in the ground's own sector, down
+ *     the fall line: FALL LINE, turning or not, and line two names no side;
+ *   - anything else, including a level track and a climb that stays on
+ *     one side: a TURN.
+ *
+ * The sides need an aspect, which is ground of 5° or more; on flat or
+ * unsampled ground every turning segment is a turn, and line two names the
+ * ground alone.
  *
  * THE ASPECT IS A SECTOR. The slope wire sends one of eight sectors per
  * segment (SNOW-976), not a bearing, so the aspect here is the sector's
  * centre and d carries up to 22.5° of that rounding. The 45° and 135°
- * edges are a reading of a 25 m segment's character, not a survey, and
- * the error is the same one the wheel's outer ring draws.
+ * edges, and where a turn crosses the fall line, are a reading of a 25 m
+ * segment's character, not a survey, and the error is the same one the
+ * wheel's outer ring draws.
  *
  * ## Line two: the ground, in the EAWS words
  *
  * `groundWord` is the EAWS glossary's slope classes — moderate under 30°,
  * steep from 30°, very steep from 35°, extremely steep from 40° — with
- * flat under 5° added below them, the rule rail two's readout used.
+ * flat under 5° added below them, the rule rail two's readout used. A
+ * traverse adds the side the ground falls away to, and a turn across the
+ * fall line both, except on the fall line itself.
+ *
+ * ## The accessible name
+ *
+ * The wheel's label is the two lines, but read rather than drawn: the
+ * heading's arrow is "to" (`label-heading-pair`) and the parts are joined
+ * by `label-join`, so a screen reader never says "right arrow" or
+ * "bullet".
  *
  * ## The gradient
  *
@@ -81,6 +107,8 @@
  *   headingDeg(path)                — a segment path's bearing, first to last
  *   fallSide(heading, aspect)       — 'left' or 'right', the way the ground falls
  *   headline(heading, aspect, gradient, angle) — {key, steepness, side}
+ *   turnOf(path, aspect)            — the sides the ground falls at both ends
+ *   kindOf(head, gradient, track, turn, fall) — the headline's kind, or null
  *   segmentGradients(profile, sampleCount, spanM, legs?) — signed, per segment
  *   reading(input, strings)         — the card's words and the wheel's state
  */
@@ -194,9 +222,8 @@
   /**
    * A segment path's bearing, from its first point to its last.
    *
-   * The chord, not one step: the headline describes the 25 m segment as
-   * a whole, and the wheel's inner ring already lights its first and last
-   * steps separately where it turns.
+   * The chord, not one step: how the track lies on the slope describes the
+   * 25 m segment as a whole. Its two ends are `turnOf`'s.
    *
    * @param {*} path The segment's `[lon, lat]` path.
    * @returns {?number} The bearing, or null with no length.
@@ -269,6 +296,103 @@
       steepness: steepness,
       side: fallSide(h, a),
     };
+  }
+
+  /**
+   * The side the ground falls at a segment's first step and at its last.
+   *
+   * @typedef {{firstSide: string, lastSide: string}} Turn
+   */
+
+  /**
+   * The bearings of a path's steps, in order, skipping any step with no
+   * length.
+   *
+   * @param {*} path The segment's `[lon, lat]` path, unchecked.
+   * @returns {Array<number>} One bearing per step that has a length.
+   */
+  function stepBearings(path) {
+    const wheel = self.pwaAspectWheelCore;
+    if (!wheel || !Array.isArray(path)) return [];
+    const points = path.filter((p) => Array.isArray(p) && finite(p[0]) !== null && finite(p[1]) !== null);
+    /** @type {Array<number>} */
+    const out = [];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      if (a[0] === b[0] && a[1] === b[1]) continue;
+      out.push(wheel.bearingDeg(a, b));
+    }
+    return out;
+  }
+
+  /**
+   * The side the ground falls at each end of a segment (SNOW-1069).
+   *
+   * Where the two differ on a segment that turned, the track crossed the
+   * fall line. On its own a difference proves nothing: a track along the
+   * fall line that wobbles 2° either side of it differs too, which is why
+   * `kindOf` and line two ask for two heading sectors as well.
+   *
+   * @param {*} path The segment's `[lon, lat]` path.
+   * @param {?number} aspect The way the ground falls, degrees; null where
+   *   it faces nowhere or is unknown.
+   * @returns {?Turn} Null with no aspect or no step with a length.
+   */
+  function turnOf(path, aspect) {
+    const fall = finite(aspect);
+    const bearings = stepBearings(path);
+    if (fall === null || !bearings.length) return null;
+    return {
+      firstSide: fallSide(bearings[0], fall),
+      lastSide: fallSide(bearings[bearings.length - 1], fall),
+    };
+  }
+
+  /**
+   * The headline's kind: how the track lies on the slope.
+   *
+   * A segment that heads into one sector is named by its chord's pattern.
+   * One that heads into two turned: climbing across the fall line it is a
+   * switchback; descending with either end in the ground's own sector it
+   * is the fall line; otherwise a turn.
+   *
+   * @param {Headline} head `headline`'s reading of the chord.
+   * @param {?number} gradient The track's signed gradient, degrees.
+   * @param {Array<number>} track The heading sectors the ring lights.
+   * @param {?Turn} turn `turnOf`'s reading of the ends.
+   * @param {?number} fall The sector the ground falls towards; null where
+   *   it faces nowhere or is unknown.
+   * @returns {?string} 'ascent', 'descent', 'traverse', 'fall-line',
+   *   'turn' or 'switchback'; null for a level track on flat ground, or no
+   *   height.
+   */
+  function kindOf(head, gradient, track, turn, fall) {
+    const grade = finite(gradient);
+    if (grade === null || head.key === 'no-height') return null;
+    if (Array.isArray(track) && track.length > 1) {
+      if (trackWord(grade) === 'level') return 'turn';
+      if (grade > 0 && turn && turn.firstSide !== turn.lastSide) return 'switchback';
+      if (grade < 0 && fall !== null && track.includes(fall)) return 'fall-line';
+      return 'turn';
+    }
+    switch (head.key) {
+      case 'fall-descent':
+      case 'fall-climb':
+        return 'fall-line';
+      case 'rising-traverse':
+      case 'descending-traverse':
+      case 'level-traverse':
+        return 'traverse';
+      case 'climb':
+      case 'climb-turning':
+        return 'ascent';
+      case 'descent':
+      case 'descent-turning':
+        return 'descent';
+      default:
+        return null;
+    }
   }
 
   /**
@@ -385,6 +509,23 @@
   }
 
   /**
+   * The heading in words: one compass point, or the first and last
+   * joined.
+   *
+   * @param {*} track The wheel's heading sectors.
+   * @param {Object<string, string>} strings The strings object.
+   * @param {string} pairKey `heading-pair` to draw, `label-heading-pair`
+   *   to read aloud.
+   * @returns {string} The heading; empty with none.
+   */
+  function headingWords(track, strings, pairKey) {
+    if (!Array.isArray(track) || !track.length) return '';
+    const names = track.map((s) => fill(strings, `compass-${s}`));
+    if (names.length === 1) return names[0];
+    return fill(strings, pairKey, { first: names[0], second: names[names.length - 1] });
+  }
+
+  /**
    * The card's words for one point, and the wheel's state for it.
    *
    * @param {{index: number, paths: *, gradients: *, angles: *,
@@ -394,8 +535,8 @@
    * @param {Object<string, string>} strings The strings object, read from
    *   the partial's `<template>`.
    * @returns {{headline: string, ground: string, label: string,
-   *   state: *}} `label` is the wheel's accessible name: the two visible
-   *   lines, joined.
+   *   kind: ?string, state: *}} `label` is the wheel's accessible name:
+   *   the two lines as read aloud; `kind` the headline's kind, or null.
    */
   function reading(input, strings) {
     const wheel = self.pwaAspectWheelCore;
@@ -404,26 +545,46 @@
     const paths = Array.isArray(input.paths) ? input.paths : [];
     const angle = Array.isArray(input.angles) ? finite(input.angles[index]) : null;
     const terrain = state ? state.terrain : { kind: 'none' };
+    // Flat ground has no sector, so the sides need ground of 5° or more.
     const aspect = terrain && terrain.kind === 'faces' ? terrain.sector * 45 : null;
     const gradient = Array.isArray(input.gradients) ? finite(input.gradients[index]) : null;
     const head = headline(headingDeg(paths[index]), aspect, gradient, angle);
-    const steepness = head.steepness ? fill(strings, `steepness-${head.steepness}`) : '';
-    const headlineText = fill(strings, `headline-${head.key}`, { steepness: steepness });
+    const turn = turnOf(paths[index], aspect);
+    const track = state ? state.track : [];
+    const kind = kindOf(head, gradient, track, turn, aspect === null ? null : terrain.sector);
+
+    const steep = trackWord(gradient);
+    const middle = steep === null
+      ? [fill(strings, 'headline-no-height')]
+      : [fill(strings, `steepness-${steep}`), kind ? fill(strings, `kind-${kind}`) : ''];
+    const drawn = [headingWords(track, strings, 'heading-pair'), ...middle].filter(Boolean);
+    const spoken = [headingWords(track, strings, 'label-heading-pair'), ...middle].filter(Boolean);
+    const join = (/** @type {Array<string>} */ parts, /** @type {string} */ key) => parts
+      .reduce((before, after) => fill(strings, key, { before: before, after: after }));
+    const headlineText = join(drawn, 'join');
+    const headlineSpoken = join(spoken, 'label-join');
+
     // A payload cached before SNOW-976 carries no `aspects`, and the wheel
     // draws it as unknown; the words agree rather than claim flat ground.
     const groundKey = terrain && (terrain.kind === 'unknown' || terrain.kind === 'none')
       ? null
       : groundWord(angle);
     const slopeText = fill(strings, groundKey === null ? 'ground-unknown' : `ground-${groundKey}`);
-    // A side needs ground that faces somewhere, which a traverse always
-    // has; the guard keeps an unknown reading from claiming one.
-    const groundText = head.side && groundKey !== null && groundKey !== 'flat'
-      ? fill(strings, `ground-falling-${head.side}`, { ground: slopeText })
-      : slopeText;
+    let groundText = slopeText;
+    // A side needs ground that faces somewhere; the guard keeps an
+    // unknown reading from claiming one.
+    if (groundKey !== null && groundKey !== 'flat') {
+      if (turn && turn.firstSide !== turn.lastSide && (kind === 'switchback' || kind === 'turn')) {
+        groundText = fill(strings, `ground-falling-${turn.firstSide}-then-${turn.lastSide}`, { ground: slopeText });
+      } else if (head.side && kind !== 'fall-line') {
+        groundText = fill(strings, `ground-falling-${head.side}`, { ground: slopeText });
+      }
+    }
     return {
       headline: headlineText,
       ground: groundText,
-      label: fill(strings, 'label', { headline: headlineText, ground: groundText }),
+      label: fill(strings, 'label', { headline: headlineSpoken, ground: groundText }),
+      kind: kind,
       state: state,
     };
   }
@@ -437,6 +598,8 @@
     headingDeg: headingDeg,
     fallSide: fallSide,
     headline: headline,
+    turnOf: turnOf,
+    kindOf: kindOf,
     segmentGradients: segmentGradients,
     reading: reading,
   });

@@ -116,9 +116,6 @@ Context:
                 <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1 text-balance">
                     <span data-row-label data-route-rail-name></span>
                 </p>
-                {# The point header (SNOW-1068): the wheel and the reading,   #}
-                {# in the title and meta line's place while a point is placed. #}
-                {% include "includes/_route_point_card.html" with static=False %}
                 <input
                     type="text"
                     data-row-rename-input
@@ -142,6 +139,11 @@ Context:
                 </button>
             </div>
         </div>
+        {# The point header (SNOW-1068): the wheel and the reading, in the #}
+        {# title and meta line's place while a point is placed. Below the  #}
+        {# buttons' row, not beside it, so the reading has the panel's     #}
+        {# full width and its lines do not wrap early (SNOW-1069).         #}
+        {% include "includes/_route_point_card.html" with static=False %}
         {# The meta line: the route's, in the routes list's format.       #}
         {# Filled by static/js/route_rail.js.                             #}
         <p data-route-rail-meta class="mt-1 font-mono text-meta text-text-2"></p>
