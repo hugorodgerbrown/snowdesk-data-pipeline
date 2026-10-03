@@ -263,6 +263,13 @@ describe('window.pwaRoutesOverlay', () => {
       expect(Object.isFrozen(window.pwaRoutesOverlay)).toBe(true);
     });
 
+    it('turns the zoom control\'s route-slopes gate on while drawn (SNOW-1077)', () => {
+      const gate = () => window.pwaZoomGates.list().find((g) => g.key === 'route_slopes');
+      expect(gate()).toMatchObject({ zoom: 14, active: true });
+      window.pwaRoutesOverlay.hide();
+      expect(gate().active).toBe(false);
+    });
+
     it('show() installs both line layers and draws them', () => {
       expect(window.pwaRoutesOverlay.isVisible()).toBe(true);
       expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible', 'visible']);

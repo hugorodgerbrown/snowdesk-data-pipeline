@@ -6577,6 +6577,9 @@
           // already drawn, and the route that just landed is the first
           // one with legs.
           syncRouteLegLegend();
+          // SNOW-1077: the same reason, for the zoom control's route-slopes
+          // tick — the first route landing turns its gate on.
+          document.dispatchEvent(new CustomEvent('snowdesk:zoom-gates-changed'));
         } else {
           // Cached pristine above, mutated here — the same order
           // ``_loadOverlay`` uses, so the stored copy is the server's
@@ -6911,6 +6914,50 @@
     },
     isVisible: () => panelOverlayPainted('routes'),
     isEnabled: () => !!overlayState.routes,
+  });
+
+  // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
+  //
+  // Two layers are drawn only past a zoom, and the zoom control's flyout
+  // (static/js/map_zoom_control.js) puts a tick on its scale for each one
+  // that is on. One entry per gated layer, so a third one is a line here
+  // and a label in the control's strings template, and nothing else.
+  //
+  // `active` answers "is this layer on the map now", not "is it drawn at
+  // this zoom" — the tick is there to say where it starts.
+  //
+  //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
+  //     (z12); on while the reader has switched it on.
+  //   route_slopes — a route's core switches from leg colours to slope
+  //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
+  //     is painted and holds a route that is not a pending share.
+  const ZOOM_GATES = Object.freeze([
+    Object.freeze({
+      key: 'terrain_filter',
+      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter,
+    }),
+    Object.freeze({
+      key: 'route_slopes',
+      zoom: ROUTE_SLOPE_MINZOOM,
+      active: () => panelOverlayPainted('routes')
+        && ((routesGeojsonCache && routesGeojsonCache.features) || []).some(
+          (f) => f && f.properties && !f.properties.pending,
+        ),
+    }),
+  ]);
+
+  window.pwaZoomGates = Object.freeze({
+    /**
+     * Every zoom-gated layer, read now.
+     *
+     * @returns {Array<{key: string, zoom: number, active: boolean}>}
+     */
+    list: () => ZOOM_GATES.map((gate) => ({
+      key: gate.key,
+      zoom: gate.zoom,
+      active: !!gate.active(),
+    })),
   });
 
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====

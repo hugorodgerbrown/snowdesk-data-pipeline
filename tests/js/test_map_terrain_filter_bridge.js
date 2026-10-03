@@ -242,3 +242,29 @@ describe('the layers menu row', () => {
     expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
   });
 });
+
+describe('window.pwaZoomGates (SNOW-1077)', () => {
+  /**
+   * One gate from the registry, by key.
+   *
+   * @param {string} key The gate's key.
+   * @returns {{key: string, zoom: number, active: boolean}}
+   */
+  const gate = (key) => window.pwaZoomGates.list().find((g) => g.key === key);
+
+  it('lists the terrain filter at z12 and route slopes at z14', () => {
+    expect(gate('terrain_filter').zoom).toBe(12);
+    expect(gate('route_slopes').zoom).toBe(14);
+  });
+
+  it('turns the terrain-filter gate on with the filter', () => {
+    window.pwaTerrainFilter.show();
+    expect(gate('terrain_filter').active).toBe(true);
+    window.pwaTerrainFilter.hide();
+    expect(gate('terrain_filter').active).toBe(false);
+  });
+
+  it('leaves the route-slopes gate off with no routes drawn', () => {
+    expect(gate('route_slopes').active).toBe(false);
+  });
+});
