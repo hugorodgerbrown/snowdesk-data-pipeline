@@ -51,6 +51,7 @@ const STRINGS = {
   'kind-traverse': 'traverse',
   'kind-fall-line': 'fall line',
   'kind-turn': 'turn',
+  'kind-switchback': 'switchback',
   'headline-no-height': 'No height data',
   'ground-flat': 'Flat ground',
   'ground-moderate': 'Moderate slope',
@@ -249,12 +250,30 @@ describe('turnOf', () => {
 });
 
 describe('kindOf', () => {
-  it('names a segment that heads into two sectors a turn, either way and level', () => {
-    expect(core.kindOf({ key: 'fall-climb', steepness: 'gentle', side: null }, true, 13)).toBe('turn');
-    expect(core.kindOf({ key: 'fall-descent', steepness: 'gentle', side: null }, true, -13)).toBe('turn');
-    expect(core.kindOf({ key: 'rising-traverse', steepness: 'gentle', side: 'left' }, true, 9)).toBe('turn');
-    expect(core.kindOf({ key: 'level-traverse', steepness: null, side: 'left' }, true, 2)).toBe('turn');
-    expect(core.kindOf({ key: 'climb', steepness: 'gentle', side: null }, true, 10)).toBe('turn');
+  const across = { firstSide: 'left', lastSide: 'right' };
+  const along = { firstSide: 'left', lastSide: 'left' };
+  const chord = (key) => ({ key, steepness: null, side: null });
+
+  it('names a climb that turns across the fall line a switchback', () => {
+    expect(core.kindOf(chord('fall-climb'), 13, [4, 1], across, 7)).toBe('switchback');
+  });
+
+  it('names a climb that turns on one side of it a turn', () => {
+    expect(core.kindOf(chord('rising-traverse'), 13, [1, 2], along, 7)).toBe('turn');
+  });
+
+  it('names a descent with either end down the fall line the fall line', () => {
+    expect(core.kindOf(chord('descending-traverse'), -24, [0, 1], along, 0)).toBe('fall-line');
+    expect(core.kindOf(chord('descending-traverse'), -25, [1, 0], across, 0)).toBe('fall-line');
+  });
+
+  it('never names a descent a switchback', () => {
+    expect(core.kindOf(chord('descending-traverse'), -12, [2, 6], across, 0)).toBe('turn');
+  });
+
+  it('names a level turn, and a turn on flat ground, a turn', () => {
+    expect(core.kindOf(chord('level-traverse'), 2, [1, 2], across, 7)).toBe('turn');
+    expect(core.kindOf(chord('climb'), 10, [1, 2], null, null)).toBe('turn');
   });
 
   it.each([
@@ -269,11 +288,26 @@ describe('kindOf', () => {
     ['descent-turning', -10, 'descent'],
     ['level', 1, null],
   ])('names the chord’s %s at %s° as %s', (key, gradient, kind) => {
-    expect(core.kindOf({ key, steepness: null, side: null }, false, gradient)).toBe(kind);
+    expect(core.kindOf(chord(key), gradient, [2], along, 0)).toBe(kind);
   });
 
   it('has no kind without a height', () => {
-    expect(core.kindOf({ key: 'no-height', steepness: null, side: null }, true, null)).toBeNull();
+    expect(core.kindOf(chord('no-height'), null, [4, 1], across, 7)).toBeNull();
+  });
+});
+
+describe('a descent that turns on the fall line', () => {
+  it('names no side, even where the ends fall on different sides', () => {
+    const words = core.reading({
+      index: 0,
+      paths: [pathTurning(40, 350)],
+      gradients: [-25],
+      angles: [27],
+      aspects: [0],
+    }, STRINGS);
+    expect(words.state.track).toEqual([1, 0]);
+    expect(words.kind).toBe('fall-line');
+    expect(words.ground).toBe('Moderate slope');
   });
 });
 
@@ -306,13 +340,13 @@ describe('the Col de la Chaux zig-zag', () => {
   }
 
   it.each([
-    [60, 'E → S • Gentle • turn', "Moderate slope, falling skier's left, then right"],
+    [60, 'E → S • Gentle • switchback', "Moderate slope, falling skier's left, then right"],
     [61, 'S • Gentle • traverse', "Moderate slope, falling skier's right"],
-    [62, 'S → NE • Gentle • turn', "Very steep slope, falling skier's right, then left"],
+    [62, 'S → NE • Gentle • switchback', "Very steep slope, falling skier's right, then left"],
     [63, 'NE → E • Gentle • turn', "Steep slope, falling skier's left"],
-    [64, 'E → S • Gentle • turn', "Steep slope, falling skier's left, then right"],
+    [64, 'E → S • Gentle • switchback', "Steep slope, falling skier's left, then right"],
     [65, 'S • Moderate • traverse', "Moderate slope, falling skier's right"],
-    [66, 'S → NE • Moderate • turn', "Moderate slope, falling skier's right, then left"],
+    [66, 'S → NE • Moderate • switchback', "Moderate slope, falling skier's right, then left"],
     [67, 'NE • Moderate • traverse', "Very steep slope, falling skier's left"],
   ])('reads segment %s as "%s"', (index, headline, ground) => {
     const words = at(index);
@@ -327,7 +361,7 @@ describe('the Col de la Chaux zig-zag', () => {
   });
 
   it('reads the arrow as "to" and the bullets as commas aloud', () => {
-    expect(at(62).label).toBe("S to NE, Gentle, turn; Very steep slope, falling skier's right, then left");
+    expect(at(62).label).toBe("S to NE, Gentle, switchback; Very steep slope, falling skier's right, then left");
   });
 });
 

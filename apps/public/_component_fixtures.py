@@ -1500,8 +1500,8 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
 # One point on the open route, read in words: the aspect wheel at 48 px and
 # two lines — the headline (heading • the track's steepness on its own scale
 # • how it lies on the slope, SNOW-1069) and the ground in the EAWS words,
-# with the side the slope falls on a traverse, or both sides where a turn
-# crosses the fall line. The lines here are what route_point_card_core.js's
+# with the side the slope falls on a traverse, or both sides across a
+# switchback. The lines here are what route_point_card_core.js's
 # ``reading`` writes for each state; on the map the header is filled
 # client-side from the route cursor, and hidden while no point is placed.
 
@@ -1586,7 +1586,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
         "Very steep slope, falling skier's right",
     ),
     _point_card_variant(
-        "Turn — Col de la Chaux, 13° up through a kick turn on a 35° face",
+        "Switchback — Col de la Chaux, 13° up through a kick turn on a 35° face",
         {
             "track": [4, 1],
             "gradeDeg": 13.28,
@@ -1594,19 +1594,31 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
         },
-        "S → NE • Gentle • turn",
+        "S → NE • Gentle • switchback",
         "Very steep slope, falling skier's right, then left",
     ),
     _point_card_variant(
-        "Turn into the adjoining sector — a 45° bend is a turn too",
+        "Turn — Col de la Chaux, a climb that turns without crossing",
         {
-            "track": [2, 3],
-            "gradeDeg": 6,
-            "prev": {"sector": 1, "gradeDeg": 9},
+            "track": [1, 2],
+            "gradeDeg": 13.29,
+            "prev": None,
             "next": None,
-            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 31.8},
         },
-        "E → SE • Gentle • turn",
+        "NE → E • Gentle • turn",
+        "Steep slope, falling skier's left",
+    ),
+    _point_card_variant(
+        "Fall line while turning — Backside, one end heads straight down",
+        {
+            "track": [0, 1],
+            "gradeDeg": -24.04,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 30.8},
+        },
+        "N → NE • Moderate • fall line",
         "Steep slope",
     ),
     _point_card_variant(

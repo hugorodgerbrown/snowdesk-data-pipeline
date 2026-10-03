@@ -68,6 +68,7 @@
     'kind-traverse': 'traverse',
     'kind-fall-line': 'fall line',
     'kind-turn': 'turn',
+    'kind-switchback': 'switchback',
     'headline-no-height': 'No height data',
     'ground-flat': 'Flat ground',
     'ground-moderate': 'Moderate slope',
