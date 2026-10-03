@@ -180,6 +180,19 @@
     }
   }
 
+  // The face last written, so a pinch — a `zoom` event every frame — writes
+  // the DOM only when the whole zoom actually changes.
+  let drawnFace = null;
+
+  // Where − and + are taking the map, while a step is animating. MapLibre's
+  // zoomIn/zoomOut step from the CURRENT zoom, so a second tap during the
+  // first one's animation stepped from the intermediate zoom: two quick
+  // taps of − from z10 ended near z9, not z8. Each tap steps
+  // from this target instead, and it clears when the move it started
+  // ends, or when a gesture takes over.
+  /** @type {number|null} */
+  let pendingTarget = null;
+
   /**
    * Repaint the face and, while it is open, the flyout.
    *
@@ -188,18 +201,23 @@
   function render() {
     const camera = map.getZoom();
     const whole = core.faceZoom(tileZoom(), camera);
-    if (face) face.textContent = String(whole);
-    toggle.setAttribute(
-      'aria-label',
-      self.pwaStrings.interpolate(STRINGS['toggle-label'], { zoom: whole }),
-    );
+    if (whole !== drawnFace) {
+      drawnFace = whole;
+      if (face) face.textContent = String(whole);
+      toggle.setAttribute(
+        'aria-label',
+        self.pwaStrings.interpolate(STRINGS['toggle-label'], { zoom: whole }),
+      );
+    }
     if (flyout.hidden) return;
 
     const min = map.getMinZoom();
     const max = map.getMaxZoom();
-    const buttons = core.buttonState(camera, min, max);
-    if (zoomOut) zoomOut.disabled = !buttons.canZoomOut;
-    if (zoomIn) zoomIn.disabled = !buttons.canZoomIn;
+    // Judged from where the map is going, so + goes dead as soon as a tap
+    // has committed the map to its maximum, not when the animation lands.
+    const buttons = core.buttonState(pendingTarget ?? camera, min, max);
+    setStepEnabled(zoomOut, buttons.canZoomOut, zoomIn);
+    setStepEnabled(zoomIn, buttons.canZoomIn, zoomOut);
     if (marker) marker.style.left = (core.scalePosition(camera, min, max) * 100).toFixed(2) + '%';
 
     const gates = window.pwaZoomGates ? window.pwaZoomGates.list() : [];
@@ -210,6 +228,44 @@
         STRINGS.camera, { zoom: camera.toFixed(2) },
       );
     }
+  }
+
+  /**
+   * Enable or disable one step button, keeping keyboard focus in the
+   * flyout: a button disabled while it holds focus drops focus to <body>,
+   * so focus moves to the other step instead.
+   *
+   * @param {HTMLButtonElement|null} button The step to set.
+   * @param {boolean} enabled Whether it can move the map.
+   * @param {HTMLButtonElement|null} other The opposite step.
+   * @returns {void}
+   */
+  function setStepEnabled(button, enabled, other) {
+    if (!button || button.disabled === !enabled) return;
+    const hadFocus = document.activeElement === button;
+    button.disabled = !enabled;
+    if (!enabled && hadFocus && other && !other.disabled) other.focus();
+  }
+
+  /**
+   * Zoom one whole step out (-1) or in (+1).
+   *
+   * Steps from the target of a step still animating rather than from the
+   * camera — the further of the two in the step's direction — and clamps
+   * to the map's range.
+   *
+   * @param {number} direction -1 or +1.
+   * @returns {void}
+   */
+  function step(direction) {
+    const camera = map.getZoom();
+    const from = pendingTarget === null
+      ? camera
+      : direction > 0 ? Math.max(camera, pendingTarget) : Math.min(camera, pendingTarget);
+    const target = Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), from + direction));
+    pendingTarget = target;
+    map.zoomTo(target);
+    render();
   }
 
   /**
@@ -240,8 +296,32 @@
     setOpen(flyout.hidden);
   });
 
-  if (zoomOut) zoomOut.addEventListener('click', () => map.zoomOut());
-  if (zoomIn) zoomIn.addEventListener('click', () => map.zoomIn());
+  if (zoomOut) zoomOut.addEventListener('click', () => step(-1));
+  if (zoomIn) zoomIn.addEventListener('click', () => step(1));
+
+  // The pending target clears when its move ends at the target. Not on
+  // every `moveend`: a second tap's zoomTo stops the first animation, and
+  // MapLibre fires `moveend` for that stop, short of the first target —
+  // clearing there would leave a third quick tap stepping from the
+  // intermediate zoom again. A gesture (an event carrying originalEvent)
+  // starting or ending a move clears it too, since the reader has taken the
+  // map somewhere else.
+  /**
+   * @param {{originalEvent?: Event}} [event]
+   * @returns {void}
+   */
+  function settle(event) {
+    if (pendingTarget === null) return;
+    const arrived = Math.abs(map.getZoom() - pendingTarget) < core.EPSILON;
+    if (arrived || (event && event.originalEvent)) {
+      pendingTarget = null;
+      render();
+    }
+  }
+  map.on('moveend', settle);
+  map.on('movestart', (event) => {
+    if (event && event.originalEvent) settle(event);
+  });
 
   // Outside-click dismiss — a tap on the map itself, which is no overlay
   // and so announces nothing to the registry. `click`, not `pointerdown`,

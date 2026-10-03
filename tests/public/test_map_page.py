@@ -1979,8 +1979,16 @@ class TestZoomControl:
         start = content.rindex("<button", 0, content.index('id="map-zoom-toggle"'))
         tag = content[start : content.index(">", start)]
         assert "aria-label='Zoom level'" in tag or 'aria-label="Zoom level"' in tag
-        assert 'aria-haspopup="true"' in tag
+        assert 'aria-haspopup="dialog"' in tag
         assert 'aria-expanded="false"' in tag
+
+    def test_flyout_is_a_named_dialog(self, client: Client) -> None:
+        """What the roundel's aria-haspopup promises: a dialog with a name."""
+        content = self._content(client)
+        start = content.rindex("<div", 0, content.index('id="map-zoom-flyout"'))
+        tag = content[start : content.index(">", start)]
+        assert 'role="dialog"' in tag
+        assert "aria-label='Zoom'" in tag or 'aria-label="Zoom"' in tag
 
     def test_camera_line_is_absent_without_debug(self, client: Client) -> None:
         """The two-decimal camera zoom is a developer's instrument."""

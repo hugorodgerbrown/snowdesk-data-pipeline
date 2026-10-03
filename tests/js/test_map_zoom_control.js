@@ -25,10 +25,10 @@ document.body.innerHTML = `
   <div id="map"></div>
   <div id="map-legend" class="map-legend">
     <button id="map-zoom-toggle" type="button" aria-label="Zoom level"
-            aria-haspopup="true" aria-expanded="false" aria-controls="map-zoom-flyout">
+            aria-haspopup="dialog" aria-expanded="false" aria-controls="map-zoom-flyout">
       <span data-zoom-face aria-hidden="true"></span>
     </button>
-    <div id="map-zoom-flyout" role="group" hidden>
+    <div id="map-zoom-flyout" role="dialog" aria-label="Zoom" hidden>
       <button type="button" data-zoom-step="out">-</button>
       <div aria-hidden="true">
         <ol data-zoom-ticks></ol>
@@ -66,8 +66,7 @@ const map = {
   getZoom: () => zoom,
   getMinZoom: () => 4,
   getMaxZoom: () => 18,
-  zoomIn: vi.fn(),
-  zoomOut: vi.fn(),
+  zoomTo: vi.fn(),
 };
 window.MAP = map;
 window.pwaZoomGates = {
@@ -89,14 +88,27 @@ function fireZoom() {
   for (const fn of handlers.zoom || []) fn();
 }
 
+/**
+ * Fire MapLibre's `moveend`.
+ *
+ * @param {object} [event] The event data; `originalEvent` marks a gesture.
+ */
+function fireMoveEnd(event = {}) {
+  for (const fn of handlers.moveend || []) fn(event);
+}
+
+/** @returns {Array<number>} Every zoomTo target, in order. */
+const targets = () => map.zoomTo.mock.calls.map((call) => call[0]);
+
 /** @returns {string} The roundel's face. */
 const faceText = () => toggle.querySelector('[data-zoom-face]').textContent;
 
 beforeEach(() => {
   zoom = 10.4;
   terrainOn = false;
-  map.zoomIn.mockClear();
-  map.zoomOut.mockClear();
+  // A gesture ends any step a previous test left pending.
+  fireMoveEnd({ originalEvent: new Event('touchend') });
+  map.zoomTo.mockClear();
   if (!flyout.hidden) toggle.click();
   fireZoom();
 });
@@ -112,6 +124,21 @@ describe('the roundel', () => {
     fireZoom();
     expect(faceText()).toBe('13');
     expect(toggle.getAttribute('aria-label')).toBe('Zoom level 13');
+  });
+});
+
+describe('the roundel\'s writes', () => {
+  it('skips the face and name when a zoom frame leaves the whole zoom unchanged', () => {
+    const spy = vi.spyOn(toggle, 'setAttribute');
+    zoom = 10.6;
+    fireZoom();
+    zoom = 10.8;
+    fireZoom();
+    expect(spy.mock.calls.filter((c) => c[0] === 'aria-label')).toEqual([]);
+    zoom = 11.1;
+    fireZoom();
+    expect(spy.mock.calls.filter((c) => c[0] === 'aria-label')).toHaveLength(1);
+    spy.mockRestore();
   });
 });
 
@@ -141,13 +168,60 @@ describe('the flyout', () => {
     expect(flyout.hidden).toBe(true);
   });
 
-  it('calls zoomOut and zoomIn from − and +, and stays open', () => {
+  it('zooms one level out and in from − and +, and stays open', () => {
     toggle.click();
     zoomOutBtn.click();
+    expect(targets()).toEqual([9.4]);
+    zoom = 9.4;
+    fireMoveEnd();
     zoomInBtn.click();
-    expect(map.zoomOut).toHaveBeenCalledTimes(1);
-    expect(map.zoomIn).toHaveBeenCalledTimes(1);
+    expect(targets()).toEqual([9.4, 10.4]);
     expect(flyout.hidden).toBe(false);
+  });
+
+  it('moves two levels for two quick taps, stepping from the pending target', () => {
+    toggle.click();
+    zoom = 10;
+    zoomOutBtn.click();
+    // The first step's animation is part-way when the second tap lands.
+    zoom = 9.6;
+    fireZoom();
+    zoomOutBtn.click();
+    expect(targets()).toEqual([9, 8]);
+
+    // The second zoomTo stops the first animation short of its target;
+    // that moveend must not forget where the map is going.
+    fireMoveEnd();
+    zoomOutBtn.click();
+    expect(targets()).toEqual([9, 8, 7]);
+
+    zoom = 7;
+    fireMoveEnd();
+    zoomInBtn.click();
+    expect(targets().at(-1)).toBe(8);
+  });
+
+  it('clamps a step to the range, and disables + once it targets the maximum', () => {
+    toggle.click();
+    zoom = 17.2;
+    zoomInBtn.click();
+    expect(targets()).toEqual([18]);
+    // Disabled on the tap, not when the animation lands, so a second
+    // quick tap has nothing further to ask for.
+    expect(zoomInBtn.disabled).toBe(true);
+    zoomInBtn.click();
+    expect(targets()).toEqual([18]);
+  });
+
+  it('moves focus to the other step when the focused one is disabled', () => {
+    toggle.click();
+    zoom = 17.5;
+    fireZoom();
+    zoomInBtn.focus();
+    expect(document.activeElement).toBe(zoomInBtn);
+    zoomInBtn.click();
+    expect(zoomInBtn.disabled).toBe(true);
+    expect(document.activeElement).toBe(zoomOutBtn);
   });
 
   it('disables − at the minimum zoom and + at the maximum', () => {
