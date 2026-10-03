@@ -119,6 +119,12 @@
   // why it is rendered as a whole URL instead of being reversed here.
   const SLOPE_TILE_URL = mapEl.dataset.slopeTileUrl || null;
   const SLOPE_ELIGIBLE = mapEl.dataset.slopeLayerEligible === 'true';
+  // SNOW-978: the terrain filter's class-tile template and its gate —
+  // settings.TERRAIN_CLASS_TILE_URL being configured. The template is
+  // emitted only for an eligible page, so both have to be present.
+  const TERRAIN_CLASS_TILE_URL = mapEl.dataset.terrainClassTileUrl || null;
+  const TERRAIN_FILTER_ELIGIBLE =
+    mapEl.dataset.terrainFilterEligible === 'true' && !!TERRAIN_CLASS_TILE_URL;
 
   // SNOW-672: marker tints, in one place. MapLibre paint properties cannot
   // reference a CSS custom property, so these two literals are the JS side
@@ -438,6 +444,9 @@
     // map should open in for someone who came to read danger ratings.
     weather: false,
     routes: false, slope: false,
+    // SNOW-978: off by default, like slope — it tints whole tracts of
+    // ground. window.pwaTerrainFilter is its one writer.
+    terrain_filter: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -541,7 +550,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope']) {
+  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope', 'terrain_filter']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   // The three EAWS boundary tiers. At most one is configured on, so each asks
@@ -4269,6 +4278,327 @@
   // mid-gesture, and one DOM write per gesture is the right budget.
   map.on('moveend', updateSlopeRowAvailability);
 
+  // SNOW-978: the terrain filter — ground highlighted by aspect, slope angle
+  // and elevation.
+  //
+  // The tiles carry FACTS, not colour: each pixel of a terrain-class tile
+  // holds a height, an aspect octant and a 5° slope band (the contract is in
+  // static/js/terrain_filter_core.js and in
+  // docs/decisions/terrain-filter-is-class-tiles-filtered-on-device.md). So
+  // the colour is made here, on the device, by a custom MapLibre protocol:
+  //
+  //   terrainfilter://{z}/{x}/{y}?v=<filter hash>
+  //     → fetch the class tile (204 or an error: no tile)
+  //     → decode it to pixels once, and keep it in a 64-tile LRU
+  //     → paint it for the current filter (terrain_filter_core.paintTile)
+  //     → hand MapLibre an ImageBitmap.
+  //
+  // A filter change only changes the hash: setTiles makes MapLibre ask for
+  // every tile again, and each answer comes out of the LRU with no network.
+  //
+  // The class tiles are cached by the service worker like any basemap tile
+  // when their origin is a registered basemap origin (tiles.snowdesk-data.info
+  // already is), so ground viewed with the filter on stays filterable offline.
+  // Nothing here fights or extends that.
+  const TERRAIN_CORE = self.pwaTerrainFilterCore;
+  const TERRAIN_SOURCE_ID = 'terrain-filter';
+  const TERRAIN_LAYER_ID = 'terrain-filter-raster';
+  // How long a burst of filter edits waits before the repaint. Each repaint
+  // re-requests every visible tile, so a reader clicking through four
+  // aspects should cost one.
+  const TERRAIN_REPAINT_DELAY_MS = 150;
+  const TERRAIN_CLASS_CACHE_TILES = 64;
+
+  let terrainFilter = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
+    ? TERRAIN_CORE.parseFilter(readStorage(TERRAIN_FILTER_STORAGE_KEY))
+    : null;
+  let terrainClassify = terrainFilter ? TERRAIN_CORE.createFilterClassifier(terrainFilter) : null;
+  const terrainClassCache = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
+    ? TERRAIN_CORE.createTileCache(TERRAIN_CLASS_CACHE_TILES)
+    : null;
+  let terrainProtocolRegistered = false;
+  let terrainRepaintTimer = null;
+  let terrainAvailability = null;
+
+  /**
+   * A 2D canvas of one tile's size — an OffscreenCanvas where the browser
+   * has one, a detached <canvas> where it does not.
+   *
+   * @param {number} size Edge in pixels.
+   * @returns {OffscreenCanvas|HTMLCanvasElement}
+   */
+  const terrainCanvas = (size) => {
+    if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(size, size);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    return canvas;
+  };
+
+  /**
+   * Decode a class-tile PNG to its raw pixels.
+   *
+   * `premultiplyAlpha: 'none'` and `colorSpaceConversion: 'none'` are the
+   * whole point: these bytes are numbers, not colours, and a browser that
+   * colour-managed them would move every height and every octant. The
+   * tiles are opaque, so premultiplication would be a no-op anyway — the
+   * colour-space flag is the one that matters.
+   *
+   * @param {Blob} blob The PNG.
+   * @returns {Promise<Uint8ClampedArray>}
+   */
+  const decodeTerrainClassTile = async (blob) => {
+    const size = TERRAIN_CORE.TILE_SIZE;
+    const bitmap = await createImageBitmap(blob, {
+      premultiplyAlpha: 'none',
+      colorSpaceConversion: 'none',
+    });
+    const canvas = terrainCanvas(size);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0);
+    if (typeof bitmap.close === 'function') bitmap.close();
+    return ctx.getImageData(0, 0, size, size).data;
+  };
+
+  /**
+   * The class pixels for one tile, or null where there is nothing to draw.
+   *
+   * A 204 inside the coverage rectangle is ground the survey has no data
+   * for, so it becomes a whole tile of no-data pixels (hatched); outside
+   * the rectangle it is simply nothing. A 204 is cached like any tile; a
+   * failed request is not, so the next pass tries again. An abort is
+   * re-thrown: MapLibre cancelled the tile and expects the rejection.
+   *
+   * @param {{z: number, x: number, y: number}} tile
+   * @param {AbortSignal} signal
+   * @returns {Promise<Uint8ClampedArray|null>}
+   */
+  const loadTerrainClassTile = async (tile, signal) => {
+    const key = `${tile.z}/${tile.x}/${tile.y}`;
+    const cached = terrainClassCache.get(key);
+    if (cached !== undefined) return cached;
+    const empty = TERRAIN_CORE.tileInCoverage(tile.z, tile.x, tile.y)
+      ? TERRAIN_CORE.noDataTile()
+      : null;
+    let response;
+    try {
+      response = await fetch(
+        TERRAIN_CORE.tileUrl(TERRAIN_CLASS_TILE_URL, tile.z, tile.x, tile.y),
+        { signal, credentials: 'omit' },
+      );
+    } catch (err) {
+      if (signal.aborted) throw err;
+      return empty;
+    }
+    if (response.status === 204) {
+      terrainClassCache.set(key, empty);
+      return empty;
+    }
+    if (!response.ok) return empty;
+    const pixels = await decodeTerrainClassTile(await response.blob());
+    terrainClassCache.set(key, pixels);
+    return pixels;
+  };
+
+  /**
+   * MapLibre's handler for `terrainfilter://` — never resolves without an
+   * image: in 4.7.1 a falsy `data` leaves the tile pending forever, so
+   * "nothing here" is a transparent bitmap rather than an empty answer.
+   *
+   * @param {{url: string}} params
+   * @param {AbortController} abortController
+   * @returns {Promise<{data: ImageBitmap}>}
+   */
+  const terrainFilterProtocol = async (params, abortController) => {
+    const tile = TERRAIN_CORE.parseProtocolUrl(params.url);
+    if (!tile) throw new Error(`terrain filter: not a tile url: ${params.url}`);
+    const pixels = await loadTerrainClassTile(tile, abortController.signal);
+    const size = TERRAIN_CORE.TILE_SIZE;
+    const out = new Uint8ClampedArray(size * size * 4);
+    if (pixels) {
+      TERRAIN_CORE.paintTile(pixels, out, terrainClassify, TERRAIN_CORE.PALETTE, tile);
+    }
+    return { data: await createImageBitmap(new ImageData(out, size, size)) };
+  };
+
+  /**
+   * Register the protocol once, lazily — only an eligible page with a
+   * MapLibre that has `addProtocol` ever does (the Vitest harness stubs
+   * maplibregl without it).
+   *
+   * @returns {boolean} Whether the protocol is available.
+   */
+  const ensureTerrainFilterProtocol = () => {
+    if (terrainProtocolRegistered) return true;
+    if (typeof maplibregl === 'undefined' || typeof maplibregl.addProtocol !== 'function') {
+      return false;
+    }
+    maplibregl.addProtocol(TERRAIN_CORE.PROTOCOL, terrainFilterProtocol);
+    terrainProtocolRegistered = true;
+    return true;
+  };
+
+  /**
+   * Where the filter can show anything, for the sheet's availability line.
+   *
+   * @returns {'ok'|'zoom-in'|'out-of-coverage'}
+   */
+  const currentTerrainAvailability = () => {
+    const centre = map.getCenter();
+    return TERRAIN_CORE.availability({ zoom: map.getZoom(), lng: centre.lng, lat: centre.lat });
+  };
+
+  /**
+   * Tell the sheet, the chip and the menu row the filter's state moved.
+   *
+   * @returns {void}
+   */
+  const announceTerrainFilter = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed', {
+      detail: {
+        enabled: !!overlayState.terrain_filter,
+        filter: TERRAIN_CORE.normaliseFilter(terrainFilter),
+        availability: terrainAvailability,
+      },
+    }));
+  };
+
+  /**
+   * Install the terrain filter's raster source and layer, hidden unless the
+   * filter is on.
+   *
+   * Idempotent — early-returns when the source is already present, so the
+   * styledata re-install handler can call it on every basemap swap. Like
+   * slope, it is installed eagerly: a layer at `visibility: none` requests
+   * no tiles, so the hidden layer costs one source entry and no network.
+   *
+   * @returns {void}
+   */
+  const installTerrainFilterLayer = () => {
+    if (!TERRAIN_FILTER_ELIGIBLE || !TERRAIN_CORE) return;
+    if (map.getSource(TERRAIN_SOURCE_ID)) return;
+    if (!ensureTerrainFilterProtocol()) return;
+
+    map.addSource(TERRAIN_SOURCE_ID, {
+      type: 'raster',
+      tiles: [TERRAIN_CORE.protocolTileUrl(TERRAIN_CORE.filterHash(terrainFilter))],
+      tileSize: TERRAIN_CORE.TILE_SIZE,
+      // The tiles exist at z12–14 only; above 14 MapLibre overzooms the z14
+      // tile, which for a nearest-sampled raster of facts is exact.
+      minzoom: TERRAIN_CORE.MIN_ZOOM,
+      maxzoom: TERRAIN_CORE.MAX_ZOOM,
+      bounds: TERRAIN_CORE.COVERAGE_BOUNDS,
+      // Names the dataset, for the reason slope's attribution does: a bare
+      // "© swisstopo" would merge with the swisstopo basemaps' own credit.
+      attribution:
+        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
+        + 'swisstopo — swissALTI3D</a>',
+    });
+
+    // Under the choropleth, beside slope — the same beforeId rule, for the
+    // same reason (the two install paths run in opposite orders).
+    const beforeId = map.getLayer('regions-fill') ? 'regions-fill' : undefined;
+    map.addLayer(
+      {
+        id: TERRAIN_LAYER_ID,
+        type: 'raster',
+        source: TERRAIN_SOURCE_ID,
+        layout: { visibility: overlayState.terrain_filter ? 'visible' : 'none' },
+        paint: {
+          // The translucency is in the painted pixels (terrain_filter_core's
+          // PALETTE), so the layer itself is fully opaque.
+          'raster-opacity': 1,
+          // Categorical, like slope: interpolating would invent half-matches.
+          'raster-resampling': 'nearest',
+          // A filter change repaints in place; a cross-fade would show the
+          // old filter and the new one at once.
+          'raster-fade-duration': 0,
+        },
+      },
+      beforeId,
+    );
+
+    raiseMarkerLayers();
+    attributionSourceIds = null;
+    updateMapAttribution();
+
+    terrainAvailability = currentTerrainAvailability();
+    announceTerrainFilter();
+  };
+
+  /**
+   * Repaint every visible tile for the current filter, debounced.
+   *
+   * MapLibre 4.7.1's raster source has `setTiles`; the remove-and-re-add
+   * branch is for a build that does not.
+   *
+   * @returns {void}
+   */
+  const scheduleTerrainRepaint = () => {
+    clearTimeout(terrainRepaintTimer);
+    terrainRepaintTimer = setTimeout(() => {
+      terrainRepaintTimer = null;
+      const source = map.getSource(TERRAIN_SOURCE_ID);
+      if (!source) return;
+      const tiles = [TERRAIN_CORE.protocolTileUrl(TERRAIN_CORE.filterHash(terrainFilter))];
+      if (typeof source.setTiles === 'function') {
+        source.setTiles(tiles);
+        return;
+      }
+      if (map.getLayer(TERRAIN_LAYER_ID)) map.removeLayer(TERRAIN_LAYER_ID);
+      map.removeSource(TERRAIN_SOURCE_ID);
+      installTerrainFilterLayer();
+    }, TERRAIN_REPAINT_DELAY_MS);
+  };
+
+  /**
+   * Switch the filter on or off, and remember it.
+   *
+   * @param {boolean} on
+   * @returns {void}
+   */
+  const setTerrainFilterEnabled = (on) => {
+    overlayState.terrain_filter = on;
+    writeStorage(OVERLAY_STORAGE_KEY.terrain_filter, String(on));
+    installTerrainFilterLayer();
+    for (const layerId of OVERLAY_LAYERS.terrain_filter) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', on ? 'visible' : 'none');
+      }
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    announceTerrainFilter();
+  };
+
+  if (TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE) {
+    // The sheet's availability line moves with the camera. Announced only
+    // when the answer changes, so a pan inside one state costs nothing.
+    map.on('moveend', () => {
+      const next = currentTerrainAvailability();
+      if (next === terrainAvailability) return;
+      terrainAvailability = next;
+      announceTerrainFilter();
+    });
+
+    // The terrain filter's one owner of state. terrain_filter_sheet.js is
+    // its only control and knows nothing about MapLibre; this owns the
+    // storage, the layer and the announcement.
+    window.pwaTerrainFilter = Object.freeze({
+      isEnabled: () => !!overlayState.terrain_filter,
+      show: () => setTerrainFilterEnabled(true),
+      hide: () => setTerrainFilterEnabled(false),
+      getFilter: () => TERRAIN_CORE.normaliseFilter(terrainFilter),
+      setFilter(next) {
+        terrainFilter = TERRAIN_CORE.normaliseFilter(next);
+        terrainClassify = TERRAIN_CORE.createFilterClassifier(terrainFilter);
+        writeStorage(TERRAIN_FILTER_STORAGE_KEY, TERRAIN_CORE.serialiseFilter(terrainFilter));
+        scheduleTerrainRepaint();
+        announceTerrainFilter();
+      },
+      availability: () => terrainAvailability || currentTerrainAvailability(),
+    });
+  }
+
   // SNOW-323: Install the bulletin-groupings source and line layer.
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
@@ -7264,6 +7594,8 @@
     // when that layer already exists, so the ordering survives the
     // styledata path running these two the other way round.
     installSlopeLayer();
+    // SNOW-978: beside slope, under the choropleth on the same terms.
+    installTerrainFilterLayer();
     installRegionsLayers(geojson);
     // The downloaded-areas overlay is a persisted preference now, so a
     // reload with it switched on has to arrive with the squares ON the map.
@@ -9412,7 +9744,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope']) {
+      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope', 'terrain_filter']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
@@ -9462,6 +9794,8 @@
       // its own `beforeId` against 'regions-fill', so it slots underneath
       // either way and neither call site has to know the other's order.
       installSlopeLayer();
+      // SNOW-978: the terrain filter went with the style as well.
+      installTerrainFilterLayer();
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted
       // visibility from overlayState.

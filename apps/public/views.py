@@ -831,6 +831,11 @@ def map_page(request: HttpRequest) -> HttpResponse:
                                 configured (SNOW-691, SNOW-724).
       ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
                                 or "" while ineligible (SNOW-691).
+      ``terrain_filter_eligible`` — True when
+                                ``settings.TERRAIN_CLASS_TILE_URL`` is
+                                configured (SNOW-978).
+      ``terrain_class_tile_url`` — XYZ template for the terrain filter's
+                                class tiles, or "" while ineligible.
 
     Args:
         request: The incoming HTTP request.
@@ -909,6 +914,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_overlay_context()
     slope_ctx = _slope_context(request)
+    terrain_filter_ctx = _terrain_filter_context()
     trips_ctx = _trips_context()
 
     return render(
@@ -925,6 +931,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
             **community_reports_ctx,
             **weather_ctx,
             **slope_ctx,
+            **terrain_filter_ctx,
             **trips_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
@@ -2044,6 +2051,27 @@ def _slope_context(request: HttpRequest) -> dict[str, Any]:
     return {
         "slope_layer_eligible": eligible,
         "slope_tile_url": settings.SLOPE_TILE_URL if eligible else "",
+    }
+
+
+def _terrain_filter_context() -> dict[str, Any]:
+    """Build the template context dict for the map's terrain filter (SNOW-978).
+
+    Eligibility is ``settings.TERRAIN_CLASS_TILE_URL`` being configured —
+    it defaults to empty, so the filter is off until an operator sets it.
+    As with the slope layer, an ineligible page carries neither the menu
+    row nor the tile template: a template in the DOM would be an
+    invitation to install a layer the environment has withdrawn.
+
+    Returns:
+        Dict with ``terrain_filter_eligible`` and ``terrain_class_tile_url``
+        (empty string while ineligible).
+
+    """
+    eligible = bool(settings.TERRAIN_CLASS_TILE_URL)
+    return {
+        "terrain_filter_eligible": eligible,
+        "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL if eligible else "",
     }
 
 
