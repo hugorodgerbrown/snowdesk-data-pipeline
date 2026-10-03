@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-03
 ---
 
 # Map page — functional specification
@@ -440,9 +440,11 @@ The resort editor is superuser-scoped by an ordinary
 The **Slope angle** overlay shades the ground by steepness, so a visitor
 can ask "is the line I am looking at in the range this bulletin is talking
 about?" without leaving the map. It is not user-generated and not issued by
-an avalanche service, which is why it sits in a **Terrain** section of its
-own rather than under Conditions: slope is a permanent property of the
-ground, and does not change with the day being scrubbed to.
+an avalanche service, which is why it is not under Conditions: slope is a
+permanent property of the ground, and does not change with the day being
+scrubbed to. It had a **Terrain** section of its own until SNOW-904 moved
+its row under **Basemap**, below a hairline, as "Display slope angles" —
+one of the things drawn on top of whichever basemap is chosen (§3.6).
 
 **What it shows.** Five bands, in the classification the SLF recommends and
 Swiss tourers already read on swisstopo's own maps: 30–35°, 35–40°, 40–45°,
@@ -498,6 +500,55 @@ warnings and therefore not optional chrome. A slope shading is the single
 easiest surface on this map to misread as permission, which is the whole
 reason all three of those sentences are there.
 
+### 3.5b Terrain filter — ground by aspect, slope and elevation (SNOW-978)
+
+The **terrain filter** tints the ground that matches three things a
+bulletin uses to say where the danger is: the **aspect** a slope faces (any
+of eight), its **slope angle** (from 30° up, optionally capped below 35–50°)
+and, optionally, a band of **elevation** (100 m steps). It answers "which
+of the slopes around me is the bulletin talking about?".
+
+**How it is drawn.** Matching ground gets a see-through blue
+(`--color-terrain-match`, about 45%), so contours and hillshade stay
+readable. Ground that does not match is left **untouched** — no veil. Ground
+the tiles carry **no data** for is **hatched**, so blank never has to mean
+"no data". Level ground (a lake) faces no direction and never matches. The
+layer sits **under the region choropleth**, beside the slope layer.
+
+**Where it is controlled.** One row in the layers menu, under Basemap after
+"Display slope angles": **"Terrain filter…"**. It is the menu's one ACTION
+row — it always opens the filter's sheet rather than toggling anything —
+because the filter has more than one control and the menu holds one action
+per row. The sheet carries the on/off switch, eight compass toggles (the
+aspect wheel's order and words), the slope range, the elevation band, its
+own colour key (the legend is hidden on a phone while a route is open) and a
+line explaining an empty map: **"zoom in"** below z12, **"outside coverage"**
+outside Switzerland. While the filter is on, the row shows a short summary
+("3 aspects · 35°+"), the menu header counts it as a layer, a **chip** at the
+top of the map repeats the filter in full ("N, NE, NW · 35°+ · above
+2,400 m") and opens the sheet on a tap, and the legend shows a **Terrain
+filter** section: Matches the filter / No data.
+
+**Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set. It
+defaults to empty, which removes the row, the chip, the sheet and the CSP
+entry. **Off by default** for the reason slope is. The filter and the switch
+persist on the device (`snowdesk.map.terrain_filter`,
+`snowdesk.map.overlay.terrain_filter`).
+
+**The tiles carry facts, not colour.** Each pixel of a terrain-class tile
+holds the height, the aspect octant and a 5° slope band; the device paints
+them for the reader's filter, so a filter change repaints from tiles already
+held with no network, and the server never learns what anyone filters for.
+Contract and rationale:
+[decisions/terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
+Tiles exist at z12–14 and are overzoomed above. Viewed tiles are cached by
+the service worker like basemap tiles, because their origin is a registered
+basemap origin.
+
+**The editorial line is on `/help/#help-topic-terrain-filter`**, linked from
+the legend and the sheet: terrain only, no runout zones, not a hazard
+verdict, Switzerland only, hatched means no data.
+
 ---
 
 ## 3.6 What the layer menu lists (SNOW-904)
@@ -515,7 +566,7 @@ Four sections, each collapsible and each remembering how it was left, with
 | **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
 | **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
 | **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Basemap** | one radio per basemap · Display slope angles (absent without `SLOPE_TILE_URL`), Display downloaded areas | The geographic backdrop; then, under a hairline, the two things drawn ON TOP of whichever one is chosen |
+| **Basemap** | one radio per basemap · Display slope angles (absent without `SLOPE_TILE_URL`), Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet, §3.5b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
 
 Four things about that layout are decisions rather than accidents, and a
 tidy-up would undo each of them:
