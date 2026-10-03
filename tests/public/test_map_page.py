@@ -1905,3 +1905,67 @@ class TestTheMapPageFitsTheScreen:
         body = self._body(".map-fullscreen")
         assert "min-height" not in body
         assert re.search(r"(^|;|\s)height:\s*100dvh", body)
+
+
+TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_renders_when_tile_url_configured() -> None:
+    """SNOW-978: an eligible page carries the filter's every surface.
+
+    The tile template reaches ``#map`` for map.js; the layers menu gets the
+    "Terrain filter…" action row (no aria-checked — it opens a sheet); the
+    chip, the legend section, the sheet and its two templates render; and
+    both scripts load.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert 'data-terrain-filter-eligible="true"' in content
+    assert f'data-terrain-class-tile-url="{TERRAIN_CLASS_URL}"' in content
+    assert "Terrain filter…" in content
+    assert 'id="map-terrain-filter-chip"' in content
+    assert 'data-testid="map-legend-terrain-filter"' in content
+    assert 'id="map-terrain-filter-sheet"' in content
+    assert 'id="map-terrain-filter-template"' in content
+    assert 'id="map-terrain-filter-strings-template"' in content
+    assert "js/terrain_filter_core" in content
+    assert "js/terrain_filter_sheet" in content
+    row = content[content.index('role="menuitem"') :][:400]
+    assert "data-terrain-filter-open" in row
+    assert "aria-checked" not in row
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_terrain_filter_absent_without_tile_url() -> None:
+    """SNOW-978: the setting defaults to empty, which turns the filter off.
+
+    Nothing of it renders — no row, no chip, no sheet, no script, and above
+    all no tile template, which would be an invitation to install a layer
+    the environment has not configured.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert 'data-terrain-filter-eligible="false"' in content
+    assert "data-terrain-class-tile-url=" not in content
+    assert "data-terrain-filter-open" not in content
+    assert 'id="map-terrain-filter-sheet"' not in content
+    assert "js/terrain_filter_sheet" not in content
+    # The core is a plain library and loads either way.
+    assert "js/terrain_filter_core" in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_row_sits_under_basemap_after_slope() -> None:
+    """SNOW-978: the row is drawn ON the basemap, so it lives under Basemap,
+    after "Display slope angles" and before the downloaded-areas row.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    group = content[content.index('id="basemap-menu-group-basemap"') :]
+    slope = group.index('data-overlay-key="slope"')
+    terrain = group.index("data-terrain-filter-open")
+    downloads = group.index('data-overlay-key="downloads"')
+    assert slope < terrain < downloads

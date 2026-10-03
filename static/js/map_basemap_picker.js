@@ -137,13 +137,34 @@
    * @returns {string}
    */
   const shortLabel = (item) => {
-    const full = self.pwaStrings.collapse(item.textContent);
+    // SNOW-978: a row with a second line (the terrain filter's summary)
+    // names itself by its label span alone, and the "…" that marks it as
+    // opening a sheet is no part of its name.
+    const labelEl = item.querySelector('[data-row-label]');
+    const full = self.pwaStrings.collapse((labelEl || item).textContent).replace(/…$/, '');
     const withoutParenthetical = full.replace(/\s*\([^)]*\)$/, '').trim();
     const prefix = STRINGS['label-prefix'];
     if (prefix && withoutParenthetical.toLowerCase().startsWith(`${prefix.toLowerCase()} `)) {
       return withoutParenthetical.slice(prefix.length + 1);
     }
     return withoutParenthetical;
+  };
+
+  /**
+   * Whether a row's layer is on.
+   *
+   * ``aria-checked`` for every checkbox and radio row. SNOW-978's terrain
+   * filter row is an action row — it opens a sheet and carries no checked
+   * state — so it is on when the bridge says the filter is.
+   *
+   * @param {HTMLElement} row - a ``.basemap-menu-item``.
+   * @returns {boolean}
+   */
+  const rowIsOn = (row) => {
+    if (row.hasAttribute('data-terrain-filter-open')) {
+      return !!(window.pwaTerrainFilter && window.pwaTerrainFilter.isEnabled());
+    }
+    return row.getAttribute('aria-checked') === 'true';
   };
 
   /**
@@ -159,7 +180,7 @@
    */
   const summaryFor = (group) => {
     const rows = Array.from(group.querySelectorAll('.basemap-menu-item'));
-    const checked = rows.filter((row) => row.getAttribute('aria-checked') === 'true');
+    const checked = rows.filter(rowIsOn);
     if (checked.length === 0) return STRINGS['none-selected'];
     const named = checked.map(shortLabel).join(', ');
     if (named.length <= MAX_SUMMARY_CHARS) return named;
@@ -185,8 +206,9 @@
     if (countEl) {
       const on = items.filter(
         (item) =>
-          item.classList.contains('basemap-menu-item--overlay') &&
-          item.getAttribute('aria-checked') === 'true',
+          (item.classList.contains('basemap-menu-item--overlay') ||
+            item.hasAttribute('data-terrain-filter-open')) &&
+          rowIsOn(item),
       ).length;
       if (on === 0) {
         countEl.textContent = STRINGS['count-none'];
@@ -498,6 +520,14 @@
       // aria-disabled here — the source of truth is that module's probe, so
       // there's no state to toggle and no basemap to swap to.
       if (item.getAttribute('aria-disabled') === 'true') return;
+
+      // SNOW-978: the terrain filter row opens its sheet and toggles
+      // nothing. The sheet announces itself to window.pwaMapOverlays, which
+      // closes this menu on the way in.
+      if (item.hasAttribute('data-terrain-filter-open')) {
+        window.pwaTerrainFilterSheet?.open();
+        return;
+      }
 
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;

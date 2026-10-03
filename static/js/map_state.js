@@ -135,6 +135,13 @@ const OVERLAY_STORAGE_KEY = {
   // and a visitor who opened the map to read danger ratings did not ask for a
   // second full-screen colour scheme under them.
   slope: 'snowdesk.map.overlay.slope',
+  // SNOW-978: the terrain filter's on/off. Gated on
+  // settings.TERRAIN_CLASS_TILE_URL — read and written only when #map
+  // carries data-terrain-filter-eligible="true". Defaults OFF for the same
+  // reason slope does: it paints whole tracts of ground, not features. The
+  // filter itself (aspects, slope, elevation) is a separate JSON blob under
+  // TERRAIN_FILTER_STORAGE_KEY below; this key is only the switch.
+  terrain_filter: 'snowdesk.map.overlay.terrain_filter',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -239,6 +246,8 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-691: the raster alone. The coverage outline that rode alongside it
   // was removed; see slope_overlay_core.js's header.
   slope: ['slope-raster'],
+  // SNOW-978: one raster layer, painted on the device from class tiles.
+  terrain_filter: ['terrain-filter-raster'],
 });
 
 // SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF
@@ -331,6 +340,12 @@ function mapDefaults() {
 }
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+// SNOW-978: the terrain filter's criteria — aspects, slope range and
+// elevation band — as ONE JSON blob, for the same reason the viewport is
+// one: the parts only mean something together. Parsed and serialised by
+// ``self.pwaTerrainFilterCore`` (terrain_filter_core.js), which falls back
+// to the defaults for anything it cannot read.
+const TERRAIN_FILTER_STORAGE_KEY = 'snowdesk.map.terrain_filter';
 // SNOW-737: where the visitor last left the camera. ONE key holding a JSON
 // blob of all five numbers, deliberately unlike the boolean-per-key shape
 // above: a centre, a zoom, a bearing and a pitch are only meaningful

@@ -75,6 +75,7 @@ from apps.public._component_fixtures import (
     STATUS_PAGE_VARIANTS,
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
+    TERRAIN_FILTER_KEY_VARIANTS,
     THEME_PREFERENCE_VARIANTS,
     THREE_WORD_ADDRESS_VARIANTS,
     TOAST_BANNER_VARIANTS,
@@ -538,6 +539,25 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             ),
             Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
             Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="terrain-filter",
+        label="Terrain filter",
+        description=(
+            "The map's terrain filter (SNOW-978): ground matching the "
+            "reader's aspect / slope / elevation filter, tinted at about 45% "
+            "so contours read through it, and the hatch over ground the "
+            "tiles carry no data for. Theme-invariant, like every map mark. "
+            "The pixels are painted on the device by "
+            "static/js/terrain_filter_core.js, which carries these two as "
+            "literals; a Vitest test holds them equal."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-terrain-match", "Matches the filter", "#2563eb", None),
+            Token("--color-terrain-nodata", "No data (hatch)", "#475569", None),
         ),
     ),
     FoundationCategory(
@@ -1410,6 +1430,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_switch.html",
         variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="terrain-filter-key",
+        label="Terrain filter key",
+        description=(
+            "The map terrain filter's two-row colour key (SNOW-978): the "
+            "match tint and the no-data hatch. Rendered in the map legend and "
+            "inside the filter sheet, which carries its own key because the "
+            "legend is hidden on a phone while a route is open."
+        ),
+        kind="components",
+        partial="includes/_terrain_filter_key.html",
+        variants=TERRAIN_FILTER_KEY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

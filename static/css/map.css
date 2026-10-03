@@ -310,6 +310,29 @@
     gap: 8px;
 }
 
+/* SNOW-978: the terrain filter's chip — centred along the top edge, level
+   with the search cluster, so it never sits under the route panel's
+   top-left column or the roundels. Shown only while the filter is on. */
+.map-terrain-filter-chip {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 2 * var(--map-edge-inset-right) - 112px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.map-terrain-filter-chip[hidden] {
+    display: none;
+}
+
 /* Bottom-right control stack — every roundel (basemap, locate, and the
    flag-gated favourite + observation pills) in one bottom-anchored column,
    with the help (?) roundel at the foot so it sits level with the bottom-left
@@ -786,6 +809,24 @@
     border-radius: 50%;
     background: transparent;
     transition: background 120ms ease, border-color 120ms ease;
+}
+
+/* SNOW-978: an action row that opens a sheet has no checked state, so its
+   indicator is kept for alignment and never drawn. Its label can carry a
+   second, quieter line (the terrain filter's summary while it is on). */
+.basemap-menu-item--sheet::before {
+    visibility: hidden;
+}
+
+.basemap-menu-item-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.basemap-menu-item-detail {
+    color: var(--color-text-3);
+    font-size: 12px;
 }
 
 .basemap-menu-item[aria-checked="true"]::before {
@@ -1801,6 +1842,24 @@ html:has(> body.map-fullscreen) > body {
 .map-legend-swatch--slope-40 { background: var(--color-slope-40); }
 .map-legend-swatch--slope-45 { background: var(--color-slope-45); }
 .map-legend-swatch--slope-50 { background: var(--color-slope-50); }
+
+/* SNOW-978: the terrain filter's key — in the legend and in the filter
+   sheet's own key. The match swatch carries the map's 45% so the key shows
+   the tint as it reads over ground; the no-data swatch is the hatch, drawn
+   as a gradient for the same reason the downloaded-areas swatch is. */
+.map-legend-swatch--terrain-match {
+    background: color-mix(in srgb, var(--color-terrain-match) 45%, transparent);
+    border-color: var(--color-terrain-match);
+}
+.map-legend-swatch--terrain-nodata {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--color-terrain-nodata) 0,
+        var(--color-terrain-nodata) 1.5px,
+        transparent 1.5px,
+        transparent 4px
+    );
+}
 
 /* SNOW-1017: the route's two kinds of leg, drawn as the lines they are —
    a climb dashed, a descent solid, in the rail's two colours. A gradient

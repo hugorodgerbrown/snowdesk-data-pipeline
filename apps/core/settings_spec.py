@@ -330,6 +330,13 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         validator=absolute_url,
         note="Slope-angle raster XYZ tile template",
     ),
+    # SNOW-978: an XYZ template like SLOPE_TILE_URL, but empty by default —
+    # empty means the terrain filter is off, which ``absolute_url`` accepts.
+    SettingSpec(
+        "TERRAIN_CLASS_TILE_URL",
+        validator=absolute_url,
+        note="Terrain-filter class tile XYZ template; empty turns the filter off",
+    ),
     # SNOW-917: a BASE, not a template — Django composes ``grid.json`` and
     # ``{x}/{y}.s16`` under it, so the only shape worth asserting is that it
     # is an absolute http(s) URL to concatenate onto.

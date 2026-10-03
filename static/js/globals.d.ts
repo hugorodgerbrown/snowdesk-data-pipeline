@@ -52,6 +52,8 @@ interface Window {
   pwaViewportCore: any;
   /** static/js/slope_overlay_core.js — swisstopo coverage predicate. */
   pwaSlopeOverlayCore: any;
+  /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */
+  pwaTerrainFilterCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
   pwaWeatherCore: any;
   /** static/js/elevation_profile_core.js — route elevation profile maths. */
@@ -106,6 +108,10 @@ interface Window {
   pwaRouteLeader: any;
   /** static/js/map.js — the route cursor's screen point on the map. */
   pwaRouteCursorMap: any;
+  /** static/js/map.js — the terrain filter's state: show/hide, get/setFilter. */
+  pwaTerrainFilter: any;
+  /** static/js/terrain_filter_sheet.js — opens the terrain filter sheet. */
+  pwaTerrainFilterSheet: any;
 }
 
 /**

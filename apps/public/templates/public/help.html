@@ -127,6 +127,13 @@ Routes and Offline downloads came to have neither.
             {% translate "Slope angle" as t_slope %}
             {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" body_template="public/help/_topic_slope.html" %}
         </div>
+        {# SNOW-978: the terrain filter's caveats. The map legend and the     #}
+        {# filter sheet link to #help-topic-terrain-filter; the wrapper keeps #}
+        {# the shared bottom margin for the reason the slope one does.         #}
+        <div id="help-topic-terrain-filter" class="mb-2 last:mb-0">
+            {% translate "Terrain filter" as t_terrain_filter %}
+            {% include "includes/_collapsible_panel.html" with title=t_terrain_filter data_testid="help-topic-terrain-filter" body_template="public/help/_topic_terrain_filter.html" %}
+        </div>
 
         {# SNOW-744: these four topics illustrate themselves with the SAME    #}
         {# component (includes/_ugc_panel.html), each passing its own entry   #}
