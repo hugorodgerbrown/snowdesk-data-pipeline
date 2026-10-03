@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+# bin/build-terrain-class-fixture — write the terrain filter's Vitest fixture tile.
+#
+# SNOW-978. tests/js/test_terrain_filter_core.js decodes one real PNG through
+# the same pixel contract the map's protocol handler reads, so a mistake in
+# the decode cannot hide behind a hand-built Uint8ClampedArray that shares
+# the mistake. That PNG is tile 12/2130/1455 of the DEBUG-only synthetic
+# tileset in apps/public/dev_terrain_class.py — the one tile that holds both
+# domes, the lake (level ground) and the no-data hole.
+#
+# Re-run it when the synthetic surface changes, and commit the result:
+#
+#     uv run python bin/build-terrain-class-fixture
+#
+# No network, no database. The module is plain Python plus django.http,
+# which imports without settings.
+#
+# ruff: noqa: T201, E402
+# T201 — CLI script; print() is the intended output channel.
+# E402 — the app import follows the sys.path insert, below.
+
+"""Terrain-class fixture writer — see the header block above."""
+
+from __future__ import annotations
+
+import pathlib
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from apps.public.dev_terrain_class import tile_png
+
+FIXTURE_TILE = (12, 2130, 1455)
+OUTPUT = REPO / "tests" / "js" / "fixtures" / "terrain-class" / "fixture.png"
+
+
+def main() -> int:
+    """Write the fixture tile.
+
+    Returns:
+        0 on success, 1 when the tile unexpectedly has no data.
+
+    """
+    png = tile_png(*FIXTURE_TILE)
+    if png is None:
+        print(f"tile {FIXTURE_TILE} has no data — the surface moved?", file=sys.stderr)
+        return 1
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_bytes(png)
+    print(f"wrote {OUTPUT.relative_to(REPO)} ({len(png)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
