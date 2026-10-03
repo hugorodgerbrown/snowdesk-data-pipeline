@@ -75,10 +75,7 @@ def test_the_partial_carries_every_word_in_its_strings_template() -> None:
             f"steepness-{s}"
             for s in ("level", "gentle", "moderate", "steep", "very-steep")
         ]
-        + [
-            f"kind-{k}"
-            for k in ("ascent", "descent", "traverse", "fall-line", "switchback")
-        ]
+        + [f"kind-{k}" for k in ("ascent", "descent", "traverse", "fall-line", "turn")]
         + ["headline-no-height"]
         + [
             f"ground-{g}"
@@ -154,7 +151,7 @@ def test_the_fixtures_cover_every_family() -> None:
     for phrase in (
         "• fall line",
         "• traverse",
-        "• switchback",
+        "• turn",
         "• ascent",
         "• descent",
         "Level • traverse",
@@ -176,4 +173,4 @@ def test_the_registry_panel_renders_every_state(staff_client: Client) -> None:
     assert response.status_code == 200
     body = response.content.decode()
     assert body.count("data-route-point-card-headline") == 2 * len(POINT_CARD_VARIANTS)
-    assert "S → NE • Gentle • switchback" in body
+    assert "S → NE • Gentle • turn" in body

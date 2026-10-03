@@ -1,7 +1,7 @@
 /*
  * static/js/route_point_card_core.js — the point card's pure half: the
  * words for one point on a saved route (SNOW-1064; headings and
- * switchbacks since SNOW-1069).
+ * turns since SNOW-1069).
  *
  * The point header (templates/includes/_route_point_card.html) is the
  * route panel's header while a point is placed. It holds the aspect wheel
@@ -10,7 +10,7 @@
  *
  * ## The headline: heading • steepness • kind
  *
- * "S → NE • Gentle • switchback". Three parts, joined pairwise by the
+ * "S → NE • Gentle • turn". Three parts, joined pairwise by the
  * strings' `join` (a template, because the strings reader trims, so a
  * bare " • " would lose its spaces):
  *
@@ -24,7 +24,7 @@
  *                under 25°, steep under 35°, very steep from 35°. The
  *                bounds are the aspect wheel's `TRACK_STEPS`, so the inner
  *                ring's colour and the word always name the same step.
- *   KIND       — ascent, descent, traverse, fall line or switchback
+ *   KIND       — ascent, descent, traverse, fall line or turn
  *                (`kindOf`). Up or down is the wheel's centre mark, not a
  *                word, so the kind names only how the track lies on the
  *                slope.
@@ -40,20 +40,17 @@
  * ## Turns: the segment's two ends (SNOW-1069)
  *
  * One chord cannot say that a segment turned, and on a skin track the
- * switchbacks are 50 m apart: a 25 m segment often holds one. `turnOf`
- * reads the side the ground falls at the segment's first step and at its
- * last (`fallSide`). If the two differ the track crossed the fall line,
- * and the direction it turned (the sum of its step-by-step turns, so a
- * hairpin keeps its own way round) says which line: the uphill direction
- * or the downhill one. A crossing in the direction of travel — uphill
- * while climbing, downhill while descending — is a SWITCHBACK; one against
- * it is the plain ascent or descent. A crossing also gives line two both
- * sides: "Steep slope, falling skier's left, then right".
+ * kick turns are 50 m apart: a 25 m segment often holds one. A segment
+ * whose first and last steps head into different compass sectors — the
+ * ring lighting two sectors, adjoining or not — is a TURN, climbing or
+ * descending. A wobble that stays inside one sector (359° to 1°) is not.
  *
- * The rule applies wherever an aspect exists, which is ground of 5° or
- * more. On flat or unsampled ground there is nothing to cross, and the
- * headline is the heading and the track alone: "NE • Gentle • descent",
- * "NE • Level".
+ * `turnOf` reads the side the ground falls at the first step and at the
+ * last (`fallSide`). On a turn whose two sides differ, the track crossed
+ * the fall line, and line two gives both sides: "Steep slope, falling
+ * skier's left, then right". The sides need an aspect, which is ground of
+ * 5° or more; on flat or unsampled ground a turn is still a turn, and line
+ * two names the ground alone.
  *
  * THE ASPECT IS A SECTOR. The slope wire sends one of eight sectors per
  * segment (SNOW-976), not a bearing, so the aspect here is the sector's
@@ -67,7 +64,8 @@
  * `groundWord` is the EAWS glossary's slope classes — moderate under 30°,
  * steep from 30°, very steep from 35°, extremely steep from 40° — with
  * flat under 5° added below them, the rule rail two's readout used. A
- * traverse adds the side the ground falls away to, and a crossing both.
+ * traverse adds the side the ground falls away to, and a turn across the
+ * fall line both.
  *
  * ## The accessible name
  *
@@ -101,8 +99,8 @@
  *   headingDeg(path)                — a segment path's bearing, first to last
  *   fallSide(heading, aspect)       — 'left' or 'right', the way the ground falls
  *   headline(heading, aspect, gradient, angle) — {key, steepness, side}
- *   turnOf(path, aspect)            — the sides at both ends, and any crossing
- *   kindOf(head, turn, gradient)    — the headline's kind, or null
+ *   turnOf(path, aspect)            — the sides the ground falls at both ends
+ *   kindOf(head, turning, gradient) — the headline's kind, or null
  *   segmentGradients(profile, sampleCount, spanM, legs?) — signed, per segment
  *   reading(input, strings)         — the card's words and the wheel's state
  */
@@ -293,24 +291,10 @@
   }
 
   /**
-   * A turn's reading: the side the ground falls at the segment's first
-   * step and at its last, and which line the track crossed between them.
+   * The side the ground falls at a segment's first step and at its last.
    *
-   * @typedef {{firstSide: string, lastSide: string,
-   *   crossing: ?('uphill'|'downhill')}} Turn
+   * @typedef {{firstSide: string, lastSide: string}} Turn
    */
-
-  /**
-   * The signed difference from one bearing to another, -180 to 180,
-   * clockwise positive.
-   *
-   * @param {number} from A bearing, degrees.
-   * @param {number} to Another.
-   * @returns {number} The shorter turn from `from` to `to`.
-   */
-  function signedTurn(from, to) {
-    return ((((to - from) % 360) + 540) % 360) - 180;
-  }
 
   /**
    * The bearings of a path's steps, in order, skipping any step with no
@@ -335,14 +319,12 @@
   }
 
   /**
-   * How a segment turns against the slope (SNOW-1069).
+   * The side the ground falls at each end of a segment (SNOW-1069).
    *
-   * The side the ground falls at the first step and at the last. Where
-   * they differ the track crossed the fall line, and the direction it
-   * turned picks which line: the arc from the first bearing to the last,
-   * the way the summed step turns run, holds either the uphill direction
-   * or the downhill one, never both, because the two ends sit on opposite
-   * sides of the fall line.
+   * Where the two differ on a turn, the track crossed the fall line. On
+   * its own a difference proves nothing: a track along the fall line that
+   * wobbles 2° either side of it differs too, which is why line two asks
+   * for a turn as well (`reading`).
    *
    * @param {*} path The segment's `[lon, lat]` path.
    * @param {?number} aspect The way the ground falls, degrees; null where
@@ -353,50 +335,29 @@
     const fall = finite(aspect);
     const bearings = stepBearings(path);
     if (fall === null || !bearings.length) return null;
-    const first = bearings[0];
-    const last = bearings[bearings.length - 1];
-    const firstSide = fallSide(first, fall);
-    const lastSide = fallSide(last, fall);
-    if (firstSide === lastSide) return { firstSide: firstSide, lastSide: lastSide, crossing: null };
-    let sum = 0;
-    for (let i = 1; i < bearings.length; i += 1) sum += signedTurn(bearings[i - 1], bearings[i]);
-    const clockwise = sum === 0 ? signedTurn(first, last) >= 0 : sum > 0;
-    const uphill = (fall + 180) % 360;
-    // How far round the arc, in the direction of the turn, uphill lies;
-    // it is on the arc when nearer than the arc's own end.
-    const along = (/** @type {number} */ bearing) => (clockwise
-      ? (((bearing - first) % 360) + 360) % 360
-      : (((first - bearing) % 360) + 360) % 360);
     return {
-      firstSide: firstSide,
-      lastSide: lastSide,
-      crossing: along(uphill) < along(last) ? 'uphill' : 'downhill',
+      firstSide: fallSide(bearings[0], fall),
+      lastSide: fallSide(bearings[bearings.length - 1], fall),
     };
   }
 
   /**
    * The headline's kind: how the track lies on the slope.
    *
-   * A crossing in the direction of travel is a switchback; one against it
-   * is the plain ascent or descent. Otherwise the chord's pattern names
-   * it. A level track has no direction of travel, so a level crossing is
-   * a traverse.
+   * A segment that heads into two compass sectors is a turn, climbing,
+   * descending or level. Otherwise the chord's pattern names it.
    *
    * @param {Headline} head `headline`'s reading of the chord.
-   * @param {?Turn} turn `turnOf`'s reading of the ends.
+   * @param {boolean} turning Whether the first and last steps head into
+   *   different sectors: the ring lights two.
    * @param {?number} gradient The track's signed gradient, degrees.
    * @returns {?string} 'ascent', 'descent', 'traverse', 'fall-line' or
-   *   'switchback'; null for a level track on flat ground, or no height.
+   *   'turn'; null for a level track on flat ground, or no height.
    */
-  function kindOf(head, turn, gradient) {
+  function kindOf(head, turning, gradient) {
     const grade = finite(gradient);
     if (grade === null || head.key === 'no-height') return null;
-    if (turn && turn.crossing) {
-      if (trackWord(grade) === 'level') return 'traverse';
-      const withTravel = (turn.crossing === 'uphill') === grade > 0;
-      if (withTravel) return 'switchback';
-      return grade > 0 ? 'ascent' : 'descent';
-    }
+    if (turning) return 'turn';
     switch (head.key) {
       case 'fall-descent':
       case 'fall-climb':
@@ -566,15 +527,16 @@
     const paths = Array.isArray(input.paths) ? input.paths : [];
     const angle = Array.isArray(input.angles) ? finite(input.angles[index]) : null;
     const terrain = state ? state.terrain : { kind: 'none' };
-    // Flat ground has no sector, so a crossing needs ground of 5° or more.
+    // Flat ground has no sector, so the sides need ground of 5° or more.
     const aspect = terrain && terrain.kind === 'faces' ? terrain.sector * 45 : null;
     const gradient = Array.isArray(input.gradients) ? finite(input.gradients[index]) : null;
     const head = headline(headingDeg(paths[index]), aspect, gradient, angle);
     const turn = turnOf(paths[index], aspect);
-    const kind = kindOf(head, turn, gradient);
+    const track = state ? state.track : [];
+    const turning = Array.isArray(track) && track.length > 1;
+    const kind = kindOf(head, turning, gradient);
 
     const steep = trackWord(gradient);
-    const track = state ? state.track : [];
     const middle = steep === null
       ? [fill(strings, 'headline-no-height')]
       : [fill(strings, `steepness-${steep}`), kind ? fill(strings, `kind-${kind}`) : ''];
@@ -595,7 +557,7 @@
     // A side needs ground that faces somewhere; the guard keeps an
     // unknown reading from claiming one.
     if (groundKey !== null && groundKey !== 'flat') {
-      if (turn && turn.crossing) {
+      if (turning && turn && turn.firstSide !== turn.lastSide) {
         groundText = fill(strings, `ground-falling-${turn.firstSide}-then-${turn.lastSide}`, { ground: slopeText });
       } else if (head.side) {
         groundText = fill(strings, `ground-falling-${head.side}`, { ground: slopeText });

@@ -2,7 +2,7 @@
 {% comment %}
 templates/includes/_route_point_card.html — the point header: one point on
 the open route, read in words (SNOW-1064; a header of the route panel
-since SNOW-1068; headings and switchbacks since SNOW-1069).
+since SNOW-1068; headings and turns since SNOW-1069).
 
 The route panel (_route_rail.html) is one card pinned top-left with the
 profile always showing and a header in one of two states: the route, or a
@@ -15,9 +15,9 @@ moves under the finger.
 
 It holds the aspect wheel (aspect_wheel_core.js, SNOW-1063) at 48 px and
 two lines: the HEADLINE — heading, the track's steepness on its own scale
-and how it lies on the slope, "S → NE • Gentle • switchback" — and the
+and how it lies on the slope, "S → NE • Gentle • turn" — and the
 GROUND in the EAWS words ("Extremely steep slope"), with the side the
-slope falls on a traverse, or both sides where the track crosses the fall
+slope falls on a traverse, or both sides where a turn crosses the fall
 line ("…, falling skier's left, then right"). The heading names the
 sectors the wheel's inner ring lights; up or down is the wheel's centre
 mark. No degrees. The words come from route_point_card_core.js, and are
@@ -94,7 +94,7 @@ Context:
     <span data-string="kind-descent">{% trans "descent" context "how a track lies on the slope" %}</span>
     <span data-string="kind-traverse">{% trans "traverse" context "how a track lies on the slope" %}</span>
     <span data-string="kind-fall-line">{% trans "fall line" context "how a track lies on the slope" %}</span>
-    <span data-string="kind-switchback">{% trans "switchback" context "how a track lies on the slope" %}</span>
+    <span data-string="kind-turn">{% trans "turn" context "how a track lies on the slope" %}</span>
     <span data-string="headline-no-height">{% trans "No height data" %}</span>
     <span data-string="ground-flat">{% trans "Flat ground" %}</span>
     <span data-string="ground-moderate">{% trans "Moderate slope" %}</span>

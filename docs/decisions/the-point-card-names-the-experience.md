@@ -1,6 +1,6 @@
 ---
 name: the-point-card-names-the-experience
-description: Point card heading • steepness • kind, switchbacks (turnOf, kindOf, trackWord, groundWord); track scale shared with the wheel
+description: Point card heading • steepness • kind, turns (turnOf, kindOf, trackWord, groundWord); track scale shared with the wheel
 status: current
 last-reviewed: 2026-10-03
 ---
@@ -16,13 +16,13 @@ meta line's place, with the eyebrow naming the route and the point's
 distance ("MONT FORT · 4.1 KM").
 
 - **Words, not figures.** The headline is heading • steepness • kind —
-  "E • Very steep • fall line", "S → NE • Gentle • switchback"
+  "E • Very steep • fall line", "S → NE • Gentle • turn"
   (SNOW-1069). Line two names the ground in the EAWS words — "Extremely
   steep slope". The card shows no degrees and no aspect. It names the
   heading, as the compass points the wheel's inner ring lights: one, or
   the first and last steps' joined by an arrow where the segment turns.
 - **Up or down is a mark, not a word.** The kind is ascent, descent,
-  traverse, fall line or switchback; whether the track climbs or
+  traverse, fall line or turn; whether the track climbs or
   descends is the wheel's centre mark — a bar for level, and one, two or
   three chevrons up or down for gentle, moderate, and steep or very
   steep.
@@ -38,13 +38,12 @@ distance ("MONT FORT · 4.1 KM").
   plain ascent or descent. The rule applies only where an aspect exists —
   ground of 5° or more; on flat or unsampled ground the kind is the
   track's alone, ascent or descent.
-- **A crossing in the direction of travel is a switchback.** Where the
-  side the ground falls differs between the segment's first step and its
-  last (`turnOf`), the track crossed the fall line, and the direction it
-  turned says which: uphill or downhill. Uphill while climbing, or
-  downhill while descending, is a switchback; against the direction of
-  travel it is the plain ascent or descent. Line two then gives both
-  sides — "Steep slope, falling skier's left, then right".
+- **Two headings is a turn.** A segment whose first and last steps head
+  into different compass sectors — the inner ring lighting two, adjoining
+  or not — is a turn, climbing, descending or level. A wobble inside one
+  sector is not. Where the side the ground falls also differs between
+  the two ends (`turnOf`), the turn crossed the fall line, and line two
+  gives both sides — "Steep slope, falling skier's left, then right".
 - **A traverse says which side the slope falls.** Line two gains the
   side the ground falls away to, relative to the skier — "Very steep
   slope, falling skier's right" (`fallSide`, the sign of the aspect's
@@ -97,8 +96,17 @@ turn — a 90° switchback on the Col de la Chaux skin track read "Gentle
 fall line climb" (SNOW-1069). Across the two Mont Fort routes about two
 segments in five light two sectors; most adjoin, but one in twenty-five
 leaves a gap. Naming the sectors in words makes the two lit sectors one
-reading, and on a skin track, whose switchbacks are 50 m apart, a 25 m
+reading, and on a skin track, whose kick turns are 50 m apart, a 25 m
 segment holds a turn often enough that the turn needs a name of its own.
+
+The turn was first called a switchback, and given only to a turn through
+the fall line in the direction of travel — uphill while climbing,
+downhill while descending. That was wrong twice over: a turn into the
+adjoining sector is not a switchback, it is just a turn, and
+"switchback" is an uphill word, wrong on a descent. A switchback that
+crossed on a side flip alone also caught a fall-line track wobbling 2°
+either side of the aspect. "Turn", for any segment that lights two
+sectors, is neutral in both directions and agrees with the ring.
 The chevrons replaced the triangle so the centre mark carries the step
 as well as the direction, and the words could drop "rising",
 "descending" and "climbing" to fit one line.
@@ -119,9 +127,9 @@ and every point reads more clearly as one or the other.
   was retired by SNOW-1065).
 - A new surface that describes a point uses `trackWord` / `groundWord`
   and the track scale rather than inventing its own words.
-- Where a turn crosses the fall line is decided against the aspect's
-  sector, so a turn that only just reaches uphill can miss it by up to
-  22.5° and read as a fall line rather than a switchback.
-- A downhill crossing while descending is a ski turn as much as a
-  switchback; both are "switchback" here, because one word for a
-  crossing in the direction of travel is what keeps the kind short.
+- Whether a turn crosses the fall line is decided against the aspect's
+  sector, so a turn that only just reaches the fall line can miss it by
+  up to 22.5° and name one side rather than both.
+- "Turn" does not say how far the track turned: a 45° bend into the next
+  sector and a 180° kick turn both read "turn". The heading pair says the
+  rest — "E → SE" against "S → NE".

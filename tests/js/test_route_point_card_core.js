@@ -50,7 +50,7 @@ const STRINGS = {
   'kind-descent': 'descent',
   'kind-traverse': 'traverse',
   'kind-fall-line': 'fall line',
-  'kind-switchback': 'switchback',
+  'kind-turn': 'turn',
   'headline-no-height': 'No height data',
   'ground-flat': 'Flat ground',
   'ground-moderate': 'Moderate slope',
@@ -233,18 +233,12 @@ describe('headline', () => {
 describe('turnOf', () => {
   // The ground falls north (0°): uphill is south.
   it('reads one side for a segment that stays on it', () => {
-    expect(core.turnOf(pathTurning(80, 100), 0)).toEqual({ firstSide: 'left', lastSide: 'left', crossing: null });
+    expect(core.turnOf(pathTurning(80, 100), 0)).toEqual({ firstSide: 'left', lastSide: 'left' });
   });
 
-  it('reads a turn through uphill as an uphill crossing, either way round', () => {
-    // East, then west by way of south: clockwise through 180°.
-    expect(core.turnOf(pathTurning(100, 250), 0)).toEqual({ firstSide: 'left', lastSide: 'right', crossing: 'uphill' });
-    // West, then east by way of south: anticlockwise through 180°.
-    expect(core.turnOf(pathTurning(250, 100), 0)).toEqual({ firstSide: 'right', lastSide: 'left', crossing: 'uphill' });
-  });
-
-  it('reads a turn through downhill as a downhill crossing', () => {
-    expect(core.turnOf(pathTurning(60, 300), 0)).toEqual({ firstSide: 'left', lastSide: 'right', crossing: 'downhill' });
+  it('reads both sides for a segment that crosses the fall line', () => {
+    expect(core.turnOf(pathTurning(100, 250), 0)).toEqual({ firstSide: 'left', lastSide: 'right' });
+    expect(core.turnOf(pathTurning(60, 300), 0)).toEqual({ firstSide: 'left', lastSide: 'right' });
   });
 
   it('has no reading without an aspect or a step with length', () => {
@@ -255,22 +249,12 @@ describe('turnOf', () => {
 });
 
 describe('kindOf', () => {
-  const across = { firstSide: 'left', lastSide: 'right', crossing: 'uphill' };
-  const down = { firstSide: 'left', lastSide: 'right', crossing: 'downhill' };
-  const along = { firstSide: 'left', lastSide: 'left', crossing: null };
-
-  it('names a crossing in the direction of travel a switchback', () => {
-    expect(core.kindOf({ key: 'fall-climb', steepness: 'gentle', side: null }, across, 13)).toBe('switchback');
-    expect(core.kindOf({ key: 'fall-descent', steepness: 'gentle', side: null }, down, -13)).toBe('switchback');
-  });
-
-  it('names a crossing against it the plain ascent or descent', () => {
-    expect(core.kindOf({ key: 'rising-traverse', steepness: 'gentle', side: 'left' }, down, 9)).toBe('ascent');
-    expect(core.kindOf({ key: 'descending-traverse', steepness: 'gentle', side: 'left' }, across, -9)).toBe('descent');
-  });
-
-  it('names a level crossing a traverse', () => {
-    expect(core.kindOf({ key: 'level-traverse', steepness: null, side: 'left' }, across, 2)).toBe('traverse');
+  it('names a segment that heads into two sectors a turn, either way and level', () => {
+    expect(core.kindOf({ key: 'fall-climb', steepness: 'gentle', side: null }, true, 13)).toBe('turn');
+    expect(core.kindOf({ key: 'fall-descent', steepness: 'gentle', side: null }, true, -13)).toBe('turn');
+    expect(core.kindOf({ key: 'rising-traverse', steepness: 'gentle', side: 'left' }, true, 9)).toBe('turn');
+    expect(core.kindOf({ key: 'level-traverse', steepness: null, side: 'left' }, true, 2)).toBe('turn');
+    expect(core.kindOf({ key: 'climb', steepness: 'gentle', side: null }, true, 10)).toBe('turn');
   });
 
   it.each([
@@ -285,11 +269,28 @@ describe('kindOf', () => {
     ['descent-turning', -10, 'descent'],
     ['level', 1, null],
   ])('names the chord’s %s at %s° as %s', (key, gradient, kind) => {
-    expect(core.kindOf({ key, steepness: null, side: null }, along, gradient)).toBe(kind);
+    expect(core.kindOf({ key, steepness: null, side: null }, false, gradient)).toBe(kind);
   });
 
   it('has no kind without a height', () => {
-    expect(core.kindOf({ key: 'no-height', steepness: null, side: null }, across, null)).toBeNull();
+    expect(core.kindOf({ key: 'no-height', steepness: null, side: null }, true, null)).toBeNull();
+  });
+});
+
+describe('a wobble inside one sector', () => {
+  // Codex's case: north-facing ground, a fall-line track heading 359° then
+  // 1°. The two ends sit either side of the aspect but light one sector.
+  it('is neither a turn nor a crossing', () => {
+    const words = core.reading({
+      index: 0,
+      paths: [pathTurning(359, 1)],
+      gradients: [-12],
+      angles: [32],
+      aspects: [0],
+    }, STRINGS);
+    expect(words.state.track).toEqual([0]);
+    expect(words.kind).toBe('fall-line');
+    expect(words.ground).toBe('Steep slope');
   });
 });
 
@@ -305,13 +306,13 @@ describe('the Col de la Chaux zig-zag', () => {
   }
 
   it.each([
-    [60, 'E → S • Gentle • switchback', "Moderate slope, falling skier's left, then right"],
+    [60, 'E → S • Gentle • turn', "Moderate slope, falling skier's left, then right"],
     [61, 'S • Gentle • traverse', "Moderate slope, falling skier's right"],
-    [62, 'S → NE • Gentle • switchback', "Very steep slope, falling skier's right, then left"],
-    [63, 'NE → E • Gentle • traverse', "Steep slope, falling skier's left"],
-    [64, 'E → S • Gentle • switchback', "Steep slope, falling skier's left, then right"],
+    [62, 'S → NE • Gentle • turn', "Very steep slope, falling skier's right, then left"],
+    [63, 'NE → E • Gentle • turn', "Steep slope, falling skier's left"],
+    [64, 'E → S • Gentle • turn', "Steep slope, falling skier's left, then right"],
     [65, 'S • Moderate • traverse', "Moderate slope, falling skier's right"],
-    [66, 'S → NE • Moderate • switchback', "Moderate slope, falling skier's right, then left"],
+    [66, 'S → NE • Moderate • turn', "Moderate slope, falling skier's right, then left"],
     [67, 'NE • Moderate • traverse', "Very steep slope, falling skier's left"],
   ])('reads segment %s as "%s"', (index, headline, ground) => {
     const words = at(index);
@@ -326,7 +327,7 @@ describe('the Col de la Chaux zig-zag', () => {
   });
 
   it('reads the arrow as "to" and the bullets as commas aloud', () => {
-    expect(at(62).label).toBe("S to NE, Gentle, switchback; Very steep slope, falling skier's right, then left");
+    expect(at(62).label).toBe("S to NE, Gentle, turn; Very steep slope, falling skier's right, then left");
   });
 });
 
