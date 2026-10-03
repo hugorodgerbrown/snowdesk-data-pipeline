@@ -902,11 +902,12 @@ def map_page(request: HttpRequest) -> HttpResponse:
     report_ctx = _report_context(request)
     fake_location_ctx = {
         "fake_location_allowed": _fake_location_allowed(request),
-        # HACK MODE: the zoom readout beside the help roundel. DEBUG only —
-        # it is a developer's instrument for work on the tile bands (which
-        # zoom is being fetched at any moment), not a map feature, and it
-        # says nothing a reader of the map wants.
-        "zoom_readout_visible": bool(settings.DEBUG),
+        # SNOW-1077: the zoom control is public; only its camera-zoom line
+        # is DEBUG. The continuous camera zoom to two decimals is a
+        # developer's instrument for work on the tile bands (how close the
+        # camera is to the next whole tile zoom), and says nothing a reader
+        # of the map wants.
+        "zoom_camera_visible": bool(settings.DEBUG),
     }
     favourites_ctx = _favourites_context(request)
     routes_ctx = _routes_context(request)

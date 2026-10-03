@@ -1491,6 +1491,12 @@ Optional context:
         {# containing block, so it must live inside .map-legend rather than    #}
         {# beside it.                                                          #}
         {% include "public/partials/_map_calendar.html" %}
+        {# SNOW-1077: the zoom control — a roundel whose face is the zoom    #}
+        {# the map is drawing, opening − / +, a zoom scale and a tick for    #}
+        {# each zoom-gated layer that is on. It tops the stack, in the slot  #}
+        {# the DEBUG-only zoom readout held; the help roundel the note below #}
+        {# calls the top of the stack now sits second.                       #}
+        {% include "public/partials/_map_zoom_control.html" with zoom_camera_visible=zoom_camera_visible %}
         {# SNOW-794: the help roundel, moved here from the bottom-right stack — #}
         {# see the note at its old site for why. It TOPS this stack: both it and #}
         {# the legend describe the map rather than change it, and of the two the #}
@@ -1506,30 +1512,6 @@ Optional context:
         {# dismissed the panel with no way back to it. map_help.js decides     #}
         {# from the presence of #home-intro, so a page embedding this partial  #}
         {# without show_intro still gets the tour straight from the roundel.   #}
-        {% if zoom_readout_visible %}
-            {# HACK MODE, DEBUG only (apps.public.views.home): the tile zoom  #}
-            {# the map is currently asking for, and the camera zoom under it. #}
-            {# The two are not the same thing and the difference is the whole #}
-            {# point of it — the camera is continuous, the tiles are whole    #}
-            {# numbers, so z9.99 is still fetching z9 tiles. Work on the      #}
-            {# download bands (z0-7 shared, z8-9 near, z10-14 the area)       #}
-            {# constantly needs to know which side of a boundary the view is  #}
-            {# on, and nothing on the map says.                               #}
-            {#                                                                #}
-            {# Not a button: it does nothing when pressed. It takes the       #}
-            {# roundel's shape because it sits in a stack of them and an      #}
-            {# oddly-shaped thing there reads as broken.                      #}
-            {# Its own class, not .map-legend-toggle's: that class means an  #}
-            {# interactive control, and tests/public/test_map_page.py checks  #}
-            {# every one of them carries the shared hover affordance. This    #}
-            {# does nothing when pressed, so it borrows the SHAPE in CSS and  #}
-            {# none of the behaviour.                                         #}
-            <output
-                id="map-zoom-readout"
-                class="map-zoom-readout"
-                aria-label='{% trans "Current zoom level" %}'
-            ></output>
-        {% endif %}
         <button
             id="map-help-toggle"
             type="button"
