@@ -1,0 +1,61 @@
+{% comment %}
+apps/public/templates/public/help/_topic_terrain_filter.html — "Terrain filter" panel body.
+
+Content partial for the help page (SNOW-978); included via the
+body_template parameter of includes/_collapsible_panel.html, and the target
+of the map legend's and the filter sheet's #help-topic-terrain-filter
+links. Like the slope topic, this is where the filter's limits live: the
+legend and the sheet carry the key and a link here.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-what">
+        {% blocktrans trimmed %}
+            The terrain filter highlights ground by the three things a bulletin uses to say where the danger is: the
+            aspect a slope faces, how steep it is, and how high it is. Choose any of the eight aspects, a slope range
+            from 30 degrees upward, and if you like a band of elevation, and the map tints the ground that matches in
+            blue. Ground that does not match is left as it is. Open it from the layers menu&rsquo;s &ldquo;Terrain
+            filter&hellip;&rdquo; row; while it is on, a chip at the top of the map says what it is set to, and a tap on
+            the chip opens it again.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-zoom">
+        {% blocktrans trimmed %}
+            The filter shows from zoom level 12, roughly a valley across the screen; zoom out further and the sheet asks
+            you to zoom in.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-hatched">
+        {% blocktrans trimmed %}
+            <strong>Hatched means no data.</strong> Where the terrain data has nothing, the ground is hatched in grey,
+            so an untinted slope always means &ldquo;does not match&rdquo; and never &ldquo;not surveyed&rdquo;. Level
+            ground, such as a lake, faces no direction and never matches.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-terrain-only">
+        {% blocktrans trimmed %}
+            It describes the terrain and nothing else. It says nothing about the snowpack, the weather or the
+            day&rsquo;s danger rating, and a tinted slope is not one that will avalanche, any more than an untinted one
+            is safe.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-runout">
+        {% blocktrans trimmed %}
+            It does not show runout zones. An avalanche released on a matching slope can run far onto ground that does
+            not match &mdash; a gentle valley floor below a steep north face is untinted and still in the path.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-not-a-verdict">
+        {% blocktrans trimmed %}
+            Treat it as a way of finding the slopes a bulletin is talking about, never as a verdict on whether to ski
+            them.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-coverage">
+        {% blocktrans trimmed %}
+            It covers Switzerland only. The terrain data is swisstopo&rsquo;s swissALTI3D elevation model, and outside
+            Switzerland the filter has nothing to show.
+        {% endblocktrans %}
+    </p>
+</div>

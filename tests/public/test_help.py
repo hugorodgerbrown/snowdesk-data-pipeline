@@ -595,3 +595,34 @@ class TestBulletinIllustrationsMatchTheirCopy:
             "icon_filename"
         ]
         assert finders.find(icon_set_dir(settings.WEATHER_ICON_SET) + filename)
+
+
+@pytest.mark.django_db
+class TestTerrainFilterHelpTopic:
+    """SNOW-978: the terrain filter's caveats live on /help/."""
+
+    def test_topic_is_an_anchor_target(self, client: Client) -> None:
+        """The map legend and the filter sheet link to this fragment."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert 'id="help-topic-terrain-filter"' in content
+        wrapper = content[content.index('id="help-topic-terrain-filter"') :][:120]
+        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+
+    def test_topic_states_each_limit(self, client: Client) -> None:
+        """Terrain only, no runout, not a verdict, Switzerland only, and
+        hatched means no data — each a distinct thing to get wrong.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-terrain-filter-hatched",
+            b"help-terrain-filter-terrain-only",
+            b"help-terrain-filter-runout",
+            b"help-terrain-filter-not-a-verdict",
+            b"help-terrain-filter-coverage",
+        ):
+            assert testid in content, testid
+
+    def test_layers_topic_describes_the_row(self, client: Client) -> None:
+        """Every layers-menu row has its paragraph in the layers topic."""
+        content = client.get(reverse("public:help")).content
+        assert b'data-testid="help-layers-terrain-filter"' in content

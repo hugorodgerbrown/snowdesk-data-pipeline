@@ -90,7 +90,7 @@ is gone, and the sections named below are the ones the menu renders.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
         {% blocktrans trimmed %}
-            Two things are drawn on top of whichever one you chose, which is why they sit under this heading. "Display
+            Three things are drawn on top of whichever one you chose, which is why they sit under this heading. "Display
             slope angles" shades the ground by steepness &mdash; the one layer with real limits on what it can tell you,
             so read "Slope angle" below before you rely on a shading.
         {% endblocktrans %}
@@ -100,6 +100,13 @@ is gone, and the sections named below are the ones the menu renders.
             "Display downloaded areas" shades the ground you already hold on this device, so you can see the edges of
             your own coverage before you set off. Left alone it switches itself on whenever you are offline, which is
             when the answer matters.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-terrain-filter">
+        {% blocktrans trimmed %}
+            "Terrain filter&hellip;" opens a sheet where you choose aspects, a slope range and, if you like, a band of
+            elevation, and the map highlights the ground that matches. Read "Terrain filter" below for what it does not
+            tell you.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The dot on each row" %}</h3>
