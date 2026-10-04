@@ -2,15 +2,15 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-09-27
+last-reviewed: 2026-10-04
 ---
 
 # Competitor list
 
-**Last automated competitor scan: 2026-09-27.** News, product-update and
-new-entrant findings from that pass are marked inline as "2026-09-27 scan
+**Last automated competitor scan: 2026-10-04.** News, product-update and
+new-entrant findings from that pass are marked inline as "2026-10-04 scan
 update"; the full source list is in the PR description for that change.
-Findings from the prior 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
+Findings from the prior 2026-09-27, 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
 2026-08-23 and 2026-08-19 passes remain marked as such below.
 
 Apps and sites that overlap Snowdesk's job — *"tell me what the avalanche
@@ -317,6 +317,17 @@ other app in this list is measured against, including ours.
   this pass. No new funding round or employee-count change found; total
   raised ($443K) and headcount (~18) unchanged. No material change since
   2026-09-20.
+  **Re-scanned again 2026-10-04** (routine competitor scan) — direct fetch of
+  `get.whympr.com/en/blog` surfaced two late-September posts: **Digital
+  Topos** (29 Sep, professionally-written "Topo Pro" tips for touring,
+  climbing, mountaineering and hiking) and a **real-time, collaborative
+  hunting-zone layer** (28 Sep, French) — plus a drinking-water-sources
+  layer and 100+ UK hiking routes across 10 regions. Search results also
+  surfaced funding detail that conflicts with the $443K recorded above:
+  Dealroom lists €500K (Sowefund, Jan 2020) and €2.2M (Dec 2022), and
+  PitchBook/Tracxn record an acquisition of Vamos Guide (31 May 2023);
+  headcount is 18 as of 31 Mar 2026. The $443K figure is probably stale
+  (treat Tracxn's total as unreliable until a primary source is read).
 - **Overlap with Snowdesk:** the avalanche bulletin is *one tab* of a
   planning app. Geolocated bulletins for FR, CH, IT, AT, AD, ES, US, CA
   and Scotland — broader country coverage than our three providers, but
@@ -569,6 +580,11 @@ competitor, not a watch item.
   lines of HTML — sharpening, not changing, the distribution-channel point
   already made below. No pricing, funding or business news surfaced this
   pass; no material change since 2026-09-20.
+  **Re-scanned again 2026-10-04** (routine competitor scan) — search results
+  add two details: translation languages are English, German, Dutch, Italian,
+  Swedish, Danish and Polish, and the app advertises **no tracking, analytics,
+  ads or account** — a privacy posture worth weighing against our own
+  PostHog/account flows. No pricing, funding or coverage change.
 - **Read:** the clearest evidence yet that cross-provider consolidation is
   a race, not a moat — a single guidebook author shipped a rough version
   of our core differentiator before we did. Our answer has to be depth (a
@@ -686,6 +702,14 @@ its own promotion.
   `www.skida.app` remain blocked (`EGRESS_BLOCKED`) on a fifth consecutive
   pass; no material change found via web search either, and no update on the
   Folkeinvest round's amount or close date.
+  **Re-scanned again 2026-10-04** (routine competitor scan) — a direct fetch of
+  `www.skida.app` **succeeded for the first time**, clearing the block. The
+  homepage claims "more than 50,000 skiers" (store listings: 25K+ downloads,
+  4.4/5), lists 3D maps with runout zones, avalanche bulletins and maps,
+  weather, rated slopes and a tour catalogue, a **Skida PRO** tier (price not
+  published), and a Garmin tour-import integration. A user testimonial says it
+  "fills the void after Fatmap". The homepage names no bulletin sources, so the
+  provider list above is still search-corroborated.
 - **Shape:** like [AvalancheClarity](#avalancheclarity), it **pulls
   together official bulletins from multiple national providers in one app
   without altering their content** — Varsom (Norway), WhiteRisk
@@ -973,6 +997,15 @@ good, but flat. The realistic version is not an e-learning module; it is
 contextual: link the specific problem type or danger pattern on a
 bulletin page through to a short explainer of *that* thing, so the
 teaching happens where the question arises.
+
+**2026-10-04 scan update — EAWS is reviewing how the danger scale is
+worded.** The EAWS network has opened a public survey on new wording and
+descriptions for the five levels (the scale itself is unchanged; the aim is
+quicker comprehension by non-experts, especially for Level 3 "Considerable",
+where most accidents happen — per the-ski-guru.com, March 2026; no
+implementation date published). Relevant to item 11: if the wording changes,
+our rendered danger-level copy and `/how-to-read-a-bulletin/` need to follow,
+and it is an opening for plain-language explainers of Level 3 on the page.
 
 ### Not for us
 
