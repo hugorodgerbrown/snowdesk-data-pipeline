@@ -60,7 +60,7 @@ test = [
     "pillow>=12,<13",
 ]
 type = [
-    "mypy>=2.3.0,<2.4",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
+    "mypy>=2.3.0,<2.5",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
     "django-stubs>=6.0.2,<7",
     "types-requests>=2.33.0.20260408,<3",
     "types-bleach>=6.3.0.20260408,<7",
@@ -76,7 +76,7 @@ lint = [
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
     # docs/coding-standards.md §6.5.
-    "ruff==0.16.9",
+    "ruff==0.16.10",
     "djangofmt>=0.2.6,<1.1",
 ]
 sast = [
