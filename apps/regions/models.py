@@ -604,6 +604,65 @@ class RegionAlias(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Pass
+# ---------------------------------------------------------------------------
+
+
+class PassQuerySet(models.QuerySet["Pass"]):
+    """Custom queryset for Pass."""
+
+    def by_slugs(self) -> dict[str, "Pass"]:
+        """Return every pass keyed by its slug, the key the resort sheet uses."""
+        return {ski_pass.slug: ski_pass for ski_pass in self}
+
+
+class Pass(BaseModel):
+    """
+    A season pass sold across several resorts, such as the Magic Pass.
+
+    Reference data that groups resorts; it is never a gate on them. A
+    group on the Magic Pass can still plan a day in Zermatt, so a pass
+    only filters the map and the resort picker (SNOW-1083). Which resorts
+    a pass covers is ``Resort.passes``, read from the ``passes`` column of
+    ``apps/regions/data/resorts.tsv`` by the pass's ``slug``.
+    """
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="The pass's own name, e.g. Magic Pass.",
+    )
+    slug = models.SlugField(
+        max_length=50,
+        unique=True,
+        help_text=(
+            "The key the resort sheet's passes column uses, e.g. magic-pass. "
+            "Renaming it breaks every sheet row that names it."
+        ),
+    )
+    website = models.URLField(
+        blank=True,
+        help_text="The pass's own site, where its resort list is published.",
+    )
+
+    objects = PassQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["name"]
+        verbose_name_plural = "passes"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return the pass's name."""
+        return self.name
+
+
+# ---------------------------------------------------------------------------
 # Resort
 # ---------------------------------------------------------------------------
 
@@ -856,13 +915,15 @@ class Resort(BaseModel):
         validators=[MONTH_DAY_VALIDATOR],
         help_text="Typical season closing as month-day, e.g. 04-30.",
     )
-    magic_pass = models.BooleanField(
-        default=False,
+    passes: models.ManyToManyField[Pass, Any] = models.ManyToManyField(
+        Pass,
+        blank=True,
+        related_name="resorts",
         help_text=(
-            "On the Magic Pass season pass (magicpass.ch). Hand-curated from "
-            "the pass's resort list (SNOW-1083). Where the pass sells one "
-            "domain the sheet splits into villages, every village row is "
-            "flagged."
+            "The season passes this resort is sold on (SNOW-1083). A pass "
+            "only groups resorts — every resort is a place to plan a day "
+            "whether or not it is on one. Where a pass sells one domain the "
+            "sheet splits into villages, every village row carries the pass."
         ),
     )
     objects = ResortQuerySet.as_manager()

@@ -27,7 +27,7 @@ from apps.regions.management.commands.dump_resorts_sheet import (
     render_resorts_sheet,
     write_resorts_sheet,
 )
-from tests.factories import MicroRegionFactory, ResortFactory
+from tests.factories import MicroRegionFactory, PassFactory, ResortFactory
 
 COMMITTED_SHEET = Path("apps/regions/data/resorts.tsv")
 
@@ -114,18 +114,21 @@ class TestRetiredRows:
 
 
 @pytest.mark.django_db
-class TestMagicPassColumn:
-    """The ``magic_pass`` flag is written as ``true`` / ``false`` (SNOW-1083)."""
+class TestPassesColumn:
+    """A resort's passes are written as sorted, comma-joined slugs (SNOW-1083)."""
 
-    def test_flag_renders_as_true_or_false(self, tmp_path: Path) -> None:
-        """Both values are spelled out, the way ``needs_review`` is."""
-        ResortFactory.create(name="Leysin", magic_pass=True)
-        ResortFactory.create(name="Zermatt", magic_pass=False)
+    def test_passes_render_as_slugs(self, tmp_path: Path) -> None:
+        """Several passes are sorted; a resort on none gets a blank cell."""
+        leysin = ResortFactory.create(name="Leysin")
+        leysin.passes.add(
+            PassFactory.create(slug="magic-pass"), PassFactory.create(slug="ikon")
+        )
+        ResortFactory.create(name="Zermatt")
 
         rows = {row["name"]: row for row in _rows(render_resorts_sheet(tmp_path / "x"))}
 
-        assert rows["Leysin"]["magic_pass"] == "true"
-        assert rows["Zermatt"]["magic_pass"] == "false"
+        assert rows["Leysin"]["passes"] == "ikon,magic-pass"
+        assert rows["Zermatt"]["passes"] == ""
 
 
 @pytest.mark.django_db

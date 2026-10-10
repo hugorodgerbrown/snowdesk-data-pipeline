@@ -654,6 +654,7 @@ Read these when working in the relevant area:
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
+| Why a season pass is a many-to-many on Resort and never a gate (Pass, Resort.passes, the sheet's passes column, apps/regions/data/passes.tsv, why no data migration seeds it) | [`docs/decisions/a-pass-groups-resorts-it-never-gates-them.md`](docs/decisions/a-pass-groups-resorts-it-never-gates-them.md) |
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
 | Weather is one immutable row per location per day (Weather model, upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
 | Weather UI (_weather_panel/_weather_day_picker/_weather_day_line, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |

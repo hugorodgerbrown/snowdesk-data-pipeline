@@ -19,8 +19,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.regions.models import Resort
-from tests.factories import MicroRegionFactory, ResortFactory
+from apps.regions.models import Pass, Resort
+from tests.factories import MicroRegionFactory, PassFactory, ResortFactory
 
 COLUMNS = [
     "uuid",
@@ -42,7 +42,7 @@ COLUMNS = [
     "notes",
     "kind",
     "tier",
-    "magic_pass",
+    "passes",
     "latitude",
     "longitude",
     "geocode_source",
@@ -916,67 +916,134 @@ class TestImportResortsTier:
 
 
 @pytest.mark.django_db
-class TestImportResortsMagicPass:
-    """The ``magic_pass`` column (SNOW-1083).
+class TestImportResortsPasses:
+    """The ``passes`` column (SNOW-1083).
 
-    An editorial flag like ``tier``: the sheet owns it and every update
-    carries it, so a resort leaving the pass is a one-cell edit.
+    Editorial like ``tier``: the sheet owns a resort's passes and every
+    update carries them, so a resort leaving a pass is a one-cell edit. The
+    cell names passes by slug; ``magic-pass`` is seeded by migration 0024.
     """
 
-    def test_true_reaches_the_model(self, tmp_path: Path) -> None:
-        """A ``true`` cell flags the resort."""
+    def test_slug_links_the_pass(self, tmp_path: Path) -> None:
+        """A ``magic-pass`` cell puts the resort on the Magic Pass."""
         resort = ResortFactory.create(name="Saas-Fee")
         sheet = _sheet(
             tmp_path,
-            [{"uuid": str(resort.uuid), "name": "Saas-Fee", "magic_pass": "true"}],
+            [{"uuid": str(resort.uuid), "name": "Saas-Fee", "passes": "magic-pass"}],
         )
 
         call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
 
-        resort.refresh_from_db()
-        assert resort.magic_pass is True
+        assert list(resort.passes.values_list("slug", flat=True)) == ["magic-pass"]
 
-    def test_blank_means_not_on_the_pass(self, tmp_path: Path) -> None:
-        """The column is optional — an export predating it still imports."""
-        resort = ResortFactory.create(name="Zermatt", magic_pass=True)
-        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt"}])
+    def test_several_passes_case_and_spacing_ignored(self, tmp_path: Path) -> None:
+        """A comma list links each pass once, whatever its casing or spacing."""
+        PassFactory.create(slug="ikon")
+        resort = ResortFactory.create(name="Zermatt")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Zermatt",
+                    "passes": " Magic-Pass , ikon,magic-pass",
+                }
+            ],
+        )
 
         call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
 
-        resort.refresh_from_db()
-        assert resort.magic_pass is False
+        assert sorted(resort.passes.values_list("slug", flat=True)) == [
+            "ikon",
+            "magic-pass",
+        ]
 
-    def test_is_case_insensitive(self, tmp_path: Path) -> None:
-        """``TRUE`` and ``False`` read the same as their lowercase spelling."""
+    def test_blank_takes_the_resort_off_every_pass(self, tmp_path: Path) -> None:
+        """The column is optional — blank means on no pass."""
+        resort = ResortFactory.create(name="Zermatt")
+        resort.passes.add(PassFactory.create(slug="magic-pass"))
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt"}])
+
+        call_command(
+            "import_resorts",
+            "--file",
+            sheet,
+            "--commit",
+            "--mode",
+            "update",
+            verbosity=2,
+            stdout=StringIO(),
+        )
+
+        assert not resort.passes.exists()
+
+    def test_change_is_reported_in_the_diff(self, tmp_path: Path) -> None:
+        """A dry run names the pass change, and writes nothing."""
         resort = ResortFactory.create(name="Leysin")
         sheet = _sheet(
             tmp_path,
-            [{"uuid": str(resort.uuid), "name": "Leysin", "magic_pass": "TRUE"}],
+            [{"uuid": str(resort.uuid), "name": "Leysin", "passes": "magic-pass"}],
+        )
+        out = StringIO()
+
+        call_command(
+            "import_resorts",
+            "--file",
+            sheet,
+            "--mode",
+            "update",
+            verbosity=2,
+            stdout=out,
         )
 
-        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+        assert "passes: '' -> 'magic-pass'" in out.getvalue()
+        assert not resort.passes.exists()
 
-        resort.refresh_from_db()
-        assert resort.magic_pass is True
-
-    def test_unknown_value_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
-        """A typo must not silently take a resort off the pass."""
-        resort = ResortFactory.create(name="Leysin", magic_pass=True)
+    def test_unchanged_passes_are_not_an_update(self, tmp_path: Path) -> None:
+        """A resort already on the named pass plans no change."""
+        resort = ResortFactory.create(name="Leysin")
+        resort.passes.add(PassFactory.create(slug="magic-pass"))
         sheet = _sheet(
             tmp_path,
-            [{"uuid": str(resort.uuid), "name": "Leysin", "magic_pass": "yes"}],
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Leysin",
+                    "canton": resort.canton,
+                    "passes": "magic-pass",
+                }
+            ],
+        )
+        out = StringIO()
+
+        call_command("import_resorts", "--file", sheet, "--mode", "update", stdout=out)
+
+        assert "No changes" in out.getvalue()
+
+    def test_unknown_slug_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
+        """A typo must not silently take a resort off its pass."""
+        resort = ResortFactory.create(name="Leysin")
+        resort.passes.add(PassFactory.create(slug="magic-pass"))
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Leysin", "passes": "magicpass"}],
         )
 
         with pytest.raises(CommandError):
             call_command(
-                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+                "import_resorts",
+                "--file",
+                sheet,
+                "--commit",
+                "--mode",
+                "update",
+                stderr=StringIO(),
             )
 
-        resort.refresh_from_db()
-        assert resort.magic_pass is True
+        assert list(resort.passes.values_list("slug", flat=True)) == ["magic-pass"]
 
-    def test_added_resort_carries_the_flag(self, tmp_path: Path) -> None:
-        """A row created by ``add`` is flagged at creation, not on a re-run."""
+    def test_added_resort_carries_its_pass(self, tmp_path: Path) -> None:
+        """A row created by ``add`` is linked at creation, not on a re-run."""
         MicroRegionFactory.create(region_id="CH-1222")
         new_uuid = str(uuid_module.uuid4())
         sheet = _sheet(
@@ -987,14 +1054,171 @@ class TestImportResortsMagicPass:
                     "name": "Eriz",
                     "region": "CH-1222",
                     "canton": "BE",
-                    "magic_pass": "true",
+                    "passes": "magic-pass",
                 }
             ],
         )
 
         call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
 
-        assert Resort.objects.get(uuid=new_uuid).magic_pass is True
+        resort = Resort.objects.get(uuid=new_uuid)
+        assert list(resort.passes.values_list("slug", flat=True)) == ["magic-pass"]
+
+    def test_passes_sheet_creates_a_pass_the_db_lacks(self, tmp_path: Path) -> None:
+        """A pass listed in ``passes.tsv`` is created before the links are set."""
+        resort = ResortFactory.create(name="Zermatt")
+        passes = tmp_path / "passes.tsv"
+        passes.write_text("slug\tname\twebsite\nikon\tIkon Pass\t\n", encoding="utf-8")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Zermatt", "passes": "ikon"}],
+        )
+        out = StringIO()
+
+        call_command(
+            "import_resorts",
+            "--file",
+            sheet,
+            "--passes-file",
+            passes,
+            "--commit",
+            "--mode",
+            "update",
+            verbosity=2,
+            stdout=out,
+        )
+
+        assert "+ pass Ikon Pass (ikon)" in out.getvalue()
+        assert Pass.objects.get(slug="ikon").name == "Ikon Pass"
+        assert list(resort.passes.values_list("slug", flat=True)) == ["ikon"]
+
+    def test_dry_run_creates_no_pass(self, tmp_path: Path) -> None:
+        """Without ``--commit`` the pass is reported, not written."""
+        passes = tmp_path / "passes.tsv"
+        passes.write_text("slug\tname\nikon\tIkon Pass\n", encoding="utf-8")
+        sheet = _sheet(tmp_path, [])
+        out = StringIO()
+
+        call_command(
+            "import_resorts", "--file", sheet, "--passes-file", passes, stdout=out
+        )
+
+        assert "1 pass(es) to add." in out.getvalue()
+        assert not Pass.objects.filter(slug="ikon").exists()
+
+    def test_existing_pass_is_never_rewritten(self, tmp_path: Path) -> None:
+        """A pass renamed in the admin keeps its name on the next import."""
+        PassFactory.create(slug="ikon", name="Ikon (renamed)")
+        passes = tmp_path / "passes.tsv"
+        passes.write_text("slug\tname\nikon\tIkon Pass\n", encoding="utf-8")
+        sheet = _sheet(tmp_path, [])
+
+        call_command(
+            "import_resorts",
+            "--file",
+            sheet,
+            "--passes-file",
+            passes,
+            "--commit",
+            stdout=StringIO(),
+        )
+
+        assert Pass.objects.get(slug="ikon").name == "Ikon (renamed)"
+
+    def test_missing_passes_sheet_means_no_new_passes(self, tmp_path: Path) -> None:
+        """No ``passes.tsv`` is not an error, but its slugs are then unknown."""
+        resort = ResortFactory.create(name="Zermatt")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Zermatt", "passes": "magic-pass"}],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts",
+                "--file",
+                sheet,
+                "--passes-file",
+                tmp_path / "absent.tsv",
+                "--mode",
+                "update",
+                stderr=StringIO(),
+            )
+
+    def test_passes_sheet_without_a_name_column_is_refused(
+        self, tmp_path: Path
+    ) -> None:
+        """``slug`` and ``name`` are required columns."""
+        passes = tmp_path / "passes.tsv"
+        passes.write_text("slug\nikon\n", encoding="utf-8")
+
+        with pytest.raises(CommandError, match="name"):
+            call_command(
+                "import_resorts",
+                "--file",
+                _sheet(tmp_path, []),
+                "--passes-file",
+                passes,
+            )
+
+    def test_passes_sheet_row_without_a_name_is_an_error(self, tmp_path: Path) -> None:
+        """A pass that fails validation stops the import, like a bad resort row."""
+        passes = tmp_path / "passes.tsv"
+        passes.write_text("slug\tname\nikon\t\n", encoding="utf-8")
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts",
+                "--file",
+                _sheet(tmp_path, []),
+                "--passes-file",
+                passes,
+                "--commit",
+                stderr=StringIO(),
+            )
+
+        assert not Pass.objects.filter(slug="ikon").exists()
+
+    def test_unreadable_passes_sheet_is_refused(self, tmp_path: Path) -> None:
+        """A path that exists but cannot be read as a file fails loudly."""
+        with pytest.raises(CommandError, match="Failed to read"):
+            call_command(
+                "import_resorts",
+                "--file",
+                _sheet(tmp_path, []),
+                "--passes-file",
+                tmp_path,
+            )
+
+    def test_unknown_slug_on_an_added_row_is_an_error(self, tmp_path: Path) -> None:
+        """The add path rejects an unknown slug too, and creates nothing."""
+        MicroRegionFactory.create(region_id="CH-1222")
+        new_uuid = str(uuid_module.uuid4())
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": new_uuid,
+                    "name": "Eriz",
+                    "region": "CH-1222",
+                    "canton": "BE",
+                    "passes": "nope",
+                }
+            ],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts",
+                "--file",
+                sheet,
+                "--commit",
+                "--mode",
+                "add",
+                stderr=StringIO(),
+            )
+
+        assert not Resort.objects.filter(uuid=new_uuid).exists()
 
 
 @pytest.mark.django_db

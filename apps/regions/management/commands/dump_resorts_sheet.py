@@ -70,7 +70,7 @@ SHEET_COLUMNS: tuple[str, ...] = (
     "name",
     "kind",
     "tier",
-    "magic_pass",
+    "passes",
     "canton",
     "region",
     "latitude",
@@ -195,7 +195,9 @@ def render_resorts_sheet(sheet_path: Path = DEFAULT_SHEET_PATH) -> str:
     existing = _read_existing(sheet_path)
     db_rows = {
         str(resort.uuid): _row_from_resort(resort)
-        for resort in Resort.objects.select_related("region").order_by("name")
+        for resort in Resort.objects.select_related("region")
+        .prefetch_related("passes")
+        .order_by("name")
     }
 
     rows: list[dict[str, str]] = []
@@ -257,7 +259,8 @@ def _row_from_resort(resort: Resort) -> dict[str, str]:
     something the database can express.
 
     Args:
-        resort: The row to render, with ``region`` already selected.
+        resort: The row to render, with ``region`` already selected and
+            ``passes`` prefetched.
 
     Returns:
         Every column in ``SHEET_COLUMNS``, as strings.
@@ -268,7 +271,8 @@ def _row_from_resort(resort: Resort) -> dict[str, str]:
         "name": resort.name,
         "kind": resort.kind,
         "tier": resort.tier,
-        "magic_pass": "true" if resort.magic_pass else "false",
+        # Read from the prefetch cache, so this costs no query per row.
+        "passes": ",".join(sorted(ski_pass.slug for ski_pass in resort.passes.all())),
         "canton": resort.canton,
         "region": resort.region.region_id,
         "latitude": _number(resort.latitude),
