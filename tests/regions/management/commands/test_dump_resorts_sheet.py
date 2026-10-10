@@ -114,6 +114,21 @@ class TestRetiredRows:
 
 
 @pytest.mark.django_db
+class TestMagicPassColumn:
+    """The ``magic_pass`` flag is written as ``true`` / ``false`` (SNOW-1083)."""
+
+    def test_flag_renders_as_true_or_false(self, tmp_path: Path) -> None:
+        """Both values are spelled out, the way ``needs_review`` is."""
+        ResortFactory.create(name="Leysin", magic_pass=True)
+        ResortFactory.create(name="Zermatt", magic_pass=False)
+
+        rows = {row["name"]: row for row in _rows(render_resorts_sheet(tmp_path / "x"))}
+
+        assert rows["Leysin"]["magic_pass"] == "true"
+        assert rows["Zermatt"]["magic_pass"] == "false"
+
+
+@pytest.mark.django_db
 class TestOrdering:
     """Diff stability — an edit should not reorder the file."""
 

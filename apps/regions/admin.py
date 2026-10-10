@@ -114,6 +114,7 @@ class ResortAdmin(admin.ModelAdmin):
         "name",
         "kind",
         "tier",
+        "magic_pass",
         "name_alt",
         "region",
         "canton",
@@ -123,7 +124,14 @@ class ResortAdmin(admin.ModelAdmin):
         "geocode_source",
         "needs_review",
     ]
-    list_filter = ["kind", "tier", "canton", "geocode_source", "needs_review"]
+    list_filter = [
+        "kind",
+        "tier",
+        "magic_pass",
+        "canton",
+        "geocode_source",
+        "needs_review",
+    ]
     search_fields = ["name", "slug", "name_alt", "region__region_id"]
     ordering = ["name"]
     readonly_fields = [
@@ -143,6 +151,7 @@ class ResortAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "tier",
+                    "magic_pass",
                     "operator_name",
                     "website",
                     "why_it_matters",

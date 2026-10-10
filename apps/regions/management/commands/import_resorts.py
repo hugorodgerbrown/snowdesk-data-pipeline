@@ -9,7 +9,7 @@ one of them. This command reads the sheet; ``dump_resorts_sheet`` writes it
 back from the database.
 
 The sheet carries ``Resort``'s editorial columns (operator, website, the
-``why_it_matters`` line, the map ``tier``, elevations, lift/run counts, piste
+``why_it_matters`` line, the map ``tier``, the ``magic_pass`` flag, elevations, lift/run counts, piste
 length, typical season dates, ``notes``), the coordinate pair, and the
 provenance of that coordinate. This command reconciles the database against
 it in up to three modes, selected with ``--mode`` (all three by default):
@@ -355,6 +355,7 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
         *TEXT_FIELDS,
         *INT_FIELDS,
         *FLOAT_FIELDS,
+        "magic_pass",
         "region",
         "canton",
         *COORDINATE_COLUMNS,
@@ -669,6 +670,36 @@ def _tier_from_row(row: dict[str, str]) -> str:
     return raw
 
 
+def _magic_pass_from_row(row: dict[str, str]) -> bool:
+    """
+    Read the sheet's ``magic_pass`` cell, defaulting to False (SNOW-1083).
+
+    A blank or absent cell means "not on the pass", so an export that
+    predates the column still imports. ``true`` / ``false`` are accepted in
+    any casing — the same spelling ``needs_review`` uses.
+
+    Anything else is an error rather than a fallback, for the reason
+    ``_kind_from_row`` rejects one: a typo resolving quietly to False would
+    drop a resort off the pass with nothing in the output saying so.
+
+    Args:
+        row: One sheet row.
+
+    Returns:
+        Whether the resort is on the Magic Pass.
+
+    Raises:
+        ValueError: If the cell is neither blank, ``true`` nor ``false``.
+
+    """
+    raw = (row.get("magic_pass") or "").strip().lower()
+    if raw in ("", "false"):
+        return False
+    if raw == "true":
+        return True
+    raise ValueError(f"unknown magic_pass {raw!r} (expected true, false or blank)")
+
+
 def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]]:
     """Assign the sheet's editorial values onto ``resort`` in memory.
 
@@ -695,6 +726,7 @@ def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]
     values: dict[str, Any] = {field: row[field].strip() for field in TEXT_FIELDS}
     values["kind"] = _kind_from_row(row)
     values["tier"] = _tier_from_row(row)
+    values["magic_pass"] = _magic_pass_from_row(row)
     for field in INT_FIELDS:
         raw = row[field].strip()
         values[field] = int(raw) if raw else None

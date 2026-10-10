@@ -856,6 +856,15 @@ class Resort(BaseModel):
         validators=[MONTH_DAY_VALIDATOR],
         help_text="Typical season closing as month-day, e.g. 04-30.",
     )
+    magic_pass = models.BooleanField(
+        default=False,
+        help_text=(
+            "On the Magic Pass season pass (magicpass.ch). Hand-curated from "
+            "the pass's resort list (SNOW-1083). Where the pass sells one "
+            "domain the sheet splits into villages, every village row is "
+            "flagged."
+        ),
+    )
     objects = ResortQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):

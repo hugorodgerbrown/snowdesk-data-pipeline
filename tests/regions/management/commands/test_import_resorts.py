@@ -42,6 +42,7 @@ COLUMNS = [
     "notes",
     "kind",
     "tier",
+    "magic_pass",
     "latitude",
     "longitude",
     "geocode_source",
@@ -912,6 +913,88 @@ class TestImportResortsTier:
 
         resort.refresh_from_db()
         assert resort.tier == Resort.Tier.CORE
+
+
+@pytest.mark.django_db
+class TestImportResortsMagicPass:
+    """The ``magic_pass`` column (SNOW-1083).
+
+    An editorial flag like ``tier``: the sheet owns it and every update
+    carries it, so a resort leaving the pass is a one-cell edit.
+    """
+
+    def test_true_reaches_the_model(self, tmp_path: Path) -> None:
+        """A ``true`` cell flags the resort."""
+        resort = ResortFactory.create(name="Saas-Fee")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Saas-Fee", "magic_pass": "true"}],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.magic_pass is True
+
+    def test_blank_means_not_on_the_pass(self, tmp_path: Path) -> None:
+        """The column is optional — an export predating it still imports."""
+        resort = ResortFactory.create(name="Zermatt", magic_pass=True)
+        sheet = _sheet(tmp_path, [{"uuid": str(resort.uuid), "name": "Zermatt"}])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.magic_pass is False
+
+    def test_is_case_insensitive(self, tmp_path: Path) -> None:
+        """``TRUE`` and ``False`` read the same as their lowercase spelling."""
+        resort = ResortFactory.create(name="Leysin")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Leysin", "magic_pass": "TRUE"}],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.magic_pass is True
+
+    def test_unknown_value_is_an_error_and_writes_nothing(self, tmp_path: Path) -> None:
+        """A typo must not silently take a resort off the pass."""
+        resort = ResortFactory.create(name="Leysin", magic_pass=True)
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Leysin", "magic_pass": "yes"}],
+        )
+
+        with pytest.raises(CommandError):
+            call_command(
+                "import_resorts", "--file", sheet, "--commit", "--mode", "update"
+            )
+
+        resort.refresh_from_db()
+        assert resort.magic_pass is True
+
+    def test_added_resort_carries_the_flag(self, tmp_path: Path) -> None:
+        """A row created by ``add`` is flagged at creation, not on a re-run."""
+        MicroRegionFactory.create(region_id="CH-1222")
+        new_uuid = str(uuid_module.uuid4())
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": new_uuid,
+                    "name": "Eriz",
+                    "region": "CH-1222",
+                    "canton": "BE",
+                    "magic_pass": "true",
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
+
+        assert Resort.objects.get(uuid=new_uuid).magic_pass is True
 
 
 @pytest.mark.django_db
