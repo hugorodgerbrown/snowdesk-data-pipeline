@@ -9,10 +9,11 @@ one of them. This command reads the sheet; ``dump_resorts_sheet`` writes it
 back from the database.
 
 The sheet carries ``Resort``'s editorial columns (operator, website, the
-``why_it_matters`` line, the map ``tier``, the ``magic_pass`` flag, elevations, lift/run counts, piste
-length, typical season dates, ``notes``), the coordinate pair, and the
-provenance of that coordinate. This command reconciles the database against
-it in up to three modes, selected with ``--mode`` (all three by default):
+``why_it_matters`` line, the map ``tier``, the ``magic_pass`` flag,
+elevations, lift/run counts, piste length, typical season dates, ``notes``),
+the coordinate pair, and the provenance of that coordinate. This command
+reconciles the database against it in up to three modes, selected with
+``--mode`` (all three by default):
 
   ``add``     Create a resort for a sheet row with no matching ``uuid``.
   ``update``  Overwrite the editorial fields of rows that do match.
