@@ -40,6 +40,7 @@ from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
     MicroRegion,
+    Pass,
     RegionAlias,
     Resort,
     SubRegion,
@@ -127,6 +128,26 @@ class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
     basemap_download = factory.LazyFunction(
         lambda: build_blob(_FACTORY_BASEMAP_BBOX, *MICRO_BAND)
     )
+
+
+class PassFactory(factory.django.DjangoModelFactory[Pass]):
+    """
+    Factory for Pass instances (SNOW-1083).
+
+    Gets or creates on ``slug``, so a test that also runs ``import_resorts``
+    (which creates ``magic-pass`` from ``passes.tsv``) reuses the row rather
+    than colliding with it.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Pass
+        django_get_or_create = ("slug",)
+
+    name = factory.Sequence(lambda n: f"Pass {n}")
+    slug = factory.Sequence(lambda n: f"pass-{n}")
+    website = ""
 
 
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):

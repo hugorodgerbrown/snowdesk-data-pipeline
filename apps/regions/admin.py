@@ -2,7 +2,7 @@
 apps/regions/admin.py — Django admin registrations for the regions app.
 
 Covers the geographic hierarchy (MajorRegion, SubRegion, MicroRegion),
-Resort, and RegionAlias. Bulletin-related admins live in
+Resort, Pass and RegionAlias. Bulletin-related admins live in
 ``apps/bulletins/admin.py``.
 """
 
@@ -15,6 +15,7 @@ from apps.locations.admin import ResortLocationInline
 from .models import (
     MajorRegion,
     MicroRegion,
+    Pass,
     RegionAlias,
     Resort,
     SubRegion,
@@ -98,6 +99,22 @@ class RegionAliasAdmin(admin.ModelAdmin):
     readonly_fields = ["id", "uuid", "created_at", "updated_at"]
 
 
+@admin.register(Pass)
+class PassAdmin(admin.ModelAdmin):
+    """Admin view for Pass (SNOW-1083).
+
+    A pass's resorts are edited from the resort side (``ResortAdmin``'s
+    ``passes`` field) or the sheet's ``passes`` column, so this page only
+    names the pass. Keep ``slug`` stable: the sheet keys on it.
+    """
+
+    list_display = ["name", "slug", "website", "updated_at"]
+    search_fields = ["name", "slug"]
+    prepopulated_fields = {"slug": ("name",)}
+    ordering = ["name"]
+    readonly_fields = ["id", "uuid", "created_at", "updated_at"]
+
+
 @admin.register(Resort)
 class ResortAdmin(admin.ModelAdmin):
     """Admin view for Resort.
@@ -123,8 +140,16 @@ class ResortAdmin(admin.ModelAdmin):
         "geocode_source",
         "needs_review",
     ]
-    list_filter = ["kind", "tier", "canton", "geocode_source", "needs_review"]
+    list_filter = [
+        "kind",
+        "tier",
+        "passes",
+        "canton",
+        "geocode_source",
+        "needs_review",
+    ]
     search_fields = ["name", "slug", "name_alt", "region__region_id"]
+    filter_horizontal = ["passes"]
     ordering = ["name"]
     readonly_fields = [
         "id",
@@ -143,6 +168,7 @@ class ResortAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "tier",
+                    "passes",
                     "operator_name",
                     "website",
                     "why_it_matters",
