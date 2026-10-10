@@ -1,0 +1,481 @@
+<title>Snowdesk page audit — 4 October 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · week of 28 September–4 October · 4 October 2026</p>
+    <h1>The site finally has a front door — and it closed two old findings on the way in, while its copy now runs ahead of a route feature deleted the same week</h1>
+    <p class="standfirst">
+      41 commits, 513 files since last week's audit (27 September). SNOW-1047 made <code>/</code> a
+      static homepage and moved the map to <code>/map/</code>. That homepage links to
+      <code>/compare/</code> — closing a finding this series carried for four audits — and the bulletin
+      guide was re-reviewed. In the same window SNOW-1062 deleted the per-route bulletin reading, which
+      the homepage's route copy still leans on, and the OAuth/MCP and explainer-reachability findings
+      are untouched. Linear was not consulted this run, so the ticket column below is omitted rather
+      than guessed.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">bbc1577</span> (27 Sep) → now <span class="mono">be778da</span></p>
+      <p class="eyebrow">41 commits · 513 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>A homepage shipped and closed two findings. The OAuth/MCP surface and the five explainers are still reachable from no page. The homepage's "your routes against the day's danger" claim now outruns the code.</h2>
+    <div class="col">
+      <p>
+        <code>public:home</code> at <code>/</code> is a static marketing page (no map JavaScript) and the
+        map is <code>public:map</code> at <code>/map/</code>
+        (<code>docs/decisions/the-homepage-is-not-the-map.md</code>). Its three link cards go to Help,
+        <code>/compare/</code> and the build blog. That is the first inbound link <code>/compare/</code>
+        has had from any template, and the decision to keep it out of the footer survives
+        (<code>tests/public/test_compare_page.py:263</code> still asserts the footer omits it).
+      </p>
+      <p>
+        The homepage tells a visitor to "Upload a .gpx and see the line against the day's danger and the
+        slope it crosses." SNOW-1062 (2 October) removed the per-route bulletin reading from the route
+        sheet and the trip page, its endpoint <code>routes:bulletin</code>, its offline store and its
+        help topic, on the stated ground that danger becomes a map layer, SNOW-979. A search finds
+        SNOW-979 only in comments and seams (<code>static/js/terrain_filter_core.js</code>,
+        <code>map.js</code>); no danger layer for routes exists yet. The line on the map still sits over
+        the region choropleth, so the copy is defensible but is no longer a feature anyone built.
+      </p>
+      <p>
+        Unmoved: nothing in <code>apps/public/templates</code> presents Claude/MCP as a feature (the one
+        match is still <code>privacy.html</code>), the five explainer pages under
+        <code>docs/explainers/</code> still have no inbound link from any template or script, SNOW-937's
+        alerting rebuild has no commit in the window, and the trip page still loads only
+        <code>route_slope_core.js</code>.
+      </p>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="figure">2</span><span class="label">findings closed (<code>/compare/</code> link, bulletin-guide staleness)</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">templates presenting Claude/MCP as a feature</span></div>
+      <div class="metric"><span class="figure">5</span><span class="label">explainer pages, zero inbound links</span></div>
+      <div class="metric"><span class="figure">90</span><span class="label">files in <code>docs/decisions/</code>, from 83 counted last week</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Closed</p>
+    <h2>Fixed since last week, with evidence</h2>
+    <div class="findings">
+      <article class="finding ok">
+        <div class="finding-head">
+          <span class="ref">F1</span>
+          <h3><code>/compare/</code> had no inbound link — now linked from the homepage</h3>
+          <span class="pill pill-ok">SNOW-1047</span>
+        </div>
+        <p>
+          <code>apps/public/templates/public/home.html:205</code> renders
+          <code>{% url 'public:compare' %}</code> in the "Compare apps" card
+          (<code>data-testid="home-links"</code>), and
+          <code>tests/public/test_homepage.py:60</code> asserts it. The finding was a missing link; the
+          link exists. The footer stays deliberately free of it. This closes a finding open since
+          the 20 September audit with no ticket ever written for it; it arrived as a side effect of
+          an unrelated redesign.
+        </p>
+      </article>
+      <article class="finding ok">
+        <div class="finding-head">
+          <span class="ref">B3a</span>
+          <h3>Bulletin guide no longer 109 days stale — but its content gap remains (see Unchanged)</h3>
+          <span class="pill pill-ok">docs sweep #1017</span>
+        </div>
+        <p>
+          <code>docs/bulletin-guide.md</code> now reads <code>last-reviewed: 2026-10-01</code>, set by the
+          all-docs alignment commit <code>7685d0e</code>. That closes the staleness half only.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>Re-verified against <span class="mono">be778da</span></h2>
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead>
+          <tr><th>Finding</th><th>Re-verified state</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>B3 · bulletin guide is SLF-only</td><td>Zero case-insensitive matches for ALBINA or Météo-France in <code>docs/bulletin-guide.md</code>, though the review date was refreshed. A date bump over unchanged content: a fresh <code>last-reviewed</code> now misleads more than the old one did. The homepage says it shows all three providers "in full", so the primer behind <code>/help/</code> is the weaker link.</td></tr>
+          <tr><td>C2 · <code>/examples/</code> orphaned</td><td>No reference to <code>examples_random</code> / <code>examples_category</code> in any template, <code>templates/</code> or <code>static/js</code>; routes still in <code>apps/public/urls.py:196</code>.</td></tr>
+          <tr><td>C3 · no regions index</td><td><code>apps/regions/</code> changed by four lines in two management commands; no view or template.</td></tr>
+          <tr><td>OAuth/MCP discoverability (N1, 27 Sep)</td><td>Only <code>privacy.html</code> mentions Claude among public templates; <code>help.html</code> and <code>compare.html</code> do not. <code>apps/oauth</code> and <code>apps/mcp_server</code> changed by two lines. Whether this is deliberate is still written nowhere.</td></tr>
+          <tr><td>Trip page vs map line (N2, 27 Sep)</td><td>Narrowed, not closed. <code>_trip_map.html:231</code> loads <code>route_slope_core.js</code> only; the map (<code>map.html:382,388</code>) loads both slope and legs cores, and since c9744a5 paints slope classes from z14 (<code>ROUTE_SLOPE_MINZOOM = 14</code>, <code>map.js:2224</code>). At close zoom the two now agree; below z14 the map shows legs and the trip shows slope colour. The decision doc still says "the trip page still draws the slope-coloured line" and no longer treats it as a gap.</td></tr>
+          <tr><td>Public-explainer reachability</td><td>Five HTML pages in <code>docs/explainers/</code>; <code>grep -rn 'explainers/' apps/*/templates templates static/js</code> finds nothing. The homepage's three link cards (Help, Compare, build blog) do not include them.</td></tr>
+          <tr><td>Alerting rebuild SNOW-937</td><td><code>git log bbc1577..HEAD -- apps | grep -i alert</code> is empty; no alert model, view or command. Linear state not checked this run.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+    <div class="findings">
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N3</span>
+          <h3>A real homepage exists, and its copy is the site's strongest — with two claims to check</h3>
+          <span class="pill pill-new">SNOW-1047</span>
+        </div>
+        <p>
+          <code>home.html</code> opens with a pitch, a still of the map, six benefit cards, a "The bulletin
+          is the authority" caveat and three link cards. It carries <code>_page_meta.html</code> as the
+          project rules require. Two claims to weigh. First, the card "Three countries, one way to read
+          them" describes SLF (Switzerland), ALBINA (Austria, South Tyrol, Trentino) and Météo-France,
+          which is three providers covering four countries, and the page's own meta description lists
+          "Switzerland, France, Austria, South Tyrol and Trentino." Second, the routes card, covered
+          above. The file's own header calls the copy "a DRAFT for review", so both may already be on
+          someone's list.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">apps/public/templates/public/home.html</span> — the "Three countries" and "Your routes on the same map" cards</li>
+          <li><span class="k">docs/decisions/the-homepage-is-not-the-map.md</span> — <code>/</code> static, <code>/map/</code> the app, <code>/?&lt;map state&gt;</code> 301s</li>
+        </ul>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N4</span>
+          <h3>The per-route bulletin reading was deleted from every surface; the danger-as-a-layer replacement is not built</h3>
+          <span class="pill pill-new">SNOW-1062 · SNOW-979</span>
+        </div>
+        <p>
+          The route detail sheet's "This day's bulletin, along your line" block, the trip page's reading,
+          <code>/routes/&lt;uuid&gt;/bulletin/</code>, the help topic and an IndexedDB store were removed
+          in one commit (<code>119b38d</code>). A new help topic, "Terrain filter"
+          (<code>_topic_terrain_filter.html</code>, SNOW-978), arrived the same week, so the aspect, slope
+          and elevation highlight is documented, but the danger-on-terrain layer the deletion points at is
+          not. Until it ships, a route is shown against terrain only, and any copy that promises danger
+          on a route is ahead of the product.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N5</span>
+          <h3>The route panel was rebuilt twice in a week</h3>
+          <span class="pill pill-new">SNOW-1052, 1064–1069</span>
+        </div>
+        <p>
+          Rail two (the track-angle readout) was added and then removed by SNOW-1065 within seven days,
+          replaced by one top-left route panel with a point header, an aspect wheel and a point card.
+          The decision docs were updated in step (two now marked HISTORICAL). Worth recording because the
+          explainers' route figures (<code>anatomy-of-a-route</code>, <code>pitch-and-roll</code>)
+          describe the older arrangement and have no inbound links to prompt anyone to re-check them.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>What this week's shape changes about older findings</h2>
+    <div class="col">
+      <p>
+        <strong>The homepage was the answer to a question no ticket asked.</strong> The
+        <code>/compare/</code> finding was written as "needs a footer link". The remedy that landed is
+        a link from the front door, a better place than the footer, and a reminder that the decision
+        in <code>test_compare_page.py</code> (never in the footer) and the audit's complaint were
+        compatible all along. The same move is open to the explainers: the homepage already has a
+        three-card "where to read more" row.
+      </p>
+      <p>
+        <strong>A <code>last-reviewed</code> date can now mislead.</strong> The docs sweep refreshed
+        <code>bulletin-guide.md</code> without adding the two providers it lacks, so the staleness
+        signal this series used to track the gap has gone quiet while the gap has not.
+      </p>
+      <p>
+        <strong>SNOW-1062 and the homepage disagree.</strong> One decided danger is not a property of a
+        route; the other still invites a visitor to see a route "against the day's danger".
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p>1. Reword the homepage routes card, or hold it until SNOW-979 lands, and fix "three countries" to match the providers.</p>
+      <p>2. Add the explainers to the homepage link row, or write down that they are developer-facing; the reachability question is now five pages and eleven days old.</p>
+      <p>3. Add ALBINA and Météo-France to <code>bulletin-guide.md</code>, or lower its <code>last-reviewed</code> honesty by noting scope in the page.</p>
+      <p>4. Say once whether the OAuth/MCP surface is meant to be found from Snowdesk's own pages.</p>
+      <p>5. Confirm SNOW-937's status, and whether the trip page's below-z14 colour difference is intended.</p>
+    </div>
+    <p class="note">
+      Re-verified against <span class="mono">be778da</span> on 4 October 2026 from the code. Linear was not
+      consulted. Nothing was changed and no tickets were created or edited.
+    </p>
+  </section>
+
+</div>
