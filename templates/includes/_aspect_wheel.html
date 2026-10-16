@@ -1,0 +1,61 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_aspect_wheel.html — the aspect wheel host (SNOW-1063).
+
+One route segment's heading and the way the ground under it faces, as two
+concentric compass rings, with the one-line summary under it. The markup is
+an empty host: static/js/aspect_wheel.js reads ``data-state`` and draws the
+SVG through ``self.pwaAspectWheelCore`` (static/js/aspect_wheel_core.js),
+then writes the line. The wheel is drawn client-side because its state
+moves with the route cursor; this partial exists so the registry at
+/_components/ can show every state, and so the strings template has a home
+ready for whichever route surface mounts the wheel.
+
+The strings template carries every word the wheel says — the compass
+points and the label and line patterns — under ``{% trans %}``, so
+makemessages sees them and no literal reaches the DOM from JavaScript. A
+page that renders several wheels renders the same template more than once;
+``pwaStrings.read`` takes the first.
+
+Context:
+    state_json : the wheel's state (``wheelState``'s shape), JSON-encoded.
+    size       : the wheel's size in CSS px, 16–200 (default 48).
+{% endcomment %}
+<span class="inline-flex flex-col items-center gap-1 p-2 bg-card">
+    <span
+        data-aspect-wheel
+        data-size="{{ size|default:48 }}"
+        data-state="{{ state_json }}"
+        class="block leading-none"
+    ></span>
+    <span data-aspect-wheel-line class="text-meta text-text-2"></span>
+</span>
+<template id="aspect-wheel-strings-template">
+    <span data-string="compass-0">{% trans "N" context "compass point" %}</span>
+    <span data-string="compass-1">{% trans "NE" context "compass point" %}</span>
+    <span data-string="compass-2">{% trans "E" context "compass point" %}</span>
+    <span data-string="compass-3">{% trans "SE" context "compass point" %}</span>
+    <span data-string="compass-4">{% trans "S" context "compass point" %}</span>
+    <span data-string="compass-5">{% trans "SW" context "compass point" %}</span>
+    <span data-string="compass-6">{% trans "W" context "compass point" %}</span>
+    <span data-string="compass-7">{% trans "NW" context "compass point" %}</span>
+    <span data-string="heading-pair">{% blocktrans %}%(first)s then %(second)s{% endblocktrans %}</span>
+    <span data-string="label">{% blocktrans %}%(track)s; %(terrain)s{% endblocktrans %}</span>
+    <span
+        data-string="label-climbing"
+    >{% blocktrans %}Heading %(heading)s, climbing %(grade)s°{% endblocktrans %}</span>
+    <span
+        data-string="label-descending"
+    >{% blocktrans %}Heading %(heading)s, descending %(grade)s°{% endblocktrans %}</span>
+    <span data-string="label-level">{% blocktrans %}Heading %(heading)s, level{% endblocktrans %}</span>
+    <span data-string="label-heading">{% blocktrans %}Heading %(heading)s{% endblocktrans %}</span>
+    <span data-string="label-no-heading">{% trans "No heading" %}</span>
+    <span data-string="label-faces">{% blocktrans %}slope faces %(aspect)s, %(slope)s°{% endblocktrans %}</span>
+    <span data-string="label-flat">{% trans "flat ground" %}</span>
+    <span data-string="label-unknown">{% trans "no terrain data" %}</span>
+    <span data-string="line">{% blocktrans %}%(track)s · %(terrain)s{% endblocktrans %}</span>
+    <span data-string="line-heading">{% blocktrans %}Heading %(heading)s{% endblocktrans %}</span>
+    <span data-string="line-faces">{% blocktrans %}slope faces %(aspect)s{% endblocktrans %}</span>
+    <span data-string="line-flat">{% trans "flat ground" %}</span>
+    <span data-string="line-unknown">{% trans "no terrain data" %}</span>
+</template>

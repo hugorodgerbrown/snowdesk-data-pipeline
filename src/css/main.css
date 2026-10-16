@@ -382,20 +382,22 @@
   --color-eaws-very-high:     #820100;   /* SLF interpretation guide; EAWS
                                             itself gives 5 no separate colour */
 
-  /* —— swisstopo slope-angle classes (SNOW-691) ————
-     The five painted classes of the
-     ch.swisstopo.hangneigung-ueber_30 raster, sampled
-     off the served tiles. This is the SLF slope
+  /* —— slope-angle classes (SNOW-691, SNOW-1073) ————
+     The five painted classes, sampled off swisstopo's
+     ch.swisstopo.hangneigung-ueber_30 raster when the
+     map showed it (SNOW-691). This is the SLF slope
      classification, so — like the EAWS scale above —
      these are a published standard, not a brand
-     choice: do not adjust them. Everything below 30°
-     is fully transparent in the source raster and so
-     has no token here.
+     choice: do not adjust them. Nothing below 30° is
+     painted, so it has no token here.
 
      Consumed by .map-legend-swatch--slope-* in
-     static/css/map.css. The map layer itself paints
-     nothing: it is a raster, and the colours arrive
-     already baked into the tile.
+     static/css/map.css. The map's slope layer is now
+     painted on the device from our terrain-class tiles
+     (SNOW-1073), so the same values are mirrored as
+     literals in static/js/slope_classes_core.js — a
+     canvas pixel cannot read a custom property — and a
+     Vitest test holds the two equal.
      ————————————————————————————————————————— */
   --color-slope-30: #f2e50a;   /* 30–35° */
   --color-slope-35: #f46f24;   /* 35–40° */
@@ -404,9 +406,9 @@
   --color-slope-50: #4b4b4b;   /* >50°   */
 
   /* —— two more, for the slope-coloured route LINE (SNOW-910) ——
-     The five above are the raster's and are a published
-     standard. These two are ours, and exist because a
-     LINE has to carry two states a raster does not:
+     The five above are a published standard. These two
+     are ours, and exist because a LINE has to carry two
+     states a raster does not:
 
      --color-slope-gentle: under 30°. The raster paints
        nothing there, which on a raster reads as "the
@@ -428,18 +430,36 @@
   --color-slope-gentle: #38bdf8;   /* <30°              */
   --color-slope-unknown: #94a3b8;  /* sampled, no answer */
 
-  /* —— the crux ring (SNOW-911) ——
-     A marker, not a band, and so deliberately NOT on the
-     scale above: the ring says WHERE to look and the line
-     under it already says how steep that ground is.
-     Borrowing a scale colour would make it read as a
-     sixth class. Near-black, which is the one ink
-     readable over all six of them — the ring is drawn
-     over the coloured line it marks. Mirrored as a
-     literal in map.js (ROUTE_CRUX_COLOUR), which cannot
-     read a custom property in a MapLibre paint property.
+  /* —— the terrain filter (SNOW-978) ——
+     --color-terrain-match: ground that matches the reader's
+       aspect / slope / elevation filter. The same blue as
+       --color-accent's light value, but its own token: the
+       map paints it from a literal in terrain_filter_core.js
+       (pixels are written on the device, and a pixel cannot
+       read a CSS variable), and a test holds the two equal.
+       Painted at about 45% so contours and hillshade read
+       through it. NOT mirrored for dark mode — the map's
+       basemap does not change with the theme either.
+
+     --color-terrain-nodata: the hatch over ground the tiles
+       carry no data for, so blank on the map never has to
+       mean "no data". Mirrored in terrain_filter_core.js on
+       the same terms.
      ————————————————————————————————————————— */
-  --color-crux-ring: #1a1916;
+  --color-terrain-match: #2563eb;
+  --color-terrain-nodata: #475569;
+
+  /* —— the track scale's first step (SNOW-1064) ——
+     The aspect wheel's INNER ring names the track on its
+     own five-step scale (level < 5°, gentle < 15°,
+     moderate < 25°, steep < 35°, very steep), reusing
+     gentle, 30, 35 and 40 above for the upper four. A
+     level track needs a step of its own below gentle, so
+     it is the same blue, lighter: on the scale's cool end
+     and plainly "less" than gentle. Wheel only; no line
+     or legend paints it.
+     ————————————————————————————————————————— */
+  --color-track-level: #bae6fd;    /* track under 5°    */
 
   /* —— the no-fall passage's core (SNOW-964) ——
      A passage is drawn as a SPLIT line: the band
@@ -452,11 +472,10 @@
      `transparent` is not an option: MapLibre cannot
      punch a hole through one line layer to another, so
      a transparent core would reveal the dark casing
-     and read as a shadow rather than a gap. #ffffff is
-     avoided because it is the crux ring's halo, and
-     the two marks co-occur on nearly every passage —
-     anything over 50° has already been flagged a crux
-     at 35°.
+     and read as a shadow rather than a gap. A shade
+     off #ffffff rather than pure white, kept from when
+     pure white was another marker's halo (the crux
+     ring, removed by SNOW-1066).
 
      Mirrored as a literal in route_slope_core.js
      (PASSAGE_CORE_COLOUR / PASSAGE_CORE_TOKEN), which
@@ -468,18 +487,15 @@
   /* —— the fall-line arrow ——
      A small arrow on a saved route, pointing the way
      the ground under it FALLS. A mark rather than a
-     band, so off the scale above for the crux ring's
-     reason — a marker tinted from the ramp reads as a
-     further class of ground.
+     band, so off the scale above: a marker tinted from
+     the ramp reads as a further class of ground.
 
-     The ring's own value, and named separately on
-     purpose. The two are one family of mark and should
-     look like it, but they can be re-inked
-     independently, and a token named for one mark that
-     two marks read is the drift SNOW-969 spent two
-     tickets closing. `--color-route-line-casing`
-     already carries this value under a third name on
-     the same reasoning.
+     Near-black, the one ink readable over every class
+     on the line, and named for this mark alone: a
+     token named for one mark that two marks read is
+     the drift SNOW-969 spent two tickets closing.
+     `--color-route-line-casing` already carries this
+     value under another name on the same reasoning.
 
      Mirrored as a literal in route_slope_core.js
      (FALL_LINE_COLOUR / FALL_LINE_TOKEN), which is
@@ -1005,36 +1021,6 @@
    completed. */
 .basemap-identity-fill { background: var(--color-sync-ok); }
 
-/* HACK MODE, DEBUG only: the tile-zoom readout beside the help roundel
-   (static/js/map_zoom_readout.js). It borrows .map-legend-toggle's roundel
-   shape from the stack it sits in and only has to make the text fit —
-   mono, because it is a number that changes and a proportional font makes
-   it jump about. */
-.map-zoom-readout {
-    /* The roundel shape from .map-legend-toggle (static/css/map.css),
-       copied rather than shared: that class is what marks an interactive
-       map control, and this reads a value. Everything here is shape; none
-       of it is hover, cursor or focus. */
-    display: inline-flex;
-    width: var(--map-control-sm);
-    height: var(--map-control-sm);
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    box-shadow: var(--shadow-glass);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: -0.02em;
-    color: var(--color-text-1);
-}
-
-
 /* —— Hero rating badge tokens ———————————————
    EAWS-coloured badge pinned to the bulletin hero
    card beside the region name. Distinct from the
@@ -1559,82 +1545,14 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 
-/* —— Rail one's leg fills (SNOW-1018) ————————————
+/* —— The rail's leg fills (SNOW-1018) ————————————
    static/js/route_rail.js draws one <path class="route-rail-leg"> per
-   leg and marks it `data-climbing` and, while it is the open leg,
-   `aria-pressed="true"`. Both are data-attribute selectors, which a
-   utility class cannot express. The open leg's fill is raised rather
-   than recoloured, so it still reads as the same climb or descent. */
-.route-rail-leg {
-    fill-opacity: 0.22;
-    cursor: pointer;
-    transition: fill-opacity 120ms ease-out;
-}
+   leg and marks it `data-climbing`, a data-attribute selector a utility
+   class cannot express. The fills are a drawing only: leg selection was
+   removed on 2026-10-02, and a tap on the profile places a point. */
+.route-rail-leg { fill-opacity: 0.22; }
 .route-rail-leg[data-climbing="true"]  { fill: var(--color-route-rail-climb); }
 .route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
-.route-rail-leg:hover { fill-opacity: 0.36; }
-.route-rail-leg[aria-pressed="true"] { fill-opacity: 0.6; }
-/* A mouse or touch press focuses the leg (it is a tabindex path) and the
-   browser would ring its bounding box; only keyboard focus is marked, and
-   by the fill below rather than by an outline. */
-.route-rail-leg:focus { outline: none; }
-.route-rail-leg:focus-visible { outline: none; fill-opacity: 0.45; }
-
-/* —— Rail two's lane (SNOW-1019) ————————————————
-   static/js/route_rail_two.js pans and pinch-zooms the lane itself, so
-   the browser must not take a touch on it as a page scroll or a zoom:
-   `touch-action: none` hands every pointer to the script. A press on a
-   band or a passage bar moves the cursor there; nothing is selected
-   (SNOW-1052 removed the `data-selected` rules with the selection). A
-   press or a drag reads a point, so the pointer is a crosshair rather
-   than a grab hand, and a band or bar has no hover of its own. */
-.route-rail-two-lane {
-    touch-action: none;
-    cursor: crosshair;
-    user-select: none;
-}
-/* The empty row (SNOW-1024) holds no leg, so there is nothing to read. */
-[data-route-rail-two][data-empty] .route-rail-two-lane { cursor: default; }
-/* A press on the lane focuses it; the ring is for keyboard focus only. */
-.route-rail-two-lane:focus:not(:focus-visible) { outline: none; }
-.route-rail-two-lane:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-/* —— Rail two's leg picker (SNOW-1033) ——————————
-   static/js/route_rail_two.js lays one <button class="route-rail-two-leg">
-   per leg over the empty lane, marked `data-climbing` like rail one's leg
-   fills, with a 24 px `.route-rail-two-leg-fill` inside carrying the leg
-   number. A data-attribute selector picks the colour, which a utility
-   cannot: the fill is rail one's leg colour at a tint, the number the same
-   colour darkened towards the text ink. `.route-rail-two-leg-solid` is the
-   pressed segment's full colour, which the opening motion fades in. */
-.route-rail-two-leg {
-    --route-rail-two-leg-colour: var(--color-route-rail-descent);
-    --route-rail-two-leg-tint: 22%;
-    cursor: pointer;
-}
-.route-rail-two-leg[data-climbing="true"] {
-    --route-rail-two-leg-colour: var(--color-route-rail-climb);
-}
-.route-rail-two-leg-fill {
-    background-color: color-mix(
-        in srgb,
-        var(--route-rail-two-leg-colour) var(--route-rail-two-leg-tint),
-        transparent
-    );
-    color: color-mix(in srgb, var(--route-rail-two-leg-colour) 70%, var(--color-text-1));
-    transition: background-color 120ms ease-out;
-}
-.route-rail-two-leg-solid { background-color: var(--route-rail-two-leg-colour); }
-.route-rail-two-leg:hover { --route-rail-two-leg-tint: 36%; }
-/* The ring is for keyboard focus only, and goes round the coloured part
-   rather than the full-height tap area. */
-.route-rail-two-leg:focus { outline: none; }
-.route-rail-two-leg:focus-visible .route-rail-two-leg-fill {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 1px;
-}
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and

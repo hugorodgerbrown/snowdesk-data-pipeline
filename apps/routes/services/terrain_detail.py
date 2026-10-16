@@ -4,9 +4,10 @@ apps/routes/services/terrain_detail.py — one row per segment, five figures.
 SNOW-1020. Four numbers describe what the ground is doing under a route at
 any point: the slope angle, the aspect, the track's bearing, and the
 gradient along the track. All four were available and no two could be
-read together: ``compact_slope`` keeps the aspect off the wire,
-``passages`` derives the bearing and throws it away, and nothing computed
-the along-track gradient at all. This module puts them in one row per
+read together: ``compact_slope`` kept the aspect off the wire (it sends
+an eight-sector index since SNOW-976, never the degree), ``passages``
+derives the bearing and throws it away, and nothing computed the
+along-track gradient at all. This module puts them in one row per
 segment, for the staff page in ``apps.public.debug_views`` and its CSV.
 
 **NOTHING HERE IS STORED.** ``docs/decisions/a-slope-segment-is-the-

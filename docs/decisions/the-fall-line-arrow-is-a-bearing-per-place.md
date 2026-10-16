@@ -2,7 +2,7 @@
 name: the-fall-line-arrow-is-a-bearing-per-place
 description: fall_line.py, fall_line_marks, fall_lines on the wire, routes-fall-lines — the downhill arrow on a route, steep ground only
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-02
 ---
 
 # The fall-line arrow is a bearing per place, not an aspect per segment
@@ -12,7 +12,8 @@ last-reviewed: 2026-10-01
 > (`trip-route-fall-lines`). The bank ribbon on rail two replaced it: a
 > tick per place leaning by how far the ground tilts across the track,
 > which answers "does the track cut across this face or run down it" on
-> the axis the reader is already reading. The data still travels —
+> the axis the reader is already reading. SNOW-1065 later retired rail two
+> and its ribbon too, so nothing draws the direction now. The data still travels —
 > `fall_line_marks` still runs and `fall_lines` is still on the slope
 > record — and `fallLineCollection` in `route_slope_core.js` and
 > `fallLineArrowPixels` in `route_markers_core.js` are kept, though no
@@ -28,7 +29,9 @@ descent. Four constraints:
 - **A bearing per PLACE.** The wire carries `fall_lines`: a list of
   `{"i": 12, "deg": 112}` — a segment index into the `angles` array the
   client already holds, and a whole compass degree. Never the
-  per-segment aspect the record stores.
+  per-segment aspect the record stores. (Since SNOW-976 a binned
+  per-segment `aspects` array travels beside it for another reader — see
+  the next section. The marks do not read it.)
 - **Derived at read time**, in `apps/routes/services/fall_line.py`, with
   both thresholds as keyword arguments. Nothing new is stored.
 - **Steep ground only.** `FALL_LINE_GATE_DEG` is 30°, the number
@@ -42,8 +45,9 @@ descent. Four constraints:
 
 ### The colour cannot say which way a face runs
 
-SNOW-910 colours the ground under the track, SNOW-911 rings the passages
-where the ground around it can release, SNOW-964 splits the line where
+SNOW-910 colours the ground under the track, SNOW-911 rang the passages
+where the ground around it can release (removed by SNOW-1066), SNOW-964
+splits the line where
 the track is on no-fall ground. A traverse across a 40° face and a
 descent of the same face get identical treatment on all three, and on the
 ground they are not the same day out. SNOW-964 does name the
@@ -64,6 +68,17 @@ looking. Spacing them is not a payload optimisation that happens to look
 better, it is the only legible form of the mark — which is why the
 spacing lives on the server beside the gate rather than in a client that
 would have to be trusted to thin consistently on two surfaces.
+
+**SNOW-976 sent a per-segment aspect after all, for a different reader.**
+The aspect wheel (SNOW-1063) shows which way the ground faces under the
+rail cursor, on moderate ground as well as steep, so `compact_slope` now
+sends `aspects`: one eight-sector index per segment (0 = N … 7 = NW),
+null below 5° or where unknown, about 1.3 kB on the 638-segment Col de la
+Chaux canonical tour. That is not the array this section rejected: it is
+a sector rather than the stored degree, it is read one segment at a time
+under a cursor rather than drawn 600 times along the line, and its
+payload is that of a digit. The arrows are unaffected — still a bearing
+per place, at the 30° gate, spaced 250 m, derived from the stored degree.
 
 ### Read time, because a stored mark list would freeze both constants
 
@@ -88,9 +103,10 @@ whatever the arrows say or fail to say, the band colour is still there.
 
 ### The arrow may be dropped; the ring may not
 
-`routes-fall-lines` is the only route mark with `icon-allow-overlap:
-false`. A crux ring dropped by the collision engine understates the day,
-which is why those ignore collision entirely. An arrow dropped at z12
+`routes-fall-lines` was the only route mark with `icon-allow-overlap:
+false`. A crux ring dropped by the collision engine understated the day,
+which is why those ignored collision entirely (the rings came off the map
+in SNOW-1019, and SNOW-1066 removed cruxes from routes). An arrow dropped at z12
 costs nothing: the survivors say the same thing about the same face. That
 asymmetry is what lets the server keep one spacing rule for every zoom.
 
@@ -128,12 +144,16 @@ asymmetry is what lets the server keep one spacing rule for every zoom.
 
 **Send a flat `aspects` array beside `angles`.** The doubled payload the
 shared-record decision rejects, and a drawing nobody can read. Both, at
-once.
+once. Rejected as the source of the ARROWS, which is still the case;
+SNOW-976 later sent a binned `aspects` array for the aspect wheel, which
+draws one segment at a time — see "Per-segment aspect is the payload the
+record was designed to avoid" above.
 
 **Draw an arrow on every segment, thinning client-side.** Two surfaces
 would each need the thinning rule, and two implementations of it would
 eventually disagree about how many passages a face has — the reasoning
-`cruxes` already follows in refusing to re-group client-side.
+`cruxes` followed in refusing to re-group client-side, before SNOW-1066
+removed them.
 
 **Scale the arrow, or fade it, by steepness.** The line under it already
 carries the angle, in a palette the legend explains and the raster

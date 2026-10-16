@@ -72,6 +72,8 @@ function stubMapLibre(state) {
     sources: {
       relief: { type: 'vector', url: RELIEF_TILEJSON },
       base: { type: 'vector', url: BASE_TILEJSON },
+      // SNOW-978: a custom-protocol source, whose opaque origin is "null".
+      'terrain-filter': { type: 'raster', tiles: ['terrainfilter://{z}/{x}/{y}?v=0'] },
     },
     glyphs: `${STYLE_ORIGIN}/fonts/{fontstack}/{range}.pbf`,
   }));
@@ -200,9 +202,10 @@ function installDbStub() {
 }
 
 /** The DOM map.js's boot reads. */
-function buildFixture() {
+function buildFixture(mapAttrs = '') {
   document.body.innerHTML = `
     <div id="map"
+         ${mapAttrs}
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
@@ -245,11 +248,12 @@ async function waitFor(predicate, timeoutMs = 1000) {
  * listeners of its own that would blur both the event dispatch and the
  * `getStyle()` call count.
  *
+ * @param {string} [mapAttrs] Extra attributes for the #map element.
  * @returns {Promise<object>} The stub map, the posted messages, and the
  *   helpers each case drives the timing with.
  */
-async function boot() {
-  buildFixture();
+async function boot(mapAttrs = '') {
+  buildFixture(mapAttrs);
   const state = { tileJSONResolved: false };
   const map = stubMapLibre(state);
   installDbStub();
@@ -329,6 +333,7 @@ describe('learning a TileJSON-backed basemap’s tile origins', () => {
     await waitFor(() => ctx.registeredOrigins().includes(HOSTS[0]));
 
     for (const host of HOSTS) expect(ctx.registeredOrigins()).toContain(host);
+    expect(ctx.registeredOrigins()).not.toContain('null');
   });
 
   it('learns them although no idle event ever arrives', async () => {
@@ -395,5 +400,21 @@ describe('learning a TileJSON-backed basemap’s tile origins', () => {
     await waitFor(() => false, 50);
 
     expect(ctx.posted).toHaveLength(messagesBefore);
+  });
+});
+
+describe('seeding the terrain filter’s class-tile origin (SNOW-978)', () => {
+  const TILE_ATTRS =
+    'data-terrain-filter-eligible="true" ' +
+    'data-terrain-class-tile-url="https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"';
+
+  it('registers the class-tile origin when the filter is eligible', async () => {
+    const { registeredOrigins } = await boot(TILE_ATTRS);
+    expect(registeredOrigins()).toContain('https://tiles.example.test');
+  });
+
+  it('registers no class-tile origin when the filter is not eligible', async () => {
+    const { registeredOrigins } = await boot();
+    expect(registeredOrigins()).not.toContain('https://tiles.example.test');
   });
 });

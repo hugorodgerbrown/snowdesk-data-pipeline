@@ -36,8 +36,8 @@ from typing import Any
 from django.conf import settings
 
 from apps.public._component_fixtures import (
+    ASPECT_WHEEL_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
-    BULLETIN_READINGS_VARIANTS,
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
     CARD_VARIANTS,
@@ -50,6 +50,7 @@ from apps.public._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -59,6 +60,7 @@ from apps.public._component_fixtures import (
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
@@ -69,11 +71,13 @@ from apps.public._component_fixtures import (
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
+    SEGMENTED_OPTION_VARIANTS,
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
+    TERRAIN_FILTER_KEY_VARIANTS,
     THEME_PREFERENCE_VARIANTS,
     THREE_WORD_ADDRESS_VARIANTS,
     TOAST_BANNER_VARIANTS,
@@ -512,17 +516,16 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="slope",
         label="Slope angle",
         description=(
-            "swisstopo slope-angle classes, SLF classification "
-            "(theme-invariant; the raster leaves below 30° unpainted). The "
+            "Slope-angle classes, SLF classification, painted from our "
+            "terrain-class tiles by the terrain filter's slope mode "
+            "(SNOW-1073; theme-invariant; nothing under 30° is painted). The "
             "last four are the route line's own — a line cannot go blank "
-            "where the raster does without reading as a break, and a "
+            "where the layer does without reading as a break, and a "
             "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
-            "The last three are MARKS drawn over that line rather than "
+            "The last two are MARKS drawn over that line rather than "
             "bands of it, and borrow no colour from the scale on purpose: "
             "a marker tinted from the ramp reads as a further class of "
-            "ground (SNOW-911, SNOW-964). The fall-line arrow shares the "
-            "crux ring's value under a name of its own — one family of "
-            "mark, two marks that can be re-inked apart."
+            "ground (SNOW-964)."
         ),
         kind="swatches",
         swatch_columns=5,
@@ -534,9 +537,30 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
             Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
-            Token("--color-crux-ring", "Key passage (marker)", "#1a1916", None),
+            Token(
+                "--color-track-level", "Level track (wheel, under 5°)", "#bae6fd", None
+            ),
             Token("--color-passage-core", "No-fall passage (marker)", "#f8fafc", None),
             Token("--color-fall-line-arrow", "Fall line (marker)", "#1a1916", None),
+        ),
+    ),
+    FoundationCategory(
+        slug="terrain-filter",
+        label="Terrain filter",
+        description=(
+            "The map's terrain filter (SNOW-978): ground matching the "
+            "reader's aspect / slope / elevation filter, tinted at about 45% "
+            "so contours read through it, and the hatch over ground the "
+            "tiles carry no data for. Theme-invariant, like every map mark. "
+            "The pixels are painted on the device by "
+            "static/js/terrain_filter_core.js, which carries these two as "
+            "literals; a Vitest test holds them equal."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-terrain-match", "Matches the filter", "#2563eb", None),
+            Token("--color-terrain-nodata", "No data (hatch)", "#475569", None),
         ),
     ),
     FoundationCategory(
@@ -1000,7 +1024,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "report map surfaces — fixed to the viewport edge on mobile, a "
             "floating card on larger screens. Content is injected by the "
             "owning JS module (favourites.js / report.js) at open time; the "
-            "shell itself carries the data-overlay dismiss contract."
+            "shell itself carries the data-overlay dismiss contract. A sheet "
+            "that declares detents (SNOW-1097) gets a handle on phones and "
+            "rests at peek, half or full; forms declare none."
         ),
         kind="components",
         partial="includes/_overlay_sheet.html",
@@ -1078,6 +1104,29 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_scrubber_demo.html",
         variants=SEASON_SCRUBBER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-zoom-control",
+        label="Map zoom control",
+        description=(
+            "The roundel at the top of the map's bottom-left stack (SNOW-1077), "
+            "the help and (i) roundels' size. Its face is the whole tile zoom "
+            "the map is drawing and its accessible name says it ('Zoom level "
+            "13'). It opens a flyout into the crook the legend card uses: − "
+            "and + as 44 px targets, disabled at the map's z4 and z18; a "
+            "scale across that range with a marker at the camera; and a tick "
+            "for each zoom-gated layer that is on — the terrain filter from "
+            "z12, a route's slope colours from z14 — with a row naming it. A "
+            "tick and its row turn from muted to full strength once the "
+            "camera reaches the gate. Under DEBUG a last line gives the "
+            "camera zoom to two decimals. Filled on /map/ by "
+            "static/js/map_zoom_control.js; the gates come from "
+            "window.pwaZoomGates in map.js. Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_zoom_control_demo.html",
+        variants=MAP_ZOOM_CONTROL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
@@ -1397,6 +1446,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="segmented-option",
+        label="Segmented option",
+        description=(
+            "One option of a segmented control: a real radio drawn as a pill "
+            "in a rounded track, the selected pill filled with the accent "
+            "(SNOW-1073). The caller writes the fieldset, its legend and the "
+            "track, and includes this once per option. Used by the theme "
+            "preference and the terrain filter's mode control."
+        ),
+        kind="components",
+        partial="includes/_segmented_option.html",
+        variants=SEGMENTED_OPTION_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="switch",
         label="Switch",
         description=(
@@ -1409,6 +1473,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_switch.html",
         variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="terrain-filter-key",
+        label="Terrain filter key",
+        description=(
+            "The map terrain filter's colour key (SNOW-978): the match tint "
+            "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
+            "five slope classes and the hatch; the script hides the rows of "
+            "the mode not set. Rendered in the map legend and "
+            "inside the filter sheet, which carries its own key because the "
+            "legend is hidden on a phone while a route is open."
+        ),
+        kind="components",
+        partial="includes/_terrain_filter_key.html",
+        variants=TERRAIN_FILTER_KEY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
@@ -1551,22 +1631,86 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="route-rail",
         label="Route rail",
         description=(
-            "Rail one (SNOW-1018): the strip docked over the map's foot "
-            "while a route is open. Three columns — the identity block "
-            "(eyebrow, name, figures, a × and the actions as a '…' menu — "
-            "Terrain and bulletin, which opens the route detail sheet, then "
-            "the routes row's four in its order), the lane (the elevation "
-            "profile as one "
-            "filled shape per leg under one outline, with distance ticks), "
-            "and a readout naming the open leg. Pressing a leg opens it on "
-            "the route cursor; pressing it again closes it. Rendered once, "
-            "empty and hidden, and filled by static/js/route_rail.js, so "
-            "this page shows the shell alone."
+            "The route panel (SNOW-1018; one rail since SNOW-1065, one "
+            "panel pinned top-left since SNOW-1068): the open route's "
+            "profile under a header in one of two states, 400 px wide "
+            "under the region chip's row on desktop and full width on a "
+            "phone's top edge. Route: the name as the title and its "
+            "figures in the routes list's meta line ('12.9km · 337m ↑ · "
+            "1906m ↓ · 2h51m'). Point: the point header (the aspect wheel "
+            "and the reading) in their place and the eyebrow naming the "
+            "route. The profile is always shown, one filled shape per leg "
+            "under one outline with distance ticks; a tap on its top line "
+            "places a point, drawn as a line with a dot on the outline and "
+            "the point's elevation and distance beside it. The × always "
+            "closes the route. The '…' menu (Terrain, "
+            "then the routes row's four in its order) and × at the top "
+            "right. Rendered once, empty and hidden, and filled by "
+            "static/js/route_rail.js, so this page shows the shell alone."
         ),
         kind="components",
         partial="includes/_route_rail.html",
         variants=ROUTE_RAIL_VARIANTS,
         panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="aspect-wheel",
+        label="Aspect wheel",
+        description=(
+            "One route segment's heading and the way the ground under it "
+            "faces (SNOW-1063): two eight-sector compass rings, north up. "
+            "The outer ring lights the sector the ground faces, in the "
+            "slope class of its angle; the inner ring lights the heading, "
+            "in the class of the track's own gradient, with the previous "
+            "and next segments' headings at 35%. The centre grades the "
+            "track (SNOW-1069): one, two or three chevrons for gentle, "
+            "moderate, and steep or very steep, pointing up for a climb "
+            "and down for a descent; a level track draws a bar. Flat "
+            "ground leaves the outer ring unlit, and "
+            "missing terrain data fills it grey. The inner ring is filled "
+            "on the track scale (SNOW-1064) — level under 5° in a lighter "
+            "blue, then gentle, moderate, steep and very steep — so its "
+            "colour agrees with the point header's word for the track; the "
+            "outer ring keeps the slope classes. Drawn by "
+            "static/js/aspect_wheel.js through aspect_wheel_core.js; "
+            "mounted on the map in the route panel's point header."
+        ),
+        kind="components",
+        partial="includes/_aspect_wheel.html",
+        variants=ASPECT_WHEEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="point-card",
+        label="Point header",
+        description=(
+            "One point on the open route, read in words (SNOW-1064): the "
+            "aspect wheel at 48 px and two lines, shown in the route "
+            "panel's header while a point is placed (SNOW-1068), under the "
+            "eyebrow and buttons at the panel's full width. The headline "
+            "is heading • steepness • kind (SNOW-1069): the compass point "
+            "the inner ring lights, or the first and last joined by an "
+            "arrow where the segment turns; the track's step on its own "
+            "scale (level, gentle, moderate, steep, very steep); and "
+            "ascent, descent, traverse, fall line, turn or switchback. "
+            "A segment that heads into two sectors is a switchback where "
+            "it climbs across the fall line, the fall line where it "
+            "descends with either end heading straight down, and a turn "
+            "otherwise. Up or down is the wheel's centre mark. Line two "
+            "names the ground in the EAWS words, with the side the slope "
+            "falls on a traverse ('falling skier's right'), or both across "
+            "a switchback ('…, left, then right'). No "
+            "degrees or aspects. "
+            "Hidden until a point is placed; pressing the wheel clears the "
+            "point. "
+            "Filled on the map by static/js/route_point_card.js from "
+            "route_point_card_core.js; the states here are rendered "
+            "server-side with the words the core writes."
+        ),
+        kind="components",
+        partial="includes/_route_point_card.html",
+        variants=POINT_CARD_VARIANTS,
+        panel_layout="two-col",
     ),
     FoundationCategory(
         slug="favourite-problem",
@@ -1579,26 +1723,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="favourites/partials/_favourite_problem.html",
         variants=FAVOURITE_PROBLEM_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
-        slug="bulletin-readings",
-        label="Bulletin readings along a line",
-        description=(
-            "Where a stored track crosses the ground each of the day's "
-            "avalanche problems names (SNOW-839), one block per region and "
-            "longest stretch first. TWO SURFACES since SNOW-973: the trip "
-            "page renders it for the trip's own date, the map's route "
-            "detail panel for the day the scrubber is showing. It states "
-            "facts about the TRACK and carries no score — read the "
-            "partial's own header before adding one. Two variants: the "
-            "ordinary two-region reading, and the pair of empty states, "
-            "which are different claims (a region published nothing vs. a "
-            "line that enters no problem the bulletin names)."
-        ),
-        kind="components",
-        partial="includes/_bulletin_readings.html",
-        variants=BULLETIN_READINGS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

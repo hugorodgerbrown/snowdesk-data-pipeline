@@ -46,12 +46,18 @@ interface Window {
   pwaSearchCore: any;
   /** static/js/layer_visibility_core.js — overlay visibility derivation. */
   pwaLayerVisibilityCore: any;
+  /** static/js/sheet_detents_core.js — where a phone map sheet settles (SNOW-1097). */
+  pwaSheetDetentsCore: any;
+  /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
+  pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */
   pwaViewportCore: any;
-  /** static/js/slope_overlay_core.js — swisstopo coverage predicate. */
-  pwaSlopeOverlayCore: any;
+  /** static/js/slope_classes_core.js — the 30/35/40/45/50+ slope-class ramp. */
+  pwaSlopeClassesCore: any;
+  /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */
+  pwaTerrainFilterCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
   pwaWeatherCore: any;
   /** static/js/elevation_profile_core.js — route elevation profile maths. */
@@ -70,16 +76,18 @@ interface Window {
   pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
-  /** static/js/route_rail_two_core.js — rail two's view, zoom, bands, readout. */
-  pwaRouteRailTwoCore: any;
-  /** static/js/bank_ribbon_core.js — the bank's level-ski wedge geometry. */
-  pwaBankRibbonCore: any;
+  /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */
+  pwaAspectWheelCore: any;
+  /** static/js/route_point_card_core.js — the point card's words and gradient. */
+  pwaRoutePointCardCore: any;
   /** static/js/trip_deeplink_core.js — ?trip= / ?trip_share= resolution. */
   pwaTripDeepLinkCore: any;
   /** static/js/basemap_download_core.js — tile-range and byte arithmetic. */
   pwaBasemapDownloadCore: any;
   /** static/js/offline_audit_core.js — the offline-content report model. */
   pwaOfflineAuditCore: any;
+  /** static/js/zoom_control_core.js — the zoom scale, ticks and bounds. */
+  pwaZoomControlCore: any;
 
   // ---- the shared map state channel --------------------------------------
   /** static/js/map_state.js — the frozen accessor surface over map state. */
@@ -100,12 +108,18 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
-  /** static/js/route_rail_two.js — rail two, the open leg; attach/detach. */
-  pwaRouteRailTwo: any;
+  /** static/js/route_point_card.js — the point card on the map; attach/detach. */
+  pwaRoutePointCard: any;
   /** static/js/route_leader.js — the leader line from the map to the rails. */
   pwaRouteLeader: any;
   /** static/js/map.js — the route cursor's screen point on the map. */
   pwaRouteCursorMap: any;
+  /** static/js/map.js — the terrain filter's state: show/hide, get/setFilter. */
+  pwaTerrainFilter: any;
+  /** static/js/terrain_filter_sheet.js — opens the terrain filter sheet. */
+  pwaTerrainFilterSheet: any;
+  /** static/js/map.js — the zoom-gated layers: list() → [{key, zoom, active}]. */
+  pwaZoomGates: any;
 }
 
 /**

@@ -17,7 +17,7 @@ trip_share_route_geojson (GET /trips/s/<token>/route.geojson):
 Plus what both answer with: geometry from the SNAPSHOT, surviving the
 source route's deletion, carrying the terrain model's heights where the
 snapshot's slope record has them (SNOW-1043) — as does the trip page's own
-inline payload and its bulletin panel; a ``page_url`` addressed the way its own caller
+inline payload; a ``page_url`` addressed the way its own caller
 may address the trip (uuid for a participant, token for a link-holder);
 and ``Cache-Control: no-store``.
 
@@ -45,7 +45,7 @@ from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from apps.trips.models import Trip
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
-from apps.trips.views import _bulletin_readings, _trip_map_payload
+from apps.trips.views import _trip_map_payload
 from tests.factories import TripFactory, UserFactory
 
 # Well before TripFactory's default date, so a minted link is live.
@@ -345,16 +345,3 @@ class TestTheHeightsAreTheModels:
         assert route["geometry"]["coordinates"] == trip.points
         assert route["properties"]["ascent_m"] == trip.ascent_m
         assert route["properties"]["descent_m"] == trip.descent_m
-
-    def test_the_bulletin_panel_reads_model_heights(self) -> None:
-        """The elevation band is matched on the model's height."""
-        trip = _backside_trip()
-
-        with patch(
-            "apps.trips.views.display_readings", return_value=[]
-        ) as display_readings:
-            _bulletin_readings(trip)
-
-        assert display_readings.call_args.args[0] == terrain_points(
-            trip.points, trip.slope_samples
-        )

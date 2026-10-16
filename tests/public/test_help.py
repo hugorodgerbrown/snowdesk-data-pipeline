@@ -82,6 +82,8 @@ LAYERS_GROUP_TESTIDS = [
 ]
 
 ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
+    # SNOW-1077: the zoom control and the two layers it marks.
+    "help-map-zoom",
     "help-map-favourites",
     "help-map-community",
     "help-map-report",
@@ -150,7 +152,7 @@ class TestHelpPage:
         content = client.get(reverse("public:help")).content
         assert b"help-layers-sync-dots" in content
         assert b"help-layers-disabled-rows" in content
-        # SNOW-904: and the two rows that carry no dot are named, because a
+        # SNOW-904: and the rows that carry no dot are named, because a
         # missing dot on one row among seventeen reads as a bug rather than
         # as a refusal to claim something the app cannot check.
         assert b"neither could answer honestly" in content
@@ -294,50 +296,73 @@ class TestHelpPageFlagGating:
     def test_slope_panel_states_the_layer_is_not_a_verdict(
         self, client: Client
     ) -> None:
-        """SNOW-691: the shortcomings are the point of this panel.
+        """SNOW-691, SNOW-1073: the shortcomings are the point of this panel.
 
         Asserted individually rather than as "the panel is non-empty",
         because each is a distinct thing a reader could otherwise get wrong:
-        the 10 m grid hides small features, coverage stops mid-map with
-        unshaded ground on both sides of the edge, and the layer is an input
-        rather than permission to ski a slope.
+        the measuring window hides small features, nothing is drawn below
+        zoom 12, coverage stops at the Swiss border with unshaded ground on
+        both sides of the edge, and the layer is an input rather than
+        permission to ski a slope. SNOW-1073 dropped the stitched-models
+        accuracy note with swisstopo's combined raster: swissALTI3D is one
+        model.
         """
         content = client.get(reverse("public:help")).content
         for testid in (
             b"help-slope-resolution",
+            b"help-slope-zoom",
             b"help-slope-coverage",
-            b"help-slope-accuracy",
             b"help-slope-not-a-decision",
         ):
             assert testid in content, testid
+        assert b"help-slope-accuracy" not in content
+        assert b"It stops at the Swiss border." in content
+        assert b"drawn from zoom level 12" in content
 
-    def test_slope_panel_explains_what_the_rails_draw(self, client: Client) -> None:
-        """SNOW-1019: the slope bands, the bank wedges and the no-fall bars.
+    def test_slope_panel_says_how_to_turn_it_on_and_where_it_comes_from(
+        self, client: Client
+    ) -> None:
+        """SNOW-1073: the layer is a mode of the terrain filter, from swissALTI3D.
 
-        A route's steepness is read on rail two, not on the map line, so
-        the panel sends the reader there: the bands and the rule that their
-        colour is the GROUND's steepness, the readout's two figures and the
-        avalanche services' words for the ground, the wedges and their
-        caveat that no wedge is no claim, and the bars with the caveat that
-        an unmarked route is not a route without no-fall ground.
+        There is no "Display slope angles" row any more, so the panel names
+        the way in; and the colours are now ours, computed from swisstopo's
+        elevation model, so it says so and credits the model — not the
+        "Slope classes over 30°" raster the map no longer shows.
+        """
+        content = client.get(reverse("public:help")).content.decode()
+        assert 'data-testid="help-slope-how-to"' in content
+        assert "Colour by slope" in content
+        assert 'data-testid="help-slope-source"' in content
+        assert "swissALTI3D" in content
+        assert "resampled to a 5 metre grid" in content
+        assert "Slope classes over 30" not in content
+        assert "Display slope angles" not in content
+
+    def test_slope_panel_explains_how_a_route_is_read(self, client: Client) -> None:
+        """SNOW-1065: the coloured line and the point card.
+
+        Rail two, and with it the band strip, the bank wedges and the
+        passage bars, is gone, so the panel sends the reader to the map
+        line's colours and the point card's two lines — with the avalanche
+        services' words for the ground. SNOW-1095 removed the route detail
+        sheet that listed no-fall passages, so SNOW-1073 took the two
+        paragraphs describing it out with the rest of the rewrite.
         """
         content = client.get(reverse("public:help")).content
         for testid in (
             b"help-slope-route-colouring",
             b"help-slope-readout",
-            b"help-slope-bank-ribbon",
-            b"help-slope-bank-averaged",
-            b"help-slope-passages",
-            b"help-slope-passages-smoothed",
         ):
             assert testid in content, testid
-        assert b"read on the rail below the map" in content
-        assert b"no wedge is never a" in content
-        # The readout's classes are the avalanche services', with their
+        for gone in (b"help-slope-passages", b"help-slope-passages-smoothed"):
+            assert gone not in content, gone
+        for gone in (b"help-slope-bank-ribbon", b"help-slope-bank-averaged"):
+            assert gone not in content
+        assert b"second rail" not in content
+        # The ground's classes are the avalanche services', with their
         # thresholds said out loud.
         assert b"very steep from 35 and extremely steep from 40" in content
-        assert b"Ground under 5 degrees reads as flat." in content
-        assert b"An unmarked route is not a route without no-fall ground." in content
+        assert b"Ground under 5 degrees reads" in content
 
     def test_slope_panel_describes_no_mark_the_map_no_longer_draws(
         self, client: Client
@@ -357,6 +382,12 @@ class TestHelpPageFlagGating:
             assert b'data-testid="' + testid + b'"' not in content, testid
         assert b"the line splits" not in content
         assert b"Small arrows along a saved route" not in content
+
+    def test_slope_panel_says_nothing_about_cruxes(self, client: Client) -> None:
+        """SNOW-1066 removed route-level cruxes; no copy may describe them."""
+        content = client.get(reverse("public:help")).content.decode().lower()
+        assert "crux" not in content
+        assert "key passage" not in content
 
     def test_slope_panel_explains_a_flat_traverse_drawn_steep(
         self, client: Client
@@ -590,3 +621,35 @@ class TestBulletinIllustrationsMatchTheirCopy:
             "icon_filename"
         ]
         assert finders.find(icon_set_dir(settings.WEATHER_ICON_SET) + filename)
+
+
+@pytest.mark.django_db
+class TestTerrainFilterHelpTopic:
+    """SNOW-978: the terrain filter's caveats live on /help/."""
+
+    def test_topic_is_an_anchor_target(self, client: Client) -> None:
+        """The map legend and the filter sheet link to this fragment."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert 'id="help-topic-terrain-filter"' in content
+        wrapper = content[content.index('id="help-topic-terrain-filter"') :][:120]
+        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+
+    def test_topic_states_each_limit(self, client: Client) -> None:
+        """Terrain only, no runout, not a verdict, Switzerland only, and
+        hatched means no data — each a distinct thing to get wrong.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-terrain-filter-modes",
+            b"help-terrain-filter-hatched",
+            b"help-terrain-filter-terrain-only",
+            b"help-terrain-filter-runout",
+            b"help-terrain-filter-not-a-verdict",
+            b"help-terrain-filter-coverage",
+        ):
+            assert testid in content, testid
+
+    def test_layers_topic_describes_the_row(self, client: Client) -> None:
+        """Every layers-menu row has its paragraph in the layers topic."""
+        content = client.get(reverse("public:help")).content
+        assert b'data-testid="help-layers-terrain-filter"' in content

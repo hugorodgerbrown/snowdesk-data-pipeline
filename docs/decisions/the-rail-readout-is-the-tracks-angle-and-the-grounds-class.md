@@ -1,11 +1,19 @@
 ---
 name: the-rail-readout-is-the-tracks-angle-and-the-grounds-class
-description: rail two readout — trackGrade, slopeTerm (flat under 5°), steepShares, ROWS_FITTED, staff debug rail, readout-no-fall, no selection
-status: current
-last-reviewed: 2026-10-01
+description: HISTORICAL (SNOW-1065 removed rail two) — its readout: trackGrade, slopeTerm (flat under 5°), steepShares, staff debug rail
+status: historical
+last-reviewed: 2026-10-02
 ---
 
 # The rail's readout is the track's angle and the ground's class
+
+> **Historical.** SNOW-1065 deleted rail two, its readout and the staff
+> debug rail (`route_rail_two*.js`). The server still computes banks and
+> passages and sends them; `/_route-terrain/<uuid>/?format=json` is kept.
+> A point is now read by the point card — see
+> [the-point-card-names-the-experience.md](the-point-card-names-the-experience.md).
+> The symbols below describe the code as it was; `segmentGradients` and the
+> ground words now live in `static/js/route_point_card_core.js`.
 
 ## Decision
 

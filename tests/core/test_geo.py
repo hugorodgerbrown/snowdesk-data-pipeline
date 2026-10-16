@@ -12,6 +12,7 @@ and they are meant to be deleted once nobody doubts it.
 
 ``initial_bearing_deg`` (SNOW-964) is covered at the end, including the
 round trip against ``destination`` that keeps the two inverses in step.
+``octant_for`` (moved here by SNOW-1062) follows it.
 """
 
 from __future__ import annotations
@@ -23,10 +24,12 @@ import pytest
 from apps.core.geo import (
     EARTH_RADIUS_KM,
     EARTH_RADIUS_M,
+    OCTANTS,
     destination,
     haversine_km,
     haversine_m,
     initial_bearing_deg,
+    octant_for,
 )
 
 # A spread of pairs covering the scales the four callers actually work at:
@@ -330,3 +333,36 @@ class TestInitialBearing:
         """Every answer is a compass bearing, or no answer at all."""
         bearing = initial_bearing_deg(lat1, lon1, lat2, lon2)
         assert bearing is None or 0.0 <= bearing < 360.0
+
+
+class TestOctantFor:
+    """Which compass sector a bearing is in."""
+
+    @pytest.mark.parametrize(
+        ("bearing", "expected"),
+        [
+            (0.0, "N"),
+            (10.0, "N"),
+            (350.0, "N"),
+            (45.0, "NE"),
+            (90.0, "E"),
+            (180.0, "S"),
+            (270.0, "W"),
+            (315.0, "NW"),
+        ],
+    )
+    def test_a_band_is_centred_on_its_own_name(
+        self, bearing: float, expected: str
+    ) -> None:
+        """Due north is the middle of N, not its edge."""
+        # Which is what a bulletin means by "north facing".
+        assert octant_for(bearing) == expected
+
+    def test_every_octant_is_reachable(self) -> None:
+        """A sweep of bearings reaches all eight octants."""
+        found = {octant_for(bearing) for bearing in range(0, 360, 5)}
+        assert found == set(OCTANTS)
+
+    def test_no_bearing_is_no_octant(self) -> None:
+        """No bearing is no octant, never a guessed one."""
+        assert octant_for(None) is None

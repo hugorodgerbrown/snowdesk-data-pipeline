@@ -4,6 +4,16 @@ Hand-curated source data for the `regions` app. Unlike `reference_data/`
 (vendored third-party files — EAWS regions, Météo-France massifs) these
 files are maintained by us.
 
+## `passes.tsv`
+
+The season passes a resort can be sold on (SNOW-1083): `slug`, `name`,
+`website`. The resort sheet's `passes` column names them by slug, comma
+separated (`magic-pass`). `import_resorts` reads this file first and
+creates any pass the database lacks; it never renames or deletes one.
+`dump_resorts_sheet` does not write it, so a pass made in the admin is
+added here by hand. Why it is a sheet and not a data migration:
+[a-pass-groups-resorts-it-never-gates-them.md](../../../docs/decisions/a-pass-groups-resorts-it-never-gates-them.md).
+
 ## `resorts.tsv`
 
 **The** file that describes a resort (SNOW-817): the editorial columns —

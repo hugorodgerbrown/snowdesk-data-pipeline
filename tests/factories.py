@@ -40,6 +40,7 @@ from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
     MicroRegion,
+    Pass,
     RegionAlias,
     Resort,
     SubRegion,
@@ -127,6 +128,26 @@ class MicroRegionFactory(factory.django.DjangoModelFactory[MicroRegion]):
     basemap_download = factory.LazyFunction(
         lambda: build_blob(_FACTORY_BASEMAP_BBOX, *MICRO_BAND)
     )
+
+
+class PassFactory(factory.django.DjangoModelFactory[Pass]):
+    """
+    Factory for Pass instances (SNOW-1083).
+
+    Gets or creates on ``slug``, so a test that also runs ``import_resorts``
+    (which creates ``magic-pass`` from ``passes.tsv``) reuses the row rather
+    than colliding with it.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Pass
+        django_get_or_create = ("slug",)
+
+    name = factory.Sequence(lambda n: f"Pass {n}")
+    slug = factory.Sequence(lambda n: f"pass-{n}")
+    website = ""
 
 
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):
@@ -978,8 +999,7 @@ def drifting_track_record() -> dict[str, object]:
 
     Returns:
         A record of the shape ``build_slope_samples`` writes: five
-        boundaries, four gentle segments, an empty crux list, a summary
-        and the model's ``heights``.
+        boundaries, four gentle segments and the model's ``heights``.
 
     """
     boundaries = [
@@ -992,6 +1012,5 @@ def drifting_track_record() -> dict[str, object]:
         "grid": "snowdesk-terrain-5m-3035",
         "points": boundaries,
         "segments": [{"angle_deg": 12.0, "aspect_deg": 180.0}] * 4,
-        "cruxes": [],
         "heights": [2000.0, 2010.0, 2020.0, 2030.0, 2040.0],
     }

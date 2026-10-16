@@ -20,8 +20,8 @@
  * which is a different length again, so a sample index is placed BY SHARE:
  * segment i owns the i-th of N equal shares of the track. That is the rule
  * `slopeBands` in elevation_profile_core.js argues for at length, and it is
- * the same rule here so the rail and the detail sheet's chart can never put
- * the same segment in two places.
+ * the same rule here so a segment sits at the same place on the rail as on
+ * any profile drawn by that module.
  *
  * ## The tick step
  *
@@ -32,15 +32,22 @@
  * kilometre apart, kilometres otherwise — so a strip never reads "500 m,
  * 1 km, 1.5 km".
  *
- * ## The figure lines
+ * ## The meta line
  *
- * Rail one's own header (SNOW-1045) reads as rail two's card: one line for
- * the vertical (`formatRouteVertical`, "Ascend 366 m · descend 1,934 m")
- * and one for the horizontal (`formatRouteHorizontal`, "12.9 km · 3.5 km
- * steep terrain"). A null figure is OMITTED, never shown as zero: a route
- * whose GPX carried no elevation has an unknown ascent, not a flat one
- * (Route.ascent_m's docstring). (`formatFigures`, the ▲/▼ line rail two's
- * card read, went with SNOW-1044's card.)
+ * The rail's subtitle (SNOW-1065) is the routes list's meta line,
+ * `formatMetaLine`: "12.9km · 337m ↑ · 1906m ↓ · 2h51m", with the
+ * panel's strings and null rules. A null figure is OMITTED, never shown as
+ * zero: a route whose GPX carried no elevation has an unknown ascent, not
+ * a flat one (Route.ascent_m's docstring). The two-line header SNOW-1045
+ * gave the rail, and its steep-terrain figure, went with rail two.
+ *
+ * ## A placed point's readout
+ *
+ * A point placed on the route is drawn on the profile as a vertical line
+ * with a dot where it crosses the outline, and two figures beside it
+ * (2026-10-02): the elevation at the top (`pointElevation`) and the
+ * distance from the start at the bottom (`pointDistance`). They sit right
+ * of the line, left-aligned, unless they would not fit (`readoutSide`).
  *
  * Exports (frozen `self.pwaRouteRailCore`):
  *
@@ -48,15 +55,22 @@
  *   majorStep(spanM)                         → metres between labelled ticks
  *   tickUnit(spanM)                          → 'm' or 'km', once per strip
  *   ticks(spanM, units?)                     → [{d, major, label}]
- *   formatRouteVertical(figures, strings?)   → rail one's ascend/descend line
- *   formatRouteHorizontal(figures, strings?) → rail one's length/steep line
+ *   pointDistance(index, sampleCount, spanM, units?) → a point's distance
+ *                                              along the route, as a label
+ *   formatDuration(seconds)                  → {hours, minutes}, or null
+ *   formatMetaLine(figures, strings?)        → the routes list's meta line
  *   legSpan(leg, sampleCount, distanceM)     → [startM, endM] on the profile
  *   clipRun(run, start, end)                 → a run clipped to [start, end],
- *                                              its ends interpolated (rail
- *                                              two clips its leg with it)
+ *                                              its ends interpolated
  *   legPaths(profile, legs, sampleCount, box) → one fill per leg + outline
- *   legAt(fraction, legs, sampleCount)       → the leg under an x fraction
  *   profileY(profile, d, box?)               → the outline's y at distance d
+ *   pointElevation(profile, index, sampleCount, units?) → a point's
+ *                                              elevation, as a label
+ *   onOutline(profile, fraction, offsetY, laneHeight, tolerance, box?)
+ *                                            → whether a press is on the
+ *                                              top line, loosely
+ *   readoutSide(x, laneWidth, readoutWidth, gap) → which side of the
+ *                                              cursor line its figures go
  *   BOX                                      → the lane's user-space box
  */
 
@@ -127,13 +141,18 @@
   /** The English units, the fallback when no strings are passed. */
   var DEFAULT_UNITS = Object.freeze({ m: '%(value)s m', km: '%(value)s km' });
 
-  /** The English templates for rail one's two lines (SNOW-1045). */
-  var DEFAULT_ROUTE_LINES = Object.freeze({
-    'route-ascend': 'Ascend %(m)s m',
-    'route-descend': 'descend %(m)s m',
-    'route-length': '%(km)s km',
-    'route-steep': '%(km)s km steep terrain',
-    'figure-separator': ' · ',
+  /**
+   * The English templates for the meta line (SNOW-1065): the routes
+   * panel's msgids, byte for byte.
+   */
+  var DEFAULT_META_LINE = Object.freeze({
+    'meta-km': '%(km)skm',
+    'meta-both': '%(km)skm · %(ascent)sm ↑ · %(descent)sm ↓',
+    'meta-ascent': '%(km)skm · %(ascent)sm ↑',
+    'meta-descent': '%(km)skm · %(descent)sm ↓',
+    'meta-hm': '%(hours)sh%(minutes)sm',
+    'meta-m': '%(minutes)sm',
+    'meta-duration': '%(figures)s · %(duration)s',
   });
 
   /**
@@ -227,6 +246,28 @@
   }
 
   /**
+   * A point's distance along the route, as the profile's readout shows it
+   * (the eyebrow until 2026-10-02): the segment's midpoint as a share of the route's
+   * length, in metres to the nearest 10 under a kilometre and in
+   * kilometres to one decimal from there.
+   *
+   * @param {number} index The segment index.
+   * @param {number} sampleCount The segments the route has.
+   * @param {number} spanM The route's length, metres.
+   * @param {{m?: string, km?: string}} [units] Label templates carrying
+   *   `%(value)s`, from the partial's strings template.
+   * @returns {?string} Null for an index or a route it cannot place.
+   */
+  function pointDistance(index, sampleCount, spanM, units) {
+    if (!Number.isFinite(index) || !(sampleCount > 0) || !(spanM > 0)) return null;
+    var d = ((index + 0.5) / sampleCount) * spanM;
+    var templates = { ...DEFAULT_UNITS, ...(units || {}) };
+    var metres = Math.round(d / 10) * 10;
+    if (metres < 1000) return interpolate(templates.m, { value: String(metres) });
+    return interpolate(templates.km, { value: (d / 1000).toFixed(1) });
+  }
+
+  /**
    * @param {*} value
    * @returns {value is number}
    */
@@ -235,64 +276,67 @@
   }
 
   /**
-   * Whole metres with a thousands separator: 1934 → "1,934".
+   * A recording's elapsed time, split for the meta line: whole minutes
+   * rounded half up; an empty hours figure under an hour, with the minutes
+   * unpadded, and padded minutes above it ("4h05m").
    *
-   * @param {number} metres
-   * @returns {string}
+   * The rule is `split_hours_minutes` in apps/core/durations.py, which the
+   * routes panel renders from; `Math.round` already rounds a .5 up, the
+   * tie Python's builtin `round` would break the other way.
+   *
+   * @param {*} seconds The elapsed time, seconds.
+   * @returns {?{hours: string, minutes: string}} Null when unknown.
    */
-  function wholeMetres(metres) {
-    return Math.round(metres).toLocaleString('en-GB');
+  function formatDuration(seconds) {
+    if (!isKnown(seconds) || seconds <= 0) return null;
+    var total = Math.round(seconds / 60);
+    var hours = Math.floor(total / 60);
+    var minutes = total % 60;
+    if (!hours) return { hours: '', minutes: String(minutes) };
+    return { hours: String(hours), minutes: String(minutes).padStart(2, '0') };
   }
 
   /**
-   * Rail one's vertical line: `Ascend 366 m · descend 1,934 m`.
+   * The routes list's meta line (SNOW-1065): "12.9km · 337m ↑ · 1906m ↓ ·
+   * 2h51m".
    *
-   * A null side is omitted, never shown as zero; both null gives ''.
+   * The same strings and the same null rules as the routes panel's row
+   * (apps/routes/templates/routes/partials/_route.html), so one route reads
+   * the same in both places: the distance always; ascent and descent each
+   * only when known, never as zero; the elapsed time only when the
+   * recording has one. Kilometres to one decimal and whole metres with no
+   * separator, as the panel's `floatformat` filters write them.
    *
-   * @param {{ascent_m?: ?number, descent_m?: ?number}} figures
+   * @param {{distance_m?: ?number, ascent_m?: ?number, descent_m?: ?number,
+   *   duration_s?: ?number}} figures The route's figures, or a leg's (which
+   *   has no duration).
    * @param {Object<string, string>} [strings] Templates keyed as
-   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
-   * @returns {string}
+   *   `DEFAULT_META_LINE`, from the partial's strings template.
+   * @returns {string} The line; '' with no distance.
    */
-  function formatRouteVertical(figures, strings) {
-    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
+  function formatMetaLine(figures, strings) {
+    var t = { ...DEFAULT_META_LINE, ...(strings || {}) };
     var f = figures || {};
-    /** @type {Array<string>} */
-    var parts = [];
-    if (isKnown(f.ascent_m)) {
-      parts.push(interpolate(t['route-ascend'], { m: wholeMetres(f.ascent_m) }));
+    if (!isKnown(f.distance_m)) return '';
+    var km = (f.distance_m / 1000).toFixed(1);
+    var up = isKnown(f.ascent_m) ? Math.round(f.ascent_m).toFixed(0) : null;
+    var down = isKnown(f.descent_m) ? Math.round(f.descent_m).toFixed(0) : null;
+    var line;
+    if (up !== null && down !== null) {
+      line = interpolate(t['meta-both'], { km: km, ascent: up, descent: down });
+    } else if (up !== null) {
+      line = interpolate(t['meta-ascent'], { km: km, ascent: up });
+    } else if (down !== null) {
+      line = interpolate(t['meta-descent'], { km: km, descent: down });
+    } else {
+      line = interpolate(t['meta-km'], { km: km });
     }
-    if (isKnown(f.descent_m)) {
-      parts.push(interpolate(t['route-descend'], { m: wholeMetres(f.descent_m) }));
-    }
-    return parts.join(t['figure-separator']);
-  }
-
-  /**
-   * Rail one's horizontal line: `12.9 km · 3.5 km steep terrain`.
-   *
-   * `steep_m` is the ground of 30° or more summed over the whole route
-   * (the feed's `terrain.steep_m`). An unsampled route has none, and the
-   * steep part is then omitted rather than read as zero; a sampled route
-   * with no steep ground keeps `0.0 km steep terrain`.
-   *
-   * @param {{distance_m?: ?number, steep_m?: ?number}} figures
-   * @param {Object<string, string>} [strings] Templates keyed as
-   *   `DEFAULT_ROUTE_LINES`, from the partial's strings template.
-   * @returns {string}
-   */
-  function formatRouteHorizontal(figures, strings) {
-    var t = { ...DEFAULT_ROUTE_LINES, ...(strings || {}) };
-    var f = figures || {};
-    /** @type {Array<string>} */
-    var parts = [];
-    if (isKnown(f.distance_m)) {
-      parts.push(interpolate(t['route-length'], { km: (f.distance_m / 1000).toFixed(1) }));
-    }
-    if (isKnown(f.steep_m)) {
-      parts.push(interpolate(t['route-steep'], { km: (f.steep_m / 1000).toFixed(1) }));
-    }
-    return parts.join(t['figure-separator']);
+    var duration = formatDuration(f.duration_s);
+    if (!duration) return line;
+    var spelt = duration.hours
+      ? interpolate(t['meta-hm'], duration)
+      : interpolate(t['meta-m'], duration);
+    return interpolate(t['meta-duration'], { figures: line, duration: spelt });
   }
 
   /**
@@ -415,11 +459,31 @@
   }
 
   /**
+   * The profile's elevation at one distance, interpolated between the two
+   * points either side of it.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} d A distance on the profile's own axis.
+   * @returns {?number} Null where the profile has no elevation at `d`.
+   */
+  function elevationAt(profile, d) {
+    if (!profile || !profile.hasElevation) return null;
+    for (var r = 0; r < profile.runs.length; r += 1) {
+      var run = profile.runs[r];
+      for (var i = 1; i < run.length; i += 1) {
+        if (d < run[i - 1].d || d > run[i].d) continue;
+        return between(run[i - 1], run[i], d).e;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Where the outline sits at one distance, in the lane's user space.
    *
-   * The y `legPaths` draws at `d`, interpolated between the two points
-   * either side of it — where the cursor line meets the profile, which is
-   * where the leader line (route_leader.js) attaches to this rail.
+   * The y `legPaths` draws at `d` — where the cursor line meets the
+   * profile, which is where the dot marking the point's elevation sits
+   * (2026-10-02).
    *
    * @param {Profile} profile A `readProfile` result.
    * @param {number} d A distance on the profile's own axis.
@@ -428,37 +492,79 @@
    */
   function profileY(profile, d, box) {
     var b = box || BOX;
-    if (!profile || !profile.hasElevation) return null;
+    var e = elevationAt(profile, d);
+    if (e === null) return null;
     var minEle = /** @type {number} */ (profile.minEle);
     var range = /** @type {number} */ (profile.maxEle) - minEle;
     var floor = b.height - PAD_Y;
     var usable = b.height - PAD_Y * 2;
-    for (var r = 0; r < profile.runs.length; r += 1) {
-      var run = profile.runs[r];
-      for (var i = 1; i < run.length; i += 1) {
-        if (d < run[i - 1].d || d > run[i].d) continue;
-        var e = between(run[i - 1], run[i], d).e;
-        return range ? floor - ((e - minEle) / range) * usable : b.height / 2;
-      }
-    }
-    return null;
+    return range ? floor - ((e - minEle) / range) * usable : b.height / 2;
   }
 
   /**
-   * The leg under a point on the strip.
+   * The elevation of a placed point, as the profile's readout shows it
+   * (2026-10-02): the height the outline is drawn at under the cursor
+   * line, to the nearest metre.
    *
-   * @param {number} fraction How far along the strip, 0 to 1.
-   * @param {Array<Leg>} legs The route's legs.
-   * @param {number} sampleCount N, the length of `slope.angles`.
-   * @returns {?Leg}
+   * Read off the profile at the segment's midpoint by share — where the
+   * cursor line and its dot sit — so the figure is the height the dot
+   * marks.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} index The segment index.
+   * @param {number} sampleCount The segments the route has.
+   * @param {{m?: string, km?: string}} [units] Label templates carrying
+   *   `%(value)s`, from the partial's strings template.
+   * @returns {?string} Null where the profile has no elevation there.
    */
-  function legAt(fraction, legs, sampleCount) {
-    if (!(sampleCount > 0) || !Array.isArray(legs)) return null;
-    var index = Math.min(sampleCount - 1, Math.max(0, Math.floor(fraction * sampleCount)));
-    for (var i = 0; i < legs.length; i += 1) {
-      if (index >= legs[i].from && index <= legs[i].to) return legs[i];
-    }
-    return null;
+  function pointElevation(profile, index, sampleCount, units) {
+    if (!profile || !Number.isFinite(index) || !(sampleCount > 0)) return null;
+    var e = elevationAt(profile, ((index + 0.5) / sampleCount) * profile.distanceM);
+    if (e === null) return null;
+    var templates = { ...DEFAULT_UNITS, ...(units || {}) };
+    return interpolate(templates.m, { value: String(Math.round(e)) });
+  }
+
+  /**
+   * Whether a press on the lane is on the profile's top line (2026-10-02).
+   *
+   * The target is the outline, loosely: anything within `tolerance` px of
+   * it, above or below, at the press's x. A press lower down, in the
+   * fill near the ticks, is not a reading of the profile and places
+   * nothing — a finger resting at the foot of the panel should not send
+   * the point somewhere.
+   *
+   * @param {Profile} profile A `readProfile` result.
+   * @param {number} fraction How far along the lane, 0 to 1.
+   * @param {number} offsetY The press's y, px from the lane's top edge.
+   * @param {number} laneHeight The lane's rendered height, px.
+   * @param {number} tolerance How far from the outline still counts, px.
+   * @param {Box} [box] The user-space box. Defaults to `BOX`.
+   * @returns {boolean} False where the profile has no elevation.
+   */
+  function onOutline(profile, fraction, offsetY, laneHeight, tolerance, box) {
+    var b = box || BOX;
+    if (!profile || !(profile.distanceM > 0) || !(laneHeight > 0)) return false;
+    var y = profileY(profile, fraction * profile.distanceM, b);
+    if (y === null) return false;
+    return Math.abs(offsetY - (y / b.height) * laneHeight) <= tolerance;
+  }
+
+  /**
+   * Which side of the cursor line the readout sits on (2026-10-02).
+   *
+   * The right, left-aligned, whenever it fits between the line and the
+   * lane's right edge; otherwise the left, right-aligned, so a point near
+   * the end of the route never has its figures clipped.
+   *
+   * @param {number} x The cursor line's x, px from the lane's left edge.
+   * @param {number} laneWidth The lane's width, px.
+   * @param {number} readoutWidth The wider of the two labels, px.
+   * @param {number} gap The space between the line and the labels, px.
+   * @returns {'right'|'left'}
+   */
+  function readoutSide(x, laneWidth, readoutWidth, gap) {
+    return x + gap + readoutWidth <= laneWidth ? 'right' : 'left';
   }
 
   self.pwaRouteRailCore = Object.freeze({
@@ -466,13 +572,16 @@
     majorStep: majorStep,
     tickUnit: tickUnit,
     ticks: ticks,
-    formatRouteVertical: formatRouteVertical,
-    formatRouteHorizontal: formatRouteHorizontal,
+    pointDistance: pointDistance,
+    formatDuration: formatDuration,
+    formatMetaLine: formatMetaLine,
     legSpan: legSpan,
     clipRun: clipRun,
     legPaths: legPaths,
-    legAt: legAt,
     profileY: profileY,
+    pointElevation: pointElevation,
+    onOutline: onOutline,
+    readoutSide: readoutSide,
     BOX: BOX,
   });
 })();

@@ -1,54 +1,38 @@
 {% load i18n components %}
 {% comment %}
-includes/_route_rail.html — rail one: the whole route's profile, cut at
-its transitions (SNOW-1018).
+includes/_route_rail.html — the route panel: the open route's profile,
+cut at its transitions, under a header for the route or a point
+(SNOW-1018, restacked by SNOW-1065, one panel since SNOW-1068, points
+only since 2026-10-02).
 
-A RAIL is the strip below the map while a route is open (docs/glossary.md).
-Rail one is the whole route. Two columns: the identity block (the
-eyebrow, the route's name, its figures and its actions) and the LANE — the
-elevation profile drawn as one filled shape per leg under one outline,
-with distance ticks along its foot. SNOW-1024 took out the third, readout
-column: rail two's empty state now says what to press. Pressing a leg
-publishes it to the route cursor (static/js/route_cursor_core.js) as the
-open leg, and rail two renders it.
-There is deliberately no "whole route" button and no breadcrumb: closing
-the leg IS the whole route.
+A RAIL is the card pinned top-left while a route is open
+(docs/glossary.md). There is one: SNOW-1065 retired rail two, and
+SNOW-1068 folded the point card into it, because a point placed on the
+profile is read in the header right above it. The profile is always
+showing; the HEADER takes one of two states:
 
-RAIL TWO IS THE SECOND ROW (SNOW-1019), `[data-route-rail-two]`. It sits
-in rail one's two columns (`subgrid`): on the left the TERRAIN eyebrow, a
-title carrying the leg's vertical and length ("Leg 2 — ascend 210 m over
-0.8 km"), a subtitle naming the very and extremely steep ground it crosses
-("Crosses very steep, extremely steep terrain"), zoom −/+ and its own ×
-(SNOW-1044); on the right a 44 px lane of three rows on one x-axis —
-a strip of slope bands (one per run of segments sharing a class,
-unmerged), the TRACK ROW, and one bar per no-fall passage — and the
-readout under it, left-aligned at the lane's left edge (the leg's elevation profile was a fourth row until it was
-taken out: it drew near-flat and said nothing rail one does not;
-SNOW-1024 took out its distance ticks). With no leg open it shows EMPTY
-(`data-empty`): the eyebrow, "Select a route leg to view terrain", and no
-zoom, close or readout; its lane holds the LEG PICKER (SNOW-1033),
-`[data-route-rail-two-legs]` — one button per leg on rail one's scale, so
-each sits under its leg on the profile, tinted by direction and numbered,
-which opens its leg through the cursor as a press on rail one does.
-Opening a leg from the empty row, from any surface, is one ~340 ms
-motion: the segment fills, stretches to the lane and becomes the band
-strip while the card, anchored by its bottom edge, grows upward; closing
-reverses it, and reduced motion skips it. It opens FITTED, the whole leg
-however long (SNOW-1031), pans and zooms within the leg, and every press
-on it only moves the cursor: the readout reads the point, with "· no-fall
-passage" inside one (SNOW-1052 removed band and passage selection). The
-track row (SNOW-1044) is empty while a segment is under 10 px, and the
-level-ski wedges showing the bank from 10 px up; a double-tap zooms to
-where the wedges draw. Kick turns are not drawn (the map shows the
-zig-zag); the lane's aria-valuetext names one under the cursor.
-static/js/route_rail_two.js draws
-it in REAL PIXELS — the viewBox is the lane's measured width, never
-stretched — because a wedge's ground line draws the bank angle, and a
-stretched wedge would lie about it. Rail one marks the part of the open leg
-rail two shows with a bracket; pressing inside the open leg on rail one
-moves rail two there rather than closing it. The leg closes on rail two's
-×, on Escape (the first closes the leg, the next the rail), or by
-pressing another leg.
+  route — the route's NAME as the title, its META LINE as the subtitle,
+          the routes list's own format and strings ("12.9km · 337m ↑ ·
+          1906m ↓ · 2h51m", routes/partials/_route.html), the time only
+          when the recording has one;
+  point — the aspect wheel and the reading (_route_point_card.html) in
+          the title and subtitle's place, and the eyebrow becomes the
+          route's name. Pressing the wheel clears the point.
+
+Then the LANE, the elevation profile drawn as one filled shape per leg
+under one outline, with distance ticks along its foot. 400 px wide on
+desktop, the map's width less its insets on a phone
+(`--route-column-width`, static/css/map.css), where a 13 km profile's
+shape reads rather than drawing near flat across a whole desktop.
+
+A TAP ON THE PROFILE'S TOP LINE places the point at that distance, with a
+generous margin either side of the line but not down in the fill; a tap on the route's line on the map places it too. The
+point is drawn on the lane as a vertical line with a dot where it crosses
+the outline, the point's ELEVATION at the top of the line and its
+DISTANCE from the start at the bottom (`[data-route-rail-readout]`),
+right of the line unless they would not fit. The legs are drawn and never
+pressed: leg selection, and dragging along the profile, were removed on
+2026-10-02.
 
 RENDERED ONCE, EMPTY, AND HIDDEN. static/js/route_rail.js fills it for the
 route map.js's `activateRoute` opens and hides it again when the route
@@ -58,26 +42,23 @@ script addresses the open route's endpoints with.
 
 INSIDE #map, NOT AFTER IT. The page body is a flex column and #map is its
 growing child, so a sibling after it would take height from the map and
-resize the canvas on every open. Positioned over the map's foot instead,
-it moves the map's bottom chrome by one token: static/css/map.css raises
-`--map-bottom-row-offset` while `#map[data-route-rail-open]` is set, and
-every bottom-anchored control reads that offset already. Inside #map also
-keeps a press on the rail from counting as a click outside the route
-detail sheet (static/js/map_sheet.js excludes #map), which would close the
-sheet and, with it, the rail.
+resize the canvas on every open. Pinned top-left instead — under the
+region chip's row on desktop, on the top edge on a phone, where that row
+is withdrawn while a route is open — it moves nothing else on the map:
+opening a route or placing a point changes only what the panel says (static/css/map.css). Inside #map also
+keeps a press on the rail from counting as a click outside an open map
+sheet (static/js/map_sheet.js excludes #map).
 
-THE ACTIONS ARE A MENU. Five actions in a restricted area collapse into
-the "…" menu (design-system rule 5): Terrain and bulletin, then the
-routes row's own four in its order — includes/_route_rail_menu_items.html.
-The first opens the route detail sheet, which a tap no longer opens: the
-rail took the sheet's top half (name, figures, profile), and the sheet
-keeps what the rail does not show — the terrain lines and the day's
-bulletin reading. A pending share has only that first item.
+THE ACTIONS ARE A MENU. Four actions in a restricted area collapse into
+the "…" menu (design-system rule 5): the routes row's own four in its
+order — includes/_route_rail_menu_items.html. All four are owner actions,
+so a pending share has no menu. A Terrain item led them and opened the
+route detail sheet until SNOW-1095 removed both.
 
 ITS OWN CLOSE, BECAUSE ITS LIFETIME IS ITS OWN. The rail opens on a tap
-and stays open while the sheet opens and closes over it, so it cannot
-borrow the sheet's dismissal. The × beside the menu is the one control
-for it, the sheet header's × drawn the same way. It is not a second
+and is not a map sheet, so it cannot borrow a sheet's dismissal. The × beside the menu is the one control
+for it, the sheet header's × drawn the same way, and it always closes the
+route: the point header's wheel is what clears a point. It is not a second
 action competing for rule 5's threshold: it dismisses the surface rather
 than acting on the route, the same place every map sheet keeps its ×.
 
@@ -86,10 +67,11 @@ A PENDING SHARE'S SAVE SITS HERE. `[data-route-rail-claim]` holds the
 for a pending share only: a recipient lands on the rail, and a Save one
 menu press away is a Save most recipients would never find.
 
-TICK LABELS ARE HTML, NOT SVG TEXT. The lane is stretched to the rail's
-width with `preserveAspectRatio="none"`, and SVG text scales with its
-viewBox, so a label drawn inside it would be squashed or stretched with
-the strip. The labels sit in `[data-route-rail-ticks]` under it, placed by
+TICK LABELS AND THE POINT'S READOUT ARE HTML, NOT SVG. The lane is
+stretched to the rail's width with `preserveAspectRatio="none"`, and SVG
+text and circles scale with its viewBox, so a label or a dot drawn inside
+it would be squashed or stretched with the strip. The tick labels sit in
+`[data-route-rail-ticks]` under it and the readout over it, placed by
 percentage.
 
 Context:
@@ -106,10 +88,6 @@ Context:
 {% trans "Route" as route_rail_eyebrow %}
 {% trans "Route actions" as route_rail_menu_label %}
 {% trans "Close the route profile" as route_rail_close_label %}
-{% trans "Terrain" as route_rail_two_eyebrow %}
-{% trans "Close the leg" as route_rail_two_close_label %}
-{% trans "Zoom out" as route_rail_two_zoom_out_label %}
-{% trans "Zoom in" as route_rail_two_zoom_in_label %}
 <section
     id="route-rail"
     data-route-rail
@@ -119,7 +97,7 @@ Context:
     data-route-share-url-template="{{ route_share_url_template }}"
     data-route-delete-url-template="{{ route_delete_url_template }}"
     data-route-plan-trip-url="{% url 'trips:new' %}"
-    class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]"
+    class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass"
 >
     {# Identity. `data-row-renameable` makes this block the row          #}
     {# static/js/inline_rename.js edits in place: the label, the hidden  #}
@@ -127,8 +105,11 @@ Context:
     <div data-row-renameable class="min-w-0">
         <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-                {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" %}
-                <p class="mt-1 truncate text-sm font-semibold text-text-1">
+                {# The eyebrow reads "Route", or the route's name while a      #}
+                {# point is placed (route_rail.js).                           #}
+                {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" class_extra="truncate" %}
+                {# The route header's title; hidden for a point.             #}
+                <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1 text-balance">
                     <span data-row-label data-route-rail-name></span>
                 </p>
                 <input
@@ -154,154 +135,43 @@ Context:
                 </button>
             </div>
         </div>
-        {# Two figure lines, read as rail two's card (SNOW-1045): the      #}
-        {# vertical (ascend · descend) and the horizontal (length · steep  #}
-        {# terrain). Filled by static/js/route_rail.js.                   #}
-        <p data-route-rail-vertical class="mt-1 font-mono text-meta text-text-2"></p>
-        <p data-route-rail-horizontal class="mt-1 font-mono text-meta text-text-2"></p>
+        {# The point header (SNOW-1068): the wheel and the reading, in the #}
+        {# title and meta line's place while a point is placed. Below the  #}
+        {# buttons' row, not beside it, so the reading has the panel's     #}
+        {# full width and its lines do not wrap early (SNOW-1069).         #}
+        {% include "includes/_route_point_card.html" with static=False %}
+        {# The meta line: the route's, in the routes list's format.       #}
+        {# Filled by static/js/route_rail.js.                             #}
+        <p data-route-rail-meta class="mt-1 font-mono text-meta text-text-2"></p>
         {# A pending share's Save — filled by static/js/route_rail.js with   #}
         {# the control map.js builds, and hidden for an owned route.         #}
         <div data-route-rail-claim hidden></div>
     </div>
-    {# The lane. Filled per open by static/js/route_rail.js.             #}
+    {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
+    {# top line places the point; the readout shows the point's figures.  #}
     <div class="min-w-0">
-        <svg
-            data-route-rail-lane
-            role="group"
-            preserveAspectRatio="none"
-            class="block h-20 w-full text-route-line"
-        >
-        </svg>
-        <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
-    </div>
-    {% comment %}
-    Rail two: the open leg (SNOW-1019). One grid row spanning rail one's
-    two columns and laid on them by `subgrid`, so its identity and lane
-    cells line up under rail one's. Hidden until a route opens;
-    static/js/route_rail_two.js shows it empty, then fills it when a leg
-    opens (SNOW-1024).
-    {% endcomment %}
-    <div
-        data-route-rail-two
-        hidden
-        role="group"
-        aria-labelledby="route-rail-two-eyebrow"
-        class="relative col-span-full grid grid-cols-subgrid gap-y-2 border-t border-border pt-2"
-    >
-        <div class="min-w-0">
-            <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                    {% include "includes/_eyebrow.html" with text=route_rail_two_eyebrow tag="h3" heading_id="route-rail-two-eyebrow" %}
-                </div>
-                <div class="-mr-3 -mt-3 flex flex-none items-start">
-                    <button
-                        type="button"
-                        data-route-rail-two-zoom="out"
-                        aria-label="{{ route_rail_two_zoom_out_label }}"
-                        class="{% icon_button_classes %}"
-                    >
-                        {% include "includes/_icon_minus.html" only %}
-                    </button>
-                    <button
-                        type="button"
-                        data-route-rail-two-zoom="in"
-                        aria-label="{{ route_rail_two_zoom_in_label }}"
-                        class="{% icon_button_classes %}"
-                    >
-                        {% include "includes/_icon_plus.html" only %}
-                    </button>
-                    <button
-                        type="button"
-                        data-route-rail-two-close
-                        aria-label="{{ route_rail_two_close_label }}"
-                        class="{% icon_button_classes %}"
-                    >
-                        {% include "includes/_icon_close.html" only %}
-                    </button>
-                </div>
-            </div>
-            {# The title, under the eyebrow and the buttons so it has the    #}
-            {# cell's whole width: beside the three 44 px buttons it wrapped. #}
-            <p data-route-rail-two-title class="text-sm font-semibold text-text-1 text-balance"></p>
-            {# The subtitle: the very and extremely steep ground it crosses. #}
-            <p data-route-rail-two-figures class="mt-1 font-mono text-meta text-text-2"></p>
-        </div>
-        {# The lane, drawn in real pixels by static/js/route_rail_two.js.   #}
-        <div class="relative min-w-0">
+        <div class="relative">
             <svg
-                data-route-rail-two-lane
-                role="slider"
-                tabindex="0"
-                aria-orientation="horizontal"
-                class="route-rail-two-lane block h-11 w-full text-route-line"
+                data-route-rail-lane
+                role="group"
+                preserveAspectRatio="none"
+                class="route-rail-lane block h-20 w-full text-route-line"
             >
             </svg>
-            {# The leg picker (SNOW-1033): one button per leg over the empty  #}
-            {# lane, filled by static/js/route_rail_two.js; hidden with a leg #}
-            {# open.                                                          #}
-            <div data-route-rail-two-legs hidden class="absolute inset-x-0 top-0 h-11"></div>
-            {# The readout, filled by static/js/route_rail_two.js: one line,  #}
-            {# always left-aligned at the lane's left edge, so it does not    #}
-            {# move with the cursor.                                          #}
-            <div data-route-rail-two-readout-box class="relative mt-1 min-h-11 text-sm text-text-2">
-                <div data-route-rail-two-readout aria-live="polite" class="absolute inset-x-0 top-1 text-left"></div>
+            <div
+                data-route-rail-readout
+                hidden
+                class="route-rail-readout pointer-events-none absolute inset-0 font-mono text-meta text-text-1"
+            >
+                <span
+                    data-route-rail-dot
+                    class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill border-2 border-text-1 bg-route-line"
+                ></span>
+                <span data-route-rail-elevation class="absolute top-0 whitespace-nowrap leading-none"></span>
+                <span data-route-rail-distance class="absolute bottom-0.5 whitespace-nowrap leading-none"></span>
             </div>
         </div>
-        {% comment %}
-        The debug rail, staff only: every figure behind the wedge under the
-        cursor, on one row. static/js/route_rail_two.js fills each
-        `data-route-rail-debug-field` from the staff terrain table
-        (public:route_terrain, `?format=json`) and from the figures the
-        readout reads. English only — staff surface, not translated.
-        {% endcomment %}
-        {% if request.user.is_staff %}
-            <dl
-                data-route-rail-debug
-                data-url-template="{% url 'public:route_terrain' '00000000-0000-0000-0000-000000000000' %}?format=json"
-                class="col-span-full grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-meta text-text-2 sm:grid-cols-5"
-            >
-                <div class="min-w-0">
-                    <dt class="text-text-3">Sample</dt>
-                    <dd data-route-rail-debug-field="sample" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Along route</dt>
-                    <dd data-route-rail-debug-field="km" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Elevation</dt>
-                    <dd data-route-rail-debug-field="heights" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Slope aspect</dt>
-                    <dd data-route-rail-debug-field="aspect" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Slope angle</dt>
-                    <dd data-route-rail-debug-field="angle" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Track direction</dt>
-                    <dd data-route-rail-debug-field="bearing" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Track angle (50 m)</dt>
-                    <dd data-route-rail-debug-field="track" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Track angle (125 m)</dt>
-                    <dd data-route-rail-debug-field="smoothed" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Banking</dt>
-                    <dd data-route-rail-debug-field="bank" class="break-words text-text-1">–</dd>
-                </div>
-                <div class="min-w-0">
-                    <dt class="text-text-3">Track to Fall line</dt>
-                    <dd data-route-rail-debug-field="fall" class="break-words text-text-1">–</dd>
-                </div>
-            </dl>
-        {% endif %}
+        <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
     </div>
     {# The CSRF token the rail's Share, Rename and Delete posts carry.   #}
     <form data-route-rail-csrf hidden>
@@ -312,12 +182,29 @@ Context:
     <template id="route-rail-strings-template">
         <span data-string="unit-m">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
         <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
-        <span data-string="route-ascend">{% blocktrans %}Ascend %(m)s m{% endblocktrans %}</span>
-        <span data-string="route-descend">{% blocktrans %}descend %(m)s m{% endblocktrans %}</span>
-        <span data-string="route-length">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
-        <span data-string="route-steep">{% blocktrans %}%(km)s km steep terrain{% endblocktrans %}</span>
-        <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
-        <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
+        {# The meta line's msgids are routes/partials/_route.html's, byte   #}
+        {# for byte, so they translate once and read the same in both. That #}
+        {# is why each passes its placeholders in as variables: a literal   #}
+        {# "%(km)s" in blocktrans text becomes a different, %%-escaped msgid. #}
+        <span data-string="meta-km">{% blocktrans trimmed with km="%(km)s" %}{{ km }}km{% endblocktrans %}</span>
+        <span
+            data-string="meta-both"
+        >{% blocktrans trimmed with km="%(km)s" ascent="%(ascent)s" descent="%(descent)s" %}{{ km }}km · {{ ascent }}m
+                ↑ · {{ descent }}m ↓{% endblocktrans %}</span>
+        <span data-string="meta-ascent">{% blocktrans trimmed with km="%(km)s" ascent="%(ascent)s" %}{{ km }}km ·
+                {{ ascent }}m ↑{% endblocktrans %}</span>
+        <span data-string="meta-descent">{% blocktrans trimmed with km="%(km)s" descent="%(descent)s" %}{{ km }}km ·
+                {{ descent }}m ↓{% endblocktrans %}</span>
+        <span
+            data-string="meta-hm"
+        >{% blocktrans trimmed with hours="%(hours)s" minutes="%(minutes)s" %}{{ hours }}h{{ minutes }}m{% endblocktrans %}</span>
+        <span
+            data-string="meta-m"
+        >{% blocktrans trimmed with minutes="%(minutes)s" %}{{ minutes }}m{% endblocktrans %}</span>
+        <span
+            data-string="meta-duration"
+        >{% blocktrans trimmed with figures="%(figures)s" duration="%(duration)s" %}{{ figures }} ·
+                {{ duration }}{% endblocktrans %}</span>
         <span data-string="lane-label">{% blocktrans %}Elevation profile of %(name)s{% endblocktrans %}</span>
         <span data-string="untitled">{% trans "Untitled route" %}</span>
         <span data-string="delete-confirm">{% blocktrans %}Delete %(name)s? You'll need the .gpx file again to put it
@@ -326,43 +213,5 @@ Context:
         <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
         <span data-string="share-copied">{% trans "Link copied." %}</span>
         <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-    </template>
-    {# Rail two's copy, for static/js/route_rail_two.js. Its own template #}
-    {# because each strings template has one reader                      #}
-    {# (tests/test_js_strings_are_translatable.py); the distance and leg  #}
-    {# names repeat rail one's msgids, so they translate once.            #}
-    <template id="route-rail-two-strings-template">
-        <span data-string="leg-climb">{% blocktrans %}Leg %(i)s — climb{% endblocktrans %}</span>
-        <span data-string="leg-descent">{% blocktrans %}Leg %(i)s — descent{% endblocktrans %}</span>
-        <span data-string="leg-ascend">{% blocktrans %}Leg %(i)s — ascend %(m)s m{% endblocktrans %}</span>
-        <span data-string="leg-descend">{% blocktrans %}Leg %(i)s — descend %(m)s m{% endblocktrans %}</span>
-        <span data-string="leg-over">{% blocktrans %}%(title)s over %(km)s km{% endblocktrans %}</span>
-        <span data-string="leg-crosses-very">{% trans "Crosses very steep terrain" %}</span>
-        <span data-string="leg-crosses-extremely">{% trans "Crosses extremely steep terrain" %}</span>
-        <span data-string="leg-crosses-both">{% trans "Crosses very steep, extremely steep terrain" %}</span>
-        <span data-string="two-lane-label">{% blocktrans %}Slope and bank along %(leg)s{% endblocktrans %}</span>
-        <span data-string="two-value">{% blocktrans %}%(km)s km along the route{% endblocktrans %}</span>
-        <span data-string="two-placeholder">{% trans "Select a route leg to view terrain" %}</span>
-        <span data-string="two-hint">{% trans "Drag or tap to read a point." %}</span>
-        <span data-string="class-slope-gentle">{% trans "under 30°" %}</span>
-        <span data-string="class-slope-30">{% trans "30–35°" %}</span>
-        <span data-string="class-slope-35">{% trans "35–40°" %}</span>
-        <span data-string="class-slope-40">{% trans "40–45°" %}</span>
-        <span data-string="class-slope-45">{% trans "45–50°" %}</span>
-        <span data-string="class-slope-50">{% trans "over 50°" %}</span>
-        <span data-string="class-unknown">{% trans "slope not known" %}</span>
-        <span data-string="track-kick-turn">{% trans "Kick turn" %}</span>
-        <span data-string="track-falls-left">{% trans "Ground falls away left" %}</span>
-        <span data-string="track-falls-right">{% trans "Ground falls away right" %}</span>
-        <span data-string="grade-ascent">{% blocktrans %}%(deg)s° ascent{% endblocktrans %}</span>
-        <span data-string="grade-descent">{% blocktrans %}%(deg)s° descent{% endblocktrans %}</span>
-        <span data-string="grade-level">{% trans "level" %}</span>
-        <span data-string="slope-flat">{% trans "flat" %}</span>
-        <span data-string="slope-moderate">{% trans "moderate slope" %}</span>
-        <span data-string="slope-steep">{% trans "steep slope" %}</span>
-        <span data-string="slope-very-steep">{% trans "very steep slope" %}</span>
-        <span data-string="slope-extremely-steep">{% trans "extremely steep slope" %}</span>
-        <span data-string="readout-point">{% blocktrans %}%(grade)s · %(slope)s{% endblocktrans %}</span>
-        <span data-string="readout-no-fall">{% blocktrans %}%(point)s · no-fall passage{% endblocktrans %}</span>
     </template>
 </section>

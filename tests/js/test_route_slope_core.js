@@ -35,6 +35,7 @@ function sampled(angles, identity = { uuid: 'r1' }) {
 }
 
 beforeAll(async () => {
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/route_slope_core.js');
   core = globalThis.pwaRouteSlopeCore;
 });
@@ -47,12 +48,21 @@ describe('CLASSES', () => {
     }
   });
 
-  it('carries the slope raster palette verbatim for the five steep bands', () => {
+  it('carries the slope layer palette verbatim for the five steep bands', () => {
     // The line and the shading under it must be the same colour — these
-    // are slope_overlay_core.js's CLASSES, value for value.
+    // are slope_classes_core.js's CLASSES, value for value.
     expect(core.CLASSES.slice(1).map((c) => c.hex)).toEqual([
       '#f2e50a', '#f46f24', '#de055b', '#c889bb', '#4b4b4b',
     ]);
+  });
+
+  it('reads the five steep bands from the shared ramp, not a copy (SNOW-1073)', () => {
+    // The terrain filter's slope mode paints the map from the same frozen
+    // objects, so the two can only change together.
+    const shared = globalThis.pwaSlopeClassesCore.CLASSES;
+    expect(core.CLASSES.slice(1)).toHaveLength(shared.length);
+    core.CLASSES.slice(1).forEach((bucket, i) => expect(bucket).toBe(shared[i]));
+    expect(core.CLASSES[0].id).toBe('slope-gentle');
   });
 
   it('names a --color-slope-* token for every bucket', () => {
@@ -346,201 +356,14 @@ describe('segmentCollection', () => {
 });
 
 /*
- * summaryLines — the same record in words (SNOW-961).
- *
- * The claim worth testing is the one about silence. A route the terrain
- * could not answer for must say SO, and a route nobody has sampled must
- * say NOTHING: the first is a coverage gap the reader has to know about,
- * the second is a line that has simply not been looked at yet, and
- * collapsing them would either invent a gap or hide one. Neither may
- * report a zero — "0m over 30°" is a claim that ground is gentle, made
- * about ground nothing measured.
+ * SNOW-1066 removed route-level cruxes: the core no longer reads a
+ * `cruxes` key, so a stored record that still carries one draws and
+ * counts nothing from it.
  */
-describe('summaryLines', () => {
-  it('states the steepest angle, the steep length and the gap', () => {
-    const lines = core.summaryLines({
-      sampled_m: 10000,
-      surveyed_m: 8000,
-      steep_m: 2500,
-      steepest_deg: 43.4,
-      bands: { 'slope-gentle': 5500, 'slope-40': 2500 },
-    });
-
-    expect(lines).toEqual([
-      { key: 'route-terrain-steepest', params: { deg: '43' } },
-      { key: 'route-terrain-steep-km', params: { km: '2.5', deg: '30' } },
-      { key: 'route-terrain-unsurveyed-km', params: { km: '2.0' } },
-    ]);
-  });
-
-  it('writes a short length in metres rather than as a fraction of a km', () => {
-    const lines = core.summaryLines({
-      sampled_m: 5000,
-      surveyed_m: 5000,
-      steep_m: 80,
-      steepest_deg: 33,
-      bands: { 'slope-30': 80 },
-    });
-
-    expect(lines[1]).toEqual({
-      key: 'route-terrain-steep-m',
-      params: { m: '80', deg: '30' },
-    });
-  });
-
-  it('says a wholly unsurveyed route is unsurveyed, and nothing else', () => {
-    const lines = core.summaryLines({
-      sampled_m: 9000,
-      surveyed_m: 0,
-      steep_m: 0,
-      bands: {},
-    });
-
-    // One line. No steepest (there is none), and no "0m over 30°", which
-    // would read as a claim that the ground is gentle.
-    expect(lines).toEqual([{ key: 'route-terrain-unsurveyed-all', params: {} }]);
-  });
-
-  it('says nothing at all about a route that has never been sampled', () => {
-    expect(core.summaryLines(null)).toEqual([]);
-    expect(core.summaryLines(undefined)).toEqual([]);
-    // A record that walked nothing is the same silence: there is no
-    // coverage gap to report because there was no walk.
-    expect(core.summaryLines({ sampled_m: 0, surveyed_m: 0, bands: {} })).toEqual([]);
-  });
-
-  it('omits the steep line when no surveyed ground reaches the threshold', () => {
-    const lines = core.summaryLines({
-      sampled_m: 4000,
-      surveyed_m: 4000,
-      steep_m: 0,
-      steepest_deg: 22,
-      bands: { 'slope-gentle': 4000 },
-    });
-
-    expect(lines).toEqual([
-      { key: 'route-terrain-steepest', params: { deg: '22' } },
-    ]);
-  });
-
-  it('reports a gap as short as one unknown segment', () => {
-    // The two figures are summed from the same lengths, so the shortfall
-    // is EXACTLY the unknown segments' length — about one stride for a
-    // single one. Suppressing that would hide a real hole in the coverage
-    // on a short track, which is the track most likely to have one.
-    const lines = core.summaryLines({
-      sampled_m: 1025,
-      surveyed_m: 1000,
-      steep_m: 0,
-      steepest_deg: 12,
-      bands: { 'slope-gentle': 1000 },
-    });
-
-    expect(lines).toContainEqual({
-      key: 'route-terrain-unsurveyed-m',
-      params: { m: '25' },
-    });
-  });
-
-  it('does not report a tenth of a metre of float residue as a gap', () => {
-    // The only way a wholly-surveyed track differs from itself: the two
-    // figures are rounded independently.
-    const lines = core.summaryLines({
-      sampled_m: 10000.1,
-      surveyed_m: 10000,
-      steep_m: 0,
-      steepest_deg: 12,
-      bands: { 'slope-gentle': 10000 },
-    });
-
-    expect(lines.map((line) => line.key)).not.toContain('route-terrain-unsurveyed-km');
-    expect(lines.map((line) => line.key)).not.toContain('route-terrain-unsurveyed-m');
-  });
-});
-
-/*
- * cruxCollection / cruxCount — the key-passage markers (SNOW-911).
- *
- * The server has already grouped a run of flagged segments into ONE
- * coordinate, so the only claims here are about unpacking: a pending
- * route contributes nothing, a route with no markers contributes nothing,
- * and the count the popup prints is the number of markers drawn.
- */
-describe('cruxCollection', () => {
-  /** A route feature carrying the given crux coordinates. */
-  function withCruxes(cruxes, identity = { uuid: 'r1' }) {
-    const feature = sampled([12, 40]);
-    feature.properties.slope.cruxes = cruxes;
-    Object.assign(feature.properties, identity);
-    return feature;
-  }
-
-  it('turns each stored coordinate into one Point', () => {
-    const collection = core.cruxCollection({
-      type: 'FeatureCollection',
-      features: [withCruxes([[7.4, 46.1], [7.42, 46.12]])],
-    });
-
-    expect(collection.features).toHaveLength(2);
-    expect(collection.features[0].geometry).toEqual({
-      type: 'Point',
-      coordinates: [7.4, 46.1],
-    });
-    // Carried so a tap on a ring can find the route it belongs to.
-    expect(collection.features[0].properties.uuid).toBe('r1');
-  });
-
-  it('marks nothing on a pending route', () => {
-    // Its one line says "this one is not yours yet"; rings would spend
-    // that line on a second message, and a non-owner's feature must
-    // carry nothing but its token.
-    const collection = core.cruxCollection({
-      type: 'FeatureCollection',
-      features: [withCruxes([[7.4, 46.1]], { token: 'tok', pending: true })],
-    });
-
-    expect(collection.features).toEqual([]);
-  });
-
-  it('is a valid empty collection when nothing is marked', () => {
-    expect(core.cruxCollection(null)).toEqual({
-      type: 'FeatureCollection',
-      features: [],
-    });
-    expect(
-      core.cruxCollection({ type: 'FeatureCollection', features: [sampled([12])] })
-        .features,
-    ).toEqual([]);
-  });
-
-  it('skips a coordinate that is not one', () => {
-    const collection = core.cruxCollection({
-      type: 'FeatureCollection',
-      features: [withCruxes([[7.4, 46.1], null, [7.4]])],
-    });
-
-    expect(collection.features).toHaveLength(1);
-  });
-});
-
-describe('cruxCount', () => {
-  it('counts the markers on one route', () => {
-    const feature = sampled([12, 40]);
-    feature.properties.slope.cruxes = [[7.4, 46.1], [7.42, 46.12]];
-
-    expect(core.cruxCount(feature)).toBe(2);
-  });
-
-  it('is zero for a route with none and for one never sampled', () => {
-    // The popup tells those two apart by whether there is a terrain
-    // summary at all, never by this number — which is why it does not
-    // return null for one of them.
-    const none = sampled([12]);
-    none.properties.slope.cruxes = [];
-
-    expect(core.cruxCount(none)).toBe(0);
-    expect(core.cruxCount({ properties: { name: 'Tour' } })).toBe(0);
-    expect(core.cruxCount(null)).toBe(0);
+describe('cruxes (removed)', () => {
+  it('exports no crux reader', () => {
+    expect(core).not.toHaveProperty('cruxCollection');
+    expect(core).not.toHaveProperty('cruxCount');
   });
 });
 
@@ -557,8 +380,7 @@ describe('the passage flag on a segment', () => {
   });
 
   it('is never false, only present or absent', () => {
-    // The `_mark_cruxes` rule, and the reason the layer filter can be a
-    // plain `['==', ['get', 'passage'], true]`: a `false` would still be
+    // The reason the layer filter can be a plain `['==', ['get', 'passage'], true]`: a `false` would still be
     // a value the next reader has to remember to test for.
     const feature = sampled([12, 52]);
     feature.properties.slope.passages = [{ from: 1, to: 1, m: 25 }];
@@ -611,81 +433,6 @@ describe('the passage flag on a segment', () => {
     feature.properties.slope.passages = 'two';
 
     expect(core.segmentFeatures(feature)).toHaveLength(2);
-  });
-});
-
-describe('passageLines', () => {
-  /** Build a route feature carrying the given passages. */
-  function withPassages(passages) {
-    const feature = sampled([12, 52]);
-    feature.properties.slope.passages = passages;
-    return feature;
-  }
-
-  it('says nothing at all when there are none', () => {
-    // The cruxCount rule. "0 no-fall passages" claims the algorithm
-    // looked and found none, which is the reading the help topic exists
-    // to prevent.
-    expect(core.passageLines(withPassages([]))).toEqual([]);
-    expect(core.passageLines(sampled([12]))).toEqual([]);
-    expect(core.passageLines(null)).toEqual([]);
-  });
-
-  it('uses the singular key for one', () => {
-    const lines = core.passageLines(withPassages([{ from: 1, to: 1, m: 25 }]));
-
-    expect(lines[0].key).toBe('route-terrain-passage-one');
-    expect(lines[0].params.count).toBe('1');
-  });
-
-  it('uses the plural key and counts them', () => {
-    const lines = core.passageLines(withPassages([
-      { from: 0, to: 0, m: 25 }, { from: 1, to: 1, m: 25 },
-    ]));
-
-    expect(lines[0].key).toBe('route-terrain-passages');
-    expect(lines[0].params.count).toBe('2');
-  });
-
-  it('names each distinct direction once, in a fixed order', () => {
-    // One descriptor per DIRECTION, not per passage: a long tour would
-    // otherwise repeat the same three words down the popup. Fixed order,
-    // so the line does not reshuffle between two taps on one route.
-    const lines = core.passageLines(withPassages([
-      { from: 0, to: 0, m: 25, fall_line: 'crossing' },
-      { from: 1, to: 1, m: 25, fall_line: 'descending' },
-      { from: 2, to: 2, m: 25, fall_line: 'crossing' },
-    ]));
-
-    expect(lines.map((l) => l.key)).toEqual([
-      'route-terrain-passages',
-      'route-terrain-passage-descending',
-      'route-terrain-passage-crossing',
-    ]);
-  });
-
-  it('carries the count alone for a passage nothing could classify', () => {
-    // `fall_line` is absent, never null, on a passage whose ground faces
-    // nowhere — and the passage still counts, because steep ground is
-    // what earns the mark.
-    const lines = core.passageLines(withPassages([{ from: 1, to: 1, m: 25 }]));
-
-    expect(lines).toHaveLength(1);
-    expect(lines[0].key).toBe('route-terrain-passage-one');
-  });
-
-  it('returns descriptors and never text', () => {
-    // Nothing here may ship an English literal to a translated page —
-    // the rule `tox -e i18n-lint` enforces.
-    const lines = core.passageLines(withPassages([
-      { from: 1, to: 1, m: 25, fall_line: 'climbing' },
-    ]));
-
-    for (const line of lines) {
-      expect(typeof line.key).toBe('string');
-      expect(line.key.startsWith('route-terrain-passage')).toBe(true);
-      expect(line).not.toHaveProperty('text');
-    }
   });
 });
 
@@ -789,7 +536,7 @@ describe('fallLineCollection', () => {
 describe('FALL_LINE_COLOUR', () => {
   it('is off the steepness scale entirely', () => {
     // A mark about a direction must not read as a further class of
-    // ground — the crux ring's rule.
+    // ground.
     expect(core.CLASSES.map((c) => c.hex)).not.toContain(core.FALL_LINE_COLOUR);
   });
 
@@ -803,12 +550,6 @@ describe('PASSAGE_CORE_COLOUR', () => {
     // The core is a GAP in the line, not a seventh class of ground, so
     // it must not be any band's colour.
     expect(core.CLASSES.map((c) => c.hex)).not.toContain(core.PASSAGE_CORE_COLOUR);
-  });
-
-  it('is not the crux ring halo, which it co-occurs with', () => {
-    // Any segment over 50° has already fired is_crux at 35°, so nearly
-    // every passage carries a ring as well.
-    expect(core.PASSAGE_CORE_COLOUR).not.toBe('#ffffff');
   });
 
   it('names the token it mirrors', () => {

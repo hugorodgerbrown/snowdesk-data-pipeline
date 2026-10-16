@@ -1,6 +1,8 @@
 /*
- * static/js/route_rail.js — rail one's DOM half: fills
- * templates/includes/_route_rail.html for the open route (SNOW-1018).
+ * static/js/route_rail.js — the route panel's DOM half: fills
+ * templates/includes/_route_rail.html for the open route (SNOW-1018; one
+ * panel pinned top-left, with a route or point header, since SNOW-1068;
+ * points only since 2026-10-02).
  *
  * A tap on a saved route opens THIS, and only this: map.js's
  * `activateRoute` calls `window.pwaRouteRail.open(feature, options)` with
@@ -8,89 +10,92 @@
  * the rendered one, because a feature read back from the map's tiles has
  * lost the third ordinate the profile is drawn from.
  *
- * THE SHEET IS BEHIND THE MENU. The route detail sheet (SNOW-973) used to
- * open on the same tap. The rail took its top half — name, figures,
- * profile — and the sheet keeps the terrain lines and the day's bulletin
- * reading, one press away on the menu's "Terrain and bulletin" item. The
- * sheet's body is built by map.js, which owns the map state it reads, and
- * handed over as `options.details`: a function this module calls on that
- * press, never at open, so the reading asks for the day the map is showing
- * when the reader asks for it.
+ * NO SHEET BEHIND IT (SNOW-1095). The route detail sheet (SNOW-973) used
+ * to open on the same tap; the rail took its top half — name, figures,
+ * profile — and the sheet kept one terrain line behind the menu's
+ * "Terrain" item until SNOW-1095 removed the item and the sheet.
  *
- * ITS OWN LIFETIME. The rail stays open while the sheet opens and closes
- * over it — it is not registered with window.pwaMapOverlays, which would
- * close it the moment the sheet it opened announced itself. It closes on
- * its own × (`[data-route-rail-close]`), on Escape when nothing else is
- * open to take that Escape and no leg is open, on a claim or a delete, and
- * it is refilled in place when another route is tapped.
+ * ITS OWN LIFETIME. The rail is not registered with window.pwaMapOverlays,
+ * which would close it the moment any other overlay announced itself. It
+ * closes on its own × (`[data-route-rail-close]`), on a tap on empty map
+ * (map.js), on Escape when nothing else is open to take that Escape and no
+ * point is placed, on a claim or a delete, and it is refilled in place
+ * when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,
  * whose first caller this is); and the rail's menu. All the
- * arithmetic — tick step, figures line, where each leg's fill sits — is
+ * arithmetic — tick step, meta line, where each leg's fill sits, the
+ * point's figures — is
  * route_rail_core.js's, and all the copy is the partial's strings template.
  *
- * PRESSING A LEG. Each leg's fill is a focusable `role="button"` path.
- * Pressing it publishes the leg to the cursor as the open leg, and rail
- * two (route_rail_two.js, SNOW-1019) opens under this rail on it.
- * Pressing another leg switches. Pressing INSIDE the open leg moves rail
- * two's window to the place pressed rather than closing the leg; the leg
- * closes on rail two's own ×, or on Escape — the first Escape closes the
- * leg, the next the rail. The pressed state — `aria-pressed` and, through
- * it, the raised fill (src/css/main.css, `.route-rail-leg`) — follows the
- * CURSOR, not the click, so when rail two closes a leg from its own side
- * this rail un-presses without being told.
+ * ONE RAIL (SNOW-1065). The route's name as the title, its figures as the
+ * subtitle in the routes list's meta-line format (`formatMetaLine`), then
+ * the profile. Rail two — the TERRAIN row with its band strip, bank wedges
+ * and readout — was retired: the point card reads a point instead.
  *
- * THE CURSOR LINE (SNOW-1019). The cursor index is drawn across the lane
- * as a vertical line (`[data-route-rail-cursor]`), placed by share, and a
- * mouse moving over the lane sets it — so the map's dot and rail two's
- * window follow the pointer along the profile. The map writes the same
- * index from a pointer on the route's line (map.js's bindRouteCursor).
+ * POINTS ONLY (2026-10-02). The leg fills are drawn and never pressed:
+ * leg selection — a leg highlighted on the map and the profile, " • Leg 3"
+ * in the title, the leg's own figures — was removed, along with dragging
+ * along the profile and the mouse moving the point by hovering. A TAP on
+ * the profile's top line — loosely, OUTLINE_TOLERANCE_PX either side —
+ * places the point at that distance; a tap on the route's
+ * line on the map places it at the nearest sample (map.js's
+ * tapOpenRoute). Either writes the cursor, and everything else follows it.
  *
- * RAIL TWO'S WINDOW. Rail two reports what it shows through `onView`, and
- * this rail draws a bracket (`[data-route-rail-window]`) over that part of
- * the open leg — none while rail two shows the whole leg. Rail two's
- * height joins the rail's, so `onResize` re-publishes it.
+ * THE POINT HEADER (SNOW-1064, SNOW-1068). `open` attaches the point
+ * header (route_point_card.js) to the new cursor, with the arrays it reads
+ * the point's words from, and `close` detaches it. The header follows the
+ * cursor itself, and its wheel clears the point; this module hides the
+ * title and the meta line while a point is placed (`paintState`) and puts
+ * the route's name in the eyebrow. The × always closes the route.
+ *
+ * THE CURSOR LINE (SNOW-1019) AND ITS READOUT (2026-10-02). The cursor
+ * index is drawn across the lane as a vertical line
+ * (`[data-route-rail-cursor]`), placed by share, with a dot where it
+ * crosses the outline (`[data-route-rail-dot]`) and two figures beside it
+ * (`[data-route-rail-readout]`): the elevation at the top, the distance
+ * from the start at the bottom. They sit right of the line, left-aligned,
+ * and move to its left, right-aligned, when they would not fit
+ * (`readoutSide`). The dot and the figures are HTML over the lane, not SVG
+ * inside it, for the tick labels' reason: the lane is stretched with
+ * `preserveAspectRatio="none"`, which would squash a circle or a glyph.
  *
  * The cursor is sized from `slope.angles` when the route has one, and
  * otherwise from the legs themselves (the last `to` plus one): legs are a
  * fact about the geometry and ride on an unsampled route too, in the
  * segment indices its record will have (apps/routes/services/leg_wire.py).
  * Only a route with no legs at all — no elevation, or too short — gets the
- * outline alone, with nothing to press.
+ * outline alone, with no point to place.
  *
- * THE ACTIONS. Terrain and bulletin calls `options.details`; Plan a trip
- * is a link; Share and Rename reuse window.pwaShare and
- * window.pwaRowRenameCommit exactly as the routes panel does; Delete
- * confirms and posts to routes:delete. Each change announces
- * `snowdesk:routes-changed`, which is what makes the map and an open
- * routes panel re-read the list. A pending share has no uuid and none of
- * the owner endpoints would answer for it, so its menu keeps the details
- * item alone (`[data-route-rail-owner]` marks the rest), and its Save —
- * `options.claim`, the control map.js builds — sits in the identity block
- * (`[data-route-rail-claim]`), where the recipient lands.
+ * THE ACTIONS. Plan a trip is a link; Share and Rename reuse
+ * window.pwaShare and window.pwaRowRenameCommit exactly as the routes
+ * panel does; Delete confirms and posts to routes:delete. Each change
+ * announces `snowdesk:routes-changed`, which is what makes the map and an
+ * open routes panel re-read the list. A pending share has no uuid and none
+ * of the owner endpoints would answer for it, so it has no menu at all,
+ * and its Save — `options.claim`, the control map.js builds — sits in the
+ * identity block (`[data-route-rail-claim]`), where the recipient lands.
  *
- * THE BOTTOM CHROME. While open, `#map` carries `data-route-rail-open` and
- * `--route-rail-height`, the rail's measured height, re-measured by a
- * ResizeObserver whenever the rail's content changes its height, which
- * then announces `snowdesk:route-rail-resized` (SNOW-1019); static/css/map.css
- * raises `--map-bottom-row-offset` from the pair, which moves every
- * bottom-anchored control at once.
+ * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
+ * `data-route-rail-open`, which static/css/map.css reads to withdraw the
+ * controls a phone does not keep (SNOW-1067). Nothing on the map moves
+ * for the panel. A ResizeObserver announces `snowdesk:route-rail-resized`
+ * whenever the panel's content changes its height (a point header, a
+ * wrapped title), for the leader line and map.js's keep-in-view check.
  *
  * Publishes (frozen `window.pwaRouteRail`):
  *
- *   open(feature, {details?, claim?})
+ *   open(feature, {claim?})
  *                  — fill and show the rail for one route feature;
- *                    `details` opens the route detail sheet, `claim` is
- *                    a pending share's Save control
+ *                    `claim` is a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
- *   cursorPoint()  — where the cursor line meets the profile, viewport
- *                    px, or null; the leader line's stop (SNOW-1019)
+ *   cursorPoint()  — the panel's bottom edge below the cursor line,
+ *                    viewport px, or null; the leader line's stop
  *   cursor()       — the open route's cursor, or null; map.js follows it
- *                    to dim every leg but the open one (SNOW-1017) and to
- *                    draw the index as a dot on the line, and writes
- *                    the index back from a pointer on it (SNOW-1019)
+ *                    to draw the index as a dot on the line, and writes
+ *                    the index back from a tap on it (SNOW-1019)
  *   element        — the rail itself, measured by map.js's fit padding
  */
 
@@ -102,18 +107,23 @@
   var mapEl = document.getElementById('map');
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
+  /** The space between the cursor line and its figures, px: clear of the dot. */
+  var READOUT_GAP_PX = 9;
+  /** How far above or below the profile's top line a tap still counts, px. */
+  var OUTLINE_TOLERANCE_PX = 20;
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
   var STRINGS = self.pwaStrings.read('route-rail-strings-template', {
     'unit-m': '%(value)s m',
     'unit-km': '%(value)s km',
-    'route-ascend': 'Ascend %(m)s m',
-    'route-descend': 'descend %(m)s m',
-    'route-length': '%(km)s km',
-    'route-steep': '%(km)s km steep terrain',
-    'leg-climb': 'Leg %(i)s — climb',
-    'leg-descent': 'Leg %(i)s — descent',
+    'meta-km': '%(km)skm',
+    'meta-both': '%(km)skm · %(ascent)sm ↑ · %(descent)sm ↓',
+    'meta-ascent': '%(km)skm · %(ascent)sm ↑',
+    'meta-descent': '%(km)skm · %(descent)sm ↓',
+    'meta-hm': '%(hours)sh%(minutes)sm',
+    'meta-m': '%(minutes)sm',
+    'meta-duration': '%(figures)s · %(duration)s',
     'lane-label': 'Elevation profile of %(name)s',
     untitled: 'Untitled route',
     'delete-confirm': "Delete %(name)s? You'll need the .gpx file again to put it back.",
@@ -130,15 +140,22 @@
   var PLAN_TRIP_URL = rail.dataset.routePlanTripUrl || '';
 
   var nameEl = rail.querySelector('[data-route-rail-name]');
-  var verticalEl = rail.querySelector('[data-route-rail-vertical]');
-  var horizontalEl = rail.querySelector('[data-route-rail-horizontal]');
+  var eyebrowEl = document.getElementById('route-rail-eyebrow');
+  var titleEl = rail.querySelector('[data-route-rail-title]');
+  var closeEl = rail.querySelector('[data-route-rail-close]');
+  /** The eyebrow's route text, as the partial rendered it. */
+  var EYEBROW_TEXT = eyebrowEl ? eyebrowEl.textContent : '';
+  var metaEl = rail.querySelector('[data-route-rail-meta]');
   var lane = rail.querySelector('[data-route-rail-lane]');
   var ticksEl = rail.querySelector('[data-route-rail-ticks]');
+  var readoutEl = rail.querySelector('[data-route-rail-readout]');
+  var dotEl = rail.querySelector('[data-route-rail-dot]');
+  var elevationEl = rail.querySelector('[data-route-rail-elevation]');
+  var distanceEl = rail.querySelector('[data-route-rail-distance]');
   var actionsEl = rail.querySelector('[data-route-rail-actions]');
   var planTripEl = rail.querySelector('[data-route-rail-plan-trip]');
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
-  var detailsEl = rail.querySelector('[data-route-rail-details]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
 
   /** The open route's cursor, or null. */
@@ -153,8 +170,10 @@
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, name: '' };
-  /** Opens the open route's detail sheet; null when there is none. */
-  var openDetails = null;
+  /** The open route's own meta line. */
+  var routeMeta = '';
+  /** The route's length a point's distance is a share of. */
+  var currentSpanM = 0;
 
   /**
    * Read a feature property that may arrive JSON-encoded.
@@ -206,18 +225,6 @@
   }
 
   /**
-   * The label a leg is announced and read out by.
-   *
-   * @param {{i: number, climbing: boolean}} leg
-   * @returns {string}
-   */
-  function legLabel(leg) {
-    return interpolate(STRINGS[leg.climbing ? 'leg-climb' : 'leg-descent'], {
-      i: String(leg.i),
-    });
-  }
-
-  /**
    * Draw the lane: the leg fills, the outline, the tick marks, and the
    * tick labels under it.
    *
@@ -244,12 +251,6 @@
         d: fill.d,
         class: 'route-rail-leg',
         'data-climbing': fill.climbing ? 'true' : 'false',
-        'data-leg-from': String(fill.leg.from),
-        'data-leg-to': String(fill.leg.to),
-        role: 'button',
-        tabindex: '0',
-        'aria-pressed': 'false',
-        'aria-label': legLabel(fill.leg),
       }));
     });
 
@@ -298,7 +299,8 @@
   }
 
   /**
-   * Draw the cursor index as a vertical line across the lane (SNOW-1019).
+   * Draw the cursor index as a vertical line across the lane (SNOW-1019),
+   * with its dot and its figures (2026-10-02).
    *
    * Placed by share, the rule the leg fills follow: sample i owns the
    * i-th of N shares, and the line sits at its middle. Hidden — removed —
@@ -310,6 +312,7 @@
     var line = lane.querySelector('[data-route-rail-cursor]');
     if (index === null || index === undefined || !(sampleCount > 0)) {
       if (line) line.remove();
+      paintReadout(null);
       return;
     }
     var box = self.pwaRouteRailCore.BOX;
@@ -329,132 +332,115 @@
     var x = (((index + 0.5) / sampleCount) * box.width).toFixed(2);
     line.setAttribute('x1', x);
     line.setAttribute('x2', x);
+    paintReadout(index);
   }
 
   /**
-   * Bring the pressed state and the cursor line in line with the cursor.
-   * Rail one has no readout of its own (SNOW-1024): rail two's empty
-   * state says what to press.
+   * Place the dot and the two figures for the cursor index, or hide them.
    *
-   * @param {?{index?: ?number, openLeg: ?{from: number, to: number, i: number,
-   *   climbing: boolean}}} state
+   * The dot sits where the line crosses the outline (`profileY`); a point
+   * on a stretch with no elevation gets no dot and no elevation, and still
+   * its distance. The figures go right of the line, left-aligned, unless
+   * they would not fit before the lane's right edge (`readoutSide`).
+   *
+   * @param {?number} index The cursor index; null to hide.
+   */
+  function paintReadout(index) {
+    if (!readoutEl) return;
+    var core = self.pwaRouteRailCore;
+    if (index === null || !(sampleCount > 0) || !currentProfile) {
+      readoutEl.hidden = true;
+      return;
+    }
+    var units = { m: STRINGS['unit-m'], km: STRINGS['unit-km'] };
+    var fraction = (index + 0.5) / sampleCount;
+    var percent = fraction * 100;
+    var elevation = core.pointElevation(currentProfile, index, sampleCount, units);
+    var distance = core.pointDistance(index, sampleCount, currentSpanM, units);
+    var y = core.profileY(currentProfile, fraction * currentProfile.distanceM);
+
+    elevationEl.textContent = elevation || '';
+    elevationEl.hidden = !elevation;
+    distanceEl.textContent = distance || '';
+    distanceEl.hidden = !distance;
+    dotEl.hidden = y === null;
+    if (y !== null) {
+      dotEl.style.left = percent.toFixed(3) + '%';
+      dotEl.style.top = ((y / core.BOX.height) * 100).toFixed(3) + '%';
+    }
+    readoutEl.hidden = false;
+
+    // Measured once shown, so the widths are the rendered ones.
+    var laneWidth = lane.getBoundingClientRect().width;
+    var widest = Math.max(
+      elevationEl.getBoundingClientRect().width,
+      distanceEl.getBoundingClientRect().width,
+    );
+    var side = core.readoutSide(fraction * laneWidth, laneWidth, widest, READOUT_GAP_PX);
+    readoutEl.setAttribute('data-side', side);
+    [elevationEl, distanceEl].forEach(function (label) {
+      if (side === 'right') {
+        label.style.left = 'calc(' + percent.toFixed(3) + '% + ' + READOUT_GAP_PX + 'px)';
+        label.style.right = '';
+      } else {
+        label.style.right = 'calc(' + (100 - percent).toFixed(3) + '% + ' + READOUT_GAP_PX + 'px)';
+        label.style.left = '';
+      }
+    });
+  }
+
+  /**
+   * Switch the header to a point, or back to the route (SNOW-1068).
+   *
+   * The point header itself follows the cursor (route_point_card.js);
+   * here the title and the meta line give way to it and the eyebrow names
+   * the route. The point's distance is on the profile, beside the cursor
+   * line (2026-10-02).
+   *
+   * @param {?number} index The cursor index; null with no point.
+   */
+  function paintPointMode(index) {
+    var point = index !== null;
+    if (point) rail.setAttribute('data-route-rail-point', '');
+    else rail.removeAttribute('data-route-rail-point');
+    if (titleEl) titleEl.hidden = point;
+    if (metaEl) metaEl.hidden = point;
+    if (eyebrowEl) eyebrowEl.textContent = point ? current.name : EYEBROW_TEXT;
+  }
+
+  /**
+   * Bring the header and the cursor line in line with the cursor.
+   *
+   * @param {?{index?: ?number}} state
    */
   function paintState(state) {
-    var open = state && state.openLeg;
-    drawCursorLine(state && typeof state.index === 'number' ? state.index : null);
-    lane.querySelectorAll('.route-rail-leg').forEach(function (path) {
-      var pressed = !!open
-        && Number(path.getAttribute('data-leg-from')) === open.from
-        && Number(path.getAttribute('data-leg-to')) === open.to;
-      path.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-    });
+    var index = state && typeof state.index === 'number' ? state.index : null;
+    drawCursorLine(index);
+    paintPointMode(index);
   }
 
   /**
-   * The sample a press on the lane landed on, inside one leg.
+   * The sample under a viewport x on the lane, clamped to the route.
    *
-   * @param {?MouseEvent} event The press, or null for a key.
-   * @param {{from: number, to: number}} leg The leg pressed.
-   * @returns {number} The leg's middle when the press has no position.
+   * @param {number} clientX The pointer's x.
+   * @returns {?number} Null while the lane has no width.
    */
-  function pressedIndex(event, leg) {
-    var middle = Math.floor((leg.from + leg.to) / 2);
-    if (!event || typeof event.clientX !== 'number') {
-      var index = cursor ? cursor.state().index : null;
-      return index === null ? middle : index;
-    }
+  function indexAt(clientX) {
     var rect = lane.getBoundingClientRect();
-    if (!(rect.width > 0)) return middle;
-    var at = Math.floor(((event.clientX - rect.left) / rect.width) * sampleCount);
-    return Math.min(leg.to, Math.max(leg.from, at));
-  }
-
-  /**
-   * Press a leg: open it, or move rail two's window within it when it is
-   * already the open one.
-   *
-   * @param {Element} path A `.route-rail-leg` path.
-   * @param {?MouseEvent} event The click, or null for a key.
-   */
-  function pressLeg(path, event) {
-    if (!cursor) return;
-    var from = Number(path.getAttribute('data-leg-from'));
-    var to = Number(path.getAttribute('data-leg-to'));
-    var open = cursor.state().openLeg;
-    if (open && open.from === from && open.to === to) {
-      if (window.pwaRouteRailTwo) {
-        window.pwaRouteRailTwo.centreOn(pressedIndex(event, open));
-      } else {
-        cursor.closeLeg();
-      }
-      return;
-    }
-    var leg = legs.find(function (candidate) {
-      return candidate.from === from && candidate.to === to;
-    });
-    if (leg) cursor.openLeg(leg);
-  }
-
-  /**
-   * Draw the bracket over the part of the open leg rail two shows.
-   *
-   * @param {?{from: number, to: number}} view Rail two's window, in
-   *   continuous sample units; null when rail two is hidden.
-   * @param {?{from: number, to: number}} leg The open leg.
-   */
-  function drawWindow(view, leg) {
-    var bracket = lane.querySelector('[data-route-rail-window]');
-    var whole = !view || !leg || !(sampleCount > 0)
-      || view.to - view.from >= leg.to - leg.from + 1 - 1e-6;
-    if (whole) {
-      if (bracket) bracket.remove();
-      return;
-    }
-    var box = self.pwaRouteRailCore.BOX;
-    if (!bracket) {
-      bracket = svgEl('rect', {
-        'data-route-rail-window': '',
-        y: '1',
-        height: String(box.height - 2),
-        rx: '2',
-        fill: 'currentColor',
-        'fill-opacity': '0.08',
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'vector-effect': 'non-scaling-stroke',
-        'pointer-events': 'none',
-        class: 'text-text-1',
-      });
-      lane.appendChild(bracket);
-    }
-    bracket.setAttribute('x', ((view.from / sampleCount) * box.width).toFixed(2));
-    bracket.setAttribute(
-      'width',
-      (((view.to - view.from) / sampleCount) * box.width).toFixed(2),
-    );
-  }
-
-  /** Write the rail's height onto #map, for the bottom-chrome offset. */
-  function publishHeight() {
-    if (!mapEl || rail.hidden) return;
-    mapEl.style.setProperty('--route-rail-height', rail.offsetHeight + 'px');
+    if (!(rect.width > 0)) return null;
+    var at = Math.floor(((clientX - rect.left) / rect.width) * sampleCount);
+    return Math.min(sampleCount - 1, Math.max(0, at));
   }
 
   /**
    * Fit the menu to the open route.
    *
-   * The details item shows whenever there is a sheet to open; the owner
-   * items only for a route this visitor owns, each hidden individually so
-   * a pending share keeps the details item. The whole menu hides only when
-   * nothing in it would do anything.
+   * Every item is an owner action, so the whole menu shows only for a
+   * route this visitor owns: a pending share, with no uuid, has none.
    */
   function fillMenu() {
     var owned = !!current.uuid;
-    if (detailsEl) detailsEl.closest('li').hidden = !openDetails;
-    rail.querySelectorAll('[data-route-rail-owner]').forEach(function (item) {
-      item.hidden = !owned;
-    });
-    if (actionsEl) actionsEl.hidden = !owned && !openDetails;
+    if (actionsEl) actionsEl.hidden = !owned;
     if (!owned) return;
     if (planTripEl && PLAN_TRIP_URL) {
       planTripEl.setAttribute(
@@ -501,10 +487,9 @@
    *
    * @param {{geometry?: {coordinates?: Array}, properties?: object}} feature
    *   The route feature from the routes GeoJSON cache.
-   * @param {{details?: function(): *, claim?: ?Node}} [options]
-   *   `details` opens the route detail sheet, called on the menu's
-   *   Terrain and bulletin item; `claim` is a pending share's Save
-   *   control, seated in the identity block.
+   * @param {{claim?: ?Node}} [options]
+   *   `claim` is a pending share's Save control, seated in the identity
+   *   block.
    * @returns {boolean} Whether the rail opened.
    */
   function open(feature, options) {
@@ -513,7 +498,6 @@
     if (!feature || !profileCore || !railCore) return false;
     var props = feature.properties || {};
 
-    if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     cursor = null;
@@ -523,11 +507,10 @@
       uuid: props.uuid ? String(props.uuid) : null,
       name: props.name || STRINGS.untitled,
     };
-    openDetails = typeof opts.details === 'function' ? opts.details : null;
     // A pending share carries the same slope record as an owned route
-    // (the server builds both with one function), and rail two draws its
-    // bands, ribbon and passages from it — so it is read for both. The
-    // map's rule that a pending line draws no slope is the map's alone.
+    // (the server builds both with one function), and the point card reads
+    // its terrain from it — so it is read for both. The map's rule that a
+    // pending line draws no slope is the map's alone.
     var slope = readJson(props.slope);
     var wireLegs = readJson(props.legs);
     legs = Array.isArray(wireLegs) ? wireLegs : [];
@@ -543,43 +526,36 @@
     var coordinates = feature.geometry && feature.geometry.coordinates;
     var profile = profileCore.readProfile(Array.isArray(coordinates) ? coordinates : []);
     var spanM = typeof props.distance_m === 'number' ? props.distance_m : profile.distanceM;
-    // `terrain` is absent for an unsampled route, and the steep part of
-    // the horizontal line is then left out rather than read as zero. A
-    // route wholly outside the terrain coverage carries `surveyed_m: 0`
-    // and `steep_m: 0`; "0.0 km steep terrain" would state the ground is
-    // gentle on the strength of never having looked at it, so the steep
-    // figure is only shown once some ground was surveyed — the rule
-    // `summaryLines` in route_slope_core.js follows.
-    var terrain = readJson(props.terrain);
-    var surveyed = !!terrain && typeof terrain === 'object'
-      && typeof terrain.surveyed_m === 'number' && terrain.surveyed_m > 0;
 
     nameEl.textContent = current.name;
-    verticalEl.textContent = railCore.formatRouteVertical(
-      { ascent_m: props.ascent_m, descent_m: props.descent_m },
-      STRINGS,
-    );
-    horizontalEl.textContent = railCore.formatRouteHorizontal(
+    routeMeta = railCore.formatMetaLine(
       {
         distance_m: props.distance_m,
-        steep_m: surveyed ? terrain.steep_m : null,
+        ascent_m: props.ascent_m,
+        descent_m: props.descent_m,
+        duration_s: props.duration_s,
       },
       STRINGS,
     );
+    if (metaEl) metaEl.textContent = routeMeta;
     currentProfile = profile;
+    currentSpanM = spanM;
     drawLane(profile, sampleCount, spanM);
-    if (cursor && window.pwaRouteRailTwo) {
-      window.pwaRouteRailTwo.attach({
-        cursor: cursor,
-        slope: slope,
-        profile: profile,
-        legs: legs,
-        sampleCount: sampleCount,
-        spanM: spanM,
-        uuid: current.uuid,
-        onView: drawWindow,
-        onResize: publishHeight,
-      });
+    // SNOW-1064: the point header follows the rail's cursor.
+    if (window.pwaRoutePointCard) {
+      if (cursor) {
+        window.pwaRoutePointCard.attach({
+          cursor: cursor,
+          slope: slope,
+          coordinates: coordinates,
+          profile: profile,
+          legs: legs,
+          sampleCount: sampleCount,
+          spanM: spanM,
+        });
+      } else {
+        window.pwaRoutePointCard.detach();
+      }
     }
     fillMenu();
     fillClaim(props.pending ? opts.claim || null : null);
@@ -587,7 +563,6 @@
 
     rail.hidden = false;
     if (mapEl) mapEl.setAttribute('data-route-rail-open', '');
-    publishHeight();
     announceRailChanged();
     return true;
   }
@@ -595,33 +570,26 @@
   /**
    * Hide the rail and drop its cursor.
    *
-   * The open leg is closed FIRST, while every subscriber is still
-   * listening, so the map (SNOW-1017) hears `openLeg: null` and restores
-   * the legs it dimmed. That covers the rail's own ×, Escape and backdrop
-   * closes, none of which the map sees.
+   * The point is cleared FIRST, while every subscriber is still
+   * listening, so the map (map.js's bindRouteCursor) clears its dot. That
+   * covers the rail's own ×, Escape and backdrop closes, none of which the
+   * map sees.
    */
   function close() {
-    // Empty the cursor before letting it go, so every surface following
-    // it — rail two, and the map's leg dimming and cursor dot
-    // (map.js's bindRouteCursor) — hears the route close and clears.
-    if (cursor) {
-      cursor.setIndex(null);
-      cursor.closeLeg();
-    }
-    if (window.pwaRouteRailTwo) window.pwaRouteRailTwo.detach();
+    if (cursor) cursor.setIndex(null);
+    if (window.pwaRoutePointCard) window.pwaRoutePointCard.detach();
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
     cursor = null;
     legs = [];
     sampleCount = 0;
     currentProfile = null;
-    openDetails = null;
+    currentSpanM = 0;
+    routeMeta = '';
     fillClaim(null);
+    paintPointMode(null);
     rail.hidden = true;
-    if (mapEl) {
-      mapEl.removeAttribute('data-route-rail-open');
-      mapEl.style.removeProperty('--route-rail-height');
-    }
+    if (mapEl) mapEl.removeAttribute('data-route-rail-open');
     announceRailChanged();
   }
 
@@ -634,11 +602,12 @@
   }
 
   /**
-   * Where the cursor line meets the profile, in viewport px (SNOW-1019).
+   * The leader line's stop on this panel, in viewport px.
    *
-   * The leader line's stop on this rail. Placed by share like the line
-   * itself; the y is the outline's at that distance, or the lane's middle
-   * where the profile has no elevation there.
+   * A notch on the panel's BOTTOM EDGE, directly below the profile's
+   * cursor line (SNOW-1068): the panel is pinned top-left, so the leader
+   * runs up from the map's dot and stops at the card, in line with the
+   * cursor line above. The x is placed by share like the line itself.
    *
    * @returns {?{x: number, y: number}} Null with no cursor index, or while
    *   the rail is hidden.
@@ -647,45 +616,53 @@
     if (!cursor || rail.hidden || !(sampleCount > 0)) return null;
     var index = cursor.state().index;
     if (index === null) return null;
-    var box = self.pwaRouteRailCore.BOX;
-    var rect = lane.getBoundingClientRect();
+    var laneRect = lane.getBoundingClientRect();
     var fraction = (index + 0.5) / sampleCount;
-    var d = currentProfile ? fraction * currentProfile.distanceM : 0;
-    var y = currentProfile ? self.pwaRouteRailCore.profileY(currentProfile, d, box) : null;
     return {
-      x: rect.left + fraction * rect.width,
-      y: rect.top + (y === null ? 0.5 : y / box.height) * rect.height,
+      x: laneRect.left + fraction * laneRect.width,
+      y: rail.getBoundingClientRect().bottom,
     };
   }
 
   // ---- presses ----------------------------------------------------------
 
-  lane.addEventListener('click', function (event) {
-    var target = /** @type {Element} */ (event.target);
-    var path = target && target.closest ? target.closest('.route-rail-leg') : null;
-    if (path) pressLeg(path, /** @type {MouseEvent} */ (event));
-  });
-
-  // SNOW-1019: a mouse over the lane moves the cursor, so the map's dot
-  // and rail two follow it along the profile. Mouse only: a finger's move
-  // is the start of a press, and the click that opens or recentres a leg
-  // must stay the only thing a press does. The cursor clamps the index
-  // into the open leg, so hovering past its ends holds the cursor there.
-  lane.addEventListener('pointermove', function (event) {
-    if (!cursor || !(sampleCount > 0) || event.pointerType !== 'mouse') return;
+  /**
+   * The sample a press on the lane places, or null when it is not on the
+   * profile's top line.
+   *
+   * @param {{clientX: number, clientY: number}} event The pointer event.
+   * @returns {?number}
+   */
+  function outlineIndexAt(event) {
+    if (!cursor || !(sampleCount > 0) || !currentProfile) return null;
     var rect = lane.getBoundingClientRect();
-    if (!(rect.width > 0)) return;
-    var at = Math.floor(((event.clientX - rect.left) / rect.width) * sampleCount);
-    cursor.setIndex(Math.min(sampleCount - 1, Math.max(0, at)));
+    if (!(rect.width > 0)) return null;
+    var fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    var on = self.pwaRouteRailCore.onOutline(
+      currentProfile,
+      fraction,
+      event.clientY - rect.top,
+      rect.height,
+      OUTLINE_TOLERANCE_PX,
+    );
+    return on ? indexAt(event.clientX) : null;
+  }
+
+  // A tap on the profile's top line places the point at that distance
+  // (2026-10-02). The target is the line, loosely — OUTLINE_TOLERANCE_PX
+  // either side — not the whole lane: a tap down in the fill by the ticks
+  // sending the point somewhere was unexpected.
+  lane.addEventListener('click', function (event) {
+    var index = outlineIndexAt(event);
+    if (index !== null) cursor.setIndex(index);
   });
 
-  lane.addEventListener('keydown', function (event) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    var target = /** @type {Element} */ (event.target);
-    var path = target && target.closest ? target.closest('.route-rail-leg') : null;
-    if (!path) return;
-    event.preventDefault();
-    pressLeg(path, null);
+  // A mouse shows the pointer only where a click would place the point.
+  lane.addEventListener('mousemove', function (event) {
+    lane.style.cursor = outlineIndexAt(event) !== null ? 'pointer' : '';
+  });
+  lane.addEventListener('mouseleave', function () {
+    lane.style.cursor = '';
   });
 
   // ---- actions ----------------------------------------------------------
@@ -720,7 +697,6 @@
       .then(function (resp) {
         if (!resp.ok) throw new Error('route delete ' + resp.status);
         close();
-        window.pwaRouteDetail?.close();
         announceRoutesChanged();
       })
       .catch(function () {
@@ -734,11 +710,9 @@
     var target = /** @type {Element} */ (event.target);
     if (!target || !target.closest) return;
     if (target.closest('[data-route-rail-close]')) {
+      // The × always closes the route (2026-10-02): the point header's
+      // wheel is what clears a point and keeps the route.
       close();
-      return;
-    }
-    if (target.closest('[data-route-rail-details]')) {
-      if (openDetails) openDetails();
       return;
     }
     if (target.closest('[data-route-rail-share]')) {
@@ -749,6 +723,8 @@
       remove();
       return;
     }
+    // A placed point hides the title the rename edits, so it clears first.
+    if (target.closest('[data-route-rename]') && cursor) cursor.setIndex(null);
     if (window.pwaRowRenameCommit && current.uuid) {
       window.pwaRowRenameCommit.handleClick(event, {
         uuidAttribute: 'data-route-rename',
@@ -773,7 +749,8 @@
 
   // ---- lifetime ---------------------------------------------------------
 
-  // Escape closes the open leg first, and the rail on the next one — but
+  // Escape clears a placed point first, and closes the rail on the next
+  // one — but
   // only an Escape nothing else was open to take. The sheets close on Escape from their own document listeners
   // (map_sheet.js), and overflow_menu.js takes one in the capture phase
   // for an open menu, so by the time this listener runs the surface that
@@ -793,28 +770,22 @@
   }, true);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' || escapeWasTaken || rail.hidden) return;
-    if (cursor && cursor.state().openLeg) {
-      cursor.closeLeg();
+    // SNOW-1064: a point placed on the route clears first, as the point
+    // header's wheel does, and keeps the route; the next Escape closes it.
+    if (cursor && cursor.state().index !== null) {
+      cursor.setIndex(null);
       return;
     }
     close();
   });
 
-  // The window resize is kept for a browser with no ResizeObserver; where
-  // there is one, the observer below sees that change too.
-  window.addEventListener('resize', publishHeight);
-
-  // SNOW-1019: the rail's height changes with its CONTENT as well as with
-  // the window — rail two opening and closing, its readout growing from
-  // one line to two, the grid wrapping differently — and a stale
-  // --route-rail-height leaves the bottom-right controls over the rail's
-  // ×. So the rail is observed and the height published on every change.
-  // The change is also announced, for the leader line (which redraws) and
-  // map.js (which re-checks the cursor's dot is not now under the rail).
+  // SNOW-1019: the panel's height changes with its CONTENT as well as with
+  // the window — a point header, a long name wrapping to two lines. The change is announced for the leader line (which redraws)
+  // and map.js (which re-checks the cursor's dot is not now under the
+  // panel).
   if (typeof window.ResizeObserver === 'function') {
     new window.ResizeObserver(function () {
       if (rail.hidden) return;
-      publishHeight();
       document.dispatchEvent(new CustomEvent('snowdesk:route-rail-resized', { detail: null }));
     }).observe(rail);
   }

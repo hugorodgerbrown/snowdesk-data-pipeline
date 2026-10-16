@@ -26,9 +26,10 @@ in addition to the shared map assets.
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
 
-{# SNOW-314: full-viewport map surface — size to 100dvh (via .map-fullscreen #}
-{# in map.css) instead of the default min-h-screen so the bottom scrubber   #}
-{# and the site footer stay within the visible viewport on mobile.          #}
+{# SNOW-314: full-viewport map surface — sized to the page's own height   #}
+{# (via .map-fullscreen in map.css) instead of the default min-h-screen, so #}
+{# the nav, the map and the site footer fit the screen exactly on a phone,  #}
+{# in Safari and in the home-screen app alike.                              #}
 {% block body_class %}bg-bg text-text-1 font-sans flex flex-col map-fullscreen{% endblock %}
 
 {% block extra_head %}
@@ -140,6 +141,10 @@ in addition to the shared map assets.
     {# guard both surfaces below share. Loaded here rather than from       #}
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
+    {# SNOW-1097: the pure peek/half/full rules map_sheet.js binds to a     #}
+    {# drag. Before it, so window.pwaSheetDetentsCore exists when attach()  #}
+    {# and bindDetents() first run.                                         #}
+    <script defer src="{% static 'js/sheet_detents_core.js' %}"></script>
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
     {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
     {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
@@ -258,11 +263,18 @@ in addition to the shared map assets.
     {# condition symbol on the map itself, so this surface is inert until    #}
     {# one is tapped.                                                        #}
     {% include "public/partials/_weather_surface.html" %}
+    {# SNOW-1098: the region sheet a map tap opens on a phone. #}
+    {% include "public/partials/_region_sheet_surface.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}
     {# layers menu's old "Manage downloads…" row — that row is gone.     #}
     {% include "public/partials/_map_downloads_sheet.html" %}
+    {# SNOW-978: the terrain filter's sheet — opened by the layers menu's    #}
+    {# "Terrain filter…" row and the map chip. Only for an eligible page.    #}
+    {% if terrain_filter_eligible %}
+        {% include "public/partials/_map_terrain_filter_sheet.html" %}
+    {% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -321,15 +333,22 @@ in addition to the shared map assets.
     {# constructor takes the restored centre and zoom), so it must load       #}
     {# before the bundle.                                                    #}
     <script defer src="{% static 'js/map_viewport_core.js' %}"></script>
-    {# SNOW-691: the slope overlay's coverage rectangle, zoom limits and     #}
-    {# class table (window.pwaSlopeOverlayCore), extracted so the coverage   #}
-    {# predicate can be unit-tested (tests/js/test_slope_overlay_core.js).   #}
+    {# SNOW-1073: the slope-class ramp (window.pwaSlopeClassesCore) — the    #}
+    {# 30/35/40/45/50+ colours the terrain filter's slope mode paints the    #}
+    {# map with and a route's core is drawn in from z14. Both               #}
+    {# terrain_filter_core.js and route_slope_core.js read it at parse time, #}
+    {# so it must load before either (tests/public/test_home_scripts.py).    #}
+    {# It replaced slope_overlay_core.js, swisstopo's slope raster's core.   #}
     {# Here with the other *_core.js modules and NOT inside the map bundle's #}
-    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
-    {# from installSlopeLayer, on the style-install path, never at parse     #}
-    {# time, so it has no place in the temporal-dead-zone ordering the       #}
-    {# bundle exists to protect.                                            #}
-    <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# contiguous run (test_bundle_scripts_are_contiguous).                  #}
+    <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
+    {# SNOW-978: the terrain filter's pure half (window.pwaTerrainFilterCore) #}
+    {# — the class-tile pixel contract, the classifier and painter, the       #}
+    {# filter's storage shape and its summary in words. map.js reads it from  #}
+    {# installTerrainFilterLayer and at the top of its terrain-filter block,  #}
+    {# not inside the bundle's temporal-dead-zone run, so it sits here with   #}
+    {# the other cores (tests/js/test_terrain_filter_core.js).                 #}
+    <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
     {# SNOW-761: the weather overlay's pure transforms                       #}
     {# (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the #}
     {# temperature-and-altitude label, the date projection and the           #}
@@ -360,10 +379,10 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_markers_core.js' %}"></script>
     {# SNOW-910: a route's slope record, read (window.pwaRouteSlopeCore).    #}
-    {# SNOW-1017 took the slope-coloured line off the map; map.js still      #}
-    {# reads this core for the no-fall passages and the terrain lines (the   #}
-    {# crux rings and fall-line arrows left the map with SNOW-1019), and the #}
-    {# elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
+    {# SNOW-1017 took the slope-coloured line off the map below z14; map.js  #}
+    {# still reads this core for the line's colours from z14 (the fall-line  #}
+    {# arrows left the map with SNOW-1019, the terrain lines with SNOW-1095), #}
+    {# and the elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
     {# never at parse time, so like the other call-site cores it sits here   #}
     {# and not inside the map bundle's contiguous run.                       #}
     <script defer src="{% static 'js/route_slope_core.js' %}"></script>
@@ -387,17 +406,17 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_cursor_core.js' %}"></script>
     <script defer src="{% static 'js/route_rail_core.js' %}"></script>
-    {# SNOW-1019: rail two, the open leg. The bank's level-ski wedges        #}
-    {# (window.pwaBankRibbonCore, SNOW-1021/1031), rail two's pure half      #}
-    {# (window.pwaRouteRailTwoCore) and its DOM half                         #}
-    {# (window.pwaRouteRailTwo), which route_rail.js attaches on open — so   #}
-    {# all three come before it.                                             #}
-    <script defer src="{% static 'js/bank_ribbon_core.js' %}"></script>
-    <script defer src="{% static 'js/route_rail_two_core.js' %}"></script>
-    <script defer src="{% static 'js/route_rail_two.js' %}"></script>
+    {# SNOW-1064: the route panel's point header — the aspect wheel          #}
+    {# (window.pwaAspectWheelCore, SNOW-1063), its words and gradient          #}
+    {# (window.pwaRoutePointCardCore) and its DOM half                         #}
+    {# (window.pwaRoutePointCard), which route_rail.js attaches on open — so   #}
+    {# all three come before it.                                               #}
+    <script defer src="{% static 'js/aspect_wheel_core.js' %}"></script>
+    <script defer src="{% static 'js/route_point_card_core.js' %}"></script>
+    <script defer src="{% static 'js/route_point_card.js' %}"></script>
     <script defer src="{% static 'js/route_rail.js' %}"></script>
     {# SNOW-1019: the leader line — a dashed line from the route cursor's    #}
-    {# dot on the map to rail one's cursor and on to rail two's. Its pure    #}
+    {# dot on the map to a notch on the rail's top edge (SNOW-1065). Its pure #}
     {# half (window.pwaRouteLeaderCore) and its DOM half                     #}
     {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
     <script defer src="{% static 'js/route_leader_core.js' %}"></script>
@@ -468,6 +487,13 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# SNOW-978: the terrain filter's sheet, map chip and menu-row summary.  #}
+    {# Talks only to window.pwaTerrainFilter, which map.js publishes at      #}
+    {# parse time — hence after the bundle, and outside its contiguous run   #}
+    {# (no bundle module reads it). Only for an eligible page.               #}
+    {% if terrain_filter_eligible %}
+        <script defer src="{% static 'js/terrain_filter_sheet.js' %}"></script>
+    {% endif %}
     {# HACK MODE (feature discovery): the drop-zone control — one-tap        #}
     {# "download the ground around me". Outside the map bundle (nothing in    #}
     {# the bundle reads it), so its tag sits BELOW the bundle's contiguous    #}
@@ -475,12 +501,13 @@ in addition to the shared map assets.
     {# map_geolocate.js, whose listener answers the locate request it         #}
     {# dispatches.                                                            #}
     <script defer src="{% static 'js/map_drop_zone.js' %}"></script>
-    {# HACK MODE, DEBUG only: the tile-zoom readout beside the help        #}
-    {# roundel. Outside the map bundle, so it sits below the bundle's run —  #}
-    {# see tests/public/test_map_script_order.py.                            #}
-    {% if zoom_readout_visible %}
-        <script defer src="{% static 'js/map_zoom_readout.js' %}"></script>
-    {% endif %}
+    {# SNOW-1077: the zoom control at the top of the bottom-left stack.     #}
+    {# Reads MAP and window.pwaZoomGates, both from map.js at parse time —   #}
+    {# hence after the bundle, and outside its contiguous run (no bundle     #}
+    {# module reads it); see tests/public/test_map_script_order.py. Its pure #}
+    {# half, zoom_control_core.js, loads just before it.                     #}
+    <script defer src="{% static 'js/zoom_control_core.js' %}"></script>
+    <script defer src="{% static 'js/map_zoom_control.js' %}"></script>
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
         {# ordinary map visits so the feature has no JS cost until opened.  #}

@@ -26,7 +26,8 @@ Sources, and which one governs:
   or from what a similar product does.
 * **Every Snowdesk cell is verified against this repository**, never
   against ``docs/competitors.md``. That doc twice recorded us as lacking
-  something we ship (the slope overlay behind ``settings.SLOPE_TILE_URL``,
+  something we ship (the slope layer — since SNOW-1073 the terrain
+  filter's slope mode, painted from ``settings.TERRAIN_CLASS_TILE_URL`` —
   and the national basemaps in ``settings.BASEMAP_STYLES``), and it is the
   page's own input, so the stale claim has a short route back in. Each
   Snowdesk cell below carries the symbol it was checked against.
@@ -308,9 +309,11 @@ FEATURES: tuple[Feature, ...] = (
             skitourenguru=_UNKNOWN,
             whympr=_YES,
             opensnow=_UNKNOWN,
-            # settings.SLOPE_TILE_URL — swisstopo "Slope classes over 30°",
-            # open to every visitor since SNOW-724 retired the flag.
-            snowdesk=Cell(Support.PARTIAL, _("Alps coverage is not complete")),
+            # SNOW-1073: the terrain filter's slope mode, painted on the
+            # device from our terrain-class tiles (settings.TERRAIN_CLASS_TILE_URL,
+            # SLOPE_PALETTE in static/js/terrain_filter_core.js) — derived from
+            # swisstopo's swissALTI3D, so Switzerland only, and from z12.
+            snowdesk=Cell(Support.PARTIAL, _("Switzerland only")),
         ),
     ),
     Feature(
@@ -350,7 +353,7 @@ FEATURES: tuple[Feature, ...] = (
         label=_("Rates a specific tour"),
         question=_("Today's bulletin combined with the terrain a route crosses."),
         cells=_cells(
-            whiterisk=Cell(Support.YES, _("Flags cruxes on a drawn route")),
+            whiterisk=Cell(Support.YES, _("Flags critical passages on a drawn route")),
             snowsafe=Cell(Support.NO, _("Not a planner")),
             clarity=_NO,
             skitourenguru=Cell(Support.YES, _("The whole product")),

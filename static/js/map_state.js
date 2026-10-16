@@ -127,14 +127,21 @@ const OVERLAY_STORAGE_KEY = {
   // visually far heavier than a pin, so the overlay is opt-in the way
   // community_reports is.
   routes: 'snowdesk.map.overlay.routes',
-  // SNOW-691: gated on settings.SLOPE_TILE_URL (SNOW-724 moved the gate off
-  // a waffle flag and onto the setting) — the row exists in the DOM, and
-  // this key is only ever read/written, when
-  // data-slope-layer-eligible="true".
-  // Defaults OFF: the raster covers the whole viewport wherever it has data,
-  // and a visitor who opened the map to read danger ratings did not ask for a
-  // second full-screen colour scheme under them.
-  slope: 'snowdesk.map.overlay.slope',
+  // SNOW-1073 removed ``slope`` ('snowdesk.map.overlay.slope'), the switch
+  // for swisstopo's slope raster. The slope layer is the terrain filter's
+  // slope mode now, and a stored ``slope=true`` is deliberately IGNORED
+  // rather than migrated: carrying it over would silently switch on a
+  // filter that needs the class tiles. The stale key is left alone.
+  //
+  // SNOW-978: the terrain filter's on/off. Gated on
+  // settings.TERRAIN_CLASS_TILE_URL — read and written only when #map
+  // carries data-terrain-filter-eligible="true". Defaults OFF: it paints
+  // whole tracts of ground, not features, and a visitor who opened the map
+  // to read danger ratings did not ask for a second full-screen colour
+  // scheme under them. The filter itself (mode, aspects, slope, elevation)
+  // is a separate JSON blob under TERRAIN_FILTER_STORAGE_KEY below; this key
+  // is only the switch.
+  terrain_filter: 'snowdesk.map.overlay.terrain_filter',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -225,19 +232,20 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-1019's route-cursor dot appends on those terms once more: a
   // mark on a route the reader has switched off would be a mark on
   // nothing. SNOW-1052 removed the two selection-stretch layers.
-  // SNOW-1019 also took SNOW-911's 'routes-cruxes', the fall-line
-  // arrows' 'routes-fall-lines' and SNOW-964's two passage layers off the
-  // map, and out of this list: the line carries no terrain marks.
+  // SNOW-1019 also took the fall-line arrows' 'routes-fall-lines' and
+  // SNOW-964's two passage layers off the map, and out of this list: the
+  // line carries no terrain marks.
   routes: [
     'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
     'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
     'routes-slope-line', 'routes-slope-unknown',
     'routes-transitions', 'routes-transition-labels',
+    'routes-cursor-point-halo',
     'routes-cursor-point',
   ],
-  // SNOW-691: the raster alone. The coverage outline that rode alongside it
-  // was removed; see slope_overlay_core.js's header.
-  slope: ['slope-raster'],
+  // SNOW-978: one raster layer, painted on the device from class tiles —
+  // in either mode, so SNOW-1073's slope layer is this entry too.
+  terrain_filter: ['terrain-filter-raster'],
 });
 
 // SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF
@@ -330,6 +338,14 @@ function mapDefaults() {
 }
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
+// SNOW-978: the terrain filter's criteria — aspects, slope range and
+// elevation band — as ONE JSON blob, for the same reason the viewport is
+// one: the parts only mean something together. Parsed and serialised by
+// ``self.pwaTerrainFilterCore`` (terrain_filter_core.js), which falls back
+// to the defaults for anything it cannot read. SNOW-1073 added ``mode``
+// ('match' or 'slope'); a blob stored before it has none and reads as
+// 'match', the filter it always was.
+const TERRAIN_FILTER_STORAGE_KEY = 'snowdesk.map.terrain_filter';
 // SNOW-737: where the visitor last left the camera. ONE key holding a JSON
 // blob of all five numbers, deliberately unlike the boolean-per-key shape
 // above: a centre, a zoom, a bearing and a pitch are only meaningful
@@ -370,6 +386,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // msgid — the caller appends it to the interpolated `pct` value itself,
   // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
+  // SNOW-1072: the readout's second line, shown when the download includes
+  // terrain data.
+  'frame-terrain-up-to': 'Terrain data: up to %(mb)s MB more',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
   'frame-readout-done': '%(mb)s downloaded',
@@ -402,6 +421,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-no-region-unavailable': "Basemap download isn't available for this region",
   'download-no-region-select': 'Select a region to download its basemap',
   'download-idle': "Download this region's basemap — up to %(mb)s MB",
+  // SNOW-1072: the same, on a device that includes terrain data.
+  'download-idle-terrain':
+    "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain data",
   'download-busy': "Downloading this region's basemap — %(pct)s",
   // SNOW-924: a downloaded area now carries the bulletins and weather
   // inside its boundary, and those go stale where the tiles never do — so
@@ -446,50 +468,6 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // a day nobody asked for, so the ribbon says which day is showing —
   // including when the honest answer is "none yet".
   'map-date-none': 'No date selected',
-  // SNOW-961: the route detail sheet's TERRAIN line — what the ground
-  // the track crosses amounts to. Six strings and not one: each is
-  // omitted entirely when there is nothing to say, and a length under a
-  // kilometre is written in metres rather than as "0.1km", a number the
-  // reader has to convert back.
-  //
-  // The threshold is INTERPOLATED rather than written into the copy. The
-  // metres were counted against it on the server
-  // (apps/routes/services/slope_summary.py), so a locale rewording this
-  // line cannot move the figure away from its own label.
-  'route-terrain-steepest': 'Steepest %(deg)s°',
-  'route-terrain-steep-km': '%(km)skm over %(deg)s°',
-  'route-terrain-steep-m': '%(m)sm over %(deg)s°',
-  // "Not surveyed" NEVER means "not steep". The terrain grid covers
-  // Switzerland, so a route beyond it was sampled and answered nothing —
-  // the one thing known about it, and the reason the whole-route case
-  // gets a line of its own rather than a zero in each band.
-  'route-terrain-unsurveyed-km': '%(km)skm not surveyed',
-  'route-terrain-unsurveyed-m': '%(m)sm not surveyed',
-  'route-terrain-unsurveyed-all': 'Terrain not surveyed',
-  // SNOW-911: how many passages on this route have terrain around them
-  // capable of releasing. Two forms rather than one pluralised string,
-  // because a locale's plural rules are not English's and a "%(count)s
-  // key passage(s)" would be a bracket in the product.
-  //
-  // "Key passage" and not "crux": the domain word is right in a guidebook
-  // and opaque on a map popup, and the marker's job is to send a reader
-  // to /help/#help-topic-slope, which is where the caveats are.
-  'route-terrain-crux-one': '1 key passage',
-  'route-terrain-cruxes': '%(count)s key passages',
-  // SNOW-964: the no-fall passages — where the TRACK is on ground over
-  // 50°, which is a different claim from the ring above and has to read
-  // as one. The ring says the terrain AROUND you can release; this says
-  // you are ON it. The two co-occur on nearly every passage, since
-  // anything over 50° was already flagged a crux at 35°.
-  //
-  // The direction is a word, never a number: the fall line is measured
-  // from one 25 m chord of a recorded track, which supports "this
-  // descends the slope" and not "at 14° off the fall line".
-  'route-terrain-passage-one': '1 no-fall passage',
-  'route-terrain-passages': '%(count)s no-fall passages',
-  'route-terrain-passage-descending': 'down the fall line',
-  'route-terrain-passage-climbing': 'up the fall line',
-  'route-terrain-passage-crossing': 'across the fall line',
   // SNOW-764: the shared-route popup's Save control — its label and its
   // three outcomes. No 'route-shared-with-you' qualifier: both labels
   // below already say the route is somebody else's being offered, so the
@@ -503,12 +481,6 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'route-save-signin': 'Sign in to save this route',
   'route-save-failed': "That couldn't be saved. Try again.",
   'route-save-limit': "You've reached your saved-route limit. Delete one to save this.",
-  // SNOW-691: the Terrain row's disable reason — the viewport centre has
-  // left the slope raster's declared coverage rectangle, so there is
-  // nothing for the layer to draw here. One string, not two: the row is
-  // only in the DOM when the layer is available at all, so WHERE the
-  // visitor is looking is the only thing that can make it unusable.
-  'slope-out-of-coverage': 'No slope data for this area',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source

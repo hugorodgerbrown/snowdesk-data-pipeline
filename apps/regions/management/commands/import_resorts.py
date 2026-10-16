@@ -9,10 +9,11 @@ one of them. This command reads the sheet; ``dump_resorts_sheet`` writes it
 back from the database.
 
 The sheet carries ``Resort``'s editorial columns (operator, website, the
-``why_it_matters`` line, the map ``tier``, elevations, lift/run counts, piste
-length, typical season dates, ``notes``), the coordinate pair, and the
-provenance of that coordinate. This command reconciles the database against
-it in up to three modes, selected with ``--mode`` (all three by default):
+``why_it_matters`` line, the map ``tier``, the ``passes`` it is sold on,
+elevations, lift/run counts, piste length, typical season dates, ``notes``),
+the coordinate pair, and the provenance of that coordinate. This command
+reconciles the database against it in up to three modes, selected with
+``--mode`` (all three by default):
 
   ``add``     Create a resort for a sheet row with no matching ``uuid``.
   ``update``  Overwrite the editorial fields of rows that do match.
@@ -43,6 +44,17 @@ owns its own position afterwards, so re-running the import cannot drag it
 back to whatever the sheet happened to say (SNOW-544). The way a coordinate
 edit *does* travel between environments is `dump_resorts_sheet` → commit →
 a fresh database's first import.
+
+A resort's ``passes`` cell names passes by slug (SNOW-1083). The passes
+themselves are described by a second, smaller sheet beside it,
+``apps/regions/data/passes.tsv`` (``slug``, ``name``, ``website``), which
+this command reads first and from which it **creates** any pass the
+database lacks. It never updates or deletes a pass: a pass is renamed in
+the admin, and the resort links are what the sheet owns. A ``passes`` cell
+naming a slug that is in neither the database nor ``passes.tsv`` is an
+error. The pass sheet travels with the resort sheet rather than through a
+data migration so that every path that imports the resort sheet — a fresh
+worktree, a test that flushes its database, staging — gets its passes too.
 
 Deliberately *not* wired into ``build.sh`` — see
 ``docs/decisions/resorts-are-editable-data.md``. Resort rows are editable
@@ -80,11 +92,12 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from apps.regions.models import MicroRegion, Resort
+from apps.regions.models import MicroRegion, Pass, Resort
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SHEET_PATH = Path(__file__).resolve().parents[2] / "data" / "resorts.tsv"
+DEFAULT_PASSES_PATH = DEFAULT_SHEET_PATH.with_name("passes.tsv")
 
 # The one non-blank ``status`` the sheet recognises. It retires the resort —
 # the sheet's way of saying "this row was never a lift-served ski area".
@@ -176,6 +189,15 @@ class Command(BaseCommand):
             default=DEFAULT_SHEET_PATH,
             help=f"Path to the sheet export (default: {DEFAULT_SHEET_PATH}).",
         )
+        parser.add_argument(
+            "--passes-file",
+            type=Path,
+            default=DEFAULT_PASSES_PATH,
+            help=(
+                "Path to the pass sheet the resort sheet's passes column "
+                f"names (default: {DEFAULT_PASSES_PATH})."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Diff the sheet against the DB and, with ``--commit``, apply it."""
@@ -184,7 +206,8 @@ class Command(BaseCommand):
         modes = _resolve_modes(options["mode"])
 
         rows = _read_sheet(options["file"], modes)
-        plan = _build_plan(rows, modes)
+        pass_rows = _read_passes_sheet(options["passes_file"])
+        plan = _build_plan(rows, modes, pass_rows)
 
         self._report_plan(plan, modes, verbosity)
 
@@ -221,6 +244,7 @@ class Command(BaseCommand):
             )
             return
 
+        self._report_pass_additions(plan, verbosity)
         self.stdout.write(
             f"{len(plan.additions)} resort(s) to add, "
             f"{len(plan.updates)} to update, "
@@ -237,13 +261,27 @@ class Command(BaseCommand):
         for resort in plan.deletions:
             self.stdout.write(f"  - {resort.name}")
 
+    def _report_pass_additions(self, plan: _Plan, verbosity: int) -> None:
+        """Print the passes ``passes.tsv`` would create, if there are any."""
+        if not plan.pass_additions:
+            return
+        self.stdout.write(f"{len(plan.pass_additions)} pass(es) to add.")
+        if verbosity >= 2:
+            for ski_pass in plan.pass_additions:
+                self.stdout.write(f"  + pass {ski_pass.name} ({ski_pass.slug})")
+
     def _apply(self, plan: _Plan, verbosity: int) -> None:
         """Persist the plan in a single transaction."""
         with transaction.atomic():
+            # Passes first: a resort's links can point at one created here.
+            for ski_pass in plan.pass_additions:
+                ski_pass.save()
             for resort in plan.additions:
                 resort.save()
             for resort, _changes in plan.updates:
                 resort.save()
+            for resort, passes in plan.pass_links:
+                resort.passes.set(passes)
             for resort in plan.deletions:
                 resort.delete()
 
@@ -272,6 +310,11 @@ class _Plan:
     unsaved) alongside a field -> ``(old, new)`` map for reporting;
     ``deletions`` holds the resorts the sheet does not list; ``errors``
     holds human-readable reasons the sheet could not be applied in full.
+    ``pass_additions`` holds unsaved passes from ``passes.tsv`` the
+    database lacks. ``pass_links`` pairs each resort whose links change
+    with the passes to set on it: a many-to-many can only be written once
+    the resort is saved, so it cannot ride on the unsaved instance the way
+    a column does.
     """
 
     def __init__(self) -> None:
@@ -280,11 +323,15 @@ class _Plan:
         self.updates: list[tuple[Resort, dict[str, tuple[Any, Any]]]] = []
         self.deletions: list[Resort] = []
         self.errors: list[str] = []
+        self.pass_links: list[tuple[Resort, list[Pass]]] = []
+        self.pass_additions: list[Pass] = []
 
     @property
     def has_changes(self) -> bool:
         """Return True when the plan would write anything."""
-        return bool(self.additions or self.updates or self.deletions)
+        return bool(
+            self.pass_additions or self.additions or self.updates or self.deletions
+        )
 
 
 def _resolve_modes(names: list[str]) -> set[Mode]:
@@ -355,6 +402,7 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
         *TEXT_FIELDS,
         *INT_FIELDS,
         *FLOAT_FIELDS,
+        "passes",
         "region",
         "canton",
         *COORDINATE_COLUMNS,
@@ -378,12 +426,86 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
     return rows
 
 
-def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
+def _read_passes_sheet(path: Path) -> list[dict[str, str]]:
+    """Return the pass sheet's rows as dicts keyed by column name.
+
+    A missing file is no passes rather than an error, so a resort sheet
+    exported to another directory still imports when its rows name only
+    passes the database already holds.
+
+    Args:
+        path: Path to the tab-separated pass sheet.
+
+    Returns:
+        One dict per row with a non-empty ``slug``, values stripped.
+
+    Raises:
+        CommandError: If the file exists but cannot be read or lacks the
+            ``slug`` or ``name`` column.
+
+    """
+    if not path.exists():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CommandError(f"Failed to read {path}: {exc}") from exc
+    reader = csv.DictReader(text.splitlines(), delimiter="\t")
+    missing = {"slug", "name"}.difference(reader.fieldnames or [])
+    if missing:
+        raise CommandError(
+            f"{path} is missing required column(s): {', '.join(sorted(missing))}"
+        )
+    return [
+        {key: (value or "").strip() for key, value in row.items() if key}
+        for row in reader
+        if (row.get("slug") or "").strip()
+    ]
+
+
+def _plan_passes(plan: _Plan, pass_rows: list[dict[str, str]]) -> dict[str, Pass]:
+    """Stage the passes ``passes.tsv`` lists that the database lacks.
+
+    Args:
+        plan: The plan to record new passes and errors on.
+        pass_rows: The pass sheet's rows, from ``_read_passes_sheet``.
+
+    Returns:
+        Every pass a resort row may name, keyed by slug: the database's,
+        plus the staged (unsaved) new ones.
+
+    """
+    passes_by_slug = Pass.objects.by_slugs()
+    for row in pass_rows:
+        slug = row["slug"].lower()
+        if slug in passes_by_slug:
+            continue
+        ski_pass = Pass(
+            slug=slug, name=row.get("name", ""), website=row.get("website", "")
+        )
+        try:
+            ski_pass.full_clean(validate_unique=False, validate_constraints=False)
+        except ValidationError as exc:
+            plan.errors.append(f"pass {slug}: {exc.message_dict}")
+            continue
+        plan.pass_additions.append(ski_pass)
+        passes_by_slug[slug] = ski_pass
+    return passes_by_slug
+
+
+def _build_plan(
+    rows: list[dict[str, str]],
+    modes: set[Mode],
+    pass_rows: list[dict[str, str]] | None = None,
+) -> _Plan:
     """Diff the sheet rows against the current Resort table.
 
     Args:
         rows: The sheet's data rows, as returned by ``_read_sheet``.
         modes: The operations to plan for; anything not selected is skipped.
+        pass_rows: The pass sheet's rows, as returned by
+            ``_read_passes_sheet``; passes it lists that the database lacks
+            are staged for creation.
 
     Returns:
         A ``_Plan`` holding the pending additions, updates, deletions and
@@ -393,7 +515,10 @@ def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
     plan = _Plan()
     # SNOW-602 exempt: bounded curated data — a few hundred Resort rows,
     # not a growable table.
-    by_uuid = {str(resort.uuid): resort for resort in Resort.objects.all()}
+    by_uuid = {
+        str(resort.uuid): resort for resort in Resort.objects.prefetch_related("passes")
+    }
+    passes_by_slug = _plan_passes(plan, pass_rows or [])
     live_uuids: set[str] = set()
 
     for row in rows:
@@ -413,10 +538,10 @@ def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
 
         if resort is None:
             if Mode.ADD in modes:
-                _plan_addition(plan, row, uuid)
+                _plan_addition(plan, row, uuid, passes_by_slug)
             continue
         if Mode.UPDATE in modes:
-            _plan_update(plan, resort, row, uuid)
+            _plan_update(plan, resort, row, uuid, passes_by_slug)
 
     if Mode.DELETE in modes:
         plan.deletions = [
@@ -427,7 +552,9 @@ def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
     return plan
 
 
-def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
+def _plan_addition(
+    plan: _Plan, row: dict[str, str], uuid: str, passes_by_slug: dict[str, Pass]
+) -> None:
     """Stage a new (unsaved) Resort for a sheet row the DB does not hold."""
     region_id = row["region"].strip()
     canton = row["canton"].strip()
@@ -452,6 +579,7 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
             resort.latitude, resort.longitude = coordinates
             _stamp_provenance(resort, row)
         _apply_row(resort, row)
+        passes = _passes_from_row(row, passes_by_slug)
         resort.full_clean(validate_unique=False, validate_constraints=False)
     except ValueError as exc:
         plan.errors.append(f"{row['name'].strip() or uuid}: {exc}")
@@ -460,6 +588,8 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
         plan.errors.append(f"{row['name'].strip() or uuid}: {exc.message_dict}")
         return
     plan.additions.append(resort)
+    if passes:
+        plan.pass_links.append((resort, passes))
 
 
 def _is_retired(row: dict[str, str]) -> bool:
@@ -589,10 +719,21 @@ def _coordinates_from_row(row: dict[str, str]) -> tuple[float, float] | None:
         ) from exc
 
 
-def _plan_update(plan: _Plan, resort: Resort, row: dict[str, str], uuid: str) -> None:
-    """Stage the sheet's editorial values onto an existing Resort."""
+def _plan_update(
+    plan: _Plan,
+    resort: Resort,
+    row: dict[str, str],
+    uuid: str,
+    passes_by_slug: dict[str, Pass],
+) -> None:
+    """Stage the sheet's editorial values onto an existing Resort.
+
+    ``resort`` must come with ``passes`` prefetched: the old set is read
+    from that cache, so diffing the links costs no query per row.
+    """
     try:
         changes = _apply_row(resort, row)
+        passes = _passes_from_row(row, passes_by_slug)
         resort.full_clean(validate_unique=False, validate_constraints=False)
     except ValueError as exc:
         # A non-numeric elevation/count/piste-km cell in the sheet.
@@ -601,6 +742,11 @@ def _plan_update(plan: _Plan, resort: Resort, row: dict[str, str], uuid: str) ->
     except ValidationError as exc:
         plan.errors.append(f"{resort.name} ({uuid}): {exc.message_dict}")
         return
+    old_slugs = sorted(ski_pass.slug for ski_pass in resort.passes.all())
+    new_slugs = sorted(ski_pass.slug for ski_pass in passes)
+    if old_slugs != new_slugs:
+        changes["passes"] = (",".join(old_slugs), ",".join(new_slugs))
+        plan.pass_links.append((resort, passes))
     if changes:
         plan.updates.append((resort, changes))
 
@@ -667,6 +813,47 @@ def _tier_from_row(row: dict[str, str]) -> str:
         valid = ", ".join(Resort.Tier.values)
         raise ValueError(f"unknown tier {raw!r} (expected one of: {valid})")
     return raw
+
+
+def _passes_from_row(
+    row: dict[str, str], passes_by_slug: dict[str, Pass]
+) -> list[Pass]:
+    """
+    Read the sheet's ``passes`` cell into ``Pass`` rows (SNOW-1083).
+
+    The cell is a comma-separated list of pass slugs (``magic-pass``); a
+    blank or absent cell means the resort is on no pass, so an export that
+    predates the column still imports. Slugs are matched case-insensitively
+    and surrounding spaces are ignored.
+
+    An unknown slug is an error rather than skipped, for the reason
+    ``_kind_from_row`` rejects an unknown kind: a typo dropped quietly would
+    take a resort off its pass with nothing in the output saying so. A pass
+    the sheet needs is added to ``passes.tsv`` (or the admin) first.
+
+    Args:
+        row: One sheet row.
+        passes_by_slug: Every ``Pass``, keyed by slug.
+
+    Returns:
+        The named passes, without duplicates, in sheet order.
+
+    Raises:
+        ValueError: If the cell names a slug no ``Pass`` carries.
+
+    """
+    passes: list[Pass] = []
+    for raw in (row.get("passes") or "").split(","):
+        slug = raw.strip().lower()
+        if not slug:
+            continue
+        ski_pass = passes_by_slug.get(slug)
+        if ski_pass is None:
+            known = ", ".join(sorted(passes_by_slug)) or "none"
+            raise ValueError(f"unknown pass {slug!r} (known passes: {known})")
+        if ski_pass not in passes:
+            passes.append(ski_pass)
+    return passes
 
 
 def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]]:

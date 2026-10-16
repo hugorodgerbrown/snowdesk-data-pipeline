@@ -1,0 +1,31 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_region_sheet_surface.html — the phone region sheet and its
+JS (SNOW-1098).
+
+Included from map.html, beside the weather sheet it most resembles: an
+empty sheet with no roundel and no trigger button, because the trigger is
+the map. On a phone EVERY selection opens it — a tap, a search pick, a
+pinned region from search, a deep link — because the region chip is not
+drawn there and the sheet is the one surface that names the selection.
+
+It is the first sheet to declare detents (SNOW-1097): it opens at PEEK, so
+the ground the reader tapped stays in view, which is the complaint that
+took the region popup away (SNOW-895). Half and full show the rest of
+public/partials/_region_sheet_body.html.
+
+At ``sm`` and up the sheet never opens: the selection moves and the
+chip's panel is the way into the summary.
+
+Context expected:
+  (None. map_region_sheet.js reads the endpoint template off #map's
+  data-region-sheet-url, which _map_embed.html renders.)
+{% endcomment %}
+{% trans "Region" as region_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="region-sheet" aria_label=region_sheet_aria_label detents="peek,half,full" initial="peek" %}
+<script defer src="{% static 'js/map_region_sheet.js' %}"></script>
+{# The module's own user-facing strings — see docs/i18n.md. #}
+<template id="region-sheet-strings-template">
+    <span data-string="loading">{% trans "Loading region details…" %}</span>
+    <span data-string="failed">{% trans "Region details are unavailable offline." %}</span>
+</template>

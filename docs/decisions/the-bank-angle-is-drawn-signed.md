@@ -1,11 +1,19 @@
 ---
 name: the-bank-angle-is-drawn-signed
-description: bank.py, `banks` on the wire, bankWedge wedges, bankGlyphs one wedge per segment (trackMode), kickTurns — kept signed, sent flat
-status: current
-last-reviewed: 2026-10-01
+description: HISTORICAL (SNOW-1065 removed the drawing) — bank.py, `banks` on the wire, bankWedge wedges, kickTurns — signed, sent flat
+status: historical
+last-reviewed: 2026-10-02
 ---
 
 # The bank angle is drawn signed
+
+> **Historical.** SNOW-1065 deleted rail two and with it every drawing of
+> the bank (`bank_ribbon_core.js`, the level-ski wedges, the kick-turn
+> wording). The bank is still computed (`bank.py`, `roll_deg`) and still
+> sent as `banks`; only the drawing went. A point on a route is now read by
+> the point card — see
+> [the-point-card-names-the-experience.md](the-point-card-names-the-experience.md).
+> The file and function names below describe the code as it was.
 
 ## Decision
 

@@ -143,6 +143,10 @@ class TestComparePageIsHonest:
     page — it breaks its reason to exist.
     """
 
+    def test_makes_no_crux_claim(self, page: str) -> None:
+        """SNOW-1066 removed route-level cruxes; the page names none."""
+        assert "crux" not in page.lower()
+
     def test_discloses_that_snowdesk_publishes_it(self, page: str) -> None:
         """The conflict of interest is stated, not implied."""
         assert "published by Snowdesk, which is one of the products" in page
@@ -190,18 +194,32 @@ class TestSnowdeskEntryMatchesTheCode:
     """Our own row is checked against this repository, not against the doc.
 
     ``docs/competitors.md`` recorded slope angle and national topo
-    basemaps as things we lack. Both shipped — ``settings.SLOPE_TILE_URL``
-    and ``settings.BASEMAP_STYLES`` — and the doc did not catch up. These
+    basemaps as things we lack. Both shipped — the slope layer (since
+    SNOW-1073 the terrain filter's slope mode) and
+    ``settings.BASEMAP_STYLES`` — and the doc did not catch up. These
     tests exist because the doc is the page's input, so the stale claim
     has an obvious route back in.
     """
 
-    def test_claims_the_slope_overlay_we_actually_ship(self, page: str) -> None:
-        """We have it; the page says so."""
+    def test_claims_the_slope_layer_we_actually_ship(self, page: str) -> None:
+        """We have it; the page says so, and credits where it comes from.
+
+        SNOW-1073: the slope layer is the terrain filter's slope mode, so
+        "shipped" is the sheet carrying the mode control — and the claim is
+        Switzerland only, from swissALTI3D, because that is what our
+        class tiles cover.
+        """
+        from pathlib import Path
+
         from django.conf import settings
 
-        assert settings.SLOPE_TILE_URL, "slope overlay is configured"
-        assert "slope-angle overlay" in page
+        sheet = (
+            Path(settings.BASE_DIR)
+            / "apps/public/templates/public/partials/_map_terrain_filter_sheet.html"
+        ).read_text()
+        assert 'value="slope"' in sheet
+        assert "slope-angle layer for Switzerland" in page
+        assert "swissALTI3D" in page
 
     def test_claims_the_national_basemaps_we_actually_ship(self, page: str) -> None:
         """swisstopo, IGN and basemap.at are all in BASEMAP_STYLES."""

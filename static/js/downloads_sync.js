@@ -245,11 +245,13 @@
    * is.
    *
    * @param {{areaId: string, regionId?: string, bbox?: number[],
-   *   basemapKey?: string|null, name?: string}} record The area as the
-   *   local writer has it. `bbox` is `[west, south, east, north]` in
-   *   (lon, lat) order, matching the server's own carve-out; it is
-   *   required for a custom area and ignored for a region, whose tiles are
-   *   computed server-side from its real boundary.
+   *   basemapKey?: string|null, name?: string, terrain?: boolean}} record
+   *   The area as the local writer has it. `bbox` is `[west, south, east,
+   *   north]` in (lon, lat) order, matching the server's own carve-out; it
+   *   is required for a custom area and ignored for a region, whose tiles
+   *   are computed server-side from its real boundary. SNOW-1072:
+   *   `terrain` is whether the download included terrain data, posted as
+   *   "true"/"false" so another device repeats the choice.
    * @returns {Promise<boolean>} Whether the write was queued. Never
    *   rejects — see `_enqueue`.
    */
@@ -264,6 +266,7 @@
       bbox: Array.isArray(record.bbox) ? JSON.stringify(record.bbox) : '',
       basemap_key: record.basemapKey || '',
       name: record.name || '',
+      terrain: record.terrain ? 'true' : 'false',
     });
     if (queued) await _markSynced(record.areaId);
     return queued;
@@ -361,7 +364,8 @@
    *
    * @returns {Promise<Array<{area_id: string, kind: string,
    *   region_id: string, bbox: number[]|null, basemap_key: string,
-   *   name: string, created_at: string}>>} Never rejects.
+   *   name: string, terrain: boolean, created_at: string}>>} Never
+   *   rejects.
    */
   async function accountAreas() {
     if (!isEnabled()) return [];
@@ -455,6 +459,7 @@
         bbox: area.bbox,
         basemapKey: area.basemapKey,
         name: area.name,
+        terrain: !!area.terrain,
       });
       if (ok) pushed += 1;
     }

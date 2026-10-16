@@ -243,8 +243,7 @@ class TestSeeding:
     def test_a_clean_record_answers_an_empty_list(self) -> None:
         """Gentle ground everywhere is a complete answer, not a missing one.
 
-        Unlike ``cruxes``, a passage list needs no probe and so can never
-        be incomplete — there is no "we could not look" state to encode.
+        A passage list needs no probe and so can never be incomplete — there is no "we could not look" state to encode.
         """
         assert route_passages(_record([12.0, 18.0, 25.0])) == []
 

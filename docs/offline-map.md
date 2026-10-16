@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # PWA shell
@@ -557,7 +557,21 @@ The SW classifies every fetch into one of four buckets:
   vector-tile + sprite + glyph requests; 600 gives headroom while
   bounding on-disk growth) via a simple oldest-first LRU trim
   (`Cache.keys()` returns insertion order — no byte-size accounting; see
-  "Out of scope" below). This is the passive, opportunistic cache for
+  "Out of scope" below). Since SNOW-1060 the 600 counts **tiles only**
+  (`isTileShapedURL`, the numeric `/{z}/{x}/{y}` tail, any extension or
+  none) and only tiles
+  are evicted for it. The style JSON, TileJSON, sprite files and glyph
+  ranges are exempt, bounded only by a `BASEMAP_CACHE_MAX_DOCUMENTS` (200)
+  backstop. The reason: MapLibre fetches those documents once per map
+  load, so they are always the oldest entries, and a whole-cache FIFO
+  trimmed them away during any session that panned through more than 600
+  new tiles. Nothing changed on screen, but the next offline load was
+  blank because every tile it held had lost the style that draws it. The
+  tile test reads the path's shape, not its extension, so a tile format
+  no style ships today (`.webp`, say) still counts as a tile and can never
+  fill the backstop and push the style out. The backstop only stops
+  anything the test rejects from growing without bound; real documents
+  are a few dozen per basemap. This is the passive, opportunistic cache for
   whatever the user has actually browsed — distinct from the byte-budget
   eviction the DELIBERATE "Download basemap" pinned buckets use (SNOW-586,
   below), which this passive cache has no part in. On a `BASEMAP_CACHE`
@@ -714,7 +728,9 @@ page was cached under, and not otherwise. See
 Deliberately not implemented: byte-based accounting for the PASSIVE
 `BASEMAP_CACHE` (the count-based LRU cap above is still its only eviction
 mechanism, and still count- not byte-based — this is genuinely
-out of scope, unlike the sentence this one replaces). SNOW-586 DID add
+out of scope, unlike the sentence this one replaces). Since SNOW-1060
+that cap counts tiles only; the style documents sit outside it under
+their own 200-entry backstop (see above). SNOW-586 DID add
 byte-based accounting, but only for the pinned, deliberate-download
 buckets — see "Download budget and whole-area eviction" below; the
 passive cache's cheaper insertion-order trim is unaffected and still the
@@ -1808,8 +1824,11 @@ A download run posts ONE url list, assembled in
 `basemap_download_runner.js`'s `run`, in this order:
 
 ```
-[...contentUrls, ...feedUrls, ...tiles, ...slopeUrls]
+[...contentUrls, ...feedUrls, ...tiles, ...slopeUrls, ...terrainUrls]
 ```
+
+`terrainUrls` (SNOW-1072) is only present for a run carrying the
+terrain-data opt-in — see "Terrain data" below.
 
 `contentUrls` is SNOW-924's — the **perishable** half of an area, where
 everything after it is the permanent half. Tiles are a fixed grid over
@@ -1845,6 +1864,49 @@ feature exists for, a run may not reach the end of the list.
 **It never reaches the eviction machinery.** The budget pre-flight prices
 the tiles; content rides along behind it. A bulk of small documents must not
 be able to destroy another area to make room for itself.
+
+### Terrain data — the terrain-class tiles (SNOW-1072)
+
+The terrain filter (SNOW-978) paints from terrain-class tiles: 256 px PNGs
+at `tiles.snowdesk-data.info/terrain-class/v2/{z}/{x}/{y}.png` whose
+pixels carry a height, an aspect octant and a 5° slope band. The page
+fetches them itself (`loadTerrainClassTile` in `map.js`), so offline the
+service worker answers out of the pinned buckets like any basemap tile —
+including a 204 (no data), which is stored and served back as a 204 and
+painted as the no-data hatch.
+
+A download pins them **only when the user opts in**: the "Terrain data"
+switch on the downloads sheet, off by default, a device preference in
+`localStorage` (`snowdesk.downloads.terrainData`). The region roundel
+starts a download in one tap and has no flow of its own to ask in, so the
+switch sits on the sheet and governs every new download on the device.
+"Download here" on an account-only row repeats that row's own choice
+instead of the preference.
+
+- **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
+  walks the blob's own rows, as SNOW-692's `slopeTileURLs` did for the
+  swisstopo slope raster SNOW-1073 removed, and keeps the tiles
+  inside the tileset's `COVERAGE_BOUNDS` and its z12–14 band
+  (`terrain_filter_core.js`). z10–11 of the download band have none; the
+  filter overzooms z14 above.
+- **What is recorded.** The flag, never the URLs: `terrain: true` on the
+  `basemap.regions` / `basemap.customAreas` record (absent means none), and
+  `DownloadArea.terrain` on the account row so another device repeats it.
+  `areaTerrainClassTileUrls(record)` derives the list from the record's
+  ground and the flag. Since SNOW-1073 these are also what the slope layer
+  paints from, so an area without the opt-in has no slope shading offline.
+- **What is checked.** An opted-in area missing a class tile is
+  `incomplete` on the roundel and the sheet; the repair and "Sync now"
+  refetch exactly the missing tiles. An area without the flag is never
+  judged on them.
+- **What it costs.** `TERRAIN_CLASS_BYTES_PER_TILE` (88 KiB) per tile,
+  stated on its own: the region roundel's idle label adds "plus up to N MB
+  of terrain data", and the framing readout gains a second line. The
+  runner adds it to the quota and budget pre-flights, and the device
+  ceiling counts it — the custom frame is sized against
+  `terrainScaledBytesPerTile`. A region is priced before its blob loads,
+  from its outline clipped to the coverage and capped at its tile count
+  (`terrainClassMbForGround`). CH-4115 is ~130 tiles, ~11 MB.
 
 **Each area's record gains `contentAt`**, alongside `savedAt`, because the
 two halves age differently — `savedAt` is when the tiles landed and does not

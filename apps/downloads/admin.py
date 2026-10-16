@@ -10,6 +10,10 @@ and should not be edited by staff except to delete test data. Mirrors
 column identify nothing a staff member could act on. ``region_id`` and
 ``name`` are what actually name a row, and one of the two is always
 populated.
+
+``terrain`` (SNOW-1072) is listed and filterable: whether a user opted in to
+terrain data is a yes/no a staff member can read at a glance, and the
+filter answers "how many areas carry it" without a query.
 """
 
 import logging
@@ -36,9 +40,10 @@ class DownloadAreaAdmin(admin.ModelAdmin):
         "region_id",
         "name",
         "basemap_key",
+        "terrain",
         "created_at",
     ]
-    list_filter = ["kind", "basemap_key", "created_at"]
+    list_filter = ["kind", "basemap_key", "terrain", "created_at"]
     search_fields = [
         "user__email",
         "area_id",
@@ -53,6 +58,7 @@ class DownloadAreaAdmin(admin.ModelAdmin):
         "bbox",
         "basemap_key",
         "name",
+        "terrain",
         "uuid",
         "created_at",
         "updated_at",

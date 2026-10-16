@@ -26,6 +26,7 @@ const MAIN_CSS = path.resolve(
 let core;
 
 beforeAll(async () => {
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/route_slope_core.js');
   await import('../../static/js/route_legs_core.js');
   core = globalThis.pwaRouteLegsCore;
@@ -211,25 +212,6 @@ describe('slopeSegmentCollection', () => {
     const fc = routes({ slope: SLOPE, pending: true, uuid: undefined, token: 'tok' });
 
     expect(core.slopeSegmentCollection(fc).features).toEqual([]);
-  });
-});
-
-describe('dimOpacity', () => {
-  it('matches the open leg of the open route, and dims the rest', () => {
-    expect(core.dimOpacity({ uuid: 'r-1', i: 2 }, 1, 0.25)).toEqual([
-      'case',
-      ['all', ['==', ['get', 'uuid'], 'r-1'], ['==', ['get', 'i'], 2]],
-      1,
-      0.25,
-    ]);
-  });
-
-  it('is plain `on` when nothing is open', () => {
-    expect(core.dimOpacity(null, 0.55, 0.15)).toBe(0.55);
-  });
-
-  it('is plain `on` for a leg with no route to match', () => {
-    expect(core.dimOpacity({ uuid: null, i: 1 }, 1, 0.25)).toBe(1);
   });
 });
 

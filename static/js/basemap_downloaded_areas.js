@@ -270,10 +270,11 @@
           // — normalised to `[]` here, which the sheet reads as UNKNOWN
           // rather than as "nothing needed".
           deps: Array.isArray(entry.deps) ? entry.deps : [],
-          // SNOW-692: the run's own tile row spans, carried so the slope
-          // tiles this area should hold can be DERIVED by the probe rather
-          // than recorded on it (~273 URLs, 27.4 KB per region, all of it
-          // recomputable from this). Null on a record written before
+          // SNOW-692: the run's own tile row spans, carried so the
+          // overlay tiles this area should hold — the terrain-class tiles
+          // since SNOW-1072, as SNOW-692's swisstopo slope tiles were —
+          // can be DERIVED by the probe rather than recorded on it, all of
+          // it recomputable from this. Null on a record written before
           // SNOW-583, which carried `bbox` and no `z` — the same absence
           // the roundel's own tile probe already reads as "no record".
           z: entry.z || null,
@@ -286,6 +287,10 @@
           // record written before the field existed — reads as fine rather
           // than as unknown.
           contentIncomplete: !!entry.contentIncomplete,
+          // SNOW-1072: whether this area includes terrain data. The class
+          // tiles it implies are derived from `z`/`bbox` above, never
+          // recorded; the flag is the choice, which nothing can derive.
+          terrain: !!entry.terrain,
         });
       }
     } catch (_e) {
@@ -340,6 +345,8 @@
           band: Array.isArray(custom.band) ? custom.band : null,
           // SNOW-932: see the region branch above.
           contentIncomplete: !!custom.contentIncomplete,
+          // SNOW-1072: see the region branch above.
+          terrain: !!custom.terrain,
         });
       }
     } catch (_e) {

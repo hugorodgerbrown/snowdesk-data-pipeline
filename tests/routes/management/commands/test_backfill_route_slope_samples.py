@@ -43,11 +43,9 @@ RECORD: dict[str, Any] = {
     "grid": "snowdesk-terrain-5m-3035",
     "points": [[7.4, 46.1], [7.41, 46.11]],
     "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3}],
-    # A CURRENT record carries ``cruxes`` even when nothing was flagged
-    # (SNOW-911): the key's presence is what the candidate queryset reads
-    # as "this row is up to date", and an empty list is an answer.
-    "cruxes": [],
-    # And ``heights`` since SNOW-1043, one per boundary, on the same rule.
+    # A CURRENT record carries ``heights`` (SNOW-1043), one per boundary:
+    # the key's presence is what the candidate queryset reads as "this
+    # row is up to date".
     "heights": [2000.0, 2010.0],
 }
 
@@ -130,24 +128,21 @@ class TestCommit:
         builder.assert_not_called()
         assert "0 route(s)" in output
 
-    def test_a_record_written_before_cruxes_is_a_candidate_again(self) -> None:
-        """SNOW-911 added a key, and nothing else would ever add it.
+    def test_a_record_without_cruxes_is_current(self) -> None:
+        """SNOW-1066 removed cruxes, so their key no longer selects a row.
 
-        The sampler runs at upload, so a route sampled before that ticket
-        draws its colours and none of its markers for good unless this
-        command picks it up. The key's PRESENCE is the test, not the list
-        inside it — an empty list is "nothing was flagged", an answer.
+        A record carrying ``heights`` and no ``cruxes`` — every record
+        written since — is up to date, and re-walking it would spend
+        terrain requests to learn nothing.
         """
-        legacy = {k: v for k, v in RECORD.items() if k != "cruxes"}
-        route = RouteFactory.create(slope_samples=legacy)
+        RouteFactory.create(slope_samples=RECORD)
+        assert "cruxes" not in RECORD
 
-        with patch(_BUILDER, return_value=RECORD) as builder:
-            _run("--commit")
+        with patch(_BUILDER) as builder:
+            output = _run("--commit")
 
-        builder.assert_called_once()
-        route.refresh_from_db()
-        assert route.slope_samples is not None
-        assert "cruxes" in route.slope_samples
+        builder.assert_not_called()
+        assert "0 route(s)" in output
 
     def test_a_record_written_before_heights_is_a_candidate_again(self) -> None:
         """SNOW-1043 added a key; a record without it serves device heights.

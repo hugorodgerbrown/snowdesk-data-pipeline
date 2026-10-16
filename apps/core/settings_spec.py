@@ -321,14 +321,16 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     SettingSpec(
         "OPENFREEMAP_STYLE_URL", validator=absolute_url, note="Basemap style JSON"
     ),
-    # SNOW-691: an XYZ tile TEMPLATE, not a plain URL — it carries the
-    # literal {z}/{x}/{y} placeholders MapLibre substitutes per tile, so
+    # SNOW-978: an XYZ tile TEMPLATE, not a plain URL — it carries the
+    # literal {z}/{x}/{y} placeholders the browser substitutes per tile, so
     # ``absolute_url`` is the right shape check (scheme + host) and nothing
-    # stricter would accept it.
+    # stricter would accept it. Empty by default — empty means the terrain
+    # filter, and since SNOW-1073 the slope layer with it, is off, which
+    # ``absolute_url`` accepts. (SNOW-1073 removed SLOPE_TILE_URL.)
     SettingSpec(
-        "SLOPE_TILE_URL",
+        "TERRAIN_CLASS_TILE_URL",
         validator=absolute_url,
-        note="Slope-angle raster XYZ tile template",
+        note="Terrain-filter class tile XYZ template; empty turns the filter off",
     ),
     # SNOW-917: a BASE, not a template — Django composes ``grid.json`` and
     # ``{x}/{y}.s16`` under it, so the only shape worth asserting is that it

@@ -5,7 +5,8 @@ Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
 
 This panel is now the map's ORIENTATION: the danger colours, selecting a
-region, search, locate, the control column and the legend. Everything a
+region, search, locate, the control column, the legend and the zoom
+control (SNOW-1077). Everything a
 control opens has a panel of its own further down the page — Layers,
 Slope angle, Favourites, Field observations, Routes, Offline downloads —
 so the last three paragraphs are pointers rather than
@@ -41,6 +42,15 @@ panel names all three, and it still does.
         {% blocktrans trimmed %}
             The (i) button in the bottom-left corner opens the legend: the danger scale, what each kind of pin means,
             the slope-angle bands when that layer is on, and the attribution for the map and the avalanche data.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-zoom">
+        {% blocktrans trimmed %}
+            The number at the top of the bottom-left buttons is the map's zoom level. Tap it for zoom-out and zoom-in
+            buttons, if you would rather not pinch or scroll, and a scale showing where you are between the widest view
+            and the closest. Some layers only appear once you are zoomed in far enough: the terrain filter and the slope
+            layer from level 12, and a route's slope colours from level 14. While one is switched on, the scale marks
+            the level it starts at.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-favourites">

@@ -2,7 +2,7 @@
 name: client-side-tests
 description: Which test layer (pytest / Vitest tests/js / Playwright tests/e2e), the e2e suite-size backstop, tox -e e2e / js / js-types, JSDoc types
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Client-side test harness
@@ -34,16 +34,21 @@ Add `// @ts-check` under its header comment. `checkJs` is `false` in
 `tsconfig.json`, so a file is unchecked until someone does. That is what let
 this land green rather than red-with-a-suppression-list.
 
-Opted in today — nineteen files, eighteen of the twenty-nine `*_core.js`
+Opted in today — twenty-one files, twenty of the thirty-one `*_core.js`
 modules plus `pwa_network_mode.js`:
 
-`bank_ribbon_core` · `calendar_core` ·
+`aspect_wheel_core` · `calendar_core` ·
 `choropleth_core` · `hatch_core` · `map_viewport_core` ·
 `offline_audit_core` · `route_cursor_core` · `route_cursor_map_core` ·
 `route_leader_core` · `route_legs_core` · `route_markers_core` ·
-`route_rail_core` · `route_rail_two_core` · `route_slope_core` ·
-`scrubber_core` · `search_core` · `slope_overlay_core` ·
-`trip_deeplink_core` · `pwa_network_mode`
+`route_point_card_core` · `route_rail_core` · `route_slope_core` ·
+`scrubber_core` · `search_core` · `slope_classes_core` ·
+`terrain_filter_core` · `trip_deeplink_core` · `zoom_control_core` ·
+`pwa_network_mode`
+
+(SNOW-1073 removed `slope_overlay_core`, swisstopo's slope raster's core,
+and added `slope_classes_core`, the slope-class ramp that
+`terrain_filter_core` and `route_slope_core` share.)
 
 Not yet — eleven core modules: `basemap_cache_core`, `basemap_download_core`,
 `basemap_manage_core` (its header mentions `@ts-check` in prose only),

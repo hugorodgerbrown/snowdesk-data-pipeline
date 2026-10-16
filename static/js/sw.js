@@ -279,7 +279,21 @@ const BASEMAP_CACHE = 'snowdesk-basemap-v1';
 // bounding on-disk growth from origins whose response sizes we don't
 // control — this is a count-based cap, not a byte budget (out of scope
 // for SNOW-484).
+//
+// SNOW-1060: the cap counts TILES only. The style JSON, TileJSON, sprite
+// and glyph ranges are fetched once per map load, so they are the oldest
+// entries — under a whole-cache FIFO a long session trimmed them away and
+// the next offline load was blank. See ``_trimPassiveBasemap``.
 const BASEMAP_CACHE_MAX_ENTRIES = 600;
+
+// SNOW-1060: the backstop for the entries the tile-only cap exempts. Every
+// tile format counts as a tile (``isTileShapedURL`` reads the numeric
+// ``/{z}/{x}/{y}`` tail, whatever the extension), so what sits under this is
+// the documents themselves: a few dozen per basemap (one style, one to three
+// TileJSON, four sprite files, the glyph ranges the style uses). 200 is well
+// clear of them across every style; it exists only so that nothing the tile
+// test rejects can grow without bound.
+const BASEMAP_CACHE_MAX_DOCUMENTS = 200;
 
 // SNOW-614: how many passive basemap puts may land between two trims.
 //
@@ -470,7 +484,32 @@ async function _trimBasemapCacheEvery(cache) {
   _basemapPutsSinceTrim += 1;
   if (_basemapPutsSinceTrim < BASEMAP_CACHE_TRIM_INTERVAL) return;
   _basemapPutsSinceTrim = 0;
-  await _trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+  await _trimPassiveBasemap(cache).catch(() => {});
+}
+
+/**
+ * SNOW-1060: trim the passive BASEMAP_CACHE by its TILES, keeping the
+ * style documents every tile depends on.
+ *
+ * Tiles are trimmed oldest first to ``BASEMAP_CACHE_MAX_ENTRIES``; every
+ * other entry (style JSON, TileJSON, sprite, glyph ranges) is exempt from
+ * that count and bounded only by ``BASEMAP_CACHE_MAX_DOCUMENTS``. Without
+ * the core this falls back to the plain whole-cache FIFO — a worker that
+ * failed to import its core is already degraded, and a third copy of the
+ * tile test is not worth carrying for that case.
+ *
+ * @param {Cache} cache
+ * @returns {Promise<void>}
+ */
+async function _trimPassiveBasemap(cache) {
+  const core = self.pwaBasemapCacheCore;
+  if (core && core.isTileShapedURL) {
+    return core.trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES, {
+      isEvictable: core.isTileShapedURL,
+      maxOther: BASEMAP_CACHE_MAX_DOCUMENTS,
+    });
+  }
+  return _trimCache(cache, BASEMAP_CACHE_MAX_ENTRIES);
 }
 
 // SNOW-586: ONE Cache Storage bucket PER DOWNLOADED AREA
@@ -2432,7 +2471,7 @@ async function _warmCache(urls, options) {
     // Once per run, not per tile, so this stays an unbatched trim — and it
     // resets the batch counter, since the cache is at its limit right after.
     _basemapPutsSinceTrim = 0;
-    await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
+    await _trimPassiveBasemap(basemapCache).catch(() => {});
   }
   // SNOW-742: make this area's labels as durable as its tiles.
   if (pinned && opts.glyphPrefix) {
@@ -2453,6 +2492,12 @@ async function _warmCache(urls, options) {
  * couple of sessions the glyphs an area needs are evicted while its tiles sit
  * safe in the pinned bucket. The area quietly decays into geometry with no
  * labels — which is what "the map only partially loaded" looked like.
+ *
+ * SNOW-1060 narrowed that: the passive trim now counts and evicts tiles only,
+ * so glyphs no longer fall to the 600-entry cap. They can still fall to the
+ * ``BASEMAP_CACHE_MAX_DOCUMENTS`` backstop, and the passive cache is never a
+ * durable home for anything, so promoting them into the pinned bucket still
+ * earns its place.
  *
  * SNOW-847 makes this a SECOND line rather than the only one. The download
  * now fetches a fixed range set outright (``glyphURLs``,

@@ -181,6 +181,29 @@ class TestStringsTemplate:
         assert "%(name)s (drop zone)" in html
         assert "%s " not in html.replace("%(", "")
 
+    def test_the_browsing_cache_copy_never_blames_the_device(self) -> None:
+        """SNOW-1058: the passive cache is trimmed by Snowdesk, not the OS.
+
+        ``snowdesk-basemap-v1`` loses its oldest tiles to Snowdesk's own
+        count cap as the user browses (SNOW-1060), so no caveat about it
+        may say it goes "when the device needs the space". The verdict for
+        a map drawn only from browsing is the product owner's wording.
+        """
+        html = render_to_string(PARTIAL, {})
+        for key in (
+            "note-basemap-downloads-only",
+            "note-basemap-browsed-only",
+            "note-basemap-style-only",
+            "verdict-browsed-only",
+        ):
+            assert f'data-string="{key}"' in html, key
+        assert "needs the space" not in html
+        assert "needs the room" not in html
+        assert (
+            "The map shows what you have looked at, but nothing is downloaded. "
+            "Download the map to ensure it isn't overwritten or deleted."
+        ) in html
+
 
 @pytest.mark.django_db
 class TestOfflinePage:

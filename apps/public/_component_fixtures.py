@@ -1237,6 +1237,21 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
             "static": True,
         },
     },
+    {
+        # SNOW-1097: a sheet that declares detents. On a phone it rests at
+        # peek, half or full and the handle drags it between them (or a
+        # press steps it up); from `sm` up the handle is hidden and the
+        # sheet is the inset panel above. Shown here with the handle
+        # visible, since the library is read at desktop width.
+        "caption": "Phone sheet with detents (peek, half, full)",
+        "context": {
+            "id": "component-library-overlay-sheet-detents",
+            "aria_label": "Region",
+            "static": True,
+            "detents": "peek,half,full",
+            "initial": "peek",
+        },
+    },
 )
 
 
@@ -1296,6 +1311,38 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
             "disabled": True,
         },
     },
+)
+
+
+# Segmented option -------------------------------------------------------------
+# SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
+# each carries its own radio name — two variants sharing one would let only one
+# of them render checked.
+SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Unselected",
+        "context": {
+            "name": "component-library-segmented-off",
+            "value": "off",
+            "label": "Highlight matches",
+        },
+    },
+    {
+        "caption": "Selected",
+        "context": {
+            "name": "component-library-segmented-on",
+            "value": "on",
+            "label": "Colour by slope",
+            "checked": True,
+        },
+    },
+)
+
+
+# Terrain filter key ----------------------------------------------------------
+# SNOW-978: the map's terrain-filter colour key. No parameters — one variant.
+TERRAIN_FILTER_KEY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default", "context": {}},
 )
 
 
@@ -1370,11 +1417,11 @@ OVERFLOW_MENU_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # Route rail (SNOW-1018) -------------------------------------------------------
-# Rail one is rendered once, empty and hidden, and filled by
+# The route rail is rendered once, empty and hidden, and filled by
 # static/js/route_rail.js for whichever route is open — this page runs no
 # interaction JS, so the one variant shows the empty shell: the eyebrow,
-# the actions menu (every item, as an owned route has them), the × and the
-# (blank) lane, rendered `static` — visible and in
+# the actions menu (every item, as an owned route has them), the ×, the
+# (blank) title and meta line and the (blank) lane, rendered `static` — visible and in
 # normal flow rather than hidden and docked over a map that is not here.
 # The URL templates are placeholders; nothing here posts.
 
@@ -1389,6 +1436,274 @@ ROUTE_RAIL_VARIANTS: tuple[dict[str, Any], ...] = (
             "static": True,
         },
     },
+)
+
+
+# Aspect wheel (SNOW-1063) -----------------------------------------------------
+# One route segment's heading (inner ring) and the way the ground under it
+# faces (outer ring), drawn client-side by static/js/aspect_wheel.js from
+# the state below — ``wheelState``'s shape in static/js/aspect_wheel_core.js.
+# Sectors run 0 (N) to 7 (NW); ``gradeDeg`` is the track's own gradient,
+# positive climbing. Eight states at 48 px, then the first again at 120 px.
+
+
+def _aspect_wheel_variant(
+    caption: str, state: dict[str, Any], size: int = 48
+) -> dict[str, Any]:
+    """Return one aspect-wheel variant with its state JSON-encoded."""
+    return {
+        "caption": caption,
+        "context": {"state_json": json.dumps(state), "size": size},
+    }
+
+
+_FALL_LINE_DESCENT: dict[str, Any] = {
+    "track": [4],
+    "gradeDeg": -31,
+    "prev": {"sector": 3, "gradeDeg": -28},
+    "next": {"sector": 5, "gradeDeg": -33},
+    "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 34},
+}
+
+ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _aspect_wheel_variant(
+        "Fall-line descent — heading S down a 34° S face", _FALL_LINE_DESCENT
+    ),
+    _aspect_wheel_variant(
+        "Traverse — heading E across a 36° S face, level (under 5°)",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": {"sector": 1, "gradeDeg": -5},
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 36},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Climbing the fall line — heading N up a 31° S face",
+        {
+            "track": [0],
+            "gradeDeg": 27,
+            "prev": {"sector": 7, "gradeDeg": 24},
+            "next": {"sector": 1, "gradeDeg": 26},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Turn inside the segment — NW then NE, both sectors lit",
+        {
+            "track": [7, 1],
+            "gradeDeg": 12,
+            "prev": {"sector": 6, "gradeDeg": 10},
+            "next": {"sector": 2, "gradeDeg": 14},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 33},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Flat ground — outer ring unlit",
+        {
+            "track": [2],
+            "gradeDeg": -4,
+            "prev": None,
+            "next": {"sector": 3, "gradeDeg": -3},
+            "terrain": {"kind": "flat"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "No terrain data — outer ring grey",
+        {
+            "track": [5],
+            "gradeDeg": -14,
+            "prev": {"sector": 4, "gradeDeg": -12},
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Level track — a bar, not a triangle",
+        {
+            "track": [6],
+            "gradeDeg": 0.8,
+            "prev": {"sector": 5, "gradeDeg": 1.2},
+            "next": {"sector": 7, "gradeDeg": -0.5},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 28},
+        },
+    ),
+    _aspect_wheel_variant(
+        "Route start — no previous segment",
+        {
+            "track": [3],
+            "gradeDeg": 8,
+            "prev": None,
+            "next": {"sector": 4, "gradeDeg": 9},
+            "terrain": {"kind": "faces", "sector": 6, "slopeDeg": 22},
+        },
+    ),
+    _aspect_wheel_variant("Fall-line descent at 120 px", _FALL_LINE_DESCENT, size=120),
+)
+
+
+# Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
+# One point on the open route, read in words: the aspect wheel at 48 px and
+# two lines — the headline (heading • the track's steepness on its own scale
+# • how it lies on the slope, SNOW-1069) and the ground in the EAWS words,
+# with the side the slope falls on a traverse, or both sides across a
+# switchback. The lines here are what route_point_card_core.js's
+# ``reading`` writes for each state; on the map the header is filled
+# client-side from the route cursor, and hidden while no point is placed.
+
+
+def _point_card_variant(
+    caption: str,
+    state: dict[str, Any],
+    headline: str = "",
+    ground: str = "",
+) -> dict[str, Any]:
+    """Return one point-header variant."""
+    return {
+        "caption": caption,
+        "context": {
+            "static": True,
+            "state_json": json.dumps(state),
+            "headline": headline,
+            "ground": ground,
+        },
+    }
+
+
+POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    _point_card_variant(
+        "Fall line descent — 37° down a 42° face",
+        {
+            "track": [2],
+            "gradeDeg": -37,
+            "prev": {"sector": 2, "gradeDeg": -37},
+            "next": {"sector": 4, "gradeDeg": -26},
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
+        },
+        "E • Very steep • fall line",
+        "Extremely steep slope",
+    ),
+    _point_card_variant(
+        "Fall line climb — 22° up a 31° face",
+        {
+            "track": [0],
+            "gradeDeg": 22,
+            "prev": {"sector": 7, "gradeDeg": 20},
+            "next": {"sector": 1, "gradeDeg": 23},
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
+        },
+        "N • Moderate • fall line",
+        "Steep slope",
+    ),
+    _point_card_variant(
+        "Rising traverse — 13° across a 33° north face",
+        {
+            "track": [3],
+            "gradeDeg": 13,
+            "prev": {"sector": 2, "gradeDeg": 6},
+            "next": {"sector": 4, "gradeDeg": 3},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
+        },
+        "SE • Gentle • traverse",
+        "Steep slope, falling skier's left",
+    ),
+    _point_card_variant(
+        "Descending traverse — 9° across a 28° face",
+        {
+            "track": [2],
+            "gradeDeg": -9,
+            "prev": {"sector": 1, "gradeDeg": -8},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
+        },
+        "E • Gentle • traverse",
+        "Moderate slope, falling skier's right",
+    ),
+    _point_card_variant(
+        "Level traverse — under 5° across a 36° face",
+        {
+            "track": [6],
+            "gradeDeg": 2,
+            "prev": None,
+            "next": {"sector": 6, "gradeDeg": 1},
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
+        },
+        "W • Level • traverse",
+        "Very steep slope, falling skier's right",
+    ),
+    _point_card_variant(
+        "Switchback — Col de la Chaux, 13° up through a kick turn on a 35° face",
+        {
+            "track": [4, 1],
+            "gradeDeg": 13.28,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
+        },
+        "S → NE • Gentle • switchback",
+        "Very steep slope, falling skier's right, then left",
+    ),
+    _point_card_variant(
+        "Turn — Col de la Chaux, a climb that turns without crossing",
+        {
+            "track": [1, 2],
+            "gradeDeg": 13.29,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 31.8},
+        },
+        "NE → E • Gentle • turn",
+        "Steep slope, falling skier's left",
+    ),
+    _point_card_variant(
+        "Fall line while turning — Backside, one end heads straight down",
+        {
+            "track": [0, 1],
+            "gradeDeg": -24.04,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 30.8},
+        },
+        "N → NE • Moderate • fall line",
+        "Steep slope",
+    ),
+    _point_card_variant(
+        "Climbing while heading downhill — the gradient overrules the chord",
+        {
+            "track": [2],
+            "gradeDeg": 6,
+            "prev": {"sector": 1, "gradeDeg": 9},
+            "next": None,
+            "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
+        },
+        "E • Gentle • ascent",
+        "Steep slope",
+    ),
+    _point_card_variant(
+        "Flat ground — the track alone",
+        {
+            "track": [2],
+            "gradeDeg": -8,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "flat"},
+        },
+        "E • Gentle • descent",
+        "Flat ground",
+    ),
+    _point_card_variant(
+        "No terrain data — the ground was not sampled",
+        {
+            "track": [5],
+            "gradeDeg": 1,
+            "prev": None,
+            "next": None,
+            "terrain": {"kind": "unknown"},
+        },
+        "SW • Level",
+        "No terrain data",
+    ),
 )
 
 
@@ -2665,6 +2980,80 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Map zoom control (SNOW-1077) ────────────────────────────────────────────
+# The roundel at the top of the map's bottom-left stack and the flyout it
+# opens. On /map/ static/js/map_zoom_control.js fills every value from the
+# map; here each variant sets them, across the map's range of z4 to z18.
+# The two gates are the ones window.pwaZoomGates publishes: the terrain
+# filter from z12 and route slope colours from z14.
+
+_MAP_MIN_ZOOM = 4
+_MAP_MAX_ZOOM = 18
+
+
+def _zoom_pct(zoom: float) -> float:
+    """Return where ``zoom`` sits on the control's scale, 0..100."""
+    return round((zoom - _MAP_MIN_ZOOM) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
+
+
+def _zoom_tick(key: str, label: str, gate: int, camera: float) -> dict[str, Any]:
+    """Return one tick, reached when ``camera`` is at or past ``gate``."""
+    return {
+        "key": key,
+        "label": label,
+        "zoom": gate,
+        "pct": _zoom_pct(gate),
+        "reached": camera >= gate,
+    }
+
+
+def _zoom_variant(
+    caption: str,
+    camera: float,
+    *,
+    terrain: bool = False,
+    routes: bool = False,
+    is_open: bool = True,
+    debug: bool = False,
+) -> dict[str, Any]:
+    """Return one zoom-control variant at a camera zoom."""
+    ticks = []
+    if terrain:
+        ticks.append(_zoom_tick("terrain_filter", "Terrain filter", 12, camera))
+    if routes:
+        ticks.append(_zoom_tick("route_slopes", "Route slope colours", 14, camera))
+    return {
+        "caption": caption,
+        "context": {
+            "zoom_face": int(camera),
+            "zoom_open": is_open,
+            "zoom_marker_pct": _zoom_pct(camera),
+            "zoom_ticks": ticks,
+            "zoom_out_disabled": camera <= _MAP_MIN_ZOOM,
+            "zoom_in_disabled": camera >= _MAP_MAX_ZOOM,
+            "zoom_camera_visible": debug,
+            "zoom_camera": f"Camera zoom {camera:.2f}",
+        },
+    }
+
+
+MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _zoom_variant("Closed — the roundel at z10", 10.4, is_open=False),
+    _zoom_variant("Open at z10, no gated layer on", 10.4),
+    _zoom_variant("Terrain filter on, not reached yet (z10)", 10.4, terrain=True),
+    _zoom_variant(
+        "Terrain filter and a route on, at z13 — filter drawn, slope colours not",
+        13.2,
+        terrain=True,
+        routes=True,
+    ),
+    _zoom_variant(
+        "At the maximum zoom (z18) — + disabled", 18, terrain=True, routes=True
+    ),
+    _zoom_variant("At the minimum zoom (z4) — − disabled", 4),
+    _zoom_variant("DEBUG — with the camera zoom line", 12.47, terrain=True, debug=True),
+)
+
 # ── Bulletin headline (SNOW-249) ────────────────────────────────────────────
 # Four representative cells from the variant matrix — enough to review the
 # copy and verify the data-testid attribute is present without wiring all 12.
@@ -3367,122 +3756,3 @@ def _build_hourly_chart_variants() -> tuple[dict[str, Any], ...]:
 
 
 HOURLY_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_hourly_chart_variants()
-
-
-# ---------------------------------------------------------------------------
-# includes/_bulletin_readings.html (SNOW-839, shared by SNOW-973)
-# ---------------------------------------------------------------------------
-
-
-def _overlap(
-    problem_label: str,
-    aspects: str,
-    length_label: str,
-    lowest_m: int | None = None,
-    highest_m: int | None = None,
-    elevation_undecided: bool = False,
-) -> Any:
-    """Return one display-shaped problem overlap for the library.
-
-    The real dataclass rather than a stub: it is frozen, takes six plain
-    values and imports nothing that touches the database, so constructing
-    it here keeps the fixture honest about the shape the template is
-    handed.
-
-    Args:
-        problem_label: The avalanche problem's own label.
-        aspects: The crossed octants, in compass order.
-        length_label: The stretch, already phrased with its unit.
-        lowest_m: The lowest metre of the stretch, or None.
-        highest_m: The highest metre of the stretch, or None.
-        elevation_undecided: Whether the height half is unusable.
-
-    Returns:
-        An ``OverlapDisplay``.
-
-    """
-    from apps.routes.services.route_bulletin import OverlapDisplay  # noqa: PLC0415
-
-    return OverlapDisplay(
-        problem_label=problem_label,
-        aspects=aspects,
-        length_label=length_label,
-        lowest_m=lowest_m,
-        highest_m=highest_m,
-        elevation_undecided=elevation_undecided,
-    )
-
-
-# ``region`` is read for its ``name`` alone and ``bulletin`` for its
-# truthiness, so both are stubs — this module renders with no database.
-BULLETIN_READINGS_VARIANTS: tuple[dict[str, Any], ...] = (
-    {
-        "caption": "Two regions, longest stretch first (the ordinary case)",
-        "context": {
-            "testid_prefix": "component-library-bulletin-readings",
-            "bulletin_readings": [
-                {
-                    "region": SimpleNamespace(name="Aletsch"),
-                    "bulletin": SimpleNamespace(),
-                    "bulletin_url": "/CH-2131/2026-03-01/",
-                    "length_km": 4.2,
-                    "overlaps": [
-                        _overlap(
-                            "Persistent weak layers",
-                            "N, NE",
-                            "1.4 km",
-                            lowest_m=2200,
-                            highest_m=2800,
-                        ),
-                        _overlap(
-                            "Wind-drifted snow",
-                            "NE",
-                            "320 m",
-                            lowest_m=2500,
-                            highest_m=2500,
-                        ),
-                    ],
-                },
-                {
-                    "region": SimpleNamespace(name="Lötschental"),
-                    "bulletin": SimpleNamespace(),
-                    "bulletin_url": "/CH-2132/2026-03-01/",
-                    "length_km": 1.1,
-                    "overlaps": [
-                        _overlap(
-                            "Wet snow",
-                            "S, SW",
-                            "900 m",
-                            elevation_undecided=True,
-                        )
-                    ],
-                },
-            ],
-        },
-    },
-    {
-        # Both of the "nothing to report" states, which are different
-        # claims: one region published nothing, the other published a
-        # bulletin whose problems this line stays out of.
-        "caption": "Unforecast region, and a line that enters no problem",
-        "context": {
-            "testid_prefix": "component-library-bulletin-readings-empty",
-            "bulletin_readings": [
-                {
-                    "region": SimpleNamespace(name="Val Ferret"),
-                    "bulletin": None,
-                    "bulletin_url": None,
-                    "length_km": 2.0,
-                    "overlaps": [],
-                },
-                {
-                    "region": SimpleNamespace(name="Grand Combin"),
-                    "bulletin": SimpleNamespace(),
-                    "bulletin_url": "/CH-2133/2026-03-01/",
-                    "length_km": 0.6,
-                    "overlaps": [],
-                },
-            ],
-        },
-    },
-)

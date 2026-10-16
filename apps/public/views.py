@@ -827,10 +827,12 @@ def map_page(request: HttpRequest) -> HttpResponse:
         (SNOW-761). Ungated: the feed is public.
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
-      ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
-                                configured (SNOW-691, SNOW-724).
-      ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
-                                or "" while ineligible (SNOW-691).
+      ``terrain_filter_eligible`` — True when
+                                ``settings.TERRAIN_CLASS_TILE_URL`` is
+                                configured (SNOW-978). Also gates the slope
+                                layer, the filter's slope mode (SNOW-1073).
+      ``terrain_class_tile_url`` — XYZ template for the terrain filter's
+                                class tiles, or "" while ineligible.
 
     Args:
         request: The incoming HTTP request.
@@ -897,18 +899,19 @@ def map_page(request: HttpRequest) -> HttpResponse:
     report_ctx = _report_context(request)
     fake_location_ctx = {
         "fake_location_allowed": _fake_location_allowed(request),
-        # HACK MODE: the zoom readout beside the help roundel. DEBUG only —
-        # it is a developer's instrument for work on the tile bands (which
-        # zoom is being fetched at any moment), not a map feature, and it
-        # says nothing a reader of the map wants.
-        "zoom_readout_visible": bool(settings.DEBUG),
+        # SNOW-1077: the zoom control is public; only its camera-zoom line
+        # is DEBUG. The continuous camera zoom to two decimals is a
+        # developer's instrument for work on the tile bands (how close the
+        # camera is to the next whole tile zoom), and says nothing a reader
+        # of the map wants.
+        "zoom_camera_visible": bool(settings.DEBUG),
     }
     favourites_ctx = _favourites_context(request)
     routes_ctx = _routes_context(request)
     downloads_ctx = _downloads_context(request)
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_overlay_context()
-    slope_ctx = _slope_context(request)
+    terrain_filter_ctx = _terrain_filter_context()
     trips_ctx = _trips_context()
 
     return render(
@@ -924,7 +927,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
             **downloads_ctx,
             **community_reports_ctx,
             **weather_ctx,
-            **slope_ctx,
+            **terrain_filter_ctx,
             **trips_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
@@ -1816,9 +1819,9 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         Dict with ``routes_eligible``, ``routes_upload_eligible``,
         ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
-        ``route_claim_url_template``, ``route_bulletin_url_template``,
-        ``route_delete_url_template``, ``route_name_max_length``,
-        ``routes_geojson_url`` and ``routes_signin_url``.
+        ``route_claim_url_template``, ``route_delete_url_template``,
+        ``route_name_max_length``, ``routes_geojson_url`` and
+        ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1858,15 +1861,6 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
             "routes:share_create", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
         "route_claim_url_template": reverse("routes:share_claim", args=["__TOKEN__"]),
-        # SNOW-973: the route detail panel's bulletin reading. Templated on
-        # the uuid like rename and share above, and for the same reason —
-        # static/js must not know how this project spells its URLs.
-        # Unconditional: the endpoint is owner-scoped and answers 403 for
-        # anyone else, and map_route_detail.js asks for a reading only for
-        # a route carrying a uuid, which a pending share never does.
-        "route_bulletin_url_template": reverse(
-            "routes:bulletin", args=[dummy_uuid]
-        ).replace(str(dummy_uuid), "__UUID__"),
         # SNOW-1018: rail one's Delete. The routes ROW needs no delete
         # template (its Remove is a server-rendered HTMX form, as the
         # docstring says), but the rail below the map is filled by JS for
@@ -2026,33 +2020,26 @@ def _weather_overlay_context() -> dict[str, Any]:
     return {"weather_geojson_url": reverse("api:weather_geojson")}
 
 
-def _slope_context(request: HttpRequest) -> dict[str, Any]:
-    """Build the template context dict for the map slope-angle overlay (SNOW-691).
+def _terrain_filter_context() -> dict[str, Any]:
+    """Build the template context dict for the map's terrain filter (SNOW-978).
 
-    Eligibility is ``settings.SLOPE_TILE_URL`` being configured, not
-    authentication and — since SNOW-724 — no longer a waffle flag either.
-    There is no Snowdesk endpoint behind this layer: the tiles come
-    straight from a third-party WMTS origin whose licence position is
-    still open, so the setting doubles as the operator kill switch the
-    flag used to provide. Clearing ``SLOPE_TILE_URL`` in the
-    environment is a restart, not a deploy, and it takes the whole layer
-    out of the DOM — the row must be absent entirely, not merely disabled,
-    and a tile template in an ineligible page's DOM would be an invitation
-    to install a layer we just withdrew.
-
-    Args:
-        request: The current HTTP request. Unused — kept for signature
-            uniformity with the sibling ``_*_context`` builders.
+    Eligibility is ``settings.TERRAIN_CLASS_TILE_URL`` being configured —
+    it defaults to empty, so the filter is off until an operator sets it.
+    Since SNOW-1073 the map's slope layer is the filter's slope mode, so
+    the same setting gates it; swisstopo's raster and its
+    ``_slope_context`` are gone. An ineligible page carries neither the
+    menu row nor the tile template: a template in the DOM would be an
+    invitation to install a layer the environment has withdrawn.
 
     Returns:
-        Dict with ``slope_layer_eligible`` and ``slope_tile_url`` (empty
-        string while ineligible).
+        Dict with ``terrain_filter_eligible`` and ``terrain_class_tile_url``
+        (empty string while ineligible).
 
     """
-    eligible = bool(settings.SLOPE_TILE_URL)
+    eligible = bool(settings.TERRAIN_CLASS_TILE_URL)
     return {
-        "slope_layer_eligible": eligible,
-        "slope_tile_url": settings.SLOPE_TILE_URL if eligible else "",
+        "terrain_filter_eligible": eligible,
+        "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL if eligible else "",
     }
 
 

@@ -32,7 +32,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.locations.services.terrain import TerrainSlope, TerrainUnknown
+from apps.locations.services.terrain import TerrainSlope
 from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share
@@ -50,28 +50,6 @@ _GRID_FIXTURE = (
 # A short meridian track: two coordinates about 1.1 km apart, which is
 # enough to hold several 25 m strides.
 MERIDIAN_TRACK = [[7.0, 46.0, 1000.0], [7.0, 46.01, 1200.0]]
-
-
-@pytest.fixture(autouse=True)
-def _silent_crux_probes() -> Any:
-    """Answer every SNOW-911 uphill probe with "we did not see".
-
-    ``apps.routes.services.cruxes`` imports ``sample_slope`` itself, so
-    patching the walk's copy does not reach the probes, and an unpatched
-    one would walk out to the real tile origin from a unit test. What the
-    probes conclude is ``tests/routes/test_cruxes.py``'s subject.
-    """
-    with patch(
-        "apps.routes.services.cruxes.sample_slope",
-        return_value=TerrainSlope(
-            angle_deg=None,
-            aspect_deg=None,
-            window_m=10.0,
-            unknown=TerrainUnknown.OUTSIDE_COVERAGE,
-            source=None,
-        ),
-    ):
-        yield
 
 
 def _grid() -> TerrainGrid:
@@ -320,108 +298,16 @@ class TestTripMapPayload:
 
 
 @pytest.mark.django_db
-class TestTripBulletinPanel:
-    """What the trip page says about this day's bulletin (SNOW-839)."""
-
-    def _sampled_trip(self, aspect_deg: float | None = 0.0) -> Any:
-        """Return a trip on forecast ground, sampled at one aspect."""
-        import datetime
-
-        from apps.regions.models import MicroRegion
-        from tests.factories import BulletinFactory, MicroRegionFactory
-
-        region = MicroRegionFactory.create(
-            region_id="CH-B01",
-            boundary={
-                "type": "Polygon",
-                "coordinates": [
-                    [[7.0, 46.0], [7.1, 46.0], [7.1, 46.1], [7.0, 46.1], [7.0, 46.0]]
-                ],
-            },
-        )
-        bulletin = BulletinFactory.create(
-            valid_from=datetime.datetime(2026, 3, 1, 6, tzinfo=datetime.UTC),
-            valid_to=datetime.datetime(2026, 3, 1, 23, tzinfo=datetime.UTC),
-            render_model_version=1,
-            render_model={
-                "version": 1,
-                "traits": [
-                    {
-                        "problems": [
-                            {
-                                "problem_type": "persistent_weak_layers",
-                                "danger_rating_value": "considerable",
-                                "aspects": ["N"],
-                                "elevation": None,
-                            }
-                        ]
-                    }
-                ],
-            },
-        )
-        bulletin.regions.add(region)
-        assert MicroRegion.objects.filter(pk=region.pk).exists()
-
-        coordinates = [(7.02, 46.02), (7.03, 46.03)]
-        return TripFactory.create(
-            date=datetime.date(2026, 3, 1),
-            points=[[lon, lat, 2500.0] for lon, lat in coordinates],
-            point_count=2,
-            slope_samples={
-                "window_m": 10.0,
-                "stride_m": 25.0,
-                "grid": "g",
-                "points": [[lon, lat] for lon, lat in coordinates],
-                "segments": [{"angle_deg": 34.0, "aspect_deg": aspect_deg}]
-                if aspect_deg is not None
-                else [{"unknown": "outside_coverage"}],
-                "cruxes": [],
-            },
-        )
-
-    def test_the_panel_names_the_problem_the_line_enters(self) -> None:
-        from apps.trips.views import _bulletin_readings
-
-        readings = _bulletin_readings(self._sampled_trip())
-
-        assert len(readings) == 1
-        assert readings[0]["overlaps"][0].problem_label == "Persistent weak layers"
-        assert readings[0]["overlaps"][0].aspects == "N"
-        assert readings[0]["bulletin_url"]
-
-    def test_a_line_outside_every_problem_reports_no_overlaps(self) -> None:
-        """And the panel says so rather than staying silent — a reader
-        shown nothing assumes the day was clear.
-        """
-        from apps.trips.views import _bulletin_readings
-
-        # South-facing, against a problem listed for N alone.
-        readings = _bulletin_readings(self._sampled_trip(aspect_deg=180.0))
-
-        assert len(readings) == 1
-        assert readings[0]["overlaps"] == []
-        assert readings[0]["bulletin"] is not None
-
-    def test_an_unsampled_trip_renders_no_panel(self) -> None:
-        """No aspect, no join — and no claim that the line meets nothing."""
-        from apps.trips.views import _bulletin_readings
-
-        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
-
-        assert _bulletin_readings(trip) == []
-
-
-@pytest.mark.django_db
 class TestTheTerrainHelpLink:
     """The way from a mark on this page to what the mark means (SNOW-968).
 
-    The trip page draws three readings of the terrain — the slope colours
-    on the line and the profile, the crux rings, and the no-fall split
-    line — and unlike the map it has no legend to explain any of them.
-    This is also the page the GROUP reads rather than the planner, so it
-    is the one least able to assume the reader has met the marks before.
-    One link to the help topic that holds all three, and that carries the
-    caveat neither marker can: neither is a full list.
+    The trip page draws two readings of the terrain — the slope colours
+    on the line and the profile, and the no-fall split line — and unlike
+    the map it has no legend to explain either. This is also the page the
+    GROUP reads rather than the planner, so it is the one least able to
+    assume the reader has met the marks before. One link to the help
+    topic that holds both, and that carries the caveat the passage mark
+    cannot: it is not a full list.
     """
 
     def _sampled(self) -> Trip:

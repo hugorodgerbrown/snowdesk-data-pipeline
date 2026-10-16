@@ -30,7 +30,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import Client, override_settings
 
-from config.settings.base import basemap_origin, csp_defaults
+from config.settings.base import basemap_origin, csp_defaults, optional_basemap_origin
 
 REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
 ENFORCING_HEADER = "Content-Security-Policy"
@@ -226,21 +226,41 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
     )
 
 
-@pytest.mark.django_db
-def test_csp_allows_slope_tile_origin_in_connect_and_img_src() -> None:
-    """SNOW-691: the slope raster's origin reaches connect-src AND img-src.
+def test_csp_names_no_slope_raster_origin() -> None:
+    """SNOW-1073: swisstopo's slope raster, and its WMTS origin, are gone.
 
-    MapLibre fetches a raster tile with ``fetch()`` and then decodes it as
-    an image, so a policy naming the origin in only one of the two blocks
-    the overlay. ``img-src`` is otherwise ``'self' data:`` only, which makes
-    this the directive that would actually have bitten.
+    The map's slope layer is painted from the terrain-class tiles now, so
+    the policy has no reason to allow ``wmts.geo.admin.ch`` — and the
+    settings that derived it no longer exist to drift back in.
     """
-    origin = "https://wmts.example.test"
+    policy = settings.CSP_DEFAULTS
+    for directive in ("connect-src", "img-src"):
+        assert not any("wmts.geo.admin.ch" in src for src in policy[directive])
+    assert not hasattr(settings, "SLOPE_TILE_URL")
+    assert not hasattr(settings, "SLOPE_TILE_ORIGIN")
+
+
+def test_csp_defaults_take_no_slope_origin() -> None:
+    """The ``slope_origin`` keyword went with the layer.
+
+    A caller still passing it is a caller that still thinks the raster is
+    there, so it must fail loudly rather than be ignored.
+    """
+    with pytest.raises(TypeError):
+        csp_defaults("https://tiles.example.test", slope_origin="https://x.test")  # type: ignore[call-arg]
+
+
+@pytest.mark.django_db
+def test_csp_allows_terrain_class_origin_in_connect_and_img_src() -> None:
+    """SNOW-978: the terrain-class tile origin reaches connect-src AND img-src.
+
+    The map's protocol handler ``fetch()``es each class tile and decodes it
+    with ``createImageBitmap``, so both directives must name the origin.
+    """
+    origin = "https://tiles.example.test"
     tile_origin = basemap_origin(settings.OPENFREEMAP_STYLE_URL)
     with override_settings(
-        SLOPE_TILE_URL=f"{origin}/1.0.0/slope/{{z}}/{{x}}/{{y}}.png",
-        SLOPE_TILE_ORIGIN=origin,
-        CSP_DEFAULTS=csp_defaults(tile_origin, slope_origin=origin),
+        CSP_DEFAULTS=csp_defaults(tile_origin, terrain_class_origin=origin),
     ):
         clear_cache()
         try:
@@ -254,28 +274,33 @@ def test_csp_allows_slope_tile_origin_in_connect_and_img_src() -> None:
     assert origin in img_src
 
 
-def test_csp_defaults_omit_the_slope_origin_when_unset() -> None:
-    """No slope origin configured means no extra source in either directive.
-
-    The keyword is defaulted so the direct callers above keep working
-    unchanged; this pins that the default is an OMISSION rather than an
-    empty string, which would emit a stray token into the policy.
-    """
-    policy = csp_defaults("https://tiles.example.test")
+def test_csp_defaults_omit_the_terrain_class_origin_when_unset() -> None:
+    """No terrain-class origin means no extra token in either directive."""
+    policy = csp_defaults("https://tiles.example.test", terrain_class_origin=None)
     assert policy["img-src"] == ["'self'", "data:"]
-    assert "" not in policy["connect-src"]
-    assert policy["connect-src"].count("'self'") == 1
+    assert None not in policy["connect-src"]
 
 
-def test_slope_tile_origin_is_derived_from_the_configured_template() -> None:
-    """SLOPE_TILE_ORIGIN is ``basemap_origin(SLOPE_TILE_URL)``, not a literal.
+def test_an_empty_terrain_class_url_derives_no_origin_and_does_not_raise() -> None:
+    """SNOW-978: ``TERRAIN_CLASS_TILE_URL`` defaults to "" — the feature off.
 
-    The same anti-drift contract SNOW-242 set for the basemap: one
-    env-configurable value, one derivation, so the CSP can never allowlist
-    an origin the map does not actually fetch from.
+    ``basemap_origin("")`` raises ``ImproperlyConfigured``, so the setting
+    goes through ``optional_basemap_origin``; an empty value yields None
+    and a set one is still held to the absolute-URL guard, including a
+    local http origin with a port (the dev fixture's shape).
     """
-    assert settings.SLOPE_TILE_ORIGIN == basemap_origin(settings.SLOPE_TILE_URL)
-    assert settings.SLOPE_TILE_URL.startswith(f"{settings.SLOPE_TILE_ORIGIN}/")
+    assert optional_basemap_origin("") is None
+    assert (
+        optional_basemap_origin(
+            "http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png"
+        )
+        == "http://localhost:3000"
+    )
+    with pytest.raises(ImproperlyConfigured):
+        optional_basemap_origin("tiles.example.test/{z}/{x}/{y}.png")
+    assert settings.TERRAIN_CLASS_TILE_ORIGIN == optional_basemap_origin(
+        settings.TERRAIN_CLASS_TILE_URL
+    )
 
 
 def test_openfreemap_style_url_validation_failure_mode() -> None:

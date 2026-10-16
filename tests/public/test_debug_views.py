@@ -195,15 +195,16 @@ class TestComponentLibraryPanel:
     def test_the_slope_panel_carries_the_marks_as_well_as_the_bands(
         self, htmx_staff_client: Client
     ) -> None:
-        """The two line MARKS are in the key, not only the seven bands.
+        """The line MARKS are in the key, not only the seven bands.
 
-        SNOW-969. ``--color-crux-ring`` (SNOW-911) and
-        ``--color-passage-core`` (SNOW-964) were both added to ``@theme``,
+        SNOW-969. ``--color-passage-core`` (SNOW-964) and the since-removed
+        crux ring token (SNOW-911, removed by SNOW-1066) were both added to
+        ``@theme``,
         used on the map and never registered, because the check in
         ``apps/public/checks.py`` was one-directional and nothing else in
         the build looked. The check now runs both ways on existence, so
         the next unregistered colour fails ``manage.py check`` rather than
-        shipping; this test stays because the two marks belong in THIS
+        shipping; this test stays because the marks belong in THIS
         panel specifically — read against the slope scale, not filed
         under the map marks they resemble.
         """
@@ -215,12 +216,14 @@ class TestComponentLibraryPanel:
             for token in response.context["active"].tokens
             if isinstance(token, Token)
         ]
-        assert "--color-crux-ring" in names
         assert "--color-passage-core" in names
+        assert "--color-fall-line-arrow" in names
+        # SNOW-1066: cruxes are gone, and so is their marker swatch.
+        assert not any("crux" in name for name in names)
 
         body = response.content.decode()
-        assert "Key passage (marker)" in body
         assert "No-fall passage (marker)" in body
+        assert "Key passage" not in body
 
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client

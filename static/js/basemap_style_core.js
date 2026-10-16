@@ -25,7 +25,7 @@
  * front of them to fix it.
  *
  * The obvious answer is a coverage rectangle per style, the way
- * `slope_overlay_core.js` carries one. It was rejected because the
+ * `terrain_filter_core.js` carries one. It was rejected because the
  * providers' own numbers cannot seed it and the hand-written alternative
  * detects the wrong thing:
  *

@@ -14,7 +14,7 @@
  *   THE TAP OFFERS SAVE. The deep link lands on the map, so what a tap
  *   opens is where the recipient meets the action — the routes panel is a
  *   thing they would have to know to open. It was an anchored popup until
- *   SNOW-973, the docked `#route-detail-sheet` until SNOW-1018, and is
+ *   SNOW-973, a docked route detail sheet until SNOW-1018, and is
  *   rail one's `claim` slot now: map.js builds the control and hands it to
  *   the rail (a recording stub here, tests/js/_route_rail_stub.js). The
  *   control, its two states and its wording are unchanged, which is what
@@ -228,18 +228,14 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>
-    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
-    <template id="route-detail-template">
-      <div>
-        <div data-route-detail-figures></div>
-        <div data-route-detail-bulletin></div>
-      </div>
-    </template>`;
+    <ul id="search-results" hidden></ul>`;
 }
 
 let mapStub;
 let rail;
+
+/** The fits made while the share link was being honoured at boot. */
+let arrivalFits = [];
 
 /**
  * Tap the map at a screen position, and return what it handed the rail.
@@ -300,20 +296,59 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
-  // SNOW-973: the sheet the tap opens, and the controller it attaches
-  // through. Both before the bundle, as the page loads them.
+  // The sheet controller, before the bundle, as the page loads it.
   await import('../../static/js/map_sheet.js');
-  await import('../../static/js/map_route_detail.js');
   rail = installRouteRailStub();
+  // Real boxes for #map and the panel, so the arrival's fit can measure
+  // the room the panel takes (jsdom lays nothing out).
+  document.getElementById('map').getBoundingClientRect = () => ({
+    top: 0, left: 0, width: 1600, height: 900, right: 1600, bottom: 900,
+  });
+  rail.element.getBoundingClientRect = () => ({
+    top: 60, left: 12, width: 400, height: 192, right: 412, bottom: 252,
+  });
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
   // Populates routesGeojsonCache and installs the three line layers.
   await window.pwaRoutesOverlay.show();
+  // The share link waits for the routes source to load; the stub's source
+  // loads silently, so say so the way MapLibre would.
+  // The boot's own load of the overlay (the share link switches it on)
+  // is still settling its fetch.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (const handler of [...(mapStub.handlers.sourcedata || [])]) {
+    handler({ sourceId: 'routes' });
+  }
+  arrivalFits = mapStub.fitBounds.mock.calls.slice();
+  delete document.getElementById('map').getBoundingClientRect;
+  delete rail.element.getBoundingClientRect;
 });
 
 beforeEach(() => {
   window.pwaTelemetry = { emit: vi.fn() };
+});
+
+describe('arriving on a share link frames the route', () => {
+  // The one path that still frames a route on opening it: the recipient
+  // has never seen this route, so the map takes them to it. A tap frames
+  // nothing (tests/js/test_map_detail_popup_exclusivity.js).
+  it('fits the shared route\'s bounds, once', () => {
+    expect(arrivalFits).toHaveLength(1);
+    expect(arrivalFits[0][0]).toEqual([[7.2, 46.0], [7.2, 46.04]]);
+  });
+
+  it('reserves the room the panel takes at the top (SNOW-1068)', () => {
+    // The panel's bottom edge, 252px below the map's top: the top padding
+    // grows from 60 to that, and the foot keeps the 40 every fit has.
+    expect(arrivalFits[0][1].padding).toEqual({
+      top: 252, right: 40, bottom: 40, left: 40,
+    });
+  });
+
+  it('frames without a zoom cap, so the route\'s marks can render (SNOW-972)', () => {
+    expect(arrivalFits[0][1]).not.toHaveProperty('maxZoom');
+  });
 });
 
 describe('the pending route layer', () => {
@@ -405,17 +440,6 @@ describe('the pending route on the rail', () => {
 
     expect(button.tagName).toBe('BUTTON');
     expect(button.textContent).toContain('Save route');
-  });
-
-  it('keeps the sheet one press away, with no reading asked for', () => {
-    const opened = tapAt(LINE_Y);
-
-    expect(typeof opened.options.details).toBe('function');
-    opened.options.details();
-    expect(document.getElementById('route-detail-sheet').hasAttribute('hidden')).toBe(
-      false,
-    );
-    window.pwaRouteDetail.close();
   });
 
   it('posts the claim to the token-templated endpoint', async () => {

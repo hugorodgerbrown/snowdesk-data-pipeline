@@ -35,7 +35,6 @@ The record written to ``Route.slope_samples``::
       "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3},
                    {"unknown": "outside_coverage"}, …],    # N
       "summary":  {"sampled_m": …, "surveyed_m": …, …},    # SNOW-961
-      "cruxes":   [[lon, lat], …],                         # SNOW-911
       "heights":  [2834.6, null, …]                        # N + 1, SNOW-1043
     }
 
@@ -43,16 +42,15 @@ The record written to ``Route.slope_samples``::
 metres to one decimal, and ``null`` where the model has no answer — outside
 its coverage, or a hole inside it. A null is per boundary and is permanent;
 a reader falls back to the device's own elevation there. An OUTAGE during
-the height pass is different, and omits the key entirely, on the rule
-``cruxes`` follows below: a missing key says "we could not look", which
-keeps the row a backfill candidate, where a list of nulls would say "there
-is no ground here" for good.
+the height pass is different, and omits the key entirely: a missing key
+says "we could not look", which keeps the row a backfill candidate, where
+a list of nulls would say "there is no ground here" for good.
 
-``cruxes`` are the passages where the ground AROUND the skier can
-release — one coordinate per run of flagged segments, never one per
-segment; a flagged segment also carries ``crux: true``, which is the
-server-side truth the markers are grouped from. See
-``apps.routes.services.cruxes``.
+A record sampled before SNOW-1066 may also carry a ``cruxes`` list and a
+``crux`` flag on some segments (SNOW-911). Nothing writes or reads them
+any more — where the dangerous ground is is the daily avalanche terrain
+layer's question (SNOW-979) — and they are left in place rather than
+migrated away.
 
 ``summary`` is the track in figures — how much of it is steep, how steep
 it gets, how much went unsurveyed — written here because this is the only
@@ -120,7 +118,6 @@ from apps.locations.services.terrain import (
 )
 from apps.locations.services.terrain_grid import load_grid
 from apps.routes.models import Route
-from apps.routes.services.cruxes import crux_points, is_crux, uphill_max_angle
 from apps.routes.services.slope_summary import summarise
 
 logger = logging.getLogger(__name__)
@@ -279,30 +276,8 @@ def build_slope_samples(
         "segments": segments,
     }
 
-    # SNOW-911: what is ABOVE each sample, which the angle underfoot
-    # cannot say. After the walk rather than inside it, so a run that
-    # aborts on an outage pays for no probes at all.
-    #
-    # THE KEY IS OMITTED WHEN THE PASS COULD NOT COMPLETE, and that is
-    # the whole retry story. Both backfill commands read the key's
-    # PRESENCE as "this record is current", so storing an empty list over
-    # an outage would file "we could not look" as "nothing was flagged"
-    # and never look again — a real key passage left unmarked for good.
-    # The angles are still stored: they are a complete answer about the
-    # ground the walk did reach, and the record is a candidate again on
-    # the strength of the missing key alone.
-    record.update(
-        _crux_record(
-            _interpolate_along(points, cumulative, midpoints),
-            segments,
-            record["points"],
-            grid.default_analysis_window_m,
-            label,
-        )
-    )
-    # SNOW-1043: the model's height at every boundary. After the crux
-    # pass for the same reason that pass follows the walk — an aborted
-    # walk pays for none of it — and with the same omitted-key rule on an
+    # SNOW-1043: the model's height at every boundary. After the walk so
+    # an aborted walk pays for none of it, and with an omitted key on an
     # outage. The tiles are the ones the walk has just read, so this is
     # mostly cache hits rather than a second pass over the origin.
     record.update(_height_record(coordinates, label))
@@ -315,10 +290,10 @@ def _height_record(
 ) -> dict[str, Any]:
     """Return the ``heights`` key for a walked track, or no key at all.
 
-    **ONE UNAVAILABLE ANSWER VOIDS THE PASS**, as one voids the crux pass:
-    a ``null`` in the list is a permanent statement that the model has no
-    ground there, and filing an outage under it would keep the device's
-    drifting elevation at that boundary for good. Three in a row end the
+    **ONE UNAVAILABLE ANSWER VOIDS THE PASS**: a ``null`` in the list is
+    a permanent statement that the model has no ground there, and filing
+    an outage under it would keep the device's drifting elevation at
+    that boundary for good. Three in a row end the
     pass early, on ``_UNAVAILABLE_RUN_LIMIT``'s arithmetic.
 
     Args:
@@ -362,111 +337,6 @@ def _height_record(
         )
         return {}
     return {"heights": heights}
-
-
-def _crux_record(
-    midpoints: list[tuple[float, float]],
-    segments: list[dict[str, Any]],
-    stored_points: list[list[float]],
-    window_m: float,
-    label: str,
-) -> dict[str, Any]:
-    """Return the ``cruxes`` key for a walked track, or no key at all.
-
-    Args:
-        midpoints: The sample coordinate of each segment.
-        segments: The per-segment records. Mutated by the marking pass.
-        stored_points: The record's rounded boundary coordinates, which
-            are what a marker is placed on — a marker must be a point the
-            client can find in the geometry it was sent.
-        window_m: The analysis spacing the walk used.
-        label: How the caller names this track in a log line.
-
-    Returns:
-        ``{"cruxes": [...]}`` when the pass completed, and an EMPTY DICT
-        when it did not. The two are not the same: an empty list says
-        "nothing was flagged", and no key at all says "we could not
-        look", which is what keeps the row a backfill candidate.
-
-    """
-    if not _mark_cruxes(midpoints, segments, window_m, label):
-        return {}
-    return {"cruxes": crux_points(stored_points, segments)}
-
-
-def _mark_cruxes(
-    midpoints: list[tuple[float, float]],
-    segments: list[dict[str, Any]],
-    window_m: float,
-    label: str,
-) -> bool:
-    """Flag the segments whose surrounding terrain can release (SNOW-911).
-
-    Mutates ``segments`` in place, setting ``crux`` on the ones that
-    qualify. The reasoning — what a crux is, why the search is an uphill
-    arc, and why the threshold is not the colouring's — is in
-    ``apps.routes.services.cruxes``.
-
-    **AN UNKNOWN SEGMENT IS NOT PROBED AND IS NEVER FLAGGED.** Ground the
-    walk could not answer for has no aspect to search uphill of, and
-    marking it would assert something about terrain nothing looked at.
-    The absence of a marker there is not a claim of safety; that is what
-    the dashed line and the help topic are for.
-
-    **AND AN OUTAGE ENDS THE PASS**, on the same rule and the same count
-    as the walk above. The probes are the walk's cost multiplied: six per
-    segment, each a request the transport will wait the full timeout for,
-    and ``_fetch_tile`` deliberately does not memoise a failure because
-    an outage has to be retried rather than cached. Without this a long
-    track would spend thousands of timeouts reaching an answer already
-    known after the third — the same arithmetic ``_UNAVAILABLE_RUN_LIMIT``
-    was chosen for, over six times the requests.
-
-    Args:
-        midpoints: The sample coordinate of each segment, as
-            ``(longitude, latitude)``, in the same order.
-        segments: The per-segment records. Mutated.
-        window_m: The analysis spacing the walk used, so a probe is
-            measured like the sample it belongs to.
-        label: How the caller names this track in a log line.
-
-    Returns:
-        True when every probe that mattered was answered, so the result
-        is a complete statement about the ground. False when the origin
-        was unreachable for any of them, which makes the marker set
-        unknown rather than empty — the caller stores no ``cruxes`` key
-        at all on a False, leaving the record a backfill candidate.
-
-    """
-    unavailable_run = 0
-    complete = True
-    for (longitude, latitude), segment in zip(midpoints, segments, strict=True):
-        angle_deg = segment.get("angle_deg")
-        if angle_deg is None:
-            continue
-        probe = uphill_max_angle(
-            latitude, longitude, segment.get("aspect_deg"), window_m
-        )
-        if probe.unavailable:
-            # ONE IS ENOUGH TO VOID THE PASS. There is nowhere in the
-            # grouped output to say "this passage is undecided" — a
-            # marker is present or it is not — so a set with a hole in it
-            # is not a set anybody should read. The run counter below is
-            # only about how soon we stop paying for the rest.
-            complete = False
-            unavailable_run += 1
-            if unavailable_run >= _UNAVAILABLE_RUN_LIMIT:
-                logger.warning(
-                    "crux probing: %d consecutive unavailable probes, %s left unmarked",
-                    unavailable_run,
-                    label,
-                )
-                return False
-            continue
-        unavailable_run = 0
-        if is_crux(angle_deg, probe.steepest_deg):
-            segment["crux"] = True
-    return complete
 
 
 def _walk_summary(

@@ -59,12 +59,14 @@ class SlopeClass:
 
     Named CLASS rather than BAND to match
     ``static/js/route_slope_core.js``'s ``CLASSES`` — which this table is
-    explicitly a copy of — and to leave "slope band" free for the
-    variable-length run of consecutive segments sharing one of these,
+    explicitly a copy of, its five steep classes read from
+    ``static/js/slope_classes_core.js`` since SNOW-1073 — and to leave
+    "slope band" free for the variable-length run of consecutive segments
+    sharing one of these,
     which is the object the route rail draws and a reader presses.
 
     ``lower_deg`` is inclusive and ``upper_deg`` exclusive, so a sample of
-    exactly 35 degrees is in ``slope-35``. That is the raster's own
+    exactly 35 degrees is in ``slope-35``. That is the ramp's own
     convention — its classes are named for their lower bound — and the
     other way round would put every boundary sample one class too gentle,
     which is the direction that matters.
@@ -81,7 +83,9 @@ class SlopeClass:
 # copy is deliberate rather than lazy: a MapLibre paint expression cannot
 # call Python and this module cannot import JavaScript, so one of the two
 # has to be second. ``tests/routes/test_slope_summary.py`` parses
-# that file and asserts the two agree, which is what stops them drifting —
+# that file (and slope_classes_core.js, which holds its five steep
+# classes since SNOW-1073) and asserts the two agree, which is what stops
+# them drifting —
 # a route coloured by one table and described by another would disagree
 # with itself on the same screen.
 SLOPE_CLASSES: tuple[SlopeClass, ...] = (

@@ -20,6 +20,13 @@
  * record says it is fresh (the guarantee is the point — see `syncArea`'s
  * own docstring), and a tile failure taking the bulletins down with it.
  *
+ * SNOW-1072 adds the terrain-class tiles to the tile half: an area whose
+ * record carries `terrain` is judged on them, a sync refetches the missing
+ * ones into its own bucket, and an area without the flag is never judged
+ * on them at all. The fixture's `#map` carries a class-tile template on
+ * its own host for that reason — every area here without the flag must
+ * fetch nothing from it.
+ *
  * Harness follows tests/js/test_map_download_content.js — see its header
  * for the jsdom-boot rationale, and for why the fixture's blob and
  * geometry have to describe the same ground.
@@ -44,6 +51,11 @@ const STYLE_URL = 'https://tiles.example.invalid/liberty.json';
 const TILEJSON_URL = 'https://tiles.example.invalid/base/tiles.json';
 const SPRITE_URL = 'https://tiles.example.invalid/sprites/liberty.json';
 const DEPS = [STYLE_URL, TILEJSON_URL, SPRITE_URL];
+
+// SNOW-1072: the terrain-class tileset, on its own host so the assertions
+// below can tell its tiles apart from everything else a run posts.
+const TERRAIN_TEMPLATE = 'https://terrain.example.invalid/terrain-class/v2/{z}/{x}/{y}.png';
+const isClassTile = (url) => url.startsWith('https://terrain.example.invalid/');
 
 /**
  * What `/api/area-content/` answers for the seeded area.
@@ -275,6 +287,7 @@ function buildFixture() {
          data-routes-url="/api/routes.geojson"
          data-routes-eligible="true"
          data-default-basemap-key="openfreemap_liberty"
+         data-terrain-class-tile-url="${TERRAIN_TEMPLATE}"
          data-season-end="2026-05-31"></div>
     <div id="season-scrubber" data-today="${TODAY}" data-today-pct="50"
          data-season-start="2025-11-01" data-season-end="2026-05-31" data-state="ready">
@@ -419,6 +432,9 @@ beforeAll(async () => {
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_download_runner.js');
+  // SNOW-1072: the class tileset's coverage and band come from here.
+  await import('../../static/js/slope_classes_core.js');
+  await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/calendar_core.js');
@@ -594,5 +610,118 @@ describe('an id nothing on this device carries', () => {
 
     expect(result).toEqual({ tiles: 'none', content: false });
     expect(window.pwaWarmCache).not.toHaveBeenCalled();
+  });
+});
+
+describe('terrain data (SNOW-1072)', () => {
+  /** The class tiles the seeded area's ground implies, derived as the probe does. */
+  function expectedClassTiles() {
+    const core = self.pwaBasemapDownloadCore;
+    const terrain = self.pwaTerrainFilterCore;
+    return core.terrainClassTileURLs(
+      TERRAIN_TEMPLATE,
+      core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 14),
+      terrain.COVERAGE_BOUNDS,
+      terrain.MIN_ZOOM,
+      terrain.MAX_ZOOM,
+    );
+  }
+
+  it('derives the class tiles from the record only when it carries the flag', () => {
+    const bridge = window.pwaBasemapDownloads;
+    const record = { bbox: [7.0, 46.0, 7.2, 46.2], band: [10, 14] };
+
+    expect(bridge.areaTerrainClassTileUrls(record)).toEqual([]);
+    const urls = bridge.areaTerrainClassTileUrls({ ...record, terrain: true });
+    expect(urls).toEqual(expectedClassTiles());
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every(isClassTile)).toBe(true);
+  });
+
+  it('refetches the missing class tiles of an opted-in area into its own bucket', async () => {
+    // A missing class tile leaves the area incomplete, and the sync's tile
+    // half is what repairs it — the same short path a missing sprite takes.
+    await seedArea({ terrain: true });
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(warmedUrls(0)).toEqual(expectedClassTiles());
+    for (const url of expectedClassTiles()) {
+      expect(cachesStub.buckets.get(PINNED_PREFIX + AREA_ID).has(url)).toBe(true);
+    }
+  });
+
+  it('fetches only the class tiles that are missing', async () => {
+    await seedArea({ terrain: true });
+    const all = expectedClassTiles();
+    holdDependencies([...DEPS, ...all.slice(1)]);
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('ok');
+    expect(warmedUrls(0)).toEqual([all[0]]);
+  });
+
+  it('reads an opted-in area holding every class tile as complete', async () => {
+    await seedArea({ terrain: true });
+    holdDependencies([...DEPS, ...expectedClassTiles()]);
+
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('none');
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+  });
+
+  it('never judges an area without the flag on class tiles', async () => {
+    // The default, and every area downloaded before the ticket: no class
+    // tiles on disk, nothing missing, nothing fetched.
+    const result = await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect(result.tiles).toBe('none');
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+  });
+});
+
+describe('the terrain-data preference (SNOW-1072)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('is available here, and off by default', () => {
+    expect(window.pwaBasemapDownloads.terrainDataAvailable()).toBe(true);
+    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(false);
+  });
+
+  it('persists a choice and announces it', () => {
+    const heard = vi.fn();
+    document.addEventListener('snowdesk:terrain-data-changed', heard);
+
+    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
+    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(true);
+    window.pwaBasemapDownloads.setTerrainDataPreferred(false);
+    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(false);
+
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(heard.mock.calls[0][0].detail).toEqual({ on: true });
+    document.removeEventListener('snowdesk:terrain-data-changed', heard);
+  });
+
+  it('reads as off on a page whose terrain filter is not configured', () => {
+    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
+    const mapEl = document.getElementById('map');
+    delete mapEl.dataset.terrainClassTileUrl;
+
+    expect(window.pwaBasemapDownloads.terrainDataAvailable()).toBe(false);
+    expect(window.pwaBasemapDownloads.terrainDataPreferred()).toBe(false);
+    expect(
+      window.pwaBasemapDownloads.areaTerrainClassTileUrls({
+        bbox: [7.0, 46.0, 7.2, 46.2],
+        band: [10, 14],
+        terrain: true,
+      }),
+    ).toEqual([]);
+
+    mapEl.dataset.terrainClassTileUrl = TERRAIN_TEMPLATE;
   });
 });

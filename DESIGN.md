@@ -70,7 +70,6 @@ colors:
   slope-50: "#4b4b4b"
   slope-gentle: "#38bdf8"
   slope-unknown: "#94a3b8"
-  crux-ring: "#1a1916"
   passage-core: "#f8fafc"
   fall-line-arrow: "#1a1916"
   route-rail-climb: "#64748b"

@@ -940,3 +940,48 @@ describe('manageRows carries the ground a slope check derives from', () => {
     expect(rows[0].band).toBeNull();
   });
 });
+
+describe('the terrain-data flag travels to the row (SNOW-1072)', () => {
+  it('carries a recorded area its flag, and reads absence as false', () => {
+    const areas = core.reconcileAreas(
+      [
+        { id: 'region-CH-4115', bytes: 1, savedAt: 'x', terrain: true },
+        { id: 'region-CH-2101', bytes: 1, savedAt: 'x' },
+      ],
+      ['region-CH-4115', 'region-CH-2101'],
+      {},
+      [],
+    );
+
+    expect(areas.find((a) => a.id === 'region-CH-4115').terrain).toBe(true);
+    expect(areas.find((a) => a.id === 'region-CH-2101').terrain).toBe(false);
+  });
+
+  it('carries an account-only row the account\'s own choice', () => {
+    // "Download here" repeats it, so another device fetches the same
+    // tile families the first one did.
+    const areas = core.reconcileAreas([], [], {}, [
+      {
+        area_id: 'region-CH-4115',
+        kind: 'region',
+        region_id: 'CH-4115',
+        bbox: null,
+        basemap_key: '',
+        name: '',
+        terrain: true,
+        created_at: '2026-07-01T00:00:00.000Z',
+      },
+    ]);
+
+    expect(areas[0].onDevice).toBe(false);
+    expect(areas[0].terrain).toBe(true);
+  });
+
+  it('keeps the flag through manageRows', () => {
+    const rows = core.manageRows(
+      [{ id: 'region-CH-4115', bytes: 1, savedAt: 'x', onDevice: true, terrain: true }],
+      {},
+    );
+    expect(rows[0].terrain).toBe(true);
+  });
+});

@@ -41,10 +41,8 @@ above away again.
 
 ## A passage list is never incomplete
 
-This is the thing ``cruxes`` cannot say. A crux can be ABSENT because a
-probe outage voided the pass, which is why that key is omitted rather
-than emptied. A passage needs no probe: it is fully derivable from the
-record at any constants, at any time. So an empty list here means
+A passage needs no probe: it is fully derivable from the record at any
+constants, at any time. So an empty list here means
 "nothing qualified" and never "we could not look", and there is no third
 state to encode.
 
@@ -96,8 +94,8 @@ by its existence.
 **AN UNMARKED ROUTE IS NOT A ROUTE WITHOUT NO-FALL GROUND.** The gate is
 a threshold on a sampled angle taken from a 10 m analysis window over a
 5 m grid, and a narrow steep passage between two gentler samples reads
-gentler than it is. The surfaces say so — rail two's passage bars and
-``/help/#help-topic-slope`` — and this module is where the reason lives.
+gentler than it is. The surfaces say so — the route detail's terrain line
+and ``/help/#help-topic-slope`` — and this module is where the reason lives.
 """
 
 from __future__ import annotations

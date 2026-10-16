@@ -473,6 +473,25 @@
   }
 
   /**
+   * SNOW-1072: paint the "Terrain data" checkbox from the bridge — hidden
+   * where this page cannot include terrain data, checked to match the
+   * device preference otherwise.
+   *
+   * @returns {void}
+   */
+  function renderTerrainDataToggle() {
+    const block = sheet.querySelector('[data-downloads-terrain]');
+    if (!block) return;
+    const bridge = window.pwaBasemapDownloads;
+    const available = !!(bridge && bridge.terrainDataAvailable && bridge.terrainDataAvailable());
+    block.hidden = !available;
+    const input = /** @type {HTMLInputElement|null} */ (
+      block.querySelector('input[type="checkbox"]')
+    );
+    if (input) input.checked = available && !!bridge.terrainDataPreferred();
+  }
+
+  /**
    * SNOW-844: mark every row whose area is on this device but cannot
    * RENDER — the tiles are pinned and something the map needs to draw them
    * (the style document, a vector source's TileJSON, the sprite) is not.
@@ -520,17 +539,21 @@
     for (const row of rows) {
       if (row.orphaned || row.onDevice === false) continue;
       const isActive = !!activeKey && row.basemapKey === activeKey;
-      // SNOW-692: the slope tiles are derived from the row's own record
-      // rather than read from `deps`, and are appended to whatever the
-      // three-row rule yields — including the empty UNKNOWN case, since
-      // the slope raster is one layer on one host whatever the basemap, so
-      // a row for an inactive basemap can still be judged on them.
       const depURLs = [
         ...bridge.areaRenderDependencyUrls(row.deps, isActive),
-        // The base layer is excluded: it is the shared z0-9 world ground,
-        // and the slope raster is a regional overlay that never covered it.
-        ...(row.kind !== 'base' && typeof bridge.areaSlopeTileUrls === 'function'
-          ? bridge.areaSlopeTileUrls(row)
+        // SNOW-1072: and the terrain-class tiles, for a row whose area
+        // includes terrain data. Empty for every other row, so an area
+        // downloaded without the opt-in is never judged on them. Derived
+        // from the row's own record rather than read from `deps`, and
+        // appended to whatever the three-row rule yields — including the
+        // empty UNKNOWN case, since the class tileset is one layer on one
+        // host whatever the basemap, so a row for an inactive basemap can
+        // still be judged on them. The base layer is excluded: it is the
+        // shared z0-9 world ground, below the tileset's z12-14 band.
+        // (SNOW-692's swisstopo slope tiles were judged here the same way
+        // until SNOW-1073 removed that layer.)
+        ...(row.kind !== 'base' && typeof bridge.areaTerrainClassTileUrls === 'function'
+          ? bridge.areaTerrainClassTileUrls(row)
           : []),
       ];
       const missing = core.missingRenderDependencies(depURLs, cached);
@@ -954,6 +977,12 @@
       sheet.querySelector('[data-downloads-budget]')
     );
     if (select) renderBudgetOptions(select, chosenMb);
+
+    // SNOW-1072: the "Terrain data" checkbox — whether NEW downloads on
+    // this device include the terrain-class tiles. Rendered only on a page
+    // whose terrain filter is configured; set from the stored preference
+    // on every render, because the body is a fresh clone each time.
+    renderTerrainDataToggle();
 
     // SNOW-637: offline-integrity for the add-trigger. Listing and deleting
     // what is already stored needs no connection, but STARTING a download
@@ -1522,6 +1551,9 @@
           'data-downloads-bbox',
           Array.isArray(row.bbox) ? JSON.stringify(row.bbox) : '',
         );
+        // SNOW-1072: the account row's terrain-data choice, so the
+        // download it starts here fetches the same tile families.
+        hereBtn.setAttribute('data-downloads-terrain', row.terrain ? 'true' : 'false');
         hereBtn.setAttribute(
           'aria-label',
           interpolate(STRINGS['download-here-row-label'], { name: row.label }),
@@ -1933,9 +1965,13 @@
       bbox = null;
     }
 
+    // SNOW-1072: the row's own terrain-data choice overrides this
+    // device's preference for the one download it starts.
+    const terrain = button.getAttribute('data-downloads-terrain') === 'true';
+
     sheet.hidden = true;
     if (regionId && window.pwaRegionDownload) {
-      window.pwaRegionDownload.start(regionId).then(function (outcome) {
+      window.pwaRegionDownload.start(regionId, { terrain: terrain }).then(function (outcome) {
         // A refusal is silent on the roundel — it settles into whatever
         // state it settled into — so say so here rather than leaving the
         // tap unanswered.
@@ -1956,7 +1992,7 @@
       return true;
     }
     if (Array.isArray(bbox) && window.pwaCustomAreaDownload?.openFramingAt) {
-      window.pwaCustomAreaDownload.openFramingAt(bbox);
+      window.pwaCustomAreaDownload.openFramingAt(bbox, { terrain: terrain });
       return true;
     }
     window.MapSheet?.toast(STRINGS['download-here-failed']);
@@ -2080,6 +2116,14 @@
   // user on a full device unable to say how much room they want to give up.
   sheet.addEventListener('change', function (event) {
     const target = /** @type {HTMLSelectElement} */ (event.target);
+    // SNOW-1072: the "Terrain data" checkbox. Saved at once, like the
+    // budget: it changes what the NEXT download fetches and nothing that
+    // is already on the device, so there is nothing to confirm.
+    if (target && target.matches && target.matches('[data-downloads-terrain] input')) {
+      const input = /** @type {HTMLInputElement} */ (/** @type {unknown} */ (target));
+      window.pwaBasemapDownloads?.setTerrainDataPreferred(!!input.checked);
+      return;
+    }
     if (!target || !target.matches || !target.matches('[data-downloads-budget]')) {
       return;
     }

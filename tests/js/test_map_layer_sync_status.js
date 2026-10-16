@@ -20,8 +20,9 @@
  * menu again — the four panel "Display on the map" switches are gone — so
  * all three are back in OVERLAY_RESOURCES as `idb` resources. They are
  * opt-in in `buildFixture` (`idbRows`) so the pre-existing blocks below keep
- * exercising a menu without them. `slope` and `downloads` are rows with NO
- * dot at all, which is asserted directly rather than left implicit.
+ * exercising a menu without them. `downloads` is a row with NO dot at
+ * all, which is asserted directly rather than left implicit. (`slope` was
+ * the other until SNOW-1073 removed swisstopo's raster.)
  *
  * SNOW-658 merged the Austria and Italy country rows into one ALBINA
  * provider row, which is why `countryRow` takes a `codes` argument: the
@@ -114,8 +115,8 @@ function buildFixture({
       </button>
     </li>`;
 
-  // SNOW-904: a row with no dot — the real markup for `slope` and
-  // `downloads`, neither of which can make an honest cache claim.
+  // SNOW-904: a row with no dot — the real markup for `downloads`, which
+  // can make no honest cache claim.
   const dotlessRow = (key) => `
     <li role="none">
       <button type="button" class="basemap-menu-item basemap-menu-item--overlay" data-overlay-key="${key}">
@@ -638,8 +639,8 @@ describe('country rows (SNOW-524)', () => {
 describe('rows absent from the DOM (conditionally rendered)', () => {
   it('skips them rather than throwing', async () => {
     // Not every page that loads this module renders every row — the
-    // conditionally-rendered ones (slope, and any embed with a reduced
-    // menu) are simply absent. map.js still calls markCached('favourites')
+    // conditionally-rendered ones (the terrain filter's row, and any embed
+    // with a reduced menu) are simply absent. map.js still calls markCached('favourites')
     // on its lazy-load path, so a missing row has to stay a no-op rather
     // than a throw.
     buildFixture();
@@ -1097,18 +1098,18 @@ describe('IndexedDB overlay rows (favourites / routes / field observations)', ()
   });
 });
 
-// SNOW-904: two rows carry no dot, for opposite reasons — slope draws a
-// third-party raster this app cannot probe, downloads draws a list that is
-// always local. Neither has an OVERLAY_RESOURCES entry, so a refresh must
-// simply pass them by.
-describe('rows with no dot (slope / downloads)', () => {
-  it('paints nothing and touches nothing for either row', async () => {
-    buildFixture({ dotlessRows: ['slope', 'downloads'] });
+// SNOW-904: the downloads row carries no dot — it draws a list that is
+// always local. It has no OVERLAY_RESOURCES entry, so a refresh must simply
+// pass it by. (SNOW-1073 removed the other dotless row, swisstopo's slope
+// raster, which this app could not probe.)
+describe('rows with no dot (downloads)', () => {
+  it('paints nothing and touches nothing for the row', async () => {
+    buildFixture({ dotlessRows: ['downloads'] });
     vi.stubGlobal('caches', fakeCaches({ hitPaths: [MAJOR_REGIONS_PATH] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
-    for (const key of ['slope', 'downloads']) {
+    for (const key of ['downloads']) {
       expect(document.querySelector(`[data-overlay-key="${key}"] .sync-dot`)).toBeNull();
       expect(rowDisabled(key)).toBe(false);
     }

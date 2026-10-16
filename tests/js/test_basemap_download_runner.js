@@ -784,8 +784,8 @@ describe('base layer top-up', () => {
  *     it is the cheap half and a run on a bad connection may not reach the
  *     end;
  *   - the progress grid's offset accounts for it, so no tile is shifted
- *     off its cell — the trap SNOW-692 dodged by appending slope urls at
- *     the end instead, which was only ever necessary because the offset
+ *     off its cell — the trap SNOW-692 dodged by appending its slope urls
+ *     at the end instead, which was only ever necessary because the offset
  *     was assumed rather than passed;
  *   - it never reaches the eviction machinery, which exists to guard a
  *     several-hundred-tile download;
@@ -945,5 +945,81 @@ describe('the content phase', () => {
     ]);
     const [, , extras] = o.finish.mock.calls[0];
     expect(extras.content).toEqual({ ok: 1, total: 1, short: true });
+  });
+});
+
+describe('terrain data (SNOW-1072)', () => {
+  const CLASS = ['https://tiles/terrain-class/v2/12/1/1.png'];
+
+  it('appends the class tiles after the grid plan when the run opts in', async () => {
+    // SNOW-1073: a deps bundle from before the swisstopo slope raster was
+    // removed may still carry `slopeUrls`; the runner no longer asks it.
+    const d = deps({
+      slopeUrls: vi.fn(() => ['/slope/1']),
+      terrainClassUrls: vi.fn(() => CLASS),
+    });
+
+    await runAndSettle(d, options({ terrain: true }));
+
+    expect(d.terrainClassUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 });
+    expect(d.slopeUrls).not.toHaveBeenCalled();
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+      ...CLASS,
+    ]);
+    // Out of the grid plan: the grid's offset still counts only the feeds.
+    expect(d.progressGrid).toHaveBeenCalledWith(expect.anything(), 1);
+  });
+
+  it('pins none without the opt-in, and never asks for them', async () => {
+    const d = deps({ terrainClassUrls: vi.fn(() => CLASS) });
+
+    await runAndSettle(d, options());
+
+    expect(d.terrainClassUrls).not.toHaveBeenCalled();
+    expect(d.warmCache.mock.calls[0][0]).not.toContain(CLASS[0]);
+  });
+
+  it('hands finish the flag, never the URLs', async () => {
+    const d = deps({ terrainClassUrls: vi.fn(() => CLASS) });
+    const o = options({ terrain: true });
+
+    await runAndSettle(d, o);
+
+    const extras = o.finish.mock.calls[0][2];
+    expect(extras.terrain).toBe(true);
+    expect(JSON.stringify(extras.renderDeps || [])).not.toContain('terrain-class');
+  });
+
+  it('reports terrain: false to finish for a run without the opt-in', async () => {
+    const o = options();
+
+    await runAndSettle(deps(), o);
+
+    expect(o.finish.mock.calls[0][2].terrain).toBe(false);
+  });
+
+  it('adds terrainMb to the quota and budget pre-flights only when opted in', async () => {
+    const withTerrain = deps();
+    await runAndSettle(withTerrain, options({ terrain: true, terrainMb: 11 }));
+    // 12 MB of basemap (one source) plus 11 of terrain.
+    expect(withTerrain.fitsQuota).toHaveBeenCalledWith(23);
+    expect(withTerrain.planBudget).toHaveBeenCalledWith('region:ch-4115', 23);
+
+    calls = [];
+    const without = deps();
+    await runAndSettle(without, options({ terrain: false, terrainMb: 11 }));
+    expect(without.fitsQuota).toHaveBeenCalledWith(12);
+  });
+
+  it('tolerates a deps bundle with no terrainClassUrls member', async () => {
+    // An older shell mid-rollout: the run goes ahead without class tiles.
+    const d = deps();
+
+    await runAndSettle(d, options({ terrain: true }));
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
   });
 });

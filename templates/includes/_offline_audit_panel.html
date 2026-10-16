@@ -213,10 +213,22 @@ of a page nobody came here to audit.
         {# A caveat on a Yes, not a No. The map DOES draw outside a #}
         {# download — from the passive browsing cache — so this must not #}
         {# claim a blank screen. What it must say is that those tiles are #}
-        {# not saved and will go when the device needs the room. #}
+        {# only what was browsed: Snowdesk trims the oldest by count as #}
+        {# the user looks at new ground (SNOW-1060), not when the device #}
+        {# runs short of room (SNOW-1058). #}
         <span
             data-string="note-basemap-downloads-only"
-        >{% translate "outside your downloads the %(name)s map is not saved, and may disappear when the device needs the space" %}</span>
+        >{% translate "outside your downloads the %(name)s map is only what you have browsed, and older areas drop out as you look at new ones" %}</span>
+        {# SNOW-1058: nothing downloaded, and the map draws from the #}
+        {# browsing cache — a Yes with the same caveat. #}
+        <span
+            data-string="note-basemap-browsed-only"
+        >{% translate "the %(name)s map is only what you have browsed — it is not saved, and older areas drop out as you look at new ones" %}</span>
+        {# SNOW-1058: the style was browsed and none of its tiles were, #}
+        {# so the map draws a background and nothing else — a No. #}
+        <span
+            data-string="note-basemap-style-only"
+        >{% translate "only the %(name)s map style is saved, not the map itself — download the map to see it offline" %}</span>
         <span
             data-string="note-area-incomplete"
         >{% translate "%(name)s will not draw until you sync it from the map’s Manage downloads sheet" %}</span>
@@ -312,6 +324,11 @@ of a page nobody came here to audit.
             data-string="verdict-other-account"
         >{% translate "The saved app belongs to another account. Open the map once while connected." %}</span>
         <span data-string="verdict-no-map">{% translate "The app opens, but there is no map to show in it." %}</span>
+        {# SNOW-1058: nothing downloaded, but the map on screen draws #}
+        {# from what the user has browsed. #}
+        <span
+            data-string="verdict-browsed-only"
+        >{% translate "The map shows what you have looked at, but nothing is downloaded. Download the map to ensure it isn't overwritten or deleted." %}</span>
         <span
             data-string="verdict-downloads-broken"
         >{% translate "The app opens, but none of your downloads will draw." %}</span>

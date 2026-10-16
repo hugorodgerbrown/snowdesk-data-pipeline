@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Map page and JSON API
@@ -186,14 +186,11 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Fifteen surfaces float over the map, and only one is ever meaningful at
+Fourteen surfaces float over the map, and only one is ever meaningful at
 once: the layers menu (`basemap-menu`), the four UGC panels (downloads,
 favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
-the route detail sheet (`#route-detail-sheet`
-— SNOW-973 moved it out of that popup, and since SNOW-1018 it opens from
-rail one's "Terrain and bulletin" menu item rather than on a tap), the
-legend card (`#map-legend-card`), the help
+the legend card (`#map-legend-card`), the help
 tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
 (`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792), the
 welcome panel (`#home-intro`), the region panel the readout chip discloses
@@ -205,15 +202,19 @@ and the sign-in sheet a signed-out tap on a Favourites or Routes row opens
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
 so the sheets that go through it need nothing of their own — which is how
-the route detail sheet joined the matrix without an edit to any other
-surface.
+the route detail sheet (SNOW-973; removed by SNOW-1095) joined the matrix
+without an edit to any other surface.
 
-Rail one (`#route-rail`, SNOW-1018) is deliberately **not** in the matrix.
-A tap on a saved route opens it and nothing else, and it stays open while
-the route detail sheet opens and closes over it — registering it would
-close it the moment the sheet it opened announced itself. It closes on its
+The route rail (`#route-rail`, SNOW-1018; the only rail since SNOW-1065) is
+deliberately **not** in the matrix.
+A tap on a saved route opens it and nothing else — registering it would
+close it the moment any other overlay announced itself. Its "…" menu is
+Plan a trip → Share → Rename → Delete, all owner actions, so a pending
+share shows none; the Terrain item and the route detail sheet it opened
+were removed by SNOW-1095. It closes on its
 own ×, on Escape when no sheet, overlay or menu was open to take that
-Escape, and after a claim or a delete.
+Escape (and no leg or point was open to take it first), on a map tap that
+no marker takes, and after a claim or a delete.
 
 It replaces the pairwise wiring the surfaces carried until then
 (`window.pwaLayersMenu.close()` from the downloads sheet;
@@ -433,82 +434,46 @@ knowing here:
   when `ascent_m` is null**, since a GPX with no elevation data means "we
   don't know", not "flat".
 
-**Slope-angle overlay (SNOW-691)**: the map's only `raster` source, and its
-only layer whose data is fetched straight from a third party rather than
-through a Snowdesk endpoint. The tiles are swisstopo's
-`ch.swisstopo.hangneigung-ueber_30` WMTS, read from `SLOPE_TILE_URL`
-(`config/settings/base.py`, env-overridable so SNOW-693 can move the origin
-without a code change) and rendered onto `#map` as `data-slope-tile-url`
-for an eligible request only — and "eligible" is simply
-`bool(settings.SLOPE_TILE_URL)`. SNOW-724 retired the `slope_layer` flag
-and moved that job onto the setting, which was already the operator's kill
-switch by another name: clearing the env var withdraws the row, the raster
-and the legend key on a restart rather than a deploy.
+**Slope layer (SNOW-1073)**: the terrain filter's "Colour by slope" mode,
+not a layer of its own. It paints from the same `terrainfilter://` raster
+source as the filter's match tint (`installTerrainFilterLayer` in
+`static/js/map.js`, `terrain-filter-raster`), so everything about that
+source — eager install while hidden, `beforeId: 'regions-fill'`,
+`nearest` resampling, the z12–14 band and `COVERAGE_BOUNDS`, the
+attribution reset — applies to it unchanged; see
+[terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
+The mode is `mode: 'slope'` in the filter JSON under
+`snowdesk.map.terrain_filter`; `TERRAIN_CORE.createClassifier` and
+`paletteFor` pick `createSlopeClassifier` and `SLOPE_PALETTE`, which paint
+each matching pixel by its 5° band in the SLF classes
+(`static/js/slope_classes_core.js`'s `CLASSES`) at 0.6 alpha. The mode is
+part of `filterHash`, so switching mode re-tiles through `setTiles`. It is
+gated on `TERRAIN_CLASS_TILE_URL` like the filter, and it shares the
+filter's on/off switch and its sheet's aspect, slope-range and elevation
+settings. The zoom control's z12 tick reads "Slope classes" while it is
+on (`slope_classes` in `window.pwaZoomGates`).
 
-It differs from every other opt-in overlay in one way worth knowing before
-you go looking for the missing code: **it is installed eagerly and hidden,
-not lazy-loaded.** MapLibre requests no tiles for a source whose layers are
-all `visibility: none`, so a hidden raster costs one source entry and no
-network at all — which is why `slope` appears in `OVERLAY_LAYERS` but not
-in the picker's lazy branch, and why there is no
-`ensureOverlayLoaded` case and no `snowdesk:overlay-load` handling for it.
-The generic `setLayoutProperty` path is the whole toggle.
+SNOW-691's swisstopo raster — `ch.swisstopo.hangneigung-ueber_30` from
+`SLOPE_TILE_URL`, its "Display slope angles" row, `slope_overlay_core.js`,
+the `slope` overlay key and its download pinning — is removed; the why and
+the costs are in
+[slope-layer-is-painted-from-our-class-tiles.md](decisions/slope-layer-is-painted-from-our-class-tiles.md).
+A stored `snowdesk.map.overlay.slope` is ignored.
 
-Three source/paint properties are load-bearing rather than decorative.
-`maxzoom` is **16**, not the service's advertised 17: z17 is a server-side
-upscale, differing from a 2x-upscaled z16 in 1.3% of pixels against 2.7%
-for z15→z16 and 7.0% for z14→z15, so capping costs nothing visible and
-saves four requests per tile of screen at touring zooms. Declaring it at
-all is SNOW-604's lesson — a raster source's `maxzoom` defaults to 22.
-`bounds` is the declared coverage rectangle (`COVERAGE_BOUNDS` in
-`static/js/slope_overlay_core.js`), which keeps MapLibre from requesting
-the tiles outside it that the service answers with HTTP 400 and a JSON body
-rather than an empty tile. `raster-resampling` is `nearest`, not MapLibre's
-default `linear`: the raster is categorical, and interpolating between two
-class colours invents a colour that corresponds to no slope class.
+The legend's terrain-filter section switches with the mode: in the slope
+mode it shows the five class swatches under a "Slope angle" heading that
+anchors into `/help/#help-topic-slope` (`public/help/_topic_slope.html`,
+which renders for every visitor). The id sits on a wrapper `div` rather
+than on `_collapsible_panel.html`'s `<details>`, so that shared partial
+keeps one shape for every caller. The source's `attribution` names the
+DATASET — "swisstopo — swissALTI3D" — rather than the publisher: two
+basemaps are also swisstopo and contribute a bare `© swisstopo`, and
+`updateMapAttribution` unions by exact string.
 
-The blockiness that `nearest` leaves at high zoom is the source's own 10 m
-grid, not a rendering fault — measured against the served tiles the
-smallest distinguishable feature is ~10 m at every zoom (a 2px run at z14,
-3px at z15, 6px at z16, each doubling with the zoom rather than resolving
-further). Note for SNOW-693: Copernicus GLO-30 is **30 m**, so a
-self-hosted replacement would be three times coarser than this inside the
-area swisstopo covers.
-
-`slope-raster` resolves `beforeId: 'regions-fill'` so it lands under the
-choropleth from either install path (boot installs it first; the
-`styledata` re-install runs the regions first).
-`updateSlopeRowAvailability` (on `moveend`) disables the layers-menu row
-with a reason once the viewport centre leaves the rectangle, via a
-namespaced marker (`data-slope-disabled-out-of-coverage`). An earlier
-build also drew the rectangle as a
-`slope-coverage-line` layer; it was removed as a hard box across the whole
-map that cost more legibility than it bought.
-
-One non-obvious coupling: `installSlopeLayer` nulls `map.js`'s memoised
-`attributionSourceIds` and re-runs `updateMapAttribution`.
-That cache is populated at `style.load` and this source is added
-afterwards, so without the reset swisstopo's attribution — a licence
-obligation, not a nicety — never reaches the legend's "Map data" section.
-
-The legend's "Slope angle" heading is an anchor into
-`/help/#help-topic-slope` (`public/help/_topic_slope.html`, which renders
-for every visitor — the help topic is not gated with the layer, so a
-reader whose environment has no `SLOPE_TILE_URL` can still read what the
-layer would have said). The id sits on a
-wrapper `div` rather than on `_collapsible_panel.html`'s `<details>`, so
-that shared partial keeps one shape for every caller. The source's
-`attribution` names the DATASET rather than the publisher — two basemaps
-are also swisstopo and contribute a bare `© swisstopo`, and
-`updateMapAttribution` unions by exact string, so a matching value rendered
-as "© swisstopo · swisstopo".
-
-Offline caching: no `OVERLAY_RESOURCES` entry, so the row carries no sync
-dot state and the offline gate never touches it. The tiles ride the service
-worker's cross-origin basemap stale-while-revalidate cache instead — the
-slope origin joins the `register-basemap-origins` payload alongside the
-basemap origins — so terrain browsed online still paints offline. Pinning
-slope tiles as part of a deliberate area download is SNOW-692.
+Offline caching: the class tiles' origin is seeded into the service
+worker's `register-basemap-origins` payload, so ground viewed online still
+paints offline; an area downloaded with "Terrain data" (SNOW-1072) pins
+them.
 
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre
@@ -637,8 +602,7 @@ appeared first.
 | `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `apps.bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`apps.bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`apps.public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the choropleth, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row, and SNOW-656 moved what governs it from the `l4` row to the bulletin-fill step, since the boundary is a bulletin concept and, like the choropleth, is date-bound — at step 0 it is hidden and a scrubbed date does not refetch it) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/weather.geojson` | `api:weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — the map's Weather overlay (SNOW-761). **One** Location-anchored feed replacing the resort-anchored `forecast-weather.geojson` and region-anchored `region-weather.geojson` SNOW-762 removed: a region centroid is a `Location` like any other now, so there is no tier to switch between and no zoom threshold to switch it at. One feature per `Location.objects.public()` row — **never `active()`**, which also reaches every location a `Favourite` points at; that is the billable set, not the visible one, and serving it here would put a stranger's private pin and its coordinates on a public map (`tests/public/test_weather_geojson_api.py` asserts the absence). `properties` carries `short_id` (`Location.short_id`, the opaque id the weather page and `weather_detail` are keyed on — never the pk, SNOW-797), `name`, `elevation_m` and `days` (`{iso_date: {code, tmax}}`) and **nothing else** — no `kind`, no `resort_id`, no `region_id`, because no layer reads them. `code` is the raw WMO weather interpretation code; the icon filename is derived client-side in `static/js/map_weather_core.js`, whose table is held to the Python one by `tests/weather/services/test_icon_table_parity.py`. `days` covers today and the week ahead from **one** `Weather` row per location (its `observed_on` plus its `forecast` column), so a scrubbed date re-projects in memory with no second request; a location with no row for today still gets a feature with an empty `days`, which the layer's `icon != ''` filter drops. Server-side `cache.get_or_set` keyed on the day (5 min). Publicly cacheable and listed in `_POSTHOG_EXEMPT_PATHS`, without which `Vary: Cookie` would defeat it. Freshness headers report the **oldest** `fetched_at` in the payload; `unsafe_after` is omitted, since weather is not safety-critical. Full contract: [`weather-surfaces.md`](weather-surfaces.md). |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, the instant as recorded — it was floored to the nearest 15 min until that floor was found to protect nothing and to make the map disagree with the reporter's own panel), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
-| `GET /routes/routes.geojson` | `routes:geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-687's routes line layer: one **LineString** feature per `Route` the **requesting user** owns. `coordinates` are `Route.points` in GeoJSON axis order (RFC 7946), already simplified at ingest by SNOW-685 — and, when the slope record carries model `heights` (SNOW-1043), merged with the record's 25 m boundary points and carrying the terrain model's heights, with any run the model does not cover rebased onto its datum (`terrain_points`, see `docs/decisions/route-heights-come-from-the-terrain-model.md`). The boundary points lie on the stored line, so the drawn line is unchanged; the legs' `point_from`/`point_to` index this served list. `ele` is metres, or `null` for a point with no height. `properties` carries `uuid`, `name`, `distance_m`, `ascent_m` and `bounds`. **`ascent_m` is served as stored, `null` included** — null means "the GPX carried no elevation data", NOT "flat", and the client omits the ascent line entirely rather than rendering a zero for an unknown (`Route`'s docstring is explicit that the substitution would be a safety-relevant lie). `bounds` is the flat `[min_lon, min_lat, max_lon, max_lat]` bbox, on the feature so a tap can fit the viewport from the payload the map already holds, offline included. **403** for anonymous callers; owner-scoped via `Route.objects.for_user()` in **one** query however many routes the user has. Not `@require_htmx` — a JS `fetch()` consumes it, not an HTMX swap. `Cache-Control: private, no-store`. Freshness headers follow `community-reports.geojson` rather than `favourites.geojson` (which carries none): `generated_at` is the newest route's `updated_at`, and **`unsafe_after` is omitted** — a user's own uploaded track is not safety-critical data, so the client's freshness state saturates at "stale" and never escalates to "unsafe". Note the path: mounted under `/routes/`, not `/api/`, alongside the panel's HTMX endpoints. **SNOW-764 widens it**: a request whose session holds a followed-but-unclaimed `RouteShare` token gets that share's route too, signed in or not, so the `/map/?route_share=<token>` deep link lands on a map that can draw what the link was for. A pending feature carries `token` and `pending: true` and **no `uuid`** — the rename and delete endpoints are addressed by uuid and owner-scoped, so a non-owner is never handed one — and `static/js/map.js` draws it through its own dashed `routes-line-pending` layer. The anonymous branch still 403s for a session with nothing pending, and both branches short-circuit on an empty session list before any query ([why](decisions/route-share-pending-claim-in-session.md)). **SNOW-910 adds `slope`** to a route that has been sampled: `{"points": [[lon, lat], …], "angles": [34.2, null, …]}` — N + 1 shared boundary coordinates bounding N segments of the 25 m stride walk, with a **null angle for a segment the terrain had no answer for**. The key is **omitted entirely** for a route nothing has sampled yet, which is a different fact and must render differently; until SNOW-1017 `static/js/map.js` filtered `routes-line` on the key's presence, when a sampled route was painted in slope classes. The trip page still does. This is a COMPACT form of `Route.slope_samples` — the per-segment aspect and the named `TerrainUnknown` reason stay server-side for SNOW-911 and SNOW-839, because nothing draws either and a 600-segment route would otherwise roughly double a payload the offline cache holds ([why](decisions/a-slope-segment-is-the-shared-record.md)). **SNOW-1018 adds `legs`** beside `slope`: `[{"i": 1, "from": 0, "to": 41, "climbing": true}, …]` — the route cut at its transitions (`detect_legs`), for rail one below the map (`templates/includes/_route_rail.html`, `static/js/route_rail.js`). `from` and `to` are **segment indices — the index space of `slope.angles` — both inclusive**, never indices into `coordinates`: the slope record is walked on its own 25 m stride, so `apps/routes/services/leg_wire.py` maps each transition point onto the nearest segment boundary by along-track distance, using the sampler's own `cumulative_distances` / `stride_distances`. The legs tile the samples exactly — the first `from` is 0, the last `to` is N − 1, each `from` is the previous `to` + 1 — and a leg too short to hold one segment is folded into its neighbours. The key is **sent for an unsampled route too**: legs and the stride walk are both functions of `coordinates` alone, so an unsampled route's legs index the segments its record will have, and the client sizes its cursor from the last `to` + 1 when there is no `angles` array. A record `compact_slope` refuses is treated the same way. The key is omitted only for a track `detect_legs` finds no leg in (no elevation, or too short). **SNOW-1017 adds `point_from` / `point_to`** to each leg: the same leg in indices into `coordinates`, both inclusive, which `static/js/route_legs_core.js` slices the map's leg lines from. Unlike `from` / `to`, adjacent legs SHARE a point — each `point_to` is the next `point_from`, the first `point_from` is 0 and the last `point_to` is the last coordinate — so the lines meet with no gap. `static/js/map.js` filters `routes-line` and `routes-line-casing` on the presence of `legs`, so a legged route is not painted flat under its own legs ([why](decisions/legs-not-slope-classes-on-the-map.md)). From z14 the leg lines stop and `routes-slope-line` paints the route's `slope` segments in the six classes, each tagged with its leg by `slopeSegmentCollection` in `static/js/route_legs_core.js` so a leg selection dims them. **SNOW-1053 adds `slope.seams`**: N + 1 indices into this feature's `coordinates`, one per boundary — the last coordinate at or before it — non-decreasing, the first 0 and the last the final coordinate. `segmentPaths` in `static/js/route_slope_core.js` draws segment i as `points[i]`, the coordinates after `seams[i]` up to `seams[i + 1]`, then `points[i + 1]`, so the classes lie on the leg casing instead of chording across a bend, and the cursor's dot sits half way along that path. The key is **omitted** when `compact_slope` cannot repeat the stride walk over the coordinates (no usable `stride_m`, or a different boundary count), and the client then draws each segment as its chord, as it does for a payload cached before the key. The trip page's inline payload carries the same key over its own geometry. |
-| `GET /routes/<uuid>/bulletin/` | `routes:bulletin` | `{"html", "day"}` — SNOW-973's route detail panel (opened from rail one's menu since SNOW-1018): what each region's bulletin says about one saved route's line, for the day `?d=YYYY-MM-DD` names (the day the map's scrubber is showing; the server's own local date if the parameter is absent, and a malformed one is **400**). `html` is `routes/partials/_route_bulletin.html`, whose rows are the same `includes/_bulletin_readings.html` the trip page has rendered since SNOW-839 — one block per region the line crosses, longest stretch first, each naming the problems the line enters and linking that region's bulletin **for the day asked about**. An empty reading is TWO different facts and is worded as two: a route nothing has sampled has not been looked at, where a sampled route with no readings crosses no ground we hold a forecast boundary for. **403** for anonymous callers; owner-scoped via `Route.objects.for_user()`, **404** and never 403 for another user's uuid, and with no pending-share widening — a recipient who has not saved a shared route gets no reading, and the panel omits the section for them. Not `@require_htmx` — a JS `fetch()` consumes it. `Cache-Control: private, no-store`. Freshness follows `favourites:card` rather than `routes.geojson`: this body is the forecaster's problems, not the user's own track, so **`unsafe_after` IS emitted** (48h) whenever a bulletin was read, and `generated_at` is the **oldest** `issued_at` among the bulletins in the answer — a panel showing two regions is only as fresh as its stalest one. With no bulletin in the answer the pair is `(now, omitted)`. The client stores the body under that envelope in `data:route_bulletins` and refuses to repaint it past the horizon (see [`offline-first.md`](offline-first.md) §12.6). Query shape: one `select_bulletin_for_date` per crossed region, pinned by a query-count assertion in `tests/routes/test_views.py`. |
+| `GET /routes/routes.geojson` | `routes:geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-687's routes line layer: one **LineString** feature per `Route` the **requesting user** owns. `coordinates` are `Route.points` in GeoJSON axis order (RFC 7946), already simplified at ingest by SNOW-685 — and, when the slope record carries model `heights` (SNOW-1043), merged with the record's 25 m boundary points and carrying the terrain model's heights, with any run the model does not cover rebased onto its datum (`terrain_points`, see `docs/decisions/route-heights-come-from-the-terrain-model.md`). The boundary points lie on the stored line, so the drawn line is unchanged; the legs' `point_from`/`point_to` index this served list. `ele` is metres, or `null` for a point with no height. `properties` carries `uuid`, `name`, `distance_m`, `ascent_m` and `bounds`. **`ascent_m` is served as stored, `null` included** — null means "the GPX carried no elevation data", NOT "flat", and the client omits the ascent line entirely rather than rendering a zero for an unknown (`Route`'s docstring is explicit that the substitution would be a safety-relevant lie). `bounds` is the flat `[min_lon, min_lat, max_lon, max_lat]` bbox, on the feature so a tap can fit the viewport from the payload the map already holds, offline included. **403** for anonymous callers; owner-scoped via `Route.objects.for_user()` in **one** query however many routes the user has. Not `@require_htmx` — a JS `fetch()` consumes it, not an HTMX swap. `Cache-Control: private, no-store`. Freshness headers follow `community-reports.geojson` rather than `favourites.geojson` (which carries none): `generated_at` is the newest route's `updated_at`, and **`unsafe_after` is omitted** — a user's own uploaded track is not safety-critical data, so the client's freshness state saturates at "stale" and never escalates to "unsafe". Note the path: mounted under `/routes/`, not `/api/`, alongside the panel's HTMX endpoints. **SNOW-764 widens it**: a request whose session holds a followed-but-unclaimed `RouteShare` token gets that share's route too, signed in or not, so the `/map/?route_share=<token>` deep link lands on a map that can draw what the link was for. A pending feature carries `token` and `pending: true` and **no `uuid`** — the rename and delete endpoints are addressed by uuid and owner-scoped, so a non-owner is never handed one — and `static/js/map.js` draws it through its own dashed `routes-line-pending` layer. The anonymous branch still 403s for a session with nothing pending, and both branches short-circuit on an empty session list before any query ([why](decisions/route-share-pending-claim-in-session.md)). **SNOW-910 adds `slope`** to a route that has been sampled: `{"points": [[lon, lat], …], "angles": [34.2, null, …]}` — N + 1 shared boundary coordinates bounding N segments of the 25 m stride walk, with a **null angle for a segment the terrain had no answer for**. The key is **omitted entirely** for a route nothing has sampled yet, which is a different fact and must render differently; until SNOW-1017 `static/js/map.js` filtered `routes-line` on the key's presence, when a sampled route was painted in slope classes. The trip page still does. This is a COMPACT form of `Route.slope_samples` — the aspect in degrees and the named `TerrainUnknown` reason stay server-side for SNOW-911 and SNOW-839, because sending the full record would roughly double a payload the offline cache holds ([why](decisions/a-slope-segment-is-the-shared-record.md)). **SNOW-976 adds `slope.aspects`**: one compass sector per segment, aligned with `angles` — `0` (N) to `7` (NW), each spanning 45° — and `null` where the angle is unknown or below 5° (`ASPECT_FLAT_DEG`), where an aspect is DEM noise. It feeds the aspect wheel (SNOW-1063) and costs about 1.3 kB on a 640-segment tour. **SNOW-1018 adds `legs`** beside `slope`: `[{"i": 1, "from": 0, "to": 41, "climbing": true}, …]` — the route cut at its transitions (`detect_legs`), for the route rail (`templates/includes/_route_rail.html`, `static/js/route_rail.js`). `from` and `to` are **segment indices — the index space of `slope.angles` — both inclusive**, never indices into `coordinates`: the slope record is walked on its own 25 m stride, so `apps/routes/services/leg_wire.py` maps each transition point onto the nearest segment boundary by along-track distance, using the sampler's own `cumulative_distances` / `stride_distances`. The legs tile the samples exactly — the first `from` is 0, the last `to` is N − 1, each `from` is the previous `to` + 1 — and a leg too short to hold one segment is folded into its neighbours. The key is **sent for an unsampled route too**: legs and the stride walk are both functions of `coordinates` alone, so an unsampled route's legs index the segments its record will have, and the client sizes its cursor from the last `to` + 1 when there is no `angles` array. A record `compact_slope` refuses is treated the same way. The key is omitted only for a track `detect_legs` finds no leg in (no elevation, or too short). **SNOW-1017 adds `point_from` / `point_to`** to each leg: the same leg in indices into `coordinates`, both inclusive, which `static/js/route_legs_core.js` slices the map's leg lines from. Unlike `from` / `to`, adjacent legs SHARE a point — each `point_to` is the next `point_from`, the first `point_from` is 0 and the last `point_to` is the last coordinate — so the lines meet with no gap. `static/js/map.js` filters `routes-line` and `routes-line-casing` on the presence of `legs`, so a legged route is not painted flat under its own legs ([why](decisions/legs-not-slope-classes-on-the-map.md)). From z14 the leg lines stop and `routes-slope-line` paints the route's `slope` segments in the six classes, each tagged with its leg by `slopeSegmentCollection` in `static/js/route_legs_core.js`. **SNOW-1053 adds `slope.seams`**: N + 1 indices into this feature's `coordinates`, one per boundary — the last coordinate at or before it — non-decreasing, the first 0 and the last the final coordinate. `segmentPaths` in `static/js/route_slope_core.js` draws segment i as `points[i]`, the coordinates after `seams[i]` up to `seams[i + 1]`, then `points[i + 1]`, so the classes lie on the leg casing instead of chording across a bend, and the cursor's dot sits half way along that path. The key is **omitted** when `compact_slope` cannot repeat the stride walk over the coordinates (no usable `stride_m`, or a different boundary count), and the client then draws each segment as its chord, as it does for a payload cached before the key. The trip page's inline payload carries the same key over its own geometry. |
 
 **The rest of `/api/`** is not the map's and is documented elsewhere:
 `api:version` and `api:sw_config` (the PWA shell contract,

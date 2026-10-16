@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Snowdesk site structure
@@ -95,7 +95,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 | `/_sw-version/` | Deployed `CACHE_VERSION` / `APP_VERSION` vs the live service-worker version ([`docs/offline-map.md`](offline-map.md)). |
 | `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
 | `/_icon-sets/` | The candidate weather icon sets side by side, kept for comparison ([`docs/weather-surfaces.md`](weather-surfaces.md)). |
-| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, read by the map's staff debug rail under rail two). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
+| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, formerly read by the map's staff debug rail, retired by SNOW-1065; the endpoint is kept). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
 
 ## HTMX partial routes
 
@@ -104,6 +104,7 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 [`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
+- `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/public/region_sheet.py`)
 - `/partials/report/`, `/partials/report/form/`, `/partials/report/list/`,
   `/partials/report/<uuid>/delete/` — field-report submission, the
   reporter's own list, and delete
@@ -143,7 +144,7 @@ map's; `/api/version` and `/api/sw-config` in [`docs/offline-map.md`](offline-ma
 `/oauth/authorize/`, `token/`, `register/`, `revoke/` ([`docs/oauth.md`](oauth.md)),
 `/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
 `/favourites/favourites.geojson`, `/routes/routes.geojson`,
-`/routes/<uuid>/bulletin/` and `/routes/<uuid>/share/`,
+`/routes/<uuid>/share/`,
 `/trips/<uuid>/route.geojson` and `/trips/s/<token>/route.geojson`,
 `/downloads/areas.json`, `/<country>/feed.rss` (per-country RSS, SNOW-396),
 `/messages/` (the site-banner dismissal endpoint, [`docs/site-banners.md`](site-banners.md)),

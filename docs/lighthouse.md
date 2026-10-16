@@ -87,15 +87,16 @@ The fix is always an entry in `package.json`'s `overrides` block, with its
 reason and its removal condition in the sibling `comments` object. Never
 `npm audit fix --force`: it only offers a breaking downgrade to
 `@lhci/cli@0.12.0`. Current entries: `tmp`, `uuid`, `cookie` (SNOW-440),
-`@puppeteer/browsers` (SNOW-688) and `qs` (SNOW-809).
+`@puppeteer/browsers` (SNOW-688), `qs` (SNOW-809) and `basic-ftp`
+(SNOW-1057).
 
 `@puppeteer/browsers` is the one worth understanding, because it breaks the
 usual shape twice. It does not pin a patched version of the vulnerable
 package — `extract-zip` (GHSA-jmr9-qjv8-65gv) has no patched release, every
 version is affected — so instead it moves `@puppeteer/browsers` onto its
-3.x line, which dropped the dependency altogether in 3.0.2. And it is the
-only override crossing a major version, because upstream has not propagated
-the fix: the latest `@lhci/cli` still pins a Lighthouse the advisory covers.
+3.x line, which dropped the dependency altogether in 3.0.2. And it crosses
+a major version, because upstream has not propagated the fix: the latest
+`@lhci/cli` still pins a Lighthouse the advisory covers.
 
 That major bump sits under `puppeteer-core@22`, so it was verified rather
 than assumed: all five symbols `puppeteer-core` imports from the package
@@ -106,6 +107,20 @@ already depends on `@puppeteer/browsers@3.x`:
 
 ```bash
 npm view @lhci/cli dependencies.lighthouse
+```
+
+`basic-ftp` is the other major-version crossing. GHSA-c475-qrg2-pj4r
+(quadratic-time CPU use in `Client.list()`) is patched only in 6.2.1, and
+both `get-uri` lines in the tree (6.x under `proxy-agent@6`, 8.x under
+`@puppeteer/browsers` → `proxy-agent@8`) declare `basic-ftp ^5.x`.
+`get-uri` constructs `Client()` with no options and calls `access`,
+`lastMod`, `list`, `downloadTo` and `close`, whose declarations are
+identical in 5.3.1 and 6.2.1; the one 6.0.0 breaking change refuses a
+separate FTP transfer host by default, which `get-uri` does not use.
+**Remove the override** once `get-uri` depends on `basic-ftp >= 6.2.1`:
+
+```bash
+npm view get-uri dependencies.basic-ftp
 ```
 
 An advisory with no resolvable override is a judgement call, not an

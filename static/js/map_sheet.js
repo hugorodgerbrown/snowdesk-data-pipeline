@@ -44,6 +44,44 @@
  * that event and finishes the job. Hiding is deliberately not repeated
  * there — the element is already hidden by the time the event fires.
  *
+ * Detents (SNOW-1097)
+ * --------------------
+ * Below the ``sm`` breakpoint a sheet whose partial declares ``detents``
+ * (includes/_overlay_sheet.html) rests at peek, half or full rather than
+ * growing with its content. ``bindDetents`` is that behaviour, and
+ * ``attach`` calls it for every sheet that declares detents, so a sheet
+ * driven by ``attach`` needs nothing more than the template parameter. A
+ * sheet with its own open/close (the weather and route sheets) calls
+ * ``window.MapSheet.bindDetents`` itself and drives the returned
+ * controller from its own open and close.
+ *
+ * What the binding does, and only on a phone:
+ *
+ *   - opens the sheet at its ``initial`` detent and measures PEEK from the
+ *     element the content marks ``data-sheet-peek``;
+ *   - lets the handle and any ``data-sheet-drag`` header drag it, and on
+ *     release settles at the detent ``pwaSheetDetentsCore.settle`` picks
+ *     from the release height and velocity — or closes it, for a drag below
+ *     the lowest detent;
+ *   - turns a press on the handle (a click, Enter or Space) into a step up
+ *     to the next detent, so the three states are reachable without a drag;
+ *   - after every settle, pads the map camera's bottom edge by the sheet's
+ *     height, so a fly-to lands above the sheet rather than behind it. The
+ *     map's furniture does not move or fold: the sheet slides up over it.
+ *     The padding is
+ *     applied with the map's view held still (the centre is moved to the
+ *     point already under the new padded centre), so a settle never jolts
+ *     the ground the reader is looking at;
+ *   - puts the handle back as the first child whenever a content swap
+ *     removed it, and re-measures PEEK after one.
+ *
+ * At ``sm`` and up the binding does nothing visible: every height rule is
+ * inside a phone media query in static/css/map.css, and the padding and the
+ * root mark are reset to nothing. The rules themselves are pure and live in
+ * static/js/sheet_detents_core.js. If that module is not on the page (most
+ * Vitest suites import this file alone) ``bindDetents`` returns null and the
+ * sheet behaves exactly as it did before detents existed.
+ *
  * Toast
  * -----
  * One server-rendered ``includes/_toast.html`` instance
@@ -132,6 +170,376 @@
     return true;
   }
 
+  // Tailwind's `sm` breakpoint — the width at which a sheet stops being a
+  // bottom dock and becomes the inset desktop panel. Detents exist only
+  // below it; static/css/map.css's phone query is the same line.
+  var DESKTOP_QUERY = '(min-width: 640px)';
+
+  // PEEK for content that marks no `data-sheet-peek` element: enough for a
+  // title and one line under the handle. The CSS carries the same fallback.
+  var PEEK_FALLBACK_PX = 160;
+
+  // Space kept below the peek element's bottom edge, matching the sheet's
+  // own top padding so the summary sits centred in what shows. The sheet's
+  // computed bottom padding wins when larger: on a phone with a home
+  // indicator it carries the safe-area inset, and a peek that ignored it
+  // would put its one row under the indicator.
+  var PEEK_BOTTOM_GAP_PX = 16;
+
+  // A pointer that travels less than this is a press, not a drag — the
+  // handle's click then steps to the next detent instead.
+  var DRAG_SLOP_PX = 4;
+
+  // Only the last stretch of a drag says how fast it was released.
+  var VELOCITY_WINDOW_MS = 100;
+
+  /** @returns {boolean} */
+  function isPhone() {
+    if (typeof window.matchMedia !== 'function') return true;
+    return !window.matchMedia(DESKTOP_QUERY).matches;
+  }
+
+  /** @returns {any} The MapLibre map, when the map bundle has made one. */
+  function getMap() {
+    return typeof MAP !== 'undefined' ? MAP : null;
+  }
+
+  /**
+   * Pad the map camera's bottom edge by `bottom` px without moving what the
+   * reader sees: the centre moves to the point already under the new padded
+   * centre, so only the camera's notion of "the middle" changes.
+   *
+   * @param {number} bottom
+   */
+  function padMapBottom(bottom) {
+    var map = getMap();
+    if (!map || typeof map.getPadding !== 'function') return;
+    var padding = map.getPadding() || {};
+    if ((padding.bottom || 0) === bottom) return;
+    // A jumpTo now would cancel a flight in progress — a search pick frames
+    // its region just as the sheet's content lands and re-fits PEEK. The
+    // sheet's moveend watcher puts the padding on once the camera rests.
+    if (typeof map.isMoving === 'function' && map.isMoving()) return;
+    var next = {
+      top: padding.top || 0,
+      left: padding.left || 0,
+      right: padding.right || 0,
+      bottom: bottom,
+    };
+    var canvas = typeof map.getContainer === 'function' ? map.getContainer() : null;
+    if (!canvas || typeof map.unproject !== 'function') {
+      map.setPadding(next);
+      return;
+    }
+    var width = canvas.clientWidth;
+    var height = canvas.clientHeight;
+    var centre = map.unproject([
+      next.left + (width - next.left - next.right) / 2,
+      next.top + (height - next.top - next.bottom) / 2,
+    ]);
+    map.jumpTo({ center: centre, padding: next });
+  }
+
+  /**
+   * Mark the root with the detent while a detent sheet is open on a phone,
+   * for any rule that needs to know the sheet is up. Nothing on the map
+   * moves for it — the sheet slides up over the furniture (Hugo, 16 Oct).
+   *
+   * @param {string|null} detent
+   */
+  function markSheet(detent) {
+    if (detent) document.documentElement.setAttribute('data-map-sheet', detent);
+    else document.documentElement.removeAttribute('data-map-sheet');
+  }
+
+  /**
+   * Give one sheet the phone detents its partial declares.
+   *
+   * @param {HTMLElement} el - The sheet container, carrying `data-detents`.
+   * @param {{ onClose?: function(): void }} [options]
+   *   ``onClose`` — how the sheet closes when a drag pulls it below its
+   *   lowest detent. The owner's own close, so its teardown runs as usual.
+   * @returns {{ open: function(): void, reset: function(): void, set: function(string): void, current: function(): (string|null) }|null}
+   *   Null when the sheet declares no detents or the core is absent.
+   */
+  function bindDetents(el, options) {
+    var core = window.pwaSheetDetentsCore;
+    if (!core || !el) return null;
+    var declared = core.parseDetents(el.getAttribute('data-detents'));
+    if (!declared.length) return null;
+    // The detents in force: the declared ones, narrowed by the content when
+    // it marks an element `data-sheet-detents` (the region sheet drops FULL
+    // for a day with no bulletin — there is nothing to reveal; Hugo, 16 Oct).
+    var detents = declared;
+    var opts = options || {};
+    var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));
+    var initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
+
+    /** @type {string|null} */
+    var current = null;
+    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, fromHandle: boolean, samples: Array<{t: number, h: number}> }|null} */
+    var drag = null;
+    var suppressClick = false;
+    // The bottom padding this sheet last gave the camera, or 0. A fit that
+    // passes its own padding (fitBounds) replaces it, so it is put back
+    // when the camera comes to rest.
+    var padded = 0;
+    var watchingCamera = false;
+
+    function isOpen() {
+      return !el.hasAttribute('hidden');
+    }
+
+    /** The bottom of the sheet's own box, from the viewport's bottom. */
+    function bottomOffset() {
+      return Math.max(0, window.innerHeight - el.getBoundingClientRect().bottom);
+    }
+
+    function fullHeight() {
+      var max = parseFloat(window.getComputedStyle(el).maxHeight);
+      return Number.isFinite(max) && max > 0 ? max : window.innerHeight;
+    }
+
+    function peekHeight() {
+      var marker = el.querySelector('[data-sheet-peek]');
+      if (!marker) return PEEK_FALLBACK_PX;
+      var top = el.getBoundingClientRect().top;
+      var bottom = marker.getBoundingClientRect().bottom;
+      var padding = parseFloat(window.getComputedStyle(el).paddingBottom);
+      var gap = Number.isFinite(padding) ? Math.max(PEEK_BOTTOM_GAP_PX, padding) : PEEK_BOTTOM_GAP_PX;
+      var measured = Math.round(bottom - top + el.scrollTop + gap);
+      return measured > 0 ? Math.min(measured, fullHeight()) : PEEK_FALLBACK_PX;
+    }
+
+    /** @returns {Record<string, number>} */
+    function heights() {
+      return {
+        peek: peekHeight(),
+        half: Math.round(window.innerHeight * 0.5),
+        full: fullHeight(),
+      };
+    }
+
+    /**
+     * The root mark and the camera padding for the detent the sheet now
+     * rests at. The map's furniture does not move: the sheet covers it. At
+     * full the map is covered too, so the padding is left at the previous
+     * detent's, which means a drag back down does not move the camera twice.
+     */
+    function applySurroundings() {
+      if (!isOpen() || !current || !isPhone()) {
+        markSheet(null);
+        padded = 0;
+        padMapBottom(0);
+        return;
+      }
+      markSheet(current);
+      if (current === 'full') return;
+      var lift = Math.round(heights()[current] + bottomOffset());
+      padded = lift;
+      watchCamera();
+      padMapBottom(lift);
+    }
+
+    /**
+     * Put the sheet's padding back after a camera move that replaced it.
+     * fitBounds and friends take a padding of their own and leave it on the
+     * map, which would let every later centring land under the sheet.
+     * padMapBottom is a no-op when the padding already matches, so its own
+     * jumpTo ends here once and stops.
+     */
+    function watchCamera() {
+      var map = getMap();
+      if (watchingCamera || !map || typeof map.on !== 'function') return;
+      watchingCamera = true;
+      map.on('moveend', function () {
+        if (!isPhone()) return;
+        // Open: put back the sheet's padding (a fit replaced it, or it was
+        // deferred mid-flight). Closed: clear what a deferred close left.
+        padMapBottom(isOpen() ? padded : 0);
+      });
+    }
+
+    /** @param {string} name */
+    function set(name) {
+      if (detents.indexOf(name) === -1) return;
+      current = name;
+      if (name === 'peek') {
+        el.style.setProperty('--sheet-peek-height', peekHeight() + 'px');
+      }
+      el.setAttribute('data-detent', name);
+      applySurroundings();
+    }
+
+    function open() {
+      restoreHandle();
+      syncAllowed();
+      set(/** @type {string} */ (initial));
+    }
+
+    function reset() {
+      current = null;
+      drag = null;
+      padded = 0;
+      suppressClick = false;
+      el.removeAttribute('data-detent');
+      el.removeAttribute('data-sheet-dragging');
+      el.style.removeProperty('--sheet-drag-height');
+      markSheet(null);
+      padMapBottom(0);
+    }
+
+    /** Re-read the content's `data-sheet-detents`, if it marks one. */
+    function syncAllowed() {
+      var marker = el.querySelector('[data-sheet-detents]');
+      if (!marker) {
+        detents = declared;
+        return;
+      }
+      var allowed = core.parseDetents(marker.getAttribute('data-sheet-detents'));
+      var narrowed = declared.filter(function (name) {
+        return allowed.indexOf(name) !== -1;
+      });
+      detents = narrowed.length ? narrowed : declared;
+    }
+
+    function restoreHandle() {
+      if (handle && !el.contains(handle)) el.insertBefore(handle, el.firstChild);
+    }
+
+    // Every caller fills the sheet by replacing its children (innerHTML, an
+    // HTMX swap), which takes the handle with them. Put it back, and re-fit
+    // PEEK to the new content.
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(function () {
+        restoreHandle();
+        syncAllowed();
+        if (!current || !isOpen()) return;
+        // New content that no longer allows the detent the sheet rests at
+        // (FULL, for a day with no bulletin) brings it down to the highest
+        // it does allow.
+        if (detents.indexOf(current) === -1) set(detents[detents.length - 1]);
+        else if (current === 'peek') set('peek');
+      }).observe(el, { childList: true });
+    }
+
+    /** @param {EventTarget|null} target */
+    function isDragSurface(target) {
+      var node = /** @type {HTMLElement|null} */ (target);
+      if (!node || !node.closest) return false;
+      if (handle && handle.contains(node)) return true;
+      var header = node.closest('[data-sheet-drag]');
+      if (!header || !el.contains(header)) return false;
+      // A control inside a draggable header keeps its own press.
+      return !node.closest('button, a, input, select, textarea, [role="menu"]');
+    }
+
+    el.addEventListener('pointerdown', function (event) {
+      // A new press starts a new gesture: a suppression left by a drag
+      // whose finger lifted off the handle (no click followed) ends here.
+      suppressClick = false;
+      if (!current || !isPhone() || drag) return;
+      if (!isDragSurface(event.target)) return;
+      var now = event.timeStamp || Date.now();
+      var startHeight = el.getBoundingClientRect().height;
+      drag = {
+        id: event.pointerId,
+        startY: event.clientY,
+        startHeight: startHeight,
+        moved: false,
+        fromHandle: !!(handle && handle.contains(/** @type {Node} */ (event.target))),
+        samples: [{ t: now, h: startHeight }],
+      };
+    });
+
+    el.addEventListener('pointermove', function (event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      var dy = drag.startY - event.clientY;
+      if (!drag.moved) {
+        if (Math.abs(dy) < DRAG_SLOP_PX) return;
+        drag.moved = true;
+        var target = /** @type {HTMLElement} */ (event.target);
+        if (target && target.setPointerCapture) {
+          try {
+            target.setPointerCapture(event.pointerId);
+          } catch (_error) {
+            // A synthetic or already-released pointer cannot be captured;
+            // the drag still works while the finger stays on the sheet.
+          }
+        }
+        el.setAttribute('data-sheet-dragging', '');
+      }
+      var height = core.clampHeight(drag.startHeight + dy, fullHeight());
+      el.style.setProperty('--sheet-drag-height', height + 'px');
+      var now = event.timeStamp || Date.now();
+      drag.samples.push({ t: now, h: height });
+      while (drag.samples.length > 2 && now - drag.samples[0].t > VELOCITY_WINDOW_MS) {
+        drag.samples.shift();
+      }
+      event.preventDefault();
+    });
+
+    /** @param {PointerEvent} event */
+    function endDrag(event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      var finished = drag;
+      drag = null;
+      if (!finished.moved) return;
+      // Only the handle reads clicks, so only a drag that began on it can
+      // leave one to swallow; a header drag setting this would eat the
+      // reader's next real press of the handle instead.
+      suppressClick = finished.fromHandle;
+      var first = finished.samples[0];
+      var last = finished.samples[finished.samples.length - 1];
+      var elapsed = last.t - first.t;
+      var velocity = elapsed > 0 ? (last.h - first.h) / elapsed : 0;
+      el.removeAttribute('data-sheet-dragging');
+      el.style.removeProperty('--sheet-drag-height');
+      var next = core.settle({
+        detents: detents,
+        heights: heights(),
+        height: last.h,
+        velocity: event.type === 'pointercancel' ? 0 : velocity,
+      });
+      if (next === 'close') {
+        if (opts.onClose) opts.onClose();
+        return;
+      }
+      if (next) set(next);
+    }
+
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+
+    if (handle) {
+      handle.addEventListener('click', function () {
+        if (suppressClick) {
+          suppressClick = false;
+          return;
+        }
+        var next = core.nextDetent(detents, current);
+        if (next) set(next);
+      });
+    }
+
+    window.addEventListener('resize', function () {
+      if (!current) return;
+      if (current === 'peek') {
+        el.style.setProperty('--sheet-peek-height', peekHeight() + 'px');
+      }
+      applySurroundings();
+    });
+
+    return {
+      open: open,
+      reset: reset,
+      set: set,
+      current: function () {
+        return current;
+      },
+    };
+  }
+
   /**
    * Wire one sheet element and return its controller.
    *
@@ -150,6 +558,9 @@
       return !el.hasAttribute('hidden');
     }
 
+    // SNOW-1097: null unless the partial declared detents.
+    var detents = bindDetents(el, { onClose: close });
+
     /**
      * Everything a close does beyond hiding. Split out because a dismissal
      * routed through overlays.js has already hidden the element.
@@ -157,6 +568,7 @@
     function teardown() {
       window.PlacePicker?.deactivate();
       el.innerHTML = '';
+      if (detents) detents.reset();
     }
 
     function open() {
@@ -176,6 +588,7 @@
       // library. A no-op below the `sm` breakpoint, where the bottom dock is
       // the right shape.
       window.pwaOverlayBounds?.positionSheet(el);
+      if (detents) detents.open();
       el.focus();
     }
 
@@ -221,6 +634,7 @@
 
   window.MapSheet = {
     attach: attach,
+    bindDetents: bindDetents,
     toast: toast,
     canQueueMutations: canQueueMutations,
   };

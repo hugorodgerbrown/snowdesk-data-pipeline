@@ -17,6 +17,14 @@ track's real coordinates instead of a straight chord between boundaries.
   - the Hidden Valley canonical track, merged and unmerged: the seams are
     a partition of its coordinates into segments.
 
+It also covers ``aspects`` (SNOW-976): one sector per segment, aligned
+with ``angles`` on a canonical track, present whenever the record can be
+read.
+
+And that ``cruxes`` is never sent (SNOW-1066): not for a new record, and
+not for a stored one that still carries the key and per-segment ``crux``
+flags from before cruxes were removed.
+
 The remaining keys ``compact_slope`` sends are covered by the view tests
 and by the modules that derive them.
 """
@@ -233,3 +241,74 @@ class TestHiddenValley:
         for boundary, seam in zip(record["points"], seams, strict=True):
             if tuple(boundary) in kept:
                 assert merged[seam][:2] == boundary
+
+
+class TestAspects:
+    """The per-segment aspect sector on the wire (SNOW-976)."""
+
+    def test_aligns_with_the_angles_on_a_canonical_track(self) -> None:
+        """One sector or null per segment, Hidden Valley's 276 of them."""
+        record = json.loads((_RECORDS / "hidden-valley.json").read_text())
+        slope = compact_slope(record)
+        assert slope is not None
+        assert len(slope["aspects"]) == len(slope["angles"])
+        assert all(
+            sector is None or (isinstance(sector, int) and 0 <= sector <= 7)
+            for sector in slope["aspects"]
+        )
+        # Null exactly where the angle is unknown or flat, or there is
+        # no aspect to bin.
+        for angle, segment, sector in zip(
+            slope["angles"], record["segments"], slope["aspects"], strict=True
+        ):
+            readable = angle is not None and angle >= 5.0
+            assert (sector is not None) == (
+                readable and segment.get("aspect_deg") is not None
+            )
+
+    def test_is_present_on_any_readable_record(self) -> None:
+        """A record with no aspect at all still sends the key, all null."""
+        slope = compact_slope(_record(_TRACK, heights=False))
+        assert slope is not None
+        assert slope["aspects"] == [None] * len(slope["angles"])
+
+    def test_is_absent_when_there_is_nothing_to_draw(self) -> None:
+        """No slope payload, no aspects: the whole value is None."""
+        record = _record(_TRACK, heights=False)
+        record["points"] = record["points"][:-1]
+        assert compact_slope(record) is None
+        assert compact_slope(None) is None
+
+
+class TestCruxesAreNotSent:
+    """Route-level cruxes were removed (SNOW-1066); none reach the wire."""
+
+    def test_a_current_record_sends_no_cruxes(self) -> None:
+        """A record written since SNOW-1066 has no key to send."""
+        slope = compact_slope(_record(_TRACK))
+        assert slope is not None
+        assert "cruxes" not in slope
+
+    def test_a_stored_record_with_cruxes_is_served_without_them(self) -> None:
+        """Old rows keep their ``cruxes`` key; it is simply not read."""
+        record = _record(_TRACK)
+        record["cruxes"] = [record["points"][1]]
+        record["segments"][0]["crux"] = True
+
+        slope = compact_slope(record)
+
+        assert slope is not None
+        assert "cruxes" not in slope
+        assert "crux" not in json.dumps(slope)
+        # Everything else is still served from the same record.
+        assert slope["angles"] == [20.0] * len(record["segments"])
+
+    def test_a_canonical_record_sampled_with_cruxes_sends_none(self) -> None:
+        """The committed Hidden Valley record predates SNOW-1066."""
+        record = json.loads((_RECORDS / "hidden-valley.json").read_text())
+        assert "cruxes" in record
+
+        slope = compact_slope(record)
+
+        assert slope is not None
+        assert "cruxes" not in slope

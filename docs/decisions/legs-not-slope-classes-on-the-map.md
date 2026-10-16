@@ -2,7 +2,7 @@
 name: legs-not-slope-classes-on-the-map
 description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -26,13 +26,22 @@ teal dashed line, with no legs and no markers. The trip page
 the map now, and off the trip map too, with their legend rows. The crux
 marks are deferred to a later ticket; the server's crux probe
 (`apps/routes/services/cruxes.py`) and the `cruxes` key on the slope
-record are unchanged. The bank ribbon on rail two replaced the arrows.
-The no-fall passages remain the one terrain mark on the line.
+record are unchanged. The bank ribbon on rail two replaced the arrows
+(rail two was retired by SNOW-1065). The no-fall passages remain the one terrain mark on the line.
+
+**2026-10-02 (SNOW-1066).** The deferred crux is not coming back.
+Snowdesk keeps no route-level crux: `apps/routes/services/cruxes.py` is
+deleted, sampling no longer writes `cruxes` or a per-segment `crux` flag,
+the slope wire no longer sends `cruxes`, and the detail sheet's
+key-passage count is gone. Where the dangerous ground is will be the
+daily avalanche terrain layer's job (SNOW-979). Old records keep their
+keys, unread.
 
 **2026-09-24, later (SNOW-1019).** The passage split line is off both
 maps too, with its legend row. The line on the map is now its legs, the
 numbered transitions and the start and end markers, and nothing else.
-The passages are shown on rail two only, as bars under the bank ribbon;
+The passages were shown on rail two only, as bars under the bank ribbon
+(retired by SNOW-1065, so no surface draws them now);
 `passages` still travels on the slope record and the detail sheet still
 names them.
 
@@ -53,8 +62,8 @@ it meets the rules above that they failed. It is one statement per
 stretch, not per 25 m segment. It is drawn on steep ground only, so a
 route with none carries no extra line. And it says where the exposure is
 and which way it drops, which nothing else on the map does at the zoom a
-route is framed at: the legs say up or down, the rail's bank ribbon says
-which way the ground tilts only once a reader opens it.
+route is framed at: the legs say up or down, the rail's bank ribbon (retired
+by SNOW-1065) said which way the ground tilts only once a reader opened it.
 
 **2026-09-30.** The steep-ground shadow is off the map, with its
 source, layer and `steepRuns` / `steepShadowCollection`. At the zooms a
@@ -69,7 +78,8 @@ In their place the slope classes return to the line itself, from z14
 above. From z14 the leg lines stop and `routes-slope-line` /
 `routes-slope-unknown` (source `routes-slopes`, built by
 `slopeSegmentCollection` in `route_legs_core.js`) paint the route's core
-per 25 m segment in the six classes, in the slope raster's palette,
+per 25 m segment in the six classes, in the slope layer's palette
+(`slope_classes_core.js`, SNOW-1073),
 with an unknown segment in grey. The leg casing and the numbered
 transitions stay at every zoom, so the legs remain countable; each
 segment carries its leg's `i`, so opening a leg on the rail dims the
@@ -93,6 +103,20 @@ where the question is which part is the climb. z14 is past that: the
 reader has zoomed in on a stretch, and the question there is how steep
 it is. The legs answer the first zoom, the classes the second.
 
+**2026-10-02 (SNOW-1065).** Rail two is deleted and there is one rail.
+Pressing a leg dims the others on the map and profile; the cursor holds a
+leg or a point, never both, and a tap on the open route's line only places
+a point (it no longer opens the leg there). The map's slope classes from
+z14 are now the only place a class is drawn along the route.
+
+**2026-10-02, later the same day: no leg selection.** Hugo removed it to
+simplify the route panel: nothing selects a leg, so nothing on the map is
+ever dimmed, and `dimOpacity` is gone from `route_legs_core.js`. The legs
+stay as the drawing this decision chose, on the map and in the profile's
+fills; a tap on the line or the profile places a point, and the point is
+the one thing the cursor holds. The "selection dims the others" bullet
+below and the dimming consequence are historical.
+
 ## Why
 
 - **Density.** A track changes slope class every few segments, so a
@@ -106,12 +130,13 @@ it is. The legs answer the first zoom, the classes the second.
   The line follows the same rule: one statement per stretch.
 - **The classes move to the rail, not away.** The rail is where the
   steepness of one leg can be read against distance. SNOW-1019 put them
-  on rail two's band strip, closing the gap accepted on 2026-09-24 in
+  on rail two's band strip (retired by SNOW-1065), closing the gap accepted on 2026-09-24 in
   which neither the map nor the rail carried a slope class; since
   2026-09-30 the map carries them again from z14 (above). The passages,
   cruxes and arrows said where the steep ground was until SNOW-1019 took
-  them off the line.
-- **A selection dims the others instead of darkening the chosen leg.**
+  them off the line (and SNOW-1066 removed cruxes altogether).
+- **A selection dimmed the others instead of darkening the chosen leg**
+  (until leg selection was removed, 2026-10-02).
   The chosen leg keeps the colour and weight the rail uses for it, so the
   two surfaces still read as one drawing, and the rest of the route stays
   on screen as context rather than disappearing. A darker or thicker leg
@@ -139,7 +164,8 @@ it is. The legs answer the first zoom, the classes the second.
 - The legend's route key has the two leg rows. The steepness bands and
   "Not surveyed" rows are gone, and SNOW-1019 took out the passage,
   fall-line and crux rows with the marks.
-- The dimming follows `window.pwaRouteRail.cursor()`, through the one
-  subscription `bindRouteCursor` in `map.js` holds. The rail's
-  `close()` closes the open leg before it drops the cursor, which is how
-  the map hears the rail's ×, Escape and backdrop closes.
+- HISTORICAL: the dimming followed `window.pwaRouteRail.cursor()`,
+  through the one subscription `bindRouteCursor` in `map.js` holds. That
+  subscription now draws only the cursor's dot, and the rail's `close()`
+  clears the point before it drops the cursor, which is how the map
+  hears the rail's ×, Escape and backdrop closes.

@@ -90,9 +90,10 @@ is gone, and the sections named below are the ones the menu renders.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
         {% blocktrans trimmed %}
-            Two things are drawn on top of whichever one you chose, which is why they sit under this heading. "Display
-            slope angles" shades the ground by steepness &mdash; the one layer with real limits on what it can tell you,
-            so read "Slope angle" below before you rely on a shading.
+            Two things are drawn on top of whichever one you chose, which is why they sit under this heading. The slope
+            layer, which shades the ground by steepness, lives inside "Terrain filter&hellip;": choose &ldquo;Colour by
+            slope&rdquo; in its sheet. It is the layer with the most real limits on what it can tell you, so read "Slope
+            angle" below before you rely on a shading.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-downloads">
@@ -102,20 +103,28 @@ is gone, and the sections named below are the ones the menu renders.
             when the answer matters.
         {% endblocktrans %}
     </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-terrain-filter">
+        {% blocktrans trimmed %}
+            "Terrain filter&hellip;" opens a sheet where you choose aspects, a slope range and, if you like, a band of
+            elevation, and the map highlights the ground that matches. Read "Terrain filter" below for what it does not
+            tell you.
+        {% endblocktrans %}
+    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The dot on each row" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-sync-dots">
         {% blocktrans trimmed %}
             Most rows carry a small dot saying whether that layer is held on this device: green for available offline,
             grey for not stored yet, and a pulse while it is being fetched. Green means the data is on the device right
             now, checked rather than assumed, so you can see what will still work before you lose signal. Two rows have
-            no dot, because neither could answer honestly: slope angles come from someone else's map server, and your
-            downloaded areas are on this device by definition.
+            no dot, because neither could answer honestly: the terrain filter draws from tiles kept as you look at the
+            map, so what is held depends on where you have been, and your downloaded areas are on this device by
+            definition.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-disabled-rows">
         {% blocktrans trimmed %}
-            A row is sometimes switched off with a reason attached &mdash; the slope layer outside the area it covers,
-            or any layer that has never been loaded while you were online. The note on the row says which.
+            A row is sometimes switched off with a reason attached &mdash; a layer that has never been loaded while you
+            were online, for instance. The note on the row says why.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-sections">

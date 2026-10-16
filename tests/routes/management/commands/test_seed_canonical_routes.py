@@ -47,7 +47,6 @@ RECORD: dict[str, Any] = {
     "grid": "snowdesk-terrain-5m-3035",
     "points": [[7.4, 46.1], [7.41, 46.11]],
     "segments": [{"angle_deg": 34.2, "aspect_deg": 105.3}],
-    "cruxes": [],
 }
 
 

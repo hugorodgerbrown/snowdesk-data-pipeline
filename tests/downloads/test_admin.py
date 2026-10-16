@@ -38,5 +38,19 @@ class TestDownloadAreaAdminRegistration:
     def test_every_field_is_read_only(self) -> None:
         """An area is user-generated content; staff delete it, never edit it."""
         registered = admin.site._registry[DownloadArea]
-        for field in ("user", "area_id", "kind", "region_id", "bbox", "name"):
+        for field in (
+            "user",
+            "area_id",
+            "kind",
+            "region_id",
+            "bbox",
+            "name",
+            "terrain",
+        ):
             assert field in registered.readonly_fields
+
+    def test_terrain_is_listed_and_filterable(self) -> None:
+        """SNOW-1072: the terrain opt-in is a column and a filter."""
+        registered = admin.site._registry[DownloadArea]
+        assert "terrain" in registered.list_display
+        assert "terrain" in registered.list_filter
