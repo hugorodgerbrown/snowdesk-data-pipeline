@@ -67,6 +67,7 @@
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-zoom': 'z%(zoom)s',
     'gate-terrain_filter': 'Terrain filter',
+    'gate-slope_classes': 'Slope classes',
     'gate-route_slopes': 'Route slope colours',
     camera: 'Camera zoom %(zoom)s',
   });

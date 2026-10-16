@@ -19,6 +19,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 let core;
 
 beforeAll(async () => {
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   core = self.pwaTerrainFilterCore;
 });
@@ -241,8 +242,9 @@ describe('availability', () => {
 });
 
 describe('filter state', () => {
-  it('defaults to every aspect, 30° and up, no elevation band', () => {
+  it('defaults to the match mode, every aspect, 30° and up, no elevation band', () => {
     expect(core.normaliseFilter(undefined)).toEqual({
+      mode: 'match',
       aspects: [0, 1, 2, 3, 4, 5, 6, 7],
       minSlope: 30,
       maxSlope: null,
@@ -274,13 +276,27 @@ describe('filter state', () => {
   it('round-trips through storage and dedupes aspects', () => {
     const f = { aspects: [7, 0, 0, 1], minSlope: 35, maxSlope: 45, minElevation: 2400, maxElevation: null };
     expect(core.parseFilter(core.serialiseFilter(f))).toEqual({
-      aspects: [0, 1, 7], minSlope: 35, maxSlope: 45, minElevation: 2400, maxElevation: null,
+      mode: 'match', aspects: [0, 1, 7], minSlope: 35, maxSlope: 45, minElevation: 2400, maxElevation: null,
     });
   });
 
   it('gives two different filters two different hashes', () => {
     expect(core.filterHash({})).toBe('ff-30---');
     expect(core.filterHash({ aspects: [0] })).not.toBe(core.filterHash({ aspects: [1] }));
+  });
+
+  it('keeps the match hash and gives the slope mode its own', () => {
+    // The match mode's hash is what it was before the mode existed, so a
+    // stored filter repaints to the same URL; switching mode must repaint.
+    expect(core.filterHash({ mode: 'match' })).toBe('ff-30---');
+    expect(core.filterHash({ mode: 'slope' })).toBe('ff-30----s');
+  });
+
+  it('reads an absent or unknown mode as the match mode', () => {
+    expect(core.parseFilter('{"aspects":[0]}').mode).toBe('match');
+    expect(core.parseFilter('{"mode":"shade"}').mode).toBe('match');
+    expect(core.normaliseFilter({ mode: 3 }).mode).toBe('match');
+    expect(core.parseFilter(core.serialiseFilter({ mode: 'slope' })).mode).toBe('slope');
   });
 });
 
@@ -296,6 +312,7 @@ describe('summarise', () => {
     'elevation-below': 'below %(max)s m',
     'elevation-range': '%(min)s–%(max)s m',
     'compass-0': 'N', 'compass-1': 'NE', 'compass-7': 'NW',
+    'mode-slope': 'Slope classes',
   };
 
   it('names the aspects, slope and band for the map chip', () => {
@@ -311,6 +328,12 @@ describe('summarise', () => {
   it('reads a closed slope range and a closed band', () => {
     expect(core.summarise({ minSlope: 30, maxSlope: 40, minElevation: 2000, maxElevation: 3000 }, strings))
       .toBe('All aspects · 30–40° · 2,000–3,000 m');
+  });
+
+  it('leads with the mode in the slope mode, long and short', () => {
+    expect(core.summarise({ mode: 'slope' }, strings)).toBe('Slope classes · All aspects · 30°+');
+    expect(core.summarise({ mode: 'slope', aspects: [0, 1] }, strings, { short: true }))
+      .toBe('Slope classes · 2 aspects · 30°+');
   });
 });
 

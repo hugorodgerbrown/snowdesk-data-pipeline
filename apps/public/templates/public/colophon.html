@@ -245,24 +245,28 @@ Reviewing this page: the browser-facing third parties are enumerated by
                     <a class="underline" href="https://basemap.at/" target="_blank" rel="noopener">basemap.at</a>
                     {% trans "— vector tile style, covering Austria" %}
                 </li>
-                {# SNOW-691: the slope-angle overlay's source. Named          #}
-                {# separately from the two basemap styles above even though   #}
-                {# both are swisstopo: this is a different dataset under the  #}
-                {# same publisher, and their terms oblige us to indicate the  #}
-                {# source of the data we actually use, not merely the         #}
-                {# organisation. The in-map legend credits it too; this is    #}
-                {# the longer form the legend's "Map data" line defers to.    #}
+                {# SNOW-1073: the terrain data's source. Named separately    #}
+                {# from the basemap style above even though both are         #}
+                {# swisstopo: this is a different dataset under the same     #}
+                {# publisher, and their terms oblige us to indicate the      #}
+                {# source of the data we actually use, not merely the        #}
+                {# organisation. It replaced SNOW-691's credit for           #}
+                {# swisstopo's "Slope classes over 30°" raster, which the    #}
+                {# map no longer shows: the slope layer is computed by us    #}
+                {# from this model. The in-map legend credits it too; this   #}
+                {# is the longer form the legend's "Map data" line defers to. #}
                 <li>
                     <a
                         class="underline"
-                        href="https://www.geocat.ch/geonetwork/srv/eng/catalog.search#/metadata/77f0637f-8d52-45bc-b824-d6e5719de55b"
+                        href="https://www.swisstopo.admin.ch/en/height-model-swissalti3d"
                         target="_blank"
                         rel="noopener"
-                    >swisstopo — Slope classes over 30°</a>
+                    >swisstopo — swissALTI3D</a>
                     {% blocktrans trimmed %}
-                        — the map's slope-angle overlay, classified as the SLF recommends (30–35°, 35–40°,
-                        40–45°, 45–50°, over 50°) and derived from a combined 10 m elevation model: swissALTI3D,
-                        RGE ALTI, TINITALY/01, DGM10, DGM1 and EU-DEM
+                        — the elevation model behind the map's slope layer, terrain filter and route slope figures,
+                        covering Switzerland. Resampled by Snowdesk to a 5 m grid, from which the slope angle, aspect
+                        and height are derived; the slope layer is classified as the SLF recommends (30–35°,
+                        35–40°, 40–45°, 45–50°, over 50°)
                     {% endblocktrans %}
                 </li>
             </ul>

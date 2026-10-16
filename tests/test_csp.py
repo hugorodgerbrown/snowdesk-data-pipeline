@@ -226,56 +226,28 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
     )
 
 
-@pytest.mark.django_db
-def test_csp_allows_slope_tile_origin_in_connect_and_img_src() -> None:
-    """SNOW-691: the slope raster's origin reaches connect-src AND img-src.
+def test_csp_names_no_slope_raster_origin() -> None:
+    """SNOW-1073: swisstopo's slope raster, and its WMTS origin, are gone.
 
-    MapLibre fetches a raster tile with ``fetch()`` and then decodes it as
-    an image, so a policy naming the origin in only one of the two blocks
-    the overlay. ``img-src`` is otherwise ``'self' data:`` only, which makes
-    this the directive that would actually have bitten.
+    The map's slope layer is painted from the terrain-class tiles now, so
+    the policy has no reason to allow ``wmts.geo.admin.ch`` — and the
+    settings that derived it no longer exist to drift back in.
     """
-    origin = "https://wmts.example.test"
-    tile_origin = basemap_origin(settings.OPENFREEMAP_STYLE_URL)
-    with override_settings(
-        SLOPE_TILE_URL=f"{origin}/1.0.0/slope/{{z}}/{{x}}/{{y}}.png",
-        SLOPE_TILE_ORIGIN=origin,
-        CSP_DEFAULTS=csp_defaults(tile_origin, slope_origin=origin),
-    ):
-        clear_cache()
-        try:
-            policy = _csp(Client().get("/"))
-        finally:
-            clear_cache()
-
-    connect_src = policy.split("connect-src")[1].split(";")[0]
-    img_src = policy.split("img-src")[1].split(";")[0]
-    assert origin in connect_src
-    assert origin in img_src
+    policy = settings.CSP_DEFAULTS
+    for directive in ("connect-src", "img-src"):
+        assert not any("wmts.geo.admin.ch" in src for src in policy[directive])
+    assert not hasattr(settings, "SLOPE_TILE_URL")
+    assert not hasattr(settings, "SLOPE_TILE_ORIGIN")
 
 
-def test_csp_defaults_omit_the_slope_origin_when_unset() -> None:
-    """No slope origin configured means no extra source in either directive.
+def test_csp_defaults_take_no_slope_origin() -> None:
+    """The ``slope_origin`` keyword went with the layer.
 
-    The keyword is defaulted so the direct callers above keep working
-    unchanged; this pins that the default is an OMISSION rather than an
-    empty string, which would emit a stray token into the policy.
+    A caller still passing it is a caller that still thinks the raster is
+    there, so it must fail loudly rather than be ignored.
     """
-    policy = csp_defaults("https://tiles.example.test")
-    assert policy["img-src"] == ["'self'", "data:"]
-    assert "" not in policy["connect-src"]
-    assert policy["connect-src"].count("'self'") == 1
-
-
-def test_slope_tile_origin_is_derived_from_the_configured_template() -> None:
-    """SLOPE_TILE_ORIGIN is ``basemap_origin(SLOPE_TILE_URL)``, not a literal.
-
-    The same anti-drift contract SNOW-242 set for the basemap: one
-    env-configurable value, one derivation, so the CSP can never allowlist
-    an origin the map does not actually fetch from.
-    """
-    assert settings.SLOPE_TILE_ORIGIN == basemap_origin(settings.SLOPE_TILE_URL)
-    assert settings.SLOPE_TILE_URL.startswith(f"{settings.SLOPE_TILE_ORIGIN}/")
+    with pytest.raises(TypeError):
+        csp_defaults("https://tiles.example.test", slope_origin="https://x.test")  # type: ignore[call-arg]
 
 
 @pytest.mark.django_db

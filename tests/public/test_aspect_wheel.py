@@ -107,11 +107,12 @@ def test_the_registry_panel_renders_every_host(staff_client: Client) -> None:
 def test_the_library_page_loads_the_wheel_scripts_in_order(
     staff_client: Client,
 ) -> None:
-    """The class table, then the core, then the renderer."""
+    """The two class tables, then the core, then the renderer."""
     client = Client()
     client.cookies = staff_client.cookies
     body = client.get(reverse("public:components_index")).content.decode()
     positions = [
+        body.index("js/slope_classes_core"),
         body.index("js/route_slope_core"),
         body.index("js/aspect_wheel_core"),
         body.index("js/aspect_wheel."),

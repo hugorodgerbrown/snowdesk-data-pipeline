@@ -48,14 +48,18 @@
  *     one refactor away from painting it green.
  *   - A NUMBER — one of six buckets, below.
  *
- * THE PALETTE IS THE SLOPE RASTER'S, verbatim. The five painted classes
- * are the same hexes `slope_overlay_core.js` carries and the same
+ * THE PALETTE IS THE SLOPE LAYER'S, verbatim. The five painted classes
+ * are `slope_classes_core.js`'s CLASSES (SNOW-1073) — the same hexes the
+ * terrain filter's slope-class mode paints the map with and the same
  * `--color-slope-*` tokens the legend swatches use, so a route crossing a
  * shaded face is the colour of the shading under it. `gentle` is the sixth,
- * and has no raster counterpart because the raster paints nothing under
- * 30° — but a LINE cannot be transparent where the raster is blank without
+ * and has no layer counterpart because the layer paints nothing under
+ * 30° — but a LINE cannot be transparent where the layer is blank without
  * the track appearing to break, so the gentle band gets an explicit colour
  * of its own.
+ *
+ * Reads `self.pwaSlopeClassesCore` at parse time, so slope_classes_core.js
+ * must load first on every page that loads this.
  *
  * Hex literals rather than CSS variables throughout: MapLibre paint
  * properties take literal colours and cannot reference a custom property.
@@ -106,7 +110,7 @@
    * The six buckets an angle falls in, gentlest first.
    *
    * `from` is inclusive and `to` is exclusive, so a sample of exactly 35°
-   * is in `slope-35` and not in `slope-30`. That is the raster's own
+   * is in `slope-35` and not in `slope-30`. That is the ramp's own
    * convention — its classes are named for their lower bound — and getting
    * it the other way round would put every boundary sample one band too
    * gentle, which is the direction that matters.
@@ -116,17 +120,13 @@
    * a test can assert the two agree and the line cannot drift from the key
    * that explains it.
    *
-   * The five steep classes are `slope_overlay_core.js`'s CLASSES, value
-   * for value. `gentle` is ours: see the module comment on why a line
-   * needs a colour where the raster needs none.
+   * The five steep classes are `slope_classes_core.js`'s CLASSES, the
+   * same frozen objects. `gentle` is ours: see the module comment on why
+   * a line needs a colour where the slope layer needs none.
    */
   const CLASSES = Object.freeze([
     Object.freeze({ id: 'slope-gentle', from: 0, to: 30, token: '--color-slope-gentle', hex: '#38bdf8' }),
-    Object.freeze({ id: 'slope-30', from: 30, to: 35, token: '--color-slope-30', hex: '#f2e50a' }),
-    Object.freeze({ id: 'slope-35', from: 35, to: 40, token: '--color-slope-35', hex: '#f46f24' }),
-    Object.freeze({ id: 'slope-40', from: 40, to: 45, token: '--color-slope-40', hex: '#de055b' }),
-    Object.freeze({ id: 'slope-45', from: 45, to: 50, token: '--color-slope-45', hex: '#c889bb' }),
-    Object.freeze({ id: 'slope-50', from: 50, to: null, token: '--color-slope-50', hex: '#4b4b4b' }),
+    ...self.pwaSlopeClassesCore.CLASSES,
   ]);
 
   /**

@@ -3,8 +3,16 @@ apps/public/templates/public/help/_topic_slope.html — "Slope angle" panel body
 
 Content partial for the help page (SNOW-691); included via the
 body_template parameter of includes/_collapsible_panel.html. Rendered for
-every visitor since SNOW-724 retired the slope_layer flag; the map overlay
-this topic documents is now gated only by settings.SLOPE_TILE_URL.
+every visitor. Since SNOW-1073 the slope layer it documents is the terrain
+filter's "Colour by slope" mode, painted from our terrain-class tiles
+(settings.TERRAIN_CLASS_TILE_URL) rather than swisstopo's pre-rendered
+raster, so this panel says where the colours come from, why the layer
+starts at zoom level 12 and why it stops at the Swiss border — see
+docs/decisions/slope-layer-is-painted-from-our-class-tiles.md.
+
+SNOW-1073 also removed the two paragraphs on no-fall passages: SNOW-1095
+removed the route detail sheet that listed them, so they described a
+surface that no longer exists.
 
 This panel is where the layer's shortcomings live. The map legend carries
 the five class swatches and a link here, and nothing else: the caveats are
@@ -16,10 +24,18 @@ half that fits.
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The Slope angle overlay shades the ground by steepness, so you can see how steep a line is without leaving
-            the map. The bands follow the classification the SLF recommends, the same one you will have seen on Swiss
-            maps: 30&ndash;35&deg;, 35&ndash;40&deg;, 40&ndash;45&deg;, 45&ndash;50&deg; and over 50&deg;. Ground under
+            The slope layer shades the ground by steepness, so you can see how steep a line is without leaving the map.
+            The bands follow the classification the SLF recommends, the same one you will have seen on Swiss maps:
+            30&ndash;35&deg;, 35&ndash;40&deg;, 40&ndash;45&deg;, 45&ndash;50&deg; and over 50&deg;. Ground under
             30&deg; is left unshaded.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-how-to">
+        {% blocktrans trimmed %}
+            Turn it on from the layers menu&rsquo;s &ldquo;Terrain filter&hellip;&rdquo; row: switch the filter on and
+            choose &ldquo;Colour by slope&rdquo;. The rest of that sheet still applies. The slope range says which bands
+            are painted, from 30&deg; up unless you change it, and the aspects and the elevation band narrow it further
+            &mdash; so you can colour only the north-facing slopes above 2,400 metres, say, by how steep they are.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-why-30-45">
@@ -65,48 +81,41 @@ half that fits.
             crossing an extremely steep face can itself be almost level.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-slope-passages">
+    {# SNOW-1073: where the colours come from — the same model and the same #}
+    {# arithmetic behind the route line and the point card, which is the    #}
+    {# reason the layer moved off swisstopo's raster.                         #}
+    <p class="mb-3 last:mb-0" data-testid="help-slope-source">
         {% blocktrans trimmed %}
-            A route&rsquo;s detail, under Terrain in its menu, names each no-fall passage: a stretch where the ground
-            you are standing on is over 50 degrees, where a slip does not stop. It says how many there are and what the
-            track does with the slope: down the fall line, up it, or across it. A rising traverse of 50 degree ground is
-            counted like any other, because it is no place to fall either.
+            The colours are worked out by Snowdesk from swissALTI3D, the elevation model of Switzerland published by
+            swisstopo, the Swiss Federal Office of Topography. Its heights are resampled to a 5 metre grid, and the
+            steepness of each point is measured across the ground around it. The route line&rsquo;s colours and the
+            figures in the route panel are worked out from the same heights in the same way, so the layer and a route
+            drawn over it agree about the same hillside.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
         {% blocktrans trimmed %}
-            The shading is calculated from an elevation model with a 10 metre grid, so it describes the average
-            steepness of each 10 metre square rather than the ground itself. A short steep roll inside an otherwise
-            gentle face will not appear at any zoom, and neither will a small bench in the middle of a steep one. Zoom
-            in far enough and you will see the individual squares &mdash; that is the resolution of the data, not a
-            fault in the map.
+            Each point&rsquo;s steepness is measured across about 30 metres of hillside, so the shading describes the
+            average slope of the ground around a point rather than the ground itself. A short steep roll inside an
+            otherwise gentle face will not appear at any zoom, and neither will a small bench in the middle of a steep
+            one. Zoom in far enough and you will see individual squares of about 7 metres &mdash; that is the resolution
+            of the data, not a fault in the map.
         {% endblocktrans %}
     </p>
-    {# SNOW-964: and the caveat the passage count cannot carry. About      #}
-    {# the ROUTE SAMPLING — a 10 m analysis window walked every 25 m —    #}
-    {# and deliberately not a restatement of the raster paragraph above,  #}
-    {# which is a different measurement of a different thing.             #}
-    <p class="mb-3 last:mb-0" data-testid="help-slope-passages-smoothed">
+    <p class="mb-3 last:mb-0" data-testid="help-slope-zoom">
         {% blocktrans trimmed %}
-            <strong>An unmarked route is not a route without no-fall ground.</strong> A route&rsquo;s steepness is
-            sampled every 25 metres, and each sample is the average slope over about ten metres of hillside, so a narrow
-            steep passage between two gentler samples is smoothed away before anything measures it. The same goes the
-            other way: a stretch named as no-fall may be a few metres of rock in the middle of an easy slope. The
-            passages say where to look, and nothing more than that.
+            It fades out when you zoom out. The layer is drawn from zoom level 12, roughly a valley across the screen;
+            further out nothing is drawn, and the sheet asks you to zoom in. An empty map at a wide view says nothing
+            about how steep the ground is.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">
         {% blocktrans trimmed %}
-            Coverage does not extend across the whole map. Where the layer has no data its menu row is switched off with
-            a note, but be careful near the edge: unshaded ground outside the covered area has simply not been surveyed,
-            and looks exactly like ground that is under 30 degrees.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-slope-accuracy">
-        {% blocktrans trimmed %}
-            The data is stitched together from several countries' national elevation models, and swisstopo, who publish
-            it, note that accuracy is not guaranteed in the places where two of those models meet.
+            It stops at the Swiss border. swissALTI3D covers Switzerland, so across the border in France, Italy, Austria
+            or Germany the layer has nothing to show. Near the border, ground the data does not reach is hatched in
+            grey; past the edge of the data altogether the sheet says there is no terrain data here. Either way,
+            unshaded ground there has not been surveyed and is not ground under 30 degrees.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-not-a-decision">
@@ -118,8 +127,8 @@ half that fits.
     </p>
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The data is the &ldquo;Slope classes over 30&deg;&rdquo; dataset published by swisstopo, the Swiss Federal
-            Office of Topography. Full attribution is in the colophon.
+            The elevation data is swisstopo&rsquo;s swissALTI3D, resampled and derived by Snowdesk. Full attribution is
+            in the colophon.
         {% endblocktrans %}
     </p>
 </div>

@@ -103,16 +103,15 @@ let map;
 let restoreCountries;
 
 /**
- * Wire up the globals map_exploded.js reads, with ``slope`` deciding whether
- * the operator kill switch is on and ``lateLayers`` naming the tiers whose
- * boot-time lazy load lands only once ``prepare()`` is called.
+ * Wire up the globals map_exploded.js reads, with ``terrain`` deciding
+ * whether the terrain filter's raster is installed (map.js installs it
+ * eagerly, hidden, on an eligible page) and ``lateLayers`` naming the tiers
+ * whose boot-time lazy load lands only once ``prepare()`` is called.
  */
-function mount({ slope = true } = {}) {
+function mount({ terrain = true } = {}) {
   document.body.innerHTML = '<div id="map"></div>';
-  const mapEl = document.getElementById('map');
-  if (slope) mapEl.dataset.slopeTileUrl = 'https://tiles.example/{z}/{x}/{y}.png';
   map = makeMap(bootLayers());
-  if (slope) map.install({ id: 'slope-raster', type: 'raster', source: 'slope' });
+  if (terrain) map.install({ id: 'terrain-filter-raster', type: 'raster', source: 'terrain-filter' });
 
   const late = {
     // None of these exists when ``ready`` resolves: the bulletin boundary's
@@ -209,7 +208,7 @@ describe('map_exploded.js hands the map back as it found it', () => {
     // loader ever reinstates it.
     expect(visibilityOf('bulletin-groupings-line')).toBe('visible');
     for (const id of ['regions-fill', 'regions-line', 'major-regions-line',
-      'sub-regions-label', 'resorts-pin', 'slope-raster']) {
+      'sub-regions-label', 'resorts-pin']) {
       expect(visibilityOf(id)).toBe('visible');
     }
   });
@@ -236,21 +235,18 @@ describe('map_exploded.js hands the map back as it found it', () => {
   });
 });
 
-describe('map_exploded.js follows the operator slope kill switch', () => {
-  it('demonstrates the slope sheet when the tile URL is configured', async () => {
+describe('map_exploded.js has no slope sheet (SNOW-1073)', () => {
+  it('builds every layer without one when the terrain filter is installed', async () => {
+    // swisstopo's slope raster is gone; the slope layer is the terrain
+    // filter's slope mode, which is off unless the reader switched it on.
     mount();
     await runDemo();
-
-    expect(rowTitles()).toContain('Slope angle');
+    expect(rowTitles()).not.toContain('Slope angle');
   });
 
-  it('omits the slope sheet, and still builds every later layer, without one', async () => {
-    mount({ slope: false });
+  it('builds every layer without the terrain filter installed', async () => {
+    mount({ terrain: false });
     await runDemo();
-
-    // The abort this guards against is total: the missing-layer check throws
-    // on step two, so nothing after slope is ever demonstrated.
-    expect(rowTitles()).not.toContain('Slope angle');
     expect(rowTitles()).toEqual([
       'Resorts', 'L4 · Micro', 'L2 · Minor', 'L1 · Major', 'SLF bulletins', 'Swisstopo',
     ]);
@@ -270,6 +266,8 @@ describe('map_exploded.js builds the ladder clean, whatever the map is showing',
 
     expect(map.frames[0]).toEqual(['background']);
     expect(map.frames[0]).not.toContain('community-reports-pin');
+    // The terrain filter's raster is the application's, not the basemap's.
+    expect(map.frames[0]).not.toContain('terrain-filter-raster');
   });
 
   it('shows one rung per sheet, in ladder order', async () => {
@@ -277,7 +275,6 @@ describe('map_exploded.js builds the ladder clean, whatever the map is showing',
     await runDemo();
 
     expect(map.frames.slice(1)).toEqual([
-      ['slope-raster'],
       ['regions-fill', 'bulletin-groupings-line'],
       ['major-regions-line', 'major-regions-label'],
       ['sub-regions-line', 'sub-regions-label'],
@@ -303,9 +300,9 @@ describe('map_exploded.js builds the ladder clean, whatever the map is showing',
     await runDemo();
     const before = map.layers.map((layer) => [layer.id, layer.layout?.visibility]);
 
-    const slope = document.querySelector('[aria-label="Slope angle"]');
-    slope.checked = false;
-    slope.dispatchEvent(new Event('change'));
+    const bulletins = document.querySelector('[aria-label="SLF bulletins"]');
+    bulletins.checked = false;
+    bulletins.dispatchEvent(new Event('change'));
 
     // Turning a sheet off dims an SVG group. It must not reach the map.
     expect(map.layers.map((layer) => [layer.id, layer.layout?.visibility])).toEqual(before);
@@ -319,7 +316,7 @@ describe('map_exploded.js lists the ladder in one fixed order', () => {
 
     const expected = [
       'Resorts', 'L4 · Micro', 'L2 · Minor', 'L1 · Major',
-      'SLF bulletins', 'Slope angle', 'Swisstopo',
+      'SLF bulletins', 'Swisstopo',
     ];
     expect(rowTitles()).toEqual(expected);
 

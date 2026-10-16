@@ -78,11 +78,12 @@ the sweep.
 
 Every tile family a download pins walks the same blob rows — the area's
 own ground, clipped to its boundary plus a margin tile for a region — and
-then drops only what its own tileset cannot answer for. The slope raster
-(SNOW-692) drops tiles outside its rectangle and past its zoom ceiling;
-the terrain-class tiles drop tiles outside the class tileset's
-`COVERAGE_BOUNDS` and its z12–14 band. Overlap, not containment, for both:
-a tile straddling the coverage edge carries data inside it and is kept.
+then drops only what its own tileset cannot answer for. The
+terrain-class tiles drop tiles outside the class tileset's
+`COVERAGE_BOUNDS` and its z12–14 band, as SNOW-692's slope raster dropped
+tiles outside its rectangle until SNOW-1073 removed it. Overlap, not
+containment: a tile straddling the coverage edge carries data inside it
+and is kept.
 `tests/js/test_basemap_download_core.js` pins the class-tile half: inside
 the area, every z12–14 tile the filter could request is listed.
 

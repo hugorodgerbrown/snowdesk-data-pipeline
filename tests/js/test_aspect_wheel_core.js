@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/aspect_wheel_core.js';
 

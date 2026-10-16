@@ -784,8 +784,8 @@ describe('base layer top-up', () => {
  *     it is the cheap half and a run on a bad connection may not reach the
  *     end;
  *   - the progress grid's offset accounts for it, so no tile is shifted
- *     off its cell — the trap SNOW-692 dodged by appending slope urls at
- *     the end instead, which was only ever necessary because the offset
+ *     off its cell — the trap SNOW-692 dodged by appending its slope urls
+ *     at the end instead, which was only ever necessary because the offset
  *     was assumed rather than passed;
  *   - it never reaches the eviction machinery, which exists to guard a
  *     several-hundred-tile download;
@@ -951,7 +951,9 @@ describe('the content phase', () => {
 describe('terrain data (SNOW-1072)', () => {
   const CLASS = ['https://tiles/terrain-class/v2/12/1/1.png'];
 
-  it('appends the class tiles after the slope tiles when the run opts in', async () => {
+  it('appends the class tiles after the grid plan when the run opts in', async () => {
+    // SNOW-1073: a deps bundle from before the swisstopo slope raster was
+    // removed may still carry `slopeUrls`; the runner no longer asks it.
     const d = deps({
       slopeUrls: vi.fn(() => ['/slope/1']),
       terrainClassUrls: vi.fn(() => CLASS),
@@ -960,11 +962,11 @@ describe('terrain data (SNOW-1072)', () => {
     await runAndSettle(d, options({ terrain: true }));
 
     expect(d.terrainClassUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 });
+    expect(d.slopeUrls).not.toHaveBeenCalled();
     expect(d.warmCache.mock.calls[0][0]).toEqual([
       '/api/feed',
       '/tile/1',
       '/tile/2',
-      '/slope/1',
       ...CLASS,
     ]);
     // Out of the grid plan: the grid's offset still counts only the feeds.

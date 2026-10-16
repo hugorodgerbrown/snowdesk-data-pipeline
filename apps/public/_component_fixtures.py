@@ -1299,6 +1299,31 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Segmented option -------------------------------------------------------------
+# SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
+# each carries its own radio name — two variants sharing one would let only one
+# of them render checked.
+SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Unselected",
+        "context": {
+            "name": "component-library-segmented-off",
+            "value": "off",
+            "label": "Highlight matches",
+        },
+    },
+    {
+        "caption": "Selected",
+        "context": {
+            "name": "component-library-segmented-on",
+            "value": "on",
+            "label": "Colour by slope",
+            "checked": True,
+        },
+    },
+)
+
+
 # Terrain filter key ----------------------------------------------------------
 # SNOW-978: the map's terrain-filter colour key. No parameters — one variant.
 TERRAIN_FILTER_KEY_VARIANTS: tuple[dict[str, Any], ...] = (

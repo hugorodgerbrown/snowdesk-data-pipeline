@@ -502,10 +502,11 @@
    * draws.
    *
    * The DIRECTORY is the source URL's path up to its last ``/``, kept
-   * because the domain alone is far too wide: ``geo.admin.ch`` also serves
-   * the slope overlay (``wmts.geo.admin.ch/…/{z}/{x}/{y}.png``), whose
-   * tiles sit in the same passive cache, and a domain-only match read one
-   * of them as this basemap's ground — a false Yes. SNOW-1072: the same
+   * because the domain alone is far too wide: ``geo.admin.ch`` also served
+   * the slope overlay (``wmts.geo.admin.ch/…/{z}/{x}/{y}.png``, removed by
+   * SNOW-1073), whose tiles sat in the same passive cache — and still may on
+   * a device that viewed them — and a domain-only match read one of them as
+   * this basemap's ground: a false Yes. SNOW-1072: the same
    * holds on ``tiles.snowdesk-data.info``, which serves the self-hosted
    * OpenFreeMap basemap AND the terrain filter's class tiles
    * (``/terrain-class/v2/{z}/{x}/{y}.png``) — tile-shaped, cached passively

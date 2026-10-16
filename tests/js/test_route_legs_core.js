@@ -26,6 +26,7 @@ const MAIN_CSS = path.resolve(
 let core;
 
 beforeAll(async () => {
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/route_slope_core.js');
   await import('../../static/js/route_legs_core.js');
   core = globalThis.pwaRouteLegsCore;

@@ -31,6 +31,10 @@ from tests.factories import (
     UserFactory,
 )
 
+# SNOW-978: a configured class-tile template, for the tests that need the
+# terrain filter — and since SNOW-1073 the slope layer — on the page.
+TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
+
 
 @pytest.mark.django_db
 def test_map_page_renders() -> None:
@@ -709,7 +713,9 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
     Asserted as ONE ordered list rather than per section, because the two
     labelling asymmetries in it are deliberate and a reader "tidying" them
     is the likeliest way this drifts: only the FIRST Conditions row says
-    "bulletins", and only the two Basemap overlay rows carry "Display ".
+    "bulletins", and only the Basemap overlay row carries "Display ".
+    SNOW-1073 removed the second such row, swisstopo's "Display slope
+    angles": the slope layer is the terrain filter's slope mode now.
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
@@ -727,7 +733,6 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
         "l1",
         "l2",
         "l4",
-        "slope",
         "downloads",
     ]
     positions = [content.index(f'data-overlay-key="{key}"', start) for key in rows]
@@ -739,10 +744,10 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
         "ALBINA (AT, IT)",
         "Field observations",
         "Major regions (EAWS L1)",
-        "Display slope angles",
         "Display downloaded areas",
     ):
         assert label in content, label
+    assert 'data-overlay-key="slope"' not in content
     # The pattern the first Conditions row sets is NOT repeated.
     assert "MétéoFrance bulletins" not in content
     assert "ALBINA bulletins" not in content
@@ -791,15 +796,12 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
 
 
 @pytest.mark.django_db
-def test_the_two_dotless_rows_carry_no_dot() -> None:
-    """SNOW-904: slope and downloads render without a ``.sync-dot``.
+def test_the_dotless_row_carries_no_dot() -> None:
+    """SNOW-904: the downloads row renders without a ``.sync-dot``.
 
-    Neither can make an honest claim, for opposite reasons. Slope draws a
-    third-party raster this app cannot probe — its dot had been permanently
-    ``unknown`` (and so ``display: none``) since SNOW-691, which is markup
-    for a state that never resolves. Downloads draws a list that is local by
-    definition, so its answer is always yes and the dot carries no
-    information.
+    Downloads draws a list that is local by definition, so its answer is
+    always yes and the dot carries no information. (SNOW-1073 removed the
+    other dotless row, swisstopo's slope raster.)
 
     A green dot on this menu means one thing since SNOW-904 — the payload
     this row draws is in a cache right now — and a row that cannot answer
@@ -808,7 +810,7 @@ def test_the_two_dotless_rows_carry_no_dot() -> None:
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 
-    for key in ("slope", "downloads"):
+    for key in ("downloads",):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_scope = content[key_idx : content.index("</button>", key_idx)]
         assert "sync-dot" not in button_scope, key
@@ -1162,65 +1164,35 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
 
 
 @pytest.mark.django_db
-def test_slope_row_renders_when_tile_url_configured() -> None:
-    """SNOW-691: the slope-angle row renders, and its tile template reaches
-    ``#map`` as ``data-slope-tile-url`` for map.js to build the raster
-    source from.
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_the_layers_menu_has_no_slope_row() -> None:
+    """SNOW-1073: swisstopo's slope raster, its row and its template are gone.
 
-    SNOW-904 moved it out of a "Terrain" section of its own and under
-    Basemap, below a hairline with the downloaded-areas row: both are drawn
-    ON TOP of whichever basemap is chosen, which is what that section is
-    about, and a section holding one row was a heading doing no work. Its
-    label gains the "Display " verb the radios above it do not carry — the
-    verb is what separates "additionally draw this" from "choose this".
+    The slope layer is the terrain filter's "colour by slope" mode, opened
+    from the filter's own row, so Layers keeps no separate slope row — and
+    nothing of the raster reaches ``#map`` for map.js to install.
     """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
-
-    assert 'data-overlay-key="slope"' in content
-    assert "Display slope angles" in content
-    assert 'data-slope-layer-eligible="true"' in content
-    assert "data-slope-tile-url=" in content
-
-
-@pytest.mark.django_db
-@override_settings(SLOPE_TILE_URL="")
-def test_terrain_row_absent_without_tile_url() -> None:
-    """SNOW-724: clearing SLOPE_TILE_URL takes the whole overlay out.
-
-    This is the operator kill switch that ``slope_layer``'s
-    ``everyone=False`` used to be — the setting is env-overridable, so
-    withdrawing a third-party raster whose licence position is still open
-    is a restart rather than a deploy. It has to leave the DOM clean. In
-    particular the tile template must not be emitted: there is no Snowdesk
-    endpoint behind it to 403, so a template rendered for an ineligible
-    page would be an invitation to install the layer anyway.
-
-    SNOW-904: there is no heading to gate with it any more. The row lives
-    under Basemap, a section that renders whatever slope does, so the
-    eligibility check wraps the row alone — SNOW-658's "a section whose only
-    row is gated must gate its heading too" no longer applies because slope
-    is no longer a section's only row.
-    """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
 
     assert 'data-overlay-key="slope"' not in content
     assert "Display slope angles" not in content
-    assert 'data-slope-layer-eligible="false"' in content
-    assert "data-slope-tile-url=" not in content
-    # The section it sits in is unaffected — the basemap radios and the
-    # downloaded-areas row still render.
-    assert 'data-overlay-key="downloads"' in content
+    assert "data-slope-layer-eligible" not in content
+    assert "data-slope-tile-url" not in content
+    assert "hangneigung" not in content
+    assert "js/slope_overlay_core" not in content
+    assert 'data-testid="map-legend-slope"' not in content
+    # The slope layer's way in is the terrain filter's row.
+    assert "data-terrain-filter-open" in content
 
 
 @pytest.mark.django_db
 def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
-    """SNOW-904: four radios, a separator, then the two "Display " rows.
+    """SNOW-904: four radios, a separator, then the "Display " row.
 
     The section holds two kinds of row — pick ONE basemap, then
-    additionally draw either of two things over it — and the only thing
-    marking the boundary is a hairline. Nothing is indented under anything
+    additionally draw something over it — and the only thing marking the
+    boundary is a hairline. (SNOW-1073 removed the slope row that sat
+    above the downloaded-areas one.) Nothing is indented under anything
     in this menu: an indent reads as a child of the row above it, and with
     collapsible sections it would also hide rows the collapsed heading does
     not govern.
@@ -1233,32 +1205,31 @@ def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
 
     last_radio = group.rindex("data-basemap-key=")
     separator = group.index("basemap-menu-separator")
-    slope = group.index('data-overlay-key="slope"')
     downloads = group.index('data-overlay-key="downloads"')
 
-    assert last_radio < separator < slope < downloads
+    assert last_radio < separator < downloads
 
 
 @pytest.mark.django_db
-def test_slope_legend_section_renders_with_its_caveat() -> None:
-    """SNOW-691: the legend carries the five classes and a route to the caveats.
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_slope_key_is_in_the_terrain_filter_legend_with_its_caveat() -> None:
+    """SNOW-691, SNOW-1073: the five classes and a route to the caveats.
 
-    The link is the reason this test exists rather than a bare "the swatches
-    are present". The caveats moved to /help/ because they ran to several
-    paragraphs in a panel that has room for none — but a shading a reader
-    might mistake for permission cannot ship with no path to the warnings,
-    so the heading being a link is the load-bearing part.
+    The slope layer's key now sits in the terrain filter's legend section,
+    shown in the slope mode. The link is the reason this test exists rather
+    than a bare "the swatches are present". The caveats live on /help/
+    because they run to several paragraphs in a panel that has room for
+    none — but a shading a reader might mistake for permission cannot ship
+    with no path to the warnings, so the heading being a link is the
+    load-bearing part.
     """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
 
-    assert 'data-testid="map-legend-slope"' in content
     for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
-        assert band in content, band
-    # The caveats live on /help/, not in the legend — but the legend must
-    # still be the way to reach them, or a reader gets five colours and no
-    # warning that the layer averages the ground and stops at a border.
-    assert "#help-topic-slope" in content
+        assert band in legend, band
+    assert "#help-topic-slope" in legend
 
 
 # ---------------------------------------------------------------------------
@@ -1874,9 +1845,6 @@ class TestTheMapPageFitsTheScreen:
         assert re.search(r"(^|;|\s)height:\s*100dvh", body)
 
 
-TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
-
-
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_terrain_filter_renders_when_tile_url_configured() -> None:
@@ -1905,6 +1873,39 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
 
 
 @pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_renders_the_mode_control() -> None:
+    """SNOW-1073: the sheet offers its two modes as one radio group.
+
+    "Highlight matches" is the server-rendered default; "Colour by slope"
+    is the slope layer. The colour key carries both modes' rows, the match
+    rows shown and the slope rows hidden until the script reads the stored
+    mode, and the legend has a heading per mode leading to its help topic.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    assert sheet.count('name="terrain-filter-mode"') == 2
+    match = sheet[sheet.index('value="match"') :][:120]
+    slope = sheet[sheet.index('value="slope"') :][:120]
+    assert "checked" in match
+    assert "checked" not in slope
+    assert "Highlight matches" in sheet
+    assert "Colour by slope" in sheet
+    assert '<div class="contents" data-terrain-filter-key="slope" hidden>' in sheet
+    assert "map-legend-swatch--slope-30" in sheet
+    # The slope range stays in the sheet whatever the mode.
+    assert "data-terrain-filter-min-slope" in sheet
+
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
+    assert 'data-terrain-filter-key="slope" hidden' in legend
+    assert "#help-topic-slope" in legend
+    assert "#help-topic-terrain-filter" in legend
+
+
+@pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL="")
 def test_terrain_filter_absent_without_tile_url() -> None:
     """SNOW-978: the setting defaults to empty, which turns the filter off.
@@ -1926,16 +1927,17 @@ def test_terrain_filter_absent_without_tile_url() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_row_sits_under_basemap_after_slope() -> None:
+def test_terrain_filter_row_sits_under_basemap_after_the_hairline() -> None:
     """SNOW-978: the row is drawn ON the basemap, so it lives under Basemap,
-    after "Display slope angles" and before the downloaded-areas row.
+    below the hairline and before the downloaded-areas row — where
+    "Display slope angles" sat until SNOW-1073 folded it into this row.
     """
     content = Client().get(reverse("public:map")).content.decode()
     group = content[content.index('id="basemap-menu-group-basemap"') :]
-    slope = group.index('data-overlay-key="slope"')
+    separator = group.index("basemap-menu-separator")
     terrain = group.index("data-terrain-filter-open")
     downloads = group.index('data-overlay-key="downloads"')
-    assert slope < terrain < downloads
+    assert separator < terrain < downloads
 
 
 # ---------------------------------------------------------------------------

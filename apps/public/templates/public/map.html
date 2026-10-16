@@ -327,15 +327,15 @@ in addition to the shared map assets.
     {# constructor takes the restored centre and zoom), so it must load       #}
     {# before the bundle.                                                    #}
     <script defer src="{% static 'js/map_viewport_core.js' %}"></script>
-    {# SNOW-691: the slope overlay's coverage rectangle, zoom limits and     #}
-    {# class table (window.pwaSlopeOverlayCore), extracted so the coverage   #}
-    {# predicate can be unit-tested (tests/js/test_slope_overlay_core.js).   #}
+    {# SNOW-1073: the slope-class ramp (window.pwaSlopeClassesCore) — the    #}
+    {# 30/35/40/45/50+ colours the terrain filter's slope mode paints the    #}
+    {# map with and a route's core is drawn in from z14. Both               #}
+    {# terrain_filter_core.js and route_slope_core.js read it at parse time, #}
+    {# so it must load before either (tests/public/test_home_scripts.py).    #}
+    {# It replaced slope_overlay_core.js, swisstopo's slope raster's core.   #}
     {# Here with the other *_core.js modules and NOT inside the map bundle's #}
-    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
-    {# from installSlopeLayer, on the style-install path, never at parse     #}
-    {# time, so it has no place in the temporal-dead-zone ordering the       #}
-    {# bundle exists to protect.                                            #}
-    <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# contiguous run (test_bundle_scripts_are_contiguous).                  #}
+    <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
     {# SNOW-978: the terrain filter's pure half (window.pwaTerrainFilterCore) #}
     {# — the class-tile pixel contract, the classifier and painter, the       #}
     {# filter's storage shape and its summary in words. map.js reads it from  #}

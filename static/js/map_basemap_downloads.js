@@ -391,71 +391,6 @@ function activeBasemapGlyphURLs(map) {
 }
 
 /**
- * SNOW-692: the slope-angle raster URLs covering one download blob.
- *
- * The template comes from `#map`'s `data-slope-tile-url`, which the view
- * renders only while `settings.SLOPE_TILE_URL` is configured — so an
- * environment with the overlay switched off pins nothing here and the rest
- * of the download is unaffected. The rectangle and the zoom ceiling come
- * from `slope_overlay_core.js`, the one definition the live overlay's own
- * source is built from, so the download cannot request ground or zooms the
- * map itself would refuse to ask for.
- *
- * @param {Object|null} blob The download blob, for its `z` row spans.
- * @returns {string[]} Empty when the overlay is not configured, its core
- *   module has not loaded, or the blob carries no ranges.
- */
-function activeSlopeTileURLs(blob) {
-  const core = self.pwaBasemapDownloadCore;
-  const slope = self.pwaSlopeOverlayCore;
-  const mapEl = document.getElementById('map');
-  const template = mapEl ? mapEl.dataset.slopeTileUrl : '';
-  if (!core || !slope || !template) return [];
-  return core.slopeTileURLs(template, blob, slope.COVERAGE_BOUNDS, slope.MAX_ZOOM);
-}
-
-/**
- * SNOW-692: the slope tiles ONE recorded area should hold, derived from
- * its record rather than read out of it.
- *
- * The slope set is a pure function of ground the record already describes
- * plus three page-level constants (the template, the raster's rectangle,
- * its zoom ceiling), so recording ~273 URLs per area would store nothing
- * the probe cannot recompute — 27.4 KB per area, measured on a
- * CH-4115-shaped region. Deriving keeps the record the size it was.
- *
- * The two area kinds describe their ground differently, which is the only
- * reason this needs to know which it is holding:
- *
- *   - a REGION record carries the run's own `z` row spans, the same shape
- *     `blobFullyCached` is handed at the tile-probe call sites;
- *   - a CUSTOM area carries `bbox` + `band` and no `z` at all, because its
- *     tile set was never server-computed — `buildBlob` is the client-side
- *     twin that produced it in the first place, so it reproduces it here.
- *
- * The consequence of deriving rather than recording, stated because it is
- * a real behavioural difference: the check asks what TODAY'S code would
- * fetch, not what that run did. If the raster's rectangle or its template
- * ever changes, every existing area re-reads against the new set at once.
- * For a constant quoted from the service's own capabilities document that
- * is the wanted behaviour — the areas really would be missing tiles — but
- * it is not the same promise `deps` makes.
- *
- * @param {Object|null} record A `basemap.regions` or `basemap.customAreas`
- *   entry.
- * @returns {string[]} Empty when the overlay is unconfigured, or the
- *   record describes no ground this can rebuild — never a partial list.
- */
-function areaSlopeTileUrls(record) {
-  const core = self.pwaBasemapDownloadCore;
-  if (!core || !record) return [];
-  if (record.z) return activeSlopeTileURLs({ z: record.z });
-  const band = Array.isArray(record.band) ? record.band : null;
-  if (!record.bbox || !band) return [];
-  return activeSlopeTileURLs(core.buildBlob(record.bbox, band[0], band[1]));
-}
-
-/**
  * SNOW-1072: the terrain-class tile URLs covering one download blob — the
  * tiles the terrain filter (SNOW-978) paints from.
  *
@@ -601,14 +536,33 @@ function setTerrainDataPreferred(on) {
 
 /**
  * SNOW-1072: the terrain-class tiles ONE recorded area should hold, derived
- * from its record — the `areaSlopeTileUrls` twin, gated on the record's own
- * `terrain` flag.
+ * from its record rather than read out of it, and gated on the record's own
+ * `terrain` flag. (SNOW-692's `areaSlopeTileUrls` did the same for the
+ * swisstopo slope raster until SNOW-1073 removed that layer; the class
+ * tiles are what the slope layer paints from now.)
  *
- * Derived, not recorded, for `areaSlopeTileUrls`'s reason: the list is a
- * pure function of the area's ground plus page constants. What IS recorded
- * is the flag, because it is the user's choice and no probe can recover a
- * choice. An area without it holds no class tiles and is never judged on
- * them; an area with it is `incomplete` until it holds every one.
+ * Derived, not recorded: the list is a pure function of ground the record
+ * already describes plus page-level constants (the template, the tileset's
+ * rectangle and its zoom band), so recording it would store nothing the
+ * probe cannot recompute. What IS recorded is the flag, because it is the
+ * user's choice and no probe can recover a choice. An area without it holds
+ * no class tiles and is never judged on them; an area with it is
+ * `incomplete` until it holds every one.
+ *
+ * The two area kinds describe their ground differently, which is the only
+ * reason this needs to know which it is holding:
+ *
+ *   - a REGION record carries the run's own `z` row spans, the same shape
+ *     `blobFullyCached` is handed at the tile-probe call sites;
+ *   - a CUSTOM area carries `bbox` + `band` and no `z` at all, because its
+ *     tile set was never server-computed — `buildBlob` is the client-side
+ *     twin that produced it in the first place, so it reproduces it here.
+ *
+ * The consequence of deriving rather than recording: the check asks what
+ * TODAY'S code would fetch, not what that run did. If the tileset's
+ * rectangle or template changes, every opted-in area re-reads against the
+ * new set at once — the areas really would be missing tiles — but it is not
+ * the same promise `deps` makes.
  *
  * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
  *   entry, or a Manage downloads row carrying the same fields.
@@ -2369,26 +2323,16 @@ window.pwaBasemapDownloads = Object.freeze({
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
 
   /**
-   * SNOW-692: the slope-angle tiles one recorded area should hold, derived
-   * from its record — see `areaSlopeTileUrls`.
+   * SNOW-1072: the terrain-class tiles one recorded area should hold —
+   * see `areaTerrainClassTileUrls`. Empty unless the record carries
+   * `terrain`.
    *
    * Unlike `areaRenderDependencyUrls` this takes the WHOLE record, because
    * a region and a custom area describe their ground with different fields
    * and the derivation has to read whichever is present. It is also not
-   * subject to the three-row rule: the slope raster is one layer on one
+   * subject to the three-row rule: the class tileset is one layer on one
    * host for every basemap, so a row whose basemap is not on screen can
    * still be judged.
-   *
-   * @param {Object|null} record
-   * @returns {string[]}
-   */
-  areaSlopeTileUrls: (record) => areaSlopeTileUrls(record),
-
-  /**
-   * SNOW-1072: the terrain-class tiles one recorded area should hold —
-   * see `areaTerrainClassTileUrls`. Empty unless the record carries
-   * `terrain`; like the slope tiles, not subject to the three-row rule,
-   * because the class tileset is one layer on one host for every basemap.
    *
    * @param {Object|null} record
    * @returns {string[]}
@@ -3297,11 +3241,9 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
-  // SNOW-692: takes the blob, because the slope raster covers the same
-  // ground and band as the area's own tiles — see `slopeTileURLs`.
-  slopeUrls: (blob) => activeSlopeTileURLs(blob),
-  // SNOW-1072: the terrain-class tiles over the same ground. Read by the
-  // runner only for a run carrying `terrain: true`.
+  // SNOW-1072: the terrain-class tiles over the area's ground — takes the
+  // blob, because they cover the same ground and band as the area's own
+  // tiles. Read by the runner only for a run carrying `terrain: true`.
   terrainClassUrls: (blob) => activeTerrainClassTileURLs(blob),
   // SNOW-924: the bulletins and weather inside the area's boundary, and
   // the four overlay feeds cached whole on the way past. Async, alone
@@ -3581,15 +3523,12 @@ async function refreshAreaContent(areaId) {
  * press claim "Synced" for an area whose drawing dependencies had never
  * been looked at.
  *
- * The slope raster is appended unconditionally, unlike the sheet's own
- * call, which excludes the shared base layer. No base layer can reach this
- * function: `_areaRecordById` resolves only `basemap.regions` and
- * `basemap.customAreas`, and a base layer lives in neither.
- *
- * SNOW-1072: so are the terrain-class tiles, for an area whose record
+ * SNOW-1072: the terrain-class tiles are appended for an area whose record
  * carries `terrain` — which is how a sync repairs an opted-in area missing
  * them: they come back in this list and `repairPinnedDownload` fetches
- * them into the area's own bucket.
+ * them into the area's own bucket. No base layer can reach this function:
+ * `_areaRecordById` resolves only `basemap.regions` and
+ * `basemap.customAreas`, and a base layer lives in neither.
  *
  * @param {Object} record A `basemap.regions` or `basemap.customAreas` entry.
  * @returns {Promise<string[]|null>} The URLs to fetch — empty when nothing
@@ -3611,16 +3550,15 @@ async function _missingAreaRenderDependencies(record) {
   const activeKey = activeBasemapKey();
   const isActive = !!activeKey && record.basemapKey === activeKey;
   const recorded = areaRenderDependencyURLs(record.deps, isActive);
-  const slope = areaSlopeTileUrls(record);
   const terrain = areaTerrainClassTileUrls(record);
   // The three-row rule's UNKNOWN branch, and the only one that reaches
   // here as an empty list: a record written before SNOW-844 stored its
-  // deps, on a basemap that is not the loaded one. The slope tiles are
-  // derived from the record rather than the style, so an area with those
+  // deps, on a basemap that is not the loaded one. The terrain-class tiles
+  // are derived from the record rather than the style, so an opted-in area
   // is still judgeable on them — the same distinction the sheet's own
-  // `markIncompleteRows` draws. SNOW-1072: the terrain-class tiles too.
-  if (recorded.length === 0 && slope.length === 0 && terrain.length === 0) return null;
-  return core.missingRenderDependencies([...recorded, ...slope, ...terrain], cached);
+  // `markIncompleteRows` draws.
+  if (recorded.length === 0 && terrain.length === 0) return null;
+  return core.missingRenderDependencies([...recorded, ...terrain], cached);
 }
 
 /**

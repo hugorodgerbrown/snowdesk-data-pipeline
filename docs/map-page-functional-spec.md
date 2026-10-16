@@ -435,22 +435,34 @@ The resort editor is superuser-scoped by an ordinary
 
 ---
 
-### 3.5a Terrain — the slope-angle overlay (SNOW-691)
+### 3.5a Terrain — the slope layer (SNOW-691, SNOW-1073)
 
-The **Slope angle** overlay shades the ground by steepness, so a visitor
-can ask "is the line I am looking at in the range this bulletin is talking
-about?" without leaving the map. It is not user-generated and not issued by
-an avalanche service, which is why it is not under Conditions: slope is a
+The **slope layer** shades the ground by steepness, so a visitor can ask
+"is the line I am looking at in the range this bulletin is talking about?"
+without leaving the map. It is not user-generated and not issued by an
+avalanche service, which is why it is not under Conditions: slope is a
 permanent property of the ground, and does not change with the day being
-scrubbed to. It had a **Terrain** section of its own until SNOW-904 moved
-its row under **Basemap**, below a hairline, as "Display slope angles" —
-one of the things drawn on top of whichever basemap is chosen (§3.6).
+scrubbed to.
+
+**It is a mode of the terrain filter (§3.5b), not a row of its own.**
+SNOW-691 shipped it as swisstopo's pre-rendered "Slope classes over 30°"
+raster with a "Display slope angles" row; SNOW-1073 replaced that with the
+filter sheet's **"Colour by slope"** mode, painted on the device from our
+terrain-class tiles, and removed the raster, its row and
+`SLOPE_TILE_URL`. The why and the costs:
+[decisions/slope-layer-is-painted-from-our-class-tiles.md](decisions/slope-layer-is-painted-from-our-class-tiles.md).
 
 **What it shows.** Five bands, in the classification the SLF recommends and
 Swiss tourers already read on swisstopo's own maps: 30–35°, 35–40°, 40–45°,
 45–50°, and over 50°. **The first three are the 30–45° range most slab
 avalanches release on** — the reason to look at this layer at all. Anything
-under 30° is unshaded.
+under 30° is unshaded. The sheet's slope range says which bands are
+painted (30° and up by default), and its aspects and elevation band narrow
+it, so "north-facing, above 2,400 m, by steepness" is one setting.
+
+**The same numbers as the route.** The colours come from the swissALTI3D
+grid, kernel and window `sample_slope` uses, so a route's slope-coloured
+core (from z14) and the point card agree with the shading under them.
 
 **Where it sits.** Under the danger choropleth, so the ratings stay
 readable on top of it. There is no separate opacity control and no
@@ -458,47 +470,33 @@ exclusivity rule: the bulletin-fill strength control (§2) already exists
 for exactly this trade-off, and a reader who wants the terrain clean takes
 the fill to 0.
 
-**Who can use it.** Everyone. The layer depends on a tile service Snowdesk
-does not operate, so it keeps an operator kill switch: clearing
-`SLOPE_TILE_URL` in the environment withdraws the row, the raster and the
-legend key on a restart (SNOW-724 moved that job from the `slope_layer`
-flag onto the setting that already chose the origin). **Off by default**: it
-paints the whole viewport rather than discrete features, and a visitor who
-opened the map to read danger ratings did not ask for a second full-screen
-colour scheme underneath them.
+**Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set.
+**Off by default**, with the filter: it paints the whole viewport rather
+than discrete features, and a visitor who opened the map to read danger
+ratings did not ask for a second full-screen colour scheme underneath
+them.
 
-**Coverage is a rectangle, and the map says where it ends.** The source
-covers `5.140242, 45.398181` → `11.47757, 48.230651` and stops dead — the
-Zillertal, the Dolomites, the Queyras and the Mercantour are all outside
-it, and the Zillertal is terrain we publish ALBINA bulletins for. So the
-menu row disables itself, with a reason, once the viewport centre leaves
-the covered area. This is not tidiness: **inside it unshaded means "under
-30°"; outside it unshaded means "not surveyed"**, and nothing about a
-raster distinguishes the two. Widening coverage to everything we publish
-bulletins for is SNOW-693.
+**Where it is blank.** Below **z12** nothing is drawn — the class tiles
+start there — and the sheet says "zoom in". Coverage is **Switzerland
+only** (the class tileset's rectangle, 5.95–10.50°E); inside the rectangle
+but outside the survey the ground is **hatched**, and outside it the sheet
+says there is no terrain data. swisstopo's raster drew from z0 and covered
+5.14–11.48°E across five countries; that is the coverage this layer gave
+up.
 
-An earlier build also drew the coverage rectangle on the map as a line.
-It was removed: a hard box spanning the whole map, most of whose length
-runs through terrain nobody is looking at, cost more legibility than the
-edge case was worth.
-
-**It is not a Swiss layer despite the name.** swisstopo derive it at 10 m
-from a combined elevation model — swissALTI3D (CH/LI), RGE ALTI (FR),
-TINITALY/01 (IT), DGM10 (AT), DGM1 (Bavaria), EU-DEM (Baden-Württemberg) —
-and warn that accuracy is not guaranteed where two base models meet.
-
-**The editorial line lives on `/help/`, not in the legend.** A 10 m model
-averages the ground, so a short steep roll inside a gentler face does not
-appear at any zoom — and the shading visibly blocks up at touring zooms for
-exactly that reason, which is the data's resolution rather than a rendering
-fault. That, what unshaded ground means where the layer has no coverage,
-and the plain statement that the layer is not a verdict, all run to several
-paragraphs: more than a legend panel can hold and too much to drop. So the
-legend carries the five class swatches and its heading is a **link** to
+**The editorial line lives on `/help/`, not in the legend.** The steepness
+is measured across about 30 m of hillside, so a short steep roll inside a
+gentler face does not appear at any zoom, and the shading blocks up into
+z14 pixels (about 6.6 m) at touring zooms — the data's resolution rather
+than a rendering fault. That, where the layer is blank and why, and the
+plain statement that the layer is not a verdict, run to several
+paragraphs: more than a legend panel can hold and too much to drop. So in
+the slope mode the legend's terrain-filter section carries the five class
+swatches under a "Slope angle" heading that **links** to
 `/help/#help-topic-slope`, which is the only route from the map to the
 warnings and therefore not optional chrome. A slope shading is the single
 easiest surface on this map to misread as permission, which is the whole
-reason all three of those sentences are there.
+reason those paragraphs are there.
 
 ### 3.5b Terrain filter — ground by aspect, slope and elevation (SNOW-978)
 
@@ -506,34 +504,37 @@ The **terrain filter** tints the ground that matches three things a
 bulletin uses to say where the danger is: the **aspect** a slope faces (any
 of eight), its **slope angle** (from 30° up, optionally capped below 35–50°)
 and, optionally, a band of **elevation** (100 m steps). It answers "which
-of the slopes around me is the bulletin talking about?".
+of the slopes around me is the bulletin talking about?". Its sheet has two
+modes: **"Highlight matches"**, described here, and **"Colour by slope"**,
+the slope layer (§3.5a). Both share every setting.
 
 **How it is drawn.** Matching ground gets a see-through blue
 (`--color-terrain-match`, about 45%), so contours and hillshade stay
 readable. Ground that does not match is left **untouched** — no veil. Ground
 the tiles carry **no data** for is **hatched**, so blank never has to mean
 "no data". Level ground (a lake) faces no direction and never matches. The
-layer sits **under the region choropleth**, beside the slope layer.
+layer sits **under the region choropleth**.
 
-**Where it is controlled.** One row in the layers menu, under Basemap after
-"Display slope angles": **"Terrain filter…"**. It is the menu's one ACTION
+**Where it is controlled.** One row in the layers menu, under Basemap below
+the hairline: **"Terrain filter…"**. It is the menu's one ACTION
 row — it always opens the filter's sheet rather than toggling anything —
 because the filter has more than one control and the menu holds one action
-per row. The sheet carries the on/off switch, eight compass toggles (the
+per row. The sheet carries the on/off switch, the mode, eight compass toggles (the
 aspect wheel's order and words), the slope range, the elevation band, its
 own colour key (the legend is hidden on a phone while a route is open) and a
 line explaining an empty map: **"zoom in"** below z12, **"outside coverage"**
 outside Switzerland. While the filter is on, the row shows a short summary
 ("3 aspects · 35°+"), the menu header counts it as a layer, a **chip** at the
 top of the map repeats the filter in full ("N, NE, NW · 35°+ · above
-2,400 m") and opens the sheet on a tap, and the legend shows a **Terrain
-filter** section: Matches the filter / No data.
+2,400 m", led by "Slope classes" in the slope mode) and opens the sheet on
+a tap, and the legend shows a **Terrain filter** section: Matches the
+filter / No data, or the five slope classes / No data in the slope mode.
 
 **Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set. It
 defaults to empty, which removes the row, the chip, the sheet and the CSP
-entry. **Off by default** for the reason slope is. The filter and the switch
-persist on the device (`snowdesk.map.terrain_filter`,
-`snowdesk.map.overlay.terrain_filter`).
+entry. **Off by default**: it paints whole tracts of ground. The filter
+(mode included) and the switch persist on the device
+(`snowdesk.map.terrain_filter`, `snowdesk.map.overlay.terrain_filter`).
 
 **The tiles carry facts, not colour.** Each pixel of a terrain-class tile
 holds the height, the aspect octant and a 5° slope band; the device paints
@@ -543,7 +544,8 @@ Contract and rationale:
 [decisions/terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
 Tiles exist at z12–14 and are overzoomed above. Viewed tiles are cached by
 the service worker like basemap tiles: `map.js` seeds the class-tile origin
-into the worker's basemap origins, beside the slope origin.
+into the worker's basemap origins. An offline download pins them with the
+"Terrain data" opt-in (SNOW-1072).
 
 **The editorial line is on `/help/#help-topic-terrain-filter`**, linked from
 the legend and the sheet: terrain only, no runout zones, not a hazard
@@ -566,7 +568,7 @@ Four sections, each collapsible and each remembering how it was left, with
 | **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
 | **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
 | **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Basemap** | one radio per basemap · Display slope angles (absent without `SLOPE_TILE_URL`), Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet, §3.5b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
+| **Basemap** | one radio per basemap · Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet holding the filter and the slope layer, §3.5a–b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
 
 Four things about that layout are decisions rather than accidents, and a
 tidy-up would undo each of them:
@@ -576,7 +578,7 @@ tidy-up would undo each of them:
   sections it would also hide rows the collapsed heading does not govern.
 * **Only the first Conditions row says "bulletins".** The first row sets the
   pattern and the reader carries it down.
-* **Only the two Basemap overlay rows carry "Display ".** There the verb
+* **Only the Basemap overlay row carries "Display ".** There the verb
   separates "additionally draw this" from the radio group's "choose this".
 * **The Boundaries tiers are checkboxes, not radios.** They are independent;
   only the opening view names one, via `settings.MAP_DEFAULT_BOUNDARY`.

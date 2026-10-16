@@ -918,17 +918,13 @@
         // same way `handleClick`'s `beforeWarm` reads it), so the live
         // style can stand in when the record names no dependencies — the
         // second row of the resolution rule in `areaRenderDependencyURLs`.
-        // SNOW-692: plus the slope-angle tiles this area's ground implies,
-        // derived from the record's own `z` rather than recorded on it.
-        const slopeAndDeps = [
-          ...areaRenderDependencyURLs(stored.deps, true),
-          ...areaSlopeTileUrls(stored),
-        ];
+        const renderDeps = areaRenderDependencyURLs(stored.deps, true);
         // SNOW-1072: and the terrain-class tiles, for a record carrying the
         // opt-in — derived from `z` and the flag, never recorded. A missing
         // class tile leaves the area 'incomplete', and the tap's repair
-        // fetches it.
-        const depURLs = [...slopeAndDeps, ...areaTerrainClassTileUrls(stored)];
+        // fetches it. (SNOW-1073 removed SNOW-692's swisstopo slope tiles,
+        // which this list also carried; the class tiles replace them.)
+        const depURLs = [...renderDeps, ...areaTerrainClassTileUrls(stored)];
         // Only asked once the tiles are all present. An area still missing
         // tiles is not downloaded at all, and 'idle' — download it — is
         // the right thing to offer; 'incomplete' would send the user to a
@@ -964,7 +960,7 @@
           const fields = { template: tileSources, basemapKey: activeBasemapKey() };
           // SNOW-1072: healed WITHOUT the class tiles, which the record
           // must never carry — the flag is what names them.
-          if (missingDeps.length === 0) fields.deps = slopeAndDeps;
+          if (missingDeps.length === 0) fields.deps = renderDeps;
           if (!stored.glyphPrefix) {
             const prefix = activeBasemapGlyphPrefix(MAP);
             const areaId = core.areaIdForRegion(data.regionId);
@@ -1031,13 +1027,8 @@
       // dependencies — but the question is being asked about the ACTIVE
       // basemap's tiles, so the active style's own list is the right one
       // to check (second row of the resolution rule).
-      // SNOW-692: the slope tiles come from the blob just fetched, which is
-      // the same ground the record would have named had there been one.
       const missingDeps = tilesCached
-        ? core.missingRenderDependencies(
-            [...areaRenderDependencyURLs(null, true), ...activeSlopeTileURLs(blob)],
-            cached,
-          )
+        ? core.missingRenderDependencies(areaRenderDependencyURLs(null, true), cached)
         : [];
       return {
         done: tilesCached && missingDeps.length === 0,

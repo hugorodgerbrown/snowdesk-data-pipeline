@@ -71,6 +71,7 @@ from apps.public._component_fixtures import (
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
+    SEGMENTED_OPTION_VARIANTS,
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
@@ -515,10 +516,11 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="slope",
         label="Slope angle",
         description=(
-            "swisstopo slope-angle classes, SLF classification "
-            "(theme-invariant; the raster leaves below 30° unpainted). The "
+            "Slope-angle classes, SLF classification, painted from our "
+            "terrain-class tiles by the terrain filter's slope mode "
+            "(SNOW-1073; theme-invariant; nothing under 30° is painted). The "
             "last four are the route line's own — a line cannot go blank "
-            "where the raster does without reading as a break, and a "
+            "where the layer does without reading as a break, and a "
             "sampled-but-unanswered stretch is not a gentle one (SNOW-910). "
             "The last two are MARKS drawn over that line rather than "
             "bands of it, and borrow no colour from the scale on purpose: "
@@ -1442,6 +1444,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="segmented-option",
+        label="Segmented option",
+        description=(
+            "One option of a segmented control: a real radio drawn as a pill "
+            "in a rounded track, the selected pill filled with the accent "
+            "(SNOW-1073). The caller writes the fieldset, its legend and the "
+            "track, and includes this once per option. Used by the theme "
+            "preference and the terrain filter's mode control."
+        ),
+        kind="components",
+        partial="includes/_segmented_option.html",
+        variants=SEGMENTED_OPTION_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="switch",
         label="Switch",
         description=(
@@ -1460,8 +1477,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="terrain-filter-key",
         label="Terrain filter key",
         description=(
-            "The map terrain filter's two-row colour key (SNOW-978): the "
-            "match tint and the no-data hatch. Rendered in the map legend and "
+            "The map terrain filter's colour key (SNOW-978): the match tint "
+            "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
+            "five slope classes and the hatch; the script hides the rows of "
+            "the mode not set. Rendered in the map legend and "
             "inside the filter sheet, which carries its own key because the "
             "legend is hidden on a phone while a route is open."
         ),

@@ -433,6 +433,7 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_download_runner.js');
   // SNOW-1072: the class tileset's coverage and band come from here.
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');

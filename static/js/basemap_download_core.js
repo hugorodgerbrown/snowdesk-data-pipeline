@@ -294,8 +294,6 @@
  *     "Downloaded areas" overlay's per-region ring (see
  *     ``docs/decisions/region-downloads-clip-custom-areas-dont.md``), the
  *     last caller that needed the list form.
- *   slopeTileURLs(template, blob, bounds, maxZoom)
- *     SNOW-692: the slope-angle raster tiles over a download's ground.
  *   terrainClassTileURLs(template, blob, bounds, minZ, maxZ) /
  *   terrainClassTileCount(blob, bounds, minZ, maxZ) /
  *   terrainClassMb(count) / terrainScaledBytesPerTile(bytesPerTile,
@@ -828,58 +826,13 @@
   }
 
   /**
-   * Every slope-angle raster URL a download should pin for ``blob``.
-   *
-   * SNOW-692: the slope overlay shipped with opportunistic offline support
-   * only — its tiles landed in the passive, FIFO-trimmed ``BASEMAP_CACHE``
-   * as they were viewed, so terrain the user looked at online might still
-   * be there offline, and might not. For a layer whose whole purpose is
-   * answering "how steep is that" while standing in front of it with no
-   * signal, that is the wrong end state.
-   *
-   * Same ground and same band as the basemap tiles, so this walks the SAME
-   * server-computed blob rows ``rangesToTileURLs`` does rather than doing
-   * tile maths of its own. Two things make it not simply a second call to
-   * that function:
-   *
-   *   - **The layer's own rectangle.** The raster is a multi-country DEM
-   *     composite clipped to a rectangle that is NOT Switzerland plus a
-   *     buffer (``COVERAGE_BOUNDS``, slope_overlay_core.js). A region
-   *     straddling the edge must DROP the tiles outside it rather than
-   *     fetch them and take the failures into the run's `failed` count,
-   *     which would fail an otherwise complete download.
-   *   - **The layer's own zoom ceiling.** The service answers HTTP 400
-   *     past z17 and its real detail stops at z16, so anything deeper is
-   *     skipped. The download band tops out at z14 today, making this
-   *     headroom rather than a live constraint — it is enforced anyway
-   *     because the two ceilings are independent and nothing else would
-   *     notice if the band moved.
-   *
-   * @param {string} template An XYZ template with ``{z}``/``{x}``/``{y}``.
-   * @param {Object | null | undefined} blob The download blob, for its
-   *   ``z`` row spans.
-   * @param {number[] | null | undefined} bounds ``[west, south, east,
-   *   north]`` the raster covers. Omitted means no clip.
-   * @param {number} maxZoom Deepest zoom to request, inclusive.
-   * @returns {string[]} Empty when the template, blob or rows are missing —
-   *   the run then pins no slope tiles, exactly as before this ticket.
-   */
-  function slopeTileURLs(template, blob, bounds, maxZoom) {
-    var urls = [];
-    if (!template) return urls;
-    _eachOverlayTile(blob, bounds, -Infinity, maxZoom, function (z, x, y) {
-      urls.push(_overlayTileURL(template, z, x, y));
-    });
-    return urls;
-  }
-
-  /**
    * Every terrain-class tile URL a download should pin for ``blob``.
    *
    * SNOW-1072: the terrain filter (SNOW-978) paints from these — each
    * pixel carries a height, an aspect octant and a slope band — so an area
-   * that holds the basemap and the slope raster but not these has a filter
-   * that goes blank offline. The same superset rule as every other tile
+   * that holds the basemap but not these has a filter, and since SNOW-1073
+   * a slope layer, that goes blank offline. They replaced the swisstopo
+   * slope raster SNOW-692 pinned. The same superset rule as every other tile
    * family: walk the blob's own row spans (the area's ground, already the
    * superset of what the map will request there), then drop what the class
    * tileset itself cannot answer for:
@@ -985,11 +938,12 @@
    * Call ``visit(z, x, y)`` for every tile in ``blob``'s rows that sits in
    * ``[minZ, maxZ]`` and overlaps ``bounds``.
    *
-   * The walk the two overlay tile families share — the slope raster
-   * (SNOW-692) and the terrain-class tiles (SNOW-1072). Both pin the
-   * area's OWN ground, so both walk the server-computed rows rather than
-   * doing tile maths of their own, and both clip to a rectangle and a band
-   * their tileset publishes.
+   * The walk ``terrainClassTileURLs`` and ``terrainClassTileCount`` share
+   * (SNOW-1072). The class tiles are pinned over the area's OWN ground, so
+   * the walk follows the server-computed rows rather than doing tile maths
+   * of its own, and clips to the rectangle and band the tileset publishes.
+   * SNOW-692's swisstopo slope raster walked it too, until SNOW-1073
+   * removed that layer.
    *
    * @param {Object | null | undefined} blob
    * @param {number[] | null | undefined} bounds Omitted means no clip.
@@ -1022,7 +976,7 @@
 
   /**
    * One overlay tile's URL: the template with ``{z}``/``{x}``/``{y}``
-   * substituted — the form both overlays' live fetches use.
+   * substituted — the form the terrain filter's live fetch uses.
    *
    * @param {string} template
    * @param {number} z
@@ -1040,11 +994,11 @@
   /**
    * Whether a tile's ground overlaps ``bbox``.
    *
-   * SNOW-692. Overlap, not containment: a tile straddling the raster's edge
-   * carries real data on the inside and has to be fetched. Touching edges
-   * count, matching ``coversPoint``'s inclusive rectangle in
-   * slope_overlay_core.js — a tile flush against the boundary is one the
-   * service still answers.
+   * SNOW-692. Overlap, not containment: a tile straddling the tileset's
+   * edge carries real data on the inside and has to be fetched. Touching
+   * edges count, matching ``coversPoint``'s inclusive rectangle in
+   * terrain_filter_core.js — a tile flush against the boundary is one the
+   * origin still answers.
    *
    * @param {number} z
    * @param {number} x
@@ -3052,7 +3006,6 @@
     missingRenderDependencies: missingRenderDependencies,
     styleFontstacks: styleFontstacks,
     glyphURLs: glyphURLs,
-    slopeTileURLs: slopeTileURLs,
     terrainClassTileURLs: terrainClassTileURLs,
     terrainClassTileCount: terrainClassTileCount,
     terrainClassMb: terrainClassMb,

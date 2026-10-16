@@ -2,7 +2,7 @@
 name: legs-not-slope-classes-on-the-map
 description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -78,7 +78,8 @@ In their place the slope classes return to the line itself, from z14
 above. From z14 the leg lines stop and `routes-slope-line` /
 `routes-slope-unknown` (source `routes-slopes`, built by
 `slopeSegmentCollection` in `route_legs_core.js`) paint the route's core
-per 25 m segment in the six classes, in the slope raster's palette,
+per 25 m segment in the six classes, in the slope layer's palette
+(`slope_classes_core.js`, SNOW-1073),
 with an unknown segment in grey. The leg casing and the numbered
 transitions stay at every zoom, so the legs remain countable; each
 segment carries its leg's `i`, so opening a leg on the rail dims the

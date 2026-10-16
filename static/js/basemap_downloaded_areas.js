@@ -270,10 +270,11 @@
           // — normalised to `[]` here, which the sheet reads as UNKNOWN
           // rather than as "nothing needed".
           deps: Array.isArray(entry.deps) ? entry.deps : [],
-          // SNOW-692: the run's own tile row spans, carried so the slope
-          // tiles this area should hold can be DERIVED by the probe rather
-          // than recorded on it (~273 URLs, 27.4 KB per region, all of it
-          // recomputable from this). Null on a record written before
+          // SNOW-692: the run's own tile row spans, carried so the
+          // overlay tiles this area should hold — the terrain-class tiles
+          // since SNOW-1072, as SNOW-692's swisstopo slope tiles were —
+          // can be DERIVED by the probe rather than recorded on it, all of
+          // it recomputable from this. Null on a record written before
           // SNOW-583, which carried `bbox` and no `z` — the same absence
           // the roundel's own tile probe already reads as "no record".
           z: entry.z || null,
