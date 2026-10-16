@@ -39,18 +39,33 @@ deep-linkable and the back button drops it. On a desktop nothing is
 overlaid on the map itself: tapping a region does not open a popup over
 the terrain the visitor just tapped.
 
-**On a phone (below 640px) a tap opens the region sheet** (SNOW-1098), a
-bottom sheet with the three detents of §3.7. It opens at **peek** (the
-region's name, the day's danger level, the date, and the pin and
-download controls), which keeps the tapped ground in view; that was the
-complaint that removed the old popup. Dragging up to **half** shows where
-the region is, the day's avalanche problems and its resorts. **Full**
-adds the link to the bulletin page, which is not re-rendered in the sheet.
-Only a map tap opens it. A search pick, a deep link and a pinned-region
-row select without one. While it is open it follows the selection and
-the day, and deselecting the region closes it. Its pin and download
-buttons press the roundels beside the chip, so each keeps one owner. The
-chip's region panel keeps its summary at every width.
+**On a phone (below 640px) every selection opens the region sheet**
+(SNOW-1098), a bottom sheet with the detents of §3.7: a map tap, a search
+pick, a pinned region from search, and a deep link (`/map/#CH-4115`). The
+region chip is not drawn on a phone (see below), so the sheet is the one
+surface that names what is selected. It slides up from the foot and opens
+at **peek**, one compact row in the manner of Google Maps' peek: the
+danger tile, the region's name, and under it the search row's flag and
+region code with the day's level and the area name (no date — the date
+control says that), beside the pin and download controls at 32px and the
+×. Peek keeps the selected ground in view; that was the complaint that
+removed the old popup. Dragging up to **half** shows where the region is,
+the day's avalanche problems and its resorts. **Full** adds the link to
+the bulletin page, which is not re-rendered in the sheet, and exists only
+on a day with a bulletin: with none there is nothing to reveal, so the
+sheet stops at half. While it is open it follows the selection and the
+day, and deselecting the region closes it. Its pin and download buttons
+press the ribbon's roundels, so each keeps one owner.
+
+**The phone's top row is the date and search** (Hugo, 16 Oct 2026). On a
+phone the ribbon (the chip, its pin and its download) is not drawn: the
+sheet names the selection, carries the pin and the download, and the
+pinned regions the chip's panel listed are listed by search. The row
+holds the date control at the left — moved up from the bottom-left stack,
+where a peeking sheet covered it — and the search roundel at the right.
+Opening search grows it across the whole row, over the date, because
+nobody needs both at once. On a desktop the chip, its panel and the
+bottom-left date are unchanged.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
@@ -787,12 +802,17 @@ ground still in view), **half** (the detail beside the map) and **full**
 them, a flick carries it past the nearest, a drag below the lowest closes
 it, and a press on the handle steps it up, so a keyboard user reaches all
 three. While it rests at peek or half the map's camera is padded by its
-height, so a fly-to lands above the sheet. A detent sheet spans the full
-width and sits flush on the screen's foot, top corners rounded. While one is
-open, every map control steps out except locate, which rides on the sheet's
-top edge. A sheet declares only the detents it can use: an object you
-tapped on the map uses all three, a list uses half and full, and **a form
-uses none**, because a swipe must never discard a half-written report. At
+height, so a fly-to lands above the sheet; a padding change waits for a
+camera already in flight, so it never cancels one. A detent sheet spans the
+full width, sits flush on the screen's foot with its top corners rounded,
+and slides up from the foot when it opens. **Nothing on the map moves or
+folds for it**: the sheet covers whatever is under it, and the furniture is
+where it was when the sheet closes. A sheet declares only the detents it
+can use: an object you tapped on the map uses all three, a list uses half
+and full, and **a form uses none**, because a swipe must never discard a
+half-written report. Content can narrow them further for what it holds
+(`data-sheet-detents`): the region sheet drops full on a day with no
+bulletin. At
 `sm` and above detents change nothing. The rule above for the docked phone
 sheet still holds for every sheet that declares no detents. Why:
 [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
@@ -989,8 +1009,10 @@ carries the danger-by-day colour that was the only other thing it offered.
 
   **The date control is one control.** The readout that says which day the
   map is showing and the button that changes it are the same pill, in the
-  bottom-left row. They were two, a screen apart — a readout you could not
-  press beside a button that did not say what it would show.
+  bottom-left row on a desktop and in the top row on a phone (§1), where
+  its calendar drops down beneath it. They were two, a screen apart — a
+  readout you could not press beside a button that did not say what it
+  would show.
 - **Shareable.** The scrubbed date is reflected in the URL (`/map/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded, today included. An
   empty querystring means **today** (SNOW-793): the map opens painted for
@@ -1009,7 +1031,12 @@ and resorts already loaded, so there are no extra round-trips. Matching
 is accent-insensitive, prefix matches rank above substring matches, and
 each result carries a "Region" or "Resort" badge to disambiguate places
 whose region and resort share a name (e.g. Davos). Selecting a result
-routes through the same selection path as a map tap.
+routes through the same selection path as a map tap. On a phone search is
+a roundel in the top row that opens across it (§1); opened with an empty
+field it lists the signed-in reader's pinned regions — the same loaded
+list as the pin roundel, so the two cannot disagree — and typing replaces
+them with matches. A pick there frames the region above the sheet it
+opens, and the field empties so the pinned list is there next time.
 
 **Placing a pin clears the map.** Positioning a pin is a precision task, so
 while it is in progress the map shows nothing but the basemap and the pin

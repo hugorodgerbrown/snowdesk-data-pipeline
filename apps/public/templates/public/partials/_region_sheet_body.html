@@ -15,11 +15,14 @@ next part of it:
      truncates rather than wraps, because a peek that grows a line for a
      long name stops being a peek (Hugo's review, 16 Oct). The header is also
      ``data-sheet-drag``, so the reader can drag the sheet by it as well as
-     by the handle; its buttons keep their own press.
+     by the handle; its buttons keep their own press. Its second line is
+     the search row's: the flag-and-code badge and the area name, not the
+     date (Hugo, 16 Oct).
   2. HALF — where the region is, the day's avalanche problems (the bulletin
      page's own cards, ``public/_rating_block.html``) and the resorts in the
      region, each a link to its resort page.
-  3. FULL — the bulletin link. The sheet links to the bulletin rather than
+  3. FULL — the bulletin link, and only when there is a bulletin for the
+     day: the body's ``data-sheet-detents`` drops FULL otherwise. The sheet links to the bulletin rather than
      re-rendering it, because the bulletin page is the full-fidelity render.
 
 THE PIN AND DOWNLOAD BUTTONS ARE PROXIES. Each one presses the roundel of
@@ -42,7 +45,13 @@ Context:
   problem_cards  — The bulletin's problem cards, possibly empty.
   resorts        — Resort rows in the region, possibly empty.
 {% endcomment %}
-<div class="space-y-4" data-testid="region-sheet-body" data-region-id="{{ region.region_id }}">
+<div
+    class="space-y-4"
+    data-testid="region-sheet-body"
+    data-region-id="{{ region.region_id }}"
+    {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
+    data-sheet-detents="{% if day_rating %}peek,half,full{% else %}peek,half{% endif %}"
+>
     <div data-sheet-peek data-sheet-drag>
         <div class="flex items-center gap-3">
             {% if day_rating %}
@@ -56,9 +65,22 @@ Context:
                 <h2 class="truncate text-base font-semibold leading-tight text-text-1" title="{{ region.name }}">
                     {{ region.name }}
                 </h2>
-                <p class="truncate text-meta text-text-2" data-testid="region-sheet-meta">
-                    {% if level_label %}{{ level_label }} ·{% endif %}
-                    {{ target_date|date:"j M" }}
+                {# The search row's second line: the region's code behind its country's flag, and the area it sits in. #}
+                <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="region-sheet-meta">
+                    <span class="search-result-badge">
+                        {% with country=region.region_id|slice:":2"|lower %}
+                            {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                <svg class="search-result-flag search-result-flag--{{ country }}" aria-hidden="true">
+                                    <use href="#flag-{{ country }}" />
+                                </svg>
+                            {% endif %}
+                        {% endwith %}
+                        {{ region.region_id }}
+                    </span>
+                    <span class="truncate">
+                        {% if level_label %}{{ level_label }} ·{% endif %}
+                        {{ region.subregion.name_en|default:region.subregion.name_native }}
+                    </span>
                 </p>
             </div>
             <button

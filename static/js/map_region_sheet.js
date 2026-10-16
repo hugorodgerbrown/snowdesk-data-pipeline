@@ -10,19 +10,15 @@
  * link (FULL). The detents themselves are SNOW-1097's, bound by
  * `window.MapSheet.attach` because the partial declares them.
  *
- * WHEN IT OPENS. Only for a selection map.js marks `via: 'tap'`, and only
- * below the `sm` breakpoint. A search pick, a deep link and a pinned-region
- * row select a region too, and a sheet thrown over the map by any of those
- * would be a surface nobody asked for. On a desktop a tap keeps today's
- * behaviour; the chip's region panel, which keeps its summary at every
- * width, is the way in there.
+ * WHEN IT OPENS. For every selection below the `sm` breakpoint — a tap, a
+ * search pick, a pinned region, a deep link (Hugo, 16 Oct). On a phone the
+ * region chip is gone (map.css hides the ribbon and gives its row to
+ * search), so the sheet is the one surface that names the selection. On a
+ * desktop nothing changes: the chip's region panel is the way in there.
  *
- * WHILE IT IS OPEN THE RIBBON HEADER STEPS OUT. The region chip and its
- * pin and download roundels sit at the top of the map and say the same
- * things the sheet's header says, twice over and not always in step (the
- * chip names the region it was last set to). While the sheet is open the
- * root carries `data-region-sheet` and map.css hides that header; the
- * proxies still press the hidden roundels, which keep owning the verbs.
+ * THE RIBBON STAYS IN THE DOM on a phone, hidden, because the proxies in
+ * the sheet's header press its pin and download roundels, which keep owning
+ * the verbs. The root carries `data-region-sheet` while the sheet is open.
  *
  * WHILE IT IS OPEN it follows the map: another region selected (by any
  * route) repaints it for that region at the detent it is resting at, a date
@@ -217,9 +213,16 @@
       load();
       return;
     }
-    if (detail.via !== 'tap' || !isPhone()) return;
-    controller.open();
+    // On a phone the sheet opens however the region was picked — a tap, a
+    // search pick, a pinned region, a deep link (Hugo, 16 Oct). The region
+    // chip is gone there, so the sheet is the one surface that names the
+    // selection; a pick that opened nothing would leave it unnamed.
+    if (!isPhone()) return;
+    // Load first: it paints the loading line synchronously, so PEEK is
+    // measured from a row rather than the empty-sheet fallback, and the
+    // sheet does not open tall and drop when the region arrives.
     load();
+    controller.open();
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {

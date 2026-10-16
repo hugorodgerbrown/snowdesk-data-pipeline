@@ -104,7 +104,7 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 [`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
-- `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by a map tap (SNOW-1098, `apps/public/region_sheet.py`)
+- `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/public/region_sheet.py`)
 - `/partials/report/`, `/partials/report/form/`, `/partials/report/list/`,
   `/partials/report/<uuid>/delete/` — field-report submission, the
   reporter's own list, and delete

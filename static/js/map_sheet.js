@@ -66,8 +66,9 @@
  *   - turns a press on the handle (a click, Enter or Space) into a step up
  *     to the next detent, so the three states are reachable without a drag;
  *   - after every settle, pads the map camera's bottom edge by the sheet's
- *     height and lifts the roundel column onto the sheet's edge, so a
- *     fly-to lands above the sheet rather than behind it. The padding is
+ *     height, so a fly-to lands above the sheet rather than behind it. The
+ *     map's furniture does not move or fold: the sheet slides up over it.
+ *     The padding is
  *     applied with the map's view held still (the centre is moved to the
  *     point already under the new padded centre), so a settle never jolts
  *     the ground the reader is looking at;
@@ -76,7 +77,7 @@
  *
  * At ``sm`` and up the binding does nothing visible: every height rule is
  * inside a phone media query in static/css/map.css, and the padding and the
- * lift are reset to nothing. The rules themselves are pure and live in
+ * root mark are reset to nothing. The rules themselves are pure and live in
  * static/js/sheet_detents_core.js. If that module is not on the page (most
  * Vitest suites import this file alone) ``bindDetents`` returns null and the
  * sheet behaves exactly as it did before detents existed.
@@ -215,6 +216,10 @@
     if (!map || typeof map.getPadding !== 'function') return;
     var padding = map.getPadding() || {};
     if ((padding.bottom || 0) === bottom) return;
+    // A jumpTo now would cancel a flight in progress — a search pick frames
+    // its region just as the sheet's content lands and re-fits PEEK. The
+    // sheet's moveend watcher puts the padding on once the camera rests.
+    if (typeof map.isMoving === 'function' && map.isMoving()) return;
     var next = {
       top: padding.top || 0,
       left: padding.left || 0,
@@ -235,14 +240,10 @@
     map.jumpTo({ center: centre, padding: next });
   }
 
-  /** @param {number} px */
-  function liftControls(px) {
-    document.documentElement.style.setProperty('--map-sheet-lift', px + 'px');
-  }
-
   /**
-   * Mark the root while a detent sheet is open on a phone, which is what
-   * map.css reads to step every map control but locate out of the way.
+   * Mark the root with the detent while a detent sheet is open on a phone,
+   * for any rule that needs to know the sheet is up. Nothing on the map
+   * moves for it — the sheet slides up over the furniture (Hugo, 16 Oct).
    *
    * @param {string|null} detent
    */
@@ -264,8 +265,12 @@
   function bindDetents(el, options) {
     var core = window.pwaSheetDetentsCore;
     if (!core || !el) return null;
-    var detents = core.parseDetents(el.getAttribute('data-detents'));
-    if (!detents.length) return null;
+    var declared = core.parseDetents(el.getAttribute('data-detents'));
+    if (!declared.length) return null;
+    // The detents in force: the declared ones, narrowed by the content when
+    // it marks an element `data-sheet-detents` (the region sheet drops FULL
+    // for a day with no bulletin — there is nothing to reveal; Hugo, 16 Oct).
+    var detents = declared;
     var opts = options || {};
     var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));
     var initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
@@ -316,26 +321,21 @@
     }
 
     /**
-     * Padding and lift for the detent the sheet now rests at. At full the
-     * map is covered, so the column drops back behind the sheet and the
-     * padding is left at the previous detent's, which means a drag back
-     * down does not move the camera twice.
+     * The root mark and the camera padding for the detent the sheet now
+     * rests at. The map's furniture does not move: the sheet covers it. At
+     * full the map is covered too, so the padding is left at the previous
+     * detent's, which means a drag back down does not move the camera twice.
      */
     function applySurroundings() {
       if (!isOpen() || !current || !isPhone()) {
         markSheet(null);
-        liftControls(0);
         padded = 0;
         padMapBottom(0);
         return;
       }
       markSheet(current);
-      if (current === 'full') {
-        liftControls(0);
-        return;
-      }
+      if (current === 'full') return;
       var lift = Math.round(heights()[current] + bottomOffset());
-      liftControls(controlsFitAbove(lift) ? lift : 0);
       padded = lift;
       watchCamera();
       padMapBottom(lift);
@@ -353,26 +353,11 @@
       if (watchingCamera || !map || typeof map.on !== 'function') return;
       watchingCamera = true;
       map.on('moveend', function () {
-        if (padded > 0 && isOpen() && isPhone()) padMapBottom(padded);
+        if (!isPhone()) return;
+        // Open: put back the sheet's padding (a fit replaced it, or it was
+        // deferred mid-flight). Closed: clear what a deferred close left.
+        padMapBottom(isOpen() ? padded : 0);
       });
-    }
-
-    /**
-     * Whether the roundel column still fits between the map's top edge and
-     * a sheet whose top is `lift` px above the viewport's foot. At half on
-     * a short phone it does not, and a column lifted anyway runs up under
-     * the search control and off the top of the map; it stays behind the
-     * sheet instead, as it does at full.
-     *
-     * @param {number} lift
-     * @returns {boolean}
-     */
-    function controlsFitAbove(lift) {
-      var controls = document.getElementById('map-controls-br');
-      var mapEl = document.getElementById('map');
-      if (!controls || !mapEl) return true;
-      var room = window.innerHeight - lift - mapEl.getBoundingClientRect().top;
-      return controls.getBoundingClientRect().height + 16 <= room;
     }
 
     /** @param {string} name */
@@ -388,6 +373,7 @@
 
     function open() {
       restoreHandle();
+      syncAllowed();
       set(/** @type {string} */ (initial));
     }
 
@@ -400,8 +386,21 @@
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
       markSheet(null);
-      liftControls(0);
       padMapBottom(0);
+    }
+
+    /** Re-read the content's `data-sheet-detents`, if it marks one. */
+    function syncAllowed() {
+      var marker = el.querySelector('[data-sheet-detents]');
+      if (!marker) {
+        detents = declared;
+        return;
+      }
+      var allowed = core.parseDetents(marker.getAttribute('data-sheet-detents'));
+      var narrowed = declared.filter(function (name) {
+        return allowed.indexOf(name) !== -1;
+      });
+      detents = narrowed.length ? narrowed : declared;
     }
 
     function restoreHandle() {
@@ -414,7 +413,13 @@
     if (typeof MutationObserver === 'function') {
       new MutationObserver(function () {
         restoreHandle();
-        if (current === 'peek' && isOpen()) set('peek');
+        syncAllowed();
+        if (!current || !isOpen()) return;
+        // New content that no longer allows the detent the sheet rests at
+        // (FULL, for a day with no bulletin) brings it down to the highest
+        // it does allow.
+        if (detents.indexOf(current) === -1) set(detents[detents.length - 1]);
+        else if (current === 'peek') set('peek');
       }).observe(el, { childList: true });
     }
 

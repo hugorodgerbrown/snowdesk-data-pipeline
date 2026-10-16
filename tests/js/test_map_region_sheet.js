@@ -110,11 +110,11 @@ describe('opening', () => {
     expect(sheet.textContent).toContain('Martigny-Verbier');
   });
 
-  it('does not open for a selection that was not a tap', async () => {
+  it('opens for a selection that was not a tap (search, pinned row, deep link)', async () => {
     const sheet = await boot();
     select('CH-4115');
-    expect(sheet.hasAttribute('hidden')).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it('does not open on a desktop', async () => {

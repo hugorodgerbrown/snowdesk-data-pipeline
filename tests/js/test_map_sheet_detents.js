@@ -5,9 +5,11 @@
  * The rules (nearest detent, flick, close threshold) are covered in
  * test_sheet_detents_core.js; this file covers the binding: a sheet opens at
  * its initial detent, the handle steps through the declared detents, a drag
- * settles or closes, the handle survives a content swap, the map camera is
- * padded and the roundel column lifted, and a sheet with no detents is left
- * exactly as it was.
+ * settles or closes, the handle survives a content swap, content can narrow
+ * the detents in force (`data-sheet-detents`), the map camera is padded
+ * (and not while it is moving), the root is marked while the sheet is open,
+ * nothing publishes a lift for the furniture (it is covered, not moved), and
+ * a sheet with no detents is left exactly as it was.
  *
  * jsdom lays nothing out, so every height the binding reads is stubbed on
  * the element (`getBoundingClientRect`) and jsdom's own `innerHeight` (768)
@@ -195,7 +197,7 @@ describe('dragging', () => {
 });
 
 describe('the map around the sheet', () => {
-  it('pads the camera and lifts the roundels by the sheet height, then clears both', () => {
+  it('pads the camera by the sheet height and marks the root, then clears both', () => {
     const jumpTo = vi.fn();
     const listeners = { moveend: [] };
     let padding = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -220,7 +222,8 @@ describe('the map around the sheet', () => {
       center: { x: 200, y: 192 },
       padding: { top: 0, left: 0, right: 0, bottom: 384 },
     });
-    expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('384px');
+    // The furniture is covered, not moved: nothing publishes a lift.
+    expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('');
 
     // A fit that brings its own padding is undone when the camera rests.
     padding = { top: 60, left: 40, right: 40, bottom: 40 };
@@ -232,19 +235,73 @@ describe('the map around the sheet', () => {
     controller.close();
     expect(padding.bottom).toBe(0);
     expect(document.documentElement.hasAttribute('data-map-sheet')).toBe(false);
-    expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('0px');
   });
 });
 
-describe('the roundel column', () => {
-  it('stays behind a sheet it would not fit above', () => {
-    document.body.insertAdjacentHTML('beforeend', '<div id="map-controls-br"></div>');
-    const controls = document.getElementById('map-controls-br');
-    // 400 px of roundels cannot fit above a 384 px half sheet in 768 px.
-    controls.getBoundingClientRect = () => /** @type {DOMRect} */ ({ height: 400 });
-    const { controller } = attachSheet('peek,half,full', 'half');
-    document.body.appendChild(controls);
+describe('detents the content allows', () => {
+  it('skips a detent the content does not allow', async () => {
+    const { sheet, handle, controller } = attachSheet('peek,half,full', 'peek');
+    sheet.insertAdjacentHTML('beforeend', '<div data-sheet-detents="peek,half"></div>');
     controller.open();
-    expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('0px');
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+  });
+
+  it('brings the sheet down when new content drops the detent it rests at', async () => {
+    const { sheet, handle, controller } = attachSheet('peek,half,full', 'full');
+    controller.open();
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+    sheet.innerHTML = '<div data-sheet-detents="peek,half"></div>';
+    await Promise.resolve();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    expect(handle).not.toBeNull();
+  });
+
+  it('falls back to the declared detents when the content allows none of them', () => {
+    const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');
+    sheet.insertAdjacentHTML('beforeend', '<div data-sheet-detents="bogus"></div>');
+    controller.open();
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+  });
+});
+
+describe('a camera in flight', () => {
+  it('defers the padding until the camera rests, so a fly-to is not cancelled', () => {
+    const jumpTo = vi.fn();
+    const listeners = { moveend: [] };
+    let padding = { top: 0, bottom: 0, left: 0, right: 0 };
+    let moving = true;
+    globalThis.MAP = {
+      getPadding: () => padding,
+      setPadding: (next) => {
+        padding = next;
+      },
+      getContainer: () => ({ clientWidth: 400, clientHeight: 768 }),
+      unproject: ([x, y]) => ({ x, y }),
+      isMoving: () => moving,
+      on: (name, fn) => listeners[name].push(fn),
+      jumpTo: (options) => {
+        jumpTo(options);
+        padding = options.padding;
+      },
+    };
+    const { controller } = attachSheet('peek,half,full', 'half');
+    controller.open();
+    expect(jumpTo).not.toHaveBeenCalled();
+
+    moving = false;
+    listeners.moveend.forEach((fn) => fn());
+    expect(padding.bottom).toBe(384);
+
+    // A close while a flight runs is cleared when it lands.
+    moving = true;
+    controller.close();
+    expect(padding.bottom).toBe(384);
+    moving = false;
+    listeners.moveend.forEach((fn) => fn());
+    expect(padding.bottom).toBe(0);
   });
 });

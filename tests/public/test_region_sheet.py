@@ -5,8 +5,11 @@ tests/public/test_region_sheet.py — the phone region sheet's body
 Covers:
   - The guards: a plain GET is a 400 (require_htmx), an unknown region a
     404, a malformed ``?d=`` a 400.
-  - PEEK: the region's name, the danger tile and level, the date, the two
-    proxy controls and the ×, inside the ``data-sheet-peek`` header.
+  - PEEK: the region's name, the danger tile and level, the search row's
+    flag-and-code badge and area name (not the date), the two proxy
+    controls and the ×, inside the ``data-sheet-peek`` header.
+  - The detents the body allows: all three on a rated day, peek and half
+    otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
   - HALF: the breadcrumb, the day's problem cards from the default
     bulletin, and the region's resorts linked to their pages.
   - FULL: the bulletin link for the day, or the no-bulletin and
@@ -16,6 +19,7 @@ Covers:
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 import pytest
@@ -96,6 +100,13 @@ def _render_model() -> dict[str, Any]:
     }
 
 
+def _meta_line(content: str) -> str:
+    """Return the peek header's second line (``region-sheet-meta``)."""
+    match = re.search(r'data-testid="region-sheet-meta">(.*?)</p>', content, re.S)
+    assert match, "the peek header has no second line"
+    return match.group(1)
+
+
 def _rated_today(region: Any) -> None:
     """Give ``region`` today's rating and a bulletin valid all of today."""
     today = timezone.localdate()
@@ -132,9 +143,7 @@ class TestGuards:
 class TestPeek:
     """What shows at peek: the header."""
 
-    def test_header_names_the_region_its_level_and_the_day(
-        self, client: Client
-    ) -> None:
+    def test_header_names_the_region_and_its_level(self, client: Client) -> None:
         region = MicroRegionFactory.create(name="Martigny-Verbier")
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
@@ -143,7 +152,20 @@ class TestPeek:
         assert 'data-testid="region-sheet-rating"' in content
         assert 'data-level="considerable"' in content
         assert "Considerable" in content
-        assert timezone.localdate().strftime("%b") in content
+
+    def test_second_line_is_the_search_rows_badge_and_area_not_the_date(
+        self, client: Client
+    ) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        meta = _meta_line(_get(client, _url(region.region_id.lower())).content.decode())
+        country = region.region_id[:2].lower()
+        assert "search-result-badge" in meta
+        assert region.region_id in meta
+        if country in {"ch", "at", "fr", "it"}:
+            assert f'href="#flag-{country}"' in meta
+        assert region.subregion.name_en in meta
+        assert timezone.localdate().strftime("%b") not in meta
 
     def test_header_carries_the_two_proxies_and_a_close(self, client: Client) -> None:
         region = MicroRegionFactory.create()
@@ -156,6 +178,22 @@ class TestPeek:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-rating"' not in content
+
+
+@pytest.mark.django_db
+class TestDetents:
+    """FULL only reveals a bulletin, so a day without one stops at half."""
+
+    def test_rated_day_allows_all_three(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-sheet-detents="peek,half,full"' in content
+
+    def test_unrated_day_stops_at_half(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-sheet-detents="peek,half"' in content
 
 
 @pytest.mark.django_db

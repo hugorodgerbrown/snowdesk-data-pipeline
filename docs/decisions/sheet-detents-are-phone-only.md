@@ -1,6 +1,6 @@
 ---
 name: sheet-detents-are-phone-only
-description: Phone map sheet detents (peek, half, full; _overlay_sheet.html detents, sheet_detents_core.js, bindDetents); forms take none
+description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
 last-reviewed: 2026-10-16
 ---
@@ -25,12 +25,20 @@ gesture a mouse does badly (map-page functional spec §3.7). Google and Apple
 Maps make the same split: a draggable sheet on a phone, a fixed side panel
 on a desktop.
 
-**Why full width, and only locate stays.** Hugo's review of the first
-build (16 Oct 2026): an inset card with the whole roundel column and the
-bottom-left stack lifted onto it read as two layers of chrome stacked over
-the ground the sheet was meant to leave clear. A detent sheet is therefore
-full width and flush to the foot, and while it is open the map keeps one
-control, locate, on the sheet's top edge; the rest return when it closes.
+**Why full width, and why the furniture is covered rather than moved.**
+Hugo's review of the first build (16 Oct 2026): an inset card with the whole
+roundel column and the bottom-left stack lifted onto it read as two layers
+of chrome stacked over the ground the sheet was meant to leave clear. A
+detent sheet is therefore full width and flush to the foot. Two later
+builds kept the column in play — lifting it onto the sheet's edge, then
+folding it down to locate — and both were withdrawn the same day: each
+needed the column's geometry measured and published on every settle (the
+map's foot sits above the viewport's when the site footer runs under it,
+which the first lift got wrong), and each moved controls the reader had
+not touched. The sheet now slides up over the map's furniture and covers
+it; nothing on the map moves or folds. What a peeking sheet would have
+hidden that matters — the date — moved to the phone's top row instead,
+beside search, where no sheet reaches.
 
 **Why forms take none.** A drag down below the lowest detent closes the
 sheet. On a form that would throw away what the reader has typed, from a
@@ -58,4 +66,12 @@ only binds it to pointer events. Without the core on the page,
   because the map is covered.
 - Content marks the end of its peek summary with `data-sheet-peek`, and a
   header the reader may drag by with `data-sheet-drag`. Controls inside a
-  draggable header keep their own press.
+  draggable header keep their own press. Content may also narrow the
+  declared detents with `data-sheet-detents`; the region sheet drops FULL
+  on a day with no bulletin, since FULL exists to reveal one.
+- Nothing on the map is repositioned for a sheet. `data-map-sheet` on the
+  root says a sheet is up; do not reintroduce a lift or a fold without
+  reading the paragraph above.
+- A padding change is skipped while the camera is moving and applied on
+  `moveend`, because a `jumpTo` mid-flight cancels the flight (a search
+  pick frames its region just as the sheet's content re-fits PEEK).

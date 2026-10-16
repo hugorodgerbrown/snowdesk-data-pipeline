@@ -4850,7 +4850,26 @@ body.map-framing #map-legend {
            would outline the whole screen width for a press nobody made. */
         outline: none;
         overflow: hidden;
-        transition: height 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    /* OPENING SLIDES UP FROM THE FOOT (Hugo, 16 Oct). Keyed on
+       [data-detents] alone, not on [data-detent]: the open path reads the
+       sheet's layout (pwaOverlayBounds.positionSheet) after it leaves
+       `hidden` and before map_sheet.js sets its detent, so the browser
+       takes its first style of the sheet without a detent, and a starting
+       style that needed one never applied. The translate is a percentage,
+       so it resolves against the peek height once the detent lands. */
+    [data-detents] {
+        transform: translateY(0);
+        transition:
+            height 280ms cubic-bezier(0.32, 0.72, 0, 1),
+            transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    @starting-style {
+        [data-detents] {
+            transform: translateY(100%);
+        }
     }
 
     [data-detents][data-detent='peek'] {
@@ -4890,39 +4909,104 @@ body.map-framing #map-legend {
         touch-action: none;
     }
 
-    /* LOCATE ONLY (Hugo, 16 Oct). While a detent sheet is open the map
-       keeps one control: locate, riding on the sheet's top edge — the
-       placement Google's own sheet uses, and the one control a reader
-       moving about the map under a peeking sheet still needs. The rest of
-       the roundel column and the bottom-left stack (help, info, date) step
-       out until the sheet closes; shifting them all up stacked a second
-       column of chrome over the ground the sheet was meant to leave clear.
-       map_sheet.js writes data-map-sheet on the root while a sheet is open
-       on a phone, and --map-sheet-lift on every settle (0 at full, where
-       locate is covered anyway, and on close). */
-    /* Locate is the column's first child (_map_embed.html, SNOW-664), so
-       "every child after the first" is every control but locate. */
-    :root[data-map-sheet] .map-controls-br > :not(:first-child),
-    :root[data-map-sheet] .map-legend {
+    /* COVERED, NOT MOVED (Hugo, 16 Oct). While a detent sheet is open on a
+       phone nothing on the map moves or folds to make room for it: the
+       sheet slides up over the furniture, and whatever is under it is under
+       it. The column's menus (#basemap-menu, #map-fill-flyout) close on
+       their own when the sheet opens — both are in pwaMapOverlays, which
+       map_sheet.js announces every open through. */
+
+    /* A TIGHT PEEK, AS GOOGLE MAPS DRAWS ONE (Hugo, 16 Oct). The handle is
+       a slim strip rather than a 24px band, the sheet's top padding goes
+       to almost nothing under it, and the header's pin and download — the
+       region sheet's proxies, which take the ribbon roundels' classes
+       whole — draw at 32px rather than 40, so the one row is as short as
+       its title allows and more of the map stays in view. */
+    [data-detents][data-detent] {
+        padding-top: 4px;
+    }
+
+    [data-detents] [data-sheet-handle] {
+        height: 16px;
+        margin-top: 0;
+        margin-bottom: 4px;
+    }
+
+    [data-detents] [data-region-sheet-proxy] {
+        width: 32px;
+        height: 32px;
+    }
+
+    [data-detents] [data-region-sheet-proxy] svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* THE TOP ROW IS THE DATE AND SEARCH (Hugo, 16 Oct). On a phone the
+       region chip, its pin and its download leave the map: the region sheet
+       names whatever is selected however it was picked
+       (map_region_sheet.js), its header carries the pin and the download,
+       and pinned regions list in search before anything is typed (map.js).
+       The ribbon stays in the DOM because the sheet's pin and download
+       proxies press its roundels.
+
+       The row they leave holds the date, at the left where the chip was —
+       map_calendar.js moves the date control and its calendar card up here
+       from the bottom-left stack, where a peeking sheet covered them — and
+       the search roundel at the right. Search opens over the date: the
+       pill grows leftwards across the whole row, because nobody needs the
+       date and a query at the same moment. */
+    .season-ribbon {
         display: none;
     }
 
-    /* The region sheet's header carries the region, its pin and its
-       download, so the ribbon header that says the same steps out while
-       the sheet is open (SNOW-1098; map_region_sheet.js marks the root). */
-    :root[data-region-sheet] .ribbon-header {
-        visibility: hidden;
+    .map-utility-cluster {
+        left: var(--map-edge-inset-left);
+        right: var(--map-edge-inset-right);
+        height: var(--map-control-lg);
+        justify-content: flex-start;
     }
 
-    .map-controls-br {
-        bottom: max(var(--map-bottom-row-offset), calc(var(--map-sheet-lift, 0px) + 8px));
-        transition: bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    .map-utility-pill--search {
+        position: absolute;
+        top: 0;
+        right: 0;
+        z-index: 1;
+    }
+
+    .map-utility-pill--search[data-state="expanded"] {
+        width: 100%;
+    }
+
+    .map-utility-cluster > .map-date-control {
+        height: var(--map-control-lg);
+    }
+
+    .search-results {
+        left: 0;
+        right: 0;
+        width: auto;
+        max-height: min(320px, 50dvh);
+    }
+
+    /* The calendar drops down from the row, as search's results do, rather
+       than rising from the bottom-left corner it left. */
+    .map-utility-cluster > .map-calendar {
+        top: calc(var(--map-control-lg) + 8px);
+        left: 0;
+        bottom: auto;
+        max-height: min(420px, calc(100dvh - 120px));
+    }
+
+    /* The terrain filter's chip was centred on the row the date and search
+       now share; it drops to the line beneath. */
+    .map-terrain-filter-chip {
+        top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
     }
 }
 
 @media (max-width: 639.98px) and (prefers-reduced-motion: reduce) {
-    [data-detents][data-detent],
-    .map-controls-br {
+    [data-detents] {
         transition: none;
     }
 }

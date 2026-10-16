@@ -9264,6 +9264,8 @@
     const toggleEl = document.getElementById('search-toggle');
     let currentResults = [];
     let activeIdx = -1;
+    // False while the list is the pinned regions rather than matches.
+    let previewTop = true;
     // SNOW-188: The map feature id currently highlighted as a search
     // preview (keyboard/pointer hover over a search result). Carried via
     // its own ``previewing`` feature-state so it stacks independently of
@@ -9298,13 +9300,54 @@
     // the input (CSS transition) and moves focus. The pill stays expanded
     // as long as the user is interacting with it; Escape or an outside
     // pointerdown collapses it back (see handlers below).
+    // PHONE: SEARCH REPLACES THE REGION CHIP (Hugo, 16 Oct). map.css gives
+    // search the whole top row and hides the chip, whose panel was where the
+    // pinned regions lived; so an empty field lists them, and typing replaces
+    // them with matches. The rows come from map_region_panel.js's loaded
+    // list (window.pwaPinnedRegions) — one loader for the list, the pin
+    // roundel and this. A visitor has none, and sees nothing until they type.
+    // On a desktop the chip and its panel are unchanged, so nothing lists.
+    const PHONE_QUERY = '(max-width: 639.98px)';
+    const isPhoneWidth = () =>
+      typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+
+    const pinnedResults = () => {
+      const ids = window.pwaPinnedRegions?.ids?.() || [];
+      return ids
+        .map((id) => SEARCH_INDEX.find((e) => e.type === 'region' && e.regionID === id))
+        .filter(Boolean);
+    };
+
+    const showEmptyState = () => {
+      if (!isPhoneWidth()) {
+        closeResults();
+        return;
+      }
+      previewTop = false;
+      renderResults(pinnedResults());
+      // The list may still be loading on a first focus straight after boot.
+      window.pwaPinnedRegions?.ready?.().then(() => {
+        if (!inputEl.value && document.activeElement === inputEl) {
+          previewTop = false;
+          renderResults(pinnedResults());
+        }
+      });
+    };
+
+    /** Matches for a typed query, the top one previewed on the map. */
+    const showMatches = () => {
+      previewTop = true;
+      renderResults(runSearch(inputEl.value));
+    };
+
     const openSearch = () => {
       pillEl.setAttribute('data-state', 'expanded');
       toggleEl.setAttribute('aria-expanded', 'true');
       // Defer focus one frame so the width transition starts before the
       // caret appears — avoids a flash of the input at width 0.
       window.requestAnimationFrame(() => inputEl.focus());
-      if (inputEl.value) renderResults(runSearch(inputEl.value));
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     };
 
     const collapseSearch = () => {
@@ -9348,7 +9391,10 @@
       // When idx === -1 (Enter not pressed yet, ArrowUp past the top),
       // preview the first result so the highlight tracks what Enter
       // would pick.
-      const previewItem = currentResults[idx >= 0 ? idx : 0];
+      // The pinned list (an empty field, on a phone) previews nothing until
+      // a row is arrowed to: nothing has been asked for yet, and an outline
+      // on the first pinned region read as a second selection.
+      const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
       setPreview(previewItem ? previewItem.regionID : null);
     };
 
@@ -9443,11 +9489,16 @@
         badge.append(document.createTextNode(r.regionID));
 
         li.append(text, badge);
-        // Use pointerdown rather than click so we act before the input's
-        // blur handler closes the dropdown. pointerdown covers both mouse
-        // and touch — mousedown alone is unreliable on iOS Safari, where
-        // the synthesised mousedown after touchend can be skipped.
+        // pointerdown only holds the input's focus (preventDefault), and the
+        // pick happens on click. Picking on pointerdown hid the list before
+        // the tap ended, so the rest of the tap landed on the map under it
+        // and selected whichever region was there (Hugo, 16 Oct). Nothing
+        // closes the list on blur, and the outside-pointerdown handler below
+        // ignores the list, so the row is still there when its click fires.
         li.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+        });
+        li.addEventListener('click', (e) => {
           e.preventDefault();
           chooseResult(r);
         });
@@ -9465,20 +9516,35 @@
     const chooseResult = (item) => {
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
-      inputEl.value = item.primary;
+      // On a phone the field empties again: the region sheet names the pick,
+      // and an empty field is what lists the pinned regions next time.
+      inputEl.value = isPhoneWidth() ? '' : item.primary;
       collapseSearch();
       // Moves the selection (highlight + ribbon + readout + hash). Picking the
       // region that is already selected is a no-op — the deselect toggle is a
       // map gesture only, so a search pick never clears the selection.
       selectFeature(feature.id);
+      // On a phone the pinned regions moved here from the chip's panel,
+      // whose rows framed what they selected (row_focus.js's rule); a pick
+      // from search does the same there, so the region lands above the
+      // sheet it opens rather than wherever the map happened to be.
+      if (isPhoneWidth()) window.pwaMapFocus?.region?.(item.regionID);
     };
 
     inputEl.addEventListener('input', () => {
-      renderResults(runSearch(inputEl.value));
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     });
 
     inputEl.addEventListener('focus', () => {
-      if (inputEl.value) renderResults(runSearch(inputEl.value));
+      // On a phone the input is always showing, so a tap lands here without
+      // passing through the toggle; mark the pill open all the same.
+      if (pillEl.getAttribute('data-state') !== 'expanded') {
+        pillEl.setAttribute('data-state', 'expanded');
+        toggleEl.setAttribute('aria-expanded', 'true');
+      }
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     });
 
     inputEl.addEventListener('keydown', (e) => {
@@ -9502,7 +9568,7 @@
       } else if (e.key === 'Escape') {
         if (inputEl.value) {
           inputEl.value = '';
-          closeResults();
+          showEmptyState();
         } else {
           collapseSearch();
         }

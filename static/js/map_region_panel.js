@@ -92,12 +92,12 @@
  * the fetch sequencing, the open/close state) is exactly the kind jsdom can
  * hold, so it belongs in tests/js rather than tests/e2e. Tracked on SNOW-801.
  *
- * SNOW-1098: on a phone a map TAP opens the region sheet as well
+ * SNOW-1098: on a phone the chip is not drawn (map.css hides the ribbon)
+ * and every selection opens the region sheet instead
  * (static/js/map_region_sheet.js), which carries the same facts at peek,
- * half and full. This panel keeps its summary regardless: it is reached
- * from the chip at every width, and the sheet is phone-only and opened by
- * a tap alone, so taking the summary out of here would leave a desktop
- * reader, or a reader who selected by search, with none.
+ * half and full. This panel keeps its summary for the desktop, where the
+ * sheet never opens and the chip is the only way in. Its pinned list also
+ * serves search on a phone, through window.pwaPinnedRegions below.
  *
  * The content stops at the resorts list. Neighbouring regions' ratings and
  * the week's trend are the obvious next two; the ratings cache already holds
@@ -759,13 +759,28 @@
     loadPins();
   });
 
+  // Search lists the pinned regions before anything is typed (Hugo, 16 Oct
+  // — on a phone it replaces the chip, whose panel was the list's home). It
+  // reads the rows this module loaded rather than fetching its own copy, so
+  // the list in search, the rows here and the pin roundel are one fact.
+  // `ids` is in list order; `ready` settles once the first load has.
+  /** @type {Promise<void>} */
+  let pinsReady = Promise.resolve();
+  window.pwaPinnedRegions = Object.freeze({
+    ids: () =>
+      [...pinnedRows.querySelectorAll('[data-row-focus-region]')]
+        .map((button) => button.getAttribute('data-row-focus-region'))
+        .filter(Boolean),
+    ready: () => pinsReady,
+  });
+
   window.pwaMapOverlays?.register(OVERLAY_NAME, { isOpen, close });
   syncEnabled();
   // Load the list at boot for a signed-in user, not on first open: the pin
   // roundel is in the header from the first paint and its state comes from
   // this list, so deferring the fetch would leave the star lying about
   // whichever region the page opened on.
-  if (PIN_LIST_URL) loadPins();
+  if (PIN_LIST_URL) pinsReady = loadPins().catch(() => {});
   // SNOW-879: and warm the resort lookup, for the same reason one line up —
   // it is the panel's other prerequisite, it does not depend on which region
   // is selected, and fetching it here means the first open of the panel is
