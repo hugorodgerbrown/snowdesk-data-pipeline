@@ -131,6 +131,8 @@
     'rename-failed': "That name couldn't be saved. Try again.",
     'share-copied': 'Link copied.',
     'share-failed': "That link couldn't be created. Try again.",
+    'terrain-loading': 'Loading the terrain table…',
+    'terrain-failed': "The terrain table couldn't be loaded.",
   });
   var interpolate = self.pwaStrings.interpolate;
 
@@ -157,6 +159,20 @@
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
+  // SNOW-1099: the phone sheet's staff-only FULL detent, and where it loads.
+  var terrainEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-terrain]'));
+  var TERRAIN_URL_TEMPLATE = rail.dataset.routeTerrainUrlTemplate || '';
+  var NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+  // SNOW-1099: on a phone the rail is a bottom sheet with detents
+  // (window.MapSheet.bindDetents). Bound on the first open rather than at
+  // load, so the order the deferred scripts run in does not matter; null
+  // without the sheet modules, and the rail is then the pinned panel alone.
+  /** @type {?{open: function(): void, reset: function(): void, set: function(string): void, current: function(): (string|null)}} */
+  var detents = null;
+  var detentsBound = false;
+  /** The uuid whose terrain table `terrainEl` holds or is loading, or null. */
+  var terrainFor = null;
 
   /** The open route's cursor, or null. */
   var cursor = null;
@@ -401,6 +417,10 @@
    */
   function paintPointMode(index) {
     var point = index !== null;
+    // SNOW-1099: a point placed while the phone sheet peeks (a tap on the
+    // route's line on the map) raises it to half, where the point header and
+    // its line on the profile answer the tap.
+    if (point && detents && detents.current() === 'peek') detents.set('half');
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
     if (titleEl) titleEl.hidden = point;
@@ -563,6 +583,9 @@
 
     rail.hidden = false;
     if (mapEl) mapEl.setAttribute('data-route-rail-open', '');
+    resetTerrain();
+    bindSheet();
+    if (detents) detents.open();
     announceRailChanged();
     return true;
   }
@@ -590,7 +613,76 @@
     paintPointMode(null);
     rail.hidden = true;
     if (mapEl) mapEl.removeAttribute('data-route-rail-open');
+    if (detents) detents.reset();
+    resetTerrain();
     announceRailChanged();
+  }
+
+  // ---- the phone sheet (SNOW-1099) ---------------------------------------
+
+  /** Bind the rail's detents once, if the sheet modules are on the page. */
+  function bindSheet() {
+    if (detentsBound) return;
+    detentsBound = true;
+    var sheet = window.MapSheet;
+    if (!sheet || typeof sheet.bindDetents !== 'function') return;
+    detents = sheet.bindDetents(rail, { onClose: close });
+    if (!detents || !terrainEl || typeof MutationObserver !== 'function') return;
+    // The terrain table loads the first time the sheet reaches FULL for a
+    // route, never before: most opens never go there.
+    new MutationObserver(function () {
+      if (rail.getAttribute('data-detent') === 'full') loadTerrain();
+    }).observe(rail, { attributes: true, attributeFilter: ['data-detent'] });
+  }
+
+  /** Empty the terrain region, ready for the next route. */
+  function resetTerrain() {
+    terrainFor = null;
+    if (!terrainEl) return;
+    terrainEl.hidden = true;
+    terrainEl.replaceChildren();
+  }
+
+  /** @param {string} text */
+  function terrainMessage(text) {
+    if (!terrainEl) return;
+    var line = document.createElement('p');
+    line.className = 'text-text-3';
+    line.textContent = text;
+    terrainEl.replaceChildren(line);
+    terrainEl.hidden = false;
+  }
+
+  /**
+   * Fetch the open route's terrain table into the FULL detent, once per
+   * route. Staff only: the partial renders the region and the URL for staff
+   * alone, and the view behind it is staff-gated. A pending share has no
+   * uuid, and so no table.
+   */
+  function loadTerrain() {
+    if (!terrainEl || !TERRAIN_URL_TEMPLATE || !current.uuid) return;
+    if (terrainFor === current.uuid) return;
+    var uuid = current.uuid;
+    terrainFor = uuid;
+    terrainMessage(STRINGS['terrain-loading']);
+    fetch(TERRAIN_URL_TEMPLATE.replace(NIL_UUID, uuid), { credentials: 'same-origin' })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('terrain ' + resp.status);
+        return resp.text();
+      })
+      .then(function (html) {
+        // The route may have closed or changed while the table loaded.
+        if (terrainFor !== uuid || !terrainEl) return;
+        // Server-rendered by our own staff view from figures we computed;
+        // the route's name is not in the fragment.
+        terrainEl.innerHTML = html;
+        terrainEl.hidden = false;
+      })
+      .catch(function () {
+        if (terrainFor !== uuid) return;
+        terrainFor = null;
+        terrainMessage(STRINGS['terrain-failed']);
+      });
   }
 
   /**
@@ -599,6 +691,20 @@
    */
   function announceRailChanged() {
     document.dispatchEvent(new CustomEvent('snowdesk:route-rail-changed', { detail: null }));
+  }
+
+  /**
+   * Whether the rail is showing as the phone's bottom sheet rather than the
+   * panel pinned top-left: it rests at a detent, which only happens on a
+   * phone (map_sheet.js's bindDetents sets data-detent, and map.css gives it
+   * a position only below 640px).
+   *
+   * @returns {boolean}
+   */
+  function isSheet() {
+    if (!rail.hasAttribute('data-detent')) return false;
+    if (typeof window.matchMedia !== 'function') return true;
+    return !window.matchMedia('(min-width: 640px)').matches;
   }
 
   /**
@@ -618,9 +724,12 @@
     if (index === null) return null;
     var laneRect = lane.getBoundingClientRect();
     var fraction = (index + 0.5) / sampleCount;
+    var box = rail.getBoundingClientRect();
     return {
       x: laneRect.left + fraction * laneRect.width,
-      y: rail.getBoundingClientRect().bottom,
+      // SNOW-1099: on a phone the panel is a sheet BELOW the dot, so the
+      // leader stops on its top edge instead.
+      y: isSheet() ? box.top : box.bottom,
     };
   }
 
@@ -796,6 +905,7 @@
     isOpen: function () { return !rail.hidden; },
     cursor: function () { return cursor; },
     cursorPoint: cursorPoint,
+    isSheet: isSheet,
     element: rail,
   });
 }());

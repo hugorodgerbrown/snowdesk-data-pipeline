@@ -1,0 +1,45 @@
+{% comment %}
+_debug/_route_terrain_table.html — one route's per-segment terrain table
+(SNOW-1020), or the line saying why there is none.
+
+Shared by the staff debug page (_debug/route_terrain.html) and the route
+sheet's FULL detent on a phone (SNOW-1099), which fetches it with
+``?format=fragment`` from the same view, so the two cannot disagree.
+
+Context:
+    columns : list[str] — the column names, apps.routes.services.terrain_detail.COLUMNS.
+    rows    : list[list] — one list of values per segment, in column order.
+    sampled : bool — whether the route has a slope record at all.
+{% endcomment %}
+{% if not sampled %}
+    <p class="text-text-2" data-testid="route-terrain-unsampled">This route has not been sampled.</p>
+{% elif not rows %}
+    <p class="text-text-2" data-testid="route-terrain-unreadable">
+        The slope record could not be read: its boundaries and segments do not pair up.
+    </p>
+{% else %}
+    <div class="bg-card border border-border rounded-card overflow-x-auto">
+        <table class="w-full text-sm font-mono" data-testid="route-terrain-table">
+            <thead>
+                <tr class="text-left text-text-3">
+                    {% for column in columns %}<th class="px-3 py-2 font-normal">{{ column }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr class="border-t border-border text-text-1">
+                        {% for value in row %}
+                            <td class="px-3 py-1">
+                                {% if value is None %}
+                                    <span class="text-text-3">—</span>
+                                {% else %}
+                                    {{ value }}
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}

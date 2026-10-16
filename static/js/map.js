@@ -2682,9 +2682,27 @@
     const rail = window.pwaRouteRail;
     if (!rail || !rail.isOpen || !rail.isOpen() || !rail.element) return null;
     if (!rail.element.getBoundingClientRect) return null;
+    // SNOW-1099: on a phone the panel is a bottom sheet, which covers the
+    // map's foot rather than its head — routeSheetTop below.
+    if (rail.isSheet && rail.isSheet()) return null;
     const box = rail.element.getBoundingClientRect();
     if (!(box.height > 0)) return null;
     return box.bottom - canvas.top;
+  };
+
+  /**
+   * The route sheet's top edge, viewport px, while the route panel is open
+   * as the phone's bottom sheet; null otherwise (SNOW-1099).
+   *
+   * @returns {?number}
+   */
+  const routeSheetTop = () => {
+    const rail = window.pwaRouteRail;
+    if (!rail || !rail.isOpen || !rail.isOpen() || !rail.element) return null;
+    if (!rail.isSheet || !rail.isSheet()) return null;
+    if (!rail.element.getBoundingClientRect) return null;
+    const box = rail.element.getBoundingClientRect();
+    return box.height > 0 ? box.top : null;
   };
 
   /**
@@ -2710,7 +2728,7 @@
     const topInset = panelBottom === null
       ? FIT_PADDING.top
       : panelBottom + ROUTE_CURSOR_TOP_INSET_PX;
-    return core.visibleRect(canvas, null, topInset);
+    return core.visibleRect(canvas, routeSheetTop(), topInset);
   };
 
   /**
@@ -7025,6 +7043,11 @@
     const panelBottom = routePanelBottom(canvas);
     if (panelBottom !== null) {
       reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
+    }
+    // SNOW-1099: the phone's route sheet covers the foot instead.
+    const sheetTop = routeSheetTop();
+    if (sheetTop !== null) {
+      reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
     return padding;
   };

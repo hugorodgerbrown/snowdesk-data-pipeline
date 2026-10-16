@@ -101,12 +101,14 @@
     var notch = local(railPoint);
 
     path.setAttribute('d', core.leaderPath([start, notch]));
-    // The notch: a small triangle pointing up onto the panel's edge.
+    // The notch: a small triangle pointing onto the panel's edge — up onto
+    // its bottom edge, or down onto a phone sheet's top edge (SNOW-1099).
+    var base = notch.y + (rail.isSheet && rail.isSheet() ? -5 : 5);
     var mark = document.createElementNS(SVG_NS, 'path');
     mark.setAttribute(
       'd',
-      'M' + (notch.x - 4) + ' ' + (notch.y + 5)
-        + ' L' + (notch.x + 4) + ' ' + (notch.y + 5)
+      'M' + (notch.x - 4) + ' ' + base
+        + ' L' + (notch.x + 4) + ' ' + base
         + ' L' + notch.x + ' ' + notch.y + ' Z',
     );
     mark.setAttribute('data-route-leader-stop', '');
