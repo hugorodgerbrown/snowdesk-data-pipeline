@@ -648,10 +648,15 @@
     //
     await styleSettled();
     const areaId = core ? core.generateCustomAreaId() : '';
+    // SNOW-1072: this device's terrain-data preference, decided at the tap
+    // and recorded as decided — as map_custom_download.js does.
+    const terrain = terrainDataPreferred();
 
     await runPinnedDownload({
       areaId: areaId,
       mb: blob.mb,
+      terrain: terrain,
+      terrainMb: terrain ? terrainClassMbForBlob(blob) : 0,
       // SNOW-868: the tile count the per-basemap price multiplies — see the
       // runner's own `count` note.
       count: blob.count,
@@ -703,6 +708,8 @@
             // records an ordinary custom area, so the Manage downloads
             // sheet reads and remedies it exactly as it does one of those.
             ...(outcome.incomplete ? { contentIncomplete: true } : {}),
+            // SNOW-1072: the flag, never the class-tile URLs it implies.
+            ...(terrain ? { terrain: true } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);
