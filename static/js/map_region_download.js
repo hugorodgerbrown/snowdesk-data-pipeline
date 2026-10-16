@@ -509,6 +509,35 @@
   }
 
   /**
+   * SNOW-1072: remove the class tiles a superseded record pinned that this
+   * run no longer holds.
+   *
+   * The class tiles are derived from the record, never listed in it, so
+   * `_pruneReplacedBasemap` (which reads `deps` and the tile template)
+   * cannot see them. When the earlier run opted in and this one did not,
+   * every class tile it pinned is now unrecorded bytes in the bucket —
+   * the storage budget undercounts the area and nothing would ever evict
+   * them. When both opted in, this run's own class tiles are spared, so
+   * only ground the new blob no longer covers is removed.
+   *
+   * @param {string} areaId The area's pinned bucket.
+   * @param {Object | null} previous The superseded record, when it carried
+   *   `terrain`; null prunes nothing.
+   * @param {Object} blob This run's own download blob.
+   * @param {boolean} terrain Whether this run included terrain data.
+   * @returns {Promise<void>} Always resolves; the prune is best-effort.
+   */
+  async function _pruneSupersededTerrain(areaId, previous, blob, terrain) {
+    if (!areaId || !previous || !previous.terrain) return;
+    const stale = new Set(areaTerrainClassTileUrls(previous));
+    if (terrain) {
+      for (const url of activeTerrainClassTileURLs(blob)) stale.delete(url);
+    }
+    if (!stale.size) return;
+    await prunePinnedBasemapURLs(areaId, [...stale], null);
+  }
+
+  /**
    * The stored ``basemap.regions`` record for `regionId`, or null.
    *
    * A PRE-SNOW-583 record carries `bbox` and no `z` — the shape this
@@ -1674,6 +1703,12 @@
     // small lie: the region IS downloaded, just for another basemap.
     let replacing = null;
     let declinedReplace = false;
+    // SNOW-1072: the record this run supersedes when it carried terrain
+    // data, whatever basemap it was for — read in `beforeWarm`, consumed
+    // in `finish` after a success. `replacing` cannot stand in for it: it
+    // is set only for a basemap change, and a re-download on the same
+    // basemap with the opt-in switched off supersedes class tiles too.
+    let priorTerrainRecord = null;
 
     // SNOW-1072: decided once, at the tap — the record stores what this
     // run actually did, whatever the preference says by the time it ends.
@@ -1724,6 +1759,7 @@
       // declined eviction.
       beforeWarm: async (_blob, _evictAreaId, tileSources) => {
         const previous = await _storedRegionRecord(data.regionId);
+        priorTerrainRecord = previous && previous.terrain ? previous : null;
         // SNOW-843: compared as source SETS via `tileSourcesKey`, which is
         // also what makes a pre-SNOW-843 record (a bare template string)
         // still match a single-source basemap it was genuinely fetched
@@ -1873,6 +1909,7 @@
             renderDeps,
             glyphPrefix,
           );
+          await _pruneSupersededTerrain(areaId, priorTerrainRecord, blob, terrain);
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the
         // two are one gesture, the region finishes filling, pulses, and only

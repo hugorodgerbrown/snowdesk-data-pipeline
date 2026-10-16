@@ -216,6 +216,8 @@ function installCachesStub() {
         put: vi.fn(async (url) => {
           store.add(url);
         }),
+        // SNOW-1072: a re-download's prune removes entries one by one.
+        delete: async (url) => store.delete(url),
         match: async (request) => {
           const url = typeof request === 'string' ? request : request.url;
           return store.has(url) ? { headers: { get: () => null } } : undefined;
@@ -1054,6 +1056,31 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
 
     expect(warmedUrls(0)).toEqual([missing]);
+  });
+
+  it('prunes the class tiles a re-download without the opt-in no longer holds', async () => {
+    // Downloaded with terrain by the tests above; the preference is now off
+    // (afterEach cleared it). Losing a basemap tile reads the region as not
+    // downloaded, so the tap is a fresh run over the same bucket.
+    const btn = document.getElementById('map-download-control');
+    const bucket = window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`);
+    expect((await recordedRegion()).terrain).toBe(true);
+    for (const url of expectedClassTiles()) bucket.add(url);
+    const basemapTile = [...bucket].find((url) => !isClassTile(url) && url.endsWith('.pbf'));
+    bucket.delete(basemapTile);
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    await waitFor(() => btn.dataset.downloadState === 'idle');
+    window.pwaWarmCache.mockClear();
+
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+    // Recorded without the flag, nothing would ever count or evict the
+    // class tiles, so the run removes them.
+    expect('terrain' in (await recordedRegion())).toBe(false);
+    const held = [...window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`)];
+    expect(held.some(isClassTile)).toBe(false);
   });
 
   it('states what terrain data adds on the idle label', async () => {
