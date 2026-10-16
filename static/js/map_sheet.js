@@ -179,7 +179,10 @@
   var PEEK_FALLBACK_PX = 160;
 
   // Space kept below the peek element's bottom edge, matching the sheet's
-  // own top padding so the summary sits centred in what shows.
+  // own top padding so the summary sits centred in what shows. The sheet's
+  // computed bottom padding wins when larger: on a phone with a home
+  // indicator it carries the safe-area inset, and a peek that ignored it
+  // would put its one row under the indicator.
   var PEEK_BOTTOM_GAP_PX = 16;
 
   // A pointer that travels less than this is a press, not a drag — the
@@ -297,7 +300,9 @@
       if (!marker) return PEEK_FALLBACK_PX;
       var top = el.getBoundingClientRect().top;
       var bottom = marker.getBoundingClientRect().bottom;
-      var measured = Math.round(bottom - top + el.scrollTop + PEEK_BOTTOM_GAP_PX);
+      var padding = parseFloat(window.getComputedStyle(el).paddingBottom);
+      var gap = Number.isFinite(padding) ? Math.max(PEEK_BOTTOM_GAP_PX, padding) : PEEK_BOTTOM_GAP_PX;
+      var measured = Math.round(bottom - top + el.scrollTop + gap);
       return measured > 0 ? Math.min(measured, fullHeight()) : PEEK_FALLBACK_PX;
     }
 
