@@ -4866,14 +4866,16 @@ body.map-framing #map-legend {
         touch-action: none;
     }
 
-    /* The bottom-right roundel column rides up with the sheet at peek and
+    /* The bottom-right roundel column — and the bottom-left stack (help,
+       legend, date) across from it — ride up with the sheet at peek and
        half, so locate stays on the sheet's edge rather than vanishing
        beneath it — the placement Google's own sheet uses. --map-sheet-lift
        is written by map_sheet.js on every settle and cleared to 0 on close,
        at full (where the column is covered anyway) and wherever the column
        would not fit above the sheet, so a map with no
        sheet open sits on its usual baseline. */
-    .map-controls-br {
+    .map-controls-br,
+    .map-legend {
         bottom: max(var(--map-bottom-row-offset), calc(var(--map-sheet-lift, 0px) + 8px));
         transition: bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
     }
@@ -4881,7 +4883,8 @@ body.map-framing #map-legend {
 
 @media (max-width: 639.98px) and (prefers-reduced-motion: reduce) {
     [data-detents][data-detent],
-    .map-controls-br {
+    .map-controls-br,
+    .map-legend {
         transition: none;
     }
 }
