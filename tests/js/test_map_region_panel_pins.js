@@ -17,7 +17,9 @@
  *   link) as well as framing it, so the chip above cannot end up naming a
  *   different region from the one on screen;
  *   the row for the region already on screen is marked rather than removed;
- *   a pin toggled anywhere makes the list stale.
+ *   a pin toggled anywhere makes the list stale;
+ *   search reads the same loaded list (window.pwaPinnedRegions), so the
+ *   pinned regions it lists on a phone are the ones the roundel agrees with.
  *
  * The panel's older behaviour (the summary fetch, the render cache key) is
  * still uncovered — see the module's own header.
@@ -303,5 +305,19 @@ describe('the pin roundel', () => {
       "That region couldn't be pinned. Try again.",
     );
     vi.unstubAllGlobals();
+  });
+});
+
+describe('the list search reads on a phone', () => {
+  it('publishes the loaded ids in list order, once the boot load settles', async () => {
+    await window.pwaPinnedRegions.ready();
+    expect(window.pwaPinnedRegions.ids()).toEqual(['CH-4115', 'CH-4222']);
+  });
+
+  it('follows the list when it reloads, so search and the roundel agree', async () => {
+    pinnedIds = [['CH-1212', 'Östliche Berner Voralpen']];
+    document.dispatchEvent(new CustomEvent('snowdesk:region-pin-changed'));
+    await settle();
+    expect(window.pwaPinnedRegions.ids()).toEqual(['CH-1212']);
   });
 });

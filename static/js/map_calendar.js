@@ -402,4 +402,30 @@
   // stopPropagation means no other surface's identical handler sees this
   // one open.
   window.pwaMapOverlays?.register(OVERLAY_NAME, { isOpen: isOpen, close: close });
+
+  // PHONE: THE DATE LIVES IN THE TOP ROW (Hugo, 16 Oct). In the bottom-left
+  // stack a peeking sheet covers it, so below the `sm` breakpoint the date
+  // control and its card move up into #map-utility-cluster, beside the
+  // search roundel, and come back when the width grows past it. Moved
+  // rather than duplicated: the listeners above stay bound to the one
+  // element, and map.css's phone rules place the card under the row.
+  const cluster = document.getElementById('map-utility-cluster');
+  if (cluster && typeof window.matchMedia === 'function') {
+    const phone = window.matchMedia('(max-width: 639.98px)');
+    const homes = [toggle, root].map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
+    const place = () => {
+      if (phone.matches) {
+        cluster.prepend(toggle, root);
+        return;
+      }
+      homes.forEach(({ el, parent, next }) => {
+        if (el.parentNode !== parent) parent.insertBefore(el, next);
+      });
+    };
+    place();
+    phone.addEventListener('change', () => {
+      if (isOpen()) close();
+      place();
+    });
+  }
 })();

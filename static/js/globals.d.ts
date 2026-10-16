@@ -48,6 +48,8 @@ interface Window {
   pwaLayerVisibilityCore: any;
   /** static/js/sheet_detents_core.js — where a phone map sheet settles (SNOW-1097). */
   pwaSheetDetentsCore: any;
+  /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
+  pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */

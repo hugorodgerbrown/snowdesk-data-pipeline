@@ -263,6 +263,8 @@ in addition to the shared map assets.
     {# condition symbol on the map itself, so this surface is inert until    #}
     {# one is tapped.                                                        #}
     {% include "public/partials/_weather_surface.html" %}
+    {# SNOW-1098: the region sheet a map tap opens on a phone. #}
+    {% include "public/partials/_region_sheet_surface.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}
