@@ -1477,8 +1477,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="terrain-filter-key",
         label="Terrain filter key",
         description=(
-            "The map terrain filter's two-row colour key (SNOW-978): the "
-            "match tint and the no-data hatch. Rendered in the map legend and "
+            "The map terrain filter's colour key (SNOW-978): the match tint "
+            "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
+            "five slope classes and the hatch; the script hides the rows of "
+            "the mode not set. Rendered in the map legend and "
             "inside the filter sheet, which carries its own key because the "
             "legend is hidden on a phone while a route is open."
         ),
