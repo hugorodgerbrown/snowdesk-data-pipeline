@@ -240,23 +240,6 @@ Optional context:
         {# window.snowdeskMap.zoom_level (see zoom exposure in map.js).        #}
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
-    {# SNOW-978: the terrain filter, repeated in words while it is on —      #}
-    {# "N, NE, NW · 35°+ · above 2,400 m" — so a tinted map always says what #}
-    {# it is tinted for. A tap opens the filter's sheet. Text written by      #}
-    {# static/js/terrain_filter_sheet.js from its strings template.           #}
-    {% if terrain_filter_eligible %}
-        <button
-            type="button"
-            id="map-terrain-filter-chip"
-            class="map-terrain-filter-chip rounded-pill border border-border bg-card px-3 py-1.5 text-chip text-text-1 shadow-glass hover-affordance"
-            aria-label='{% trans "Terrain filter — change the filter" %}'
-            data-terrain-filter-open
-            hidden
-        >
-            <span class="map-legend-swatch map-legend-swatch--terrain-match" aria-hidden="true"></span>
-            <span data-terrain-filter-chip-text></span>
-        </button>
-    {% endif %}
     {# SNOW-475: fixed centre pin for touch-friendly placement. Shown by     #}
     {# place_picker.js while placing a favourite/observation; the map pans   #}
     {# underneath it and the coord is read from the map centre.              #}
@@ -384,21 +367,7 @@ Optional context:
                         aria-expanded="false"
                         aria-controls="basemap-menu"
                     >
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M12 2 2 7l10 5 10-5-10-5Z" />
-                            <path d="m2 12 10 5 10-5" />
-                            <path d="m2 17 10 5 10-5" />
-                        </svg>
+                        {% include "includes/_icon_layers.html" %}
                     </button>
                 </div>
                 {# SNOW-656: bulletin-fill strength — a roundel whose flyout     #}
@@ -1250,6 +1219,12 @@ Optional context:
                         >{% trans "Slope angle" %}</a>
                     </div>
                     {% include "includes/_terrain_filter_key.html" %}
+                    {# What the filter is set to, in words — "N, NE, NW · 35°+ ·   #}
+                    {# above 2,400 m" — written by terrain_filter_sheet.js. It    #}
+                    {# took over from the chip along the map's top edge, so a     #}
+                    {# tinted map still says what it is tinted for, in the place  #}
+                    {# every other layer explains itself.                         #}
+                    <p class="map-legend-attribution" data-terrain-filter-legend-summary></p>
                 </section>
             {% endif %}
             {% comment %}

@@ -1,6 +1,6 @@
 /*
- * static/js/terrain_filter_sheet.js — the terrain filter's sheet, map chip and
- * menu-row summary (SNOW-978).
+ * static/js/terrain_filter_sheet.js — the terrain filter's sheet, menu-row
+ * summary and legend section (SNOW-978).
  *
  * The filter's only control. It talks to one thing — the
  * ``window.pwaTerrainFilter`` bridge map.js publishes
@@ -9,15 +9,17 @@
  *
  * Three surfaces, all driven from the bridge's state:
  *
- *   - the sheet (#map-terrain-filter-sheet), opened by the layers menu's
- *     "Terrain filter…" row and by the chip. MapSheet.attach empties it on
- *     every close, so its body is cloned from
+ *   - the sheet (#map-terrain-filter-sheet), the standard map panel, opened
+ *     by the layers menu's "Terrain filter…" row — the one way in.
+ *     MapSheet.attach empties it on every close, so its body is cloned from
  *     #map-terrain-filter-template on every open;
- *   - the chip on the map (#map-terrain-filter-chip), visible while the
- *     filter is on, repeating it in words: "N, NE, NW · 35°+ · above 2,400 m";
  *   - the menu row's second line ([data-terrain-filter-summary]), the short
  *     form: "3 aspects · 35°+";
- *   - and the legend's terrain-filter section, shown while the filter is on.
+ *   - and the legend's terrain-filter section, shown while the filter is on,
+ *     whose last line ([data-terrain-filter-legend-summary]) is the long
+ *     form: "N, NE, NW · 35°+ · above 2,400 m". That line replaced the chip
+ *     that used to sit along the map's top edge — a one-off control no
+ *     other layer had.
  *
  * SNOW-1073 gave the filter a mode: 'match' tints matching ground, 'slope'
  * colours it by slope class and is the map's slope layer. The sheet's
@@ -74,8 +76,6 @@
   const sheet = window.MapSheet.attach(sheetEl, {
     triggerSelector: '[data-terrain-filter-open]',
   });
-
-  const chip = document.getElementById('map-terrain-filter-chip');
 
   /** Thousands separators in the page's own language. */
   const lang = document.documentElement.lang || undefined;
@@ -217,7 +217,7 @@
   };
 
   /**
-   * Repaint the chip, the menu row's summary and the legend section.
+   * Repaint the menu row's summary and the legend section.
    *
    * @returns {void}
    */
@@ -226,11 +226,6 @@
     const enabled = !!(b && b.isEnabled());
     const filter = b ? b.getFilter() : core.normaliseFilter(null);
 
-    if (chip) {
-      chip.hidden = !enabled;
-      const label = chip.querySelector('[data-terrain-filter-chip-text]');
-      if (label) label.textContent = core.summarise(filter, STRINGS, { formatNumber: formatNumber });
-    }
     const summary = document.querySelector('[data-terrain-filter-summary]');
     if (summary) {
       summary.hidden = !enabled;
@@ -240,6 +235,12 @@
     }
     const legend = document.querySelector('[data-terrain-filter-legend]');
     if (legend) legend.hidden = !enabled;
+    const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
+    if (legendSummary) {
+      legendSummary.textContent = enabled
+        ? core.summarise(filter, STRINGS, { formatNumber: formatNumber })
+        : '';
+    }
     syncModeKeys(document, filter.mode);
   };
 
@@ -247,15 +248,6 @@
     renderChrome();
     renderSheet();
   });
-
-  if (chip) {
-    chip.addEventListener('click', (event) => {
-      // The chip sits over the map; the map's own click handlers must not
-      // read the tap as a tap on the ground beneath it.
-      event.stopPropagation();
-      open();
-    });
-  }
 
   window.pwaTerrainFilterSheet = Object.freeze({
     open: open,

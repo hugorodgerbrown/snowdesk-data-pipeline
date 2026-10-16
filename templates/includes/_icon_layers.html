@@ -1,0 +1,35 @@
+{% comment %}
+templates/includes/_icon_layers.html — the layers glyph: three stacked
+sheets.
+
+One source for one mark. The glyph identifies the layers roundel
+(#basemap-toggle, public/partials/_map_embed.html) AND, at 22px, the header
+of the terrain filter panel that roundel's menu opens — the same rule
+_icon_route.html and _icon_favourite.html follow: the roundel's own icon is
+the panel's identity mark, so a reader can confirm which roundel they
+tapped.
+
+STYLE — a 24-grid 2px stroke, matching the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            roundel size; the panel header passes 22.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+    <path d="m2 12 10 5 10-5" />
+    <path d="m2 17 10 5 10-5" />
+</svg>

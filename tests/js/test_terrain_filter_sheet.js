@@ -1,5 +1,5 @@
 /*
- * tests/js/test_terrain_filter_sheet.js — the terrain filter's sheet, chip and
+ * tests/js/test_terrain_filter_sheet.js — the terrain filter's sheet, legend and
  * menu-row summary (SNOW-978).
  *
  * terrain_filter_sheet.js talks to one thing, window.pwaTerrainFilter, so the
@@ -41,21 +41,18 @@ function stubBridge() {
   return bridge;
 }
 
-/** The sheet, its two templates, the chip, the menu row and the legend. */
+/** The sheet, its two templates, the menu row and the legend. */
 function buildFixture() {
   document.documentElement.lang = 'en';
   const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   document.body.innerHTML = `
-    <div id="map">
-      <button id="map-terrain-filter-chip" data-terrain-filter-open hidden>
-        <span data-terrain-filter-chip-text></span>
-      </button>
-    </div>
+    <div id="map"></div>
     <button data-terrain-filter-open><span data-row-label>Terrain filter…</span>
       <span data-terrain-filter-summary hidden></span></button>
     <section data-terrain-filter-legend hidden>
       <div data-terrain-filter-key="match" data-legend-part>Terrain filter</div>
       <div data-terrain-filter-key="slope" data-legend-part hidden>Slope angle</div>
+      <p data-terrain-filter-legend-summary></p>
     </section>
     <div id="map-terrain-filter-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-terrain-filter-template">
@@ -150,11 +147,6 @@ describe('opening the sheet', () => {
     expect(q('[data-terrain-filter-max-slope] option[value="35"]').disabled).toBe(true);
     expect(q('[data-terrain-filter-max-slope] option[value="40"]').disabled).toBe(false);
   });
-
-  it('opens from the chip', () => {
-    document.getElementById('map-terrain-filter-chip').click();
-    expect(window.pwaTerrainFilterSheet.isOpen()).toBe(true);
-  });
 });
 
 describe('editing', () => {
@@ -230,13 +222,13 @@ describe('the mode (SNOW-1073)', () => {
     expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'slope', minSlope: 40 });
   });
 
-  it('says the ground is coloured by class, and names the mode on the chip', () => {
+  it('says the ground is coloured by class, and names the mode in the legend', () => {
     bridge.state.filter = { mode: 'slope', minSlope: 30 };
     bridge.show();
     window.pwaTerrainFilterSheet.open();
     expect(q('[data-terrain-filter-availability]').textContent).toBe('Nach Neigungsklasse eingefärbt.');
-    const chip = document.getElementById('map-terrain-filter-chip');
-    expect(chip.textContent.trim()).toBe('Neigungsklassen · Alle Expositionen · ab 30°');
+    const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
+    expect(legendSummary.textContent).toBe('Neigungsklassen · Alle Expositionen · ab 30°');
     expect(shown(document.querySelector('[data-terrain-filter-legend]'))).toEqual(['slope']);
     bridge.hide();
   });
@@ -253,18 +245,17 @@ describe('the words', () => {
     expect(q('[data-terrain-filter-availability]').textContent).toBe('Aus.');
   });
 
-  it('shows the chip, the row summary and the legend only while the filter is on', () => {
+  it('shows the row summary and the legend, in words, only while the filter is on', () => {
     bridge.state.filter = { aspects: [0, 7], minSlope: 35, minElevation: 2400 };
     bridge.show();
-    const chip = document.getElementById('map-terrain-filter-chip');
+    const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
     const summary = document.querySelector('[data-terrain-filter-summary]');
-    expect(chip.hidden).toBe(false);
-    expect(chip.textContent.trim()).toBe('N, NW · ab 35° · über 2,400 m');
+    expect(legendSummary.textContent).toBe('N, NW · ab 35° · über 2,400 m');
     expect(summary.hidden).toBe(false);
     expect(summary.textContent).toBe('2 Expositionen · ab 35°');
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(false);
     bridge.hide();
-    expect(chip.hidden).toBe(true);
+    expect(legendSummary.textContent).toBe('');
     expect(summary.hidden).toBe(true);
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(true);
   });

@@ -2,8 +2,14 @@
 {% comment %}
 public/partials/_map_terrain_filter_sheet.html — the terrain filter's sheet (SNOW-978).
 
-The layers menu's "Terrain filter…" row and the map chip both open this
-sheet. Everything about the filter lives here, one action per row: the
+The layers menu's "Terrain filter…" row opens this sheet — the one way in.
+It is the standard map panel: includes/_overlay_sheet.html, inset beside
+the roundel column on a desktop and docked to the foot on a phone, with the
+UGC panels' header (the layers roundel's glyph, title, ×, context line).
+The chip that used to repeat the filter along the top edge of the map is
+gone: it was a one-off control no other layer had. While the filter is on,
+the menu row's second line and the legend's terrain section say what it is
+set to. Everything about the filter lives here, one action per row: the
 on/off switch, the mode, the eight aspects, the slope range, an optional
 elevation band, the colour key, and the line that says why nothing is
 showing (zoom in; outside coverage).
@@ -37,7 +43,11 @@ Included by public/map.html only for an eligible page
 {% trans "Terrain filter" as terrain_filter_title %}
 {% include "includes/_overlay_sheet.html" with id="map-terrain-filter-sheet" aria_label=terrain_filter_title %}
 <template id="map-terrain-filter-template">
-    {% include "includes/_sheet_header.html" with title=terrain_filter_title close_action="dismiss" title_class="text-lg font-semibold" %}
+    {# The standard map panel header (includes/_ugc_panel.html's shape):    #}
+    {# the opening roundel's glyph, the title, the ×, then one context line #}
+    {# at the same -mt-1.5 / px-2 / text-summary the UGC panels use.       #}
+    {% include "includes/_sheet_header.html" with title=terrain_filter_title icon_template="includes/_icon_layers.html" close_action="dismiss" title_class="text-lg font-semibold" %}
+    <p class="-mt-1.5 px-2 text-summary text-text-3">{% trans "The map changes as you change these." %}</p>
     <div class="mt-3 flex items-center justify-between gap-3">
         <label
             for="map-terrain-filter-enabled"
@@ -189,9 +199,9 @@ Included by public/map.html only for an eligible page
         >{% trans "More about the terrain filter" %}</a>
     </p>
 </template>
-{# The words terrain_filter_sheet.js assembles: the availability line, the #}
-{# map chip and the menu row's summary. The compass names are the aspect   #}
-{# wheel's msgids, so the chip reads "N, NE, NW" in the reader's language. #}
+{# The words terrain_filter_sheet.js assembles: the availability line and #}
+{# the menu row's summary. The compass names are the aspect wheel's       #}
+{# msgids, so the summary reads in the reader's language.                 #}
 <template id="map-terrain-filter-strings-template">
     <span data-string="availability-ok">{% trans "Matching ground is highlighted." %}</span>
     <span data-string="availability-ok-slope">{% trans "Steep ground is coloured by slope class." %}</span>

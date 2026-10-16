@@ -310,29 +310,6 @@
     gap: 8px;
 }
 
-/* SNOW-978: the terrain filter's chip — centred along the top edge, level
-   with the search cluster, so it never sits under the route panel's
-   top-left column or the roundels. Shown only while the filter is on. */
-.map-terrain-filter-chip {
-    position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 12px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 5;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    max-width: calc(100% - 2 * var(--map-edge-inset-right) - 112px);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-}
-
-.map-terrain-filter-chip[hidden] {
-    display: none;
-}
-
 /* Bottom-right control stack — every roundel (basemap, locate, and the
    flag-gated favourite + observation pills) in one bottom-anchored column,
    with the help (?) roundel at the foot so it sits level with the bottom-left

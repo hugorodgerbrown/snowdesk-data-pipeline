@@ -4297,7 +4297,7 @@
   };
 
   /**
-   * Tell the sheet, the chip and the menu row the filter's state moved.
+   * Tell the sheet, the menu row and the legend the filter's state moved.
    *
    * @returns {void}
    */
