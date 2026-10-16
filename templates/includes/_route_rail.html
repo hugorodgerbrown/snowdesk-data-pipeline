@@ -46,21 +46,17 @@ resize the canvas on every open. Pinned top-left instead — under the
 region chip's row on desktop, on the top edge on a phone, where that row
 is withdrawn while a route is open — it moves nothing else on the map:
 opening a route or placing a point changes only what the panel says (static/css/map.css). Inside #map also
-keeps a press on the rail from counting as a click outside the route
-detail sheet (static/js/map_sheet.js excludes #map), which would close the
-sheet and, with it, the rail.
+keeps a press on the rail from counting as a click outside an open map
+sheet (static/js/map_sheet.js excludes #map).
 
-THE ACTIONS ARE A MENU. Five actions in a restricted area collapse into
-the "…" menu (design-system rule 5): Terrain, then the
-routes row's own four in its order — includes/_route_rail_menu_items.html.
-The first opens the route detail sheet, which a tap no longer opens: the
-rail took the sheet's top half (name, figures, profile), and the sheet
-keeps what the rail does not show — the terrain lines. A pending share
-has only that first item.
+THE ACTIONS ARE A MENU. Four actions in a restricted area collapse into
+the "…" menu (design-system rule 5): the routes row's own four in its
+order — includes/_route_rail_menu_items.html. All four are owner actions,
+so a pending share has no menu. A Terrain item led them and opened the
+route detail sheet until SNOW-1095 removed both.
 
 ITS OWN CLOSE, BECAUSE ITS LIFETIME IS ITS OWN. The rail opens on a tap
-and stays open while the sheet opens and closes over it, so it cannot
-borrow the sheet's dismissal. The × beside the menu is the one control
+and is not a map sheet, so it cannot borrow a sheet's dismissal. The × beside the menu is the one control
 for it, the sheet header's × drawn the same way, and it always closes the
 route: the point header's wheel is what clears a point. It is not a second
 action competing for rule 5's threshold: it dismisses the surface rather
