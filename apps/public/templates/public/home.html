@@ -3,7 +3,13 @@
 apps/public/templates/public/home.html — the marketing homepage at /.
 
 A static page: a screenshot of the map, a one-line pitch, a link into the
-app at /map/, and short sections on what a reader gets from Snowdesk. It
+app at /map/, and short sections on what a reader gets from Snowdesk. The
+pitch is local conditions and route analysis — one place, one day — so the
+sections follow the order a tour is prepared in: the bulletin, the weather,
+the line, the line against the day, the trip, the hill without signal.
+Snowdesk analyses a route the reader brings as a GPX; it has no route
+planner, so the copy never says "plan a route".
+Cross-border coverage is a footnote, not the lead: a reader is in one place. It
 loads no map JavaScript and no MapLibre CSS — the image is a JPEG
 (static/img/home/map.jpg), not a live map, so the page stays light enough
 to be the first thing a new visitor downloads.
@@ -18,8 +24,8 @@ parameters never reaches this template — views.home 301s it to /map/.
 {% load i18n static components %}
 
 {% block page_meta %}
-    {% trans "Snowdesk · Alpine avalanche bulletins on one map" as page_title %}
-    {% trans "The official avalanche bulletins for Switzerland, France, Austria, South Tyrol and Trentino, on one map — with the weather, your routes and offline maps beside them." as page_description %}
+    {% trans "Snowdesk · Know your line, stay avi-savvy." as page_title %}
+    {% trans "Avalanche bulletins, weather forecasts, and route analysis for the Alps. Create and share trip plans." as page_description %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
 
@@ -63,15 +69,15 @@ parameters never reaches this template — views.home 301s it to /map/.
             aria-labelledby="home-heading"
             data-testid="home-hero"
         >
-            {% trans "Snowdesk" as eyebrow_text %}
+            {% trans "Stay avi-savvy" as eyebrow_text %}
             {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
             <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1 mb-4">
-                {% trans "Avalanche bulletins across the Alps, on one map." %}
+                {% trans "Know your line before you leave." %}
             </h1>
             <p class="text-base leading-prose text-text-2 mb-6">
                 {% blocktrans trimmed %}
-                    Read today’s danger for where you are going, in the same layout whichever country issued it —
-                    with the weather, your routes and offline maps beside it.
+                    Today’s avalanche bulletin and weather forecast for where you’re going. Upload your route for an
+                    analysis against the bulletin, and share it as a trip.
                 {% endblocktrans %}
             </p>
             <div class="flex flex-wrap items-center justify-center gap-3">
@@ -99,53 +105,63 @@ parameters never reaches this template — views.home 301s it to /map/.
         </a>
 
         {# ---------------------------------------------------------------- #}
-        {# What a reader gets                                               #}
+        {# What a reader gets, in the order a tour is prepared              #}
         {# ---------------------------------------------------------------- #}
         <div class="grid gap-4 md:grid-cols-2 mb-12" data-testid="home-sections">
             {% card %}
             <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "Three countries, one way to read them" %}
+                {% trans "The bulletin, and the season behind it" %}
             </h2>
             <p class="text-sm leading-prose text-text-2">
                 {% blocktrans trimmed %}
-                    SLF in Switzerland, ALBINA for Austria, South Tyrol and Trentino, and Météo-France for the French
-                    Alps each publish a bulletin in their own format. Snowdesk shows every one of them in full, in the
-                    same layout, so a tour that crosses a border reads the same on both sides.
+                    Today’s danger level, avalanche problems, aspects and elevations — the whole bulletin, as the
+                    warning service issued it. Scroll back through the season to see how the snowpack got here.
                 {% endblocktrans %}
             </p>
             {% endcard %}
 
             {% card %}
             <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "Today, and the season behind it" %}
+                {% trans "Weather forecast for the valley, the lift and the summit" %}
             </h2>
             <p class="text-sm leading-prose text-text-2">
                 {% blocktrans trimmed %}
-                    Tap a region for its danger level, its avalanche problems and the aspects and elevations they sit
-                    on. Scrub back through the season to see how the snowpack got here — a quiet week reads
-                    differently after a storm cycle.
+                    Seven days of snowfall, wind and freezing level at the heights you’ll pass through, with today and
+                    tomorrow hour by hour.
                 {% endblocktrans %}
             </p>
             {% endcard %}
 
             {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">{% trans "Weather where you are going" %}</h2>
+            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">{% trans "Route analysis" %}</h2>
             <p class="text-sm leading-prose text-text-2">
                 {% blocktrans trimmed %}
-                    A forecast for the village, the lift station and the summit of each resort, next to the bulletin for
-                    the same slopes — so the new snow, the wind and the freezing level are in front of you when you
-                    read the danger.
+                    Upload a route (GPX) to see the slope angle under your line, where steep ground above could release
+                    onto you, and where a fall would not stop. Full terrain analysis covers Switzerland today.
                 {% endblocktrans %}
             </p>
             {% endcard %}
 
             {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">{% trans "Your routes on the same map" %}</h2>
+            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
+                {% trans "Your route against the day’s bulletin" %}
+            </h2>
             <p class="text-sm leading-prose text-text-2">
                 {% blocktrans trimmed %}
-                    Upload a .gpx and see the line against the day’s danger and the slope it crosses. Pin the places
-                    and regions you go back to, plan a trip for a named day, and send the link to the people coming with
-                    you.
+                    Pick a day and see which stretches of your line sit on the aspects and elevations each avalanche
+                    problem names. No score — the judgement stays with you.
+                {% endblocktrans %}
+            </p>
+            {% endcard %}
+
+            {% card %}
+            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
+                {% trans "Trips: one link for the group" %}
+            </h2>
+            <p class="text-sm leading-prose text-text-2">
+                {% blocktrans trimmed %}
+                    Give your route a date and meeting point and share with friends as a trip, with the weather forecast
+                    and bulletin information included.
                 {% endblocktrans %}
             </p>
             {% endcard %}
@@ -156,36 +172,32 @@ parameters never reaches this template — views.home 301s it to /map/.
             </h2>
             <p class="text-sm leading-prose text-text-2">
                 {% blocktrans trimmed %}
-                    Add Snowdesk to your home screen and it opens like an app. Download the map for an area before you
-                    leave, and the bulletins you have read stay readable at the trailhead with no connection.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">{% trans "What people saw on the hill" %}</h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Field reports from other readers — whumpfing, shooting cracks, pinwheels, wind-scoured snow —
-                    sit on the map beside the forecast. Add your own from your phone; it is sent when you are back in
-                    range.
+                    Download an area before you leave: the map, the bulletins and the weather forecast for it stay on
+                    your phone. Field reports you file up there are sent when you’re back in range.
                 {% endblocktrans %}
             </p>
             {% endcard %}
         </div>
 
         {# ---------------------------------------------------------------- #}
-        {# The caveat, and where to read more                               #}
+        {# The caveat, coverage, and where to read more                     #}
         {# ---------------------------------------------------------------- #}
         <section class="max-w-wide mx-auto mb-8" aria-labelledby="home-authority-heading">
             <h2 id="home-authority-heading" class="text-sheet-subhead font-semibold text-text-1 mb-2">
                 {% trans "The bulletin is the authority" %}
             </h2>
-            <p class="text-sm leading-prose text-text-2 mb-6">
+            <p class="text-sm leading-prose text-text-2 mb-3">
                 {% blocktrans trimmed %}
-                    Snowdesk does not write forecasts. Every danger level on it comes from the warning service that
-                    issued it, and it is shown as they wrote it. It is a faster way to read their work — not a
-                    substitute for avalanche training, a transceiver you can use, and partners who can use theirs.
+                    Snowdesk does not write avalanche forecasts. Every danger level comes from the warning service that
+                    issued it, shown as they wrote it. The route analysis reads slope angle only — a route with
+                    nothing marked is not a safe route. None of it replaces avalanche training, a transceiver you can
+                    use, and partners who can use theirs.
+                {% endblocktrans %}
+            </p>
+            <p class="text-sm leading-prose text-text-2 mb-6" data-testid="home-coverage">
+                {% blocktrans trimmed %}
+                    Avalanche bulletins from SLF (Switzerland), Météo-France (French Alps) and ALBINA (Tyrol, South
+                    Tyrol, Trentino). Weather forecasts from Open-Meteo.
                 {% endblocktrans %}
             </p>
             <ul class="grid gap-3 sm:grid-cols-3 text-sm" data-testid="home-links">
