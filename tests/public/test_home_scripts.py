@@ -11,6 +11,8 @@ Covers:
   - every ``*_core.js`` module a ``map*.js`` module dereferences is
     actually loaded on ``/`` (SNOW-573). See ``TestMapCoreModulesLoaded``
     for the bug that motivated it.
+  - ``slope_classes_core.js`` precedes the two cores that read it at
+    parse time (SNOW-1073).
 """
 
 from __future__ import annotations
@@ -55,6 +57,22 @@ class TestHomeScriptTags:
         picker = content.index("js/place_picker.js")
         assert picker < content.index("js/report.js")
         assert picker < content.index("js/favourites.js")
+
+    def test_slope_classes_precede_both_readers(self) -> None:
+        """``slope_classes_core.js`` loads once, ahead of the two cores reading it.
+
+        SNOW-1073 moved the slope-class ramp into its own module.
+        ``terrain_filter_core.js`` and ``route_slope_core.js`` both read
+        ``self.pwaSlopeClassesCore`` at parse time rather than lazily, so for
+        these three document order is load-bearing: a reader ahead of the
+        ramp throws as it loads.
+        """
+        client = Client()
+        content = client.get(reverse("public:map")).content.decode()
+        assert content.count("js/slope_classes_core.js") == 1
+        ramp = content.index("js/slope_classes_core.js")
+        assert ramp < content.index("js/terrain_filter_core.js")
+        assert ramp < content.index("js/route_slope_core.js")
 
 
 @pytest.mark.django_db

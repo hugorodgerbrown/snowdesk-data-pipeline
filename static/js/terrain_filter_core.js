@@ -33,9 +33,27 @@
  *   2 — the no-data hatch, drawn from pixel coordinates so blank never has
  *       to mean "no data".
  *
+ * TWO MODES (SNOW-1073). The filter's `mode` picks the classifier and the
+ * palette together:
+ *
+ *   'match' — the three-entry palette above: matching ground in one tint.
+ *   'slope' — "colour by slope class": SLOPE_PALETTE paints each matching
+ *             pixel by its 5° band on the 30/35/40/45/50+ ramp
+ *             (slope_classes_core.js's CLASSES). This is the map's slope
+ *             layer; it replaced swisstopo's pre-rendered raster, so the
+ *             slope colours come from the same terrain model as the route
+ *             line and the point card. The aspect, slope-range and
+ *             elevation settings mask it exactly as they mask the tint.
+ *
+ * An absent or unknown mode is 'match', so a filter stored before the mode
+ * existed reads back as it always did.
+ *
  * Lives outside `map.js` for the usual reason: `map.js` is one file of IIFEs
  * that jsdom cannot import, and an off-by-one in an octant or band boundary
  * would paint the wrong slopes without any error anywhere.
+ *
+ * Reads `self.pwaSlopeClassesCore` at parse time, so
+ * slope_classes_core.js must load first.
  *
  * Every function here is pure.
  *
@@ -44,9 +62,12 @@
  *   OCTANTS / MIN_ZOOM / MAX_ZOOM / TILE_SIZE / COVERAGE_BOUNDS
  *   SLOPE_LADDER / ELEVATION_STEP_M / ELEVATION_MAX_M / B_LEVEL / B_NODATA
  *   PALETTE_INDEX / PALETTE / HATCH_PERIOD / HATCH_WIDTH / PROTOCOL
+ *   MODES / SLOPE_PALETTE_INDEX / SLOPE_PALETTE / SLOPE_RASTER_ALPHA
  *   DEFAULT_FILTER
  *   decodeCell(r, g, b, out?)
  *   createFilterClassifier(filter)  → (cell, px, py, tile) => paletteIndex
+ *   createSlopeClassifier(filter)   → the same, into SLOPE_PALETTE
+ *   createClassifier(filter) / paletteFor(filter) — picked by filter.mode
  *   paintTile(src, out, classify, palette, tile)
  *   noDataTile()
  *   coversPoint(lng, lat) / tileInCoverage(z, x, y)
@@ -65,6 +86,8 @@
 
   /**
    * @typedef {object} TerrainFilter
+   * @property {'match'|'slope'} mode What a matching pixel is painted with:
+   *   the match tint, or its slope class.
    * @property {ReadonlyArray<number>} aspects Octants that match, 0 (N) … 7 (NW), sorted.
    * @property {number} minSlope Lowest matching slope, a SLOPE_LADDER value.
    * @property {number|null} maxSlope Exclusive upper slope, or null for none.
@@ -183,8 +206,60 @@
     }),
   ]);
 
+  /**
+   * The two modes, the default first: 'match' paints matching ground in
+   * one tint, 'slope' paints it by slope class.
+   */
+  const MODES = Object.freeze(['match', 'slope']);
+
+  const SLOPE_PALETTE_INDEX = Object.freeze({ NONE: 0, NODATA: 1, FIRST_CLASS: 2 });
+
+  /**
+   * The slope classes' alpha. swisstopo's raster was drawn at 0.6 layer
+   * opacity under the danger choropleth (SNOW-691), and readers know the
+   * ramp at that strength; here the translucency is in the pixels, so 0.6
+   * of 255.
+   */
+  const SLOPE_RASTER_ALPHA = 153;
+
+  /**
+   * What the slope mode paints: transparent, the same no-data hatch as the
+   * match palette, then one entry per slope class, gentlest first. The
+   * classes are slope_classes_core.js's, so the map, the legend and a
+   * route's slope-coloured core share one ramp.
+   *
+   * @type {ReadonlyArray<PaletteEntry>}
+   */
+  const SLOPE_PALETTE = Object.freeze([
+    PALETTE[PALETTE_INDEX.NONE],
+    PALETTE[PALETTE_INDEX.NODATA],
+    ...self.pwaSlopeClassesCore.CLASSES.map((/** @type {*} */ klass) => Object.freeze({
+      id: klass.id,
+      token: klass.token,
+      hex: klass.hex,
+      rgba: Object.freeze([...hexChannels(klass.hex), SLOPE_RASTER_ALPHA]),
+    })),
+  ]);
+
+  /**
+   * Band → SLOPE_PALETTE index, for every band the contract allows. A band
+   * below the first class (under 30°) maps to NONE; the classifier never
+   * reaches it, because the lowest slope a reader can pick is 30°.
+   *
+   * @type {ReadonlyArray<number>}
+   */
+  const SLOPE_INDEX_BY_BAND = Object.freeze(Array.from({ length: 18 }, (_unused, band) => {
+    const deg = band * 5;
+    const classes = self.pwaSlopeClassesCore.CLASSES;
+    for (let i = classes.length - 1; i >= 0; i -= 1) {
+      if (deg >= classes[i].from) return SLOPE_PALETTE_INDEX.FIRST_CLASS + i;
+    }
+    return SLOPE_PALETTE_INDEX.NONE;
+  }));
+
   /** @type {Readonly<TerrainFilter>} */
   const DEFAULT_FILTER = Object.freeze({
+    mode: 'match',
     aspects: Object.freeze([0, 1, 2, 3, 4, 5, 6, 7]),
     minSlope: 30,
     maxSlope: null,
@@ -248,12 +323,14 @@
    * An empty aspect list is VALID — it is what a reader gets by switching
    * every aspect off, and it matches nothing. A maximum slope at or below
    * the minimum, or a maximum height at or below the minimum, is dropped.
+   * An absent or unknown mode is 'match'.
    *
    * @param {*} raw Anything — usually a parsed JSON blob.
    * @returns {TerrainFilter} A filter safe to classify with.
    */
   function normaliseFilter(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
+    const mode = MODES.includes(src.mode) ? src.mode : DEFAULT_FILTER.mode;
     let aspects = [...DEFAULT_FILTER.aspects];
     if (Array.isArray(src.aspects)) {
       const valid = src.aspects.filter(
@@ -272,7 +349,7 @@
     if (minElevation !== null && maxElevation !== null && maxElevation <= minElevation) {
       maxElevation = null;
     }
-    return { aspects, minSlope, maxSlope, minElevation, maxElevation };
+    return { mode, aspects, minSlope, maxSlope, minElevation, maxElevation };
   }
 
   /**
@@ -299,6 +376,7 @@
   function serialiseFilter(filter) {
     const f = normaliseFilter(filter);
     return JSON.stringify({
+      mode: f.mode,
       aspects: f.aspects,
       minSlope: f.minSlope,
       maxSlope: f.maxSlope,
@@ -311,20 +389,25 @@
    * A short, URL-safe identity for a filter — the `v` that makes MapLibre
    * treat a repainted tile as a new one.
    *
+   * The slope mode adds a trailing `-s`, so switching mode repaints; the
+   * match mode's hash is unchanged from before the mode existed.
+   *
    * @param {*} filter The filter.
-   * @returns {string} e.g. `ff-30--2400-`.
+   * @returns {string} e.g. `ff-30--2400-`, or `ff-30--2400--s` in slope mode.
    */
   function filterHash(filter) {
     const f = normaliseFilter(filter);
     const mask = f.aspects.reduce((acc, a) => acc | (1 << a), 0);
     const part = (/** @type {number|null} */ v) => (v === null ? '' : String(v));
-    return [
+    const parts = [
       mask.toString(16).padStart(2, '0'),
-      f.minSlope,
+      String(f.minSlope),
       part(f.maxSlope),
       part(f.minElevation),
       part(f.maxElevation),
-    ].join('-');
+    ];
+    if (f.mode === 'slope') parts.push('s');
+    return parts.join('-');
   }
 
   /**
@@ -354,6 +437,56 @@
       if (cell.height < loHeight || cell.height > hiHeight) return PALETTE_INDEX.NONE;
       return PALETTE_INDEX.MATCH;
     };
+  }
+
+  /**
+   * Build the per-pixel classifier for the slope-class mode.
+   *
+   * The same masks as createFilterClassifier — aspect, slope range,
+   * elevation — so the sheet's settings narrow the slope layer exactly as
+   * they narrow the tint; a pixel that passes is painted by its band's
+   * class rather than the match tint. Level ground is never painted, and
+   * no-data is hatched, as in the match mode.
+   *
+   * @param {*} filter The filter (normalised here; its mode is ignored).
+   * @returns {Classifier} `(cell, px, py, tile) => SLOPE_PALETTE index`.
+   */
+  function createSlopeClassifier(filter) {
+    const f = normaliseFilter(filter);
+    const mask = f.aspects.reduce((acc, a) => acc | (1 << a), 0);
+    const loBand = f.minSlope / BAND_DEG;
+    const hiBand = f.maxSlope === null ? MAX_BAND : f.maxSlope / BAND_DEG - 1;
+    const loHeight = f.minElevation === null ? -Infinity : f.minElevation;
+    const hiHeight = f.maxElevation === null ? Infinity : f.maxElevation;
+    return function classify(cell, _px, _py, _tile) {
+      if (cell.kind === 'nodata') return SLOPE_PALETTE_INDEX.NODATA;
+      if (cell.kind === 'level') return SLOPE_PALETTE_INDEX.NONE;
+      if ((mask & (1 << cell.octant)) === 0) return SLOPE_PALETTE_INDEX.NONE;
+      if (cell.band < loBand || cell.band > hiBand) return SLOPE_PALETTE_INDEX.NONE;
+      if (cell.height < loHeight || cell.height > hiHeight) return SLOPE_PALETTE_INDEX.NONE;
+      return SLOPE_INDEX_BY_BAND[cell.band] ?? SLOPE_PALETTE_INDEX.NONE;
+    };
+  }
+
+  /**
+   * The classifier for a filter's mode.
+   *
+   * @param {*} filter The filter.
+   * @returns {Classifier}
+   */
+  function createClassifier(filter) {
+    const f = normaliseFilter(filter);
+    return f.mode === 'slope' ? createSlopeClassifier(f) : createFilterClassifier(f);
+  }
+
+  /**
+   * The palette that goes with createClassifier(filter).
+   *
+   * @param {*} filter The filter.
+   * @returns {ReadonlyArray<PaletteEntry>}
+   */
+  function paletteFor(filter) {
+    return normaliseFilter(filter).mode === 'slope' ? SLOPE_PALETTE : PALETTE;
   }
 
   /**
@@ -470,6 +603,7 @@
    * The filter in words, for the map chip (long) or the menu row (short).
    *
    * Long: "N, NE, NW · 35°+ · above 2,400 m". Short: "3 aspects · 35°+".
+   * The slope mode leads with its name: "Slope classes · All aspects · 30°+".
    *
    * @param {*} filter The filter.
    * @param {Object<string, string>} strings The sheet's strings — see
@@ -482,6 +616,7 @@
     const opts = options || {};
     const num = opts.formatNumber || ((/** @type {number} */ n) => n.toLocaleString('en-GB'));
     const parts = [];
+    if (f.mode === 'slope') parts.push(strings['mode-slope']);
     if (f.aspects.length === OCTANTS.length) {
       parts.push(strings['aspects-all']);
     } else if (f.aspects.length === 0) {
@@ -600,9 +735,16 @@
     HATCH_PERIOD: HATCH_PERIOD,
     HATCH_WIDTH: HATCH_WIDTH,
     PROTOCOL: PROTOCOL,
+    MODES: MODES,
+    SLOPE_PALETTE_INDEX: SLOPE_PALETTE_INDEX,
+    SLOPE_PALETTE: SLOPE_PALETTE,
+    SLOPE_RASTER_ALPHA: SLOPE_RASTER_ALPHA,
     DEFAULT_FILTER: DEFAULT_FILTER,
     decodeCell: decodeCell,
     createFilterClassifier: createFilterClassifier,
+    createSlopeClassifier: createSlopeClassifier,
+    createClassifier: createClassifier,
+    paletteFor: paletteFor,
     paintTile: paintTile,
     noDataTile: noDataTile,
     coversPoint: coversPoint,

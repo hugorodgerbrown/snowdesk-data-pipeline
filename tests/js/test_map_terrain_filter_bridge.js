@@ -163,6 +163,7 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   loadMapBundle();
 });
@@ -180,6 +181,7 @@ describe('window.pwaTerrainFilter', () => {
   it('opens off, with the default filter when storage holds garbage', () => {
     expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
     expect(window.pwaTerrainFilter.getFilter()).toEqual({
+      mode: 'match',
       aspects: [0, 1, 2, 3, 4, 5, 6, 7],
       minSlope: 30,
       maxSlope: null,
@@ -210,6 +212,7 @@ describe('window.pwaTerrainFilter', () => {
   it('persists the filter, normalised', () => {
     window.pwaTerrainFilter.setFilter({ aspects: [7, 0], minSlope: 35, minElevation: 2449 });
     expect(JSON.parse(window.localStorage.getItem(FILTER_KEY))).toEqual({
+      mode: 'match',
       aspects: [0, 7],
       minSlope: 35,
       maxSlope: null,

@@ -227,7 +227,9 @@ Context:
 {# profile are both coloured from. The SAME module the map page's routes   #}
 {# layer uses, so one track cannot read as two different pictures — see    #}
 {# static/js/route_slope_core.js. Ordered before trip_map.js, which reads  #}
-{# `self.pwaRouteSlopeCore` when it installs its layers.                   #}
+{# `self.pwaRouteSlopeCore` when it installs its layers. Its five steep    #}
+{# classes come from slope_classes_core.js (SNOW-1073), read at parse time. #}
+<script defer src="{% static 'js/slope_classes_core.js' %}"></script>
 <script defer src="{% static 'js/route_slope_core.js' %}"></script>
 {# SNOW-829: which basemap this reader gets, and whether it drew anything #}
 {# (window.pwaBasemapStyleCore). Read by trip_map.js at its top level, so #}

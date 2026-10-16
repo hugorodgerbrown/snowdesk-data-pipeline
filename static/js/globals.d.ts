@@ -52,6 +52,8 @@ interface Window {
   pwaViewportCore: any;
   /** static/js/slope_overlay_core.js — swisstopo coverage predicate. */
   pwaSlopeOverlayCore: any;
+  /** static/js/slope_classes_core.js — the 30/35/40/45/50+ slope-class ramp. */
+  pwaSlopeClassesCore: any;
   /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */
   pwaTerrainFilterCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */

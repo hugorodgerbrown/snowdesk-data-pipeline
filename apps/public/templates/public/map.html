@@ -336,6 +336,12 @@ in addition to the shared map assets.
     {# time, so it has no place in the temporal-dead-zone ordering the       #}
     {# bundle exists to protect.                                            #}
     <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# SNOW-1073: the slope-class ramp (window.pwaSlopeClassesCore) — the    #}
+    {# 30/35/40/45/50+ colours the terrain filter's slope mode paints the    #}
+    {# map with and a route's core is drawn in from z14. Both               #}
+    {# terrain_filter_core.js and route_slope_core.js read it at parse time, #}
+    {# so it must load before either (tests/public/test_home_scripts.py).    #}
+    <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
     {# SNOW-978: the terrain filter's pure half (window.pwaTerrainFilterCore) #}
     {# — the class-tile pixel contract, the classifier and painter, the       #}
     {# filter's storage shape and its summary in words. map.js reads it from  #}

@@ -35,6 +35,7 @@ function sampled(angles, identity = { uuid: 'r1' }) {
 }
 
 beforeAll(async () => {
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/route_slope_core.js');
   core = globalThis.pwaRouteSlopeCore;
 });
@@ -47,12 +48,21 @@ describe('CLASSES', () => {
     }
   });
 
-  it('carries the slope raster palette verbatim for the five steep bands', () => {
+  it('carries the slope layer palette verbatim for the five steep bands', () => {
     // The line and the shading under it must be the same colour — these
-    // are slope_overlay_core.js's CLASSES, value for value.
+    // are slope_classes_core.js's CLASSES, value for value.
     expect(core.CLASSES.slice(1).map((c) => c.hex)).toEqual([
       '#f2e50a', '#f46f24', '#de055b', '#c889bb', '#4b4b4b',
     ]);
+  });
+
+  it('reads the five steep bands from the shared ramp, not a copy (SNOW-1073)', () => {
+    // The terrain filter's slope mode paints the map from the same frozen
+    // objects, so the two can only change together.
+    const shared = globalThis.pwaSlopeClassesCore.CLASSES;
+    expect(core.CLASSES.slice(1)).toHaveLength(shared.length);
+    core.CLASSES.slice(1).forEach((bucket, i) => expect(bucket).toBe(shared[i]));
+    expect(core.CLASSES[0].id).toBe('slope-gentle');
   });
 
   it('names a --color-slope-* token for every bucket', () => {

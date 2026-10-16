@@ -50,6 +50,7 @@ import '../../static/js/elevation_profile_core.js';
 // them rather than holding a second copy. Importing it is what puts
 // `self.pwaRouteSlopeCore` in place; without it the chart draws
 // uncoloured, which is what the trip map gets today.
+import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 
 const core = self.pwaElevationProfileCore;

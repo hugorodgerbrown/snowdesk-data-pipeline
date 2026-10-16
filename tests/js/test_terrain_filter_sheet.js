@@ -94,6 +94,7 @@ beforeAll(async () => {
   bridge = stubBridge();
   vi.resetModules();
   await import('../../static/js/map_sheet.js');
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/terrain_filter_sheet.js');
 });
