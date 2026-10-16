@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-03
+last-reviewed: 2026-10-16
 ---
 
 # Map page — functional specification
@@ -343,8 +343,8 @@ readout's row, search, the legend, help, date and scrubber stack and the
 rest of the control column withdraw, and come back when the panel closes.
 The date matters on a route only when it is today, which belongs to the
 Tour feature, not this panel. The intro card withdraws at every width.
-The map itself still pans and zooms by gesture, and the panel, the leader
-line and the route detail sheet stay.
+The map itself still pans and zooms by gesture, and the panel and the
+leader line stay.
 
 **The route cursor on the map (SNOW-1019; points only since
 2026-10-02).** While a route's rail is open, the map and the route panel
@@ -381,22 +381,22 @@ keeping its zoom, until the dot is back in the visible part with a small
 margin. A place the reader picked on the map itself never pans the map.
 Until the pan lands, the leader line leaves out the covered dot.
 
-**Tapping a route** opens the **route detail panel** — the docked sheet
-(`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once
-five tickets of terrain reading had outgrown a 320px card — and then fits
-the viewport to that route's stored bounds **around it**: the panel is
-opened and measured first, and the track is framed into the map the panel
-leaves (the right-hand side on desktop, the bottom dock's height on a
-phone). Framing first and opening over the result is what put the eastern
-end of a long route behind the panel describing it. The reservation is
-measured rather than declared, and capped at 40% of the map in any one
-direction, so a tall panel on a short screen degrades to a usable fit. It
-carries the route's name, distance and ascent, the terrain lines and the
-elevation profile. **Nothing in it depends on the day.** It also showed
-what each region's bulletin said about the line on the scrubbed day
-(SNOW-973) until SNOW-1062 removed that: the day's danger is a map layer
-(SNOW-979), drawn on the ground around the route rather than judged along
-it. The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
+**Tapping a route** opens the route panel and nothing else. Its "…" menu
+holds the routes row's four actions in the same order: Plan a trip →
+Share → Rename → Delete. A pending share has none of them (each is an
+owner endpoint addressed by a uuid the recipient is never handed), so it
+shows no "…" menu; its Save sits in the panel's header instead.
+
+The menu also led with a **Terrain** item, which opened the route detail
+sheet — the docked sheet SNOW-973 put in place of the anchored popup. By
+SNOW-1095 the sheet held one line of terrain figures, and that ticket
+removed the item and the sheet. **Nothing in the panel depends on the
+day.** The sheet showed what each region's bulletin said about the line
+on the scrubbed day (SNOW-973) until SNOW-1062 removed that: the day's
+danger is a map layer (SNOW-979), drawn on the ground around the route
+rather than judged along it.
+
+The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
 *below* the point markers: where a favourite star or a report flag sits on
 top of a line, the pin wins, because a pin is a smaller and more
 deliberate target.
@@ -405,8 +405,8 @@ deliberate target.
 produces a route with no ascent figure at all — not zero. "We don't know
 how much climbing this is" and "this route is flat" are different facts
 about a mountain day, and showing the second for the first is the kind of
-error somebody could plan on. The detail panel simply has no ascent line
-in that case, exactly as the panel row does not.
+error somebody could plan on. The route panel's figures simply have no
+ascent in that case, exactly as the panel row does not.
 
 **Default off.** Unlike favourites, the routes overlay starts switched
 off and is opt-in. Favourites are pins, and a handful of extra pins costs
@@ -693,9 +693,8 @@ Downloads, Favourites, Field observations and Routes each open a panel from
 their own roundel in the bottom-right stack. The four share one shape — a
 header carrying the roundel's own mark, a list of what the user has, and an
 "add" call to action — and **two layouts**, chosen by viewport width at the
-`sm` breakpoint (640px). The route detail sheet and the weather sheet are
-built on the same `_overlay_sheet.html` primitive and follow the same two
-layouts.
+`sm` breakpoint (640px). The weather sheet is built on the same
+`_overlay_sheet.html` primitive and follows the same two layouts.
 
 Each carried a fourth part, a footer switch labelled "Display on the map",
 until SNOW-904 made §3.6's layers menu the sole control for every layer.

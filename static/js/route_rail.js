@@ -10,20 +10,17 @@
  * the rendered one, because a feature read back from the map's tiles has
  * lost the third ordinate the profile is drawn from.
  *
- * THE SHEET IS BEHIND THE MENU. The route detail sheet (SNOW-973) used to
- * open on the same tap. The rail took its top half — name, figures,
- * profile — and the sheet keeps the terrain lines, one press away on the
- * menu's "Terrain" item. The sheet's body is built by map.js, which owns
- * the map state it reads, and handed over as `options.details`: a function
- * this module calls on that press, never at open.
+ * NO SHEET BEHIND IT (SNOW-1095). The route detail sheet (SNOW-973) used
+ * to open on the same tap; the rail took its top half — name, figures,
+ * profile — and the sheet kept one terrain line behind the menu's
+ * "Terrain" item until SNOW-1095 removed the item and the sheet.
  *
- * ITS OWN LIFETIME. The rail stays open while the sheet opens and closes
- * over it — it is not registered with window.pwaMapOverlays, which would
- * close it the moment the sheet it opened announced itself. It closes on
- * its own × (`[data-route-rail-close]`), on a tap on empty map (map.js),
- * on Escape when nothing else is open to take that Escape and no point is
- * placed, on a claim or a delete, and it is refilled in place when
- * another route is tapped.
+ * ITS OWN LIFETIME. The rail is not registered with window.pwaMapOverlays,
+ * which would close it the moment any other overlay announced itself. It
+ * closes on its own × (`[data-route-rail-close]`), on a tap on empty map
+ * (map.js), on Escape when nothing else is open to take that Escape and no
+ * point is placed, on a claim or a delete, and it is refilled in place
+ * when another route is tapped.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,
@@ -71,16 +68,14 @@
  * Only a route with no legs at all — no elevation, or too short — gets the
  * outline alone, with no point to place.
  *
- * THE ACTIONS. Terrain calls `options.details`; Plan a trip
- * is a link; Share and Rename reuse window.pwaShare and
- * window.pwaRowRenameCommit exactly as the routes panel does; Delete
- * confirms and posts to routes:delete. Each change announces
- * `snowdesk:routes-changed`, which is what makes the map and an open
- * routes panel re-read the list. A pending share has no uuid and none of
- * the owner endpoints would answer for it, so its menu keeps the details
- * item alone (`[data-route-rail-owner]` marks the rest), and its Save —
- * `options.claim`, the control map.js builds — sits in the identity block
- * (`[data-route-rail-claim]`), where the recipient lands.
+ * THE ACTIONS. Plan a trip is a link; Share and Rename reuse
+ * window.pwaShare and window.pwaRowRenameCommit exactly as the routes
+ * panel does; Delete confirms and posts to routes:delete. Each change
+ * announces `snowdesk:routes-changed`, which is what makes the map and an
+ * open routes panel re-read the list. A pending share has no uuid and none
+ * of the owner endpoints would answer for it, so it has no menu at all,
+ * and its Save — `options.claim`, the control map.js builds — sits in the
+ * identity block (`[data-route-rail-claim]`), where the recipient lands.
  *
  * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
  * `data-route-rail-open`, which static/css/map.css reads to withdraw the
@@ -91,10 +86,9 @@
  *
  * Publishes (frozen `window.pwaRouteRail`):
  *
- *   open(feature, {details?, claim?})
+ *   open(feature, {claim?})
  *                  — fill and show the rail for one route feature;
- *                    `details` opens the route detail sheet, `claim` is
- *                    a pending share's Save control
+ *                    `claim` is a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
  *   cursorPoint()  — the panel's bottom edge below the cursor line,
@@ -162,7 +156,6 @@
   var planTripEl = rail.querySelector('[data-route-rail-plan-trip]');
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
-  var detailsEl = rail.querySelector('[data-route-rail-details]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
 
   /** The open route's cursor, or null. */
@@ -177,8 +170,6 @@
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
   var current = { uuid: null, name: '' };
-  /** Opens the open route's detail sheet; null when there is none. */
-  var openDetails = null;
   /** The open route's own meta line. */
   var routeMeta = '';
   /** The route's length a point's distance is a share of. */
@@ -444,18 +435,12 @@
   /**
    * Fit the menu to the open route.
    *
-   * The details item shows whenever there is a sheet to open; the owner
-   * items only for a route this visitor owns, each hidden individually so
-   * a pending share keeps the details item. The whole menu hides only when
-   * nothing in it would do anything.
+   * Every item is an owner action, so the whole menu shows only for a
+   * route this visitor owns: a pending share, with no uuid, has none.
    */
   function fillMenu() {
     var owned = !!current.uuid;
-    if (detailsEl) detailsEl.closest('li').hidden = !openDetails;
-    rail.querySelectorAll('[data-route-rail-owner]').forEach(function (item) {
-      item.hidden = !owned;
-    });
-    if (actionsEl) actionsEl.hidden = !owned && !openDetails;
+    if (actionsEl) actionsEl.hidden = !owned;
     if (!owned) return;
     if (planTripEl && PLAN_TRIP_URL) {
       planTripEl.setAttribute(
@@ -502,10 +487,9 @@
    *
    * @param {{geometry?: {coordinates?: Array}, properties?: object}} feature
    *   The route feature from the routes GeoJSON cache.
-   * @param {{details?: function(): *, claim?: ?Node}} [options]
-   *   `details` opens the route detail sheet, called on the menu's
-   *   Terrain item; `claim` is a pending share's Save
-   *   control, seated in the identity block.
+   * @param {{claim?: ?Node}} [options]
+   *   `claim` is a pending share's Save control, seated in the identity
+   *   block.
    * @returns {boolean} Whether the rail opened.
    */
   function open(feature, options) {
@@ -523,7 +507,6 @@
       uuid: props.uuid ? String(props.uuid) : null,
       name: props.name || STRINGS.untitled,
     };
-    openDetails = typeof opts.details === 'function' ? opts.details : null;
     // A pending share carries the same slope record as an owned route
     // (the server builds both with one function), and the point card reads
     // its terrain from it — so it is read for both. The map's rule that a
@@ -603,7 +586,6 @@
     currentProfile = null;
     currentSpanM = 0;
     routeMeta = '';
-    openDetails = null;
     fillClaim(null);
     paintPointMode(null);
     rail.hidden = true;
@@ -715,7 +697,6 @@
       .then(function (resp) {
         if (!resp.ok) throw new Error('route delete ' + resp.status);
         close();
-        window.pwaRouteDetail?.close();
         announceRoutesChanged();
       })
       .catch(function () {
@@ -732,10 +713,6 @@
       // The × always closes the route (2026-10-02): the point header's
       // wheel is what clears a point and keeps the route.
       close();
-      return;
-    }
-    if (target.closest('[data-route-rail-details]')) {
-      if (openDetails) openDetails();
       return;
     }
     if (target.closest('[data-route-rail-share]')) {

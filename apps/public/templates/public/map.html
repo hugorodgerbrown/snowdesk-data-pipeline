@@ -373,10 +373,10 @@ in addition to the shared map assets.
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_markers_core.js' %}"></script>
     {# SNOW-910: a route's slope record, read (window.pwaRouteSlopeCore).    #}
-    {# SNOW-1017 took the slope-coloured line off the map; map.js still      #}
-    {# reads this core for the no-fall passages and the terrain lines (the   #}
-    {# fall-line arrows left the map with SNOW-1019), and the                #}
-    {# elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
+    {# SNOW-1017 took the slope-coloured line off the map below z14; map.js  #}
+    {# still reads this core for the line's colours from z14 (the fall-line  #}
+    {# arrows left the map with SNOW-1019, the terrain lines with SNOW-1095), #}
+    {# and the elevation profile for its bands. Read from installRoutesLayer and refreshPanelOverlay,  #}
     {# never at parse time, so like the other call-site cores it sits here   #}
     {# and not inside the map bundle's contiguous run.                       #}
     <script defer src="{% static 'js/route_slope_core.js' %}"></script>

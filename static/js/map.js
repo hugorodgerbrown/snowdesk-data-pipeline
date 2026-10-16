@@ -7113,8 +7113,8 @@
    * panel's 400 px: a north-to-south tour reads top to bottom under it.
    *
    * This replaced SNOW-973's `paddingClearing`, which reserved the route
-   * detail sheet instead. A tap no longer opens that sheet — it sits behind
-   * the panel's menu — so on the tap there is no sheet to frame around.
+   * detail sheet instead. A tap stopped opening that sheet with SNOW-1018,
+   * and SNOW-1095 removed it, so there is no sheet to frame around.
    *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
@@ -7876,11 +7876,12 @@
       p.remove();
     };
 
-    // SNOW-973: the two surfaces that describe ONE thing on the map — the
-    // anchored popup (a resort pin, a favourite pin) and the route detail
-    // sheet. Both are dismissed by the gestures that move the reader on
-    // from what they were looking at: deselecting a region, tapping a
-    // different one, entering pin-placement focus.
+    // SNOW-973: the surface that describes ONE thing on the map — the
+    // anchored popup (a resort pin, a favourite pin). It sat beside the
+    // route detail sheet here until SNOW-1095 removed the sheet. It is
+    // dismissed by the gestures that move the reader on from what they
+    // were looking at: deselecting a region, tapping a different one,
+    // entering pin-placement focus.
     //
     // Deliberately NOT `pwaMapOverlays.closeAll()`, which would take the
     // layers menu and the three UGC panels with it. Two of the three
@@ -7888,12 +7889,8 @@
     // for `#map` on purpose — a panel is not dismissed by working the map
     // underneath it, and routing these through the registry would reverse
     // that decision for every sheet as a side effect of this ticket.
-    //
-    // `isOpen` is checked before closing for the reason the registry checks
-    // it: the sheet's teardown empties its body, which is not free.
     const closeMapDetailSurfaces = () => {
       closeDetailPopup();
-      if (window.pwaRouteDetail?.isOpen()) window.pwaRouteDetail.close();
     };
 
     // SNOW-658: the anchored detail popup is a map overlay like the layers
@@ -8840,11 +8837,10 @@
                 detail: { claimed: true },
               }),
             );
-            // SNOW-1018: this control sits on the rail now. Both surfaces
-            // describe a pending route that no longer exists as such, so
-            // both close; the refetch above redraws it as an owned line.
+            // SNOW-1018: this control sits on the rail now. The rail
+            // describes a pending route that no longer exists as such, so
+            // it closes; the refetch above redraws it as an owned line.
             window.pwaRouteRail?.close();
-            window.pwaRouteDetail?.close();
           })
           .catch(function (resp) {
             button.disabled = false;
@@ -8891,14 +8887,9 @@
     // — the route's profile cut at its transitions, docked over the map's
     // foot — and ONLY the rail. The rail carries what the sheet's top half
     // used to: the name, the distance/ascent/descent figures and the
-    // elevation profile. The route detail sheet (SNOW-973) is one press
-    // further, behind the rail's "Terrain" menu item, and holds what the
-    // rail does not: the terrain lines below. SNOW-1062 took the day's
-    // bulletin reading out of it — the day's danger is a map layer
-    // (SNOW-979), not an attribute of a route.
-    //
-    // So the sheet's body is built here but DEFERRED: handed to the rail as
-    // `details`, a function the menu item calls.
+    // elevation profile. The route detail sheet (SNOW-973) stayed one press
+    // further, behind the rail's "Terrain" menu item, until SNOW-1095
+    // removed both: by then it held one line of terrain figures.
     //
     // The rail opens BEFORE the fit, when there is one, so the fit can measure it
     // (`paddingClearingRail`) — otherwise a route's lower end would be
@@ -8914,57 +8905,6 @@
     const activateRoute = (feature, { frame = false } = {}) => {
       const props = feature.properties || {};
 
-      /**
-       * Build the sheet's body: the terrain lines, and nothing the rail
-       * already shows.
-       *
-       * @returns {HTMLElement}
-       */
-      const buildDetailBody = () => {
-        const container = document.createElement('div');
-        container.setAttribute('data-route-detail', '');
-
-        // SNOW-961: the ground, on a line of its own. It sat under the
-        // route's figures until SNOW-1018 moved those to the rail; it stays
-        // apart from them there too — distance and ascent are facts about
-        // the track, these are facts about what it crosses, and running them
-        // together invites the reader to take "43°" for something the GPX
-        // said.
-        //
-        // Absent entirely for a route that has never been sampled — see
-        // summaryLines, which distinguishes that from one we looked at and
-        // could not answer.
-        // The core is in home.html's DEFERRED group, so it is not
-        // guaranteed to exist when this runs — the same reason
-        // ``routeLegsFor`` and ``flatOwnedRouteFilter`` test for their
-        // cores rather than assuming them. Without the core the sheet has
-        // no terrain line to show.
-        const slopeCore = self.pwaRouteSlopeCore;
-        const terrainLines = slopeCore
-          ? slopeCore.summaryLines(readFeatureJson(props.terrain))
-          : [];
-        // Parsed ONCE and shared with the passage lines below: the slope
-        // record is the largest property on the feature, and it arrives as
-        // a JSON string that both readers would otherwise parse
-        // separately.
-        const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
-        // SNOW-964: the no-fall passages, on the same line as the figures
-        // rather than a line of their own — one more fact about the ground.
-        if (slopeCore?.passageLines) {
-          terrainLines.push(...slopeCore.passageLines(slopeFeature));
-        }
-        if (terrainLines.length) {
-          const terrainMeta = document.createElement('div');
-          terrainMeta.className = 'mt-0.5 text-xs text-text-2';
-          terrainMeta.textContent = terrainLines
-            .map((line) => self.pwaStrings.interpolate(MAP_STRINGS[line.key], line.params))
-            .join(' · ');
-          container.appendChild(terrainMeta);
-        }
-
-        return container;
-      };
-
       // Handed the CACHED feature: the one MapLibre gave the tap is the
       // tile's copy — clipped at tile boundaries and simplified for the
       // current zoom — so a profile drawn from it would be of part of the
@@ -8979,7 +8919,6 @@
       );
 
       window.pwaRouteRail?.open(cachedFeature || feature, {
-        details: () => window.pwaRouteDetail?.open({ node: buildDetailBody() }),
         claim: props.pending ? buildRouteClaimCta(props.token) : null,
       });
       // SNOW-1019: follow the new cursor, so its index is drawn on the
@@ -9256,9 +9195,8 @@
           deselectRegion();
           return;
         }
-        // SNOW-499: close any anchored resort/favourite detail popup — and
-        // since SNOW-973 the route detail sheet too — so neither lingers
-        // over a region the user has moved on from.
+        // SNOW-499: close any anchored resort/favourite detail popup so it
+        // does not linger over a region the user has moved on from.
         closeMapDetailSurfaces();
         selectFeature(region.id);
       }

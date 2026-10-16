@@ -240,10 +240,3 @@ class TestBandTableParity:
             (class_id, float(lower), None if upper == "null" else float(upper))
             for class_id, lower, upper in found
         ]
-
-    def test_the_steep_threshold_matches_route_slope_core(self) -> None:
-        source = _ROUTE_SLOPE_CORE.read_text(encoding="utf-8")
-        match = re.search(r"const STEEP_THRESHOLD_DEG = (\d+);", source)
-
-        assert match is not None
-        assert float(match.group(1)) == STEEP_THRESHOLD_DEG

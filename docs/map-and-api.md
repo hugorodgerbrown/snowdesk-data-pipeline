@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # Map page and JSON API
@@ -186,14 +186,11 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Fifteen surfaces float over the map, and only one is ever meaningful at
+Fourteen surfaces float over the map, and only one is ever meaningful at
 once: the layers menu (`basemap-menu`), the four UGC panels (downloads,
 favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
-the route detail sheet (`#route-detail-sheet`
-— SNOW-973 moved it out of that popup, and since SNOW-1018 it opens from
-the rail's "Terrain" menu item rather than on a tap), the
-legend card (`#map-legend-card`), the help
+the legend card (`#map-legend-card`), the help
 tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
 (`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792), the
 welcome panel (`#home-intro`), the region panel the readout chip discloses
@@ -205,14 +202,16 @@ and the sign-in sheet a signed-out tap on a Favourites or Routes row opens
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
 so the sheets that go through it need nothing of their own — which is how
-the route detail sheet joined the matrix without an edit to any other
-surface.
+the route detail sheet (SNOW-973; removed by SNOW-1095) joined the matrix
+without an edit to any other surface.
 
 The route rail (`#route-rail`, SNOW-1018; the only rail since SNOW-1065) is
 deliberately **not** in the matrix.
-A tap on a saved route opens it and nothing else, and it stays open while
-the route detail sheet opens and closes over it — registering it would
-close it the moment the sheet it opened announced itself. It closes on its
+A tap on a saved route opens it and nothing else — registering it would
+close it the moment any other overlay announced itself. Its "…" menu is
+Plan a trip → Share → Rename → Delete, all owner actions, so a pending
+share shows none; the Terrain item and the route detail sheet it opened
+were removed by SNOW-1095. It closes on its
 own ×, on Escape when no sheet, overlay or menu was open to take that
 Escape (and no leg or point was open to take it first), on a map tap that
 no marker takes, and after a claim or a delete.

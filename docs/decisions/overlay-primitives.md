@@ -2,7 +2,7 @@
 name: overlay-primitives
 description: Four DS overlay primitives (banner/toast/sheet/modal), the data-action=dismiss + data-overlay contract, and the ordered z-index token scheme
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Overlay primitives, the shared dismiss contract, and the z-index scheme
@@ -53,8 +53,9 @@ control, and z-index literal.
    so the next reader does not route it back through a toast.
 3. **Sheet** — `templates/includes/_overlay_sheet.html`. Fly-out panel
    shared by the favourite and report map surfaces, and since then by the
-   routes panel, the downloads sheet, the route detail sheet, the weather
-   sheet and the layers menu's sign-in sheet (seven `id`s today); content
+   routes panel, the downloads sheet, the weather sheet, the terrain
+   filter sheet and the layers menu's sign-in sheet (seven `id`s today;
+   the route detail sheet was one until SNOW-1095 removed it); content
    is injected by the owning JS module at open time, and
    `static/js/map_sheet.js`'s `MapSheet.attach` gives each one the shared
    dismissal routes and its registration with `window.pwaMapOverlays`.
