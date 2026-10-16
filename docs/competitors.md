@@ -2,7 +2,7 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-10-11
+last-reviewed: 2026-10-16
 ---
 
 # Competitor list
@@ -956,14 +956,18 @@ navigation.
 
 **6. Slope-angle overlay** *(WhiteRisk, Whympr)* — **SHIPPED. This item is
 closed; the text below is kept for the editorial reasoning only.**
-*(2026-09-05, SNOW-836)* We ship a slope-angle overlay: `settings.SLOPE_TILE_URL`
-serves swisstopo's "Slope classes over 30°" dataset on the SLF band
+*(2026-09-05, SNOW-836)* We ship a slope-angle layer on the SLF band
 classification (30–35 / 35–40 / 40–45 / 45–50 / 50+), documented at
-`apps/public/templates/public/help/_topic_slope.html`, and open to every
-visitor since SNOW-724 retired the `slope_layer` flag. The careful editorial
+`apps/public/templates/public/help/_topic_slope.html` and open to every
+visitor. *(2026-10-16, SNOW-1073)* It is now the terrain filter's "Colour by
+slope" mode, painted from our own terrain-class tiles (swisstopo's
+swissALTI3D, resampled to 5 m) rather than swisstopo's "Slope classes over
+30°" raster behind the retired `SLOPE_TILE_URL`, so it can be narrowed by
+aspect and elevation and agrees with the route line. The careful editorial
 line this item argued for was written — the caveats live in that help panel,
-and the legend links to it. Coverage is not Alps-complete, which is the one
-part of this item still open.
+and the legend links to it. Coverage is Switzerland only and starts at z12
+([why](decisions/slope-layer-is-painted-from-our-class-tiles.md)); coverage
+beyond Switzerland is the part of this item still open.
 The single most-cited terrain layer in ski touring; WhiteRisk ships both
 slope angle *and* an avalanche-terrain layer, Whympr ships slope gradient
 across Europe. It was the most conspicuous absence on our map. The cost is a tile source rather than app code — a slope raster

@@ -1,0 +1,122 @@
+{% load i18n l10n %}
+{% comment %}
+public/partials/_map_zoom_control.html — the map's zoom control (SNOW-1077).
+
+Included by _map_embed.html at the top of the bottom-left stack, and by the
+component library at /_components/?slug=map-zoom-control.
+
+Two things, both direct children of .map-legend once included:
+
+* The ROUNDEL, the same small roundel as the help and (i) controls beside
+  it. Its face is the whole tile zoom the map is drawing, and its
+  accessible name says it ("Zoom level 13"). Before SNOW-1077 this slot
+  held a DEBUG-only <output> that read the zoom and did nothing when
+  pressed; it is now a public control, because two layers — the terrain
+  filter from z12, a route's slope colours from z14 — appear only past a
+  zoom the map never stated, and zooming was gesture-only (WCAG 2.5.1).
+* The FLYOUT it opens, into the crook between the stack and the date row
+  where the legend card opens: − and + (44 px targets), a scale across the
+  map's zoom range with a marker at the camera, a tick for each zoom-gated
+  layer that is on, and one row per tick naming the layer. Under DEBUG it
+  also prints the camera zoom to two decimals — the figure the old readout
+  gave developers working on the download bands.
+
+static/js/map_zoom_control.js fills all of it from the map; the zoom gates
+come from window.pwaZoomGates (static/js/map.js). Every value below is
+empty on /map/ and set only by the component library's variants.
+
+Context (all optional):
+* zoom_face           — int; the roundel's face (the map never goes below z4, so 0 means unset).
+* zoom_open           — bool; render the flyout open.
+* zoom_marker_pct     — float 0..100; the camera marker's position.
+* zoom_ticks          — list of {key, label, zoom, pct, reached}.
+* zoom_out_disabled   — bool; − at the minimum zoom.
+* zoom_in_disabled    — bool; + at the maximum zoom.
+* zoom_camera_visible — bool; render the DEBUG camera line.
+* zoom_camera         — str; that line's text.
+{% endcomment %}
+<button
+    id="map-zoom-toggle"
+    type="button"
+    class="map-legend-toggle map-zoom-toggle hover-affordance"
+    {% if zoom_face %}
+        aria-label="{% blocktrans with zoom=zoom_face %}Zoom level {{ zoom }}{% endblocktrans %}"
+    {% else %}
+        aria-label='{% trans "Zoom level" %}'
+    {% endif %}
+    aria-haspopup="dialog"
+    aria-expanded="{% if zoom_open %}true{% else %}false{% endif %}"
+    aria-controls="map-zoom-flyout"
+>
+    <span class="map-zoom-face" data-zoom-face aria-hidden="true">{{ zoom_face|default:"" }}</span>
+</button>
+<div
+    id="map-zoom-flyout"
+    class="map-zoom-flyout"
+    role="dialog"
+    aria-label='{% trans "Zoom" %}'
+    {% if not zoom_open %}hidden{% endif %}
+>
+    <div class="map-zoom-row">
+        <button
+            type="button"
+            class="map-zoom-step hover-affordance"
+            data-zoom-step="out"
+            aria-label='{% trans "Zoom out" %}'
+            {% if zoom_out_disabled %}disabled{% endif %}
+        >
+            {% include "includes/_icon_minus.html" with size=18 only %}
+        </button>
+        {# The scale is a picture of what the list below and the roundel's #}
+        {# name already say, so assistive technology skips it.              #}
+        <div class="map-zoom-scale" aria-hidden="true">
+            <span class="map-zoom-track"></span>
+            <ol class="map-zoom-ticks" data-zoom-ticks>
+                {% for tick in zoom_ticks %}
+                    {% include "public/partials/_map_zoom_tick.html" with tick=tick only %}
+                {% endfor %}
+            </ol>
+            {% localize off %}
+                <span class="map-zoom-marker" data-zoom-marker style="left: {{ zoom_marker_pct|default:0 }}%"></span>
+            {% endlocalize %}
+        </div>
+        <button
+            type="button"
+            class="map-zoom-step hover-affordance"
+            data-zoom-step="in"
+            aria-label='{% trans "Zoom in" %}'
+            {% if zoom_in_disabled %}disabled{% endif %}
+        >
+            {% include "includes/_icon_plus.html" with size=18 only %}
+        </button>
+    </div>
+    <ul class="map-zoom-gates" data-zoom-gates {% if not zoom_ticks %}hidden{% endif %}>
+        {% for tick in zoom_ticks %}
+            {% include "public/partials/_map_zoom_gate.html" with tick=tick only %}
+        {% endfor %}
+    </ul>
+    {% if zoom_camera_visible %}
+        {# DEBUG only (apps.public.views.map_page): the continuous camera #}
+        {# zoom. The face shows the tile zoom, which is a step; work on   #}
+        {# the download bands needs to know how close to the next step   #}
+        {# the camera is.                                                 #}
+        <p class="map-zoom-camera" data-zoom-camera>{{ zoom_camera|default:"" }}</p>
+    {% endif %}
+</div>
+<template id="map-zoom-tick-template">
+    {% include "public/partials/_map_zoom_tick.html" %}
+</template>
+<template id="map-zoom-gate-template">
+    {% include "public/partials/_map_zoom_gate.html" %}
+</template>
+{# makemessages never scans JavaScript, so every string the control writes #}
+{# is rendered here and read back by window.pwaStrings.read(). One label   #}
+{# per entry in window.pwaZoomGates.                                       #}
+<template id="map-zoom-strings-template">
+    <span data-string="toggle-label">{% blocktrans %}Zoom level %(zoom)s{% endblocktrans %}</span>
+    <span data-string="gate-zoom">{% blocktrans %}z%(zoom)s{% endblocktrans %}</span>
+    <span data-string="gate-terrain_filter">{% trans "Terrain filter" %}</span>
+    <span data-string="gate-slope_classes">{% trans "Slope classes" %}</span>
+    <span data-string="gate-route_slopes">{% trans "Route slope colours" %}</span>
+    <span data-string="camera">{% blocktrans %}Camera zoom %(zoom)s{% endblocktrans %}</span>
+</template>

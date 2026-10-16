@@ -163,6 +163,7 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
+  await import('../../static/js/slope_classes_core.js');
   await import('../../static/js/terrain_filter_core.js');
   loadMapBundle();
 });
@@ -180,6 +181,7 @@ describe('window.pwaTerrainFilter', () => {
   it('opens off, with the default filter when storage holds garbage', () => {
     expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
     expect(window.pwaTerrainFilter.getFilter()).toEqual({
+      mode: 'match',
       aspects: [0, 1, 2, 3, 4, 5, 6, 7],
       minSlope: 30,
       maxSlope: null,
@@ -210,6 +212,7 @@ describe('window.pwaTerrainFilter', () => {
   it('persists the filter, normalised', () => {
     window.pwaTerrainFilter.setFilter({ aspects: [7, 0], minSlope: 35, minElevation: 2449 });
     expect(JSON.parse(window.localStorage.getItem(FILTER_KEY))).toEqual({
+      mode: 'match',
       aspects: [0, 7],
       minSlope: 35,
       maxSlope: null,
@@ -240,5 +243,56 @@ describe('the layers menu row', () => {
     expect(window.pwaTerrainFilterSheet.open).toHaveBeenCalledTimes(1);
     expect(row().hasAttribute('aria-checked')).toBe(false);
     expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
+  });
+});
+
+describe('window.pwaZoomGates (SNOW-1077)', () => {
+  /**
+   * One gate from the registry, by key.
+   *
+   * @param {string} key The gate's key.
+   * @returns {{key: string, zoom: number, active: boolean}}
+   */
+  const gate = (key) => window.pwaZoomGates.list().find((g) => g.key === key);
+
+  it('lists the terrain filter at z12 and route slopes at z14', () => {
+    expect(gate('terrain_filter').zoom).toBe(12);
+    expect(gate('route_slopes').zoom).toBe(14);
+  });
+
+  it('turns the terrain-filter gate on with the filter', () => {
+    window.pwaTerrainFilter.show();
+    expect(gate('terrain_filter').active).toBe(true);
+    window.pwaTerrainFilter.hide();
+    expect(gate('terrain_filter').active).toBe(false);
+  });
+
+  it('leaves the route-slopes gate off with no routes drawn', () => {
+    expect(gate('route_slopes').active).toBe(false);
+  });
+
+  it('labels the z12 gate as slope classes in the slope mode (SNOW-1073)', () => {
+    // The two gates share a zoom and are never on together, so the scale
+    // carries one tick at z12 named for what is actually drawn.
+    expect(gate('slope_classes').zoom).toBe(12);
+    window.pwaTerrainFilter.setFilter({ mode: 'slope' });
+    window.pwaTerrainFilter.show();
+    expect(gate('slope_classes').active).toBe(true);
+    expect(gate('terrain_filter').active).toBe(false);
+    window.pwaTerrainFilter.setFilter({ mode: 'match' });
+    expect(gate('slope_classes').active).toBe(false);
+    expect(gate('terrain_filter').active).toBe(true);
+    window.pwaTerrainFilter.hide();
+    expect(gate('slope_classes').active).toBe(false);
+  });
+});
+
+describe('the slope mode (SNOW-1073)', () => {
+  it('persists the mode and reads it back', () => {
+    window.pwaTerrainFilter.setFilter({ mode: 'slope', minSlope: 35 });
+    expect(JSON.parse(window.localStorage.getItem(FILTER_KEY))).toMatchObject({ mode: 'slope', minSlope: 35 });
+    expect(window.pwaTerrainFilter.getFilter().mode).toBe('slope');
+    window.pwaTerrainFilter.setFilter({});
+    expect(window.pwaTerrainFilter.getFilter().mode).toBe('match');
   });
 });

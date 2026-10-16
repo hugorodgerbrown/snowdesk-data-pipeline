@@ -294,9 +294,13 @@ function makeCaches() {
         },
         async put(request, response) {
           const url = typeof request === 'string' ? request : request.url;
+          // SNOW-1072: a null-body status (the class tileset's 204) cannot
+          // be rebuilt around a body — the Response constructor throws —
+          // and a real Cache stores it without one.
+          const nullBody = [101, 204, 205, 304].includes(response.status);
           entries.set(
             url,
-            new Response(await response.arrayBuffer(), {
+            new Response(nullBody ? null : await response.arrayBuffer(), {
               status: response.status,
               headers: response.headers,
             }),
@@ -3807,5 +3811,107 @@ describe('an offline navigation to the root (SNOW-1047)', () => {
     const response = await sw._networkFirst(navRequest('/'));
 
     expect(await response.text()).toContain('the homepage');
+  });
+});
+
+describe('terrain-class tiles pinned by a download (SNOW-1072)', () => {
+  /*
+   * The terrain filter fetches its class tiles from the PAGE
+   * (`loadTerrainClassTile` in map.js), so offline it is this worker that
+   * answers — out of the area's pinned bucket, like any basemap tile. The
+   * tileset answers 204 for a tile with no data, and the filter paints a
+   * 204 inside its coverage as the no-data hatch; so a pinned 204 must be
+   * stored by the download and served back as a 204, not dropped as a
+   * non-tile or turned into a 504.
+   */
+  const CLASS_ORIGIN = 'https://terrain.example.invalid';
+  const NO_DATA = `${CLASS_ORIGIN}/terrain-class/v2/14/8512/5820.png`;
+  const DATA = `${CLASS_ORIGIN}/terrain-class/v2/14/8513/5820.png`;
+  const AREA_ID = 'region-CH-4115';
+  const BUCKET = `snowdesk-basemap-pinned-${AREA_ID}`;
+
+  /** A cross-origin response, as `fetch` hands the worker one. */
+  function corsResponse(status, body) {
+    const build = () => {
+      const real = new Response(body, { status });
+      return {
+        ok: real.ok,
+        status: real.status,
+        type: 'cors',
+        headers: real.headers,
+        arrayBuffer: () => real.arrayBuffer(),
+        clone: () => build(),
+      };
+    };
+    return build();
+  }
+
+  /** The class host: no data for one tile, a PNG for the other. */
+  const classFetch = () =>
+    vi.fn(async (url) =>
+      String(url) === NO_DATA ? corsResponse(204, null) : corsResponse(200, 'png bytes'),
+    );
+
+  /** A cross-origin GET from the page, as the fetch listener receives one. */
+  async function dispatchFetch(sw, url) {
+    let responded;
+    sw.__listeners.fetch({
+      request: { url, method: 'GET', mode: 'cors', destination: '' },
+      clientId: '',
+      respondWith(promise) {
+        responded = promise;
+      },
+    });
+    return responded;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('pins a 204 class tile alongside a 200, counting neither as a failure', async () => {
+    const caches = makeCaches();
+    const sw = loadSw({ caches, fetch: classFetch() });
+
+    const result = await sw._warmCache([NO_DATA, DATA], { pinned: true, areaId: AREA_ID });
+
+    expect(result.ok).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(caches.size(BUCKET)).toBe(2);
+  });
+
+  it('serves the pinned 204 back offline, from the bucket, with no network', async () => {
+    const caches = makeCaches();
+    const fetchSpy = classFetch();
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._warmCache([NO_DATA, DATA], { pinned: true, areaId: AREA_ID });
+    fetchSpy.mockClear();
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const noData = await dispatchFetch(sw, NO_DATA);
+    const data = await dispatchFetch(sw, DATA);
+
+    expect(noData.status).toBe(204);
+    expect(data.status).toBe(200);
+    expect(await data.text()).toBe('png bytes');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('reads the pinned bucket even when the class origin is not on the allowlist', async () => {
+    // A restarted worker that could not rehydrate its allowlist classifies
+    // the class host as unknown; SNOW-722's read-only probe still finds
+    // the pinned tile, so the filter still draws.
+    const caches = makeCaches();
+    caches.seed(BUCKET, NO_DATA, new Response(null, { status: 204 }));
+    const fetchSpy = vi.fn(async () => corsResponse(200, 'network'));
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const response = await dispatchFetch(sw, NO_DATA);
+
+    expect(response.status).toBe(204);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

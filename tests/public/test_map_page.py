@@ -31,6 +31,10 @@ from tests.factories import (
     UserFactory,
 )
 
+# SNOW-978: a configured class-tile template, for the tests that need the
+# terrain filter — and since SNOW-1073 the slope layer — on the page.
+TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
+
 
 @pytest.mark.django_db
 def test_map_page_renders() -> None:
@@ -709,7 +713,9 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
     Asserted as ONE ordered list rather than per section, because the two
     labelling asymmetries in it are deliberate and a reader "tidying" them
     is the likeliest way this drifts: only the FIRST Conditions row says
-    "bulletins", and only the two Basemap overlay rows carry "Display ".
+    "bulletins", and only the Basemap overlay row carries "Display ".
+    SNOW-1073 removed the second such row, swisstopo's "Display slope
+    angles": the slope layer is the terrain filter's slope mode now.
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
@@ -727,7 +733,6 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
         "l1",
         "l2",
         "l4",
-        "slope",
         "downloads",
     ]
     positions = [content.index(f'data-overlay-key="{key}"', start) for key in rows]
@@ -739,10 +744,10 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
         "ALBINA (AT, IT)",
         "Field observations",
         "Major regions (EAWS L1)",
-        "Display slope angles",
         "Display downloaded areas",
     ):
         assert label in content, label
+    assert 'data-overlay-key="slope"' not in content
     # The pattern the first Conditions row sets is NOT repeated.
     assert "MétéoFrance bulletins" not in content
     assert "ALBINA bulletins" not in content
@@ -791,15 +796,12 @@ def test_map_layer_menu_renders_sync_status_dots() -> None:
 
 
 @pytest.mark.django_db
-def test_the_two_dotless_rows_carry_no_dot() -> None:
-    """SNOW-904: slope and downloads render without a ``.sync-dot``.
+def test_the_dotless_row_carries_no_dot() -> None:
+    """SNOW-904: the downloads row renders without a ``.sync-dot``.
 
-    Neither can make an honest claim, for opposite reasons. Slope draws a
-    third-party raster this app cannot probe — its dot had been permanently
-    ``unknown`` (and so ``display: none``) since SNOW-691, which is markup
-    for a state that never resolves. Downloads draws a list that is local by
-    definition, so its answer is always yes and the dot carries no
-    information.
+    Downloads draws a list that is local by definition, so its answer is
+    always yes and the dot carries no information. (SNOW-1073 removed the
+    other dotless row, swisstopo's slope raster.)
 
     A green dot on this menu means one thing since SNOW-904 — the payload
     this row draws is in a cache right now — and a row that cannot answer
@@ -808,7 +810,7 @@ def test_the_two_dotless_rows_carry_no_dot() -> None:
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 
-    for key in ("slope", "downloads"):
+    for key in ("downloads",):
         key_idx = content.index(f'data-overlay-key="{key}"')
         button_scope = content[key_idx : content.index("</button>", key_idx)]
         assert "sync-dot" not in button_scope, key
@@ -1162,65 +1164,35 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
 
 
 @pytest.mark.django_db
-def test_slope_row_renders_when_tile_url_configured() -> None:
-    """SNOW-691: the slope-angle row renders, and its tile template reaches
-    ``#map`` as ``data-slope-tile-url`` for map.js to build the raster
-    source from.
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_the_layers_menu_has_no_slope_row() -> None:
+    """SNOW-1073: swisstopo's slope raster, its row and its template are gone.
 
-    SNOW-904 moved it out of a "Terrain" section of its own and under
-    Basemap, below a hairline with the downloaded-areas row: both are drawn
-    ON TOP of whichever basemap is chosen, which is what that section is
-    about, and a section holding one row was a heading doing no work. Its
-    label gains the "Display " verb the radios above it do not carry — the
-    verb is what separates "additionally draw this" from "choose this".
+    The slope layer is the terrain filter's "colour by slope" mode, opened
+    from the filter's own row, so Layers keeps no separate slope row — and
+    nothing of the raster reaches ``#map`` for map.js to install.
     """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
-
-    assert 'data-overlay-key="slope"' in content
-    assert "Display slope angles" in content
-    assert 'data-slope-layer-eligible="true"' in content
-    assert "data-slope-tile-url=" in content
-
-
-@pytest.mark.django_db
-@override_settings(SLOPE_TILE_URL="")
-def test_terrain_row_absent_without_tile_url() -> None:
-    """SNOW-724: clearing SLOPE_TILE_URL takes the whole overlay out.
-
-    This is the operator kill switch that ``slope_layer``'s
-    ``everyone=False`` used to be — the setting is env-overridable, so
-    withdrawing a third-party raster whose licence position is still open
-    is a restart rather than a deploy. It has to leave the DOM clean. In
-    particular the tile template must not be emitted: there is no Snowdesk
-    endpoint behind it to 403, so a template rendered for an ineligible
-    page would be an invitation to install the layer anyway.
-
-    SNOW-904: there is no heading to gate with it any more. The row lives
-    under Basemap, a section that renders whatever slope does, so the
-    eligibility check wraps the row alone — SNOW-658's "a section whose only
-    row is gated must gate its heading too" no longer applies because slope
-    is no longer a section's only row.
-    """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
 
     assert 'data-overlay-key="slope"' not in content
     assert "Display slope angles" not in content
-    assert 'data-slope-layer-eligible="false"' in content
-    assert "data-slope-tile-url=" not in content
-    # The section it sits in is unaffected — the basemap radios and the
-    # downloaded-areas row still render.
-    assert 'data-overlay-key="downloads"' in content
+    assert "data-slope-layer-eligible" not in content
+    assert "data-slope-tile-url" not in content
+    assert "hangneigung" not in content
+    assert "js/slope_overlay_core" not in content
+    assert 'data-testid="map-legend-slope"' not in content
+    # The slope layer's way in is the terrain filter's row.
+    assert "data-terrain-filter-open" in content
 
 
 @pytest.mark.django_db
 def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
-    """SNOW-904: four radios, a separator, then the two "Display " rows.
+    """SNOW-904: four radios, a separator, then the "Display " row.
 
     The section holds two kinds of row — pick ONE basemap, then
-    additionally draw either of two things over it — and the only thing
-    marking the boundary is a hairline. Nothing is indented under anything
+    additionally draw something over it — and the only thing marking the
+    boundary is a hairline. (SNOW-1073 removed the slope row that sat
+    above the downloaded-areas one.) Nothing is indented under anything
     in this menu: an indent reads as a child of the row above it, and with
     collapsible sections it would also hide rows the collapsed heading does
     not govern.
@@ -1233,32 +1205,31 @@ def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
 
     last_radio = group.rindex("data-basemap-key=")
     separator = group.index("basemap-menu-separator")
-    slope = group.index('data-overlay-key="slope"')
     downloads = group.index('data-overlay-key="downloads"')
 
-    assert last_radio < separator < slope < downloads
+    assert last_radio < separator < downloads
 
 
 @pytest.mark.django_db
-def test_slope_legend_section_renders_with_its_caveat() -> None:
-    """SNOW-691: the legend carries the five classes and a route to the caveats.
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_slope_key_is_in_the_terrain_filter_legend_with_its_caveat() -> None:
+    """SNOW-691, SNOW-1073: the five classes and a route to the caveats.
 
-    The link is the reason this test exists rather than a bare "the swatches
-    are present". The caveats moved to /help/ because they ran to several
-    paragraphs in a panel that has room for none — but a shading a reader
-    might mistake for permission cannot ship with no path to the warnings,
-    so the heading being a link is the load-bearing part.
+    The slope layer's key now sits in the terrain filter's legend section,
+    shown in the slope mode. The link is the reason this test exists rather
+    than a bare "the swatches are present". The caveats live on /help/
+    because they run to several paragraphs in a panel that has room for
+    none — but a shading a reader might mistake for permission cannot ship
+    with no path to the warnings, so the heading being a link is the
+    load-bearing part.
     """
-    client = Client()
-    content = client.get(reverse("public:map")).content.decode()
+    content = Client().get(reverse("public:map")).content.decode()
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
 
-    assert 'data-testid="map-legend-slope"' in content
     for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
-        assert band in content, band
-    # The caveats live on /help/, not in the legend — but the legend must
-    # still be the way to reach them, or a reader gets five colours and no
-    # warning that the layer averages the ground and stops at a border.
-    assert "#help-topic-slope" in content
+        assert band in legend, band
+    assert "#help-topic-slope" in legend
 
 
 # ---------------------------------------------------------------------------
@@ -1721,58 +1692,25 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     assert "Zoom to" in strings
 
 
-# SNOW-964: the five strings the no-fall passage line is built from —
-# the two count forms and one word per direction.
-_PASSAGE_STRING_KEYS = (
-    "route-terrain-passage-one",
-    "route-terrain-passages",
-    "route-terrain-passage-descending",
-    "route-terrain-passage-climbing",
-    "route-terrain-passage-crossing",
-)
-
 _MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
 
 
 @pytest.mark.django_db
-def test_the_no_fall_passage_strings_are_rendered_and_mirrored() -> None:
-    """The passage line's words exist in BOTH hand-maintained places.
+def test_the_route_terrain_strings_are_gone() -> None:
+    """No ``route-terrain-*`` key is rendered or mirrored (SNOW-1095).
 
-    ``makemessages`` never scans JavaScript, so every user-facing string
-    in ``static/js`` is rendered here and read back through
-    ``window.pwaStrings`` (``tox -e i18n-lint``). The fallbacks in
-    ``MAP_STRINGS`` are the second copy, and NOTHING enforces that the
-    two agree — a key that lands in one but not the other ships an
-    English literal to a translated page and nothing fails. This
-    assertion is the only guard there is.
+    They were the route detail sheet's terrain line — steepest angle,
+    length over 30°, unsurveyed length, no-fall passages — and went with
+    the sheet. Checked in BOTH hand-maintained places: the strings
+    template and the ``MAP_STRINGS`` fallbacks in ``map_state.js``.
     """
     content = Client().get(reverse("public:map")).content.decode()
     template = content.split('id="map-strings-template"', 1)[1]
     strings = template.split("</template>", 1)[0]
     fallbacks = _MAP_STATE_JS.read_text(encoding="utf-8")
 
-    for key in _PASSAGE_STRING_KEYS:
-        assert f'data-string="{key}"' in strings, key
-        assert f"'{key}':" in fallbacks, key
-
-
-@pytest.mark.django_db
-def test_the_route_terrain_strings_carry_passages_and_no_cruxes() -> None:
-    """The sheet's terrain line names no-fall passages, never cruxes.
-
-    SNOW-1066 removed route-level cruxes, so the "key passage" count and
-    its two string keys are gone; the no-fall passage wording stays.
-    """
-    content = Client().get(reverse("public:map")).content.decode()
-    template = content.split('id="map-strings-template"', 1)[1]
-    strings = template.split("</template>", 1)[0]
-
-    assert "no-fall passage" in strings
-    assert "key passage" not in strings
-    assert "route-terrain-crux" not in strings
-    assert "down the fall line" in strings
-    assert "up the fall line" in strings
-    assert "across the fall line" in strings
+    assert 'data-string="route-terrain-' not in strings
+    assert "'route-terrain-" not in fallbacks
 
 
 @pytest.mark.django_db
@@ -1907,9 +1845,6 @@ class TestTheMapPageFitsTheScreen:
         assert re.search(r"(^|;|\s)height:\s*100dvh", body)
 
 
-TERRAIN_CLASS_URL = "https://tiles.example.test/terrain-class/v1/{z}/{x}/{y}.png"
-
-
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_terrain_filter_renders_when_tile_url_configured() -> None:
@@ -1938,6 +1873,39 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
 
 
 @pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_renders_the_mode_control() -> None:
+    """SNOW-1073: the sheet offers its two modes as one radio group.
+
+    "Highlight matches" is the server-rendered default; "Colour by slope"
+    is the slope layer. The colour key carries both modes' rows, the match
+    rows shown and the slope rows hidden until the script reads the stored
+    mode, and the legend has a heading per mode leading to its help topic.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    assert sheet.count('name="terrain-filter-mode"') == 2
+    match = sheet[sheet.index('value="match"') :][:120]
+    slope = sheet[sheet.index('value="slope"') :][:120]
+    assert "checked" in match
+    assert "checked" not in slope
+    assert "Highlight matches" in sheet
+    assert "Colour by slope" in sheet
+    assert '<div class="contents" data-terrain-filter-key="slope" hidden>' in sheet
+    assert "map-legend-swatch--slope-30" in sheet
+    # The slope range stays in the sheet whatever the mode.
+    assert "data-terrain-filter-min-slope" in sheet
+
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
+    assert 'data-terrain-filter-key="slope" hidden' in legend
+    assert "#help-topic-slope" in legend
+    assert "#help-topic-terrain-filter" in legend
+
+
+@pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL="")
 def test_terrain_filter_absent_without_tile_url() -> None:
     """SNOW-978: the setting defaults to empty, which turns the filter off.
@@ -1959,13 +1927,156 @@ def test_terrain_filter_absent_without_tile_url() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_row_sits_under_basemap_after_slope() -> None:
+def test_terrain_filter_row_sits_under_basemap_after_the_hairline() -> None:
     """SNOW-978: the row is drawn ON the basemap, so it lives under Basemap,
-    after "Display slope angles" and before the downloaded-areas row.
+    below the hairline and before the downloaded-areas row — where
+    "Display slope angles" sat until SNOW-1073 folded it into this row.
     """
     content = Client().get(reverse("public:map")).content.decode()
     group = content[content.index('id="basemap-menu-group-basemap"') :]
-    slope = group.index('data-overlay-key="slope"')
+    separator = group.index("basemap-menu-separator")
     terrain = group.index("data-terrain-filter-open")
     downloads = group.index('data-overlay-key="downloads"')
-    assert slope < terrain < downloads
+    assert separator < terrain < downloads
+
+
+# ---------------------------------------------------------------------------
+# The zoom control (SNOW-1077)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestZoomControl:
+    """The zoom roundel is public; only its camera-zoom line is DEBUG.
+
+    Before SNOW-1077 the slot held a DEBUG-only ``<output>`` that read the
+    zoom and did nothing when pressed. The control is now a ``<button>``
+    every reader gets, opening a flyout with − and +, so the page has to
+    render it — and its script — with DEBUG off.
+    """
+
+    def _content(self, client: Client) -> str:
+        return client.get(reverse("public:map")).content.decode()
+
+    def test_renders_the_roundel_and_flyout_without_debug(self, client: Client) -> None:
+        """The roundel controls its flyout, and the script loads."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        assert 'id="map-zoom-toggle"' in content
+        assert 'aria-controls="map-zoom-flyout"' in content
+        assert 'id="map-zoom-flyout"' in content
+        assert 'data-zoom-step="out"' in content
+        assert 'data-zoom-step="in"' in content
+        assert 'id="map-zoom-strings-template"' in content
+        assert "js/map_zoom_control.js" in content
+        assert "js/zoom_control_core.js" in content
+        # The old DEBUG readout is gone, element and script alike.
+        assert 'id="map-zoom-readout"' not in content
+        assert "map_zoom_readout" not in content
+
+    def test_roundel_is_a_button_with_a_zoom_level_name(self, client: Client) -> None:
+        """A button, named "Zoom level" until the script adds the number."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        start = content.rindex("<button", 0, content.index('id="map-zoom-toggle"'))
+        tag = content[start : content.index(">", start)]
+        assert "aria-label='Zoom level'" in tag or 'aria-label="Zoom level"' in tag
+        assert 'aria-haspopup="dialog"' in tag
+        assert 'aria-expanded="false"' in tag
+
+    def test_flyout_is_a_named_dialog(self, client: Client) -> None:
+        """What the roundel's aria-haspopup promises: a dialog with a name."""
+        content = self._content(client)
+        start = content.rindex("<div", 0, content.index('id="map-zoom-flyout"'))
+        tag = content[start : content.index(">", start)]
+        assert 'role="dialog"' in tag
+        assert "aria-label='Zoom'" in tag or 'aria-label="Zoom"' in tag
+
+    def test_camera_line_is_absent_without_debug(self, client: Client) -> None:
+        """The two-decimal camera zoom is a developer's instrument."""
+        with override_settings(DEBUG=False):
+            assert "data-zoom-camera" not in self._content(client)
+
+    def test_camera_line_renders_under_debug(self, client: Client) -> None:
+        """DEBUG keeps what the hack-mode readout gave developers."""
+        with override_settings(DEBUG=True):
+            assert "data-zoom-camera" in self._content(client)
+
+    def test_roundel_tops_the_bottom_left_stack(self, client: Client) -> None:
+        """It sits above the help and (i) roundels, as the readout did."""
+        content = self._content(client)
+        zoom = content.index('id="map-zoom-toggle"')
+        assert zoom < content.index('id="map-help-toggle"')
+        assert zoom < content.index('id="map-legend-toggle"')
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_downloads_sheet_offers_terrain_data_when_the_filter_is_configured() -> None:
+    """SNOW-1072: the downloads sheet carries the "Terrain data" switch.
+
+    It is inside the sheet's body template, which the JS clones on open,
+    and the framing readout carries the line that states what it adds.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    body = content[content.index('id="map-downloads-body-template"') :]
+    body = body[: body.index("</template>")]
+
+    assert "data-downloads-terrain" in body
+    assert 'id="map-downloads-terrain"' in body
+    assert "Terrain data" in body
+    assert 'id="map-frame-terrain-readout"' in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_downloads_sheet_has_no_terrain_data_without_the_filter() -> None:
+    """SNOW-1072: no class tileset, no switch — there is nothing to include."""
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert "data-downloads-terrain" not in content
+    assert 'id="map-downloads-terrain"' not in content
+
+
+# What a phone detent sheet covers at each detent, measured at 390×844
+# (SNOW-1098): peek cuts the bottom row on both sides, half and full cover
+# both stacks whole.
+_SHEET_HIDES = {
+    "peek": (".map-controls-toggle", "#map-legend-toggle"),
+    "half": ("#map-controls-br", "#map-legend"),
+    "full": ("#map-controls-br", "#map-legend"),
+}
+
+
+@pytest.mark.parametrize(("detent", "targets"), list(_SHEET_HIDES.items()))
+def test_a_detent_sheet_hides_what_it_covers(
+    detent: str, targets: tuple[str, ...]
+) -> None:
+    """Covered controls are hidden, not left cut or reachable by keyboard.
+
+    The sheet slides over the furniture without moving it, so its top edge
+    can land part-way up a roundel, and a covered button stays in the tab
+    order. ``visibility: hidden`` on the covered ones removes both.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    hidden = {
+        selector.strip()
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        if "visibility: hidden" in body
+        for selector in selectors.split("*/")[-1].split(",")
+    }
+
+    for target in targets:
+        assert f":root[data-map-sheet='{detent}'] {target}" in hidden
+
+
+@pytest.mark.django_db
+def test_the_controls_a_detent_sheet_hides_are_on_the_page() -> None:
+    """Every element the hide rules name renders, so no rule goes stale."""
+    content = Client().get(reverse("public:map")).content.decode()
+
+    for target in {t for targets in _SHEET_HIDES.values() for t in targets}:
+        if target.startswith("#"):
+            assert f'id="{target[1:]}"' in content
+        else:
+            assert target[1:] in content

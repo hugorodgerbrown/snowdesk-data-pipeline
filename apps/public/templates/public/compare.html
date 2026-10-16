@@ -29,7 +29,8 @@ otherwise leak something inappropriate onto a public page:
 
 Our own row is checked against this repository, not against the doc, because
 the doc went stale on us twice: it recorded slope angle and national topo
-basemaps as things we lack, and both shipped (SLOPE_TILE_URL and
+basemaps as things we lack, and both shipped (the slope layer — since
+SNOW-1073 the terrain filter's slope mode, on TERRAIN_CLASS_TILE_URL — and
 BASEMAP_STYLES). When editing our entry, verify against the code.
 {% endcomment %}
 {% load i18n components %}
@@ -533,9 +534,10 @@ BASEMAP_STYLES). When editing our entry, verify against the code.
             </p>
             <p class="mb-3">
                 {% blocktrans trimmed %}
-                    Around the bulletin: a slope-angle overlay using the same band classification as the Swiss maps, the
-                    national topographic basemaps for Switzerland, France and Austria, mountain weather forecasts
-                    refreshed four times a day, uploaded routes, and shared trips.
+                    Around the bulletin: a slope-angle layer for Switzerland, derived from swisstopo's swissALTI3D
+                    elevation model and drawn in the same band classification as the Swiss maps, the national
+                    topographic basemaps for Switzerland, France and Austria, mountain weather forecasts refreshed four
+                    times a day, uploaded routes, and shared trips.
                 {% endblocktrans %}
             </p>
             <p class="mb-3">

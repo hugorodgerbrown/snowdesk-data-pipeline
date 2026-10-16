@@ -893,9 +893,10 @@ def basemap_origin(style_url: str) -> str:
     parts = urlsplit(style_url)
     if not parts.scheme or not parts.netloc:
         # SNOW-691: the message names the VALUE rather than one setting —
-        # SLOPE_TILE_URL is a second caller now, and naming
-        # OPENFREEMAP_STYLE_URL for a bad slope template would send whoever
-        # hits this to the wrong line of the wrong .env.
+        # TERRAIN_CLASS_TILE_URL is a second caller (through
+        # optional_basemap_origin), and naming OPENFREEMAP_STYLE_URL for a
+        # bad class-tile template would send whoever hits this to the wrong
+        # line of the wrong .env.
         raise ImproperlyConfigured(
             f"Tile/style URL {style_url!r} must be an absolute URL "
             f"(e.g. https://tiles.openfreemap.org/styles/liberty) — the CSP "
@@ -926,7 +927,6 @@ SWISSTOPO_TILE_SHARDS = [f"https://vectortiles{n}.geo.admin.ch" for n in range(5
 def csp_defaults(
     tile_origin: str,
     *,
-    slope_origin: str | None = None,
     terrain_class_origin: str | None = None,
 ) -> dict[str, list[str]]:
     """Return the baseline CSP directives, allowlisting ``tile_origin``.
@@ -935,25 +935,19 @@ def csp_defaults(
     JSON and vector tiles from — the sole part of the policy that varies
     with the environment.
 
-    ``slope_origin`` (SNOW-691) is the origin serving the slope-angle
-    raster overlay's WMTS tiles. Keyword-only and defaulted so the direct
-    callers in ``tests/test_csp.py`` keep working unchanged; ``None`` omits
-    it entirely, which is what a deployment with the overlay's tile URL
-    unset should get. It is appended to BOTH ``connect-src`` and
-    ``img-src`` because MapLibre fetches raster tiles through ``fetch()``
-    but decodes them as images, and ``img-src`` is otherwise
-    ``'self' data:`` only.
-
     ``terrain_class_origin`` (SNOW-978) is the origin serving the terrain
-    filter's class tiles. Same two directives for a related reason: the
-    map's ``terrainfilter://`` protocol handler ``fetch()``es each tile and
-    decodes it with ``createImageBitmap``. ``None`` — the default, and
-    what an unset ``TERRAIN_CLASS_TILE_URL`` produces — omits it.
+    filter's class tiles, which since SNOW-1073 also paint the map's slope
+    layer. Keyword-only and defaulted so the direct callers in
+    ``tests/test_csp.py`` need not pass it; ``None`` — the default, and what
+    an unset ``TERRAIN_CLASS_TILE_URL`` produces — omits it. It is appended
+    to BOTH ``connect-src`` and ``img-src``: the map's ``terrainfilter://``
+    protocol handler ``fetch()``es each tile and decodes it with
+    ``createImageBitmap``, and ``img-src`` is otherwise ``'self' data:``
+    only. (SNOW-1073 removed ``slope_origin``, swisstopo's slope raster's
+    WMTS origin, with the layer.)
 
     Args:
         tile_origin: ``scheme://host[:port]`` of the basemap tile origin.
-        slope_origin: ``scheme://host[:port]`` of the slope-raster origin,
-            or None to leave it out of the policy.
         terrain_class_origin: ``scheme://host[:port]`` of the terrain-class
             tile origin, or None to leave it out of the policy.
 
@@ -979,12 +973,11 @@ def csp_defaults(
             "'self'",
             "'unsafe-inline'",
         ],
-        # SNOW-691: the slope raster is decoded as an image, so its origin
+        # SNOW-978: the class tiles are decoded as images, so their origin
         # has to be here as well as in connect-src below.
         "img-src": [
             "'self'",
             "data:",
-            *([slope_origin] if slope_origin else []),
             *([terrain_class_origin] if terrain_class_origin else []),
         ],
         "font-src": ["'self'", "data:"],
@@ -1013,12 +1006,10 @@ def csp_defaults(
             # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
             "https://data.geopf.fr",
             "https://mapsneu.wien.gv.at",
-            # SNOW-691: the slope-angle raster's WMTS origin (swisstopo by
-            # default). Env-derived like tile_origin above, so the setting
-            # and the policy cannot drift.
-            *([slope_origin] if slope_origin else []),
             # SNOW-978: the terrain filter's class tiles, fetched by the
             # map's protocol handler. Absent while the setting is unset.
+            # Env-derived like tile_origin above, so the setting and the
+            # policy cannot drift.
             *([terrain_class_origin] if terrain_class_origin else []),
         ],
         "manifest-src": ["'self'"],
@@ -1032,37 +1023,22 @@ OPENFREEMAP_STYLE_URL = config(
 )
 OPENFREEMAP_ORIGIN = basemap_origin(OPENFREEMAP_STYLE_URL)
 
-# SNOW-691: the slope-angle raster overlay's XYZ tile template. swisstopo's
-# ``ch.swisstopo.hangneigung-ueber_30`` WMTS layer, in the ``3857_17`` matrix
-# set (z0–17; z18 answers HTTP 400). It is derived from a 10 m COMBINED DEM —
-# swissALTI3D (CH/LI), RGE ALTI (FR), TINITALY/01 (IT), DGM10 (AT), DGM1
-# (Bavaria), EU-DEM (Baden-Württemberg) — so it is a multi-country layer
-# clipped to a rectangle, not "Switzerland plus a buffer"; the rectangle
-# itself lives in ``static/js/slope_overlay_core.js`` because the client is
-# what has to keep requests inside it.
-#
-# Env-overridable so a self-hosted or replacement raster (SNOW-693) can be
-# swapped in without a code deploy, exactly as the basemap style URL is.
-SLOPE_TILE_URL = config(
-    "SLOPE_TILE_URL",
-    default=(
-        "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30"
-        "/default/current/3857/{z}/{x}/{y}.png"
-    ),
-)
-SLOPE_TILE_ORIGIN = basemap_origin(SLOPE_TILE_URL)
+# SNOW-1073 removed SLOPE_TILE_URL / SLOPE_TILE_ORIGIN, swisstopo's
+# ``ch.swisstopo.hangneigung-ueber_30`` slope raster. The map's slope layer
+# is painted from TERRAIN_CLASS_TILE_URL below now — see
+# docs/decisions/slope-layer-is-painted-from-our-class-tiles.md.
 
 # SNOW-917: the terrain HEIGHT tileset's origin — a 5 m Int16 grid over
 # Switzerland in EPSG:3035, published by SNOW-908 from the snowdesk-tiles
-# repo. It answers "how steep is the ground here", where SLOPE_TILE_URL
-# above only paints a picture of it.
+# repo. It answers "how steep is the ground here" for one point, server
+# side, where TERRAIN_CLASS_TILE_URL below is what the browser paints from.
 #
 # A BASE, NOT AN XYZ TEMPLATE, and the difference is deliberate.
-# ``SLOPE_TILE_URL`` is handed verbatim to MapLibre, which substitutes the
-# placeholders itself, so the template IS the setting. Django composes two
-# different paths under this one — ``grid.json`` for the geometry and
-# ``{x}/{y}.s16`` for a tile — so a template would have to be edited to
-# reach the definition that describes it.
+# ``TERRAIN_CLASS_TILE_URL`` is handed verbatim to the browser, which
+# substitutes the placeholders itself, so the template IS the setting.
+# Django composes two different paths under this one — ``grid.json`` for
+# the geometry and ``{x}/{y}.s16`` for a tile — so a template would have
+# to be edited to reach the definition that describes it.
 #
 # NO CSP ENTRY, and it must not go through ``basemap_origin`` or
 # ``csp_defaults``: nothing in a browser fetches this. Every request to it
@@ -1078,9 +1054,10 @@ CSP_REPORT_ONLY = True
 # SNOW-978: the terrain filter's class tiles — an XYZ PNG template whose
 # pixels carry height, aspect octant and 5° slope band (contract in
 # docs/decisions/terrain-filter-is-class-tiles-filtered-on-device.md),
-# published by the snowdesk-tiles repo (SNOW-987). Unlike SLOPE_TILE_URL it
-# defaults to EMPTY, meaning "feature off": the layer, its menu row and its
-# CSP entry are all absent until an operator sets it. That is also why the
+# published by the snowdesk-tiles repo (SNOW-987). It defaults to EMPTY,
+# meaning "feature off": the layer, its menu row and its CSP entry are all
+# absent until an operator sets it — and since SNOW-1073 that includes the
+# map's slope layer, which is the filter's slope mode. That is also why the
 # origin is derived only when it is set — ``basemap_origin("")`` raises.
 #
 # Local dev can point it at the DEBUG-only fixture mirror:
@@ -1090,7 +1067,6 @@ TERRAIN_CLASS_TILE_ORIGIN = optional_basemap_origin(TERRAIN_CLASS_TILE_URL)
 
 CSP_DEFAULTS = csp_defaults(
     OPENFREEMAP_ORIGIN,
-    slope_origin=SLOPE_TILE_ORIGIN,
     terrain_class_origin=TERRAIN_CLASS_TILE_ORIGIN,
 )
 

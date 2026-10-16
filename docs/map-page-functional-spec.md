@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-03
+last-reviewed: 2026-10-16
 ---
 
 # Map page — functional specification
@@ -35,9 +35,37 @@ selected day. The chip is a disclosure button: pressing it opens the
 for the shown day, the resorts inside the region, and the region's pin
 (SNOW-814). The
 selection is mirrored in the URL fragment (`#CH-4115`), so it is
-deep-linkable and the back button drops it. Nothing is overlaid on the
-map itself: tapping a region does not open a popup over the terrain the
-visitor just tapped.
+deep-linkable and the back button drops it. On a desktop nothing is
+overlaid on the map itself: tapping a region does not open a popup over
+the terrain the visitor just tapped.
+
+**On a phone (below 640px) every selection opens the region sheet**
+(SNOW-1098), a bottom sheet with the detents of §3.7: a map tap, a search
+pick, a pinned region from search, and a deep link (`/map/#CH-4115`). The
+region chip is not drawn on a phone (see below), so the sheet is the one
+surface that names what is selected. It slides up from the foot and opens
+at **peek**, one compact row in the manner of Google Maps' peek: the
+danger tile, the region's name, and under it the search row's flag and
+region code with the day's level and the area name (no date — the date
+control says that), beside the pin and download controls at 32px and the
+×. Peek keeps the selected ground in view; that was the complaint that
+removed the old popup. Dragging up to **half** shows where the region is,
+the day's avalanche problems and its resorts. **Full** adds the link to
+the bulletin page, which is not re-rendered in the sheet, and exists only
+on a day with a bulletin: with none there is nothing to reveal, so the
+sheet stops at half. While it is open it follows the selection and the
+day, and deselecting the region closes it. Its pin and download buttons
+press the ribbon's roundels, so each keeps one owner.
+
+**The phone's top row is the date and search** (Hugo, 16 Oct 2026). On a
+phone the ribbon (the chip, its pin and its download) is not drawn: the
+sheet names the selection, carries the pin and the download, and the
+pinned regions the chip's panel listed are listed by search. The row
+holds the date control at the left — moved up from the bottom-left stack,
+where a peeking sheet covered it — and the search roundel at the right.
+Opening search grows it across the whole row, over the date, because
+nobody needs both at once. On a desktop the chip, its panel and the
+bottom-left date are unchanged.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
@@ -339,12 +367,12 @@ phone. Opening a route or placing a point changes
 only what the panel says, so nothing on the map moves. On desktop every
 control stays. On a phone, where a route is followed on the move, only
 locate-me, layers and routes stay, in the bottom-right corner; the region
-readout's row, search, the legend, help, date and scrubber stack and the
+readout's row, search, the legend, zoom, help, date and scrubber stack and the
 rest of the control column withdraw, and come back when the panel closes.
 The date matters on a route only when it is today, which belongs to the
 Tour feature, not this panel. The intro card withdraws at every width.
-The map itself still pans and zooms by gesture, and the panel, the leader
-line and the route detail sheet stay.
+The map itself still pans and zooms by gesture, and the panel and the
+leader line stay.
 
 **The route cursor on the map (SNOW-1019; points only since
 2026-10-02).** While a route's rail is open, the map and the route panel
@@ -381,22 +409,22 @@ keeping its zoom, until the dot is back in the visible part with a small
 margin. A place the reader picked on the map itself never pans the map.
 Until the pan lands, the leader line leaves out the covered dot.
 
-**Tapping a route** opens the **route detail panel** — the docked sheet
-(`#route-detail-sheet`, SNOW-973) that replaced the anchored popup once
-five tickets of terrain reading had outgrown a 320px card — and then fits
-the viewport to that route's stored bounds **around it**: the panel is
-opened and measured first, and the track is framed into the map the panel
-leaves (the right-hand side on desktop, the bottom dock's height on a
-phone). Framing first and opening over the result is what put the eastern
-end of a long route behind the panel describing it. The reservation is
-measured rather than declared, and capped at 40% of the map in any one
-direction, so a tall panel on a short screen degrades to a usable fit. It
-carries the route's name, distance and ascent, the terrain lines and the
-elevation profile. **Nothing in it depends on the day.** It also showed
-what each region's bulletin said about the line on the scrubbed day
-(SNOW-973) until SNOW-1062 removed that: the day's danger is a map layer
-(SNOW-979), drawn on the ground around the route rather than judged along
-it. The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
+**Tapping a route** opens the route panel and nothing else. Its "…" menu
+holds the routes row's four actions in the same order: Plan a trip →
+Share → Rename → Delete. A pending share has none of them (each is an
+owner endpoint addressed by a uuid the recipient is never handed), so it
+shows no "…" menu; its Save sits in the panel's header instead.
+
+The menu also led with a **Terrain** item, which opened the route detail
+sheet — the docked sheet SNOW-973 put in place of the anchored popup. By
+SNOW-1095 the sheet held one line of terrain figures, and that ticket
+removed the item and the sheet. **Nothing in the panel depends on the
+day.** The sheet showed what each region's bulletin said about the line
+on the scrubbed day (SNOW-973) until SNOW-1062 removed that: the day's
+danger is a map layer (SNOW-979), drawn on the ground around the route
+rather than judged along it.
+
+The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
 *below* the point markers: where a favourite star or a report flag sits on
 top of a line, the pin wins, because a pin is a smaller and more
 deliberate target.
@@ -405,8 +433,8 @@ deliberate target.
 produces a route with no ascent figure at all — not zero. "We don't know
 how much climbing this is" and "this route is flat" are different facts
 about a mountain day, and showing the second for the first is the kind of
-error somebody could plan on. The detail panel simply has no ascent line
-in that case, exactly as the panel row does not.
+error somebody could plan on. The route panel's figures simply have no
+ascent in that case, exactly as the panel row does not.
 
 **Default off.** Unlike favourites, the routes overlay starts switched
 off and is opt-in. Favourites are pins, and a handful of extra pins costs
@@ -435,22 +463,34 @@ The resort editor is superuser-scoped by an ordinary
 
 ---
 
-### 3.5a Terrain — the slope-angle overlay (SNOW-691)
+### 3.5a Terrain — the slope layer (SNOW-691, SNOW-1073)
 
-The **Slope angle** overlay shades the ground by steepness, so a visitor
-can ask "is the line I am looking at in the range this bulletin is talking
-about?" without leaving the map. It is not user-generated and not issued by
-an avalanche service, which is why it is not under Conditions: slope is a
+The **slope layer** shades the ground by steepness, so a visitor can ask
+"is the line I am looking at in the range this bulletin is talking about?"
+without leaving the map. It is not user-generated and not issued by an
+avalanche service, which is why it is not under Conditions: slope is a
 permanent property of the ground, and does not change with the day being
-scrubbed to. It had a **Terrain** section of its own until SNOW-904 moved
-its row under **Basemap**, below a hairline, as "Display slope angles" —
-one of the things drawn on top of whichever basemap is chosen (§3.6).
+scrubbed to.
+
+**It is a mode of the terrain filter (§3.5b), not a row of its own.**
+SNOW-691 shipped it as swisstopo's pre-rendered "Slope classes over 30°"
+raster with a "Display slope angles" row; SNOW-1073 replaced that with the
+filter sheet's **"Colour by slope"** mode, painted on the device from our
+terrain-class tiles, and removed the raster, its row and
+`SLOPE_TILE_URL`. The why and the costs:
+[decisions/slope-layer-is-painted-from-our-class-tiles.md](decisions/slope-layer-is-painted-from-our-class-tiles.md).
 
 **What it shows.** Five bands, in the classification the SLF recommends and
 Swiss tourers already read on swisstopo's own maps: 30–35°, 35–40°, 40–45°,
 45–50°, and over 50°. **The first three are the 30–45° range most slab
 avalanches release on** — the reason to look at this layer at all. Anything
-under 30° is unshaded.
+under 30° is unshaded. The sheet's slope range says which bands are
+painted (30° and up by default), and its aspects and elevation band narrow
+it, so "north-facing, above 2,400 m, by steepness" is one setting.
+
+**The same numbers as the route.** The colours come from the swissALTI3D
+grid, kernel and window `sample_slope` uses, so a route's slope-coloured
+core (from z14) and the point card agree with the shading under them.
 
 **Where it sits.** Under the danger choropleth, so the ratings stay
 readable on top of it. There is no separate opacity control and no
@@ -458,47 +498,33 @@ exclusivity rule: the bulletin-fill strength control (§2) already exists
 for exactly this trade-off, and a reader who wants the terrain clean takes
 the fill to 0.
 
-**Who can use it.** Everyone. The layer depends on a tile service Snowdesk
-does not operate, so it keeps an operator kill switch: clearing
-`SLOPE_TILE_URL` in the environment withdraws the row, the raster and the
-legend key on a restart (SNOW-724 moved that job from the `slope_layer`
-flag onto the setting that already chose the origin). **Off by default**: it
-paints the whole viewport rather than discrete features, and a visitor who
-opened the map to read danger ratings did not ask for a second full-screen
-colour scheme underneath them.
+**Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set.
+**Off by default**, with the filter: it paints the whole viewport rather
+than discrete features, and a visitor who opened the map to read danger
+ratings did not ask for a second full-screen colour scheme underneath
+them.
 
-**Coverage is a rectangle, and the map says where it ends.** The source
-covers `5.140242, 45.398181` → `11.47757, 48.230651` and stops dead — the
-Zillertal, the Dolomites, the Queyras and the Mercantour are all outside
-it, and the Zillertal is terrain we publish ALBINA bulletins for. So the
-menu row disables itself, with a reason, once the viewport centre leaves
-the covered area. This is not tidiness: **inside it unshaded means "under
-30°"; outside it unshaded means "not surveyed"**, and nothing about a
-raster distinguishes the two. Widening coverage to everything we publish
-bulletins for is SNOW-693.
+**Where it is blank.** Below **z12** nothing is drawn — the class tiles
+start there — and the sheet says "zoom in". Coverage is **Switzerland
+only** (the class tileset's rectangle, 5.95–10.50°E); inside the rectangle
+but outside the survey the ground is **hatched**, and outside it the sheet
+says there is no terrain data. swisstopo's raster drew from z0 and covered
+5.14–11.48°E across five countries; that is the coverage this layer gave
+up.
 
-An earlier build also drew the coverage rectangle on the map as a line.
-It was removed: a hard box spanning the whole map, most of whose length
-runs through terrain nobody is looking at, cost more legibility than the
-edge case was worth.
-
-**It is not a Swiss layer despite the name.** swisstopo derive it at 10 m
-from a combined elevation model — swissALTI3D (CH/LI), RGE ALTI (FR),
-TINITALY/01 (IT), DGM10 (AT), DGM1 (Bavaria), EU-DEM (Baden-Württemberg) —
-and warn that accuracy is not guaranteed where two base models meet.
-
-**The editorial line lives on `/help/`, not in the legend.** A 10 m model
-averages the ground, so a short steep roll inside a gentler face does not
-appear at any zoom — and the shading visibly blocks up at touring zooms for
-exactly that reason, which is the data's resolution rather than a rendering
-fault. That, what unshaded ground means where the layer has no coverage,
-and the plain statement that the layer is not a verdict, all run to several
-paragraphs: more than a legend panel can hold and too much to drop. So the
-legend carries the five class swatches and its heading is a **link** to
+**The editorial line lives on `/help/`, not in the legend.** The steepness
+is measured across about 30 m of hillside, so a short steep roll inside a
+gentler face does not appear at any zoom, and the shading blocks up into
+z14 pixels (about 6.6 m) at touring zooms — the data's resolution rather
+than a rendering fault. That, where the layer is blank and why, and the
+plain statement that the layer is not a verdict, run to several
+paragraphs: more than a legend panel can hold and too much to drop. So in
+the slope mode the legend's terrain-filter section carries the five class
+swatches under a "Slope angle" heading that **links** to
 `/help/#help-topic-slope`, which is the only route from the map to the
 warnings and therefore not optional chrome. A slope shading is the single
 easiest surface on this map to misread as permission, which is the whole
-reason all three of those sentences are there.
+reason those paragraphs are there.
 
 ### 3.5b Terrain filter — ground by aspect, slope and elevation (SNOW-978)
 
@@ -506,34 +532,37 @@ The **terrain filter** tints the ground that matches three things a
 bulletin uses to say where the danger is: the **aspect** a slope faces (any
 of eight), its **slope angle** (from 30° up, optionally capped below 35–50°)
 and, optionally, a band of **elevation** (100 m steps). It answers "which
-of the slopes around me is the bulletin talking about?".
+of the slopes around me is the bulletin talking about?". Its sheet has two
+modes: **"Highlight matches"**, described here, and **"Colour by slope"**,
+the slope layer (§3.5a). Both share every setting.
 
 **How it is drawn.** Matching ground gets a see-through blue
 (`--color-terrain-match`, about 45%), so contours and hillshade stay
 readable. Ground that does not match is left **untouched** — no veil. Ground
 the tiles carry **no data** for is **hatched**, so blank never has to mean
 "no data". Level ground (a lake) faces no direction and never matches. The
-layer sits **under the region choropleth**, beside the slope layer.
+layer sits **under the region choropleth**.
 
-**Where it is controlled.** One row in the layers menu, under Basemap after
-"Display slope angles": **"Terrain filter…"**. It is the menu's one ACTION
+**Where it is controlled.** One row in the layers menu, under Basemap below
+the hairline: **"Terrain filter…"**. It is the menu's one ACTION
 row — it always opens the filter's sheet rather than toggling anything —
 because the filter has more than one control and the menu holds one action
-per row. The sheet carries the on/off switch, eight compass toggles (the
+per row. The sheet carries the on/off switch, the mode, eight compass toggles (the
 aspect wheel's order and words), the slope range, the elevation band, its
 own colour key (the legend is hidden on a phone while a route is open) and a
 line explaining an empty map: **"zoom in"** below z12, **"outside coverage"**
 outside Switzerland. While the filter is on, the row shows a short summary
 ("3 aspects · 35°+"), the menu header counts it as a layer, a **chip** at the
 top of the map repeats the filter in full ("N, NE, NW · 35°+ · above
-2,400 m") and opens the sheet on a tap, and the legend shows a **Terrain
-filter** section: Matches the filter / No data.
+2,400 m", led by "Slope classes" in the slope mode) and opens the sheet on
+a tap, and the legend shows a **Terrain filter** section: Matches the
+filter / No data, or the five slope classes / No data in the slope mode.
 
 **Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set. It
 defaults to empty, which removes the row, the chip, the sheet and the CSP
-entry. **Off by default** for the reason slope is. The filter and the switch
-persist on the device (`snowdesk.map.terrain_filter`,
-`snowdesk.map.overlay.terrain_filter`).
+entry. **Off by default**: it paints whole tracts of ground. The filter
+(mode included) and the switch persist on the device
+(`snowdesk.map.terrain_filter`, `snowdesk.map.overlay.terrain_filter`).
 
 **The tiles carry facts, not colour.** Each pixel of a terrain-class tile
 holds the height, the aspect octant and a 5° slope band; the device paints
@@ -543,7 +572,8 @@ Contract and rationale:
 [decisions/terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
 Tiles exist at z12–14 and are overzoomed above. Viewed tiles are cached by
 the service worker like basemap tiles: `map.js` seeds the class-tile origin
-into the worker's basemap origins, beside the slope origin.
+into the worker's basemap origins. An offline download pins them with the
+"Terrain data" opt-in (SNOW-1072).
 
 **The editorial line is on `/help/#help-topic-terrain-filter`**, linked from
 the legend and the sheet: terrain only, no runout zones, not a hazard
@@ -566,7 +596,7 @@ Four sections, each collapsible and each remembering how it was left, with
 | **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
 | **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
 | **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Basemap** | one radio per basemap · Display slope angles (absent without `SLOPE_TILE_URL`), Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet, §3.5b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
+| **Basemap** | one radio per basemap · Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet holding the filter and the slope layer, §3.5a–b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
 
 Four things about that layout are decisions rather than accidents, and a
 tidy-up would undo each of them:
@@ -576,7 +606,7 @@ tidy-up would undo each of them:
   sections it would also hide rows the collapsed heading does not govern.
 * **Only the first Conditions row says "bulletins".** The first row sets the
   pattern and the reader carries it down.
-* **Only the two Basemap overlay rows carry "Display ".** There the verb
+* **Only the Basemap overlay row carries "Display ".** There the verb
   separates "additionally draw this" from the radio group's "choose this".
 * **The Boundaries tiers are checkboxes, not radios.** They are independent;
   only the opening view names one, via `settings.MAP_DEFAULT_BOUNDARY`.
@@ -623,7 +653,7 @@ toggle**:
 
 The map help "?" (`#map-help-toggle`) is not in this column: it sits in the
 bottom-LEFT stack (`#map-legend`), above the legend toggle and the date row
-(SNOW-794).
+(SNOW-794), and under the zoom control (§3.6b).
 
 Locate is the only permanent one. "Where am I" is the question worth a
 standing control on a map the user is physically standing in; everything
@@ -687,15 +717,56 @@ so the control reads correctly before JS runs.
 
 ---
 
+## 3.6b The zoom control (SNOW-1077)
+
+The roundel at the top of the bottom-left stack (`#map-zoom-toggle`, above
+help, the legend toggle and the date row) shows the **zoom level** the map
+is drawing, and its accessible name says it: "Zoom level 13". The number is
+the **tile zoom** — a whole number, the zoom of the tiles on screen — not
+the continuous camera: at camera 13.99 the map still draws z13 tiles, so
+the roundel says 13.
+
+Tapping it opens a flyout (`#map-zoom-flyout`) into the crook between the
+stack and the date row, where the legend card opens:
+
+- **− and +**, 44 px targets, zooming out and in by one step. − is
+  disabled at the map's minimum (z4), + at its maximum (z18). They are the
+  single-pointer alternative to pinching (WCAG 2.5.1).
+- **A scale** across the map's whole zoom range, with a marker at the
+  camera.
+- **A tick for each zoom-gated layer that is on**, numbered with its zoom,
+  and a row under the scale naming it: **Terrain filter** at z12 while the
+  filter is switched on (§3.5b), **Route slope colours** at z14 while the
+  routes overlay is drawing a route whose slope has been sampled (§3.4a).
+  An unsampled route keeps its leg colours at every zoom, so it adds no
+  tick. A layer that is off has no tick. A tick and its row turn from muted to full strength once the camera
+  reaches the gate, which is when the layer is drawn.
+
+The gates come from one registry, `window.pwaZoomGates` in `map.js` —
+`list()` answers `{key, zoom, active}` per gated layer — so a third gated
+layer is one entry there and one label in the control's strings template.
+The face and the ticks update on every zoom, and when either gated layer is
+switched on or off.
+
+The flyout is one overlay among the others: opening it closes any open
+sheet, menu or card, and opening one of those closes it
+(`window.pwaMapOverlays`). An outside tap and Escape close it.
+
+Under `DEBUG` the flyout ends with the **camera zoom** to two decimals. The
+control replaced a DEBUG-only readout in the same slot, and that figure is
+what work on the download bands (z0–7 shared, z8–9 near, z10–14 the area)
+needs: how close the camera is to the next whole tile zoom.
+
+---
+
 ## 3.7 The overlay panels, and why they differ by viewport
 
 Downloads, Favourites, Field observations and Routes each open a panel from
 their own roundel in the bottom-right stack. The four share one shape — a
 header carrying the roundel's own mark, a list of what the user has, and an
 "add" call to action — and **two layouts**, chosen by viewport width at the
-`sm` breakpoint (640px). The route detail sheet and the weather sheet are
-built on the same `_overlay_sheet.html` primitive and follow the same two
-layouts.
+`sm` breakpoint (640px). The weather sheet is built on the same
+`_overlay_sheet.html` primitive and follows the same two layouts.
 
 Each carried a fourth part, a footer switch labelled "Display on the map",
 until SNOW-904 made §3.6's layers menu the sole control for every layer.
@@ -722,6 +793,29 @@ size (`static/js/map_overlay_bounds.js`).
 screen on my laptop" are both the intended behaviour. Both layouts are
 bounded and scroll internally: a panel never grows past the viewport and
 never pushes its own content off-screen, whatever the list contains.
+
+**Detents on phones (SNOW-1097).** A sheet built on `_overlay_sheet.html`
+may declare up to three detents, and below `sm` it then rests at one of
+them instead of growing with its content: **peek** (a short summary, the
+ground still in view), **half** (the detail beside the map) and **full**
+(the map covered, the body scrolling). A handle at the top drags it between
+them, a flick carries it past the nearest, a drag below the lowest closes
+it, and a press on the handle steps it up, so a keyboard user reaches all
+three. While it rests at peek or half the map's camera is padded by its
+height, so a fly-to lands above the sheet; a padding change waits for a
+camera already in flight, so it never cancels one. A detent sheet spans the
+full width, sits flush on the screen's foot with its top corners rounded,
+and slides up from the foot when it opens. **Nothing on the map moves or
+folds for it**: the sheet covers whatever is under it, and the furniture is
+where it was when the sheet closes. A sheet declares only the detents it
+can use: an object you tapped on the map uses all three, a list uses half
+and full, and **a form uses none**, because a swipe must never discard a
+half-written report. Content can narrow them further for what it holds
+(`data-sheet-detents`): the region sheet drops full on a day with no
+bulletin. At
+`sm` and above detents change nothing. The rule above for the docked phone
+sheet still holds for every sheet that declares no detents. Why:
+[`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
 
 ### 3.7a Pressing a row's name frames its place
 
@@ -915,8 +1009,10 @@ carries the danger-by-day colour that was the only other thing it offered.
 
   **The date control is one control.** The readout that says which day the
   map is showing and the button that changes it are the same pill, in the
-  bottom-left row. They were two, a screen apart — a readout you could not
-  press beside a button that did not say what it would show.
+  bottom-left row on a desktop and in the top row on a phone (§1), where
+  its calendar drops down beneath it. They were two, a screen apart — a
+  readout you could not press beside a button that did not say what it
+  would show.
 - **Shareable.** The scrubbed date is reflected in the URL (`/map/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded, today included. An
   empty querystring means **today** (SNOW-793): the map opens painted for
@@ -935,7 +1031,12 @@ and resorts already loaded, so there are no extra round-trips. Matching
 is accent-insensitive, prefix matches rank above substring matches, and
 each result carries a "Region" or "Resort" badge to disambiguate places
 whose region and resort share a name (e.g. Davos). Selecting a result
-routes through the same selection path as a map tap.
+routes through the same selection path as a map tap. On a phone search is
+a roundel in the top row that opens across it (§1); opened with an empty
+field it lists the signed-in reader's pinned regions — the same loaded
+list as the pin roundel, so the two cannot disagree — and typing replaces
+them with matches. A pick there frames the region above the sheet it
+opens, and the field empties so the pinned list is there next time.
 
 **Placing a pin clears the map.** Positioning a pin is a precision task, so
 while it is in progress the map shows nothing but the basemap and the pin

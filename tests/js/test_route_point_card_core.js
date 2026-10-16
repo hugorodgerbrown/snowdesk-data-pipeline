@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest';
 
 import '../../static/js/elevation_profile_core.js';
+import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/aspect_wheel_core.js';
 import '../../static/js/route_point_card_core.js';

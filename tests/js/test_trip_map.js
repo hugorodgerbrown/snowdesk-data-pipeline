@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/elevation_profile_core.js';
 import '../../static/js/route_markers_core.js';
+import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/trip_map.js';
 

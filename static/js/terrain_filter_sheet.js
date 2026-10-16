@@ -19,6 +19,12 @@
  *     form: "3 aspects · 35°+";
  *   - and the legend's terrain-filter section, shown while the filter is on.
  *
+ * SNOW-1073 gave the filter a mode: 'match' tints matching ground, 'slope'
+ * colours it by slope class and is the map's slope layer. The sheet's
+ * segmented control (radios named terrain-filter-mode) writes it, and every
+ * [data-terrain-filter-key] wrapper — the colour key in the sheet and in the
+ * legend, and the legend's heading — shows only for the mode that is set.
+ *
  * Every word it writes comes from #map-terrain-filter-strings-template via
  * ``window.pwaStrings.read`` — makemessages never scans JavaScript — with the
  * English literals below as the fallback.
@@ -38,9 +44,11 @@
 
   const STRINGS = self.pwaStrings.read('map-terrain-filter-strings-template', {
     'availability-ok': 'Matching ground is highlighted.',
+    'availability-ok-slope': 'Steep ground is coloured by slope class.',
     'availability-off': 'The filter is off.',
     'availability-zoom-in': 'Zoom in further to see the filter.',
     'availability-out-of-coverage': 'No terrain data here — the filter covers Switzerland only.',
+    'mode-slope': 'Slope classes',
     'aspects-all': 'All aspects',
     'aspects-none': 'No aspects',
     'aspects-one': '1 aspect',
@@ -84,7 +92,23 @@
     const state = b.availability();
     if (state === 'zoom-in') return STRINGS['availability-zoom-in'];
     if (state === 'out-of-coverage') return STRINGS['availability-out-of-coverage'];
-    return STRINGS['availability-ok'];
+    return b.getFilter().mode === 'slope'
+      ? STRINGS['availability-ok-slope']
+      : STRINGS['availability-ok'];
+  };
+
+  /**
+   * Show each mode's key (and the legend's heading for it) only while that
+   * mode is set.
+   *
+   * @param {ParentNode} root Where to look: the sheet, or the document.
+   * @param {string} mode The filter's mode.
+   * @returns {void}
+   */
+  const syncModeKeys = (root, mode) => {
+    for (const el of root.querySelectorAll('[data-terrain-filter-key]')) {
+      el.hidden = el.dataset.terrainFilterKey !== mode;
+    }
   };
 
   /**
@@ -98,6 +122,10 @@
     const filter = b.getFilter();
     const toggle = sheetEl.querySelector('#map-terrain-filter-enabled');
     if (toggle) toggle.checked = b.isEnabled();
+    for (const radio of sheetEl.querySelectorAll('input[name="terrain-filter-mode"]')) {
+      radio.checked = radio.value === filter.mode;
+    }
+    syncModeKeys(sheetEl, filter.mode);
     for (const button of sheetEl.querySelectorAll('[data-octant]')) {
       const on = filter.aspects.includes(Number(button.dataset.octant));
       button.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -134,7 +162,9 @@
       const el = sheetEl.querySelector(selector);
       return el && el.value !== '' ? Number(el.value) : null;
     };
+    const mode = sheetEl.querySelector('input[name="terrain-filter-mode"]:checked');
     b.setFilter({
+      mode: mode ? mode.value : 'match',
       aspects: aspects,
       minSlope: value('[data-terrain-filter-min-slope]'),
       maxSlope: value('[data-terrain-filter-max-slope]'),
@@ -165,7 +195,10 @@
         commit();
       });
     }
-    for (const control of sheetEl.querySelectorAll('select, input[type="number"]')) {
+    const controls = sheetEl.querySelectorAll(
+      'select, input[type="number"], input[name="terrain-filter-mode"]',
+    );
+    for (const control of controls) {
       control.addEventListener('change', commit);
     }
   };
@@ -207,6 +240,7 @@
     }
     const legend = document.querySelector('[data-terrain-filter-legend]');
     if (legend) legend.hidden = !enabled;
+    syncModeKeys(document, filter.mode);
   };
 
   document.addEventListener('snowdesk:terrain-filter-changed', () => {

@@ -1,0 +1,164 @@
+{% load i18n components snowdesk_time %}
+{% comment %}
+public/partials/_region_sheet_body.html — what a tapped region's phone sheet
+says (SNOW-1098).
+
+Rendered by ``apps.public.region_sheet.region_sheet_partial`` and swapped by
+``static/js/map_region_sheet.js`` into ``#region-sheet``, an
+``includes/_overlay_sheet.html`` that declares the detents peek, half and
+full. One fragment serves all three, ordered so that each detent shows the
+next part of it:
+
+  1. PEEK (``data-sheet-peek``, which is where map_sheet.js measures the
+     peek height to) — ONE ROW: the danger tile, the region's name over the
+     level and the date, the pin and download controls and the ×. The name
+     truncates rather than wraps, because a peek that grows a line for a
+     long name stops being a peek (Hugo's review, 16 Oct). The header is also
+     ``data-sheet-drag``, so the reader can drag the sheet by it as well as
+     by the handle; its buttons keep their own press. Its second line is
+     the search row's: the flag-and-code badge and the area name, not the
+     date (Hugo, 16 Oct).
+  2. HALF — where the region is, the day's avalanche problems (the bulletin
+     page's own cards, ``public/_rating_block.html``) and the resorts in the
+     region, each a link to its resort page.
+  3. FULL — the bulletin link, and only when there is a bulletin for the
+     day: the body's ``data-sheet-detents`` drops FULL otherwise. The sheet links to the bulletin rather than
+     re-rendering it, because the bulletin page is the full-fidelity render.
+
+THE PIN AND DOWNLOAD BUTTONS ARE PROXIES. Each one presses the roundel of
+the same name in the ribbon header (``#map-region-pin-control``,
+``#map-download-control``), and map_region_sheet.js copies that roundel's
+state onto it. The roundels stay the one owner of each verb, so the sheet's
+star and the header's star are the same fact and cannot disagree. The
+labels rendered here are what shows before the first copy.
+
+Context:
+  region         — MicroRegion, with subregion__major select_related.
+  day_rating     — RegionDayRating for target_date, or None.
+  level_label    — The danger level's name ("Considerable"), or "".
+  target_date    — The day the map is showing.
+  bulletin_url   — The bulletin page for that day.
+  country_name   — "Switzerland" and so on.
+  covered        — Whether any provider ever rates this region.
+  provider_name  — The provider that does not publish here, for the
+                   uncovered line.
+  problem_cards  — The bulletin's problem cards, possibly empty.
+  resorts        — Resort rows in the region, possibly empty.
+{% endcomment %}
+<div
+    class="space-y-4"
+    data-testid="region-sheet-body"
+    data-region-id="{{ region.region_id }}"
+    {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
+    data-sheet-detents="{% if day_rating %}peek,half,full{% else %}peek,half{% endif %}"
+>
+    <div data-sheet-peek data-sheet-drag>
+        <div class="flex items-center gap-3">
+            {% if day_rating %}
+                <span
+                    class="danger-tile flex-none"
+                    data-level="{{ day_rating.max_rating }}"
+                    data-testid="region-sheet-rating"
+                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                <h2 class="truncate text-base font-semibold leading-tight text-text-1" title="{{ region.name }}">
+                    {{ region.name }}
+                </h2>
+                {# The search row's second line: the region's code behind its country's flag, and the area it sits in. #}
+                <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="region-sheet-meta">
+                    <span class="search-result-badge">
+                        {% with country=region.region_id|slice:":2"|lower %}
+                            {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                <svg class="search-result-flag search-result-flag--{{ country }}" aria-hidden="true">
+                                    <use href="#flag-{{ country }}" />
+                                </svg>
+                            {% endif %}
+                        {% endwith %}
+                        {{ region.region_id }}
+                    </span>
+                    <span class="truncate">
+                        {% if level_label %}{{ level_label }} ·{% endif %}
+                        {{ region.subregion.name_en|default:region.subregion.name_native }}
+                    </span>
+                </p>
+            </div>
+            <button
+                type="button"
+                data-region-sheet-proxy="map-region-pin-control"
+                aria-label="{% trans 'Pin this region' %}"
+                title="{% trans 'Pin this region' %}"
+                class="{% icon_button_classes %}"
+            >
+                {% include "includes/_icon_favourite.html" with size=18 only %}
+            </button>
+            <button
+                type="button"
+                data-region-sheet-proxy="map-download-control"
+                aria-label="{% trans 'Download this region' %}"
+                title="{% trans 'Download this region' %}"
+                class="{% icon_button_classes %}"
+            >
+                {% include "includes/_icon_download_arrow.html" with size=18 only %}
+            </button>
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Close' %}"
+                class="{% icon_button_classes extra='-mr-3' %}"
+            >
+                {% include "includes/_icon_close.html" only %}
+            </button>
+        </div>
+    </div>
+
+    <p class="text-sm text-text-2" data-testid="region-sheet-breadcrumb">
+        {{ country_name }}
+        <span aria-hidden="true">›</span>
+        {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
+        <span aria-hidden="true">›</span>
+        {{ region.subregion.name_en|default:region.subregion.name_native }}
+    </p>
+
+    {% if problem_cards %}
+        <section class="space-y-2" data-testid="region-sheet-problems">
+            {% translate "Avalanche problems" as problems_eyebrow %}
+            {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
+            {% for card in problem_cards %}
+                {% include "public/_rating_block.html" with card=card %}
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    {% if resorts %}
+        <section class="space-y-2" data-testid="region-sheet-resorts">
+            {% translate "Resorts in this region" as resorts_eyebrow %}
+            {% include "includes/_eyebrow.html" with text=resorts_eyebrow tag="h3" %}
+            <ul class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                {% for resort in resorts %}
+                    <li>
+                        <a href="{{ resort.get_absolute_url }}" class="text-text-1 underline">{{ resort.name }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </section>
+    {% endif %}
+
+    <div data-testid="region-sheet-bulletin">
+        {% if day_rating %}
+            {% blocktrans with d=target_date|date:"j M Y" trimmed asvar bulletin_label %}Open bulletin for
+                {{ d }}{% endblocktrans %}
+            {% include "includes/_button.html" with label=bulletin_label href=bulletin_url full_width=True %}
+        {% elif not covered %}
+            <p class="text-sm text-text-2">
+                {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
+                    area{% endblocktrans %}
+            </p>
+        {% else %}
+            <p class="text-sm text-text-2">
+                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                    {{ d }}{% endblocktrans %}
+            </p>
+        {% endif %}
+    </div>
+</div>

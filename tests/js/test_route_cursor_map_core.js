@@ -10,6 +10,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_cursor_map_core.js';
 

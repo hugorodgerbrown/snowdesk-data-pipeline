@@ -571,3 +571,64 @@ describe('the focused region\'s danger, per day (SNOW-794)', () => {
     expect(ratingClass('2026-02-10')).toBe(null);
   });
 });
+
+describe('on a phone the date lives in the top row', () => {
+  /**
+   * Stub matchMedia with a query whose answer the test can flip.
+   *
+   * @param {boolean} matches
+   * @returns {{ set: function(boolean): void }}
+   */
+  function stubPhone(matches) {
+    const listeners = [];
+    const query = {
+      matches,
+      addEventListener: (_name, fn) => listeners.push(fn),
+    };
+    window.matchMedia = () => query;
+    return {
+      set(next) {
+        query.matches = next;
+        listeners.forEach((fn) => fn());
+      },
+    };
+  }
+
+  afterEach(() => {
+    delete window.matchMedia;
+  });
+
+  it('moves the date control and its card into the search row, and back', async () => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="map-utility-cluster"><div id="search-pill"></div></div>',
+    );
+    const toggle = document.getElementById('map-calendar-toggle');
+    const card = document.getElementById('map-calendar');
+    const scrubber = document.getElementById('season-scrubber');
+    const width = stubPhone(true);
+    await loadCalendar();
+
+    const cluster = document.getElementById('map-utility-cluster');
+    expect(cluster.firstElementChild).toBe(toggle);
+    expect(toggle.nextElementSibling).toBe(card);
+    expect(cluster.lastElementChild.id).toBe('search-pill');
+
+    // The same element moved: its own listeners still open the card.
+    openPopup();
+    expect(card.hidden).toBe(false);
+
+    // Wider than a phone: an open card shuts, and both go home.
+    width.set(false);
+    expect(card.hidden).toBe(true);
+    expect(toggle.parentNode).toBe(scrubber);
+    expect(card.parentNode).toBe(document.body);
+  });
+
+  it('stays where it is on a desktop', async () => {
+    document.body.insertAdjacentHTML('beforeend', '<div id="map-utility-cluster"></div>');
+    stubPhone(false);
+    await loadCalendar();
+    expect(document.getElementById('map-calendar-toggle').parentNode.id).toBe('season-scrubber');
+  });
+});

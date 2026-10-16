@@ -2,7 +2,7 @@
 name: feature-flags
 description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Feature flags (django-waffle)
@@ -163,12 +163,13 @@ remain gated by ordinary auth/ownership checks where they need to be — the
 resort editor is now `request.user.is_superuser`, which is exactly the
 audience its flag shipped with — just not by a waffle flag.
 
-The slope-angle raster keeps its kill switch; it just isn't a flag any
-more. Eligibility is `settings.SLOPE_TILE_URL`, so clearing that env var on
-Render removes the row, the raster and the legend key on a restart rather
-than a deploy. That is still the lever to reach for if swisstopo's service
-degrades or the licence question resolves against us — it is simply the
-same lever that already chose which tile origin to point at.
+The slope-angle raster kept a kill switch, `settings.SLOPE_TILE_URL`,
+until SNOW-1073 removed the raster and the setting. The slope layer is the
+terrain filter's "Colour by slope" mode now, and its switch is the
+filter's: `settings.TERRAIN_CLASS_TILE_URL`, empty by default. Clearing it
+on Render removes the filter's row, sheet, chip, legend section and CSP
+entry — and the slope layer with them — on a restart rather than a
+deploy.
 
 The resort page's field-observations panel is point-local, scoped to the
 configurable `FIELD_OBSERVATION_RADIUS_KM` setting (default 10 km) around

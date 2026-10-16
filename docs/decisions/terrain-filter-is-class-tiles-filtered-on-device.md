@@ -1,8 +1,8 @@
 ---
 name: terrain-filter-is-class-tiles-filtered-on-device
-description: Terrain filter — class tiles (height, octant, slope band) painted on device via terrainfilter://; TERRAIN_CLASS_TILE_URL (SNOW-978)
+description: Terrain filter — class tiles painted on device via terrainfilter://, match and slope modes; TERRAIN_CLASS_TILE_URL
 status: current
-last-reviewed: 2026-10-03
+last-reviewed: 2026-10-16
 ---
 
 # The terrain filter is class tiles, filtered on the device
@@ -33,6 +33,15 @@ the colour is made in the browser:
 - The classifier returns a **palette index**, not a boolean, and receives
   the tile and pixel coordinates: 0 transparent (no match; level ground),
   1 the match tint, 2 the no-data hatch drawn from pixel coordinates.
+- **Two modes** (SNOW-1073). The filter's `mode` picks the classifier and
+  the palette together (`createClassifier` / `paletteFor`): `'match'` is
+  the three entries above; `'slope'` is `SLOPE_PALETTE` — transparent, the
+  same hatch, then the five slope classes — so each matching pixel is
+  painted by its 5° band. That mode is the map's slope layer, which
+  replaced swisstopo's raster:
+  [slope-layer-is-painted-from-our-class-tiles.md](slope-layer-is-painted-from-our-class-tiles.md).
+  The mode is in the filter hash (a trailing `-s`), so switching mode
+  repaints.
 
 **Why.**
 
@@ -44,7 +53,8 @@ the colour is made in the browser:
 - The server never learns what anyone filters for.
 - The palette-index seam is for SNOW-979, which needs a four-state palette
   and per-region clipping; a boolean predicate would have to be replaced to
-  get there.
+  get there. SNOW-1073's slope palette was the first second palette to use
+  it.
 - Hatching no-data rather than leaving it blank keeps the rule the slope
   layer learned the hard way: blank must never be readable as "does not
   match" where it means "not surveyed".
@@ -83,11 +93,12 @@ the colour is made in the browser:
   operator sets it, and the CSP origin is derived only when it is set
   (`optional_basemap_origin`).
 - `static/js/map.js` seeds the class tiles' origin into the service worker's
-  basemap origins, beside the slope origin. No basemap entry supplies
+  basemap origins. No basemap entry supplies
   `tiles.snowdesk-data.info`, so without the seed the worker treats the
   tiles as network-only. With it, viewed tiles are cached like basemap tiles
-  and repaint after an offline reload. This is passive caching, not an
-  offline download.
+  and repaint after an offline reload. This is passive caching; an
+  offline download pins them only with the "Terrain data" opt-in
+  (SNOW-1072).
 - Local development uses the DEBUG-only synthetic tiles in
   `apps/public/dev_terrain_class.py`
   (`TERRAIN_CLASS_TILE_URL=http://localhost:3000/dev/terrain-class/v1/{z}/{x}/{y}.png`),

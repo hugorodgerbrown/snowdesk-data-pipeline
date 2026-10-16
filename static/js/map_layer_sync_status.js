@@ -203,13 +203,11 @@
   // country rows are handled separately — the country rows' resource set is
   // per-code, so it lives in COUNTRY_FEED_PATHS below rather than here.
   //
-  // SNOW-904: a row absent from here gets no dot AT ALL, and two rows are
-  // absent on purpose rather than by omission. ``slope`` draws a
-  // third-party raster, not a Snowdesk feed or an IndexedDB row, so it can
-  // make no honest claim — its dot had been permanently ``unknown``
-  // (display:none) since SNOW-691, and the markup for it is gone now.
-  // ``downloads`` draws a list that is local-only, so its answer is always
-  // yes and a dot saying so carries no information.
+  // SNOW-904: a row absent from here gets no dot AT ALL, and ``downloads``
+  // is absent on purpose rather than by omission: it draws a list that is
+  // local-only, so its answer is always yes and a dot saying so carries no
+  // information. (``slope``, swisstopo's raster, was the other such row
+  // until SNOW-1073 removed it.)
   const OVERLAY_RESOURCES = Object.freeze({
     l1: Object.freeze({
       kind: 'geojson',

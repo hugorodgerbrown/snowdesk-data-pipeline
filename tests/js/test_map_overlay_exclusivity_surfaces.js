@@ -33,11 +33,8 @@
  * tests/js/test_map_detail_popup_exclusivity.js — reaching it needs the
  * whole map bundle booted against a MapLibre stub, which is a fixture of
  * its own rather than an eighth entry in this one. SNOW-973's route detail
- * sheet (#route-detail-sheet) is absent from this matrix for the same
- * reason and is covered in that same file: it registers through
- * window.MapSheet.attach like the panels below, but it is opened by a TAP
- * ON THE MAP rather than by a roundel, so "open it the way a user does"
- * needs the bundle and the stub.
+ * sheet was absent from this matrix for the same reason until SNOW-1095
+ * removed it.
  *
  * The fixture is a hand-copy of the seven surfaces' markup, reduced to what
  * the modules bind to — the standing trade-off for this harness (Vitest
@@ -129,6 +126,11 @@ const SURFACES = {
   'map-fill-flyout': {
     open: () => document.getElementById('map-fill-toggle').click(),
     isOpen: () => shownByAttribute('map-fill-flyout'),
+  },
+  // SNOW-1077: the zoom control's flyout, the stack's second flyout.
+  'map-zoom-flyout': {
+    open: () => document.getElementById('map-zoom-toggle').click(),
+    isOpen: () => shownByAttribute('map-zoom-flyout'),
   },
 };
 
@@ -230,6 +232,12 @@ function buildFixture() {
     </div>
     <div id="map-legend" data-state="collapsed">
       <div id="map-legend-card"></div>
+      <button id="map-zoom-toggle" type="button" aria-expanded="false"
+              aria-controls="map-zoom-flyout"><span data-zoom-face></span></button>
+      <div id="map-zoom-flyout" role="group" hidden>
+        <button type="button" data-zoom-step="out"></button>
+        <button type="button" data-zoom-step="in"></button>
+      </div>
       <button id="map-legend-toggle" type="button" aria-expanded="false"></button>
     </div>
     <ul id="map-help-steps" hidden>
@@ -258,10 +266,11 @@ function buildFixture() {
 /**
  * Load the registry and the surface modules in home.html's order.
  *
- * Nine surfaces, nine modules: map_basemap_picker.js carries both the
- * layers menu and the bulletin fill-strength flyout in two IIFEs, and
- * overlays.js carries no surface of its own — it is the shared dismiss
- * handler home_intro.js's "×" and CTA both route through.
+ * Ten surfaces: map_basemap_picker.js carries both the layers menu and
+ * the bulletin fill-strength flyout in two IIFEs, overlays.js carries no
+ * surface of its own — it is the shared dismiss handler home_intro.js's
+ * "×" and CTA both route through — and zoom_control_core.js is the pure
+ * half map_zoom_control.js reads.
  *
  * @returns {Promise<void>}
  */
@@ -278,6 +287,15 @@ async function loadSurfaces() {
   await import('../../static/js/map_downloads_manager.js');
   await import('../../static/js/map_legend.js');
   await import('../../static/js/map_basemap_picker.js');
+  // SNOW-1077: the zoom control binds MAP at parse time and holds it, so
+  // it gets a stub for its own import and the null every other module here
+  // expects is put back after.
+  await import('../../static/js/zoom_control_core.js');
+  globalThis.MAP = {
+    on: () => {}, getZoom: () => 10, getMinZoom: () => 4, getMaxZoom: () => 18,
+  };
+  await import('../../static/js/map_zoom_control.js');
+  globalThis.MAP = null;
   await import('../../static/js/overlays.js');
   await import('../../static/js/home_intro.js');
   await import('../../static/js/map_help.js');

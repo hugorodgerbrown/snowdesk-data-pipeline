@@ -7,21 +7,14 @@
  * be reached without booting map.js, so it sits here rather than in the
  * surfaces matrix (tests/js/test_map_overlay_exclusivity_surfaces.js).
  *
- * SNOW-973 TOOK THE ROUTE OUT OF THAT POPUP. A saved route's detail is now
- * the docked `#route-detail-sheet` (static/js/map_route_detail.js), so the
- * route half of this file tests a SHEET reached through the same tap —
- * still here rather than in the matrix, because reaching it needs the whole
- * bundle booted against a MapLibre stub, which is the fixture cost that
- * keeps it out. The routes PANEL (`route-sheet`, SNOW-686) is a third
- * surface again, and stays in the matrix where it always was.
- *
- * SNOW-1018 MOVED THE SHEET ONE PRESS FURTHER. A tap opens rail one and
- * only the rail; the sheet opens from the rail's "Terrain"
- * item, which calls the `details` function map.js handed the rail. The
- * rail is a recording stub here (tests/js/_route_rail_stub.js), so the
- * sheet's exclusivity is tested from that call — the same sheet, reached
- * one press later — and the fit is framed around the rail rather than the
- * sheet, because the rail is what a tap leaves over the map.
+ * SNOW-973 TOOK THE ROUTE OUT OF THAT POPUP, into a docked route detail
+ * sheet; SNOW-1018 moved the sheet behind rail one's "Terrain" menu item,
+ * and SNOW-1095 removed both. A tap on a saved route opens rail one and
+ * only the rail — a recording stub here (tests/js/_route_rail_stub.js) —
+ * so the route half of this file checks the tap opens the rail and no
+ * popup. It stays here rather than in the matrix because reaching it needs
+ * the whole bundle booted against a MapLibre stub. The routes PANEL
+ * (`route-sheet`, SNOW-686) is another surface, and stays in the matrix.
  *
  * Both directions matter, and before this ticket only one existed: map.js
  * dispatched ``snowdesk:map-detail-opening``, which favourites.js alone
@@ -135,14 +128,12 @@ function stubMapLibre() {
     // `railOpen` records the rail's state AT THE MOMENT OF THE FIT, which
     // is the only way to observe the order: the rail has to be on screen
     // and measurable before the camera can frame the route into the map
-    // it leaves. `sheetOpen` holds the other half — a tap opens no sheet.
+    // it leaves.
     fitBounds: (bounds, opts) => {
-      const sheet = document.getElementById('route-detail-sheet');
       fits.push({
         bounds,
         opts,
         railOpen: !!window.pwaRouteRail && window.pwaRouteRail.isOpen(),
-        sheetOpen: !!sheet && !sheet.hasAttribute('hidden'),
       });
     },
     easeTo: () => {},
@@ -207,14 +198,7 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>
-    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
-    <template id="route-detail-template">
-      <div>
-        <div data-route-detail-figures></div>
-        <div data-route-detail-bulletin></div>
-      </div>
-    </template>`;
+    <ul id="search-results" hidden></ul>`;
 }
 
 /** Tap the map at the given point, whatever the hit-test currently returns. */
@@ -245,12 +229,6 @@ function openPopup() {
   return popups.filter((popup) => popup.open).at(-1) || null;
 }
 
-/** The route detail sheet, if it is open. */
-function openRouteSheet() {
-  const el = document.getElementById('route-detail-sheet');
-  return el && !el.hasAttribute('hidden') ? el : null;
-}
-
 let mapStub;
 let rail;
 
@@ -274,12 +252,8 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
-  // SNOW-973: the route detail sheet and the controller it attaches
-  // through. Imported BEFORE the bundle so `window.pwaRouteDetail` exists
-  // by the time map.js's route tap reaches for it — the page loads them in
-  // the same order, both deferred.
+  // The sheet controller, before the bundle, as the page loads it.
   await import('../../static/js/map_sheet.js');
-  await import('../../static/js/map_route_detail.js');
   rail = installRouteRailStub();
   loadMapBundle();
   // MapLibre never fires 'load' in jsdom, and the detail-popup surface
@@ -303,7 +277,6 @@ beforeEach(() => {
   popups.length = 0;
   fits.length = 0;
   hitFeatures = [FAVOURITE_FEATURE];
-  window.pwaRouteDetail.close();
   rail.reset();
 });
 
@@ -335,20 +308,19 @@ describe('the anchored detail popup and the shared registry', () => {
   });
 });
 
-describe('a saved route opens rail one, and not the sheet (SNOW-1018)', () => {
-  it('opens the rail on a route tap, with no sheet and no anchored popup', () => {
+describe('a saved route opens rail one (SNOW-1018)', () => {
+  it('opens the rail on a route tap, with no anchored popup', () => {
     tapTheRoute(mapStub);
 
     expect(rail.last()).not.toBeNull();
     expect(rail.last().feature.properties.uuid).toBe('r-1');
-    expect(openRouteSheet()).toBeNull();
     expect(openPopup()).toBeNull();
   });
 
-  it('hands the rail a way to open the sheet, and no Save for an owned route', () => {
+  it('hands the rail no details callback, and no Save for an owned route', () => {
     tapTheRoute(mapStub);
 
-    expect(typeof rail.last().options.details).toBe('function');
+    expect(rail.last().options).not.toHaveProperty('details');
     expect(rail.last().options.claim).toBeNull();
   });
 
@@ -364,65 +336,12 @@ describe('a saved route opens rail one, and not the sheet (SNOW-1018)', () => {
   });
 });
 
-describe('the sheet, opened from the rail\'s menu', () => {
-  it('opens on the rail\'s details press', () => {
-    tapTheRoute(mapStub);
-
-    rail.openDetails();
-
-    expect(openRouteSheet()).not.toBeNull();
-    // The rail stays: the sheet opens over it, not instead of it.
-    expect(window.pwaRouteRail.isOpen()).toBe(true);
+describe('no route detail sheet (SNOW-1095)', () => {
+  it('registers no route detail sheet with the overlay registry', () => {
+    expect(window.pwaMapOverlays.names()).not.toContain('route-detail-sheet');
   });
 
-  it('closes every other overlay as it opens, like any other detail', () => {
-    // Free from MapSheet.attach, which registers the sheet under its own
-    // DOM id — the same way the route popup got it from mountDetailPopup.
-    const panel = { open: true };
-    window.pwaMapOverlays.register('routes-panel-stub', {
-      isOpen: () => panel.open,
-      close: () => { panel.open = false; },
-    });
-    tapTheRoute(mapStub);
-
-    rail.openDetails();
-
-    expect(openRouteSheet()).not.toBeNull();
-    expect(panel.open).toBe(false);
-  });
-
-  it('is closed when another overlay opens', () => {
-    tapTheRoute(mapStub);
-    rail.openDetails();
-    expect(openRouteSheet()).not.toBeNull();
-
-    window.pwaMapOverlays.opening('routes-panel-stub');
-
-    expect(openRouteSheet()).toBeNull();
-  });
-
-  it('registers under its own DOM id', () => {
-    expect(window.pwaMapOverlays.names()).toContain('route-detail-sheet');
-  });
-});
-
-describe('what the route sheet says', () => {
-  /** The text of the open sheet, whitespace-collapsed. */
-  function sheetText() {
-    return (openRouteSheet().textContent || '').replace(/\s+/g, ' ').trim();
-  }
-
-  it('leaves the name and the figures to the rail', () => {
-    // SNOW-1018: the rail carries the name, the distance/ascent/descent
-    // line and the profile, so the sheet repeating them would be the same
-    // facts twice on one screen. What the rail does NOT show — the terrain
-    // lines and the bulletin reading — is what the sheet is for now.
-    tapTheRoute(mapStub);
-    rail.openDetails();
-
-    const text = sheetText();
-    expect(text).not.toContain('Rosablanche');
-    expect(text).not.toContain('12.4');
-    expect(openRouteSheet().querySelector('svg')).toBeNull();
+  it('publishes no window.pwaRouteDetail', () => {
+    expect(window.pwaRouteDetail).toBeUndefined();
   });
 });

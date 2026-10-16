@@ -105,7 +105,6 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
             'Basemap',
             basemap('openfreemap_liberty', 'OpenFreeMap', true)
               + basemap('swisstopo_winter', 'Swisstopo (CH)', false)
-              + row('slope', 'Display slope angles')
               + row('downloads', 'Display downloaded areas'),
           )}
         </ul>
@@ -288,12 +287,12 @@ describe('the derived readout', () => {
     expect(summary('conditions')).toBe('SLF bulletins, Weather');
   });
 
-  it('strips the "Display" verb the two Basemap overlay rows carry', async () => {
+  it('strips the "Display" verb the Basemap overlay row carries', async () => {
     await loadPicker();
 
-    rowFor('slope').click();
+    rowFor('downloads').click();
 
-    expect(summary('basemap')).toBe('OpenFreeMap, slope angles');
+    expect(summary('basemap')).toBe('OpenFreeMap, downloaded areas');
   });
 
   it('names the radio section\'s own selection', async () => {
@@ -305,12 +304,13 @@ describe('the derived readout', () => {
   it('falls back to a count when the names would not fit', async () => {
     await loadPicker();
 
-    rowFor('slope').click();
-    rowFor('downloads').click();
+    rowFor('country.ch').click();
+    rowFor('weather').click();
+    rowFor('community_reports').click();
 
-    // "OpenFreeMap, slope angles, downloaded areas" is past the line, so
+    // "SLF bulletins, Weather, Field observations" is past the line, so
     // the summary states the count rather than clipping a name mid-word.
-    expect(summary('basemap')).toBe('3 of 4 on');
+    expect(summary('conditions')).toBe('3 of 3 on');
   });
 });
 

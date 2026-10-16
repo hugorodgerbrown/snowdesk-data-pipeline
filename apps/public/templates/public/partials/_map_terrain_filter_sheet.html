@@ -4,9 +4,18 @@ public/partials/_map_terrain_filter_sheet.html — the terrain filter's sheet (S
 
 The layers menu's "Terrain filter…" row and the map chip both open this
 sheet. Everything about the filter lives here, one action per row: the
-on/off switch, the eight aspects, the slope range, an optional elevation
-band, the colour key, and the line that says why nothing is showing (zoom
-in; outside coverage).
+on/off switch, the mode, the eight aspects, the slope range, an optional
+elevation band, the colour key, and the line that says why nothing is
+showing (zoom in; outside coverage).
+
+THE MODE (SNOW-1073) is a segmented control of two real radios, drawn by
+includes/_segmented_option.html: "Highlight matches" paints matching ground
+in one tint; "Colour by slope" paints it by slope class on the
+30/35/40/45/50+ ramp, and is the map's slope layer — it replaced swisstopo's
+raster and the Layers menu's slope row. Both modes share every setting
+below it, so the slope range stays visible in either: in slope mode it
+says which classes are painted, from 30° up by default. The colour key
+switches with the mode (includes/_terrain_filter_key.html).
 
 MapSheet.attach empties the sheet on every close, so the body is a
 <template> cloned on every open (static/js/terrain_filter_sheet.js) — the
@@ -33,10 +42,19 @@ Included by public/map.html only for an eligible page
         <label
             for="map-terrain-filter-enabled"
             class="text-sm text-text-1"
-        >{% trans "Highlight matching ground" %}</label>
+        >{% trans "Show on the map" %}</label>
         {% include "includes/_switch.html" with id="map-terrain-filter-enabled" %}
     </div>
     <p class="mt-1 text-sm text-text-2" data-terrain-filter-availability aria-live="polite"></p>
+    <fieldset class="mt-4">
+        <legend class="text-sm font-semibold text-text-1">{% trans "Colour" %}</legend>
+        <div class="mt-2 inline-flex rounded-pill border border-border bg-card p-0.5">
+            {% trans "Highlight matches" as mode_match_label %}
+            {% trans "Colour by slope" as mode_slope_label %}
+            {% include "includes/_segmented_option.html" with name="terrain-filter-mode" value="match" label=mode_match_label checked=True %}
+            {% include "includes/_segmented_option.html" with name="terrain-filter-mode" value="slope" label=mode_slope_label %}
+        </div>
+    </fieldset>
     {% with aspect_class="min-h-9 rounded-sm border border-border bg-card px-2 text-sm text-text-1 aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-accent-text hover-affordance" %}
         <fieldset class="mt-4">
             <legend class="text-sm font-semibold text-text-1">{% trans "Aspect" %}</legend>
@@ -176,11 +194,13 @@ Included by public/map.html only for an eligible page
 {# wheel's msgids, so the chip reads "N, NE, NW" in the reader's language. #}
 <template id="map-terrain-filter-strings-template">
     <span data-string="availability-ok">{% trans "Matching ground is highlighted." %}</span>
+    <span data-string="availability-ok-slope">{% trans "Steep ground is coloured by slope class." %}</span>
     <span data-string="availability-off">{% trans "The filter is off." %}</span>
     <span data-string="availability-zoom-in">{% trans "Zoom in further to see the filter." %}</span>
     <span
         data-string="availability-out-of-coverage"
     >{% trans "No terrain data here — the filter covers Switzerland only." %}</span>
+    <span data-string="mode-slope">{% trans "Slope classes" %}</span>
     <span data-string="aspects-all">{% trans "All aspects" %}</span>
     <span data-string="aspects-none">{% trans "No aspects" %}</span>
     <span data-string="aspects-one">{% trans "1 aspect" %}</span>

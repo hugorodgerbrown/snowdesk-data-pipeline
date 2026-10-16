@@ -1,0 +1,13 @@
+{% comment %}
+public/partials/_map_zoom_control_demo.html — component-library wrapper for
+the map's zoom control (SNOW-1077), /_components/?slug=map-zoom-control.
+
+Renders the same partial /map/ includes, inside a static box standing in
+for the bottom-left stack: the roundel sits one control and a gap above
+the box's foot, where the date row would be, so the flyout opens into the
+same crook it does on the map. No JS is wired on this page; each variant's
+context sets the face, the marker, the ticks and the button states.
+{% endcomment %}
+<div class="map-zoom-control-demo">
+    {% include "public/partials/_map_zoom_control.html" %}
+</div>

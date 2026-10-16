@@ -20,8 +20,12 @@ Switzerland in EPSG:3035 — through
 ``apps.locations.services.terrain_grid``. Distinct from
 ``apps.locations.services.elevation``, which asks Open-Meteo for one
 point's height over the whole world and can never answer a gradient, and
-from ``SLOPE_TILE_URL``, which is a picture of steepness that MapLibre
-paints and no Python reads back.
+from ``TERRAIN_CLASS_TILE_URL``, the terrain-class tiles the browser paints
+the terrain filter and the map's slope layer from and no Python reads back.
+Those tiles are built from the same swissALTI3D grid with the same Horn
+kernel and 10 m window as ``sample_slope``, which is why a slope class on
+the map agrees with the figure this module gives for the same ground
+(docs/decisions/slope-layer-is-painted-from-our-class-tiles.md).
 
 **AN UNKNOWN IS A REASON, NEVER A NULL.** Roughly half the grid's rectangle
 is ground no source covers, and the origin answers ``204 No Content``
@@ -269,18 +273,19 @@ def sample_slope(
 ) -> TerrainSlope:
     """Return the ground's gradient and facing at one coordinate.
 
-    Horn's 3x3 method — the same one GDAL's ``gdaldem`` and swisstopo's own
-    slope products use — over the eight cells around the one the coordinate
-    falls in.
+    Horn's 3x3 method — the one GDAL's ``gdaldem`` uses — over the eight
+    cells around the one the coordinate falls in.
 
     **``window_m`` IS THE SPACING BETWEEN THE SAMPLED CELLS, not the width
     of the patch.** At the default 10 m the kernel reads cells 10 m apart
     and therefore spans 30 m of ground. That is deliberate and was decided
-    rather than inherited: 10 m spacing is what SLF and swisstopo compute
-    the 30 / 35 / 40 degree classes at, so our angles agree with the slope
-    overlay painted beside them on the same map. Reading it as a patch
-    width would give a 3.3 m spacing, a noticeably rougher answer, and two
-    numbers on one screen that disagree about the same hillside.
+    rather than inherited: 10 m is the resolution swisstopo's published
+    slope classes were derived at, and it is the window the terrain-class
+    tiles are built with, so these angles agree with the slope layer the
+    map paints from those tiles (SNOW-1073) — same grid, same kernel, same
+    window. Reading it as a patch width would give a 3.3 m spacing, a
+    noticeably rougher answer, and two numbers on one screen that disagree
+    about the same hillside.
 
     It must be a positive whole multiple of the grid's cell size. Anything
     else raises rather than rounding: silently answering a 12 m request at

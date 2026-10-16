@@ -18,8 +18,6 @@
     'data-credits': 'Data credits',
     swisstopo: 'Swisstopo',
     'winter-basemap': 'Winter basemap',
-    slope: 'Slope angle',
-    'terrain-shading': 'Terrain shading',
     bulletins: 'SLF bulletins',
     'avalanche-danger': 'Avalanche danger',
     major: 'L1 · Major',
@@ -102,14 +100,10 @@
   const groups = [
     [strings.swisstopo, strings['winter-basemap'], [], null],
   ];
-  // SNOW-691/724: the slope raster is behind an operator kill switch — clear
-  // settings.SLOPE_TILE_URL and `installSlopeLayer` never adds `slope-raster`,
-  // so the template omits `data-slope-tile-url`. Demonstrating a sheet the map
-  // will not install aborts the build on its missing-layer check, taking every
-  // later layer with it; omit the group instead.
-  if (mapEl?.dataset.slopeTileUrl) {
-    groups.push([strings.slope, strings['terrain-shading'], ['slope-raster'], null]);
-  }
+  // SNOW-1073 removed the slope sheet: swisstopo's slope raster is gone,
+  // and the slope layer that replaced it is the terrain filter's slope mode,
+  // which is off unless the reader switched it on — not a sheet every build
+  // can demonstrate.
   groups.push(
     [strings.bulletins, strings['avalanche-danger'], ['regions-fill', 'bulletin-groupings-line'], 'l3'],
     [strings.major, strings.boundaries, ['major-regions-line', 'major-regions-label'], 'l1'],
@@ -435,7 +429,7 @@
       const applicationSources = new Set([
         'regions', 'major-regions', 'sub-regions', 'bulletin-groupings',
         'resorts', 'favourites', 'weather', 'routes', 'community-reports',
-        'cached-tiles', 'slope',
+        'cached-tiles', 'terrain-filter',
       ]);
       groups[0][2] = map.getStyle().layers
         .filter(layer => !applicationSources.has(layer.source) && !/^(routes|trip|download|cached)-/.test(layer.id))

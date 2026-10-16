@@ -41,9 +41,12 @@ from apps.routes.services.slope_summary import (
     summarise_record,
 )
 
-_ROUTE_SLOPE_CORE = (
-    Path(__file__).parent.parent.parent / "static" / "js" / "route_slope_core.js"
-)
+_JS_DIR = Path(__file__).parent.parent.parent / "static" / "js"
+_ROUTE_SLOPE_CORE = _JS_DIR / "route_slope_core.js"
+# SNOW-1073: the five steep classes moved to their own module, shared with
+# the terrain filter's slope mode; route_slope_core.js keeps only the gentle
+# one and spreads the shared five after it.
+_SLOPE_CLASSES_CORE = _JS_DIR / "slope_classes_core.js"
 
 
 def _known(angle_deg: float) -> dict[str, Any]:
@@ -224,8 +227,12 @@ class TestBandTableParity:
         # `map.js` paints from the JS table and the popup describes from
         # this one. A route coloured by one and described by the other
         # would contradict itself on a single screen, and nothing else in
-        # the build would notice.
-        source = _ROUTE_SLOPE_CORE.read_text(encoding="utf-8")
+        # the build would notice. Since SNOW-1073 the JS table is the gentle
+        # class in route_slope_core.js followed by slope_classes_core.js's
+        # five, so the two files are read in that order.
+        route_core = _ROUTE_SLOPE_CORE.read_text(encoding="utf-8")
+        assert "...self.pwaSlopeClassesCore.CLASSES" in route_core
+        source = route_core + _SLOPE_CLASSES_CORE.read_text(encoding="utf-8")
         found = re.findall(
             r"id:\s*'(?P<id>[a-z0-9-]+)',\s*from:\s*(?P<from>\d+),\s*"
             r"to:\s*(?P<to>\d+|null)",
@@ -240,10 +247,3 @@ class TestBandTableParity:
             (class_id, float(lower), None if upper == "null" else float(upper))
             for class_id, lower, upper in found
         ]
-
-    def test_the_steep_threshold_matches_route_slope_core(self) -> None:
-        source = _ROUTE_SLOPE_CORE.read_text(encoding="utf-8")
-        match = re.search(r"const STEEP_THRESHOLD_DEG = (\d+);", source)
-
-        assert match is not None
-        assert float(match.group(1)) == STEEP_THRESHOLD_DEG

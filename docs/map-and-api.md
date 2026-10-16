@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # Map page and JSON API
@@ -186,14 +186,11 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Fifteen surfaces float over the map, and only one is ever meaningful at
+Fourteen surfaces float over the map, and only one is ever meaningful at
 once: the layers menu (`basemap-menu`), the four UGC panels (downloads,
 favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
-the route detail sheet (`#route-detail-sheet`
-— SNOW-973 moved it out of that popup, and since SNOW-1018 it opens from
-the rail's "Terrain" menu item rather than on a tap), the
-legend card (`#map-legend-card`), the help
+the legend card (`#map-legend-card`), the help
 tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
 (`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792), the
 welcome panel (`#home-intro`), the region panel the readout chip discloses
@@ -205,14 +202,16 @@ and the sign-in sheet a signed-out tap on a Favourites or Routes row opens
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
 so the sheets that go through it need nothing of their own — which is how
-the route detail sheet joined the matrix without an edit to any other
-surface.
+the route detail sheet (SNOW-973; removed by SNOW-1095) joined the matrix
+without an edit to any other surface.
 
 The route rail (`#route-rail`, SNOW-1018; the only rail since SNOW-1065) is
 deliberately **not** in the matrix.
-A tap on a saved route opens it and nothing else, and it stays open while
-the route detail sheet opens and closes over it — registering it would
-close it the moment the sheet it opened announced itself. It closes on its
+A tap on a saved route opens it and nothing else — registering it would
+close it the moment any other overlay announced itself. Its "…" menu is
+Plan a trip → Share → Rename → Delete, all owner actions, so a pending
+share shows none; the Terrain item and the route detail sheet it opened
+were removed by SNOW-1095. It closes on its
 own ×, on Escape when no sheet, overlay or menu was open to take that
 Escape (and no leg or point was open to take it first), on a map tap that
 no marker takes, and after a claim or a delete.
@@ -435,82 +434,46 @@ knowing here:
   when `ascent_m` is null**, since a GPX with no elevation data means "we
   don't know", not "flat".
 
-**Slope-angle overlay (SNOW-691)**: the map's only `raster` source, and its
-only layer whose data is fetched straight from a third party rather than
-through a Snowdesk endpoint. The tiles are swisstopo's
-`ch.swisstopo.hangneigung-ueber_30` WMTS, read from `SLOPE_TILE_URL`
-(`config/settings/base.py`, env-overridable so SNOW-693 can move the origin
-without a code change) and rendered onto `#map` as `data-slope-tile-url`
-for an eligible request only — and "eligible" is simply
-`bool(settings.SLOPE_TILE_URL)`. SNOW-724 retired the `slope_layer` flag
-and moved that job onto the setting, which was already the operator's kill
-switch by another name: clearing the env var withdraws the row, the raster
-and the legend key on a restart rather than a deploy.
+**Slope layer (SNOW-1073)**: the terrain filter's "Colour by slope" mode,
+not a layer of its own. It paints from the same `terrainfilter://` raster
+source as the filter's match tint (`installTerrainFilterLayer` in
+`static/js/map.js`, `terrain-filter-raster`), so everything about that
+source — eager install while hidden, `beforeId: 'regions-fill'`,
+`nearest` resampling, the z12–14 band and `COVERAGE_BOUNDS`, the
+attribution reset — applies to it unchanged; see
+[terrain-filter-is-class-tiles-filtered-on-device.md](decisions/terrain-filter-is-class-tiles-filtered-on-device.md).
+The mode is `mode: 'slope'` in the filter JSON under
+`snowdesk.map.terrain_filter`; `TERRAIN_CORE.createClassifier` and
+`paletteFor` pick `createSlopeClassifier` and `SLOPE_PALETTE`, which paint
+each matching pixel by its 5° band in the SLF classes
+(`static/js/slope_classes_core.js`'s `CLASSES`) at 0.6 alpha. The mode is
+part of `filterHash`, so switching mode re-tiles through `setTiles`. It is
+gated on `TERRAIN_CLASS_TILE_URL` like the filter, and it shares the
+filter's on/off switch and its sheet's aspect, slope-range and elevation
+settings. The zoom control's z12 tick reads "Slope classes" while it is
+on (`slope_classes` in `window.pwaZoomGates`).
 
-It differs from every other opt-in overlay in one way worth knowing before
-you go looking for the missing code: **it is installed eagerly and hidden,
-not lazy-loaded.** MapLibre requests no tiles for a source whose layers are
-all `visibility: none`, so a hidden raster costs one source entry and no
-network at all — which is why `slope` appears in `OVERLAY_LAYERS` but not
-in the picker's lazy branch, and why there is no
-`ensureOverlayLoaded` case and no `snowdesk:overlay-load` handling for it.
-The generic `setLayoutProperty` path is the whole toggle.
+SNOW-691's swisstopo raster — `ch.swisstopo.hangneigung-ueber_30` from
+`SLOPE_TILE_URL`, its "Display slope angles" row, `slope_overlay_core.js`,
+the `slope` overlay key and its download pinning — is removed; the why and
+the costs are in
+[slope-layer-is-painted-from-our-class-tiles.md](decisions/slope-layer-is-painted-from-our-class-tiles.md).
+A stored `snowdesk.map.overlay.slope` is ignored.
 
-Three source/paint properties are load-bearing rather than decorative.
-`maxzoom` is **16**, not the service's advertised 17: z17 is a server-side
-upscale, differing from a 2x-upscaled z16 in 1.3% of pixels against 2.7%
-for z15→z16 and 7.0% for z14→z15, so capping costs nothing visible and
-saves four requests per tile of screen at touring zooms. Declaring it at
-all is SNOW-604's lesson — a raster source's `maxzoom` defaults to 22.
-`bounds` is the declared coverage rectangle (`COVERAGE_BOUNDS` in
-`static/js/slope_overlay_core.js`), which keeps MapLibre from requesting
-the tiles outside it that the service answers with HTTP 400 and a JSON body
-rather than an empty tile. `raster-resampling` is `nearest`, not MapLibre's
-default `linear`: the raster is categorical, and interpolating between two
-class colours invents a colour that corresponds to no slope class.
+The legend's terrain-filter section switches with the mode: in the slope
+mode it shows the five class swatches under a "Slope angle" heading that
+anchors into `/help/#help-topic-slope` (`public/help/_topic_slope.html`,
+which renders for every visitor). The id sits on a wrapper `div` rather
+than on `_collapsible_panel.html`'s `<details>`, so that shared partial
+keeps one shape for every caller. The source's `attribution` names the
+DATASET — "swisstopo — swissALTI3D" — rather than the publisher: two
+basemaps are also swisstopo and contribute a bare `© swisstopo`, and
+`updateMapAttribution` unions by exact string.
 
-The blockiness that `nearest` leaves at high zoom is the source's own 10 m
-grid, not a rendering fault — measured against the served tiles the
-smallest distinguishable feature is ~10 m at every zoom (a 2px run at z14,
-3px at z15, 6px at z16, each doubling with the zoom rather than resolving
-further). Note for SNOW-693: Copernicus GLO-30 is **30 m**, so a
-self-hosted replacement would be three times coarser than this inside the
-area swisstopo covers.
-
-`slope-raster` resolves `beforeId: 'regions-fill'` so it lands under the
-choropleth from either install path (boot installs it first; the
-`styledata` re-install runs the regions first).
-`updateSlopeRowAvailability` (on `moveend`) disables the layers-menu row
-with a reason once the viewport centre leaves the rectangle, via a
-namespaced marker (`data-slope-disabled-out-of-coverage`). An earlier
-build also drew the rectangle as a
-`slope-coverage-line` layer; it was removed as a hard box across the whole
-map that cost more legibility than it bought.
-
-One non-obvious coupling: `installSlopeLayer` nulls `map.js`'s memoised
-`attributionSourceIds` and re-runs `updateMapAttribution`.
-That cache is populated at `style.load` and this source is added
-afterwards, so without the reset swisstopo's attribution — a licence
-obligation, not a nicety — never reaches the legend's "Map data" section.
-
-The legend's "Slope angle" heading is an anchor into
-`/help/#help-topic-slope` (`public/help/_topic_slope.html`, which renders
-for every visitor — the help topic is not gated with the layer, so a
-reader whose environment has no `SLOPE_TILE_URL` can still read what the
-layer would have said). The id sits on a
-wrapper `div` rather than on `_collapsible_panel.html`'s `<details>`, so
-that shared partial keeps one shape for every caller. The source's
-`attribution` names the DATASET rather than the publisher — two basemaps
-are also swisstopo and contribute a bare `© swisstopo`, and
-`updateMapAttribution` unions by exact string, so a matching value rendered
-as "© swisstopo · swisstopo".
-
-Offline caching: no `OVERLAY_RESOURCES` entry, so the row carries no sync
-dot state and the offline gate never touches it. The tiles ride the service
-worker's cross-origin basemap stale-while-revalidate cache instead — the
-slope origin joins the `register-basemap-origins` payload alongside the
-basemap origins — so terrain browsed online still paints offline. Pinning
-slope tiles as part of a deliberate area download is SNOW-692.
+Offline caching: the class tiles' origin is seeded into the service
+worker's `register-basemap-origins` payload, so ground viewed online still
+paints offline; an area downloaded with "Terrain data" (SNOW-1072) pins
+them.
 
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre

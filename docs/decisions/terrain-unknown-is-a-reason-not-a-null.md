@@ -2,7 +2,7 @@
 name: terrain-unknown-is-a-reason-not-a-null
 description: sample_height and sample_slope return a TerrainUnknown — outside_coverage, no_data, unavailable — never None; a 204 is the coverage answer
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # A terrain unknown is a reason, never a null
@@ -58,9 +58,10 @@ memoised; a timeout is not, so an outage cannot cache itself as
 
 `window_m` as spacing was chosen with the user rather than inherited. At
 the default 10 m the kernel reads cells 10 m apart and spans 30 m of
-ground. 10 m spacing is what SLF and swisstopo compute the 30 / 35 / 40
-degree classes at, so our angles agree with the slope overlay painted
-beside them on the same map. Reading it as a patch width would give a 3.3 m
+ground. 10 m is the resolution swisstopo's published slope classes were
+derived at, and since SNOW-1073 it is the window the map's slope layer is
+painted with, so our angles agree with the shading beside them on the same
+map. Reading it as a patch width would give a 3.3 m
 spacing, a rougher answer, and two numbers on one screen disagreeing about
 one hillside.
 

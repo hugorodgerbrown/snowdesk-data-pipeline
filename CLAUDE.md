@@ -484,8 +484,8 @@ has had: the three guards above each catch one historical bug class, and
 `js-globals-lint` in particular exists to catch a read of a global nothing
 assigns, which is a misspelled identifier and exactly what a type checker
 catches for free. `checkJs` is **false** project-wide, so a file is checked
-only once someone adds `// @ts-check` to it — twenty files today:
-nineteen of the thirty `*_core.js` modules plus `pwa_network_mode.js`.
+only once someone adds `// @ts-check` to it — twenty-one files today:
+twenty of the thirty-one `*_core.js` modules plus `pwa_network_mode.js`.
 Eleven core modules are still unchecked, among them the four SNOW-899
 deferred (`basemap_download_core`, `map_weather_core`,
 `layer_visibility_core`, `elevation_profile_core` — they carried 115 of the
@@ -679,6 +679,7 @@ Read these when working in the relevant area:
 | Why `/` is a static homepage and the map lives at `/map/` (public:home vs public:map, views.home / views.map_page, the `/?<map state>` → `/map/` 301 and its attribution-parameter exemption, manifest start_url vs id) | [`docs/decisions/the-homepage-is-not-the-map.md`](docs/decisions/the-homepage-is-not-the-map.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
+| Why a phone map sheet rests at peek, half or full and a desktop one does not (_overlay_sheet.html `detents` / `initial`, data-sheet-peek, data-sheet-drag, data-sheet-detents, sheet_detents_core.js, MapSheet.bindDetents; forms declare none; the sheet covers the map controls and moves none) | [`docs/decisions/sheet-detents-are-phone-only.md`](docs/decisions/sheet-detents-are-phone-only.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | Why a grouping outline asserts an aggregation (BulletinGrouping, MIN_GROUPED_REGIONS, degenerate(), purge_degenerate_bulletin_groupings; why a day can return zero features) | [`docs/decisions/a-grouping-outline-asserts-an-aggregation.md`](docs/decisions/a-grouping-outline-asserts-an-aggregation.md) |
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |
@@ -688,6 +689,7 @@ Read these when working in the relevant area:
 | Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
 | Why the base layer's zoom band follows the basemap's extent (BASE_LAYER_BANDS, baseLayerBand, z0-9 for the national styles, z0-7 for OpenFreeMap) | [`docs/decisions/the-base-layer-band-follows-the-basemap-extent.md`](docs/decisions/the-base-layer-band-follows-the-basemap-extent.md) |
 | Why the terrain filter is class tiles painted on the device (TERRAIN_CLASS_TILE_URL, the R,G height / B octant-and-band pixel contract, 254 level / 255 no data, terrainfilter:// protocol, terrain_filter_core.js, window.pwaTerrainFilter, the DEBUG dev/terrain-class fixture tiles) | [`docs/decisions/terrain-filter-is-class-tiles-filtered-on-device.md`](docs/decisions/terrain-filter-is-class-tiles-filtered-on-device.md) |
+| Why the slope layer is painted from our terrain-class tiles, not swisstopo's raster (the terrain filter's "Colour by slope" mode, mode 'slope', SLOPE_PALETTE, slope_classes_core.js; SLOPE_TILE_URL and hangneigung-ueber_30 removed; blank below z12, Switzerland only, what the swisstopo metadata says about its method) | [`docs/decisions/slope-layer-is-painted-from-our-class-tiles.md`](docs/decisions/slope-layer-is-painted-from-our-class-tiles.md) |
 | Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, the fixed glyph range set GLYPH_RANGES) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
 | Why an area download picks its content by crude rectangle, server-side, never real geometry (/api/area-content/, bboxes_overlap, areaBBox; the superset invariant) | [`docs/decisions/inside-the-boundary-is-complete.md`](docs/decisions/inside-the-boundary-is-complete.md) |
 | Why a region holds one basemap at a time while a custom area can hold the same ground twice (areaIdForRegion, generateCustomAreaId, confirmBasemapReplace; SNOW-864 declined) | [`docs/decisions/one-basemap-per-region-download.md`](docs/decisions/one-basemap-per-region-download.md) |

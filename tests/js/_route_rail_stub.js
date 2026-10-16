@@ -3,11 +3,10 @@
  * `window.pwaRouteRail` (static/js/route_rail.js, SNOW-1018), for the
  * suites that boot map.js.
  *
- * Since SNOW-1018 a tap on a saved route opens rail one and nothing else;
- * the route detail sheet is reached through the rail's menu, which calls
- * the `details` function map.js handed the rail. These suites test map.js's
- * half of that contract — what it hands over, and what the `details` call
- * then opens — so they need the rail's surface and not its DOM, which
+ * Since SNOW-1018 a tap on a saved route opens rail one and nothing else
+ * (SNOW-1095 removed the route detail sheet the rail's menu used to open).
+ * These suites test map.js's half of that contract — what it hands over —
+ * so they need the rail's surface and not its DOM, which
  * tests/js/test_route_rail.js covers against the real module.
  *
  * Installed BEFORE the bundle boots, the way the page loads route_rail.js
@@ -25,7 +24,6 @@
  *     calls: Array<{feature: object, options: object}>},
  *   element: HTMLElement,
  *   last: function(): ?{feature: object, options: object},
- *   openDetails: function(): *,
  *   reset: function(): void,
  * }}
  */
@@ -50,8 +48,6 @@ export function installRouteRailStub() {
     state,
     element,
     last: () => state.calls.at(-1) || null,
-    // What a press on the rail's "Terrain" item does.
-    openDetails: () => state.calls.at(-1).options.details(),
     reset: () => {
       state.open = false;
       state.cursor = null;

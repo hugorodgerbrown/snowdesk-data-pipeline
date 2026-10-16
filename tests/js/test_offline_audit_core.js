@@ -1973,12 +1973,32 @@ describe('the passive browsing cache (SNOW-1058)', () => {
     });
 
     it('keeps the site fallback to its source’s directory, not the whole domain', () => {
-      // Codex on #1025: the slope overlay is also on geo.admin.ch and its
-      // tiles sit in the same passive cache. With the TileJSON missing, a
-      // domain-only fallback read one of them as Swisstopo ground.
-      const slope =
-        'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/14/8500/5800.png';
-      expect(core.browsedState(STYLE, {}, [SWISSTOPO, slope], SWISSTOPO)).toBe('style-only');
+      // Codex on #1025: other swisstopo rasters are on geo.admin.ch too, and
+      // their tiles can sit in the same passive cache — the slope overlay's
+      // did until SNOW-1073 removed it, and a device that viewed it may
+      // still hold some. With the TileJSON missing, a domain-only fallback
+      // read one of them as Swisstopo ground.
+      const raster =
+        'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/14/8500/5800.jpeg';
+      expect(core.browsedState(STYLE, {}, [SWISSTOPO, raster], SWISSTOPO)).toBe('style-only');
+    });
+
+    it('does not read a terrain-class tile as the basemap sharing its host (SNOW-1072)', () => {
+      // tiles.snowdesk-data.info serves the self-hosted OpenFreeMap basemap
+      // and the terrain filter's class tiles side by side. A class tile is
+      // tile-shaped, and a download that includes terrain data pins them;
+      // only the directory keeps one from passing as basemap ground.
+      const selfHosted = 'https://tiles.snowdesk-data.info/styles/liberty';
+      const style = {
+        sources: {
+          openmaptiles: {
+            type: 'vector',
+            tiles: ['https://tiles.snowdesk-data.info/tiles/20260906/{z}/{x}/{y}.mvt'],
+          },
+        },
+      };
+      const classTile = 'https://tiles.snowdesk-data.info/terrain-class/v2/14/8512/5820.png';
+      expect(core.browsedState(style, {}, [selfHosted, classTile], selfHosted)).toBe('style-only');
     });
 
     it('keeps the site fallback to its own site', () => {

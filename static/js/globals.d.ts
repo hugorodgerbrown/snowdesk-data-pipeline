@@ -46,12 +46,16 @@ interface Window {
   pwaSearchCore: any;
   /** static/js/layer_visibility_core.js — overlay visibility derivation. */
   pwaLayerVisibilityCore: any;
+  /** static/js/sheet_detents_core.js — where a phone map sheet settles (SNOW-1097). */
+  pwaSheetDetentsCore: any;
+  /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
+  pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */
   pwaViewportCore: any;
-  /** static/js/slope_overlay_core.js — swisstopo coverage predicate. */
-  pwaSlopeOverlayCore: any;
+  /** static/js/slope_classes_core.js — the 30/35/40/45/50+ slope-class ramp. */
+  pwaSlopeClassesCore: any;
   /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */
   pwaTerrainFilterCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
@@ -82,6 +86,8 @@ interface Window {
   pwaBasemapDownloadCore: any;
   /** static/js/offline_audit_core.js — the offline-content report model. */
   pwaOfflineAuditCore: any;
+  /** static/js/zoom_control_core.js — the zoom scale, ticks and bounds. */
+  pwaZoomControlCore: any;
 
   // ---- the shared map state channel --------------------------------------
   /** static/js/map_state.js — the frozen accessor surface over map state. */
@@ -112,6 +118,8 @@ interface Window {
   pwaTerrainFilter: any;
   /** static/js/terrain_filter_sheet.js — opens the terrain filter sheet. */
   pwaTerrainFilterSheet: any;
+  /** static/js/map.js — the zoom-gated layers: list() → [{key, zoom, active}]. */
+  pwaZoomGates: any;
 }
 
 /**

@@ -1237,6 +1237,21 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
             "static": True,
         },
     },
+    {
+        # SNOW-1097: a sheet that declares detents. On a phone it rests at
+        # peek, half or full and the handle drags it between them (or a
+        # press steps it up); from `sm` up the handle is hidden and the
+        # sheet is the inset panel above. Shown here with the handle
+        # visible, since the library is read at desktop width.
+        "caption": "Phone sheet with detents (peek, half, full)",
+        "context": {
+            "id": "component-library-overlay-sheet-detents",
+            "aria_label": "Region",
+            "static": True,
+            "detents": "peek,half,full",
+            "initial": "peek",
+        },
+    },
 )
 
 
@@ -1294,6 +1309,31 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "id": "component-library-switch-disabled",
             "disabled": True,
+        },
+    },
+)
+
+
+# Segmented option -------------------------------------------------------------
+# SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
+# each carries its own radio name — two variants sharing one would let only one
+# of them render checked.
+SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Unselected",
+        "context": {
+            "name": "component-library-segmented-off",
+            "value": "off",
+            "label": "Highlight matches",
+        },
+    },
+    {
+        "caption": "Selected",
+        "context": {
+            "name": "component-library-segmented-on",
+            "value": "on",
+            "label": "Colour by slope",
+            "checked": True,
         },
     },
 )
@@ -2939,6 +2979,80 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+
+# ── Map zoom control (SNOW-1077) ────────────────────────────────────────────
+# The roundel at the top of the map's bottom-left stack and the flyout it
+# opens. On /map/ static/js/map_zoom_control.js fills every value from the
+# map; here each variant sets them, across the map's range of z4 to z18.
+# The two gates are the ones window.pwaZoomGates publishes: the terrain
+# filter from z12 and route slope colours from z14.
+
+_MAP_MIN_ZOOM = 4
+_MAP_MAX_ZOOM = 18
+
+
+def _zoom_pct(zoom: float) -> float:
+    """Return where ``zoom`` sits on the control's scale, 0..100."""
+    return round((zoom - _MAP_MIN_ZOOM) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
+
+
+def _zoom_tick(key: str, label: str, gate: int, camera: float) -> dict[str, Any]:
+    """Return one tick, reached when ``camera`` is at or past ``gate``."""
+    return {
+        "key": key,
+        "label": label,
+        "zoom": gate,
+        "pct": _zoom_pct(gate),
+        "reached": camera >= gate,
+    }
+
+
+def _zoom_variant(
+    caption: str,
+    camera: float,
+    *,
+    terrain: bool = False,
+    routes: bool = False,
+    is_open: bool = True,
+    debug: bool = False,
+) -> dict[str, Any]:
+    """Return one zoom-control variant at a camera zoom."""
+    ticks = []
+    if terrain:
+        ticks.append(_zoom_tick("terrain_filter", "Terrain filter", 12, camera))
+    if routes:
+        ticks.append(_zoom_tick("route_slopes", "Route slope colours", 14, camera))
+    return {
+        "caption": caption,
+        "context": {
+            "zoom_face": int(camera),
+            "zoom_open": is_open,
+            "zoom_marker_pct": _zoom_pct(camera),
+            "zoom_ticks": ticks,
+            "zoom_out_disabled": camera <= _MAP_MIN_ZOOM,
+            "zoom_in_disabled": camera >= _MAP_MAX_ZOOM,
+            "zoom_camera_visible": debug,
+            "zoom_camera": f"Camera zoom {camera:.2f}",
+        },
+    }
+
+
+MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
+    _zoom_variant("Closed — the roundel at z10", 10.4, is_open=False),
+    _zoom_variant("Open at z10, no gated layer on", 10.4),
+    _zoom_variant("Terrain filter on, not reached yet (z10)", 10.4, terrain=True),
+    _zoom_variant(
+        "Terrain filter and a route on, at z13 — filter drawn, slope colours not",
+        13.2,
+        terrain=True,
+        routes=True,
+    ),
+    _zoom_variant(
+        "At the maximum zoom (z18) — + disabled", 18, terrain=True, routes=True
+    ),
+    _zoom_variant("At the minimum zoom (z4) — − disabled", 4),
+    _zoom_variant("DEBUG — with the camera zoom line", 12.47, terrain=True, debug=True),
+)
 
 # ── Bulletin headline (SNOW-249) ────────────────────────────────────────────
 # Four representative cells from the variant matrix — enough to review the

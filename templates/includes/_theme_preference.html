@@ -19,7 +19,8 @@ understands is therefore reachable here, and "System" is spelled by
 REMOVING the key rather than storing a third literal, so this control and
 that resolver cannot disagree about what "system" means.
 
-Real radios in a real fieldset, not a cycling button. A three-state
+Real radios in a real fieldset, not a cycling button, each option drawn by
+includes/_segmented_option.html (extracted by SNOW-1073). A three-state
 control has to show which of the three is active, which one icon cannot
 do; a radio group shows it, and gets keyboard support, focus management
 and the group label from the browser. Each option's label is a `{% trans %}`
@@ -46,40 +47,11 @@ Parameters: none. Rendered once, in accounts/settings.html.
 <fieldset data-theme-preference>
     <legend class="sr-only">{% trans "Theme" %}</legend>
     <div class="inline-flex rounded-pill border border-border bg-card p-0.5">
-        {% comment %}
-            The `peer` variant needs the styled <span> to be a LATER sibling
-            of the input it reflects, which is why the sr-only input comes
-            first inside each label rather than wrapping the text.
-        {% endcomment %}
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                name="theme-preference"
-                value="system"
-                class="peer sr-only"
-                checked
-            >
-            <span
-                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
-            >
-                {% trans "System" %}
-            </span>
-        </label>
-        <label class="cursor-pointer">
-            <input type="radio" name="theme-preference" value="light" class="peer sr-only">
-            <span
-                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
-            >
-                {% trans "Light" %}
-            </span>
-        </label>
-        <label class="cursor-pointer">
-            <input type="radio" name="theme-preference" value="dark" class="peer sr-only">
-            <span
-                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
-            >
-                {% trans "Dark" %}
-            </span>
-        </label>
+        {% trans "System" as system_label %}
+        {% trans "Light" as light_label %}
+        {% trans "Dark" as dark_label %}
+        {% include "includes/_segmented_option.html" with name="theme-preference" value="system" label=system_label checked=True %}
+        {% include "includes/_segmented_option.html" with name="theme-preference" value="light" label=light_label %}
+        {% include "includes/_segmented_option.html" with name="theme-preference" value="dark" label=dark_label %}
     </div>
 </fieldset>

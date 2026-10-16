@@ -110,15 +110,6 @@
     token: mapEl.dataset.tripShareRouteUrlTemplate || null,
   });
   const ROUTES_SIGNIN_URL = mapEl.dataset.routesSigninUrl || null;
-  // SNOW-691: the slope-angle raster's tile template and its gate. Public
-  // third-party tiles, so "eligible" is settings.SLOPE_TILE_URL being
-  // configured (SNOW-724 moved the gate off a waffle flag and onto the
-  // setting, which is the operator kill switch) rather than the
-  // gate-AND-authentication shape routes and favourites use. The template
-  // is a swisstopo WMTS XYZ URL rather than a Snowdesk endpoint, which is
-  // why it is rendered as a whole URL instead of being reversed here.
-  const SLOPE_TILE_URL = mapEl.dataset.slopeTileUrl || null;
-  const SLOPE_ELIGIBLE = mapEl.dataset.slopeLayerEligible === 'true';
   // SNOW-978: the terrain filter's class-tile template and its gate —
   // settings.TERRAIN_CLASS_TILE_URL being configured. The template is
   // emitted only for an eligible page, so both have to be present.
@@ -249,15 +240,6 @@
   let learnBasemapTileOrigins = () => {};
 
   if (navigator.serviceWorker) {
-    // SNOW-691: the slope raster's origin joins the list. It is not a
-    // basemap — it never reaches BASEMAP_OPTIONS and has no picker row — but
-    // it is the same KIND of thing to the service worker: cross-origin tiles
-    // whose opportunistic caching is what lets previously-browsed terrain
-    // still paint offline. Without it every slope tile is network-only, and
-    // the layer goes blank the moment the signal does, which is precisely
-    // the situation it is most wanted in. (Pinning slope tiles as part of a
-    // deliberate area download is SNOW-692; this is the passive half.)
-    //
     // SNOW-843: these are the origins of the style DOCUMENTS, and a style's
     // TILES are very often served from somewhere else entirely — swisstopo
     // publishes its styles on `vectortiles.geo.admin.ch` and its tiles on
@@ -272,11 +254,14 @@
       Object.values(BASEMAP_OPTIONS)
         .filter((url) => typeof url === 'string' && url)
         .map((url) => new URL(url).origin)
-        .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : [])
         // SNOW-978: the class tiles are fetched from the page, so the worker
         // caches them only if their origin is on this list. No basemap entry
-        // supplies tiles.snowdesk-data.info, so it is seeded here as the
-        // slope origin is.
+        // supplies tiles.snowdesk-data.info, so it is seeded here. They are
+        // not a basemap, but they are the same KIND of thing to the service
+        // worker: cross-origin tiles whose opportunistic caching is what lets
+        // previously-browsed terrain still paint offline — the terrain
+        // filter, and with it the slope layer (SNOW-1073), which is most
+        // wanted exactly where the signal goes.
         .concat(
           TERRAIN_FILTER_ELIGIBLE
             ? [new URL(TERRAIN_CLASS_TILE_URL, window.location.href).origin]
@@ -446,10 +431,6 @@
   // separate row. Both default on, so the map opens exactly as it did.
   // 'bulletins' is the user's PREFERENCE; what is actually painted is that
   // AND-ed with any active suppression, held in bulletinsVisibility below.
-  // SNOW-691: slope defaults OFF. It is the only overlay that paints the
-  // WHOLE viewport rather than discrete features, so opening the map with it
-  // on would put a second full-screen colour scheme under the danger ratings
-  // for a visitor who came to read the ratings.
   const overlayState = {
     l1: false, l2: false, l4: true, bulletins: true, resorts: false,
     favourites: true, community_reports: false,
@@ -457,9 +438,12 @@
     // condition symbols over every station is an opt-in, not the state the
     // map should open in for someone who came to read danger ratings.
     weather: false,
-    routes: false, slope: false,
-    // SNOW-978: off by default, like slope — it tints whole tracts of
-    // ground. window.pwaTerrainFilter is its one writer.
+    routes: false,
+    // SNOW-978: off by default. It paints whole tracts of ground rather
+    // than discrete features — in its slope mode (SNOW-1073), a second
+    // full-screen colour scheme under the danger ratings — so opening the
+    // map with it on would greet a visitor who came to read the ratings
+    // with terrain. window.pwaTerrainFilter is its one writer.
     terrain_filter: false,
   };
 
@@ -564,7 +548,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope', 'terrain_filter']) {
+  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   // The three EAWS boundary tiers. At most one is configured on, so each asks
@@ -2246,14 +2230,25 @@
    * leg. Guarded like the legs, and for the same reason: a missing core
    * costs the classes, not the routes overlay.
    *
+   * Records how many segments it produced in `routeSlopeSegmentCount`.
+   * Every write to the `routes-slopes` source goes through here, so the
+   * count is what that source draws. The zoom control's `route_slopes`
+   * gate reads it: a route that is unsampled, or has no usable heights,
+   * yields no segments and keeps its leg colours past z14, so it must not
+   * put a tick on the scale.
+   *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} A line
    *   FeatureCollection, empty when nothing has been sampled.
    */
+  let routeSlopeSegmentCount = 0;
   const routeSlopesFor = (geojson) => {
     const core = self.pwaRouteLegsCore;
-    if (!core || !core.slopeSegmentCollection) return { type: 'FeatureCollection', features: [] };
-    return core.slopeSegmentCollection(geojson);
+    const collection = core && core.slopeSegmentCollection
+      ? core.slopeSegmentCollection(geojson)
+      : { type: 'FeatureCollection', features: [] };
+    routeSlopeSegmentCount = collection.features.length;
+    return collection;
   };
 
   /**
@@ -2989,7 +2984,7 @@
       },
     });
     // From z14 the route's core is painted in the slope classes — the six
-    // buckets of route_slope_core.js, the slope raster's palette — in
+    // buckets of route_slope_core.js, the slope layer's palette — in
     // place of the leg colours, which go transparent at the same zoom on
     // a sampled route (legCoreOpacity) and stay on one with no segments. The leg
     // casing and the numbered transitions stay at every zoom, so the legs
@@ -4119,179 +4114,6 @@
     announceOverlayVisibility();
   };
 
-  // ==== SNOW-691: the slope-angle overlay ====
-  //
-  // A third-party raster (swisstopo's ch.swisstopo.hangneigung-ueber_30),
-  // banded to the SLF classification. Everything pure about it — the
-  // coverage rectangle, the zoom limits, the opacity constant, the class
-  // table — lives in static/js/slope_overlay_core.js so it can be tested;
-  // this is the MapLibre half.
-  //
-  // Installed EAGERLY and hidden, unlike every other opt-in overlay, which
-  // lazy-loads on first toggle-on. There is nothing to lazy-load: MapLibre
-  // requests no tiles for a source whose layers are all `visibility: none`,
-  // so a hidden raster costs one source entry and no network at all. That
-  // is also why `slope` is absent from the picker's lazy-load branch and
-  // from ensureOverlayLoaded — the generic setLayoutProperty path is the
-  // whole toggle.
-  const SLOPE_CORE = self.pwaSlopeOverlayCore;
-
-  // The Terrain row's own namespaced disabled marker — mirroring
-  // pwa_offline.js's `data-was-disabled-offline` /
-  // map_layer_sync_status.js's `data-sync-disabled-offline` idiom, so this
-  // module only ever re-enables a row IT disabled.
-  //
-  // Nothing else disables this one today: the slope
-  // tiles are a third-party raster with no entry in
-  // map_layer_sync_status.js's OVERLAY_RESOURCES, so that module's
-  // offline gate never reaches this row and its marker is the only one in
-  // play. The `data-sync-disabled-offline` check below is therefore
-  // defensive rather than load-bearing — kept because it costs one
-  // comparison and is exactly what would have to be here the day a probe
-  // for the slope tile cache is added (SNOW-692's territory).
-  const SLOPE_ROW_DISABLED_MARKER = 'data-slope-disabled-out-of-coverage';
-
-  /**
-   * Apply or clear the Terrain row's coverage disable.
-   *
-   * @param {boolean} disabled Whether the row should be inert.
-   * @param {string} reason The title text explaining why.
-   */
-  const _setSlopeRowDisabled = (disabled, reason) => {
-    const row = document.querySelector('#basemap-menu [data-overlay-key="slope"]');
-    if (!row) return;
-    if (disabled) {
-      row.setAttribute('aria-disabled', 'true');
-      row.setAttribute(SLOPE_ROW_DISABLED_MARKER, '1');
-      row.title = reason;
-    } else if (row.getAttribute(SLOPE_ROW_DISABLED_MARKER) === '1') {
-      row.removeAttribute(SLOPE_ROW_DISABLED_MARKER);
-      row.removeAttribute('title');
-      // Never re-enable a row the offline gate is still holding down —
-      // whichever reason clears second is the one that re-enables it.
-      if (row.getAttribute('data-sync-disabled-offline') !== '1') {
-        row.removeAttribute('aria-disabled');
-      }
-    }
-  };
-
-  /**
-   * Re-derive the Terrain row's disabled state from where the map is
-   * currently looking.
-   *
-   * The viewport CENTRE, not its bounds: a partial overlap would otherwise
-   * leave the row enabled while most of the screen has no data, and the
-   * centre is the thing a visitor is actually looking at. Panning back
-   * inside re-enables it.
-   *
-   * The row is only in the DOM for an eligible request, so there is exactly
-   * one reason it can be unusable and one string to say it.
-   */
-  const updateSlopeRowAvailability = () => {
-    if (!SLOPE_ELIGIBLE || !SLOPE_CORE) return;
-    const centre = map.getCenter();
-    const covered = SLOPE_CORE.coversPoint(centre.lng, centre.lat);
-    _setSlopeRowDisabled(!covered, MAP_STRINGS['slope-out-of-coverage']);
-  };
-
-  /**
-   * Install the slope raster and its coverage outline.
-   *
-   * Idempotent — early-returns when the source is already present, so the
-   * styledata re-install handler can call it on every basemap swap.
-   */
-  const installSlopeLayer = () => {
-    if (!SLOPE_ELIGIBLE || !SLOPE_TILE_URL || !SLOPE_CORE) return;
-    if (map.getSource('slope')) return;
-
-    const visibility = overlayState.slope ? 'visible' : 'none';
-
-    map.addSource('slope', {
-      type: 'raster',
-      tiles: [SLOPE_TILE_URL],
-      tileSize: 256,
-      // Both declared explicitly, and maxzoom is 16 rather than the
-      // service's advertised 17 — see MAX_ZOOM in slope_overlay_core.js for
-      // the measurement behind that. Declaring it at all is SNOW-604's
-      // lesson: a raster source's maxzoom defaults to 22, and this origin
-      // answers HTTP 400 past z17.
-      minzoom: SLOPE_CORE.MIN_ZOOM,
-      maxzoom: SLOPE_CORE.MAX_ZOOM,
-      // The declared coverage rectangle. This is what keeps MapLibre from
-      // ever asking for a tile outside it — the service answers those with
-      // HTTP 400 and a JSON body rather than an empty tile, so an unbounded
-      // source would spend real requests on errors along every edge.
-      bounds: SLOPE_CORE.COVERAGE_BOUNDS,
-      // swisstopo's terms make the free geoservices usable commercially and
-      // oblige us to name the source. `updateMapAttribution` unions this
-      // into the legend's "Map data" section; /colophon/ carries the longer
-      // form. Trusted, server-controlled HTML, like every other source's.
-      //
-      // It names the DATASET, not just the publisher, and that is
-      // load-bearing rather than pedantic: two of the basemaps are also
-      // swisstopo and contribute a bare "© swisstopo", so a matching string
-      // here rendered as "© swisstopo · swisstopo" — a duplicate that
-      // credits nothing. The union is by exact string, so the way to say
-      // "this is a second, different swisstopo dataset" is to say which.
-      attribution:
-        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
-        + 'swisstopo — slope classes</a>',
-    });
-
-    // Under the choropleth, so the danger ratings stay readable on top of
-    // it and the SNOW-656 fill-strength control does the "am I reading
-    // danger or terrain" trade-off it was built for — no new exclusivity
-    // rule, and no second opacity control. `beforeId` rather than relying
-    // on insertion order because the two install paths run in opposite
-    // orders: at boot this runs before installRegionsLayers, and on a
-    // basemap swap the styledata handler reinstalls the regions first.
-    const beforeId = map.getLayer('regions-fill') ? 'regions-fill' : undefined;
-    map.addLayer(
-      {
-        id: 'slope-raster',
-        type: 'raster',
-        source: 'slope',
-        layout: { visibility: visibility },
-        paint: {
-          'raster-opacity': SLOPE_CORE.RASTER_OPACITY,
-          // NEAREST, not MapLibre's default linear. This raster is
-          // CATEGORICAL — five discrete class colours — so interpolating
-          // between neighbouring pixels invents colours that correspond to
-          // no slope class at all, softening every class boundary into a
-          // gradient the data does not contain. On a layer a reader might
-          // use to judge whether a slope is under or over 40°, a made-up
-          // colour between two classes is worse than a visible pixel edge.
-          //
-          // The blockiness that leaves at high zoom is the source's own 10 m
-          // grid, not a rendering artefact: measured against the served
-          // tiles, the smallest distinguishable feature is ~10 m at every
-          // zoom (a 2px run at z14, 3px at z15, 6px at z16 — each doubling
-          // with the zoom rather than resolving further).
-          'raster-resampling': 'nearest',
-        },
-      },
-      beforeId,
-    );
-
-    raiseMarkerLayers();
-
-    // `updateMapAttribution` caches the style's source ids the first time it
-    // runs (at style.load) and only clears that cache on the next style
-    // load. This source is added AFTER that, so without dropping the cache
-    // its attribution is never read and the swisstopo credit silently never
-    // reaches the legend — a licence obligation lost to a memoisation.
-    attributionSourceIds = null;
-    updateMapAttribution();
-
-    updateSlopeRowAvailability();
-  };
-
-  // Panning changes whether the map is looking at ground the raster covers,
-  // so the row's reason is re-derived on every settled move. `moveend`
-  // rather than `move`: this only touches the menu, which nobody can read
-  // mid-gesture, and one DOM write per gesture is the right budget.
-  map.on('moveend', updateSlopeRowAvailability);
-
   // SNOW-978: the terrain filter — ground highlighted by aspect, slope angle
   // and elevation.
   //
@@ -4326,7 +4148,13 @@
   let terrainFilter = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
     ? TERRAIN_CORE.parseFilter(readStorage(TERRAIN_FILTER_STORAGE_KEY))
     : null;
-  let terrainClassify = terrainFilter ? TERRAIN_CORE.createFilterClassifier(terrainFilter) : null;
+  // SNOW-1073: the classifier and the palette follow the filter's mode —
+  // 'match' tints matching ground, 'slope' colours it by slope class (the
+  // map's slope layer, which replaced swisstopo's raster). Reassigned
+  // together by setFilter, so a tile is never painted with one mode's
+  // indices and the other's colours.
+  let terrainClassify = terrainFilter ? TERRAIN_CORE.createClassifier(terrainFilter) : null;
+  let terrainPalette = terrainFilter ? TERRAIN_CORE.paletteFor(terrainFilter) : null;
   const terrainClassCache = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
     ? TERRAIN_CORE.createTileCache(TERRAIN_CLASS_CACHE_TILES)
     : null;
@@ -4436,7 +4264,7 @@
     const size = TERRAIN_CORE.TILE_SIZE;
     const out = new Uint8ClampedArray(size * size * 4);
     if (pixels) {
-      TERRAIN_CORE.paintTile(pixels, out, terrainClassify, TERRAIN_CORE.PALETTE, tile);
+      TERRAIN_CORE.paintTile(pixels, out, terrainClassify, terrainPalette, tile);
     }
     return { data: await createImageBitmap(new ImageData(out, size, size)) };
   };
@@ -4488,9 +4316,10 @@
    * filter is on.
    *
    * Idempotent — early-returns when the source is already present, so the
-   * styledata re-install handler can call it on every basemap swap. Like
-   * slope, it is installed eagerly: a layer at `visibility: none` requests
-   * no tiles, so the hidden layer costs one source entry and no network.
+   * styledata re-install handler can call it on every basemap swap. It is
+   * installed eagerly, unlike the opt-in overlays that lazy-load on first
+   * toggle-on: a layer at `visibility: none` requests no tiles, so the
+   * hidden layer costs one source entry and no network.
    *
    * @returns {void}
    */
@@ -4508,15 +4337,24 @@
       minzoom: TERRAIN_CORE.MIN_ZOOM,
       maxzoom: TERRAIN_CORE.MAX_ZOOM,
       bounds: TERRAIN_CORE.COVERAGE_BOUNDS,
-      // Names the dataset, for the reason slope's attribution does: a bare
-      // "© swisstopo" would merge with the swisstopo basemaps' own credit.
+      // Names the DATASET, not just the publisher, and that is load-bearing:
+      // two of the basemaps are also swisstopo and contribute a bare
+      // "© swisstopo", and `updateMapAttribution` unions by exact string, so
+      // a matching credit here would merge into theirs and credit nothing.
+      // swisstopo's terms oblige us to name the source; the slope layer
+      // (SNOW-1073) is derived from this same model, so this one credit
+      // covers both modes. /colophon/ carries the longer form.
       attribution:
         '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
         + 'swisstopo — swissALTI3D</a>',
     });
 
-    // Under the choropleth, beside slope — the same beforeId rule, for the
-    // same reason (the two install paths run in opposite orders).
+    // Under the choropleth, so the danger ratings stay readable on top of
+    // it and the SNOW-656 fill-strength control does the "am I reading
+    // danger or terrain" trade-off. `beforeId` rather than insertion order
+    // because the two install paths run in opposite orders: at boot this
+    // runs before installRegionsLayers, and on a basemap swap the styledata
+    // handler reinstalls the regions first.
     const beforeId = map.getLayer('regions-fill') ? 'regions-fill' : undefined;
     map.addLayer(
       {
@@ -4528,7 +4366,10 @@
           // The translucency is in the painted pixels (terrain_filter_core's
           // PALETTE), so the layer itself is fully opaque.
           'raster-opacity': 1,
-          // Categorical, like slope: interpolating would invent half-matches.
+          // NEAREST, not MapLibre's default linear: the painted pixels are
+          // categorical — a tint or one of five slope classes — so
+          // interpolating would invent half-matches and colours between
+          // two classes that correspond to no slope at all.
           'raster-resampling': 'nearest',
           // A filter change repaints in place; a cross-fade would show the
           // old filter and the new one at once.
@@ -4610,7 +4451,8 @@
       getFilter: () => TERRAIN_CORE.normaliseFilter(terrainFilter),
       setFilter(next) {
         terrainFilter = TERRAIN_CORE.normaliseFilter(next);
-        terrainClassify = TERRAIN_CORE.createFilterClassifier(terrainFilter);
+        terrainClassify = TERRAIN_CORE.createClassifier(terrainFilter);
+        terrainPalette = TERRAIN_CORE.paletteFor(terrainFilter);
         writeStorage(TERRAIN_FILTER_STORAGE_KEY, TERRAIN_CORE.serialiseFilter(terrainFilter));
         scheduleTerrainRepaint();
         announceTerrainFilter();
@@ -6577,6 +6419,9 @@
           // already drawn, and the route that just landed is the first
           // one with legs.
           syncRouteLegLegend();
+          // SNOW-1077: the same reason, for the zoom control's route-slopes
+          // tick — the first route landing turns its gate on.
+          document.dispatchEvent(new CustomEvent('snowdesk:zoom-gates-changed'));
         } else {
           // Cached pristine above, mutated here — the same order
           // ``_loadOverlay`` uses, so the stored copy is the server's
@@ -6913,6 +6758,59 @@
     isEnabled: () => !!overlayState.routes,
   });
 
+  // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
+  //
+  // Some layers are drawn only past a zoom, and the zoom control's flyout
+  // (static/js/map_zoom_control.js) puts a tick on its scale for each one
+  // that is on. One entry per gated layer, so a third one is a line here
+  // and a label in the control's strings template, and nothing else.
+  //
+  // `active` answers "is this layer on the map now", not "is it drawn at
+  // this zoom" — the tick is there to say where it starts.
+  //
+  //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
+  //     (z12); on while the reader has switched it on in the match mode.
+  //   slope_classes — the same tiles, so the same zoom, in the filter's
+  //     slope mode (SNOW-1073): the slope layer, labelled as such. The two
+  //     entries are never on together, so there is one tick at z12.
+  //   route_slopes — a route's core switches from leg colours to slope
+  //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
+  //     is painted and its slope source holds at least one segment. A
+  //     route with no sampled slope keeps its leg colours at every zoom,
+  //     so it does not count.
+  const ZOOM_GATES = Object.freeze([
+    Object.freeze({
+      key: 'terrain_filter',
+      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
+        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode !== 'slope',
+    }),
+    Object.freeze({
+      key: 'slope_classes',
+      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
+        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope',
+    }),
+    Object.freeze({
+      key: 'route_slopes',
+      zoom: ROUTE_SLOPE_MINZOOM,
+      active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
+    }),
+  ]);
+
+  window.pwaZoomGates = Object.freeze({
+    /**
+     * Every zoom-gated layer, read now.
+     *
+     * @returns {Array<{key: string, zoom: number, active: boolean}>}
+     */
+    list: () => ZOOM_GATES.map((gate) => ({
+      key: gate.key,
+      zoom: gate.zoom,
+      active: !!gate.active(),
+    })),
+  });
+
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
   //
   // The three account list pages became permanent redirects to the map
@@ -7113,8 +7011,8 @@
    * panel's 400 px: a north-to-south tour reads top to bottom under it.
    *
    * This replaced SNOW-973's `paddingClearing`, which reserved the route
-   * detail sheet instead. A tap no longer opens that sheet — it sits behind
-   * the panel's menu — so on the tap there is no sheet to frame around.
+   * detail sheet instead. A tap stopped opening that sheet with SNOW-1018,
+   * and SNOW-1095 removed it, so there is no sheet to frame around.
    *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
@@ -7609,12 +7507,11 @@
     // SNOW-235: majorGeojsonCache / subGeojsonCache / resortsGeojsonCache
     // remain null until the user first enables that overlay tier; they are
     // populated by ensureOverlayLoaded below.
-    // SNOW-691: before the regions, so the raster lands under the
-    // choropleth. installSlopeLayer also passes `beforeId: 'regions-fill'`
-    // when that layer already exists, so the ordering survives the
-    // styledata path running these two the other way round.
-    installSlopeLayer();
-    // SNOW-978: beside slope, under the choropleth on the same terms.
+    // SNOW-978: before the regions, so the raster lands under the
+    // choropleth. installTerrainFilterLayer also passes
+    // `beforeId: 'regions-fill'` when that layer already exists, so the
+    // ordering survives the styledata path running the two the other way
+    // round.
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
     // The downloaded-areas overlay is a persisted preference now, so a
@@ -7876,11 +7773,12 @@
       p.remove();
     };
 
-    // SNOW-973: the two surfaces that describe ONE thing on the map — the
-    // anchored popup (a resort pin, a favourite pin) and the route detail
-    // sheet. Both are dismissed by the gestures that move the reader on
-    // from what they were looking at: deselecting a region, tapping a
-    // different one, entering pin-placement focus.
+    // SNOW-973: the surface that describes ONE thing on the map — the
+    // anchored popup (a resort pin, a favourite pin). It sat beside the
+    // route detail sheet here until SNOW-1095 removed the sheet. It is
+    // dismissed by the gestures that move the reader on from what they
+    // were looking at: deselecting a region, tapping a different one,
+    // entering pin-placement focus.
     //
     // Deliberately NOT `pwaMapOverlays.closeAll()`, which would take the
     // layers menu and the three UGC panels with it. Two of the three
@@ -7888,12 +7786,8 @@
     // for `#map` on purpose — a panel is not dismissed by working the map
     // underneath it, and routing these through the registry would reverse
     // that decision for every sheet as a side effect of this ticket.
-    //
-    // `isOpen` is checked before closing for the reason the registry checks
-    // it: the sheet's teardown empties its body, which is not free.
     const closeMapDetailSurfaces = () => {
       closeDetailPopup();
-      if (window.pwaRouteDetail?.isOpen()) window.pwaRouteDetail.close();
     };
 
     // SNOW-658: the anchored detail popup is a map overlay like the layers
@@ -8071,9 +7965,14 @@
     //   'mark' — skips the write because the URL already matches (popstate,
     //   hashchange, initial load) and just records that our hash is the active
     //   history entry.
+    //
+    // ``via`` (SNOW-1098) rides out on the event so a listener can tell a
+    // map TAP from the other routes into a selection. Only the region
+    // sheet reads it: a tap on a phone opens the sheet, while a search
+    // pick, a deep link or a pinned-region row select without one.
     const selectFeature = async (
       numericId,
-      { urlMode = 'push' } = {},
+      { urlMode = 'push', via = '' } = {},
     ) => {
       // Already the active region — nothing to change. The deselect toggle is
       // the click handler's job (see deselectRegion), so that a repeated
@@ -8113,6 +8012,7 @@
           // readout can build a breadcrumb mirroring the visible map overlays.
           subregion_name: props.subregion_name || '',
           major_name: props.major_name || '',
+          via,
         },
       }));
     };
@@ -8840,11 +8740,10 @@
                 detail: { claimed: true },
               }),
             );
-            // SNOW-1018: this control sits on the rail now. Both surfaces
-            // describe a pending route that no longer exists as such, so
-            // both close; the refetch above redraws it as an owned line.
+            // SNOW-1018: this control sits on the rail now. The rail
+            // describes a pending route that no longer exists as such, so
+            // it closes; the refetch above redraws it as an owned line.
             window.pwaRouteRail?.close();
-            window.pwaRouteDetail?.close();
           })
           .catch(function (resp) {
             button.disabled = false;
@@ -8891,14 +8790,9 @@
     // — the route's profile cut at its transitions, docked over the map's
     // foot — and ONLY the rail. The rail carries what the sheet's top half
     // used to: the name, the distance/ascent/descent figures and the
-    // elevation profile. The route detail sheet (SNOW-973) is one press
-    // further, behind the rail's "Terrain" menu item, and holds what the
-    // rail does not: the terrain lines below. SNOW-1062 took the day's
-    // bulletin reading out of it — the day's danger is a map layer
-    // (SNOW-979), not an attribute of a route.
-    //
-    // So the sheet's body is built here but DEFERRED: handed to the rail as
-    // `details`, a function the menu item calls.
+    // elevation profile. The route detail sheet (SNOW-973) stayed one press
+    // further, behind the rail's "Terrain" menu item, until SNOW-1095
+    // removed both: by then it held one line of terrain figures.
     //
     // The rail opens BEFORE the fit, when there is one, so the fit can measure it
     // (`paddingClearingRail`) — otherwise a route's lower end would be
@@ -8914,57 +8808,6 @@
     const activateRoute = (feature, { frame = false } = {}) => {
       const props = feature.properties || {};
 
-      /**
-       * Build the sheet's body: the terrain lines, and nothing the rail
-       * already shows.
-       *
-       * @returns {HTMLElement}
-       */
-      const buildDetailBody = () => {
-        const container = document.createElement('div');
-        container.setAttribute('data-route-detail', '');
-
-        // SNOW-961: the ground, on a line of its own. It sat under the
-        // route's figures until SNOW-1018 moved those to the rail; it stays
-        // apart from them there too — distance and ascent are facts about
-        // the track, these are facts about what it crosses, and running them
-        // together invites the reader to take "43°" for something the GPX
-        // said.
-        //
-        // Absent entirely for a route that has never been sampled — see
-        // summaryLines, which distinguishes that from one we looked at and
-        // could not answer.
-        // The core is in home.html's DEFERRED group, so it is not
-        // guaranteed to exist when this runs — the same reason
-        // ``routeLegsFor`` and ``flatOwnedRouteFilter`` test for their
-        // cores rather than assuming them. Without the core the sheet has
-        // no terrain line to show.
-        const slopeCore = self.pwaRouteSlopeCore;
-        const terrainLines = slopeCore
-          ? slopeCore.summaryLines(readFeatureJson(props.terrain))
-          : [];
-        // Parsed ONCE and shared with the passage lines below: the slope
-        // record is the largest property on the feature, and it arrives as
-        // a JSON string that both readers would otherwise parse
-        // separately.
-        const slopeFeature = { properties: { slope: readFeatureJson(props.slope) } };
-        // SNOW-964: the no-fall passages, on the same line as the figures
-        // rather than a line of their own — one more fact about the ground.
-        if (slopeCore?.passageLines) {
-          terrainLines.push(...slopeCore.passageLines(slopeFeature));
-        }
-        if (terrainLines.length) {
-          const terrainMeta = document.createElement('div');
-          terrainMeta.className = 'mt-0.5 text-xs text-text-2';
-          terrainMeta.textContent = terrainLines
-            .map((line) => self.pwaStrings.interpolate(MAP_STRINGS[line.key], line.params))
-            .join(' · ');
-          container.appendChild(terrainMeta);
-        }
-
-        return container;
-      };
-
       // Handed the CACHED feature: the one MapLibre gave the tap is the
       // tile's copy — clipped at tile boundaries and simplified for the
       // current zoom — so a profile drawn from it would be of part of the
@@ -8979,7 +8822,6 @@
       );
 
       window.pwaRouteRail?.open(cachedFeature || feature, {
-        details: () => window.pwaRouteDetail?.open({ node: buildDetailBody() }),
         claim: props.pending ? buildRouteClaimCta(props.token) : null,
       });
       // SNOW-1019: follow the new cursor, so its index is drawn on the
@@ -9256,11 +9098,10 @@
           deselectRegion();
           return;
         }
-        // SNOW-499: close any anchored resort/favourite detail popup — and
-        // since SNOW-973 the route detail sheet too — so neither lingers
-        // over a region the user has moved on from.
+        // SNOW-499: close any anchored resort/favourite detail popup so it
+        // does not linger over a region the user has moved on from.
         closeMapDetailSurfaces();
-        selectFeature(region.id);
+        selectFeature(region.id, { via: 'tap' });
       }
     });
 
@@ -9423,6 +9264,8 @@
     const toggleEl = document.getElementById('search-toggle');
     let currentResults = [];
     let activeIdx = -1;
+    // False while the list is the pinned regions rather than matches.
+    let previewTop = true;
     // SNOW-188: The map feature id currently highlighted as a search
     // preview (keyboard/pointer hover over a search result). Carried via
     // its own ``previewing`` feature-state so it stacks independently of
@@ -9457,13 +9300,54 @@
     // the input (CSS transition) and moves focus. The pill stays expanded
     // as long as the user is interacting with it; Escape or an outside
     // pointerdown collapses it back (see handlers below).
+    // PHONE: SEARCH REPLACES THE REGION CHIP (Hugo, 16 Oct). map.css gives
+    // search the whole top row and hides the chip, whose panel was where the
+    // pinned regions lived; so an empty field lists them, and typing replaces
+    // them with matches. The rows come from map_region_panel.js's loaded
+    // list (window.pwaPinnedRegions) — one loader for the list, the pin
+    // roundel and this. A visitor has none, and sees nothing until they type.
+    // On a desktop the chip and its panel are unchanged, so nothing lists.
+    const PHONE_QUERY = '(max-width: 639.98px)';
+    const isPhoneWidth = () =>
+      typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+
+    const pinnedResults = () => {
+      const ids = window.pwaPinnedRegions?.ids?.() || [];
+      return ids
+        .map((id) => SEARCH_INDEX.find((e) => e.type === 'region' && e.regionID === id))
+        .filter(Boolean);
+    };
+
+    const showEmptyState = () => {
+      if (!isPhoneWidth()) {
+        closeResults();
+        return;
+      }
+      previewTop = false;
+      renderResults(pinnedResults());
+      // The list may still be loading on a first focus straight after boot.
+      window.pwaPinnedRegions?.ready?.().then(() => {
+        if (!inputEl.value && document.activeElement === inputEl) {
+          previewTop = false;
+          renderResults(pinnedResults());
+        }
+      });
+    };
+
+    /** Matches for a typed query, the top one previewed on the map. */
+    const showMatches = () => {
+      previewTop = true;
+      renderResults(runSearch(inputEl.value));
+    };
+
     const openSearch = () => {
       pillEl.setAttribute('data-state', 'expanded');
       toggleEl.setAttribute('aria-expanded', 'true');
       // Defer focus one frame so the width transition starts before the
       // caret appears — avoids a flash of the input at width 0.
       window.requestAnimationFrame(() => inputEl.focus());
-      if (inputEl.value) renderResults(runSearch(inputEl.value));
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     };
 
     const collapseSearch = () => {
@@ -9507,7 +9391,10 @@
       // When idx === -1 (Enter not pressed yet, ArrowUp past the top),
       // preview the first result so the highlight tracks what Enter
       // would pick.
-      const previewItem = currentResults[idx >= 0 ? idx : 0];
+      // The pinned list (an empty field, on a phone) previews nothing until
+      // a row is arrowed to: nothing has been asked for yet, and an outline
+      // on the first pinned region read as a second selection.
+      const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
       setPreview(previewItem ? previewItem.regionID : null);
     };
 
@@ -9602,11 +9489,16 @@
         badge.append(document.createTextNode(r.regionID));
 
         li.append(text, badge);
-        // Use pointerdown rather than click so we act before the input's
-        // blur handler closes the dropdown. pointerdown covers both mouse
-        // and touch — mousedown alone is unreliable on iOS Safari, where
-        // the synthesised mousedown after touchend can be skipped.
+        // pointerdown only holds the input's focus (preventDefault), and the
+        // pick happens on click. Picking on pointerdown hid the list before
+        // the tap ended, so the rest of the tap landed on the map under it
+        // and selected whichever region was there (Hugo, 16 Oct). Nothing
+        // closes the list on blur, and the outside-pointerdown handler below
+        // ignores the list, so the row is still there when its click fires.
         li.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+        });
+        li.addEventListener('click', (e) => {
           e.preventDefault();
           chooseResult(r);
         });
@@ -9624,20 +9516,35 @@
     const chooseResult = (item) => {
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
-      inputEl.value = item.primary;
+      // On a phone the field empties again: the region sheet names the pick,
+      // and an empty field is what lists the pinned regions next time.
+      inputEl.value = isPhoneWidth() ? '' : item.primary;
       collapseSearch();
       // Moves the selection (highlight + ribbon + readout + hash). Picking the
       // region that is already selected is a no-op — the deselect toggle is a
       // map gesture only, so a search pick never clears the selection.
       selectFeature(feature.id);
+      // On a phone the pinned regions moved here from the chip's panel,
+      // whose rows framed what they selected (row_focus.js's rule); a pick
+      // from search does the same there, so the region lands above the
+      // sheet it opens rather than wherever the map happened to be.
+      if (isPhoneWidth()) window.pwaMapFocus?.region?.(item.regionID);
     };
 
     inputEl.addEventListener('input', () => {
-      renderResults(runSearch(inputEl.value));
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     });
 
     inputEl.addEventListener('focus', () => {
-      if (inputEl.value) renderResults(runSearch(inputEl.value));
+      // On a phone the input is always showing, so a tap lands here without
+      // passing through the toggle; mark the pill open all the same.
+      if (pillEl.getAttribute('data-state') !== 'expanded') {
+        pillEl.setAttribute('data-state', 'expanded');
+        toggleEl.setAttribute('aria-expanded', 'true');
+      }
+      if (inputEl.value) showMatches();
+      else showEmptyState();
     });
 
     inputEl.addEventListener('keydown', (e) => {
@@ -9661,7 +9568,7 @@
       } else if (e.key === 'Escape') {
         if (inputEl.value) {
           inputEl.value = '';
-          closeResults();
+          showEmptyState();
         } else {
           collapseSearch();
         }
@@ -9764,7 +9671,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'slope', 'terrain_filter']) {
+      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
@@ -9809,12 +9716,10 @@
       // was loaded before the basemap switch is a no-op (loadedCountries
       // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
-      // SNOW-691: the raster went with the style too. Re-added after the
-      // regions here rather than before them — installSlopeLayer resolves
-      // its own `beforeId` against 'regions-fill', so it slots underneath
-      // either way and neither call site has to know the other's order.
-      installSlopeLayer();
-      // SNOW-978: the terrain filter went with the style as well.
+      // SNOW-978: the terrain filter went with the style too. Re-added
+      // after the regions here rather than before them — it resolves its
+      // own `beforeId` against 'regions-fill', so it slots underneath either
+      // way and neither call site has to know the other's order.
       installTerrainFilterLayer();
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted

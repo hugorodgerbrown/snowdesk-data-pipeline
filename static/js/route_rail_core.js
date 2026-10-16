@@ -20,8 +20,8 @@
  * which is a different length again, so a sample index is placed BY SHARE:
  * segment i owns the i-th of N equal shares of the track. That is the rule
  * `slopeBands` in elevation_profile_core.js argues for at length, and it is
- * the same rule here so the rail and the detail sheet's chart can never put
- * the same segment in two places.
+ * the same rule here so a segment sits at the same place on the rail as on
+ * any profile drawn by that module.
  *
  * ## The tick step
  *
