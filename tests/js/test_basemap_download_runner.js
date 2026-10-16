@@ -947,3 +947,77 @@ describe('the content phase', () => {
     expect(extras.content).toEqual({ ok: 1, total: 1, short: true });
   });
 });
+
+describe('terrain data (SNOW-1072)', () => {
+  const CLASS = ['https://tiles/terrain-class/v2/12/1/1.png'];
+
+  it('appends the class tiles after the slope tiles when the run opts in', async () => {
+    const d = deps({
+      slopeUrls: vi.fn(() => ['/slope/1']),
+      terrainClassUrls: vi.fn(() => CLASS),
+    });
+
+    await runAndSettle(d, options({ terrain: true }));
+
+    expect(d.terrainClassUrls).toHaveBeenCalledWith({ z: 12, band: 'micro', mb: 12 });
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+      '/slope/1',
+      ...CLASS,
+    ]);
+    // Out of the grid plan: the grid's offset still counts only the feeds.
+    expect(d.progressGrid).toHaveBeenCalledWith(expect.anything(), 1);
+  });
+
+  it('pins none without the opt-in, and never asks for them', async () => {
+    const d = deps({ terrainClassUrls: vi.fn(() => CLASS) });
+
+    await runAndSettle(d, options());
+
+    expect(d.terrainClassUrls).not.toHaveBeenCalled();
+    expect(d.warmCache.mock.calls[0][0]).not.toContain(CLASS[0]);
+  });
+
+  it('hands finish the flag, never the URLs', async () => {
+    const d = deps({ terrainClassUrls: vi.fn(() => CLASS) });
+    const o = options({ terrain: true });
+
+    await runAndSettle(d, o);
+
+    const extras = o.finish.mock.calls[0][2];
+    expect(extras.terrain).toBe(true);
+    expect(JSON.stringify(extras.renderDeps || [])).not.toContain('terrain-class');
+  });
+
+  it('reports terrain: false to finish for a run without the opt-in', async () => {
+    const o = options();
+
+    await runAndSettle(deps(), o);
+
+    expect(o.finish.mock.calls[0][2].terrain).toBe(false);
+  });
+
+  it('adds terrainMb to the quota and budget pre-flights only when opted in', async () => {
+    const withTerrain = deps();
+    await runAndSettle(withTerrain, options({ terrain: true, terrainMb: 11 }));
+    // 12 MB of basemap (one source) plus 11 of terrain.
+    expect(withTerrain.fitsQuota).toHaveBeenCalledWith(23);
+    expect(withTerrain.planBudget).toHaveBeenCalledWith('region:ch-4115', 23);
+
+    calls = [];
+    const without = deps();
+    await runAndSettle(without, options({ terrain: false, terrainMb: 11 }));
+    expect(without.fitsQuota).toHaveBeenCalledWith(12);
+  });
+
+  it('tolerates a deps bundle with no terrainClassUrls member', async () => {
+    // An older shell mid-rollout: the run goes ahead without class tiles.
+    const d = deps();
+
+    await runAndSettle(d, options({ terrain: true }));
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
+  });
+});

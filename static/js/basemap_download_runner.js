@@ -68,6 +68,7 @@
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
    *   slopeUrls?: function(Object): string[],
+   *   terrainClassUrls?: function(Object): string[],
    *   contentUrls?: function(Object): Promise<string[]|{urls: string[],
    *     short?: boolean}>,
    *   renderDeps?: function(): string[],
@@ -89,6 +90,8 @@
    *   the only async one: it caches the overlay feeds before it can say
    *   which weather sheets the area contains. All optional, each yielding
    *   its pre-ticket behaviour when a deps bundle predates it.
+   *   SNOW-1072: `terrainClassUrls` is the terrain-class tiles over the
+   *   blob's ground — read only when `options.terrain` is set.
    * @param {{
    *   areaId: string,
    *   mb: number,
@@ -97,8 +100,17 @@
    *   paint: function(string, number=, number=): void,
    *   beforeWarm?: function(Object, string, string[][]): Promise<boolean|void>,
    *   finish: function(Object|null, Object, Object): Promise<void>,
+   *   terrain?: boolean,
+   *   terrainMb?: number,
    * }} options
    *   `areaId` — the pinned bucket this run writes into.
+   *   `terrain` — SNOW-1072: whether this download includes terrain data,
+   *     the terrain-class tiles the terrain filter paints from. An opt-in:
+   *     absent or false, the run pins none, exactly as before the ticket.
+   *   `terrainMb` — what those tiles cost, added to the quota and budget
+   *     pre-flights when `terrain` is set. The caller prices it because
+   *     only the caller knows its ground before the blob loads (a region's
+   *     blob is fetched after the pre-flights, by design).
    *   `mb` — worst-case size estimate PER TILE, for the quota and budget
    *     pre-flights. SNOW-843: scaled here by the number of vector sources
    *     the active style fetches, because the blob that produced it — a
@@ -173,6 +185,9 @@
    */
   async function run(deps, options) {
     const { areaId, mb, count, loadBlob, paint, beforeWarm, finish } = options;
+    // SNOW-1072: the opt-in, read once. Everything below that touches the
+    // class tiles is gated on this one boolean.
+    const terrain = !!options.terrain;
 
     // A new attempt clears the previous one's message before it can raise
     // its own (SNOW-568).
@@ -192,8 +207,15 @@
     // against the unpriced figure — the checks themselves keep their
     // order, and an unresolved style leaves the estimate at `mb` (see
     // `sourceScaledMb`) and is refused outright a few lines below.
-    const estimateMb =
+    const basemapMb =
       core && core.sourceScaledMb ? core.sourceScaledMb(mb, tileSources, count) : mb;
+    // SNOW-1072: terrain data is its own tile family on its own host, so
+    // it is not scaled by the basemap's sources — it is added on top.
+    const terrainMb =
+      terrain && Number.isFinite(options.terrainMb) && options.terrainMb > 0
+        ? options.terrainMb
+        : 0;
+    const estimateMb = basemapMb + terrainMb;
 
     // Refuse a download that cannot fit in the origin's storage quota
     // before spending a single fetch on it (SNOW-568). Without this the run
@@ -303,6 +325,17 @@
     // `[]`, which is the pre-ticket behaviour: no slope tiles pinned.
     const slopeUrls = typeof deps.slopeUrls === 'function' ? deps.slopeUrls(blob) : [];
 
+    // SNOW-1072: the terrain-class tiles the terrain filter paints from —
+    // the same ground and the same placement as the slope raster above (at
+    // the end, after the grid plan, so no tile is shifted off its cell),
+    // and the same treatment in the record: never stored, derived again
+    // by the probe from the area's ground and its `terrain` flag
+    // (`areaTerrainClassTileUrls`). Unlike the slope raster they are an
+    // OPT-IN, so nothing is asked of the deps bundle unless the run
+    // carries `terrain`.
+    const terrainUrls =
+      terrain && typeof deps.terrainClassUrls === 'function' ? deps.terrainClassUrls(blob) : [];
+
     // SNOW-924: the bulletin pages and weather sheets inside the area's
     // boundary — the perishable half of a download, where everything above
     // is the permanent half. Takes the blob for the same reason `slopeUrls`
@@ -338,7 +371,13 @@
       ? contentReply
       : contentReply.urls || [];
     const contentShort = Array.isArray(contentReply) ? false : !!contentReply.short;
-    const urls = [...contentUrls, ...feedUrls, ...(gridPlan ? gridPlan.urls : []), ...slopeUrls];
+    const urls = [
+      ...contentUrls,
+      ...feedUrls,
+      ...(gridPlan ? gridPlan.urls : []),
+      ...slopeUrls,
+      ...terrainUrls,
+    ];
 
     // SNOW-569: the area's tiles are drawn as an empty grid that fills in
     // as they land. SNOW-924 widened the offset to cover the content that
@@ -386,6 +425,9 @@
     // its zoom ceiling), so storing ~273 URLs per area would be 27.4 KB of
     // record carrying no information the probe cannot recompute. The probe
     // derives them instead: `areaSlopeTileUrls` in map_basemap_downloads.js.
+    // SNOW-1072: the terrain-class tiles likewise; what the record carries
+    // is the `terrain` flag (passed to `finish` below), and
+    // `areaTerrainClassTileUrls` derives the list from it.
     const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
 
     // SNOW-742: `glyphPrefix` lets the worker promote this style's
@@ -409,6 +451,9 @@
         basemapKey,
         renderDeps,
         glyphPrefix,
+        // SNOW-1072: whether this run included terrain data — the flag a
+        // caller records, never the URLs it implied.
+        terrain,
         // SNOW-924: `{ok, total}` for the content half alone. `total === 0`
         // means this run had no content to fetch — an older deps bundle, or
         // an area whose boundary contains nothing — which a caller must read
