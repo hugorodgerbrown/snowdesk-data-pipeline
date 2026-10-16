@@ -30,9 +30,12 @@
  *
  * THE PIN AND DOWNLOAD BUTTONS IN ITS HEADER ARE PROXIES for the two
  * roundels in the ribbon header (#map-region-pin-control,
- * #map-download-control). A press presses the roundel, and the roundel's
- * state — pressed, disabled, its label — is copied onto the proxy whenever
- * it changes. Each verb keeps one owner (map_region_panel.js and
+ * #map-download-control). A press presses the roundel, and the proxy is
+ * redrawn AS the roundel whenever it changes: its classes, its state
+ * attributes (data-pin-state, data-download-state, the basemap key), its
+ * inline style (the --download-progress fill), its ARIA and its glyphs. The
+ * ribbon is hidden while the sheet is open, so the proxy is the only place
+ * a filled star, a rising download fill or an error glyph can show. Each verb keeps one owner (map_region_panel.js and
  * map_region_download.js), so the sheet's star cannot disagree with the
  * header's.
  */
@@ -50,8 +53,15 @@
   // Tailwind's `sm` — the width at which the inset panel replaces the sheet.
   const DESKTOP_QUERY = '(min-width: 640px)';
 
-  // Attributes a proxy copies from the roundel it stands for.
-  const MIRRORED = ['aria-pressed', 'aria-disabled', 'aria-label', 'title'];
+  /**
+   * Whether a proxy copies this attribute from the roundel it stands for:
+   * its ARIA and title, its inline style, and every data-* state attribute.
+   *
+   * @param {string} name
+   * @returns {boolean}
+   */
+  const isMirrored = (name) =>
+    name.startsWith('aria-') || name.startsWith('data-') || name === 'title' || name === 'style';
 
   const STRINGS = self.pwaStrings.read('region-sheet-strings-template', {
     loading: 'Loading region details…',
@@ -110,11 +120,21 @@
       proxy.hidden = true;
       return;
     }
-    MIRRORED.forEach((name) => {
-      const value = source.getAttribute(name);
-      if (value === null) proxy.removeAttribute(name);
-      else proxy.setAttribute(name, value);
+    Array.from(proxy.attributes).forEach(({ name }) => {
+      if (name !== 'data-region-sheet-proxy' && isMirrored(name) && !source.hasAttribute(name)) {
+        proxy.removeAttribute(name);
+      }
     });
+    Array.from(source.attributes).forEach(({ name, value }) => {
+      if (isMirrored(name)) proxy.setAttribute(name, value);
+    });
+    // The roundel's classes carry its shape and every state rule in map.css
+    // (.map-download-control[data-download-state="busy"]::before, …), so the
+    // proxy takes them whole rather than a copy of each state's look.
+    proxy.className = source.className;
+    // Its glyphs too: the download roundel swaps between four, and they are
+    // server-rendered markup with no ids, so a copy cannot collide.
+    if (proxy.innerHTML !== source.innerHTML) proxy.innerHTML = source.innerHTML;
   };
 
   const mirrorAll = () => {
@@ -132,7 +152,8 @@
       if (!source) return;
       new MutationObserver(mirrorAll).observe(source, {
         attributes: true,
-        attributeFilter: MIRRORED,
+        childList: true,
+        subtree: true,
       });
     });
   }

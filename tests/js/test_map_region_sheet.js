@@ -80,7 +80,12 @@ beforeEach(() => {
   const pin = document.getElementById('map-region-pin-control');
   pin.setAttribute('aria-pressed', 'false');
   pin.setAttribute('aria-label', 'Pin this region');
-  document.getElementById('map-download-control').removeAttribute('aria-disabled');
+  const download = document.getElementById('map-download-control');
+  download.removeAttribute('aria-disabled');
+  download.removeAttribute('data-download-state');
+  download.removeAttribute('style');
+  download.className = '';
+  download.innerHTML = '';
   fetchMock = vi.fn(() =>
     Promise.resolve({ ok: true, text: () => Promise.resolve(BODY) }),
   );
@@ -201,6 +206,24 @@ describe('the proxies', () => {
     const proxy = sheet.querySelector('[data-region-sheet-proxy="map-region-pin-control"]');
     expect(proxy.getAttribute('aria-pressed')).toBe('true');
     expect(proxy.getAttribute('aria-label')).toBe('Unpin this region');
+  });
+
+  it('take the roundel\'s look: its classes, state, fill and glyphs', async () => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    const roundel = document.getElementById('map-download-control');
+    roundel.className = 'map-glass-roundel map-download-control';
+    roundel.setAttribute('data-download-state', 'busy');
+    roundel.style.setProperty('--download-progress', '40%');
+    roundel.innerHTML = '<svg class="map-download-control-icon--busy"></svg>';
+    await settle();
+    const proxy = sheet.querySelector('[data-region-sheet-proxy="map-download-control"]');
+    expect(proxy.className).toBe('map-glass-roundel map-download-control');
+    expect(proxy.getAttribute('data-download-state')).toBe('busy');
+    expect(proxy.style.getPropertyValue('--download-progress')).toBe('40%');
+    expect(proxy.querySelector('.map-download-control-icon--busy')).not.toBeNull();
+    expect(proxy.getAttribute('data-region-sheet-proxy')).toBe('map-download-control');
   });
 
   it('press the roundel, and not when it is disabled', async () => {
