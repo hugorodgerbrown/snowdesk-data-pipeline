@@ -180,6 +180,53 @@
     }
 }
 
+/* —— The route sheet on a phone (SNOW-1099) ————————————————————————————
+   Below 640px the panel is not pinned to the top edge any more: it is a
+   bottom sheet, with the detents every map sheet has (see "Sheet detents
+   on phones" below, which supplies its full width, its flush foot, its
+   heights and its slide up). The profile — the thing a thumb taps to place
+   a point — sits at the thumb rather than as far from it as the screen
+   allows. Peek is the identity block (name, meta line, menu, ×), half adds
+   the point header and the profile, and full — staff only — the point
+   debug readout: every terrain figure behind the placed point.
+
+   `fixed` rather than #map's absolute, so it sits on the viewport's foot
+   like every other sheet, over the site footer rather than above it, and
+   at the sheets' own level (--z-popup) like the region sheet.
+
+   At peek only the identity block shows: the profile starts 8px below it
+   (the grid's gap), inside the sheet's bottom padding, so without this a
+   sliver of it shows under the meta line — and a covered profile must
+   not take a tap or a tab stop either. */
+@media (max-width: 639.98px) {
+    .route-rail[data-detent] {
+        position: fixed;
+        top: auto;
+        width: auto;
+        z-index: var(--z-popup);
+        align-content: start;
+    }
+
+    .route-rail[data-detent='peek'] > :not([data-sheet-handle]):not([data-sheet-peek]) {
+        visibility: hidden;
+    }
+
+    /* The point debug readout is FULL's alone. Hidden rather than taken
+       out of the flow, so FULL can measure it before it shows; HALF stops
+       at the profile (`data-sheet-half`), which clips it. */
+    .route-rail:not([data-detent='full']) [data-route-rail-debug] {
+        visibility: hidden;
+    }
+
+    /* With a route open the column is trimmed to locate, layers and routes
+       (SNOW-1067, above), so its foot is the layers-and-routes group rather
+       than the chevron the region sheet's peek covers: peek cuts layers and
+       covers routes. Both go; locate stays, clear of the sheet's edge. */
+    :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-collapsible {
+        visibility: hidden;
+    }
+}
+
 /* —— Route-open furniture (SNOW-1067) ——————————————————————————————
    SNOW-1019 withdrew every floating control while a route was open, at
    every width, when two rails filled the screen. With one panel pinned
@@ -4853,14 +4900,17 @@ body.map-framing #map-legend {
         height: var(--sheet-peek-height, 160px);
     }
 
+    /* HALF and FULL fit their content (Hugo, 16 Oct): map_sheet.js
+       measures it and writes the height, capped at half the screen and at
+       the room below the top inset. The fallbacks are the caps. */
     [data-detents][data-detent='half'] {
-        height: 50dvh;
+        height: var(--sheet-half-height, 50dvh);
     }
 
     /* The only detent at which the sheet itself scrolls: at peek and half
        a scroll gesture inside the sheet would fight the drag that grows it. */
     [data-detents][data-detent='full'] {
-        height: calc(100dvh - var(--map-edge-inset-top));
+        height: var(--sheet-full-height, calc(100dvh - var(--map-edge-inset-top)));
         overflow-y: auto;
     }
 

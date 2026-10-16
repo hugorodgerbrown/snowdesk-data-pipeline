@@ -9,7 +9,8 @@
  * the detents in force (`data-sheet-detents`), the map camera is padded
  * (and not while it is moving), the root is marked while the sheet is open,
  * nothing publishes a lift for the furniture (it is covered, not moved), and
- * a sheet with no detents is left exactly as it was.
+ * a sheet with no detents is left exactly as it was, and half and full fit
+ * their content (SNOW-1099).
  *
  * jsdom lays nothing out, so every height the binding reads is stubbed on
  * the element (`getBoundingClientRect`) and jsdom's own `innerHeight` (768)
@@ -303,5 +304,130 @@ describe('a camera in flight', () => {
     moving = false;
     listeners.moveend.forEach((fn) => fn());
     expect(padding.bottom).toBe(0);
+  });
+});
+
+/**
+ * Append a child that pretends to end `bottom` px below the sheet's top.
+ *
+ * @param {HTMLElement} sheet
+ * @param {number} bottom
+ * @param {string} [attrs]
+ * @returns {HTMLElement}
+ */
+function childEndingAt(sheet, bottom, attrs = '') {
+  sheet.insertAdjacentHTML('beforeend', `<div ${attrs}></div>`);
+  const child = /** @type {HTMLElement} */ (sheet.lastElementChild);
+  // The stubbed sheet's top sits 400 px above jsdom's 768 px foot.
+  child.getBoundingClientRect = () =>
+    /** @type {DOMRect} */ ({ top: 368, bottom: 368 + bottom, height: bottom, left: 0, right: 0, width: 0 });
+  return child;
+}
+
+describe('fitting the content (SNOW-1099)', () => {
+  it('stops half under the marked element', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    childEndingAt(sheet, 150, 'data-sheet-half');
+    childEndingAt(sheet, 300);
+    controller.open();
+    // 150 px to the marker's foot, plus the 16 px gap below it.
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('166px');
+  });
+
+  it('stops half at the end of the content when nothing is marked', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    childEndingAt(sheet, 120);
+    childEndingAt(sheet, 200);
+    controller.open();
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('216px');
+  });
+
+  it('never takes half above half the screen', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    childEndingAt(sheet, 600, 'data-sheet-half');
+    controller.open();
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('384px');
+  });
+
+  it('stops full at the end of the content, past the half marker', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'full');
+    childEndingAt(sheet, 150, 'data-sheet-half');
+    childEndingAt(sheet, 500);
+    controller.open();
+    expect(sheet.style.getPropertyValue('--sheet-full-height')).toBe('516px');
+  });
+
+  it('re-fits the resting detent when content changes height in place', () => {
+    /** @type {Array<function(): void>} */
+    const callbacks = [];
+    const observed = new Set();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        /** @param {function(): void} fn */
+        constructor(fn) {
+          callbacks.push(fn);
+        }
+        /** @param {Element} el */
+        observe(el) {
+          observed.add(el);
+        }
+        disconnect() {
+          observed.clear();
+        }
+      },
+    );
+    try {
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      const header = childEndingAt(sheet, 100);
+      controller.open();
+      expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('116px');
+
+      // A child added before attach is observed; the header grows by 40 px.
+      header.getBoundingClientRect = () =>
+        /** @type {DOMRect} */ ({ top: 368, bottom: 508, height: 140, left: 0, right: 0, width: 0 });
+      callbacks.forEach((fn) => fn());
+      expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('156px');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('holds the drag height while a finger is on the sheet', () => {
+    /** @type {Array<function(): void>} */
+    const callbacks = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        /** @param {function(): void} fn */
+        constructor(fn) {
+          callbacks.push(fn);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');
+      const header = childEndingAt(sheet, 100);
+      controller.open();
+      pointer(handle, 'pointerdown', 500, 0);
+      pointer(handle, 'pointermove', 450, 100);
+      header.getBoundingClientRect = () =>
+        /** @type {DOMRect} */ ({ top: 368, bottom: 508, height: 140, left: 0, right: 0, width: 0 });
+      callbacks.forEach((fn) => fn());
+      expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('116px');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('clears the fitted heights on close', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    childEndingAt(sheet, 150);
+    controller.open();
+    controller.close();
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('');
+    expect(sheet.style.getPropertyValue('--sheet-full-height')).toBe('');
   });
 });

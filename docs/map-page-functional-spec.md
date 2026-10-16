@@ -361,9 +361,15 @@ and keeps the flat line
 
 **The route panel and the map's controls while a route is open
 (SNOW-1068, SNOW-1067).** The route panel — the profile under a header
-for the route or a placed point — is pinned top-left: under the region
-readout's row on desktop, 400 px wide, and across the top edge on a
-phone. Opening a route or placing a point changes
+for the route or a placed point — is pinned top-left under the region
+readout's row on desktop, 400 px wide. On a phone it is a bottom sheet
+(SNOW-1099) that opens at peek (the route's name and figures), rises to
+half (down to the profile, never above half the screen) on the handle or
+when a point is placed, and, for staff only, to full: the point debug
+readout, the terrain table's figures for the segment under the point.
+Half and full fit their content rather than a fixed height
+([why the detents are phone-only](decisions/sheet-detents-are-phone-only.md)).
+Opening a route or placing a point changes
 only what the panel says, so nothing on the map moves. On desktop every
 control stays. On a phone, where a route is followed on the move, only
 locate-me, layers and routes stay, in the bottom-right corner; the region

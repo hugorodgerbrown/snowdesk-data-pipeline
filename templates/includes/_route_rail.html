@@ -97,12 +97,35 @@ Context:
     data-route-share-url-template="{{ route_share_url_template }}"
     data-route-delete-url-template="{{ route_delete_url_template }}"
     data-route-plan-trip-url="{% url 'trips:new' %}"
+    {% if not static %}
+        data-detents="{% if request.user.is_staff %}peek,half,full{% else %}peek,half{% endif %}"
+        data-detent-initial="peek"
+        {% if request.user.is_staff %}
+            data-route-terrain-url-template="{% url 'public:route_terrain' route_uuid='00000000-0000-0000-0000-000000000000' %}?format=json"
+        {% endif %}
+    {% endif %}
     class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass"
 >
+    {% if not static %}
+        {# SNOW-1099: the phone sheet's handle, as includes/_overlay_sheet.html #}
+        {# draws it. A press steps to the next detent; hidden from sm up, where #}
+        {# the panel stays pinned top-left.                                    #}
+        <button
+            type="button"
+            data-sheet-handle
+            aria-label="{% trans 'Resize panel' %}"
+            class="sm:hidden -mt-2 flex h-6 w-full items-center justify-center"
+        >
+            <span aria-hidden="true" class="block h-1 w-9 rounded-pill bg-border-strong"></span>
+        </button>
+    {% endif %}
     {# Identity. `data-row-renameable` makes this block the row          #}
     {# static/js/inline_rename.js edits in place: the label, the hidden  #}
     {# input beside it, and the Rename item inside the menu below.        #}
-    <div data-row-renameable class="min-w-0">
+    {# SNOW-1099: on a phone this block is the sheet's PEEK and its drag  #}
+    {# header — the profile below it never drags, so a tap there still   #}
+    {# places a point.                                                   #}
+    <div data-row-renameable data-sheet-peek data-sheet-drag class="min-w-0">
         <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
                 {# The eyebrow reads "Route", or the route's name while a      #}
@@ -149,7 +172,8 @@ Context:
     </div>
     {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
     {# top line places the point; the readout shows the point's figures.  #}
-    <div class="min-w-0">
+    {# On a phone the sheet's HALF ends under it (data-sheet-half).       #}
+    <div data-sheet-half class="min-w-0">
         <div class="relative">
             <svg
                 data-route-rail-lane
@@ -173,6 +197,61 @@ Context:
         </div>
         <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
     </div>
+    {% comment %}
+    SNOW-1099: the phone sheet's FULL detent, staff only — the point debug
+    readout rail two carried until SNOW-1065: every figure behind the point
+    on the profile, one segment of the staff terrain table
+    (public:route_terrain, `?format=json`), which static/js/route_rail.js
+    fetches the first time the sheet reaches full and repaints as the point
+    moves. Never shown from sm up, where the panel has no detents. English
+    only, like the terrain page beside it: a staff surface, not translated.
+    {% endcomment %}
+    {% if request.user.is_staff and not static %}
+        <dl
+            data-route-rail-debug
+            class="sm:hidden grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-meta text-text-2"
+        >
+            <div data-route-rail-debug-hint class="col-span-full text-text-3">
+                Place a point on the profile to read its figures.
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Segment</dt>
+                <dd data-route-rail-debug-field="sample" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Along route</dt>
+                <dd data-route-rail-debug-field="km" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Elevation</dt>
+                <dd data-route-rail-debug-field="heights" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Slope aspect</dt>
+                <dd data-route-rail-debug-field="aspect" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Slope angle</dt>
+                <dd data-route-rail-debug-field="angle" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Track direction</dt>
+                <dd data-route-rail-debug-field="bearing" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Track angle (smoothed)</dt>
+                <dd data-route-rail-debug-field="track" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Banking</dt>
+                <dd data-route-rail-debug-field="bank" class="break-words text-text-1">–</dd>
+            </div>
+            <div class="min-w-0">
+                <dt class="text-text-3">Track to fall line</dt>
+                <dd data-route-rail-debug-field="fall" class="break-words text-text-1">–</dd>
+            </div>
+        </dl>
+    {% endif %}
     {# The CSRF token the rail's Share, Rename and Delete posts carry.   #}
     <form data-route-rail-csrf hidden>
         {% csrf_token %}

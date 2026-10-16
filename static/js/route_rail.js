@@ -77,6 +77,18 @@
  * and its Save — `options.claim`, the control map.js builds — sits in the
  * identity block (`[data-route-rail-claim]`), where the recipient lands.
  *
+ * A BOTTOM SHEET ON A PHONE (SNOW-1099). Below 640px the rail is a sheet
+ * with detents (window.MapSheet.bindDetents, bound on the first open):
+ * PEEK shows the identity block (`data-sheet-peek`), HALF stops under the
+ * profile (`data-sheet-half`), and FULL — staff only, declared by the
+ * partial — is the point debug readout (`[data-route-rail-debug]`): the
+ * staff terrain table's figures for the segment under the point, fetched
+ * from /_route-terrain/<uuid>/?format=json the first time the sheet
+ * reaches FULL for a route, never before. A point placed while the sheet
+ * peeks raises it to HALF. The sheet is below the map's dot, so the leader
+ * line stops on its top edge (`isSheet`), and map.js pads the camera's
+ * foot rather than its head. At `sm` and above none of this applies.
+ *
  * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
  * `data-route-rail-open`, which static/css/map.css reads to withdraw the
  * controls a phone does not keep (SNOW-1067). Nothing on the map moves
@@ -91,8 +103,11 @@
  *                    `claim` is a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
- *   cursorPoint()  — the panel's bottom edge below the cursor line,
- *                    viewport px, or null; the leader line's stop
+ *   cursorPoint()  — the panel's bottom edge below the cursor line (a
+ *                    phone sheet's top edge), viewport px, or null; the
+ *                    leader line's stop
+ *   isSheet()      — whether the rail is the phone's bottom sheet
+ *                    (SNOW-1099)
  *   cursor()       — the open route's cursor, or null; map.js follows it
  *                    to draw the index as a dot on the line, and writes
  *                    the index back from a tap on it (SNOW-1019)
@@ -157,6 +172,24 @@
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
+  // SNOW-1099: the phone sheet's staff-only FULL detent — the point debug
+  // readout — and the terrain rows it reads.
+  var debugEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-debug]'));
+  var debugHintEl = rail.querySelector('[data-route-rail-debug-hint]');
+  var TERRAIN_URL_TEMPLATE = rail.dataset.routeTerrainUrlTemplate || '';
+  var NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+  // SNOW-1099: on a phone the rail is a bottom sheet with detents
+  // (window.MapSheet.bindDetents). Bound on the first open rather than at
+  // load, so the order the deferred scripts run in does not matter; null
+  // without the sheet modules, and the rail is then the pinned panel alone.
+  /** @type {?{open: function(): void, reset: function(): void, set: function(string): void, current: function(): (string|null)}} */
+  var detents = null;
+  var detentsBound = false;
+  /** The uuid whose terrain rows are loaded or loading, or null. */
+  var terrainFor = null;
+  /** The open route's staff terrain rows, by segment index. */
+  var debugRows = [];
 
   /** The open route's cursor, or null. */
   var cursor = null;
@@ -401,6 +434,10 @@
    */
   function paintPointMode(index) {
     var point = index !== null;
+    // SNOW-1099: a point placed while the phone sheet peeks (a tap on the
+    // route's line on the map) raises it to half, where the point header and
+    // its line on the profile answer the tap.
+    if (point && detents && detents.current() === 'peek') detents.set('half');
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
     if (titleEl) titleEl.hidden = point;
@@ -417,6 +454,7 @@
     var index = state && typeof state.index === 'number' ? state.index : null;
     drawCursorLine(index);
     paintPointMode(index);
+    paintDebug(index);
   }
 
   /**
@@ -563,6 +601,9 @@
 
     rail.hidden = false;
     if (mapEl) mapEl.setAttribute('data-route-rail-open', '');
+    resetTerrain();
+    bindSheet();
+    if (detents) detents.open();
     announceRailChanged();
     return true;
   }
@@ -590,7 +631,177 @@
     paintPointMode(null);
     rail.hidden = true;
     if (mapEl) mapEl.removeAttribute('data-route-rail-open');
+    if (detents) detents.reset();
+    resetTerrain();
     announceRailChanged();
+  }
+
+  // ---- the phone sheet (SNOW-1099) ---------------------------------------
+
+  /** Bind the rail's detents once, if the sheet modules are on the page. */
+  function bindSheet() {
+    if (detentsBound) return;
+    detentsBound = true;
+    var sheet = window.MapSheet;
+    if (!sheet || typeof sheet.bindDetents !== 'function') return;
+    detents = sheet.bindDetents(rail, { onClose: close });
+    if (!detents || !debugEl || typeof MutationObserver !== 'function') return;
+    // The terrain rows load the first time the sheet reaches FULL for a
+    // route, never before: most opens never go there. Leaving FULL puts the
+    // sheet's scroll back at the top; map.css hides the readout below full.
+    new MutationObserver(function () {
+      if (rail.getAttribute('data-detent') === 'full') loadTerrain();
+      else rail.scrollTop = 0;
+    }).observe(rail, { attributes: true, attributeFilter: ['data-detent'] });
+  }
+
+  /** Forget the previous route's terrain rows. */
+  function resetTerrain() {
+    terrainFor = null;
+    debugRows = [];
+    paintDebug(null);
+  }
+
+  /**
+   * Fetch the open route's staff terrain rows for the point debug readout,
+   * once per route. Staff only: the partial renders the readout and the URL
+   * for staff alone, and the view behind it is staff-gated. A pending share
+   * has no uuid, and so no rows.
+   */
+  function loadTerrain() {
+    if (!debugEl || !TERRAIN_URL_TEMPLATE || !current.uuid) return;
+    if (terrainFor === current.uuid) return;
+    var uuid = current.uuid;
+    terrainFor = uuid;
+    fetch(TERRAIN_URL_TEMPLATE.replace(NIL_UUID, encodeURIComponent(uuid)), { credentials: 'same-origin' })
+      .then(function (resp) { return resp.ok ? resp.json() : { rows: [] }; })
+      .then(function (body) {
+        // The route may have closed or changed while the rows loaded.
+        if (terrainFor !== uuid) return;
+        debugRows = body && Array.isArray(body.rows) ? body.rows : [];
+        paintDebug(cursor ? cursor.state().index : null);
+      })
+      .catch(function () {
+        // The readout reads "–" without the rows; the next FULL retries.
+        if (terrainFor === uuid) terrainFor = null;
+      });
+  }
+
+  // ---- the point debug readout (staff, FULL on a phone; SNOW-1099) -------
+  //
+  // Rail two's debug rail, brought back for the point the profile places
+  // (SNOW-1065 removed it with rail two). Every figure is the staff terrain
+  // table's own, for the segment under the point, so the readout and
+  // /_route-terrain/ cannot disagree. English only: a staff surface.
+
+  /**
+   * A figure with its unit, or "–" for one that is not known.
+   *
+   * @param {*} value
+   * @param {string} unit
+   * @returns {string}
+   */
+  function debugFigure(value, unit) {
+    return typeof value === 'number' && isFinite(value) ? value + unit : '–';
+  }
+
+  /**
+   * A bearing in degrees with its eight-point compass name.
+   *
+   * @param {*} degrees
+   * @returns {string}
+   */
+  function debugBearing(degrees) {
+    if (typeof degrees !== 'number' || !isFinite(degrees)) return '–';
+    var names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return degrees + '° ' + names[Math.round(degrees / 45) % 8];
+  }
+
+  /**
+   * The bank in words ("Falling 46.8° to skier's left"); a positive bank
+   * falls to the right (bank.py's sign).
+   *
+   * @param {*} bank
+   * @returns {string}
+   */
+  function debugBanking(bank) {
+    if (typeof bank !== 'number' || !isFinite(bank)) return '–';
+    if (bank === 0) return 'Level (0°)';
+    return 'Falling ' + Math.abs(bank) + '° to skier’s ' + (bank > 0 ? 'right' : 'left');
+  }
+
+  /**
+   * How far the track points from the fall line, 0–180°: 0 straight down
+   * it, 90 across it, 180 straight up it.
+   *
+   * @param {*} bearing
+   * @param {*} aspect
+   * @returns {string}
+   */
+  function debugOffFallLine(bearing, aspect) {
+    if (typeof bearing !== 'number' || typeof aspect !== 'number') return '–';
+    var delta = Math.abs(bearing - aspect) % 360;
+    return Math.round(delta > 180 ? 360 - delta : delta) + '°';
+  }
+
+  /**
+   * The smoothed track gradient and the segments it was summed over
+   * ("-12.4° · 190..194"), naming any in the window that contributed
+   * nothing (rejected, or with no height), and flagging a rejected segment.
+   *
+   * @param {*} row
+   * @returns {string}
+   */
+  function debugTrack(row) {
+    if (!row) return '–';
+    var text = debugFigure(row.track_gradient_deg, '°');
+    var from = row.track_gradient_from;
+    var to = row.track_gradient_to;
+    if (Number.isInteger(from) && Number.isInteger(to)) {
+      var skipped = [];
+      for (var k = from; k <= to; k += 1) {
+        var other = debugRows[k];
+        if (!other || other.track_gradient_rejected
+            || typeof other.ele_from_m !== 'number' || typeof other.ele_to_m !== 'number') {
+          skipped.push(k);
+        }
+      }
+      text += ' · ' + from + '..' + to + (skipped.length ? ' less ' + skipped.join(', ') : '');
+    }
+    return row.track_gradient_rejected ? text + ' · rejected' : text;
+  }
+
+  /**
+   * Fill the readout for the segment under the point; every field reads
+   * "–" with no point, or before the rows arrive.
+   *
+   * @param {?number} index
+   */
+  function paintDebug(index) {
+    if (!debugEl) return;
+    var row = index === null ? null : debugRows[index] || null;
+    if (debugHintEl) /** @type {HTMLElement} */ (debugHintEl).hidden = index !== null;
+    var values = !row ? {} : {
+      sample: String(row.i) + ' of ' + debugRows.length,
+      km: typeof row.from_m === 'number' && typeof row.length_m === 'number'
+        ? (row.from_m / 1000).toFixed(3) + ' km → ' + ((row.from_m + row.length_m) / 1000).toFixed(3) + ' km'
+        : '–',
+      heights: debugFigure(row.ele_from_m, '') + ' → ' + debugFigure(row.ele_to_m, ' m'),
+      aspect: debugBearing(row.aspect_deg),
+      angle: debugFigure(row.angle_deg, '°'),
+      bearing: debugBearing(row.bearing_deg),
+      track: debugTrack(row),
+      bank: debugBanking(row.roll_deg),
+      fall: debugOffFallLine(row.bearing_deg, row.aspect_deg),
+    };
+    Array.prototype.forEach.call(
+      debugEl.querySelectorAll('[data-route-rail-debug-field]'),
+      function (cell) {
+        var value = values[cell.getAttribute('data-route-rail-debug-field')];
+        cell.textContent = value || '–';
+        cell.title = value || '';
+      },
+    );
   }
 
   /**
@@ -599,6 +810,20 @@
    */
   function announceRailChanged() {
     document.dispatchEvent(new CustomEvent('snowdesk:route-rail-changed', { detail: null }));
+  }
+
+  /**
+   * Whether the rail is showing as the phone's bottom sheet rather than the
+   * panel pinned top-left: it rests at a detent, which only happens on a
+   * phone (map_sheet.js's bindDetents sets data-detent, and map.css gives it
+   * a position only below 640px).
+   *
+   * @returns {boolean}
+   */
+  function isSheet() {
+    if (!rail.hasAttribute('data-detent')) return false;
+    if (typeof window.matchMedia !== 'function') return true;
+    return !window.matchMedia('(min-width: 640px)').matches;
   }
 
   /**
@@ -618,9 +843,12 @@
     if (index === null) return null;
     var laneRect = lane.getBoundingClientRect();
     var fraction = (index + 0.5) / sampleCount;
+    var box = rail.getBoundingClientRect();
     return {
       x: laneRect.left + fraction * laneRect.width,
-      y: rail.getBoundingClientRect().bottom,
+      // SNOW-1099: on a phone the panel is a sheet BELOW the dot, so the
+      // leader stops on its top edge instead.
+      y: isSheet() ? box.top : box.bottom,
     };
   }
 
@@ -796,6 +1024,7 @@
     isOpen: function () { return !rail.hidden; },
     cursor: function () { return cursor; },
     cursorPoint: cursorPoint,
+    isSheet: isSheet,
     element: rail,
   });
 }());

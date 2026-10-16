@@ -58,7 +58,10 @@
  * What the binding does, and only on a phone:
  *
  *   - opens the sheet at its ``initial`` detent and measures PEEK from the
- *     element the content marks ``data-sheet-peek``;
+ *     element the content marks ``data-sheet-peek``; HALF and FULL fit the
+ *     content too (SNOW-1099), HALF down to a ``data-sheet-half`` element
+ *     or the content's end, capped at half the screen, FULL to the
+ *     content's end, capped below the top inset;
  *   - lets the handle and any ``data-sheet-drag`` header drag it, and on
  *     release settles at the detent ``pwaSheetDetentsCore.settle`` picks
  *     from the release height and velocity — or closes it, for a drag below
@@ -73,7 +76,8 @@
  *     point already under the new padded centre), so a settle never jolts
  *     the ground the reader is looking at;
  *   - puts the handle back as the first child whenever a content swap
- *     removed it, and re-measures PEEK after one.
+ *     removed it, and re-fits the resting detent after one, or after any
+ *     child changes height in place (a ResizeObserver; never mid-drag).
  *
  * At ``sm`` and up the binding does nothing visible: every height rule is
  * inside a phone media query in static/css/map.css, and the padding and the
@@ -300,23 +304,73 @@
       return Number.isFinite(max) && max > 0 ? max : window.innerHeight;
     }
 
+    /**
+     * The sheet height that ends just below a viewport y: the distance from
+     * the sheet's top, plus whatever it has scrolled, plus the gap the
+     * bottom padding keeps.
+     *
+     * @param {number} bottom
+     * @returns {number}
+     */
+    function heightTo(bottom) {
+      var top = el.getBoundingClientRect().top;
+      var padding = parseFloat(window.getComputedStyle(el).paddingBottom);
+      var gap = Number.isFinite(padding) ? Math.max(PEEK_BOTTOM_GAP_PX, padding) : PEEK_BOTTOM_GAP_PX;
+      return Math.round(bottom - top + el.scrollTop + gap);
+    }
+
     function peekHeight() {
       var marker = el.querySelector('[data-sheet-peek]');
       if (!marker) return PEEK_FALLBACK_PX;
-      var top = el.getBoundingClientRect().top;
-      var bottom = marker.getBoundingClientRect().bottom;
-      var padding = parseFloat(window.getComputedStyle(el).paddingBottom);
-      var gap = Number.isFinite(padding) ? Math.max(PEEK_BOTTOM_GAP_PX, padding) : PEEK_BOTTOM_GAP_PX;
-      var measured = Math.round(bottom - top + el.scrollTop + gap);
+      var measured = heightTo(marker.getBoundingClientRect().bottom);
       return measured > 0 ? Math.min(measured, fullHeight()) : PEEK_FALLBACK_PX;
+    }
+
+    /**
+     * The height the whole content needs: down to the lowest child that has
+     * a box (a `display: none` child has none; a `visibility: hidden` one
+     * keeps its place and counts). Null before anything is laid out.
+     *
+     * @returns {?number}
+     */
+    function contentHeight() {
+      var bottom = -Infinity;
+      Array.prototype.forEach.call(el.children, function (child) {
+        var box = child.getBoundingClientRect();
+        if (box.height > 0 && box.bottom > bottom) bottom = box.bottom;
+      });
+      if (!Number.isFinite(bottom)) return null;
+      var measured = heightTo(bottom);
+      return measured > 0 ? measured : null;
+    }
+
+    /**
+     * HALF FITS ITS CONTENT (Hugo, 16 Oct), up to half the screen: down to
+     * the element the content marks `data-sheet-half` when it marks one
+     * (the route sheet stops under its profile), else to the end of the
+     * content. A sheet with less to say than half a screen stops where it
+     * ends rather than showing a band of empty card.
+     */
+    function halfHeight() {
+      var cap = Math.round(window.innerHeight * 0.5);
+      var marker = el.querySelector('[data-sheet-half]');
+      var measured = marker ? heightTo(marker.getBoundingClientRect().bottom) : contentHeight();
+      return measured && measured > 0 ? Math.min(cap, measured) : cap;
+    }
+
+    /** FULL fits its content too, up to the room below the top inset. */
+    function fullFitHeight() {
+      var cap = fullHeight();
+      var measured = contentHeight();
+      return measured ? Math.min(cap, measured) : cap;
     }
 
     /** @returns {Record<string, number>} */
     function heights() {
       return {
         peek: peekHeight(),
-        half: Math.round(window.innerHeight * 0.5),
-        full: fullHeight(),
+        half: halfHeight(),
+        full: fullFitHeight(),
       };
     }
 
@@ -364,11 +418,26 @@
     function set(name) {
       if (detents.indexOf(name) === -1) return;
       current = name;
-      if (name === 'peek') {
-        el.style.setProperty('--sheet-peek-height', peekHeight() + 'px');
-      }
+      // The detent goes on first: content may show or hide with it, and
+      // the height is measured from what the detent shows.
       el.setAttribute('data-detent', name);
+      fit(name);
       applySurroundings();
+    }
+
+    /**
+     * Write the measured height of one detent onto the sheet.
+     *
+     * @param {string} name
+     */
+    function fit(name) {
+      var measured = heights();
+      if (!Object.prototype.hasOwnProperty.call(measured, name)) return;
+      var value = measured[name] + 'px';
+      var prop = '--sheet-' + name + '-height';
+      // Unchanged writes are skipped: the resize observer below fires on
+      // this sheet's own children, and a no-op write must not loop it.
+      if (el.style.getPropertyValue(prop) !== value) el.style.setProperty(prop, value);
     }
 
     function open() {
@@ -385,6 +454,8 @@
       el.removeAttribute('data-detent');
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
+      el.style.removeProperty('--sheet-half-height');
+      el.style.removeProperty('--sheet-full-height');
       markSheet(null);
       padMapBottom(0);
     }
@@ -409,7 +480,7 @@
 
     // Every caller fills the sheet by replacing its children (innerHTML, an
     // HTMX swap), which takes the handle with them. Put it back, and re-fit
-    // PEEK to the new content.
+    // the resting detent to the new content.
     if (typeof MutationObserver === 'function') {
       new MutationObserver(function () {
         restoreHandle();
@@ -419,9 +490,30 @@
         // (FULL, for a day with no bulletin) brings it down to the highest
         // it does allow.
         if (detents.indexOf(current) === -1) set(detents[detents.length - 1]);
-        else if (current === 'peek') set('peek');
+        else set(current);
+        observeChildren();
       }).observe(el, { childList: true });
     }
+
+    // Content that changes height IN PLACE (the route sheet's point header
+    // replacing its title, a readout filling in) re-fits the detent the
+    // sheet rests at; a swap is the observer above's. Not while a finger
+    // holds the sheet: the drag height wins until it settles.
+    var resizes = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(function () {
+        if (!current || !isOpen() || el.hasAttribute('data-sheet-dragging')) return;
+        fit(current);
+        applySurroundings();
+      })
+      : null;
+    function observeChildren() {
+      if (!resizes) return;
+      resizes.disconnect();
+      Array.prototype.forEach.call(el.children, function (child) {
+        resizes.observe(child);
+      });
+    }
+    observeChildren();
 
     /** @param {EventTarget|null} target */
     function isDragSurface(target) {
@@ -524,9 +616,7 @@
 
     window.addEventListener('resize', function () {
       if (!current) return;
-      if (current === 'peek') {
-        el.style.setProperty('--sheet-peek-height', peekHeight() + 'px');
-      }
+      fit(current);
       applySurroundings();
     });
 
