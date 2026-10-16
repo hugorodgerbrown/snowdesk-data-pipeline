@@ -45,8 +45,8 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 /** Four sampled boundaries bounding three segments: gentle, steep, unknown.
  *
  * The steep one is over 50°, so SNOW-964 names it a no-fall passage. Since
- * SNOW-1019 the map draws no mark for it; the detail sheet's words still
- * name it.
+ * SNOW-1019 the map draws no mark for it, and since SNOW-1095 removed the
+ * route detail sheet nothing names it.
  */
 const SLOPE = {
   points: [[7.0, 46.0], [7.0, 46.005], [7.0, 46.01], [7.0, 46.015]],
@@ -170,23 +170,6 @@ function drawnBy(layerId) {
 
 /** The recording rail stub (tests/js/_route_rail_stub.js). */
 let rail;
-
-/**
- * The body map.js has seated in the route detail sheet, if it is open.
- *
- * SNOW-1018: a tap opens rail one, and the sheet opens from the rail's
- * menu — `rail.openDetails()` below is that press. The body is the
- * terrain lines alone; the name, figures and profile are the rail's.
- * `window.pwaRouteDetail.close()` between taps is what makes "the newest
- * one" meaningful — MapSheet's teardown empties the body.
- *
- * @returns {HTMLElement|null}
- */
-function detailBody() {
-  const sheetEl = document.getElementById('route-detail-sheet');
-  if (!sheetEl || sheetEl.hasAttribute('hidden')) return null;
-  return sheetEl.querySelector('[data-route-detail]');
-}
 
 /** Layer definitions as map.js added them, by id. */
 const layers = new Map();
@@ -337,13 +320,6 @@ function buildFixture() {
       <input id="search-input">
     </div>
     <ul id="search-results" hidden></ul>
-    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
-    <template id="route-detail-template">
-      <div>
-        <div data-route-detail-figures></div>
-        <div data-route-detail-bulletin></div>
-      </div>
-    </template>
     <section id="map-route-legs-section" hidden></section>`;
 }
 
@@ -385,10 +361,8 @@ beforeAll(async () => {
   await import('../../static/js/route_legs_core.js');
   await import('../../static/js/route_cursor_core.js');
   await import('../../static/js/route_cursor_map_core.js');
-  // SNOW-973: the sheet the tap opens, and the controller it attaches
-  // through. Both before the bundle, as the page loads them.
+  // The sheet controller, before the bundle, as the page loads it.
   await import('../../static/js/map_sheet.js');
-  await import('../../static/js/map_route_detail.js');
   core = globalThis.pwaRouteSlopeCore;
   legsCore = globalThis.pwaRouteLegsCore;
   rail = installRouteRailStub();
@@ -678,17 +652,6 @@ describe('tapping a legged route', () => {
     expect(queried).not.toContain('routes-transitions');
   });
 
-  it('names the no-fall passage and what the track does with it', () => {
-    window.pwaRouteDetail.close();
-    tapLeg();
-    rail.openDetails();
-
-    const text = detailBody().textContent;
-
-    expect(text).toContain('1 no-fall passage');
-    expect(text).toContain('down the fall line');
-  });
-
   it('hands the rail the whole route the leg belongs to', () => {
     tapLeg();
 
@@ -734,7 +697,6 @@ describe('a sampled route somebody shared', () => {
   });
 
   it('opens the rail with the cached pending share', () => {
-    window.pwaRouteDetail.close();
     tapLayer('routes-line-pending', {
       token: 'tok-pending',
       pending: true,

@@ -15,8 +15,8 @@
  * 1.5px line really would — with nothing — and only reports the route
  * when the query geometry is a box that actually covers it.
  *
- * SNOW-973 made what the tap OPENS the docked `#route-detail-sheet`, and
- * SNOW-1018 made it rail one — a recording stub here
+ * SNOW-973 made what the tap OPENS a docked route detail sheet, and
+ * SNOW-1018 made it rail one (SNOW-1095 removed the sheet) — a recording stub here
  * (tests/js/_route_rail_stub.js) — so `tapAt` reads what map.js handed
  * the rail. The hit test is the subject, and the surface it feeds is
  * incidental to it. What the rail then shows (the name, the figures, the
@@ -221,14 +221,7 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>
-    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
-    <template id="route-detail-template">
-      <div>
-        <div data-route-detail-figures></div>
-        <div data-route-detail-bulletin></div>
-      </div>
-    </template>`;
+    <ul id="search-results" hidden></ul>`;
 }
 
 let mapStub;
@@ -281,10 +274,8 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
-  // SNOW-973: the sheet the tap opens, and the controller it attaches
-  // through. Both before the bundle, as the page loads them.
+  // The sheet controller, before the bundle, as the page loads it.
   await import('../../static/js/map_sheet.js');
-  await import('../../static/js/map_route_detail.js');
   rail = installRouteRailStub();
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -331,12 +322,10 @@ describe('tapping a saved route', () => {
     expect(opened.feature.properties.name).toBe('Haute Route');
   });
 
-  it('opens no sheet on the tap', () => {
-    tapAt(LINE_Y - 6);
+  it('hands the rail no details callback (SNOW-1095)', () => {
+    const opened = tapAt(LINE_Y - 6);
 
-    expect(document.getElementById('route-detail-sheet').hasAttribute('hidden')).toBe(
-      true,
-    );
+    expect(opened.options).not.toHaveProperty('details');
   });
 
   it('still opens for a tap exactly on the line', () => {

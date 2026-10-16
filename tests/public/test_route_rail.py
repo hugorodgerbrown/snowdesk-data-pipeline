@@ -297,11 +297,14 @@ class TestTheActionsAreAMenu:
     def test_the_terrain_item_is_gone(self, client: Client) -> None:
         """SNOW-1095 removed Terrain and the route detail sheet it opened."""
         client.force_login(UserFactory.create())
-        menu = _MENU_RE.search(_rail(_home(client)))
+        body = _home(client)
+        menu = _MENU_RE.search(_rail(body))
         assert menu is not None
 
         assert "data-route-rail-details" not in menu.group(0)
         assert "Terrain" not in menu.group(0)
+        assert "route-detail-sheet" not in body
+        assert "map_route_detail.js" not in body
 
     def test_the_rail_has_its_own_close_outside_the_menu(self, client: Client) -> None:
         """A bare × with a translated name, not an item inside the menu."""

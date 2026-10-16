@@ -14,7 +14,7 @@
  *   THE TAP OFFERS SAVE. The deep link lands on the map, so what a tap
  *   opens is where the recipient meets the action — the routes panel is a
  *   thing they would have to know to open. It was an anchored popup until
- *   SNOW-973, the docked `#route-detail-sheet` until SNOW-1018, and is
+ *   SNOW-973, a docked route detail sheet until SNOW-1018, and is
  *   rail one's `claim` slot now: map.js builds the control and hands it to
  *   the rail (a recording stub here, tests/js/_route_rail_stub.js). The
  *   control, its two states and its wording are unchanged, which is what
@@ -228,14 +228,7 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>
-    <div id="route-detail-sheet" hidden tabindex="-1" data-overlay></div>
-    <template id="route-detail-template">
-      <div>
-        <div data-route-detail-figures></div>
-        <div data-route-detail-bulletin></div>
-      </div>
-    </template>`;
+    <ul id="search-results" hidden></ul>`;
 }
 
 let mapStub;
@@ -303,10 +296,8 @@ beforeAll(async () => {
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/elevation_profile_core.js');
-  // SNOW-973: the sheet the tap opens, and the controller it attaches
-  // through. Both before the bundle, as the page loads them.
+  // The sheet controller, before the bundle, as the page loads it.
   await import('../../static/js/map_sheet.js');
-  await import('../../static/js/map_route_detail.js');
   rail = installRouteRailStub();
   // Real boxes for #map and the panel, so the arrival's fit can measure
   // the room the panel takes (jsdom lays nothing out).
@@ -449,17 +440,6 @@ describe('the pending route on the rail', () => {
 
     expect(button.tagName).toBe('BUTTON');
     expect(button.textContent).toContain('Save route');
-  });
-
-  it('keeps the sheet one press away, with no reading asked for', () => {
-    const opened = tapAt(LINE_Y);
-
-    expect(typeof opened.options.details).toBe('function');
-    opened.options.details();
-    expect(document.getElementById('route-detail-sheet').hasAttribute('hidden')).toBe(
-      false,
-    );
-    window.pwaRouteDetail.close();
   });
 
   it('posts the claim to the token-templated endpoint', async () => {
