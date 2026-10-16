@@ -1852,15 +1852,17 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
 
     The tile template reaches ``#map`` for map.js; the layers menu gets the
     "Terrain filter…" action row (no aria-checked — it opens a sheet); the
-    chip, the legend section, the sheet and its two templates render; and
-    both scripts load.
+    legend section (with its summary line), the sheet and its two templates
+    render; and both scripts load. The chip that used to sit along the
+    map's top edge is gone — the menu row is the one way in.
     """
     content = Client().get(reverse("public:map")).content.decode()
 
     assert 'data-terrain-filter-eligible="true"' in content
     assert f'data-terrain-class-tile-url="{TERRAIN_CLASS_URL}"' in content
     assert "Terrain filter…" in content
-    assert 'id="map-terrain-filter-chip"' in content
+    assert 'id="map-terrain-filter-chip"' not in content
+    assert "data-terrain-filter-legend-summary" in content
     assert 'data-testid="map-legend-terrain-filter"' in content
     assert 'id="map-terrain-filter-sheet"' in content
     assert 'id="map-terrain-filter-template"' in content
@@ -2036,6 +2038,26 @@ def test_downloads_sheet_has_no_terrain_data_without_the_filter() -> None:
 
     assert "data-downloads-terrain" not in content
     assert 'id="map-downloads-terrain"' not in content
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_has_the_standard_panel_header() -> None:
+    """The filter opens as the standard map panel, headed like the UGC panels.
+
+    The layers roundel's glyph (includes/_icon_layers.html) heads the panel,
+    as the favourites, observations and routes roundels' glyphs head theirs,
+    with the one-line context strip under the title.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+    layers_glyph = '<path d="M12 2 2 7l10 5 10-5-10-5Z" />'
+    assert layers_glyph in sheet
+    assert "The map changes as you change these." in sheet
+    roundel = content[content.index('id="basemap-toggle"') :][:1200]
+    assert layers_glyph in roundel
 
 
 # What a phone detent sheet covers at each detent, measured at 390×844

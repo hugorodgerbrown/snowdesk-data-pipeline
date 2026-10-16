@@ -315,7 +315,7 @@ describe('summarise', () => {
     'mode-slope': 'Slope classes',
   };
 
-  it('names the aspects, slope and band for the map chip', () => {
+  it('names the aspects, slope and band for the legend', () => {
     expect(core.summarise({ aspects: [0, 1, 7], minSlope: 35, minElevation: 2400 }, strings))
       .toBe('N, NE, NW · 35°+ · above 2,400 m');
   });

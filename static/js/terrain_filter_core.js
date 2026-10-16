@@ -600,7 +600,7 @@
   }
 
   /**
-   * The filter in words, for the map chip (long) or the menu row (short).
+   * The filter in words, for the legend (long) or the menu row (short).
    *
    * Long: "N, NE, NW · 35°+ · above 2,400 m". Short: "3 aspects · 35°+".
    * The slope mode leads with its name: "Slope classes · All aspects · 30°+".
