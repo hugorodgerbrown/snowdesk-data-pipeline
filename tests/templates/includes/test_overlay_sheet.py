@@ -127,3 +127,52 @@ class TestScrollBodyTrue:
         )
         assert "flex flex-col overflow-hidden" not in html
         assert "relative" in html
+
+
+class TestDetents:
+    """SNOW-1097: a sheet that declares detents renders a labelled handle."""
+
+    def test_no_detents_renders_no_handle(self) -> None:
+        html = render({"id": "report-sheet", "aria_label": "Report"})
+        assert "data-sheet-handle" not in html
+        assert "data-detents" not in html
+
+    def test_detents_render_a_labelled_handle_button(self) -> None:
+        html = render(
+            {"id": "region-sheet", "aria_label": "Region", "detents": "peek,half,full"}
+        )
+        assert 'type="button"' in html
+        assert "data-sheet-handle" in html
+        assert 'aria-label="Resize panel"' in html
+
+    def test_detents_and_initial_reach_the_sheet(self) -> None:
+        html = render(
+            {
+                "id": "region-sheet",
+                "aria_label": "Region",
+                "detents": "peek,half,full",
+                "initial": "half",
+            }
+        )
+        assert 'data-detents="peek,half,full"' in html
+        assert 'data-detent-initial="half"' in html
+
+    def test_handle_is_hidden_from_sm_up(self) -> None:
+        """Phones only: the inset desktop panel takes no handle."""
+        html = render(
+            {"id": "region-sheet", "aria_label": "Region", "detents": "half,full"}
+        )
+        assert "sm:hidden" in html
+
+    def test_static_handle_shows_at_every_width(self) -> None:
+        """The component library renders the handle on a desktop screen."""
+        html = render(
+            {
+                "id": "sheet-demo",
+                "aria_label": "Demo",
+                "static": True,
+                "detents": "peek,half,full",
+            }
+        )
+        assert "data-sheet-handle" in html
+        assert "sm:hidden" not in html

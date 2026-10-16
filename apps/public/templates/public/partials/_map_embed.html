@@ -78,6 +78,8 @@ Optional context:
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
     data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
+    {# SNOW-1098: the phone region sheet's body, read by map_region_sheet.js. #}
+    data-region-sheet-url="{% url 'public:region_sheet_partial' region_id='XX-0000' %}"
     {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
     data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     {# SNOW-499: resort-pin popup URL — public endpoint, always emitted. #}

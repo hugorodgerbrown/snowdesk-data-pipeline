@@ -141,6 +141,10 @@ in addition to the shared map assets.
     {# guard both surfaces below share. Loaded here rather than from       #}
     {# either partial — all three scripts are defer, so document order is  #}
     {# execution order and window.MapSheet exists before either caller.    #}
+    {# SNOW-1097: the pure peek/half/full rules map_sheet.js binds to a     #}
+    {# drag. Before it, so window.pwaSheetDetentsCore exists when attach()  #}
+    {# and bindDetents() first run.                                         #}
+    <script defer src="{% static 'js/sheet_detents_core.js' %}"></script>
     <script defer src="{% static 'js/map_sheet.js' %}"></script>
     {# SNOW-879: the shared stale-while-revalidate cache for the three UGC   #}
     {# panels' rows. Loaded HERE, ahead of every surface partial below, for  #}
@@ -259,6 +263,8 @@ in addition to the shared map assets.
     {# condition symbol on the map itself, so this surface is inert until    #}
     {# one is tapped.                                                        #}
     {% include "public/partials/_weather_surface.html" %}
+    {# SNOW-1098: the region sheet a map tap opens on a phone. #}
+    {% include "public/partials/_region_sheet_surface.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}

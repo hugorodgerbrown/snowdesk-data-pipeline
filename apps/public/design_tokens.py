@@ -1024,7 +1024,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "report map surfaces — fixed to the viewport edge on mobile, a "
             "floating card on larger screens. Content is injected by the "
             "owning JS module (favourites.js / report.js) at open time; the "
-            "shell itself carries the data-overlay dismiss contract."
+            "shell itself carries the data-overlay dismiss contract. A sheet "
+            "that declares detents (SNOW-1097) gets a handle on phones and "
+            "rests at peek, half or full; forms declare none."
         ),
         kind="components",
         partial="includes/_overlay_sheet.html",

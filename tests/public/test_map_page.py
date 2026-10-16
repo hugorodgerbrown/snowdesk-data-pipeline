@@ -2058,3 +2058,47 @@ def test_terrain_filter_sheet_has_the_standard_panel_header() -> None:
     assert "The map changes as you change these." in sheet
     roundel = content[content.index('id="basemap-toggle"') :][:1200]
     assert layers_glyph in roundel
+
+
+# What a phone detent sheet covers at each detent, measured at 390×844
+# (SNOW-1098): peek cuts the bottom row on both sides, half and full cover
+# both stacks whole.
+_SHEET_HIDES = {
+    "peek": (".map-controls-toggle", "#map-legend-toggle"),
+    "half": ("#map-controls-br", "#map-legend"),
+    "full": ("#map-controls-br", "#map-legend"),
+}
+
+
+@pytest.mark.parametrize(("detent", "targets"), list(_SHEET_HIDES.items()))
+def test_a_detent_sheet_hides_what_it_covers(
+    detent: str, targets: tuple[str, ...]
+) -> None:
+    """Covered controls are hidden, not left cut or reachable by keyboard.
+
+    The sheet slides over the furniture without moving it, so its top edge
+    can land part-way up a roundel, and a covered button stays in the tab
+    order. ``visibility: hidden`` on the covered ones removes both.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    hidden = {
+        selector.strip()
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        if "visibility: hidden" in body
+        for selector in selectors.split("*/")[-1].split(",")
+    }
+
+    for target in targets:
+        assert f":root[data-map-sheet='{detent}'] {target}" in hidden
+
+
+@pytest.mark.django_db
+def test_the_controls_a_detent_sheet_hides_are_on_the_page() -> None:
+    """Every element the hide rules name renders, so no rule goes stale."""
+    content = Client().get(reverse("public:map")).content.decode()
+
+    for target in {t for targets in _SHEET_HIDES.values() for t in targets}:
+        if target.startswith("#"):
+            assert f'id="{target[1:]}"' in content
+        else:
+            assert target[1:] in content

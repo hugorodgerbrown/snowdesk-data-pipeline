@@ -1237,6 +1237,21 @@ OVERLAY_SHEET_VARIANTS: tuple[dict[str, Any], ...] = (
             "static": True,
         },
     },
+    {
+        # SNOW-1097: a sheet that declares detents. On a phone it rests at
+        # peek, half or full and the handle drags it between them (or a
+        # press steps it up); from `sm` up the handle is hidden and the
+        # sheet is the inset panel above. Shown here with the handle
+        # visible, since the library is read at desktop width.
+        "caption": "Phone sheet with detents (peek, half, full)",
+        "context": {
+            "id": "component-library-overlay-sheet-detents",
+            "aria_label": "Region",
+            "static": True,
+            "detents": "peek,half,full",
+            "initial": "peek",
+        },
+    },
 )
 
 

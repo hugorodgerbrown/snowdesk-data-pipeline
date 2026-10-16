@@ -4783,3 +4783,222 @@ body.map-framing #map-legend {
 .map-unavailable > [data-testid='callout'] {
     margin-bottom: 0;
 }
+
+/* —— Sheet detents on phones (SNOW-1097) ——————————————————————————————
+   includes/_overlay_sheet.html's `detents` gives a map sheet the
+   three-state shape readers know from Google and Apple Maps: PEEK (a short
+   summary, the ground still in view), HALF (the detail beside it) and FULL
+   (the map covered, the body scrolling). static/js/map_sheet.js owns the
+   state (`data-detent`) and the drag; these rules turn each state into a
+   height.
+
+   EVERYTHING HERE IS INSIDE THE PHONE QUERY. At `sm` and up the inset panel
+   stays exactly as it was (map-page functional spec §3.7: on a desktop,
+   covering the map is the loss), so a sheet that declares detents is
+   indistinguishable there from one that does not. 639.98px rather than
+   639px so a fractional viewport width between the two breakpoints never
+   matches both this and Tailwind's `sm:` (min-width: 640px).
+
+   PEEK fits content: map_sheet.js measures the bottom of the element the
+   content marks `data-sheet-peek` and writes it as --sheet-peek-height,
+   with a fixed fallback for content that marks nothing. HALF is half the
+   dynamic viewport. FULL is the room below the top inset.
+
+   FULL WIDTH, FLUSH TO THE FOOT. A detent sheet is not the inset card the
+   partial draws everywhere else: it spans the screen edge to edge and sits
+   on the bottom of it, with only its top corners rounded, so it reads as a
+   surface pulled up from below rather than a card floating over the map.
+   The safe-area inset goes inside it, as padding, so its content clears the
+   home indicator while its background runs under it.
+
+   During a drag the finger sets the height (--sheet-drag-height) and the
+   transition is off, so the sheet follows without lag; on release the
+   transition carries it to the detent it settled at. */
+@media (max-width: 639.98px) {
+    [data-detents][data-detent] {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: calc(100dvh - var(--map-edge-inset-top));
+        border-width: 1px 0 0;
+        border-radius: var(--radius-card) var(--radius-card) 0 0;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+        /* Focused on open so Escape and the keyboard reach it; the ring
+           would outline the whole screen width for a press nobody made. */
+        outline: none;
+        overflow: hidden;
+    }
+
+    /* OPENING SLIDES UP FROM THE FOOT (Hugo, 16 Oct). Keyed on
+       [data-detents] alone, not on [data-detent]: the open path reads the
+       sheet's layout (pwaOverlayBounds.positionSheet) after it leaves
+       `hidden` and before map_sheet.js sets its detent, so the browser
+       takes its first style of the sheet without a detent, and a starting
+       style that needed one never applied. The translate is a percentage,
+       so it resolves against the peek height once the detent lands. */
+    [data-detents] {
+        transform: translateY(0);
+        transition:
+            height 280ms cubic-bezier(0.32, 0.72, 0, 1),
+            transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    @starting-style {
+        [data-detents] {
+            transform: translateY(100%);
+        }
+    }
+
+    [data-detents][data-detent='peek'] {
+        height: var(--sheet-peek-height, 160px);
+    }
+
+    [data-detents][data-detent='half'] {
+        height: 50dvh;
+    }
+
+    /* The only detent at which the sheet itself scrolls: at peek and half
+       a scroll gesture inside the sheet would fight the drag that grows it. */
+    [data-detents][data-detent='full'] {
+        height: calc(100dvh - var(--map-edge-inset-top));
+        overflow-y: auto;
+    }
+
+    /* A scroll region inside the content (a scroll_body sheet's list) is
+       held still too below full: overflow on the sheet clips its own box
+       but leaves a descendant's scroller live, and a swipe there would
+       scroll the list rather than ask for more room. */
+    [data-detents][data-detent='peek'] .overflow-y-auto,
+    [data-detents][data-detent='half'] .overflow-y-auto {
+        overflow-y: hidden;
+    }
+
+    [data-detents][data-sheet-dragging] {
+        height: var(--sheet-drag-height) !important; /* the finger wins over every detent rule above */
+        transition: none;
+    }
+
+    /* The handle and any header the content marks draggable take the
+       gesture themselves, so the browser neither scrolls nor zooms the page
+       under a drag. */
+    [data-detents] [data-sheet-handle],
+    [data-detents] [data-sheet-drag] {
+        touch-action: none;
+    }
+
+    /* COVERED, NOT MOVED (Hugo, 16 Oct). While a detent sheet is open on a
+       phone nothing on the map moves or folds to make room for it: the
+       sheet slides up over the furniture, and whatever is under it is under
+       it. The column's menus (#basemap-menu, #map-fill-flyout) close on
+       their own when the sheet opens — both are in pwaMapOverlays, which
+       map_sheet.js announces every open through. */
+
+    /* ...BUT NOTHING IS LEFT HALF-COVERED, OR REACHABLE UNDER THE SHEET.
+       Covering alone leaves two faults. The sheet's top edge lands where
+       the detent puts it, not on a row boundary, so a roundel can show a
+       sliver above it: at 390×844 peek cuts the chevron and the info
+       roundel 8px from their tops, and half cuts locate 7px from its top.
+       And a covered control is still in the tab order and the
+       accessibility tree, so a keyboard or screen reader reaches buttons
+       nobody can see. `visibility: hidden` fixes both without moving
+       anything: at peek the bottom row on each side (the chevron, the
+       info roundel) goes, and at half and full both stacks go whole,
+       since the sheet covers them entirely there. Root-keyed on
+       data-map-sheet, which map_sheet.js sets to the current detent. */
+    :root[data-map-sheet='peek'] .map-controls-toggle,
+    :root[data-map-sheet='peek'] #map-legend-toggle,
+    :root[data-map-sheet='half'] #map-controls-br,
+    :root[data-map-sheet='half'] #map-legend,
+    :root[data-map-sheet='full'] #map-controls-br,
+    :root[data-map-sheet='full'] #map-legend {
+        visibility: hidden;
+    }
+
+    /* A TIGHT PEEK, AS GOOGLE MAPS DRAWS ONE (Hugo, 16 Oct). The handle is
+       a slim strip rather than a 24px band, the sheet's top padding goes
+       to almost nothing under it, and the header's pin and download — the
+       region sheet's proxies, which take the ribbon roundels' classes
+       whole — draw at 32px rather than 40, so the one row is as short as
+       its title allows and more of the map stays in view. */
+    [data-detents][data-detent] {
+        padding-top: 4px;
+    }
+
+    [data-detents] [data-sheet-handle] {
+        height: 16px;
+        margin-top: 0;
+        margin-bottom: 4px;
+    }
+
+    [data-detents] [data-region-sheet-proxy] {
+        width: 32px;
+        height: 32px;
+    }
+
+    [data-detents] [data-region-sheet-proxy] svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* THE TOP ROW IS THE DATE AND SEARCH (Hugo, 16 Oct). On a phone the
+       region chip, its pin and its download leave the map: the region sheet
+       names whatever is selected however it was picked
+       (map_region_sheet.js), its header carries the pin and the download,
+       and pinned regions list in search before anything is typed (map.js).
+       The ribbon stays in the DOM because the sheet's pin and download
+       proxies press its roundels.
+
+       The row they leave holds the date, at the left where the chip was —
+       map_calendar.js moves the date control and its calendar card up here
+       from the bottom-left stack, where a peeking sheet covered them — and
+       the search roundel at the right. Search opens over the date: the
+       pill grows leftwards across the whole row, because nobody needs the
+       date and a query at the same moment. */
+    .season-ribbon {
+        display: none;
+    }
+
+    .map-utility-cluster {
+        left: var(--map-edge-inset-left);
+        right: var(--map-edge-inset-right);
+        height: var(--map-control-lg);
+        justify-content: flex-start;
+    }
+
+    .map-utility-pill--search {
+        position: absolute;
+        top: 0;
+        right: 0;
+        z-index: 1;
+    }
+
+    .map-utility-pill--search[data-state="expanded"] {
+        width: 100%;
+    }
+
+    .map-utility-cluster > .map-date-control {
+        height: var(--map-control-lg);
+    }
+
+    .search-results {
+        left: 0;
+        right: 0;
+        width: auto;
+        max-height: min(320px, 50dvh);
+    }
+
+    /* The calendar drops down from the row, as search's results do, rather
+       than rising from the bottom-left corner it left. */
+    .map-utility-cluster > .map-calendar {
+        top: calc(var(--map-control-lg) + 8px);
+        left: 0;
+        bottom: auto;
+        max-height: min(420px, calc(100dvh - 120px));
+    }
+}
+
+@media (max-width: 639.98px) and (prefers-reduced-motion: reduce) {
+    [data-detents] {
+        transition: none;
+    }
+}
