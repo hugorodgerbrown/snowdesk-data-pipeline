@@ -2246,14 +2246,25 @@
    * leg. Guarded like the legs, and for the same reason: a missing core
    * costs the classes, not the routes overlay.
    *
+   * Records how many segments it produced in `routeSlopeSegmentCount`.
+   * Every write to the `routes-slopes` source goes through here, so the
+   * count is what that source draws. The zoom control's `route_slopes`
+   * gate reads it: a route that is unsampled, or has no usable heights,
+   * yields no segments and keeps its leg colours past z14, so it must not
+   * put a tick on the scale.
+   *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} A line
    *   FeatureCollection, empty when nothing has been sampled.
    */
+  let routeSlopeSegmentCount = 0;
   const routeSlopesFor = (geojson) => {
     const core = self.pwaRouteLegsCore;
-    if (!core || !core.slopeSegmentCollection) return { type: 'FeatureCollection', features: [] };
-    return core.slopeSegmentCollection(geojson);
+    const collection = core && core.slopeSegmentCollection
+      ? core.slopeSegmentCollection(geojson)
+      : { type: 'FeatureCollection', features: [] };
+    routeSlopeSegmentCount = collection.features.length;
+    return collection;
   };
 
   /**
@@ -6930,7 +6941,9 @@
   //     (z12); on while the reader has switched it on.
   //   route_slopes — a route's core switches from leg colours to slope
   //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
-  //     is painted and holds a route that is not a pending share.
+  //     is painted and its slope source holds at least one segment. A
+  //     route with no sampled slope keeps its leg colours at every zoom,
+  //     so it does not count.
   const ZOOM_GATES = Object.freeze([
     Object.freeze({
       key: 'terrain_filter',
@@ -6940,10 +6953,7 @@
     Object.freeze({
       key: 'route_slopes',
       zoom: ROUTE_SLOPE_MINZOOM,
-      active: () => panelOverlayPainted('routes')
-        && ((routesGeojsonCache && routesGeojsonCache.features) || []).some(
-          (f) => f && f.properties && !f.properties.pending,
-        ),
+      active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
     }),
   ]);
 

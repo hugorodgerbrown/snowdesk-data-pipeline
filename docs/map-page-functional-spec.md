@@ -707,8 +707,9 @@ stack and the date row, where the legend card opens:
 - **A tick for each zoom-gated layer that is on**, numbered with its zoom,
   and a row under the scale naming it: **Terrain filter** at z12 while the
   filter is switched on (§3.5b), **Route slope colours** at z14 while the
-  routes overlay is drawing a route (§3.4a). A layer that is off has no
-  tick. A tick and its row turn from muted to full strength once the camera
+  routes overlay is drawing a route whose slope has been sampled (§3.4a).
+  An unsampled route keeps its leg colours at every zoom, so it adds no
+  tick. A layer that is off has no tick. A tick and its row turn from muted to full strength once the camera
   reaches the gate, which is when the layer is drawn.
 
 The gates come from one registry, `window.pwaZoomGates` in `map.js` —
