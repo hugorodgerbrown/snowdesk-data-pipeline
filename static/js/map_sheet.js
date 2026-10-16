@@ -311,8 +311,26 @@
         return;
       }
       var lift = Math.round(heights()[current] + bottomOffset());
-      liftControls(lift);
+      liftControls(controlsFitAbove(lift) ? lift : 0);
       padMapBottom(lift);
+    }
+
+    /**
+     * Whether the roundel column still fits between the map's top edge and
+     * a sheet whose top is `lift` px above the viewport's foot. At half on
+     * a short phone it does not, and a column lifted anyway runs up under
+     * the search control and off the top of the map; it stays behind the
+     * sheet instead, as it does at full.
+     *
+     * @param {number} lift
+     * @returns {boolean}
+     */
+    function controlsFitAbove(lift) {
+      var controls = document.getElementById('map-controls-br');
+      var mapEl = document.getElementById('map');
+      if (!controls || !mapEl) return true;
+      var room = window.innerHeight - lift - mapEl.getBoundingClientRect().top;
+      return controls.getBoundingClientRect().height + 16 <= room;
     }
 
     /** @param {string} name */

@@ -4869,8 +4869,9 @@ body.map-framing #map-legend {
     /* The bottom-right roundel column rides up with the sheet at peek and
        half, so locate stays on the sheet's edge rather than vanishing
        beneath it — the placement Google's own sheet uses. --map-sheet-lift
-       is written by map_sheet.js on every settle and cleared to 0 on close
-       and at full (where the column is covered anyway), so a map with no
+       is written by map_sheet.js on every settle and cleared to 0 on close,
+       at full (where the column is covered anyway) and wherever the column
+       would not fit above the sheet, so a map with no
        sheet open sits on its usual baseline. */
     .map-controls-br {
         bottom: max(var(--map-bottom-row-offset), calc(var(--map-sheet-lift, 0px) + 8px));

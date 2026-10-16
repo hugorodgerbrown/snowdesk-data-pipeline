@@ -210,3 +210,16 @@ describe('the map around the sheet', () => {
     expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('0px');
   });
 });
+
+describe('the roundel column', () => {
+  it('stays behind a sheet it would not fit above', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div id="map-controls-br"></div>');
+    const controls = document.getElementById('map-controls-br');
+    // 400 px of roundels cannot fit above a 384 px half sheet in 768 px.
+    controls.getBoundingClientRect = () => /** @type {DOMRect} */ ({ height: 400 });
+    const { controller } = attachSheet('peek,half,full', 'half');
+    document.body.appendChild(controls);
+    controller.open();
+    expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('0px');
+  });
+});
