@@ -4806,3 +4806,81 @@ body.map-framing #map-legend {
 .map-unavailable > [data-testid='callout'] {
     margin-bottom: 0;
 }
+
+/* —— Sheet detents on phones (SNOW-1097) ——————————————————————————————
+   includes/_overlay_sheet.html's `detents` gives a map sheet the
+   three-state shape readers know from Google and Apple Maps: PEEK (a short
+   summary, the ground still in view), HALF (the detail beside it) and FULL
+   (the map covered, the body scrolling). static/js/map_sheet.js owns the
+   state (`data-detent`) and the drag; these rules turn each state into a
+   height.
+
+   EVERYTHING HERE IS INSIDE THE PHONE QUERY. At `sm` and up the inset panel
+   stays exactly as it was (map-page functional spec §3.7: on a desktop,
+   covering the map is the loss), so a sheet that declares detents is
+   indistinguishable there from one that does not. 639.98px rather than
+   639px so a fractional viewport width between the two breakpoints never
+   matches both this and Tailwind's `sm:` (min-width: 640px).
+
+   PEEK fits content: map_sheet.js measures the bottom of the element the
+   content marks `data-sheet-peek` and writes it as --sheet-peek-height,
+   with a fixed fallback for content that marks nothing. HALF is half the
+   dynamic viewport. FULL is the partial's own max-height, the room between
+   the top inset and the bottom one, so FULL is exactly as tall as the sheet
+   could ever have grown before detents existed.
+
+   During a drag the finger sets the height (--sheet-drag-height) and the
+   transition is off, so the sheet follows without lag; on release the
+   transition carries it to the detent it settled at. */
+@media (max-width: 639.98px) {
+    [data-detents][data-detent] {
+        overflow: hidden;
+        transition: height 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    [data-detents][data-detent='peek'] {
+        height: var(--sheet-peek-height, 160px);
+    }
+
+    [data-detents][data-detent='half'] {
+        height: 50dvh;
+    }
+
+    /* The only detent at which the sheet itself scrolls: at peek and half
+       a scroll gesture inside the sheet would fight the drag that grows it. */
+    [data-detents][data-detent='full'] {
+        height: calc(100dvh - var(--map-edge-inset-top) - var(--map-edge-inset-bottom));
+        overflow-y: auto;
+    }
+
+    [data-detents][data-sheet-dragging] {
+        height: var(--sheet-drag-height) !important; /* the finger wins over every detent rule above */
+        transition: none;
+    }
+
+    /* The handle and any header the content marks draggable take the
+       gesture themselves, so the browser neither scrolls nor zooms the page
+       under a drag. */
+    [data-detents] [data-sheet-handle],
+    [data-detents] [data-sheet-drag] {
+        touch-action: none;
+    }
+
+    /* The bottom-right roundel column rides up with the sheet at peek and
+       half, so locate stays on the sheet's edge rather than vanishing
+       beneath it — the placement Google's own sheet uses. --map-sheet-lift
+       is written by map_sheet.js on every settle and cleared to 0 on close
+       and at full (where the column is covered anyway), so a map with no
+       sheet open sits on its usual baseline. */
+    .map-controls-br {
+        bottom: max(var(--map-bottom-row-offset), calc(var(--map-sheet-lift, 0px) + 8px));
+        transition: bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+}
+
+@media (max-width: 639.98px) and (prefers-reduced-motion: reduce) {
+    [data-detents][data-detent],
+    .map-controls-br {
+        transition: none;
+    }
+}

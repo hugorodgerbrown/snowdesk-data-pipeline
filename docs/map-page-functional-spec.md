@@ -766,6 +766,22 @@ screen on my laptop" are both the intended behaviour. Both layouts are
 bounded and scroll internally: a panel never grows past the viewport and
 never pushes its own content off-screen, whatever the list contains.
 
+**Detents on phones (SNOW-1097).** A sheet built on `_overlay_sheet.html`
+may declare up to three detents, and below `sm` it then rests at one of
+them instead of growing with its content: **peek** (a short summary, the
+ground still in view), **half** (the detail beside the map) and **full**
+(the map covered, the body scrolling). A handle at the top drags it between
+them, a flick carries it past the nearest, a drag below the lowest closes
+it, and a press on the handle steps it up, so a keyboard user reaches all
+three. While it rests at peek or half the map's camera is padded by its
+height, so a fly-to lands above the sheet, and the roundel column rides up
+onto its edge. A sheet declares only the detents it can use: an object you
+tapped on the map uses all three, a list uses half and full, and **a form
+uses none**, because a swipe must never discard a half-written report. At
+`sm` and above detents change nothing. The rule above for the docked phone
+sheet still holds for every sheet that declares no detents. Why:
+[`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
+
 ### 3.7a Pressing a row's name frames its place
 
 On the three panels whose rows are **places** — routes, favourites

@@ -1,3 +1,4 @@
+{% load i18n %}
 {% comment %}
 templates/includes/_overlay_sheet.html — Map fly-out sheet primitive (SNOW-486).
 
@@ -53,6 +54,39 @@ Optional context:
                 variant, not a fork. Below the ``sm`` breakpoint it is
                 not applied at all: the sheet spans the viewport there,
                 which is the point of the two layouts described below.
+
+  detents     — Comma-separated detent names drawn from ``peek``, ``half``
+                and ``full`` (SNOW-1097); default none. Phones only: below
+                the ``sm`` breakpoint a sheet that declares detents renders
+                a drag handle and settles at fixed heights instead of
+                growing with its content — PEEK fits the element its content
+                marks ``data-sheet-peek`` and leaves the map clear, HALF is
+                50dvh, FULL fills the room between the top inset and the
+                bottom one and is the only height at which the sheet itself
+                scrolls. A sheet lists only the detents it can use: a list
+                has no one-line summary to peek with, so it declares
+                ``half,full``. A FORM DECLARES NONE, because a swipe must
+                never throw away a half-written report — so the report,
+                favourite, sign-in and terrain-filter sheets pass nothing and
+                render byte-identical to before. At ``sm`` and up nothing
+                here applies (the handle is ``sm:hidden`` and every detent
+                rule in static/css/map.css sits inside a phone media query):
+                the inset panel stays exactly as it was.
+                The behaviour — drag, flick, cycle on press, close on a drag
+                below the lowest detent, map camera padding and the roundel
+                column riding up with the sheet — is static/js/map_sheet.js's
+                ``bindDetents``, over the pure rules in
+                static/js/sheet_detents_core.js. Why phone-only and why forms
+                take none: docs/decisions/sheet-detents-are-phone-only.md.
+  initial     — The detent the sheet opens at; default the lowest declared.
+                Ignored without ``detents``.
+
+The handle is a ``<button>`` with an accessible name, not a bare grip: a
+press cycles to the next detent, so a keyboard or switch user can reach all
+three without a drag. It is rendered here rather than built in JS so the
+label is translated, and it survives the content swaps every caller makes
+(``innerHTML`` / HTMX into this element) because map_sheet.js puts it back
+as the first child whenever a swap removes it.
 
 ``tabindex="-1"`` (SNOW-538) makes the container a programmatic focus
 target without putting it in the tab order: favourites.js and report.js
@@ -119,7 +153,18 @@ bug in a subtler form.
     data-overlay
     class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}"
     aria-label="{{ aria_label }}"
+    {% if detents %}data-detents="{{ detents }}" data-detent-initial="{{ initial|default:'' }}"{% endif %}
 >
+    {% if detents %}
+        <button
+            type="button"
+            data-sheet-handle
+            aria-label="{% trans 'Resize panel' %}"
+            class="{% if not static %}sm:hidden {% endif %}-mt-2 mb-2 flex h-6 w-full items-center justify-center"
+        >
+            <span aria-hidden="true" class="block h-1 w-9 rounded-pill bg-border-strong"></span>
+        </button>
+    {% endif %}
     {% if static %}
         <p class="px-2 py-4 text-sm text-text-3">Content injected by JS (favourites.js / report.js) at open time.</p>
     {% endif %}
