@@ -4900,7 +4900,9 @@ body.map-framing #map-legend {
        map_sheet.js writes data-map-sheet on the root while a sheet is open
        on a phone, and --map-sheet-lift on every settle (0 at full, where
        locate is covered anyway, and on close). */
-    :root[data-map-sheet] .map-controls-br > :not(.map-utility-pill--locate),
+    /* Locate is the column's first child (_map_embed.html, SNOW-664), so
+       "every child after the first" is every control but locate. */
+    :root[data-map-sheet] .map-controls-br > :not(:first-child),
     :root[data-map-sheet] .map-legend {
         display: none;
     }
