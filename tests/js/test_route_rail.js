@@ -10,8 +10,9 @@
  * elevation and distance beside it, moving to the line's left when they
  * would not fit. The × always closes the route. Around it: one path per
  * leg with its direction, an unsampled route still cut into legs, a
- * pending share without its menu, the rail closing with the detail sheet,
- * and Delete confirming before it posts.
+ * pending share without its menu (SNOW-1095: it has no item it could
+ * use), the rail outliving a sheet opened over it, and Delete confirming
+ * before it posts.
  *
  * The markup below is the hooks of templates/includes/_route_rail.html;
  * tests/public/test_route_rail.py holds the partial itself to them.
@@ -43,13 +44,11 @@ document.body.innerHTML = `
         <div data-route-rail-actions>
           <div data-overflow-menu>
             <ul role="menu">
-              <li><button role="menuitem" data-route-rail-details>Terrain</button></li>
-              <li aria-hidden="true" data-route-rail-owner></li>
-              <li data-route-rail-owner><a role="menuitem" data-route-rail-plan-trip>Plan a trip</a></li>
-              <li data-route-rail-owner><button role="menuitem" data-route-rail-share>Share</button></li>
-              <li aria-hidden="true" data-route-rail-owner></li>
-              <li data-route-rail-owner><button role="menuitem" data-row-rename data-route-rename="">Rename</button></li>
-              <li data-route-rail-owner><button role="menuitem" data-route-rail-delete>Delete</button></li>
+              <li><a role="menuitem" data-route-rail-plan-trip>Plan a trip</a></li>
+              <li><button role="menuitem" data-route-rail-share>Share</button></li>
+              <li aria-hidden="true"></li>
+              <li><button role="menuitem" data-row-rename data-route-rename="">Rename</button></li>
+              <li><button role="menuitem" data-route-rail-delete>Delete</button></li>
             </ul>
           </div>
         </div>
@@ -71,7 +70,7 @@ document.body.innerHTML = `
       </form>
     </section>
   </div>
-  <div id="route-detail-sheet" data-overlay hidden></div>
+  <div id="other-sheet" data-overlay hidden></div>
 `;
 
 // jsdom has no ResizeObserver. A stub that records each observed element
@@ -93,7 +92,7 @@ await import('../../static/js/route_rail.js');
 
 const rail = document.getElementById('route-rail');
 const mapEl = document.getElementById('map');
-const sheet = document.getElementById('route-detail-sheet');
+const sheet = document.getElementById('other-sheet');
 const meta = rail.querySelector('[data-route-rail-meta]');
 const lane = rail.querySelector('[data-route-rail-lane]');
 const readout = rail.querySelector('[data-route-rail-readout]');
@@ -294,21 +293,23 @@ describe('open', () => {
     expect(window.pwaRouteRail.cursor()).toBeNull();
   });
 
-  it('keeps only the details item for a pending share, which has no uuid', () => {
-    window.pwaRouteRail.open(
-      feature({ uuid: undefined, token: 'abc', pending: true }),
-      { details: vi.fn() },
-    );
+  it('hides the actions menu for a pending share, which has no uuid', () => {
+    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
 
-    expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(false);
-    expect(visibleMenuItems()).toEqual(['Terrain']);
+    expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(true);
   });
 
-  it('offers every item for an owned route, details first', () => {
-    window.pwaRouteRail.open(feature(), { details: vi.fn() });
+  it('shows the menu again when an owned route replaces a pending share', () => {
+    window.pwaRouteRail.open(feature({ uuid: undefined, token: 'abc', pending: true }));
+    window.pwaRouteRail.open(feature());
+
+    expect(rail.querySelector('[data-route-rail-actions]').hidden).toBe(false);
+  });
+
+  it('offers four items for an owned route, Plan a trip first', () => {
+    window.pwaRouteRail.open(feature());
 
     expect(visibleMenuItems()).toEqual([
-      'Terrain',
       'Plan a trip',
       'Share',
       'Rename',
@@ -322,7 +323,7 @@ describe('open', () => {
 
     window.pwaRouteRail.open(
       feature({ uuid: undefined, token: 'abc', pending: true }),
-      { details: vi.fn(), claim: save },
+      { claim: save },
     );
 
     const slot = rail.querySelector('[data-route-rail-claim]');
@@ -606,30 +607,11 @@ describe('the point header (SNOW-1068)', () => {
   });
 });
 
-describe('the details item', () => {
-  it('calls the details callback map.js handed over', () => {
-    const details = vi.fn();
-    window.pwaRouteRail.open(feature(), { details });
-
-    rail.querySelector('[data-route-rail-details]').click();
-
-    expect(details).toHaveBeenCalledTimes(1);
-  });
-
-  it('is hidden when there is no sheet to open', () => {
+describe('lifetime', () => {
+  it('stays open while a sheet opens and closes over it', async () => {
     window.pwaRouteRail.open(feature());
 
-    expect(visibleMenuItems()).not.toContain('Terrain');
-  });
-});
-
-describe('lifetime', () => {
-  it('stays open while the sheet opens and closes over it', async () => {
-    window.pwaRouteRail.open(feature(), {
-      details: () => sheet.removeAttribute('hidden'),
-    });
-
-    rail.querySelector('[data-route-rail-details]').click();
+    sheet.removeAttribute('hidden');
     await Promise.resolve();
     expect(rail.hidden).toBe(false);
 

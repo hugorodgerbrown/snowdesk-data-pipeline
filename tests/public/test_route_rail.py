@@ -267,7 +267,6 @@ class TestTheActionsAreAMenu:
         assert menu is not None
         outside = rail.replace(menu.group(0), "")
         for hook in (
-            "data-route-rail-details",
             "data-route-rail-plan-trip",
             "data-route-rail-share",
             "data-route-rename",
@@ -279,17 +278,14 @@ class TestTheActionsAreAMenu:
             assert exact.search(menu.group(0))
             assert not exact.search(outside)
 
-    def test_the_order_leads_with_details_then_the_routes_rows(
-        self, client: Client
-    ) -> None:
-        """Terrain → Plan a trip → Share → Rename → Delete."""
+    def test_the_order_is_the_routes_rows(self, client: Client) -> None:
+        """Plan a trip → Share → Rename → Delete (SNOW-1095)."""
         menu = _MENU_RE.search(_rail(_home(client)))
         assert menu is not None
 
         positions = [
             menu.group(0).index(label)
             for label in (
-                "Terrain",
                 "Plan a trip",
                 "Share",
                 "Rename",
@@ -298,16 +294,14 @@ class TestTheActionsAreAMenu:
         ]
         assert positions == sorted(positions)
 
-    def test_every_owner_item_is_marked_for_a_pending_share_to_hide(
-        self, client: Client
-    ) -> None:
-        """The details item alone is unmarked: a pending share keeps it."""
+    def test_the_terrain_item_is_gone(self, client: Client) -> None:
+        """SNOW-1095 removed Terrain and the route detail sheet it opened."""
+        client.force_login(UserFactory.create())
         menu = _MENU_RE.search(_rail(_home(client)))
         assert menu is not None
 
-        items = re.findall(r"<li\b[^>]*>", menu.group(0))
-        marked = [item for item in items if "data-route-rail-owner" in item]
-        assert len(items) - len(marked) == 1
+        assert "data-route-rail-details" not in menu.group(0)
+        assert "Terrain" not in menu.group(0)
 
     def test_the_rail_has_its_own_close_outside_the_menu(self, client: Client) -> None:
         """A bare × with a translated name, not an item inside the menu."""
@@ -493,12 +487,12 @@ class TestTheRouteOpenFurniture:
             assert re.search(rf'id="{container}"', source), container
         assert "map-utility-pill--route" in source
 
-    def test_the_panel_its_leader_and_the_route_sheet_stay(self) -> None:
+    def test_the_panel_and_its_leader_stay(self) -> None:
         """What the reader is using now is never among the hidden."""
         css = _MAP_CSS.read_text(encoding="utf-8")
         hidden = _withdrawn_ids(css)
 
-        for kept in ("route-rail", "route-detail-sheet", "map"):
+        for kept in ("route-rail", "map"):
             assert kept not in hidden, kept
         assert "[data-route-rail-open] .route-leader" not in css
         assert "[data-route-rail-open] .route-rail" not in css

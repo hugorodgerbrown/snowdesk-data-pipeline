@@ -6,19 +6,16 @@ rail one, as menu items (SNOW-1018).
 includes/_overflow_menu.html's `items_template` slot, reached from
 includes/_route_rail.html.
 
-THE ROUTES ROW'S ORDER, AFTER ONE ITEM OF ITS OWN. Terrain
-→ rule → Plan a trip → Share → rule → Rename → Delete. The last four are
+THE ROUTES ROW'S ORDER. Plan a trip → Share → rule → Rename → Delete,
 exactly routes/partials/_route_row_menu_items.html's: design-system rule
 4 puts an action where the user already learned it is, and the rail
-offers the same four things for the same route. The first is the rail's
-alone — it opens the route detail sheet, which a tap no longer opens —
-and it reads the route rather than acting on it, so it leads and a rule
-sets it apart. Destructive stays last.
+offers the same four things for the same route. Destructive stays last.
+The rail's own first item, Terrain, opened the route detail sheet until
+SNOW-1095 removed both.
 
-A PENDING SHARE KEEPS ONLY THE FIRST. Its reading needs no ownership;
-the other four are owner-only endpoints addressed by a uuid a recipient
-is never handed. static/js/route_rail.js hides each owner-only item
-(`data-route-rail-owner`) individually rather than the whole menu.
+A PENDING SHARE KEEPS NOTHING. All four are owner-only endpoints
+addressed by a uuid a recipient is never handed, so static/js/route_rail.js
+hides the whole menu for a route without one.
 
 WHAT DIFFERS FROM THE ROW, AND WHY. The row is rendered server-side for
 one known route, so its items carry that route's uuid and its Delete is
@@ -40,18 +37,6 @@ their route in an aria-label because a list holds many, and the rail
 holds one, named in the heading beside the trigger.
 {% endcomment %}
 <li role="none">
-    <button
-        type="button"
-        role="menuitem"
-        data-route-rail-details
-        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
-    >
-        {% include "includes/_icon_route.html" with size=17 only %}
-        {% trans "Terrain" %}
-    </button>
-</li>
-<li aria-hidden="true" data-route-rail-owner class="my-1 border-t border-border"></li>
-<li role="none" data-route-rail-owner>
     <a
         role="menuitem"
         data-route-rail-plan-trip
@@ -61,7 +46,7 @@ holds one, named in the heading beside the trigger.
         {% trans "Plan a trip" %}
     </a>
 </li>
-<li role="none" data-route-rail-owner>
+<li role="none">
     <button
         type="button"
         role="menuitem"
@@ -72,8 +57,8 @@ holds one, named in the heading beside the trigger.
         {% trans "Share" %}
     </button>
 </li>
-<li aria-hidden="true" data-route-rail-owner class="my-1 border-t border-border"></li>
-<li role="none" data-route-rail-owner>
+<li aria-hidden="true" class="my-1 border-t border-border"></li>
+<li role="none">
     <button
         type="button"
         role="menuitem"
@@ -85,7 +70,7 @@ holds one, named in the heading beside the trigger.
         {% trans "Rename" %}
     </button>
 </li>
-<li role="none" data-route-rail-owner>
+<li role="none">
     <button
         type="button"
         role="menuitem"
