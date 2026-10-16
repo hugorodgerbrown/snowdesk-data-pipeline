@@ -5,8 +5,9 @@
  * #home-intro is anchored to the map's top-left and bounded at the bottom.
  * Until the date control joined the bottom-left stack (SNOW-794) that bound
  * could be the bare edge inset, because the corner below the card held only
- * the (i) legend toggle. It now holds three control-height members — the
- * help roundel, the legend toggle and the date row — and on a short viewport
+ * the (i) legend toggle. It now holds four control-height members — the
+ * zoom control (SNOW-1077), the help roundel, the legend toggle and the date
+ * row — and on a short viewport
  * (a docked preview pane, or a laptop with the off-season banner up) a card
  * bounded at the map's own bottom edge lands straight on top of them.
  *
@@ -53,7 +54,7 @@ describe('the bottom-left stack clearance token', () => {
     // common ancestor, and already carries --map-bottom-row-offset.
     const body = ruleBody(/^#map \{/m);
     expect(body).toMatch(
-      /--map-bottom-left-stack:\s*calc\(3 \* var\(--map-control-sm\) \+ 16px\)/,
+      /--map-bottom-left-stack:\s*calc\(4 \* var\(--map-control-sm\) \+ 24px\)/,
     );
   });
 

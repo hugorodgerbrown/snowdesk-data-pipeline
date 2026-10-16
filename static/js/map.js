@@ -2246,14 +2246,25 @@
    * leg. Guarded like the legs, and for the same reason: a missing core
    * costs the classes, not the routes overlay.
    *
+   * Records how many segments it produced in `routeSlopeSegmentCount`.
+   * Every write to the `routes-slopes` source goes through here, so the
+   * count is what that source draws. The zoom control's `route_slopes`
+   * gate reads it: a route that is unsampled, or has no usable heights,
+   * yields no segments and keeps its leg colours past z14, so it must not
+   * put a tick on the scale.
+   *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} A line
    *   FeatureCollection, empty when nothing has been sampled.
    */
+  let routeSlopeSegmentCount = 0;
   const routeSlopesFor = (geojson) => {
     const core = self.pwaRouteLegsCore;
-    if (!core || !core.slopeSegmentCollection) return { type: 'FeatureCollection', features: [] };
-    return core.slopeSegmentCollection(geojson);
+    const collection = core && core.slopeSegmentCollection
+      ? core.slopeSegmentCollection(geojson)
+      : { type: 'FeatureCollection', features: [] };
+    routeSlopeSegmentCount = collection.features.length;
+    return collection;
   };
 
   /**
@@ -6577,6 +6588,9 @@
           // already drawn, and the route that just landed is the first
           // one with legs.
           syncRouteLegLegend();
+          // SNOW-1077: the same reason, for the zoom control's route-slopes
+          // tick — the first route landing turns its gate on.
+          document.dispatchEvent(new CustomEvent('snowdesk:zoom-gates-changed'));
         } else {
           // Cached pristine above, mutated here — the same order
           // ``_loadOverlay`` uses, so the stored copy is the server's
@@ -6911,6 +6925,49 @@
     },
     isVisible: () => panelOverlayPainted('routes'),
     isEnabled: () => !!overlayState.routes,
+  });
+
+  // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
+  //
+  // Two layers are drawn only past a zoom, and the zoom control's flyout
+  // (static/js/map_zoom_control.js) puts a tick on its scale for each one
+  // that is on. One entry per gated layer, so a third one is a line here
+  // and a label in the control's strings template, and nothing else.
+  //
+  // `active` answers "is this layer on the map now", not "is it drawn at
+  // this zoom" — the tick is there to say where it starts.
+  //
+  //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
+  //     (z12); on while the reader has switched it on.
+  //   route_slopes — a route's core switches from leg colours to slope
+  //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
+  //     is painted and its slope source holds at least one segment. A
+  //     route with no sampled slope keeps its leg colours at every zoom,
+  //     so it does not count.
+  const ZOOM_GATES = Object.freeze([
+    Object.freeze({
+      key: 'terrain_filter',
+      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter,
+    }),
+    Object.freeze({
+      key: 'route_slopes',
+      zoom: ROUTE_SLOPE_MINZOOM,
+      active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
+    }),
+  ]);
+
+  window.pwaZoomGates = Object.freeze({
+    /**
+     * Every zoom-gated layer, read now.
+     *
+     * @returns {Array<{key: string, zoom: number, active: boolean}>}
+     */
+    list: () => ZOOM_GATES.map((gate) => ({
+      key: gate.key,
+      zoom: gate.zoom,
+      active: !!gate.active(),
+    })),
   });
 
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====

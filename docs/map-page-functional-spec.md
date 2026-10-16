@@ -339,7 +339,7 @@ phone. Opening a route or placing a point changes
 only what the panel says, so nothing on the map moves. On desktop every
 control stays. On a phone, where a route is followed on the move, only
 locate-me, layers and routes stay, in the bottom-right corner; the region
-readout's row, search, the legend, help, date and scrubber stack and the
+readout's row, search, the legend, zoom, help, date and scrubber stack and the
 rest of the control column withdraw, and come back when the panel closes.
 The date matters on a route only when it is today, which belongs to the
 Tour feature, not this panel. The intro card withdraws at every width.
@@ -623,7 +623,7 @@ toggle**:
 
 The map help "?" (`#map-help-toggle`) is not in this column: it sits in the
 bottom-LEFT stack (`#map-legend`), above the legend toggle and the date row
-(SNOW-794).
+(SNOW-794), and under the zoom control (§3.6b).
 
 Locate is the only permanent one. "Where am I" is the question worth a
 standing control on a map the user is physically standing in; everything
@@ -684,6 +684,48 @@ has nothing stored under the matching `snowdesk.map.overlay.*` key, so a
 returning visitor keeps whatever they last set. The `aria-checked` /
 `data-state` attributes in the template are rendered from the same settings,
 so the control reads correctly before JS runs.
+
+---
+
+## 3.6b The zoom control (SNOW-1077)
+
+The roundel at the top of the bottom-left stack (`#map-zoom-toggle`, above
+help, the legend toggle and the date row) shows the **zoom level** the map
+is drawing, and its accessible name says it: "Zoom level 13". The number is
+the **tile zoom** — a whole number, the zoom of the tiles on screen — not
+the continuous camera: at camera 13.99 the map still draws z13 tiles, so
+the roundel says 13.
+
+Tapping it opens a flyout (`#map-zoom-flyout`) into the crook between the
+stack and the date row, where the legend card opens:
+
+- **− and +**, 44 px targets, zooming out and in by one step. − is
+  disabled at the map's minimum (z4), + at its maximum (z18). They are the
+  single-pointer alternative to pinching (WCAG 2.5.1).
+- **A scale** across the map's whole zoom range, with a marker at the
+  camera.
+- **A tick for each zoom-gated layer that is on**, numbered with its zoom,
+  and a row under the scale naming it: **Terrain filter** at z12 while the
+  filter is switched on (§3.5b), **Route slope colours** at z14 while the
+  routes overlay is drawing a route whose slope has been sampled (§3.4a).
+  An unsampled route keeps its leg colours at every zoom, so it adds no
+  tick. A layer that is off has no tick. A tick and its row turn from muted to full strength once the camera
+  reaches the gate, which is when the layer is drawn.
+
+The gates come from one registry, `window.pwaZoomGates` in `map.js` —
+`list()` answers `{key, zoom, active}` per gated layer — so a third gated
+layer is one entry there and one label in the control's strings template.
+The face and the ticks update on every zoom, and when either gated layer is
+switched on or off.
+
+The flyout is one overlay among the others: opening it closes any open
+sheet, menu or card, and opening one of those closes it
+(`window.pwaMapOverlays`). An outside tap and Escape close it.
+
+Under `DEBUG` the flyout ends with the **camera zoom** to two decimals. The
+control replaced a DEBUG-only readout in the same slot, and that figure is
+what work on the download bands (z0–7 shared, z8–9 near, z10–14 the area)
+needs: how close the camera is to the next whole tile zoom.
 
 ---
 

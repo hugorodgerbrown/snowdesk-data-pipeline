@@ -495,12 +495,13 @@ in addition to the shared map assets.
     {# map_geolocate.js, whose listener answers the locate request it         #}
     {# dispatches.                                                            #}
     <script defer src="{% static 'js/map_drop_zone.js' %}"></script>
-    {# HACK MODE, DEBUG only: the tile-zoom readout beside the help        #}
-    {# roundel. Outside the map bundle, so it sits below the bundle's run —  #}
-    {# see tests/public/test_map_script_order.py.                            #}
-    {% if zoom_readout_visible %}
-        <script defer src="{% static 'js/map_zoom_readout.js' %}"></script>
-    {% endif %}
+    {# SNOW-1077: the zoom control at the top of the bottom-left stack.     #}
+    {# Reads MAP and window.pwaZoomGates, both from map.js at parse time —   #}
+    {# hence after the bundle, and outside its contiguous run (no bundle     #}
+    {# module reads it); see tests/public/test_map_script_order.py. Its pure #}
+    {# half, zoom_control_core.js, loads just before it.                     #}
+    <script defer src="{% static 'js/zoom_control_core.js' %}"></script>
+    <script defer src="{% static 'js/map_zoom_control.js' %}"></script>
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
         {# ordinary map visits so the feature has no JS cost until opened.  #}

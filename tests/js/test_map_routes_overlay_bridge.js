@@ -77,6 +77,31 @@ const ROUTES_GEOJSON = {
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+/*
+ * The same route once the slope sampler has reached it: one angle per pair
+ * of consecutive points, which is what `segmentFeatures` needs to emit a
+ * slope-class segment.
+ */
+const SAMPLED_ROUTES_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      ...ROUTES_GEOJSON.features[0],
+      properties: {
+        ...ROUTES_GEOJSON.features[0].properties,
+        slope: {
+          points: [[7.5, 46.1], [7.52, 46.12], [7.54, 46.14]],
+          angles: [31, 36],
+        },
+      },
+    },
+  ],
+};
+
+// What the stubbed fetch answers for the routes feed. A test that swaps it
+// restores it before it ends.
+let routesBody = ROUTES_GEOJSON;
+
 /**
  * Minimal MapLibre stub tracking per-layer `layout`, the thing this suite
  * reads back. Lifted from test_map_favourites_overlay_bridge.js; see its
@@ -218,7 +243,7 @@ beforeAll(async () => {
     vi.fn((url) => {
       const href = String(url);
       let body = EMPTY_FC;
-      if (href.includes('routes')) body = ROUTES_GEOJSON;
+      if (href.includes('routes')) body = routesBody;
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -231,6 +256,8 @@ beforeAll(async () => {
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
+  await import('../../static/js/route_slope_core.js');
+  await import('../../static/js/route_legs_core.js');
   loadMapBundle();
   // MapLibre never fires 'load' in jsdom, and installRegionsLayers hangs off it.
   for (const handler of mapStub.handlers.load || []) await handler();
@@ -261,6 +288,27 @@ describe('window.pwaRoutesOverlay', () => {
 
     it('is a frozen bridge, like every other map.js export', () => {
       expect(Object.isFrozen(window.pwaRoutesOverlay)).toBe(true);
+    });
+
+    it('turns the zoom control\'s route-slopes gate on only for a sampled route (SNOW-1077)', async () => {
+      const gate = () => window.pwaZoomGates.list().find((g) => g.key === 'route_slopes');
+      // Drawn, but unsampled: the route keeps its leg colours past z14, so
+      // the scale must not promise slope classes there.
+      expect(gate()).toMatchObject({ zoom: 14, active: false });
+
+      routesBody = SAMPLED_ROUTES_GEOJSON;
+      try {
+        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+        await waitFor(() => gate().active);
+        expect(gate().active).toBe(true);
+        window.pwaRoutesOverlay.hide();
+        expect(gate().active).toBe(false);
+      } finally {
+        routesBody = ROUTES_GEOJSON;
+        window.pwaRoutesOverlay.show();
+        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+        await waitFor(() => !gate().active);
+      }
     });
 
     it('show() installs both line layers and draws them', () => {

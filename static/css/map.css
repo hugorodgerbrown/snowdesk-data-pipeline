@@ -137,17 +137,17 @@
    very line the scrubber fills. */
 #map {
     --map-bottom-row-offset: var(--map-edge-inset-bottom);
-    /* How tall the bottom-left stack is: three control-height members —
-       the help roundel, the legend toggle and the date row — and the two
-       8px gaps between them. A surface floating over the map's bottom-left
-       corner has to clear it, because those members are what a visitor
+    /* How tall the bottom-left stack is: four control-height members —
+       the zoom control (SNOW-1077), the help roundel, the legend toggle
+       and the date row — and the three 8px gaps between them. A surface
+       floating over the map's bottom-left corner has to clear it, because those members are what a visitor
        taps and a card overlapping them wins the hit test in silence: the
        date control simply stops responding, with no console error and
        nothing on screen to say why. #home-intro is the one that does
        (its own rule, below); the stack's members read their offsets from
        --map-bottom-row-offset above, so both sides of that clearance come
        from the same two tokens. */
-    --map-bottom-left-stack: calc(3 * var(--map-control-sm) + 16px);
+    --map-bottom-left-stack: calc(4 * var(--map-control-sm) + 24px);
 }
 
 /* —— The route panel (SNOW-1018; pinned top-left since SNOW-1068) ———————
@@ -195,7 +195,7 @@
                             whose row the panel takes;
      #map-utility-cluster — the top-right search;
      #map-legend          — the bottom-left stack: legend, help, zoom
-                            readout, date control and season scrubber (the
+                            control, date control and season scrubber (the
                             date matters only for a route on the day, which
                             is the Tour feature's to bring back);
      #home-intro          — the intro card, if it is showing;
@@ -1772,6 +1772,195 @@ html:has(> body.map-fullscreen) > body {
     opacity: 1;
     transform: none;
     pointer-events: auto;
+}
+
+/* —— The zoom control (SNOW-1077) ————————————————————————————————————————
+   The roundel at the top of the bottom-left stack and the flyout it opens
+   (public/partials/_map_zoom_control.html, static/js/map_zoom_control.js).
+   The roundel IS a .map-legend-toggle — the help and (i) roundels' shape,
+   size and pointer-events — and only its face needs a rule: mono, because
+   it is a number that changes and a proportional font makes it jump. */
+.map-zoom-face {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+
+/* The flyout opens into the crook between the roundel column and the date
+   row, exactly where .map-legend-card opens — the same two offsets, so
+   it needs no JS to find its place. The two are never open together
+   (window.pwaMapOverlays). 264 px fits beside the 32 px column at 320 px:
+   inset + 32 + 8 + 264 stays inside the viewport. */
+.map-zoom-flyout {
+    position: absolute;
+    left: calc(var(--map-control-sm) + 8px);
+    bottom: calc(var(--map-control-sm) + 8px);
+    width: 264px;
+    max-width: calc(100vw - var(--map-control-sm) - 32px);
+    padding: 2px 2px 8px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    /* .map-legend is `pointer-events: none` so it does not swallow map
+       taps; a panel in it has to take them back. */
+    pointer-events: auto;
+}
+
+.map-zoom-flyout[hidden] {
+    display: none;
+}
+
+.map-zoom-row {
+    display: flex;
+    align-items: center;
+}
+
+/* − and +: 44 px targets, the same box as .map-fill-step. */
+.map-zoom-step {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    color: var(--color-text-1);
+}
+
+.map-zoom-step:disabled {
+    color: var(--color-text-3);
+}
+
+.map-zoom-step:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -3px;
+}
+
+/* The scale: a hairline track across the map's zoom range, the camera
+   marker on it, and a tick for each gated layer that is on with its zoom
+   above it. Every `left` is a percentage of this box, written by the JS. */
+.map-zoom-scale {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    margin: 0 8px;
+}
+
+.map-zoom-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    border-radius: 999px;
+    background: var(--color-border);
+}
+
+.map-zoom-ticks {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.map-zoom-tick {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 12px;
+    margin: -6px 0 0 -1px;
+    background: var(--color-text-3);
+}
+
+/* At or past the gate: the layer is being drawn. */
+.map-zoom-tick[data-reached] {
+    background: var(--color-text-1);
+}
+
+.map-zoom-tick-zoom {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--color-text-2);
+}
+
+.map-zoom-marker {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border: 2px solid var(--color-card);
+    border-radius: 999px;
+    background: var(--color-text-1);
+    box-shadow: 0 0 0 0.5px var(--color-border);
+}
+
+/* One row per tick, naming the layer and the zoom it starts at. */
+.map-zoom-gates {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 2px 12px 0;
+    list-style: none;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.map-zoom-gates[hidden] {
+    display: none;
+}
+
+.map-zoom-gate {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--color-text-2);
+}
+
+.map-zoom-gate[data-reached] {
+    color: var(--color-text-1);
+}
+
+.map-zoom-gate-zoom {
+    font-family: var(--font-mono);
+}
+
+/* DEBUG only: the camera zoom to two decimals. */
+.map-zoom-camera {
+    margin: 4px 12px 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-2);
+}
+
+/* The component library's stand-in for the bottom-left stack
+   (_map_zoom_control_demo.html): a box whose foot is where the date row
+   would be, so the flyout's two offsets land it where they do on /map/. */
+.map-zoom-control-demo {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 168px;
+    padding-bottom: calc(var(--map-control-sm) + 8px);
 }
 
 .map-legend-title {

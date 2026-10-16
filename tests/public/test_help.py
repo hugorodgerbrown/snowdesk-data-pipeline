@@ -82,6 +82,8 @@ LAYERS_GROUP_TESTIDS = [
 ]
 
 ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
+    # SNOW-1077: the zoom control and the two layers it marks.
+    "help-map-zoom",
     "help-map-favourites",
     "help-map-community",
     "help-map-report",

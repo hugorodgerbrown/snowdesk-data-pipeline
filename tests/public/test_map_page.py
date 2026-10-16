@@ -1936,3 +1936,73 @@ def test_terrain_filter_row_sits_under_basemap_after_slope() -> None:
     terrain = group.index("data-terrain-filter-open")
     downloads = group.index('data-overlay-key="downloads"')
     assert slope < terrain < downloads
+
+
+# ---------------------------------------------------------------------------
+# The zoom control (SNOW-1077)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestZoomControl:
+    """The zoom roundel is public; only its camera-zoom line is DEBUG.
+
+    Before SNOW-1077 the slot held a DEBUG-only ``<output>`` that read the
+    zoom and did nothing when pressed. The control is now a ``<button>``
+    every reader gets, opening a flyout with − and +, so the page has to
+    render it — and its script — with DEBUG off.
+    """
+
+    def _content(self, client: Client) -> str:
+        return client.get(reverse("public:map")).content.decode()
+
+    def test_renders_the_roundel_and_flyout_without_debug(self, client: Client) -> None:
+        """The roundel controls its flyout, and the script loads."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        assert 'id="map-zoom-toggle"' in content
+        assert 'aria-controls="map-zoom-flyout"' in content
+        assert 'id="map-zoom-flyout"' in content
+        assert 'data-zoom-step="out"' in content
+        assert 'data-zoom-step="in"' in content
+        assert 'id="map-zoom-strings-template"' in content
+        assert "js/map_zoom_control.js" in content
+        assert "js/zoom_control_core.js" in content
+        # The old DEBUG readout is gone, element and script alike.
+        assert 'id="map-zoom-readout"' not in content
+        assert "map_zoom_readout" not in content
+
+    def test_roundel_is_a_button_with_a_zoom_level_name(self, client: Client) -> None:
+        """A button, named "Zoom level" until the script adds the number."""
+        with override_settings(DEBUG=False):
+            content = self._content(client)
+        start = content.rindex("<button", 0, content.index('id="map-zoom-toggle"'))
+        tag = content[start : content.index(">", start)]
+        assert "aria-label='Zoom level'" in tag or 'aria-label="Zoom level"' in tag
+        assert 'aria-haspopup="dialog"' in tag
+        assert 'aria-expanded="false"' in tag
+
+    def test_flyout_is_a_named_dialog(self, client: Client) -> None:
+        """What the roundel's aria-haspopup promises: a dialog with a name."""
+        content = self._content(client)
+        start = content.rindex("<div", 0, content.index('id="map-zoom-flyout"'))
+        tag = content[start : content.index(">", start)]
+        assert 'role="dialog"' in tag
+        assert "aria-label='Zoom'" in tag or 'aria-label="Zoom"' in tag
+
+    def test_camera_line_is_absent_without_debug(self, client: Client) -> None:
+        """The two-decimal camera zoom is a developer's instrument."""
+        with override_settings(DEBUG=False):
+            assert "data-zoom-camera" not in self._content(client)
+
+    def test_camera_line_renders_under_debug(self, client: Client) -> None:
+        """DEBUG keeps what the hack-mode readout gave developers."""
+        with override_settings(DEBUG=True):
+            assert "data-zoom-camera" in self._content(client)
+
+    def test_roundel_tops_the_bottom_left_stack(self, client: Client) -> None:
+        """It sits above the help and (i) roundels, as the readout did."""
+        content = self._content(client)
+        zoom = content.index('id="map-zoom-toggle"')
+        assert zoom < content.index('id="map-help-toggle"')
+        assert zoom < content.index('id="map-legend-toggle"')

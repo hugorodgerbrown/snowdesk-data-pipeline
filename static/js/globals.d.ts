@@ -82,6 +82,8 @@ interface Window {
   pwaBasemapDownloadCore: any;
   /** static/js/offline_audit_core.js — the offline-content report model. */
   pwaOfflineAuditCore: any;
+  /** static/js/zoom_control_core.js — the zoom scale, ticks and bounds. */
+  pwaZoomControlCore: any;
 
   // ---- the shared map state channel --------------------------------------
   /** static/js/map_state.js — the frozen accessor surface over map state. */
@@ -112,6 +114,8 @@ interface Window {
   pwaTerrainFilter: any;
   /** static/js/terrain_filter_sheet.js — opens the terrain filter sheet. */
   pwaTerrainFilterSheet: any;
+  /** static/js/map.js — the zoom-gated layers: list() → [{key, zoom, active}]. */
+  pwaZoomGates: any;
 }
 
 /**

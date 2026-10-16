@@ -50,6 +50,7 @@ from apps.public._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
     NO_DATA_SUPPLIED_VARIANTS,
@@ -1099,6 +1100,29 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_scrubber_demo.html",
         variants=SEASON_SCRUBBER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-zoom-control",
+        label="Map zoom control",
+        description=(
+            "The roundel at the top of the map's bottom-left stack (SNOW-1077), "
+            "the help and (i) roundels' size. Its face is the whole tile zoom "
+            "the map is drawing and its accessible name says it ('Zoom level "
+            "13'). It opens a flyout into the crook the legend card uses: − "
+            "and + as 44 px targets, disabled at the map's z4 and z18; a "
+            "scale across that range with a marker at the camera; and a tick "
+            "for each zoom-gated layer that is on — the terrain filter from "
+            "z12, a route's slope colours from z14 — with a row naming it. A "
+            "tick and its row turn from muted to full strength once the "
+            "camera reaches the gate. Under DEBUG a last line gives the "
+            "camera zoom to two decimals. Filled on /map/ by "
+            "static/js/map_zoom_control.js; the gates come from "
+            "window.pwaZoomGates in map.js. Static here."
+        ),
+        kind="components",
+        partial="public/partials/_map_zoom_control_demo.html",
+        variants=MAP_ZOOM_CONTROL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

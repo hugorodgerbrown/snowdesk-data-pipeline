@@ -211,6 +211,7 @@ Which coordinate on which model is exact, approximate or derived:
 | Strings template | How a user-facing string reaches JavaScript: rendered by the surface partial into a `<template>` and read back by name, with the English literal as the fallback, so `makemessages` sees it | `window.pwaStrings.read()` in `static/js/i18n_strings.js`; `bin/i18n-lint`; [i18n.md](i18n.md) |
 | Component library | The staff-only design-system reference at `/_components/` — every partial in every variant, the canonical place to look before adding a visual surface | `public:components_index` (`component_library` in `apps/public/debug_views.py`); `apps/public/design_tokens.py`; `apps/public/_component_fixtures.py` |
 | Overlay exclusivity | The rule that one map overlay is open at a time, so opening any closes the rest — held in one registry rather than pairwise by each surface (SNOW-658) | `window.pwaMapOverlays` in `static/js/map_overlay_exclusivity.js` |
+| Zoom gate | A map layer drawn only from a stated zoom — the terrain filter from z12, a route's slope colours from z14. One registry entry per layer (`{key, zoom, active}`), which the zoom control reads to put a tick on its scale for each gated layer that is on (SNOW-1077) | `window.pwaZoomGates` (`ZOOM_GATES`) in `static/js/map.js`; `static/js/map_zoom_control.js` + `zoom_control_core.js`; `public/partials/_map_zoom_control.html` |
 
 ## Offline basemap downloads (PWA)
 
