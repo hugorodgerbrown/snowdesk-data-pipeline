@@ -4916,6 +4916,27 @@ body.map-framing #map-legend {
        their own when the sheet opens — both are in pwaMapOverlays, which
        map_sheet.js announces every open through. */
 
+    /* ...BUT NOTHING IS LEFT HALF-COVERED, OR REACHABLE UNDER THE SHEET.
+       Covering alone leaves two faults. The sheet's top edge lands where
+       the detent puts it, not on a row boundary, so a roundel can show a
+       sliver above it: at 390×844 peek cuts the chevron and the info
+       roundel 8px from their tops, and half cuts locate 7px from its top.
+       And a covered control is still in the tab order and the
+       accessibility tree, so a keyboard or screen reader reaches buttons
+       nobody can see. `visibility: hidden` fixes both without moving
+       anything: at peek the bottom row on each side (the chevron, the
+       info roundel) goes, and at half and full both stacks go whole,
+       since the sheet covers them entirely there. Root-keyed on
+       data-map-sheet, which map_sheet.js sets to the current detent. */
+    :root[data-map-sheet='peek'] .map-controls-toggle,
+    :root[data-map-sheet='peek'] #map-legend-toggle,
+    :root[data-map-sheet='half'] #map-controls-br,
+    :root[data-map-sheet='half'] #map-legend,
+    :root[data-map-sheet='full'] #map-controls-br,
+    :root[data-map-sheet='full'] #map-legend {
+        visibility: hidden;
+    }
+
     /* A TIGHT PEEK, AS GOOGLE MAPS DRAWS ONE (Hugo, 16 Oct). The handle is
        a slim strip rather than a 24px band, the sheet's top padding goes
        to almost nothing under it, and the header's pin and download — the

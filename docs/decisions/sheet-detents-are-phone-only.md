@@ -40,6 +40,14 @@ it; nothing on the map moves or folds. What a peeking sheet would have
 hidden that matters — the date — moved to the phone's top row instead,
 beside search, where no sheet reaches.
 
+Covering does not mean leaving covered controls live. The sheet's top edge
+lands where the detent puts it, not on a row boundary, so it can leave a
+sliver of a roundel above it, and a covered button stays in the tab order.
+So what a detent covers is set `visibility: hidden`, keyed on the detent
+`map_sheet.js` writes to the root's `data-map-sheet`: at peek the bottom
+row on each side (the chevron and the info roundel), at half and full both
+stacks whole. Nothing moves; what is under the sheet is simply gone.
+
 **Why forms take none.** A drag down below the lowest detent closes the
 sheet. On a form that would throw away what the reader has typed, from a
 gesture they may have meant as a scroll. A form is a task that ends with a
