@@ -92,6 +92,13 @@
  * the fetch sequencing, the open/close state) is exactly the kind jsdom can
  * hold, so it belongs in tests/js rather than tests/e2e. Tracked on SNOW-801.
  *
+ * SNOW-1098: on a phone a map TAP opens the region sheet as well
+ * (static/js/map_region_sheet.js), which carries the same facts at peek,
+ * half and full. This panel keeps its summary regardless: it is reached
+ * from the chip at every width, and the sheet is phone-only and opened by
+ * a tap alone, so taking the summary out of here would leave a desktop
+ * reader, or a reader who selected by search, with none.
+ *
  * The content stops at the resorts list. Neighbouring regions' ratings and
  * the week's trend are the obvious next two; the ratings cache already holds
  * what the trend would need.

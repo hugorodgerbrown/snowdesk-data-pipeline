@@ -7965,9 +7965,14 @@
     //   'mark' — skips the write because the URL already matches (popstate,
     //   hashchange, initial load) and just records that our hash is the active
     //   history entry.
+    //
+    // ``via`` (SNOW-1098) rides out on the event so a listener can tell a
+    // map TAP from the other routes into a selection. Only the region
+    // sheet reads it: a tap on a phone opens the sheet, while a search
+    // pick, a deep link or a pinned-region row select without one.
     const selectFeature = async (
       numericId,
-      { urlMode = 'push' } = {},
+      { urlMode = 'push', via = '' } = {},
     ) => {
       // Already the active region — nothing to change. The deselect toggle is
       // the click handler's job (see deselectRegion), so that a repeated
@@ -8007,6 +8012,7 @@
           // readout can build a breadcrumb mirroring the visible map overlays.
           subregion_name: props.subregion_name || '',
           major_name: props.major_name || '',
+          via,
         },
       }));
     };
@@ -9095,7 +9101,7 @@
         // SNOW-499: close any anchored resort/favourite detail popup so it
         // does not linger over a region the user has moved on from.
         closeMapDetailSurfaces();
-        selectFeature(region.id);
+        selectFeature(region.id, { via: 'tap' });
       }
     });
 

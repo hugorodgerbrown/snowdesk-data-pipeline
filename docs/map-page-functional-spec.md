@@ -35,9 +35,22 @@ selected day. The chip is a disclosure button: pressing it opens the
 for the shown day, the resorts inside the region, and the region's pin
 (SNOW-814). The
 selection is mirrored in the URL fragment (`#CH-4115`), so it is
-deep-linkable and the back button drops it. Nothing is overlaid on the
-map itself: tapping a region does not open a popup over the terrain the
-visitor just tapped.
+deep-linkable and the back button drops it. On a desktop nothing is
+overlaid on the map itself: tapping a region does not open a popup over
+the terrain the visitor just tapped.
+
+**On a phone (below 640px) a tap opens the region sheet** (SNOW-1098), a
+bottom sheet with the three detents of §3.7. It opens at **peek** (the
+region's name, the day's danger level, the date, and the pin and
+download controls), which keeps the tapped ground in view; that was the
+complaint that removed the old popup. Dragging up to **half** shows where
+the region is, the day's avalanche problems and its resorts. **Full**
+adds the link to the bulletin page, which is not re-rendered in the sheet.
+Only a map tap opens it. A search pick, a deep link and a pinned-region
+row select without one. While it is open it follows the selection and
+the day, and deselecting the region closes it. Its pin and download
+buttons press the roundels beside the chip, so each keeps one owner. The
+chip's region panel keeps its summary at every width.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
