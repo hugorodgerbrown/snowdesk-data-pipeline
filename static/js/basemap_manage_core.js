@@ -278,7 +278,9 @@
    *   bytes: number, savedAt: string, size: string, basemapKey: string,
    *   onDevice: boolean, synced: boolean, redownloadable: boolean,
    *   bbox: number[]|null, regionId: string, deps: string[],
-   *   z: Object|null, band: number[]|null, contentIncomplete: boolean}>}
+   *   z: Object|null, band: number[]|null, contentIncomplete: boolean,
+   *   terrain: boolean}>}
+   *   SNOW-1072: ``terrain`` is whether the area includes terrain data.
    *   SNOW-936: ``deletable``, ``deps``, ``z`` and ``band`` were emitted
    *   here for tickets' worth of releases without being named above. This
    *   file is not ``@ts-check``'d, so this block is the ONLY contract a
@@ -429,6 +431,11 @@
         // account-only row was never downloaded here at all — and both
         // would otherwise be offered a Refresh with nothing to refresh.
         contentIncomplete: !area.orphaned && onDevice && !!area.contentIncomplete,
+        // SNOW-1072: whether the area includes terrain data. Carried for
+        // two readers: the completeness check, which judges an opted-in
+        // row on its class tiles too, and "Download here", which repeats
+        // the account row's choice on this device.
+        terrain: !!area.terrain,
       });
     }
 
@@ -638,6 +645,9 @@
         // from the record. This join rebuilds every entry field by field,
         // so a field not named here is a field the sheet never sees.
         contentIncomplete: !!area.contentIncomplete,
+        // SNOW-1072: whether the area includes terrain data — the flag the
+        // sheet's completeness check derives the class tiles from.
+        terrain: !!area.terrain,
       });
     }
 
@@ -710,6 +720,9 @@
         // nothing here to be missing. The sheet skips the completeness
         // check for an off-device row entirely.
         deps: [],
+        // SNOW-1072: the account's record of the opt-in, so "Download
+        // here" fetches the same tile families the first device did.
+        terrain: !!accountRow.terrain,
       });
     }
     accountOnly.sort(function (a3, b3) {

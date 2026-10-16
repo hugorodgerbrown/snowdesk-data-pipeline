@@ -122,6 +122,10 @@ function buildFixture() {
           </div>
         </div>
         <p data-downloads-over hidden>You're over your budget.</p>
+        <div data-downloads-terrain>
+          <label for="map-downloads-terrain">Terrain data</label>
+          <input id="map-downloads-terrain" type="checkbox" role="switch">
+        </div>
         <div>
           <div data-downloads-groups></div>
           <p data-downloads-empty hidden>No areas downloaded yet.</p>
@@ -299,6 +303,11 @@ function installDownloadsBridge(rows, cachesStub) {
         // above — no cache read can answer it — so the reader carries it
         // through exactly as map.js's own does.
         contentIncomplete: !!entry.contentIncomplete,
+        // SNOW-1072: the ground and the terrain-data flag the class tiles
+        // are derived from, as the real reader carries them.
+        z: entry.z || null,
+        band: Array.isArray(entry.band) ? entry.band : null,
+        terrain: !!entry.terrain,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -2084,8 +2093,23 @@ describe('account-only rows (SNOW-749)', () => {
     row().querySelector('[data-downloads-here]').click();
     await settle();
 
-    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000');
+    // SNOW-1072: with the account row's terrain-data choice (none here).
+    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000', { terrain: false });
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    delete window.pwaRegionDownload;
+  });
+
+  it('repeats the account row\'s terrain-data choice on Download here (SNOW-1072)', async () => {
+    installAreas([{ ...ACCOUNT_ONLY_REGION, terrain: true }]);
+    window.pwaRegionDownload = { start: vi.fn(async () => ({ started: true, reason: '' })) };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000', { terrain: true });
     delete window.pwaRegionDownload;
   });
 
@@ -2201,9 +2225,10 @@ describe('account-only rows (SNOW-749)', () => {
     row().querySelector('[data-downloads-here]').click();
     await settle();
 
-    expect(window.pwaCustomAreaDownload.openFramingAt).toHaveBeenCalledWith([
-      7.9, 46.4, 8.1, 46.6,
-    ]);
+    expect(window.pwaCustomAreaDownload.openFramingAt).toHaveBeenCalledWith(
+      [7.9, 46.4, 8.1, 46.6],
+      { terrain: false },
+    );
   });
 
   it('refuses Download here while offline', async () => {
@@ -3146,5 +3171,126 @@ describe('resilience', () => {
     seed({});
     await expect(loadModule()).resolves.not.toThrow();
     expect(window.pwaDownloadsManager).toBeUndefined();
+  });
+});
+
+describe('terrain data (SNOW-1072)', () => {
+  const STYLE_URL = 'https://tiles.example.invalid/liberty.json';
+  const CLASS_URLS = [
+    'https://terrain.example.invalid/terrain-class/v2/12/2130/1455.png',
+    'https://terrain.example.invalid/terrain-class/v2/12/2131/1455.png',
+  ];
+
+  /** One region on the active basemap, with or without the terrain flag. */
+  function region(extra) {
+    return [
+      {
+        region_id: 'CH-2101',
+        name: 'Aletsch',
+        band: [10, 14],
+        z: { 12: { 1455: [2130, 2131] } },
+        bytes: 40 * MB,
+        savedAt: '2026-08-01T10:00:00.000Z',
+        basemapKey: 'openfreemap_liberty',
+        deps: [STYLE_URL],
+        ...(extra || {}),
+      },
+    ];
+  }
+
+  /** Wire the terrain members onto the bridge `seed` installed. */
+  function terrainBridge(options) {
+    const bridge = window.pwaBasemapDownloads;
+    bridge.areaTerrainClassTileUrls = vi.fn((row) => (row && row.terrain ? CLASS_URLS : []));
+    bridge.terrainDataAvailable = vi.fn(() => options.available);
+    bridge.terrainDataPreferred = vi.fn(() => options.preferred);
+    bridge.setTerrainDataPreferred = vi.fn();
+    return bridge;
+  }
+
+  it('reads an opted-in area missing a class tile as Incomplete', async () => {
+    window.caches.urls = [STYLE_URL, CLASS_URLS[0]];
+    seed({ 'basemap.regions': region({ terrain: true }) });
+    terrainBridge({ available: true, preferred: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+  });
+
+  it('reads an opted-in area holding every class tile as complete', async () => {
+    window.caches.urls = [STYLE_URL, ...CLASS_URLS];
+    seed({ 'basemap.regions': region({ terrain: true }) });
+    terrainBridge({ available: true, preferred: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      'Region · OpenFreeMap · 40.0 MB',
+    );
+  });
+
+  it('ignores class tiles for an area downloaded without terrain data', async () => {
+    window.caches.urls = [STYLE_URL];
+    seed({ 'basemap.regions': region() });
+    terrainBridge({ available: true, preferred: true });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      'Region · OpenFreeMap · 40.0 MB',
+    );
+  });
+
+  it('shows the checkbox off by default, and on to match the preference', async () => {
+    seed({ 'basemap.regions': region() });
+    terrainBridge({ available: true, preferred: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const block = document.querySelector('#map-downloads-sheet [data-downloads-terrain]');
+    const input = block.querySelector('input');
+    expect(block.hidden).toBe(false);
+    expect(input.checked).toBe(false);
+
+    window.pwaBasemapDownloads.terrainDataPreferred.mockReturnValue(true);
+    // A re-open re-clones the body and repaints it from the preference.
+    window.pwaDownloadsManager.toggle();
+    await settle();
+    openSheet();
+    await settle();
+    expect(document.querySelector('#map-downloads-sheet [data-downloads-terrain] input').checked).toBe(
+      true,
+    );
+  });
+
+  it('hides the checkbox where this page cannot include terrain data', async () => {
+    seed({ 'basemap.regions': region() });
+    terrainBridge({ available: false, preferred: true });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const block = document.querySelector('#map-downloads-sheet [data-downloads-terrain]');
+    expect(block.hidden).toBe(true);
+    expect(block.querySelector('input').checked).toBe(false);
+  });
+
+  it('saves the choice through the bridge when the checkbox changes', async () => {
+    seed({ 'basemap.regions': region() });
+    const bridge = terrainBridge({ available: true, preferred: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const input = document.querySelector('#map-downloads-sheet [data-downloads-terrain] input');
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(bridge.setTerrainDataPreferred).toHaveBeenCalledWith(true);
   });
 });

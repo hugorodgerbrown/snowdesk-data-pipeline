@@ -286,6 +286,10 @@
           // record written before the field existed — reads as fine rather
           // than as unknown.
           contentIncomplete: !!entry.contentIncomplete,
+          // SNOW-1072: whether this area includes terrain data. The class
+          // tiles it implies are derived from `z`/`bbox` above, never
+          // recorded; the flag is the choice, which nothing can derive.
+          terrain: !!entry.terrain,
         });
       }
     } catch (_e) {
@@ -340,6 +344,8 @@
           band: Array.isArray(custom.band) ? custom.band : null,
           // SNOW-932: see the region branch above.
           contentIncomplete: !!custom.contentIncomplete,
+          // SNOW-1072: see the region branch above.
+          terrain: !!custom.terrain,
         });
       }
     } catch (_e) {

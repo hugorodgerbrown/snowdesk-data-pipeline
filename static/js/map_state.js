@@ -386,6 +386,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // msgid — the caller appends it to the interpolated `pct` value itself,
   // so there is nothing here for a translation to get wrong.
   'frame-up-to': 'Up to %(mb)s MB',
+  // SNOW-1072: the readout's second line, shown when the download includes
+  // terrain data.
+  'frame-terrain-up-to': 'Terrain data: up to %(mb)s MB more',
   'frame-over-ceiling': 'Area too large to download (over %(mb)s MB)',
   'frame-readout-busy': '%(pct)s · %(mb)s',
   'frame-readout-done': '%(mb)s downloaded',
@@ -418,6 +421,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-no-region-unavailable': "Basemap download isn't available for this region",
   'download-no-region-select': 'Select a region to download its basemap',
   'download-idle': "Download this region's basemap — up to %(mb)s MB",
+  // SNOW-1072: the same, on a device that includes terrain data.
+  'download-idle-terrain':
+    "Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain data",
   'download-busy': "Downloading this region's basemap — %(pct)s",
   // SNOW-924: a downloaded area now carries the bulletins and weather
   // inside its boundary, and those go stale where the tiles never do — so

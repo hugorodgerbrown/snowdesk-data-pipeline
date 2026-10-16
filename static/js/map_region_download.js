@@ -309,6 +309,10 @@
    *   representation of "nothing wrong", and that is what makes every
    *   record predating this ticket keep reading `done` rather than going
    *   amber on the deploy that introduces the field.
+   * @param {boolean} [terrain] SNOW-1072: whether this run included terrain
+   *   data. Stored as `terrain: true` or not at all, and synced to the
+   *   account either way, so a record without it reads as an area with no
+   *   class tiles to check — which every record before the ticket is.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -322,6 +326,7 @@
     glyphPrefix,
     contentAt,
     contentIncomplete,
+    terrain,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -373,6 +378,9 @@
         // fine, which is the whole compatibility story: an area downloaded
         // before this ticket carries neither field and still reads `done`.
         ...(contentIncomplete ? { contentIncomplete: true } : {}),
+        // SNOW-1072: the terrain-data opt-in this run carried. The class
+        // tiles it implies are derived from `z`, never stored here.
+        ...(terrain ? { terrain: true } : {}),
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -397,6 +405,7 @@
         regionId: regionId,
         basemapKey: basemapKey,
         name: name,
+        terrain: !!terrain,
       });
     } catch (err) {
       // Still non-fatal — see the docstring — but no longer silent
@@ -723,6 +732,38 @@
   // which is the honest reading of "nothing is focused yet".
   let currentRegionId = null;
 
+  // SNOW-1072: a "Download here" for an account row carries that row's own
+  // terrain-data choice, which wins over this device's preference for the
+  // one run it starts. Null means no override — `handleClick` reads the
+  // preference. Set and cleared around a single `handleClick` by
+  // `startRegionDownload`.
+  let terrainOverride = null;
+
+  /**
+   * SNOW-1072: whether the run about to start includes terrain data.
+   *
+   * @returns {boolean}
+   */
+  function _runIncludesTerrain() {
+    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+  }
+
+  /**
+   * SNOW-1072: what terrain data would add to this region's download, in
+   * MB — the figure the idle label states and the runner adds to its
+   * pre-flights. Priced from the region's own outline and tile count, since
+   * the blob is fetched only once the run has started.
+   *
+   * @param {{regionId: string, summary: Object}} data
+   * @returns {number}
+   */
+  function _regionTerrainMb(data) {
+    const core = self.pwaBasemapDownloadCore;
+    const feature = data ? FEATURE_BY_REGION_ID[data.regionId] : null;
+    const bbox = core && feature ? core.featureBBox(feature) : null;
+    return terrainClassMbForGround(bbox, data && data.summary ? data.summary.count : undefined);
+  }
+
   /**
    * True when EVERY tile of `data`'s region is present in the pinned
    * cache — "is this region actually available offline?".
@@ -850,10 +891,15 @@
         // second row of the resolution rule in `areaRenderDependencyURLs`.
         // SNOW-692: plus the slope-angle tiles this area's ground implies,
         // derived from the record's own `z` rather than recorded on it.
-        const depURLs = [
+        const slopeAndDeps = [
           ...areaRenderDependencyURLs(stored.deps, true),
           ...areaSlopeTileUrls(stored),
         ];
+        // SNOW-1072: and the terrain-class tiles, for a record carrying the
+        // opt-in — derived from `z` and the flag, never recorded. A missing
+        // class tile leaves the area 'incomplete', and the tap's repair
+        // fetches it.
+        const depURLs = [...slopeAndDeps, ...areaTerrainClassTileUrls(stored)];
         // Only asked once the tiles are all present. An area still missing
         // tiles is not downloaded at all, and 'idle' — download it — is
         // the right thing to offer; 'incomplete' would send the user to a
@@ -887,7 +933,9 @@
         // there is nothing for a later prune to take.
         if (tilesCached) {
           const fields = { template: tileSources, basemapKey: activeBasemapKey() };
-          if (missingDeps.length === 0) fields.deps = depURLs;
+          // SNOW-1072: healed WITHOUT the class tiles, which the record
+          // must never carry — the flag is what names them.
+          if (missingDeps.length === 0) fields.deps = slopeAndDeps;
           if (!stored.glyphPrefix) {
             const prefix = activeBasemapGlyphPrefix(MAP);
             const areaId = core.areaIdForRegion(data.regionId);
@@ -1097,7 +1145,7 @@
       'no-region': currentRegionId
         ? MAP_STRINGS['download-no-region-unavailable']
         : MAP_STRINGS['download-no-region-select'],
-      idle: self.pwaStrings.interpolate(MAP_STRINGS['download-idle'], { mb: mb }),
+      idle: _idleLabel(mb, summary),
       busy: self.pwaStrings.interpolate(MAP_STRINGS['download-busy'], { pct: `${pct || 0}%` }),
       // SNOW-924: the tap on a done area updates its content rather than
       // downloading it again, so the label has to say so. The refresh
@@ -1131,6 +1179,25 @@
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
+  }
+
+  /**
+   * SNOW-1072: the idle label — the region's size, and on a device that
+   * includes terrain data, what that adds, as its own clause.
+   *
+   * @param {number} mb The basemap download's priced size.
+   * @param {Object|undefined} summary The region's download summary.
+   * @returns {string}
+   */
+  function _idleLabel(mb, summary) {
+    const terrainMb = summary && _runIncludesTerrain() ? _regionTerrainMb(regionData) : 0;
+    if (terrainMb > 0 && MAP_STRINGS['download-idle-terrain']) {
+      return self.pwaStrings.interpolate(MAP_STRINGS['download-idle-terrain'], {
+        mb: mb,
+        terrain: terrainMb,
+      });
+    }
+    return self.pwaStrings.interpolate(MAP_STRINGS['download-idle'], { mb: mb });
   }
 
   // SNOW-611: the shared retry-when-the-style-settles callback — see
@@ -1180,7 +1247,10 @@
     // flag calls too large is downloaded anyway on a phone with the room
     // for it; the stored flag stays in the payload and the admin as the
     // sizing signal it always was.
-    if (core && scaledMb > basemapDeviceCeilingMb()) {
+    // SNOW-1072: terrain data, when this device includes it, is part of
+    // what the download spends and so part of what the ceiling judges.
+    const terrainMb = _runIncludesTerrain() ? _regionTerrainMb(data) : 0;
+    if (core && scaledMb + terrainMb > basemapDeviceCeilingMb()) {
       setState('disabled', data.summary);
       return;
     }
@@ -1605,9 +1675,15 @@
     let replacing = null;
     let declinedReplace = false;
 
+    // SNOW-1072: decided once, at the tap — the record stores what this
+    // run actually did, whatever the preference says by the time it ends.
+    const terrain = _runIncludesTerrain();
+
     await runPinnedDownload({
       areaId: areaId,
       mb: data.summary.mb,
+      terrain: terrain,
+      terrainMb: terrain ? _regionTerrainMb(data) : 0,
       // SNOW-868: the tile count is what the per-basemap price multiplies —
       // see the runner's own `count` note.
       count: data.summary.count,
@@ -1777,6 +1853,7 @@
             glyphPrefix,
             outcome.complete ? new Date().toISOString() : null,
             outcome.incomplete,
+            terrain,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
@@ -1887,6 +1964,10 @@
 
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
 
+  // SNOW-1072: the idle label states what terrain data adds, and the
+  // ceiling check counts it, so a change to the preference repaints.
+  document.addEventListener('snowdesk:terrain-data-changed', () => renderControl());
+
   // Offline-integrity: re-render on every connectivity transition so the
   // icon greys out (offline, not yet downloaded) or becomes actionable
   // again (back online) without needing the region re-selected.
@@ -1929,6 +2010,9 @@
    * whether a run is allowed at all.
    *
    * @param {string} regionId
+   * @param {{terrain?: boolean}} [options] SNOW-1072: `terrain` is the
+   *   account row's own terrain-data choice, which this run repeats in
+   *   place of the device's preference. Omitted, the preference decides.
    * @returns {Promise<{started: boolean, reason: string}>} SNOW-863: a
    *   REASON, not just a boolean. `reason` is `''` on success,
    *   `'signin'` when the visitor has been sent to sign in (so the caller
@@ -1939,7 +2023,7 @@
    *   `'incomplete'`, `'disabled'`, `'offline'`. The caller picks its
    *   message from that; see `map_downloads_manager.js`.
    */
-  async function startRegionDownload(regionId) {
+  async function startRegionDownload(regionId, options) {
     if (NEEDS_SIGNIN) {
       goToSignIn();
       return { started: false, reason: 'signin' };
@@ -1947,21 +2031,30 @@
     if (!regionId || !FEATURE_BY_REGION_ID[regionId]) {
       return { started: false, reason: 'unknown-region' };
     }
-    applyRegion(regionId);
-    await renderControl();
-    const state = btn.dataset.downloadState;
-    if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
-      // SNOW-863: the refused STATE travels back, because "it did not
-      // start" and "here is why" are different facts and the caller could
-      // only ever say the first. The state that actually reaches a user
-      // here is 'busy' — this control is a single shared roundel, so a
-      // second "Download here" while the first run is still going is
-      // refused, and the sheet's only message was "Try again", which is
-      // untrue: trying again fails identically until the run finishes.
-      return { started: false, reason: state || 'unknown' };
+    // SNOW-1072: in force from the probe on, so the ceiling check that
+    // decides whether this region can run prices the same tile families
+    // the run will fetch.
+    terrainOverride =
+      options && typeof options.terrain === 'boolean' ? options.terrain : null;
+    try {
+      applyRegion(regionId);
+      await renderControl();
+      const state = btn.dataset.downloadState;
+      if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
+        // SNOW-863: the refused STATE travels back, because "it did not
+        // start" and "here is why" are different facts and the caller
+        // could only ever say the first. The state that actually reaches a
+        // user here is 'busy' — this control is a single shared roundel, so
+        // a second "Download here" while the first run is still going is
+        // refused, and the sheet's only message was "Try again", which is
+        // untrue: trying again fails identically until the run finishes.
+        return { started: false, reason: state || 'unknown' };
+      }
+      await handleClick();
+      return { started: true, reason: '' };
+    } finally {
+      terrainOverride = null;
     }
-    await handleClick();
-    return { started: true, reason: '' };
   }
 
   window.pwaRegionDownload = Object.freeze({
