@@ -4337,7 +4337,13 @@
   let terrainFilter = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
     ? TERRAIN_CORE.parseFilter(readStorage(TERRAIN_FILTER_STORAGE_KEY))
     : null;
-  let terrainClassify = terrainFilter ? TERRAIN_CORE.createFilterClassifier(terrainFilter) : null;
+  // SNOW-1073: the classifier and the palette follow the filter's mode —
+  // 'match' tints matching ground, 'slope' colours it by slope class (the
+  // map's slope layer, which replaced swisstopo's raster). Reassigned
+  // together by setFilter, so a tile is never painted with one mode's
+  // indices and the other's colours.
+  let terrainClassify = terrainFilter ? TERRAIN_CORE.createClassifier(terrainFilter) : null;
+  let terrainPalette = terrainFilter ? TERRAIN_CORE.paletteFor(terrainFilter) : null;
   const terrainClassCache = TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE
     ? TERRAIN_CORE.createTileCache(TERRAIN_CLASS_CACHE_TILES)
     : null;
@@ -4447,7 +4453,7 @@
     const size = TERRAIN_CORE.TILE_SIZE;
     const out = new Uint8ClampedArray(size * size * 4);
     if (pixels) {
-      TERRAIN_CORE.paintTile(pixels, out, terrainClassify, TERRAIN_CORE.PALETTE, tile);
+      TERRAIN_CORE.paintTile(pixels, out, terrainClassify, terrainPalette, tile);
     }
     return { data: await createImageBitmap(new ImageData(out, size, size)) };
   };
@@ -4621,7 +4627,8 @@
       getFilter: () => TERRAIN_CORE.normaliseFilter(terrainFilter),
       setFilter(next) {
         terrainFilter = TERRAIN_CORE.normaliseFilter(next);
-        terrainClassify = TERRAIN_CORE.createFilterClassifier(terrainFilter);
+        terrainClassify = TERRAIN_CORE.createClassifier(terrainFilter);
+        terrainPalette = TERRAIN_CORE.paletteFor(terrainFilter);
         writeStorage(TERRAIN_FILTER_STORAGE_KEY, TERRAIN_CORE.serialiseFilter(terrainFilter));
         scheduleTerrainRepaint();
         announceTerrainFilter();
@@ -6929,7 +6936,7 @@
 
   // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
   //
-  // Two layers are drawn only past a zoom, and the zoom control's flyout
+  // Some layers are drawn only past a zoom, and the zoom control's flyout
   // (static/js/map_zoom_control.js) puts a tick on its scale for each one
   // that is on. One entry per gated layer, so a third one is a line here
   // and a label in the control's strings template, and nothing else.
@@ -6938,7 +6945,10 @@
   // this zoom" — the tick is there to say where it starts.
   //
   //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
-  //     (z12); on while the reader has switched it on.
+  //     (z12); on while the reader has switched it on in the match mode.
+  //   slope_classes — the same tiles, so the same zoom, in the filter's
+  //     slope mode (SNOW-1073): the slope layer, labelled as such. The two
+  //     entries are never on together, so there is one tick at z12.
   //   route_slopes — a route's core switches from leg colours to slope
   //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
   //     is painted and its slope source holds at least one segment. A
@@ -6948,7 +6958,14 @@
     Object.freeze({
       key: 'terrain_filter',
       zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
-      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
+        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode !== 'slope',
+    }),
+    Object.freeze({
+      key: 'slope_classes',
+      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
+      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
+        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope',
     }),
     Object.freeze({
       key: 'route_slopes',

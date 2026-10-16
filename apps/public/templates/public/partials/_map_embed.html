@@ -1319,11 +1319,20 @@ Optional context:
                     data-terrain-filter-legend
                     hidden
                 >
-                    <div class="map-legend-title">
+                    {# SNOW-1073: one heading per mode, shown with its key — in #}
+                    {# the slope mode this section is the slope layer's key,   #}
+                    {# and its heading leads to the slope topic's caveats.     #}
+                    <div class="map-legend-title" data-terrain-filter-key="match">
                         <a
                             class="map-legend-attribution-link"
                             href="{% url 'public:help' %}#help-topic-terrain-filter"
                         >{% trans "Terrain filter" %}</a>
+                    </div>
+                    <div class="map-legend-title" data-terrain-filter-key="slope" hidden>
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-slope"
+                        >{% trans "Slope angle" %}</a>
                     </div>
                     {% include "includes/_terrain_filter_key.html" %}
                 </section>

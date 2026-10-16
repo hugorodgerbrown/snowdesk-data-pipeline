@@ -53,12 +53,17 @@ function buildFixture() {
     </div>
     <button data-terrain-filter-open><span data-row-label>Terrain filter…</span>
       <span data-terrain-filter-summary hidden></span></button>
-    <section data-terrain-filter-legend hidden></section>
+    <section data-terrain-filter-legend hidden>
+      <div data-terrain-filter-key="match" data-legend-part>Terrain filter</div>
+      <div data-terrain-filter-key="slope" data-legend-part hidden>Slope angle</div>
+    </section>
     <div id="map-terrain-filter-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-terrain-filter-template">
       <h2>Terrain filter</h2>
       <input id="map-terrain-filter-enabled" type="checkbox" role="switch">
       <p data-terrain-filter-availability></p>
+      <input type="radio" name="terrain-filter-mode" value="match" checked>
+      <input type="radio" name="terrain-filter-mode" value="slope">
       ${compass.map((c, i) => `<button type="button" data-octant="${i}" aria-pressed="false">${c}</button>`).join('')}
       <select data-terrain-filter-min-slope>
         ${[30, 35, 40, 45, 50].map((d) => `<option value="${d}">${d}°</option>`).join('')}
@@ -69,9 +74,13 @@ function buildFixture() {
       </select>
       <input type="number" step="100" data-terrain-filter-min-elevation>
       <input type="number" step="100" data-terrain-filter-max-elevation>
+      <div data-terrain-filter-key="match">Matches the filter</div>
+      <div data-terrain-filter-key="slope" hidden>30–35°</div>
     </template>
     <template id="map-terrain-filter-strings-template">
       <span data-string="availability-ok">Hervorgehoben.</span>
+      <span data-string="availability-ok-slope">Nach Neigungsklasse eingefärbt.</span>
+      <span data-string="mode-slope">Neigungsklassen</span>
       <span data-string="availability-off">Aus.</span>
       <span data-string="availability-zoom-in">Näher heranzoomen.</span>
       <span data-string="aspects-all">Alle Expositionen</span>
@@ -183,6 +192,53 @@ describe('editing', () => {
       minElevation: 2500,
       maxElevation: null,
     });
+  });
+});
+
+describe('the mode (SNOW-1073)', () => {
+  const radio = (value) => q(`input[name="terrain-filter-mode"][value="${value}"]`);
+  const shown = (root) => [...root.querySelectorAll('[data-terrain-filter-key]')]
+    .filter((el) => !el.hidden)
+    .map((el) => el.dataset.terrainFilterKey);
+
+  it('seeds the mode control and the key from the bridge', () => {
+    bridge.state.filter = { mode: 'slope', minSlope: 30 };
+    window.pwaTerrainFilterSheet.open();
+    expect(radio('slope').checked).toBe(true);
+    expect(radio('match').checked).toBe(false);
+    expect(shown(sheetEl())).toEqual(['slope']);
+  });
+
+  it('hands the chosen mode back with the rest of the filter', () => {
+    window.pwaTerrainFilterSheet.open();
+    radio('slope').checked = true;
+    radio('slope').dispatchEvent(changeEvent());
+    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'slope', minSlope: 30 });
+    expect(shown(sheetEl())).toEqual(['slope']);
+    radio('match').checked = true;
+    radio('match').dispatchEvent(changeEvent());
+    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'match' });
+    expect(shown(sheetEl())).toEqual(['match']);
+  });
+
+  it('keeps the slope range in slope mode', () => {
+    bridge.state.filter = { mode: 'slope', minSlope: 35, maxSlope: 45 };
+    window.pwaTerrainFilterSheet.open();
+    expect(q('[data-terrain-filter-min-slope]').value).toBe('35');
+    q('[data-terrain-filter-min-slope]').value = '40';
+    q('[data-terrain-filter-min-slope]').dispatchEvent(changeEvent());
+    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'slope', minSlope: 40 });
+  });
+
+  it('says the ground is coloured by class, and names the mode on the chip', () => {
+    bridge.state.filter = { mode: 'slope', minSlope: 30 };
+    bridge.show();
+    window.pwaTerrainFilterSheet.open();
+    expect(q('[data-terrain-filter-availability]').textContent).toBe('Nach Neigungsklasse eingefärbt.');
+    const chip = document.getElementById('map-terrain-filter-chip');
+    expect(chip.textContent.trim()).toBe('Neigungsklassen · Alle Expositionen · ab 30°');
+    expect(shown(document.querySelector('[data-terrain-filter-legend]'))).toEqual(['slope']);
+    bridge.hide();
   });
 });
 

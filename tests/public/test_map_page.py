@@ -1905,6 +1905,39 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
 
 
 @pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_renders_the_mode_control() -> None:
+    """SNOW-1073: the sheet offers its two modes as one radio group.
+
+    "Highlight matches" is the server-rendered default; "Colour by slope"
+    is the slope layer. The colour key carries both modes' rows, the match
+    rows shown and the slope rows hidden until the script reads the stored
+    mode, and the legend has a heading per mode leading to its help topic.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    sheet = content[content.index('id="map-terrain-filter-template"') :]
+    sheet = sheet[: sheet.index("</template>")]
+
+    assert sheet.count('name="terrain-filter-mode"') == 2
+    match = sheet[sheet.index('value="match"') :][:120]
+    slope = sheet[sheet.index('value="slope"') :][:120]
+    assert "checked" in match
+    assert "checked" not in slope
+    assert "Highlight matches" in sheet
+    assert "Colour by slope" in sheet
+    assert '<div class="contents" data-terrain-filter-key="slope" hidden>' in sheet
+    assert "map-legend-swatch--slope-30" in sheet
+    # The slope range stays in the sheet whatever the mode.
+    assert "data-terrain-filter-min-slope" in sheet
+
+    legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
+    legend = legend[: legend.index("</section>")]
+    assert 'data-terrain-filter-key="slope" hidden' in legend
+    assert "#help-topic-slope" in legend
+    assert "#help-topic-terrain-filter" in legend
+
+
+@pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL="")
 def test_terrain_filter_absent_without_tile_url() -> None:
     """SNOW-978: the setting defaults to empty, which turns the filter off.

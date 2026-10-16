@@ -1,0 +1,43 @@
+{% comment %}
+templates/includes/_segmented_option.html — one option of a segmented control.
+
+A segmented control is a radio group drawn as a row of pills inside one
+rounded track, the selected pill filled with the accent. A caller writes the
+track and the fieldset (with its legend) and includes this once per option:
+
+    <fieldset>
+        <legend class="sr-only">…</legend>
+        <div class="inline-flex rounded-pill border border-border bg-card p-0.5">
+            {% include "includes/_segmented_option.html" with name="x" value="a" label=a_label checked=True %}
+            {% include "includes/_segmented_option.html" with name="x" value="b" label=b_label %}
+        </div>
+    </fieldset>
+
+Real radios rather than toggle buttons: the browser supplies the arrow-key
+movement, the single selection and the group label. The `peer` variant needs
+the styled <span> to be a LATER sibling of the input it reflects, which is why
+the sr-only input comes first inside each label rather than wrapping the text.
+
+Extracted by SNOW-1073, when the terrain filter's mode control became the
+second user of the shape includes/_theme_preference.html introduced.
+
+Parameters:
+  name    — the radio group's name (required).
+  value   — this option's value (required).
+  label   — the visible, already-translated text (required).
+  checked — render this option selected (optional, default False).
+{% endcomment %}
+<label class="cursor-pointer">
+    <input
+        type="radio"
+        name="{{ name }}"
+        value="{{ value }}"
+        class="peer sr-only"
+        {% if checked %}checked{% endif %}
+    >
+    <span
+        class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+    >
+        {{ label }}
+    </span>
+</label>
