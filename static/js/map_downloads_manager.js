@@ -539,21 +539,19 @@
     for (const row of rows) {
       if (row.orphaned || row.onDevice === false) continue;
       const isActive = !!activeKey && row.basemapKey === activeKey;
-      // SNOW-692: the slope tiles are derived from the row's own record
-      // rather than read from `deps`, and are appended to whatever the
-      // three-row rule yields — including the empty UNKNOWN case, since
-      // the slope raster is one layer on one host whatever the basemap, so
-      // a row for an inactive basemap can still be judged on them.
       const depURLs = [
         ...bridge.areaRenderDependencyUrls(row.deps, isActive),
-        // The base layer is excluded: it is the shared z0-9 world ground,
-        // and the slope raster is a regional overlay that never covered it.
-        ...(row.kind !== 'base' && typeof bridge.areaSlopeTileUrls === 'function'
-          ? bridge.areaSlopeTileUrls(row)
-          : []),
         // SNOW-1072: and the terrain-class tiles, for a row whose area
         // includes terrain data. Empty for every other row, so an area
-        // downloaded without the opt-in is never judged on them.
+        // downloaded without the opt-in is never judged on them. Derived
+        // from the row's own record rather than read from `deps`, and
+        // appended to whatever the three-row rule yields — including the
+        // empty UNKNOWN case, since the class tileset is one layer on one
+        // host whatever the basemap, so a row for an inactive basemap can
+        // still be judged on them. The base layer is excluded: it is the
+        // shared z0-9 world ground, below the tileset's z12-14 band.
+        // (SNOW-692's swisstopo slope tiles were judged here the same way
+        // until SNOW-1073 removed that layer.)
         ...(row.kind !== 'base' && typeof bridge.areaTerrainClassTileUrls === 'function'
           ? bridge.areaTerrainClassTileUrls(row)
           : []),

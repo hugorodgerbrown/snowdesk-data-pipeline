@@ -50,8 +50,6 @@ interface Window {
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */
   pwaViewportCore: any;
-  /** static/js/slope_overlay_core.js — swisstopo coverage predicate. */
-  pwaSlopeOverlayCore: any;
   /** static/js/slope_classes_core.js — the 30/35/40/45/50+ slope-class ramp. */
   pwaSlopeClassesCore: any;
   /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */

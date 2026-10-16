@@ -128,8 +128,8 @@
    *
    * Derived from the row's own text rather than a second string per row:
    * a trailing parenthetical goes ("SLF bulletins (CH)" → "SLF bulletins")
-   * and so does the leading "Display" verb the two Basemap overlay rows
-   * carry ("Display slope angles" → "slope angles"). The verb is read from
+   * and so does the leading "Display" verb the Basemap overlay rows carry
+   * ("Display downloaded areas" → "downloaded areas"). The verb is read from
    * the strings template, so the strip survives a locale that words it
    * differently.
    *

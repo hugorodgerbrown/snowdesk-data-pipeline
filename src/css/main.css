@@ -382,20 +382,22 @@
   --color-eaws-very-high:     #820100;   /* SLF interpretation guide; EAWS
                                             itself gives 5 no separate colour */
 
-  /* —— swisstopo slope-angle classes (SNOW-691) ————
-     The five painted classes of the
-     ch.swisstopo.hangneigung-ueber_30 raster, sampled
-     off the served tiles. This is the SLF slope
+  /* —— slope-angle classes (SNOW-691, SNOW-1073) ————
+     The five painted classes, sampled off swisstopo's
+     ch.swisstopo.hangneigung-ueber_30 raster when the
+     map showed it (SNOW-691). This is the SLF slope
      classification, so — like the EAWS scale above —
      these are a published standard, not a brand
-     choice: do not adjust them. Everything below 30°
-     is fully transparent in the source raster and so
-     has no token here.
+     choice: do not adjust them. Nothing below 30° is
+     painted, so it has no token here.
 
      Consumed by .map-legend-swatch--slope-* in
-     static/css/map.css. The map layer itself paints
-     nothing: it is a raster, and the colours arrive
-     already baked into the tile.
+     static/css/map.css. The map's slope layer is now
+     painted on the device from our terrain-class tiles
+     (SNOW-1073), so the same values are mirrored as
+     literals in static/js/slope_classes_core.js — a
+     canvas pixel cannot read a custom property — and a
+     Vitest test holds the two equal.
      ————————————————————————————————————————— */
   --color-slope-30: #f2e50a;   /* 30–35° */
   --color-slope-35: #f46f24;   /* 35–40° */
@@ -404,9 +406,9 @@
   --color-slope-50: #4b4b4b;   /* >50°   */
 
   /* —— two more, for the slope-coloured route LINE (SNOW-910) ——
-     The five above are the raster's and are a published
-     standard. These two are ours, and exist because a
-     LINE has to carry two states a raster does not:
+     The five above are a published standard. These two
+     are ours, and exist because a LINE has to carry two
+     states a raster does not:
 
      --color-slope-gentle: under 30°. The raster paints
        nothing there, which on a raster reads as "the

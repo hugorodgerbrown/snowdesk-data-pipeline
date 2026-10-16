@@ -67,7 +67,6 @@
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
-   *   slopeUrls?: function(Object): string[],
    *   terrainClassUrls?: function(Object): string[],
    *   contentUrls?: function(Object): Promise<string[]|{urls: string[],
    *     short?: boolean}>,
@@ -84,12 +83,14 @@
    *   id and the subset of its urls NOT already cached — so a second
    *   download finds nothing to do — and `finishBaseLayer` records what
    *   the top-up fetched. Both optional; see `topUpBaseLayer`.
-   *   SNOW-924 listed three members this block had drifted past —
-   *   `slopeUrls` (SNOW-692) and `glyphPrefix` (SNOW-847) were both read
-   *   by `run` while documented nowhere — alongside its own `contentUrls`,
-   *   the only async one: it caches the overlay feeds before it can say
-   *   which weather sheets the area contains. All optional, each yielding
-   *   its pre-ticket behaviour when a deps bundle predates it.
+   *   SNOW-924 listed the members this block had drifted past —
+   *   `glyphPrefix` (SNOW-847) was read by `run` while documented nowhere —
+   *   alongside its own `contentUrls`, the only async one: it caches the
+   *   overlay feeds before it can say which weather sheets the area
+   *   contains. All optional, each yielding its pre-ticket behaviour when a
+   *   deps bundle predates it. SNOW-1073 removed `slopeUrls` (SNOW-692),
+   *   the swisstopo slope raster's tiles, with the layer; a deps bundle
+   *   that still carries it is simply not asked.
    *   SNOW-1072: `terrainClassUrls` is the terrain-class tiles over the
    *   blob's ground — read only when `options.terrain` is set.
    * @param {{
@@ -310,44 +311,37 @@
     const gridPlan = core.tileGridPlan(tileSources, blob);
     const feedUrls = deps.feedUrls();
 
-    // SNOW-692: the slope-angle raster over the same ground and the same
-    // band as the basemap tiles. Derived from the BLOB, so unlike
-    // `feedUrls` it cannot be resolved before the blob has loaded — hence a
-    // separate dep taking it as an argument.
+    // SNOW-1072: the terrain-class tiles the terrain filter — and since
+    // SNOW-1073 the slope layer — paints from, over the same ground as the
+    // basemap tiles. Derived from the BLOB, so unlike `feedUrls` they cannot
+    // be resolved before the blob has loaded — hence a dep taking it as an
+    // argument.
     //
     // Appended AFTER the grid plan's own URLs, never before: `progressGrid`
-    // is given `feedUrls.length` as the offset at which tile URLs start, so
-    // anything inserted between the two would shift every tile off its
-    // cell. Landing them at the end costs only that the on-map grid
-    // finishes filling slightly before the run itself settles.
+    // is given the offset at which tile URLs start, so anything inserted
+    // between the two would shift every tile off its cell. Landing them at
+    // the end costs only that the on-map grid finishes filling slightly
+    // before the run itself settles.
     //
-    // A deps bundle without the member (an older shell mid-rollout) yields
-    // `[]`, which is the pre-ticket behaviour: no slope tiles pinned.
-    const slopeUrls = typeof deps.slopeUrls === 'function' ? deps.slopeUrls(blob) : [];
-
-    // SNOW-1072: the terrain-class tiles the terrain filter paints from —
-    // the same ground and the same placement as the slope raster above (at
-    // the end, after the grid plan, so no tile is shifted off its cell),
-    // and the same treatment in the record: never stored, derived again
-    // by the probe from the area's ground and its `terrain` flag
-    // (`areaTerrainClassTileUrls`). Unlike the slope raster they are an
-    // OPT-IN, so nothing is asked of the deps bundle unless the run
+    // Never stored in the record: the probe derives them again from the
+    // area's ground and its `terrain` flag (`areaTerrainClassTileUrls`).
+    // An OPT-IN, so nothing is asked of the deps bundle unless the run
     // carries `terrain`.
     const terrainUrls =
       terrain && typeof deps.terrainClassUrls === 'function' ? deps.terrainClassUrls(blob) : [];
 
     // SNOW-924: the bulletin pages and weather sheets inside the area's
     // boundary — the perishable half of a download, where everything above
-    // is the permanent half. Takes the blob for the same reason `slopeUrls`
-    // does: the area's ground is what it resolves against.
+    // is the permanent half. Takes the blob for the same reason
+    // `terrainClassUrls` does: the area's ground is what it resolves against.
     //
     // AWAITED, unlike every other url source here, because its first act is
     // to cache the four overlay feeds and the weather sheets it returns are
     // derived from the feed it just fetched. That ordering is the whole
     // reason it is one member rather than two.
     //
-    // FIRST in the list, not last like the slope tiles. SNOW-692 put those
-    // at the end because the grid's offset was `feedUrls.length` and
+    // FIRST in the list, not last like the class tiles. SNOW-692 put its
+    // slope tiles at the end because the grid's offset was `feedUrls.length` and
     // anything inserted ahead of the tiles would shift every one of them
     // off its cell — but the offset is a PARAMETER, so the fix is to widen
     // it rather than to reorder around it. Content going first is worth
@@ -375,7 +369,6 @@
       ...contentUrls,
       ...feedUrls,
       ...(gridPlan ? gridPlan.urls : []),
-      ...slopeUrls,
       ...terrainUrls,
     ];
 
@@ -418,16 +411,15 @@
     // (an older shell mid-rollout) yields `[]`, which every reader treats
     // as "unknown" rather than "complete".
     //
-    // SNOW-692: the slope tiles are deliberately NOT recorded here, though
-    // they ARE checked. They are derivable from what the record already
-    // holds — a region's own `z`, or a custom area's `bbox` + `band` — plus
-    // three page-level constants (the template, the raster's rectangle and
-    // its zoom ceiling), so storing ~273 URLs per area would be 27.4 KB of
-    // record carrying no information the probe cannot recompute. The probe
-    // derives them instead: `areaSlopeTileUrls` in map_basemap_downloads.js.
-    // SNOW-1072: the terrain-class tiles likewise; what the record carries
-    // is the `terrain` flag (passed to `finish` below), and
-    // `areaTerrainClassTileUrls` derives the list from it.
+    // SNOW-1072: the terrain-class tiles are deliberately NOT recorded here,
+    // though they ARE checked. They are derivable from what the record
+    // already holds — a region's own `z`, or a custom area's `bbox` + `band`,
+    // and the `terrain` flag (passed to `finish` below) — plus page-level
+    // constants (the template, the tileset's rectangle and its zoom band),
+    // so storing them would be record carrying no information the probe
+    // cannot recompute. `areaTerrainClassTileUrls` in
+    // map_basemap_downloads.js derives the list instead, as SNOW-692's
+    // `areaSlopeTileUrls` did for the swisstopo raster SNOW-1073 removed.
     const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
 
     // SNOW-742: `glyphPrefix` lets the worker promote this style's

@@ -152,7 +152,7 @@ class TestMapCoreModulesLoaded:
         pair a ``map.js``-only check would miss.
         """
         pairs = {(consumer, core) for consumer, core, _ in self._dependencies()}
-        assert ("map.js", "slope_overlay_core.js") in pairs
+        assert ("map.js", "terrain_filter_core.js") in pairs
         assert ("map_scrubber.js", "scrubber_core.js") in pairs
 
     def test_every_core_dependency_is_loaded(self) -> None:

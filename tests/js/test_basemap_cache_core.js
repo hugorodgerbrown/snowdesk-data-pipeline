@@ -295,7 +295,10 @@ describe('trimCache', () => {
       ['https://vectortiles0.geo.admin.ch/tiles/base.vt/14/8500/5800.pbf', true],
       ['https://tiles.openfreemap.org/planet/20260906_080001_pt/7/66/45.pbf', true],
       ['https://mapsneu.wien.gv.at/basemapv/bmapv/3857/tile/12/1456/2145.pbf', true],
-      ['https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30/default/current/3857/14/8500/5800.png', true],
+      // SNOW-1073: a terrain-class tile — a raster PNG on the self-hosted
+      // origin, which replaced swisstopo's slope raster as the map's one
+      // raster overlay.
+      ['https://tiles.snowdesk-data.info/terrain-class/v1/14/8500/5800.png', true],
       ['https://tiles.example.invalid/14/8500/5800.webp', true],
       ['https://tiles.example.invalid/14/8500/5800', true],
       ['https://tiles.example.invalid/7/66/45.pbf?key=abc', true],
