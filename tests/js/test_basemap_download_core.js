@@ -1933,3 +1933,155 @@ describe('areaContentURLs', () => {
     expect(plan).toEqual({ bulletinUrls: [], weatherDetailUrls: [] });
   });
 });
+
+/* -------------------------------------------------------------------- *
+ * SNOW-1072: the terrain-class tiles the terrain filter paints from.
+ *
+ * A second overlay tile family beside the slope raster, and an opt-in one:
+ * the functions here are pure, and whether a download calls them at all is
+ * the area's `terrain` flag, decided by the caller. What has to hold here
+ * is the superset rule every tile family follows — inside the area and the
+ * tileset's own coverage and band, every tile the filter can ask for is
+ * listed — and that the URL is the one the filter's own fetch builds.
+ * -------------------------------------------------------------------- */
+
+describe('terrainClassTileURLs', () => {
+  const TEMPLATE = 'https://tiles.snowdesk-data.info/terrain-class/v2/{z}/{x}/{y}.png';
+  // terrain_filter_core.js's COVERAGE_BOUNDS and band, restated rather than
+  // imported so a change there shows up here as a deliberate edit.
+  const COVERAGE = [5.9503666, 45.7213375, 10.4998461, 47.8216742];
+  const MIN_Z = 12;
+  const MAX_Z = 14;
+  // Verbier, inside the coverage.
+  const BBOX = [7.2, 46.05, 7.3, 46.12];
+
+  it('builds the URL the filter fetches, three substitutions on the template', () => {
+    const blob = { z: { 12: { 1455: [2130, 2131] } } };
+    expect(core.terrainClassTileURLs(TEMPLATE, blob, COVERAGE, MIN_Z, MAX_Z)).toEqual([
+      'https://tiles.snowdesk-data.info/terrain-class/v2/12/2130/1455.png',
+      'https://tiles.snowdesk-data.info/terrain-class/v2/12/2131/1455.png',
+    ]);
+  });
+
+  it('pins z12-14 only, out of a z10-14 download band', () => {
+    const blob = core.buildBlob(BBOX, 10, 14);
+    const urls = core.terrainClassTileURLs(TEMPLATE, blob, COVERAGE, MIN_Z, MAX_Z);
+    const zooms = new Set(urls.map((url) => Number(url.split('/').slice(-3)[0])));
+    expect([...zooms].sort()).toEqual([12, 13, 14]);
+  });
+
+  it('drops tiles outside the tileset coverage', () => {
+    // x=2200 at z12 is ~13.4°E, east of the coverage's 10.5°E edge.
+    const inside = { z: { 12: { 1455: [2130, 2130] } } };
+    const outside = { z: { 12: { 1455: [2200, 2200] } } };
+    expect(core.terrainClassTileURLs(TEMPLATE, inside, COVERAGE, MIN_Z, MAX_Z)).toHaveLength(1);
+    expect(core.terrainClassTileURLs(TEMPLATE, outside, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+  });
+
+  it('lists every tile the filter can ask for inside the area (the superset rule)', () => {
+    // The filter's source asks for z12-14 tiles over the visible ground,
+    // bounded by the coverage rectangle. Inside the area, each of those
+    // must be pinned — under-fetching is the only defect.
+    const blob = core.buildBlob(BBOX, 10, 14);
+    const pinned = new Set(core.terrainClassTileURLs(TEMPLATE, blob, COVERAGE, MIN_Z, MAX_Z));
+    const ranges = core.tileRangesForBBox(BBOX, MIN_Z, MAX_Z);
+    let checked = 0;
+    for (const [zKey, [xmin, xmax, ymin, ymax]] of Object.entries(ranges)) {
+      for (let x = xmin; x <= xmax; x += 1) {
+        for (let y = ymin; y <= ymax; y += 1) {
+          const url = TEMPLATE.replace('{z}', zKey)
+            .replace('{x}', String(x))
+            .replace('{y}', String(y));
+          expect(pinned.has(url)).toBe(true);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('answers [] without a template, a blob or any ranges', () => {
+    const blob = { z: { 12: { 1455: [2130, 2130] } } };
+    expect(core.terrainClassTileURLs('', blob, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+    expect(core.terrainClassTileURLs(TEMPLATE, null, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+    expect(core.terrainClassTileURLs(TEMPLATE, {}, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+  });
+
+  it('rebuilds the same set from a custom area bbox + band', () => {
+    // What a run fetches and what a later probe derives must be one list.
+    const fetched = core.terrainClassTileURLs(
+      TEMPLATE,
+      core.buildBlob(BBOX, 10, 14),
+      COVERAGE,
+      MIN_Z,
+      MAX_Z,
+    );
+    const derived = core.terrainClassTileURLs(
+      TEMPLATE,
+      core.buildBlob(BBOX, 10, 14),
+      COVERAGE,
+      MIN_Z,
+      MAX_Z,
+    );
+    expect(derived).toEqual(fetched);
+  });
+
+  it('leaves slopeTileURLs unchanged by the shared walk', () => {
+    // The two families share one walker; the slope raster has no floor.
+    const blob = { z: { 10: { 363: [532, 532] }, 12: { 1455: [2130, 2130] } } };
+    expect(core.slopeTileURLs('s/{z}/{x}/{y}', blob, null, 16)).toEqual([
+      's/10/532/363',
+      's/12/2130/1455',
+    ]);
+  });
+});
+
+describe('terrainClassTileCount / terrainClassMb', () => {
+  const COVERAGE = [5.9503666, 45.7213375, 10.4998461, 47.8216742];
+  const BBOX = [7.2, 46.05, 7.3, 46.12];
+
+  it('counts what terrainClassTileURLs lists', () => {
+    const blob = core.buildBlob(BBOX, 10, 14);
+    expect(core.terrainClassTileCount(blob, COVERAGE, 12, 14)).toBe(
+      core.terrainClassTileURLs('t/{z}/{x}/{y}', blob, COVERAGE, 12, 14).length,
+    );
+  });
+
+  it('prices a tile at TERRAIN_CLASS_BYTES_PER_TILE, rounded up to the MB', () => {
+    expect(core.TERRAIN_CLASS_BYTES_PER_TILE).toBe(88 * 1024);
+    // ~130 tiles (CH-4115) is ~11 MB, rounded up.
+    expect(core.terrainClassMb(130)).toBe(12);
+    expect(core.terrainClassMb(1)).toBe(1);
+  });
+
+  it('is 0 for no tiles, so a download without terrain adds nothing', () => {
+    expect(core.terrainClassMb(0)).toBe(0);
+    expect(core.terrainClassMb(NaN)).toBe(0);
+  });
+});
+
+describe('terrainScaledBytesPerTile', () => {
+  it('leaves the basemap price alone without terrain data', () => {
+    expect(core.terrainScaledBytesPerTile(96 * 1024, 2, false)).toBe(96 * 1024);
+  });
+
+  it('adds the class tile, spread over the sources the frame multiplies by', () => {
+    const per = core.terrainScaledBytesPerTile(96 * 1024, 2, true);
+    expect(per * 2).toBe(96 * 1024 * 2 + core.TERRAIN_CLASS_BYTES_PER_TILE);
+  });
+
+  it('shrinks the frame budgetScaleForBBox allows once terrain is on', () => {
+    // The ceiling has to hold the class tiles too.
+    const bbox = [6.5, 45.9, 8.5, 46.9];
+    const without = core.budgetScaleForBBox(bbox, 10, 14, 1, 200, 50 * 1024);
+    const withTerrain = core.budgetScaleForBBox(
+      bbox,
+      10,
+      14,
+      1,
+      200,
+      core.terrainScaledBytesPerTile(50 * 1024, 1, true),
+    );
+    expect(withTerrain).toBeLessThan(without);
+  });
+});

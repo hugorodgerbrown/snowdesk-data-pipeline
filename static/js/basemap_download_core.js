@@ -294,6 +294,18 @@
  *     "Downloaded areas" overlay's per-region ring (see
  *     ``docs/decisions/region-downloads-clip-custom-areas-dont.md``), the
  *     last caller that needed the list form.
+ *   slopeTileURLs(template, blob, bounds, maxZoom)
+ *     SNOW-692: the slope-angle raster tiles over a download's ground.
+ *   terrainClassTileURLs(template, blob, bounds, minZ, maxZ) /
+ *   terrainClassTileCount(blob, bounds, minZ, maxZ) /
+ *   terrainClassMb(count) / terrainScaledBytesPerTile(bytesPerTile,
+ *   sourceCount, terrain)
+ *     SNOW-1072: the terrain-class tiles the terrain filter paints from,
+ *     over the same ground, clipped to the class tileset's own coverage
+ *     rectangle and z12-14 band, and what they cost. An OPT-IN tile
+ *     family: a download pins them only when its area carries the
+ *     ``terrain`` flag. ``TERRAIN_CLASS_BYTES_PER_TILE`` is the per-tile
+ *     figure the estimate charges.
  *   missingRenderDependencies(depURLs, cached)
  *     SNOW-844: which of an area's RENDER dependencies — its style JSON,
  *     each vector source's TileJSON, its sprite JSON+PNG at 1x and 2x —
@@ -412,6 +424,15 @@
   // the measured split and for why the glyph half cannot be predicted from
   // a bbox.
   var DOWNLOAD_DOCUMENTS_MB = 2;
+
+  // SNOW-1072: what one terrain-class tile costs (the 256 px PNGs the
+  // terrain filter paints from — tiles.snowdesk-data.info/terrain-class/).
+  // The tileset averages ~88 kB a tile; charged at 88 KiB, which sits just
+  // above that so the "up to" figure stays an upper bound. CH-4115
+  // (Martigny–Verbier, 278 km²) is ~130 class tiles, so ~11 MB. A 204
+  // (no data, or outside z12-14) is a few hundred bytes of headers and is
+  // charged the same — an estimate that over-reads, never under.
+  var TERRAIN_CLASS_BYTES_PER_TILE = 88 * 1024;
 
   // The FALLBACK ceiling, used only when the device cannot say what it can
   // hold. The real ceiling is ``deviceCeilingMb`` below: how large one
@@ -845,13 +866,147 @@
    */
   function slopeTileURLs(template, blob, bounds, maxZoom) {
     var urls = [];
-    if (!template || !blob || !blob.z) return urls;
-    var ceiling = typeof maxZoom === 'number' ? maxZoom : Infinity;
+    if (!template) return urls;
+    _eachOverlayTile(blob, bounds, -Infinity, maxZoom, function (z, x, y) {
+      urls.push(_overlayTileURL(template, z, x, y));
+    });
+    return urls;
+  }
+
+  /**
+   * Every terrain-class tile URL a download should pin for ``blob``.
+   *
+   * SNOW-1072: the terrain filter (SNOW-978) paints from these — each
+   * pixel carries a height, an aspect octant and a slope band — so an area
+   * that holds the basemap and the slope raster but not these has a filter
+   * that goes blank offline. The same superset rule as every other tile
+   * family: walk the blob's own row spans (the area's ground, already the
+   * superset of what the map will request there), then drop what the class
+   * tileset itself cannot answer for:
+   *
+   *   - **its coverage rectangle** (``COVERAGE_BOUNDS``,
+   *     terrain_filter_core.js) — the same rectangle the live layer's
+   *     source declares, so the download never asks for a tile MapLibre
+   *     would not;
+   *   - **its zoom band** (``MIN_ZOOM``–``MAX_ZOOM``, 12–14) — the origin
+   *     answers 204 outside it, and MapLibre overzooms z14 above, so a
+   *     download band of z10–14 pins z12–14 here.
+   *
+   * The URL is built exactly as the filter's own fetch builds it
+   * (``tileUrl``, terrain_filter_core.js: three ``replace`` calls on the
+   * same template), because a pinned entry is found by its URL and a
+   * mismatch of one character is a tile nothing ever reads.
+   *
+   * @param {string} template The class tileset's ``{z}/{x}/{y}`` template —
+   *   ``#map[data-terrain-class-tile-url]``.
+   * @param {Object | null | undefined} blob The download blob, for its ``z``
+   *   row spans.
+   * @param {number[] | null | undefined} bounds ``[west, south, east,
+   *   north]`` the tileset covers. Omitted means no clip.
+   * @param {number} minZ Shallowest zoom the tileset publishes, inclusive.
+   * @param {number} maxZ Deepest zoom it publishes, inclusive.
+   * @returns {string[]} Empty when the template, blob or rows are missing.
+   */
+  function terrainClassTileURLs(template, blob, bounds, minZ, maxZ) {
+    var urls = [];
+    if (!template) return urls;
+    _eachOverlayTile(blob, bounds, minZ, maxZ, function (z, x, y) {
+      urls.push(_overlayTileURL(template, z, x, y));
+    });
+    return urls;
+  }
+
+  /**
+   * How many terrain-class tiles ``terrainClassTileURLs`` would list.
+   *
+   * SNOW-1072. The size estimate needs the count, not the URLs, and the
+   * custom-area readout recomputes it on every frame of a pan — so this
+   * walks the same tiles without building a string for each.
+   *
+   * @param {Object | null | undefined} blob
+   * @param {number[] | null | undefined} bounds
+   * @param {number} minZ
+   * @param {number} maxZ
+   * @returns {number}
+   */
+  function terrainClassTileCount(blob, bounds, minZ, maxZ) {
+    var count = 0;
+    _eachOverlayTile(blob, bounds, minZ, maxZ, function () {
+      count += 1;
+    });
+    return count;
+  }
+
+  /**
+   * What ``count`` terrain-class tiles cost, in megabytes, rounded up.
+   *
+   * SNOW-1072. Its own figure rather than folded into ``sourceScaledMb``,
+   * because the readout states it on its own line: terrain data is an
+   * opt-in, and the reader deciding whether to take it needs to see what
+   * it adds.
+   *
+   * @param {number} count
+   * @returns {number} 0 for no tiles.
+   */
+  function terrainClassMb(count) {
+    var n = Number(count);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.ceil((n * TERRAIN_CLASS_BYTES_PER_TILE) / (1024 * 1024));
+  }
+
+  /**
+   * The per-source tile price ``budgetScaleForBBox`` should size a frame
+   * at, with terrain data included or not.
+   *
+   * SNOW-1072: the frame's ceiling has to hold the class tiles too, or a
+   * frame drawn right up to the ceiling is over it the moment terrain data
+   * is on. The frame model prices every tile in the band, so charging the
+   * class tile against every one of them — z10 and z11 included, where the
+   * tileset publishes nothing — over-states the cost. That is the safe
+   * direction for a ceiling: the frame comes out a little smaller than it
+   * strictly had to be, never larger. Divided by the source count because
+   * ``budgetScaleForBBox`` multiplies the figure back by it, and a class
+   * tile is fetched once per cell whatever the basemap.
+   *
+   * @param {number} bytesPerTile The basemap's own per-source figure.
+   * @param {number} [sourceCount] Vector sources in the active style.
+   * @param {boolean} [terrain] Whether terrain data is included.
+   * @returns {number}
+   */
+  function terrainScaledBytesPerTile(bytesPerTile, sourceCount, terrain) {
+    var base =
+      Number.isFinite(bytesPerTile) && bytesPerTile > 0 ? bytesPerTile : WORST_CASE_BYTES_PER_TILE;
+    if (!terrain) return base;
+    var sources = Number.isFinite(sourceCount) && sourceCount > 1 ? sourceCount : 1;
+    return base + TERRAIN_CLASS_BYTES_PER_TILE / sources;
+  }
+
+  /**
+   * Call ``visit(z, x, y)`` for every tile in ``blob``'s rows that sits in
+   * ``[minZ, maxZ]`` and overlaps ``bounds``.
+   *
+   * The walk the two overlay tile families share — the slope raster
+   * (SNOW-692) and the terrain-class tiles (SNOW-1072). Both pin the
+   * area's OWN ground, so both walk the server-computed rows rather than
+   * doing tile maths of their own, and both clip to a rectangle and a band
+   * their tileset publishes.
+   *
+   * @param {Object | null | undefined} blob
+   * @param {number[] | null | undefined} bounds Omitted means no clip.
+   * @param {number} minZ Inclusive; ``-Infinity`` for no floor.
+   * @param {number} maxZ Inclusive; a non-number means no ceiling.
+   * @param {function(number, number, number): void} visit
+   * @returns {void}
+   */
+  function _eachOverlayTile(blob, bounds, minZ, maxZ, visit) {
+    if (!blob || !blob.z) return;
+    var floor = typeof minZ === 'number' ? minZ : -Infinity;
+    var ceiling = typeof maxZ === 'number' ? maxZ : Infinity;
     var rect = Array.isArray(bounds) && bounds.length === 4 ? bounds : null;
     var zKeys = Object.keys(blob.z);
     for (var zi = 0; zi < zKeys.length; zi += 1) {
       var z = Number(zKeys[zi]);
-      if (!Number.isFinite(z) || z > ceiling) continue;
+      if (!Number.isFinite(z) || z < floor || z > ceiling) continue;
       var rows = zoomRows(blob.z[zKeys[zi]]);
       var yKeys = Object.keys(rows);
       for (var yi = 0; yi < yKeys.length; yi += 1) {
@@ -859,16 +1014,27 @@
         var span = rows[yKeys[yi]];
         for (var x = span[0]; x <= span[1]; x += 1) {
           if (rect && !_tileIntersectsBBox(z, x, y, rect)) continue;
-          urls.push(
-            template
-              .replace('{z}', String(z))
-              .replace('{x}', String(x))
-              .replace('{y}', String(y)),
-          );
+          visit(z, x, y);
         }
       }
     }
-    return urls;
+  }
+
+  /**
+   * One overlay tile's URL: the template with ``{z}``/``{x}``/``{y}``
+   * substituted — the form both overlays' live fetches use.
+   *
+   * @param {string} template
+   * @param {number} z
+   * @param {number} x
+   * @param {number} y
+   * @returns {string}
+   */
+  function _overlayTileURL(template, z, x, y) {
+    return template
+      .replace('{z}', String(z))
+      .replace('{x}', String(x))
+      .replace('{y}', String(y));
   }
 
   /**
@@ -2887,6 +3053,10 @@
     styleFontstacks: styleFontstacks,
     glyphURLs: glyphURLs,
     slopeTileURLs: slopeTileURLs,
+    terrainClassTileURLs: terrainClassTileURLs,
+    terrainClassTileCount: terrainClassTileCount,
+    terrainClassMb: terrainClassMb,
+    terrainScaledBytesPerTile: terrainScaledBytesPerTile,
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
@@ -2909,6 +3079,7 @@
     BYTES_PER_TILE_BY_BASEMAP: BYTES_PER_TILE_BY_BASEMAP,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
     DOWNLOAD_DOCUMENTS_MB: DOWNLOAD_DOCUMENTS_MB,
+    TERRAIN_CLASS_BYTES_PER_TILE: TERRAIN_CLASS_BYTES_PER_TILE,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,
