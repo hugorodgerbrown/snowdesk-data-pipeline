@@ -774,8 +774,10 @@ ground still in view), **half** (the detail beside the map) and **full**
 them, a flick carries it past the nearest, a drag below the lowest closes
 it, and a press on the handle steps it up, so a keyboard user reaches all
 three. While it rests at peek or half the map's camera is padded by its
-height, so a fly-to lands above the sheet, and the roundel column rides up
-onto its edge. A sheet declares only the detents it can use: an object you
+height, so a fly-to lands above the sheet. A detent sheet spans the full
+width and sits flush on the screen's foot, top corners rounded. While one is
+open, every map control steps out except locate, which rides on the sheet's
+top edge. A sheet declares only the detents it can use: an object you
 tapped on the map uses all three, a list uses half and full, and **a form
 uses none**, because a swipe must never discard a half-written report. At
 `sm` and above detents change nothing. The rule above for the docked phone

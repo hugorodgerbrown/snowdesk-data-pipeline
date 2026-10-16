@@ -25,6 +25,13 @@ gesture a mouse does badly (map-page functional spec §3.7). Google and Apple
 Maps make the same split: a draggable sheet on a phone, a fixed side panel
 on a desktop.
 
+**Why full width, and only locate stays.** Hugo's review of the first
+build (16 Oct 2026): an inset card with the whole roundel column and the
+bottom-left stack lifted onto it read as two layers of chrome stacked over
+the ground the sheet was meant to leave clear. A detent sheet is therefore
+full width and flush to the foot, and while it is open the map keeps one
+control, locate, on the sheet's top edge; the rest return when it closes.
+
 **Why forms take none.** A drag down below the lowest detent closes the
 sheet. On a form that would throw away what the reader has typed, from a
 gesture they may have meant as a scroll. A form is a task that ends with a

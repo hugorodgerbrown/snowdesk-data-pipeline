@@ -227,8 +227,11 @@ describe('the map around the sheet', () => {
     listeners.moveend.forEach((fn) => fn());
     expect(padding.bottom).toBe(384);
 
+    expect(document.documentElement.getAttribute('data-map-sheet')).toBe('half');
+
     controller.close();
     expect(padding.bottom).toBe(0);
+    expect(document.documentElement.hasAttribute('data-map-sheet')).toBe(false);
     expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('0px');
   });
 });

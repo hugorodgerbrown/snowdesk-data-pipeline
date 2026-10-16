@@ -238,6 +238,17 @@
   }
 
   /**
+   * Mark the root while a detent sheet is open on a phone, which is what
+   * map.css reads to step every map control but locate out of the way.
+   *
+   * @param {string|null} detent
+   */
+  function markSheet(detent) {
+    if (detent) document.documentElement.setAttribute('data-map-sheet', detent);
+    else document.documentElement.removeAttribute('data-map-sheet');
+  }
+
+  /**
    * Give one sheet the phone detents its partial declares.
    *
    * @param {HTMLElement} el - The sheet container, carrying `data-detents`.
@@ -307,11 +318,13 @@
      */
     function applySurroundings() {
       if (!isOpen() || !current || !isPhone()) {
+        markSheet(null);
         liftControls(0);
         padded = 0;
         padMapBottom(0);
         return;
       }
+      markSheet(current);
       if (current === 'full') {
         liftControls(0);
         return;
@@ -381,6 +394,7 @@
       el.removeAttribute('data-detent');
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
+      markSheet(null);
       liftControls(0);
       padMapBottom(0);
     }
