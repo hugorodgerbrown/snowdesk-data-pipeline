@@ -505,7 +505,12 @@
    * because the domain alone is far too wide: ``geo.admin.ch`` also serves
    * the slope overlay (``wmts.geo.admin.ch/…/{z}/{x}/{y}.png``), whose
    * tiles sit in the same passive cache, and a domain-only match read one
-   * of them as this basemap's ground — a false Yes. The tiles of every
+   * of them as this basemap's ground — a false Yes. SNOW-1072: the same
+   * holds on ``tiles.snowdesk-data.info``, which serves the self-hosted
+   * OpenFreeMap basemap AND the terrain filter's class tiles
+   * (``/terrain-class/v2/{z}/{x}/{y}.png``) — tile-shaped, cached passively
+   * when viewed and pinned by a download that includes terrain data; the
+   * directory is what keeps them from reading as basemap ground. The tiles of every
    * style shipped share their source's directory: Swisstopo's TileJSON is
    * ``…/tiles/ch.swisstopo.base.vt/v1.0.0/tiles.json`` and its tiles
    * ``…/tiles/ch.swisstopo.base.vt/v1.0.0/{z}/{x}/{y}.pbf``; basemap.at's

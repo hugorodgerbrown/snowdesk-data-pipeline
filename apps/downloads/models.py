@@ -27,6 +27,11 @@ Three fields the client stores locally are deliberately absent:
   not a property of the area. Two devices downloading the same region
   legitimately report different sizes.
 
+``terrain`` (SNOW-1072) IS stored, although it is a choice about tiles: it
+records the user's INTENT — "this area includes terrain data" — which is a
+property of the area, not of a device. The terrain-class tile URLs it
+implies are never stored; each device derives them from the area's ground.
+
 ``area_id`` is the join key, and it is minted by the CLIENT rather than
 here. That is not a shortcut: ``basemap_download_core.js``'s
 ``areaIdForRegion`` already produces ``region-<region_id>`` deterministically,
@@ -184,6 +189,15 @@ class DownloadArea(BaseModel):
             "User-supplied label for a custom area. Blank for a region "
             "(whose name is the region's own) and for a custom area the "
             "user has never renamed."
+        ),
+    )
+    terrain = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whether the download included terrain data — the terrain-class "
+            "tiles the terrain filter paints from (SNOW-1072). An opt-in, so "
+            "False by default. Synced so another device downloading or "
+            "repairing the same area fetches the same tile families."
         ),
     )
 

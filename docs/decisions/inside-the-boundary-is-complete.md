@@ -2,7 +2,7 @@
 name: inside-the-boundary-is-complete
 description: Why an area download picks its content by crude rectangle, server-side (/api/area-content/, bboxes_overlap, areaBBox), never real geometry
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Inside the boundary, everything. Outside, whatever is there.
@@ -73,6 +73,18 @@ Mercator inverse would hide.
 
 It is checked to fail: tightening the box by 0.01° in each direction breaks
 the sweep.
+
+### The tile families hold it too (SNOW-1072)
+
+Every tile family a download pins walks the same blob rows — the area's
+own ground, clipped to its boundary plus a margin tile for a region — and
+then drops only what its own tileset cannot answer for. The slope raster
+(SNOW-692) drops tiles outside its rectangle and past its zoom ceiling;
+the terrain-class tiles drop tiles outside the class tileset's
+`COVERAGE_BOUNDS` and its z12–14 band. Overlap, not containment, for both:
+a tile straddling the coverage edge carries data inside it and is kept.
+`tests/js/test_basemap_download_core.js` pins the class-tile half: inside
+the area, every z12–14 tile the filter could request is listed.
 
 ### The invariant is about the test, not the candidate set
 

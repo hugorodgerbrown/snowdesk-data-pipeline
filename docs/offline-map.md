@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # PWA shell
@@ -1824,8 +1824,11 @@ A download run posts ONE url list, assembled in
 `basemap_download_runner.js`'s `run`, in this order:
 
 ```
-[...contentUrls, ...feedUrls, ...tiles, ...slopeUrls]
+[...contentUrls, ...feedUrls, ...tiles, ...slopeUrls, ...terrainUrls]
 ```
+
+`terrainUrls` (SNOW-1072) is only present for a run carrying the
+terrain-data opt-in — see "Terrain data" below.
 
 `contentUrls` is SNOW-924's — the **perishable** half of an area, where
 everything after it is the permanent half. Tiles are a fixed grid over
@@ -1861,6 +1864,47 @@ feature exists for, a run may not reach the end of the list.
 **It never reaches the eviction machinery.** The budget pre-flight prices
 the tiles; content rides along behind it. A bulk of small documents must not
 be able to destroy another area to make room for itself.
+
+### Terrain data — the terrain-class tiles (SNOW-1072)
+
+The terrain filter (SNOW-978) paints from terrain-class tiles: 256 px PNGs
+at `tiles.snowdesk-data.info/terrain-class/v2/{z}/{x}/{y}.png` whose
+pixels carry a height, an aspect octant and a 5° slope band. The page
+fetches them itself (`loadTerrainClassTile` in `map.js`), so offline the
+service worker answers out of the pinned buckets like any basemap tile —
+including a 204 (no data), which is stored and served back as a 204 and
+painted as the no-data hatch.
+
+A download pins them **only when the user opts in**: the "Terrain data"
+switch on the downloads sheet, off by default, a device preference in
+`localStorage` (`snowdesk.downloads.terrainData`). The region roundel
+starts a download in one tap and has no flow of its own to ask in, so the
+switch sits on the sheet and governs every new download on the device.
+"Download here" on an account-only row repeats that row's own choice
+instead of the preference.
+
+- **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
+  walks the blob's own rows, as `slopeTileURLs` does, and keeps the tiles
+  inside the tileset's `COVERAGE_BOUNDS` and its z12–14 band
+  (`terrain_filter_core.js`). z10–11 of the download band have none; the
+  filter overzooms z14 above.
+- **What is recorded.** The flag, never the URLs: `terrain: true` on the
+  `basemap.regions` / `basemap.customAreas` record (absent means none), and
+  `DownloadArea.terrain` on the account row so another device repeats it.
+  `areaTerrainClassTileUrls(record)` derives the list from the record's
+  ground and the flag, as `areaSlopeTileUrls` does for the slope raster.
+- **What is checked.** An opted-in area missing a class tile is
+  `incomplete` on the roundel and the sheet; the repair and "Sync now"
+  refetch exactly the missing tiles. An area without the flag is never
+  judged on them.
+- **What it costs.** `TERRAIN_CLASS_BYTES_PER_TILE` (88 KiB) per tile,
+  stated on its own: the region roundel's idle label adds "plus up to N MB
+  of terrain data", and the framing readout gains a second line. The
+  runner adds it to the quota and budget pre-flights, and the device
+  ceiling counts it — the custom frame is sized against
+  `terrainScaledBytesPerTile`. A region is priced before its blob loads,
+  from its outline clipped to the coverage and capped at its tile count
+  (`terrainClassMbForGround`). CH-4115 is ~130 tiles, ~11 MB.
 
 **Each area's record gains `contentAt`**, alongside `savedAt`, because the
 two halves age differently — `savedAt` is when the tiles landed and does not

@@ -143,7 +143,7 @@
   const DROP_OPEN_CLASS = 'map-drop-zone-open';
 
   let centre = null; // {lat, lon} — the fix this drop is anchored to.
-  let pending = null; // {bbox, blob, radiusKm, capped} — see `recompute`.
+  let pending = null; // {bbox, blob, radiusKm, terrain, capped} — see `recompute`.
   let runState = 'idle';
   // The pending "revert to locate" timer, or null when the roundel is not
   // armed. See `resetArmTimer`.
@@ -361,7 +361,15 @@
     // SNOW-868: sized at the price the readout below charges the same
     // circle at, or every drop reads as over the ceiling on a national
     // basemap — see `budgetScaleForBBox`'s own note.
-    const bytesPerTile = core.bytesPerTileForSources(activeBasemapTileSources(MAP));
+    // SNOW-1072: plus the terrain-class tile when this device includes
+    // terrain data, as the framing overlay sizes its frame — a circle drawn
+    // to the ceiling without it would be over it once the run adds them.
+    const terrain = terrainDataPreferred();
+    const bytesPerTile = core.terrainScaledBytesPerTile(
+      core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
+      sources,
+      terrain
+    );
     const scale = core.budgetScaleForBBox(
       circleBBox(centre.lat, centre.lon, asked),
       minZ,
@@ -381,6 +389,9 @@
       bbox: circleBBox(centre.lat, centre.lon, radiusKm),
       blob: core.circleBlob(centre.lat, centre.lon, radiusKm, minZ, maxZ, ceilingMb),
       radiusKm: radiusKm,
+      // SNOW-1072: decided here, so the readout, the sizing and the run
+      // all price the same tile families.
+      terrain: terrain,
       // `budgetScaleForBBox` sizes against the BOUNDING BOX, so the cap it
       // returns is conservative for a circle by about a fifth — the tiles
       // actually fetched are ~pi/4 of the box it priced. Deliberate: the
@@ -412,11 +423,16 @@
     if (runState === 'busy' || runState === 'done') return;
     if (!pending) return;
     const core = self.pwaBasemapDownloadCore;
-    const mb = core.sourceScaledMb(
+    // SNOW-1072: the readout states what the run will spend, terrain data
+    // included.
+    const basemapMb = core.sourceScaledMb(
       pending.blob.mb,
       activeBasemapTileSources(MAP),
       pending.blob.count
     );
+    const mb = pending.terrain
+      ? Math.ceil(basemapMb + terrainClassMbForBlob(pending.blob))
+      : basemapMb;
     readoutEl.textContent = self.pwaStrings.interpolate(
       STRINGS[pending.capped ? 'readout-capped' : 'readout'],
       { km: formatKm(pending.radiusKm), mb: mb }
@@ -648,10 +664,15 @@
     //
     await styleSettled();
     const areaId = core ? core.generateCustomAreaId() : '';
+    // SNOW-1072: the terrain-data choice the circle was sized and priced
+    // with, recorded as decided — as map_custom_download.js does.
+    const terrain = !!pending.terrain;
 
     await runPinnedDownload({
       areaId: areaId,
       mb: blob.mb,
+      terrain: terrain,
+      terrainMb: terrain ? terrainClassMbForBlob(blob) : 0,
       // SNOW-868: the tile count the per-basemap price multiplies — see the
       // runner's own `count` note.
       count: blob.count,
@@ -703,6 +724,8 @@
             // records an ordinary custom area, so the Manage downloads
             // sheet reads and remedies it exactly as it does one of those.
             ...(outcome.incomplete ? { contentIncomplete: true } : {}),
+            // SNOW-1072: the flag, never the class-tile URLs it implies.
+            ...(terrain ? { terrain: true } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);
@@ -811,6 +834,12 @@
     // It also re-sizes the drop: a basemap with two vector sources costs
     // twice the ground, so the ceiling may now cap a radius it did not.
     if (!overlayEl.hidden) refresh();
+  });
+
+  // SNOW-1072: the terrain-data preference changes what a drop costs, so an
+  // open drop is re-sized and re-priced, as for a basemap swap.
+  document.addEventListener('snowdesk:terrain-data-changed', () => {
+    if (!overlayEl.hidden && runState !== 'busy' && runState !== 'done') refresh();
   });
 
   // Going offline mid-decision disables the button rather than failing the

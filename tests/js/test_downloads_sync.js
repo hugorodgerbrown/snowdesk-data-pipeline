@@ -177,6 +177,16 @@ describe('push', () => {
     expect(body.region_id).toBe('');
   });
 
+  it('posts the terrain-data choice as "true" or "false" (SNOW-1072)', async () => {
+    // The two spellings area_sync accepts — anything else is a 400, which
+    // the mutation queue would classify as permanent.
+    await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115', terrain: true });
+    await sync.push({ areaId: 'region-CH-2101', regionId: 'CH-2101' });
+
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).terrain).toBe('true');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).terrain).toBe('false');
+  });
+
   it('does nothing at all on a page with no downloads surface', async () => {
     // No config element means no sync URL to post to. The no-op has to be
     // immediate rather than a request that fails, because this runs inside
@@ -436,6 +446,14 @@ describe('adopt', () => {
     await sync.adopt();
 
     expect(bodyOf(window.pwaMutationQueue.enqueue).region_id).toBe('CH-4115');
+  });
+
+  it('carries each area\'s terrain-data flag to the account (SNOW-1072)', async () => {
+    installDownloads([{ ...AREAS[0], terrain: true }, AREAS[1]]);
+    await sync.adopt();
+
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).terrain).toBe('true');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).terrain).toBe('false');
   });
 
   it('does nothing for an anonymous visitor', async () => {

@@ -1,8 +1,8 @@
 ---
 name: a-downloaded-area-is-verified-by-what-it-renders
-description: missingRenderDependencies, incomplete, repair, contentIncomplete, refreshAreaContent — an area needs its style, TileJSON, sprite, bulletins
+description: missingRenderDependencies, incomplete, repair, contentIncomplete, areaTerrainClassTileUrls — style, TileJSON, sprite, bulletins, class tiles
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # A downloaded area is verified by what it renders, not by its tiles
@@ -228,6 +228,30 @@ firing.
   both directions — skip never accuses and never falsely completes — but the
   two paths are not equally informative, and closing the gap means giving
   the sheet's repair a heal of its own.
+
+## Addendum (SNOW-1072): the terrain-class tiles, when the area opted in
+
+An area downloaded with terrain data holds the terrain-class tiles the
+terrain filter paints from, and without them the filter is blank offline.
+So they join the render-dependency list exactly as the slope raster's
+tiles did (SNOW-692): **derived, not recorded** —
+`areaTerrainClassTileUrls(record)` rebuilds them from the record's own
+`z`, or its `bbox` + `band`, plus the class tileset's template, coverage
+and band. What the record carries is the `terrain` flag, because it is
+the user's choice and no probe can recover a choice.
+
+- With the flag, a missing class tile is `incomplete`, and the repair —
+  the roundel's tap, or the sheet's "Sync now" — refetches only the
+  missing tiles into the area's own bucket.
+- Without it the area is never judged on them. Every area downloaded
+  before SNOW-1072 carries no flag and reads exactly as it did.
+- Not subject to the three-row rule: the class tileset is one layer on
+  one host for every basemap, so a row whose basemap is not on screen can
+  still be judged on it.
+- `_healRegionRecord` heals `deps` WITHOUT the class tiles, so the record
+  never comes to carry what the flag already names.
+- A page whose filter is not configured derives nothing, so an opted-in
+  area there is not accused of missing tiles it could not fetch.
 
 ## Addendum (SNOW-932): the same rule for the CONTENT half
 

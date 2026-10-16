@@ -456,6 +456,175 @@ function areaSlopeTileUrls(record) {
 }
 
 /**
+ * SNOW-1072: the terrain-class tile URLs covering one download blob — the
+ * tiles the terrain filter (SNOW-978) paints from.
+ *
+ * The template comes from `#map`'s `data-terrain-class-tile-url`, the same
+ * attribute map.js's filter reads its own fetch template from, so the URL
+ * pinned here is the URL the filter will ask for. The view renders it only
+ * while `settings.TERRAIN_CLASS_TILE_URL` is set, so an environment with
+ * the filter off pins nothing. The coverage rectangle and the z12-14 band
+ * come from `terrain_filter_core.js`, the one definition the filter itself
+ * uses.
+ *
+ * @param {Object|null} blob The download blob, for its `z` row spans.
+ * @returns {string[]} Empty when the filter is not configured, its core
+ *   module has not loaded, or the blob carries no ranges.
+ */
+function activeTerrainClassTileURLs(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  const template = terrainClassTileTemplate();
+  if (!core || !terrain || !template) return [];
+  return core.terrainClassTileURLs(
+    template,
+    blob,
+    terrain.COVERAGE_BOUNDS,
+    terrain.MIN_ZOOM,
+    terrain.MAX_ZOOM,
+  );
+}
+
+/**
+ * SNOW-1072: what the terrain-class tiles over one blob cost, in MB — the
+ * figure the size readouts state on their own line and the runner adds to
+ * its quota and budget pre-flights.
+ *
+ * @param {Object|null} blob
+ * @returns {number} 0 when terrain data is unavailable here.
+ */
+function terrainClassMbForBlob(blob) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  if (!core || !terrain || !terrainClassTileTemplate()) return 0;
+  return core.terrainClassMb(
+    core.terrainClassTileCount(blob, terrain.COVERAGE_BOUNDS, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
+  );
+}
+
+/**
+ * SNOW-1072: what the terrain-class tiles over a piece of ground cost, in
+ * MB, BEFORE its blob is known — the region roundel's case, whose blob is
+ * fetched only once the run's pre-flights have passed.
+ *
+ * Two upper bounds, and the smaller one wins: the class tiles over the
+ * ground's bounding box clipped to the tileset's coverage (zero for a
+ * region outside it), and the ground's own tile count (every class tile is
+ * one of the download's tiles, so there can never be more). Both
+ * over-read, which is the safe direction for an "up to" figure.
+ *
+ * @param {number[]|null} bbox `[west, south, east, north]`.
+ * @param {number} [maxTiles] The download's own tile count, when known.
+ * @returns {number} 0 when terrain data is unavailable here.
+ */
+function terrainClassMbForGround(bbox, maxTiles) {
+  const core = self.pwaBasemapDownloadCore;
+  const terrain = self.pwaTerrainFilterCore;
+  if (!core || !terrain || !terrainClassTileTemplate() || !bbox) return 0;
+  const clipped = core.intersectBBox(bbox, terrain.COVERAGE_BOUNDS);
+  if (!clipped) return 0;
+  let count = core.tileCount(
+    core.tileRangesForBBox(clipped, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
+  );
+  if (Number.isFinite(maxTiles) && maxTiles >= 0) count = Math.min(count, maxTiles);
+  return core.terrainClassMb(count);
+}
+
+/**
+ * SNOW-1072: the class tileset's `{z}/{x}/{y}` template, or `''` while the
+ * terrain filter is not configured for this page.
+ *
+ * @returns {string}
+ */
+function terrainClassTileTemplate() {
+  const mapEl = document.getElementById('map');
+  return (mapEl && mapEl.dataset.terrainClassTileUrl) || '';
+}
+
+/**
+ * SNOW-1072: whether this page can include terrain data in a download at
+ * all — the class tileset is configured and the filter's core has loaded.
+ * The "Terrain data" checkbox is hidden, and every download runs without
+ * terrain, when it cannot.
+ *
+ * @returns {boolean}
+ */
+function terrainDataAvailable() {
+  return !!terrainClassTileTemplate() && !!self.pwaTerrainFilterCore;
+}
+
+// SNOW-1072: the "Terrain data" checkbox's state — whether NEW downloads
+// on this device include the terrain-class tiles. A device preference, in
+// localStorage beside the map's other preferences, because the region
+// roundel starts a download in one tap and has no flow of its own to ask
+// in. What a download actually included is recorded per area (`terrain`
+// on its record and its account row), so changing this never changes an
+// area already downloaded.
+const TERRAIN_DATA_STORAGE_KEY = 'snowdesk.downloads.terrainData';
+
+/**
+ * SNOW-1072: whether the reader has opted in to terrain data for new
+ * downloads. Off by default, and off wherever terrain data is unavailable.
+ *
+ * @returns {boolean}
+ */
+function terrainDataPreferred() {
+  if (!terrainDataAvailable()) return false;
+  try {
+    return window.localStorage.getItem(TERRAIN_DATA_STORAGE_KEY) === 'true';
+  } catch (_e) {
+    // Storage blocked (private mode, a sandboxed frame): the default.
+    return false;
+  }
+}
+
+/**
+ * SNOW-1072: record the reader's terrain-data choice.
+ *
+ * @param {boolean} on
+ * @returns {void}
+ */
+function setTerrainDataPreferred(on) {
+  try {
+    if (on) {
+      window.localStorage.setItem(TERRAIN_DATA_STORAGE_KEY, 'true');
+    } else {
+      window.localStorage.removeItem(TERRAIN_DATA_STORAGE_KEY);
+    }
+  } catch (_e) {
+    // Best-effort: the checkbox still reflects the click for this page.
+  }
+  document.dispatchEvent(
+    new CustomEvent('snowdesk:terrain-data-changed', { detail: { on: !!on } }),
+  );
+}
+
+/**
+ * SNOW-1072: the terrain-class tiles ONE recorded area should hold, derived
+ * from its record — the `areaSlopeTileUrls` twin, gated on the record's own
+ * `terrain` flag.
+ *
+ * Derived, not recorded, for `areaSlopeTileUrls`'s reason: the list is a
+ * pure function of the area's ground plus page constants. What IS recorded
+ * is the flag, because it is the user's choice and no probe can recover a
+ * choice. An area without it holds no class tiles and is never judged on
+ * them; an area with it is `incomplete` until it holds every one.
+ *
+ * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
+ *   entry, or a Manage downloads row carrying the same fields.
+ * @returns {string[]} Empty for an area without terrain data, an
+ *   unconfigured filter, or a record with no ground to rebuild.
+ */
+function areaTerrainClassTileUrls(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !record || !record.terrain) return [];
+  if (record.z) return activeTerrainClassTileURLs({ z: record.z });
+  const band = Array.isArray(record.band) ? record.band : null;
+  if (!record.bbox || !band) return [];
+  return activeTerrainClassTileURLs(core.buildBlob(record.bbox, band[0], band[1]));
+}
+
+/**
  * SNOW-844: which render-dependency list to check ONE recorded area
  * against — the three-row resolution rule, in one place because three
  * surfaces apply it (both download controls and the Manage downloads
@@ -1582,6 +1751,9 @@ async function _appendCustomArea(area) {
     bbox: area.bbox,
     basemapKey: area.basemapKey,
     name: area.name || '',
+    // SNOW-1072: the opt-in travels with the definition, so another
+    // device downloading this area fetches the same tile families.
+    terrain: !!area.terrain,
   });
 }
 
@@ -2211,6 +2383,26 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {string[]}
    */
   areaSlopeTileUrls: (record) => areaSlopeTileUrls(record),
+
+  /**
+   * SNOW-1072: the terrain-class tiles one recorded area should hold —
+   * see `areaTerrainClassTileUrls`. Empty unless the record carries
+   * `terrain`; like the slope tiles, not subject to the three-row rule,
+   * because the class tileset is one layer on one host for every basemap.
+   *
+   * @param {Object|null} record
+   * @returns {string[]}
+   */
+  areaTerrainClassTileUrls: (record) => areaTerrainClassTileUrls(record),
+
+  /**
+   * SNOW-1072: the "Terrain data" checkbox's model — whether this page can
+   * include terrain data at all, and whether the reader has opted in for
+   * new downloads. Writing it dispatches `snowdesk:terrain-data-changed`.
+   */
+  terrainDataAvailable: () => terrainDataAvailable(),
+  terrainDataPreferred: () => terrainDataPreferred(),
+  setTerrainDataPreferred: (on) => setTerrainDataPreferred(on),
 
   // SNOW-844's `repair(areaId, urls)` stood here until SNOW-951. It was
   // the Manage downloads sheet's Repair control and nothing else, and
@@ -3108,6 +3300,9 @@ const PINNED_DOWNLOAD_DEPS = {
   // SNOW-692: takes the blob, because the slope raster covers the same
   // ground and band as the area's own tiles — see `slopeTileURLs`.
   slopeUrls: (blob) => activeSlopeTileURLs(blob),
+  // SNOW-1072: the terrain-class tiles over the same ground. Read by the
+  // runner only for a run carrying `terrain: true`.
+  terrainClassUrls: (blob) => activeTerrainClassTileURLs(blob),
   // SNOW-924: the bulletins and weather inside the area's boundary, and
   // the four overlay feeds cached whole on the way past. Async, alone
   // among these — see `assembleAreaContentURLs`.
@@ -3391,6 +3586,11 @@ async function refreshAreaContent(areaId) {
  * function: `_areaRecordById` resolves only `basemap.regions` and
  * `basemap.customAreas`, and a base layer lives in neither.
  *
+ * SNOW-1072: so are the terrain-class tiles, for an area whose record
+ * carries `terrain` — which is how a sync repairs an opted-in area missing
+ * them: they come back in this list and `repairPinnedDownload` fetches
+ * them into the area's own bucket.
+ *
  * @param {Object} record A `basemap.regions` or `basemap.customAreas` entry.
  * @returns {Promise<string[]|null>} The URLs to fetch — empty when nothing
  *   is missing. `null` when the question could not be ASKED: no download
@@ -3412,14 +3612,15 @@ async function _missingAreaRenderDependencies(record) {
   const isActive = !!activeKey && record.basemapKey === activeKey;
   const recorded = areaRenderDependencyURLs(record.deps, isActive);
   const slope = areaSlopeTileUrls(record);
+  const terrain = areaTerrainClassTileUrls(record);
   // The three-row rule's UNKNOWN branch, and the only one that reaches
   // here as an empty list: a record written before SNOW-844 stored its
   // deps, on a basemap that is not the loaded one. The slope tiles are
   // derived from the record rather than the style, so an area with those
   // is still judgeable on them — the same distinction the sheet's own
-  // `markIncompleteRows` draws.
-  if (recorded.length === 0 && slope.length === 0) return null;
-  return core.missingRenderDependencies([...recorded, ...slope], cached);
+  // `markIncompleteRows` draws. SNOW-1072: the terrain-class tiles too.
+  if (recorded.length === 0 && slope.length === 0 && terrain.length === 0) return null;
+  return core.missingRenderDependencies([...recorded, ...slope, ...terrain], cached);
 }
 
 /**

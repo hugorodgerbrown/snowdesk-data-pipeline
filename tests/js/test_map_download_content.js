@@ -47,6 +47,12 @@ const TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';
 const TODAY = '2026-01-06';
 
+// SNOW-1072: the terrain-class tileset, on its own host so its tiles can be
+// told apart from everything else a run posts. On the fixture's `#map` from
+// the start; nothing pins from it until a test opts in.
+const TERRAIN_TEMPLATE = 'https://terrain.example.invalid/terrain-class/v2/{z}/{x}/{y}.png';
+const isClassTile = (url) => url.startsWith('https://terrain.example.invalid/');
+
 /** One region, whose polygon is the ground REGION_BLOB's tiles cover. */
 const REGIONS_GEOJSON = {
   type: 'FeatureCollection',
@@ -210,6 +216,8 @@ function installCachesStub() {
         put: vi.fn(async (url) => {
           store.add(url);
         }),
+        // SNOW-1072: a re-download's prune removes entries one by one.
+        delete: async (url) => store.delete(url),
         match: async (request) => {
           const url = typeof request === 'string' ? request : request.url;
           return store.has(url) ? { headers: { get: () => null } } : undefined;
@@ -293,6 +301,7 @@ function buildFixture() {
          data-routes-url="/api/routes.geojson"
          data-routes-eligible="true"
          data-default-basemap-key="openfreemap_liberty"
+         data-terrain-class-tile-url="${TERRAIN_TEMPLATE}"
          data-season-end="2026-05-31"></div>
     <div id="season-scrubber" data-today="${TODAY}" data-today-pct="50"
          data-content-past-days="1"
@@ -441,6 +450,8 @@ beforeAll(async () => {
   vi.resetModules();
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_download_runner.js');
+  // SNOW-1072: the class tileset's coverage and band.
+  await import('../../static/js/terrain_filter_core.js');
   await import('../../static/js/search_core.js');
   await import('../../static/js/choropleth_core.js');
   await import('../../static/js/calendar_core.js');
@@ -976,5 +987,117 @@ describe('a stalled content endpoint gives up rather than hanging (SNOW-958)', (
     // refresh: the honest answer, not a completion stamped over a gap.
     vi.useRealTimers();
     await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe('terrain data on a region download (SNOW-1072)', () => {
+  /** The class tiles REGION_BLOB's ground implies, derived as the run does. */
+  function expectedClassTiles() {
+    const terrain = self.pwaTerrainFilterCore;
+    return self.pwaBasemapDownloadCore.terrainClassTileURLs(
+      TERRAIN_TEMPLATE,
+      REGION_BLOB,
+      terrain.COVERAGE_BOUNDS,
+      terrain.MIN_ZOOM,
+      terrain.MAX_ZOOM,
+    );
+  }
+
+  /** Forget the region on this device, so the next click downloads it. */
+  async function forgetRegion() {
+    await window.pwaDb.delete('meta:app', 'basemap.regions');
+    window.caches.buckets.clear();
+  }
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('pins no class tiles without the opt-in, and records none', async () => {
+    await forgetRegion();
+    window.pwaWarmCache.mockClear();
+
+    await clickControl();
+
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+    expect('terrain' in (await recordedRegion())).toBe(false);
+  });
+
+  it('pins the class tiles over the area when opted in, and records the flag', async () => {
+    await forgetRegion();
+    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
+    window.pwaWarmCache.mockClear();
+
+    await clickControl();
+
+    const posted = warmedUrls(0);
+    const expected = expectedClassTiles();
+    expect(expected.length).toBeGreaterThan(0);
+    expect(posted.filter(isClassTile)).toEqual(expected);
+    // Appended after every other tile family, never ahead of the grid.
+    expect(posted.slice(-expected.length)).toEqual(expected);
+    const record = await recordedRegion();
+    expect(record.terrain).toBe(true);
+    // The flag, never the URLs: the record carries no class tile.
+    expect(JSON.stringify(record).includes('terrain.example.invalid')).toBe(false);
+  });
+
+  it('reads an opted-in region missing a class tile as incomplete, and the tap repairs it', async () => {
+    // Downloaded by the test above, flag and all.
+    const btn = document.getElementById('map-download-control');
+    const missing = expectedClassTiles()[0];
+    window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`).delete(missing);
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+    expect(btn.dataset.downloadState).toBe('incomplete');
+    window.pwaWarmCache.mockClear();
+
+    btn.click();
+    await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+
+    expect(warmedUrls(0)).toEqual([missing]);
+  });
+
+  it('prunes the class tiles a re-download without the opt-in no longer holds', async () => {
+    // Downloaded with terrain by the tests above; the preference is now off
+    // (afterEach cleared it). Losing a basemap tile reads the region as not
+    // downloaded, so the tap is a fresh run over the same bucket.
+    const btn = document.getElementById('map-download-control');
+    const bucket = window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`);
+    expect((await recordedRegion()).terrain).toBe(true);
+    for (const url of expectedClassTiles()) bucket.add(url);
+    const basemapTile = [...bucket].find((url) => !isClassTile(url) && url.endsWith('.pbf'));
+    bucket.delete(basemapTile);
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    await waitFor(() => btn.dataset.downloadState === 'idle');
+    window.pwaWarmCache.mockClear();
+
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect(warmedUrls(0).some(isClassTile)).toBe(false);
+    // Recorded without the flag, nothing would ever count or evict the
+    // class tiles, so the run removes them.
+    expect('terrain' in (await recordedRegion())).toBe(false);
+    const held = [...window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`)];
+    expect(held.some(isClassTile)).toBe(false);
+  });
+
+  it('states what terrain data adds on the idle label', async () => {
+    await forgetRegion();
+    window.pwaBasemapDownloads.setTerrainDataPreferred(true);
+    const btn = document.getElementById('map-download-control');
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: REGION_ID, region_name: 'Martigny — Verbier' },
+      }),
+    );
+    await waitFor(() => btn.dataset.downloadState === 'idle');
+
+    expect(btn.getAttribute('aria-label')).toMatch(/terrain data/);
+
+    window.pwaBasemapDownloads.setTerrainDataPreferred(false);
+    await waitFor(() => !/terrain data/.test(btn.getAttribute('aria-label')));
+    expect(btn.getAttribute('aria-label')).not.toMatch(/terrain data/);
   });
 });

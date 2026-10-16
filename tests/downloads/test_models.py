@@ -8,6 +8,7 @@ Covers:
   The (user, area_id) unique constraint, and that it is scoped PER USER —
     two users may each hold the same area id.
   user FK is CASCADE — deleting the owner removes their areas.
+  terrain (SNOW-1072) defaults to False — the opt-in is off until chosen.
 """
 
 from __future__ import annotations
@@ -104,6 +105,28 @@ class TestDownloadAreaQuerySet:
         )
 
         assert list(DownloadArea.objects.for_user(user)) == [newer, older]
+
+
+@pytest.mark.django_db
+class TestDownloadAreaTerrain:
+    """SNOW-1072: the terrain-data opt-in."""
+
+    def test_terrain_defaults_to_false(self) -> None:
+        """An area carries no terrain data unless the user opted in."""
+        user = UserFactory.create()
+        area = DownloadArea.objects.create(
+            user=user, area_id="region-ch-4115", kind=DownloadArea.KIND.REGION
+        )
+
+        area.refresh_from_db()
+        assert area.terrain is False
+
+    def test_terrain_is_stored(self) -> None:
+        """An opted-in area keeps the flag through a round trip."""
+        area = DownloadAreaFactory.create(terrain=True)
+
+        area.refresh_from_db()
+        assert area.terrain is True
 
 
 @pytest.mark.django_db

@@ -11,6 +11,9 @@ Covers:
                 never stored and a custom area's region_id never is;
                 at DOWNLOAD_AREAS_MAX_PER_USER → 409 for a NEW area but
                 still 200 for one already held; rate-limited → 429.
+                SNOW-1072: ``terrain`` — "true"/"false" stored, absent
+                defaults a new row to False and leaves an existing row's
+                value alone, anything else → 400.
   area_rename — owner renames; a region → 400 (its name is its own);
                 another user's area_id → 404 (no existence oracle); an
                 unknown id → 404; over-long name → 400; anonymous → 403.
@@ -371,6 +374,70 @@ class TestAreaSyncWrites:
 
 
 @pytest.mark.django_db
+class TestAreaSyncTerrain:
+    """SNOW-1072: the terrain-data opt-in round-trips through area_sync."""
+
+    @pytest.mark.parametrize(("posted", "stored"), [("true", True), ("false", False)])
+    def test_terrain_is_stored(
+        self, client: Client, signed_in: Any, posted: str, stored: bool
+    ) -> None:
+        """The two spellings downloads_sync.js posts are stored as booleans."""
+        response = client.post(
+            SYNC_URL, {**REGION_PAYLOAD, "terrain": posted}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 200
+        assert DownloadArea.objects.get(area_id="region-ch-4115").terrain is stored
+        assert response.json()["terrain"] is stored
+
+    def test_absent_terrain_defaults_to_false(
+        self, client: Client, signed_in: Any
+    ) -> None:
+        """A shell that predates the field creates a row without terrain."""
+        response = client.post(SYNC_URL, REGION_PAYLOAD, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert DownloadArea.objects.get(area_id="region-ch-4115").terrain is False
+
+    def test_absent_terrain_leaves_a_stored_flag_alone(
+        self, client: Client, signed_in: Any
+    ) -> None:
+        """An older shell re-syncing an area must not clear the opt-in."""
+        DownloadAreaFactory.create(
+            user=signed_in, area_id="region-ch-4115", region_id="ch-4115", terrain=True
+        )
+
+        response = client.post(SYNC_URL, REGION_PAYLOAD, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert DownloadArea.objects.get(area_id="region-ch-4115").terrain is True
+
+    def test_terrain_false_clears_a_stored_flag(
+        self, client: Client, signed_in: Any
+    ) -> None:
+        """An explicit false is a decision, and replaces the stored value."""
+        DownloadAreaFactory.create(
+            user=signed_in, area_id="region-ch-4115", region_id="ch-4115", terrain=True
+        )
+
+        client.post(SYNC_URL, {**REGION_PAYLOAD, "terrain": "false"}, **HTMX_HEADERS)
+
+        assert DownloadArea.objects.get(area_id="region-ch-4115").terrain is False
+
+    @pytest.mark.parametrize("posted", ["", "1", "yes", "True", "on", "null"])
+    def test_non_boolean_terrain_is_refused(
+        self, client: Client, signed_in: Any, posted: str
+    ) -> None:
+        """A value the client never sends is refused, not read as False."""
+        response = client.post(
+            SYNC_URL, {**REGION_PAYLOAD, "terrain": posted}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 400
+        assert not DownloadArea.objects.exists()
+
+
+@pytest.mark.django_db
 class TestAreaRename:
     """area_rename coverage."""
 
@@ -554,6 +621,8 @@ class TestAreasJson:
         assert area["bbox"] == [7.0, 45.9, 7.3, 46.1]
         assert area["name"] == "Verbier bowl"
         assert area["basemap_key"] == "outdoor"
+        # SNOW-1072: the opt-in, so another device fetches the same tiles.
+        assert area["terrain"] is False
         assert "created_at" in area
         # Never synced — see apps/downloads/models.py for why each is
         # absent. A client that found one here would be reading another

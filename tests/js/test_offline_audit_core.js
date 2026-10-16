@@ -1981,6 +1981,24 @@ describe('the passive browsing cache (SNOW-1058)', () => {
       expect(core.browsedState(STYLE, {}, [SWISSTOPO, slope], SWISSTOPO)).toBe('style-only');
     });
 
+    it('does not read a terrain-class tile as the basemap sharing its host (SNOW-1072)', () => {
+      // tiles.snowdesk-data.info serves the self-hosted OpenFreeMap basemap
+      // and the terrain filter's class tiles side by side. A class tile is
+      // tile-shaped, and a download that includes terrain data pins them;
+      // only the directory keeps one from passing as basemap ground.
+      const selfHosted = 'https://tiles.snowdesk-data.info/styles/liberty';
+      const style = {
+        sources: {
+          openmaptiles: {
+            type: 'vector',
+            tiles: ['https://tiles.snowdesk-data.info/tiles/20260906/{z}/{x}/{y}.mvt'],
+          },
+        },
+      };
+      const classTile = 'https://tiles.snowdesk-data.info/terrain-class/v2/14/8512/5820.png';
+      expect(core.browsedState(style, {}, [selfHosted, classTile], selfHosted)).toBe('style-only');
+    });
+
     it('keeps the site fallback to its own site', () => {
       const other = 'https://tiles.openfreemap.org/planet/20260906_080001_pt/9/267/180.pbf';
       expect(core.browsedState(STYLE, {}, [SWISSTOPO, other], SWISSTOPO)).toBe('style-only');

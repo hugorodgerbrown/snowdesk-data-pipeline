@@ -4079,7 +4079,8 @@ body.map-framing #map-legend {
    under it. Stacked rather than run together on one line because the two say
    different KINDS of thing — one is the current state, the other is how to
    change it — and a bar that reads as one long sentence gets skipped whole. */
-.map-drop-zone-lines {
+.map-drop-zone-lines,
+.map-frame-lines {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -4089,7 +4090,8 @@ body.map-framing #map-legend {
     flex: 1 1 auto;
 }
 
-.map-drop-zone-hint {
+.map-drop-zone-hint,
+.map-frame-hint {
     color: var(--color-text-2);
     font-size: 12px;
 }

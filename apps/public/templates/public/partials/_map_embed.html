@@ -2033,7 +2033,13 @@ Optional context:
         {# rather than given a second, state-aware click handler), so only   #}
         {# the user's own Cancel/Close click ever actually closes it.        #}
         <div class="map-frame-cta" id="map-frame-cta">
-            <span id="map-frame-readout" class="map-frame-readout" aria-live="polite"></span>
+            {# SNOW-1072: the readout, and under it what terrain data adds   #}
+            {# when the download includes it — its own line, so the cost of #}
+            {# the opt-in reads apart from the basemap's. Hidden otherwise.  #}
+            <div class="map-frame-lines">
+                <span id="map-frame-readout" class="map-frame-readout" aria-live="polite"></span>
+                <span id="map-frame-terrain-readout" class="map-frame-hint" aria-live="polite" hidden></span>
+            </div>
             <div class="map-frame-cta-actions">
                 <button
                     type="button"
@@ -2315,6 +2321,8 @@ Optional context:
     {# _updateReadout. "frame-readout-busy" carries no literal '%' in its   #}
     {# msgid; the caller appends it to the interpolated pct value itself.  #}
     <span data-string="frame-up-to">{% blocktrans %}Up to %(mb)s MB{% endblocktrans %}</span>
+    {# SNOW-1072: the framing readout's terrain-data line. #}
+    <span data-string="frame-terrain-up-to">{% blocktrans %}Terrain data: up to %(mb)s MB more{% endblocktrans %}</span>
     <span data-string="frame-over-ceiling">{% blocktrans %}Area too large to download (over %(mb)s
             MB){% endblocktrans %}</span>
     <span data-string="frame-readout-busy">{% blocktrans %}%(pct)s · %(mb)s{% endblocktrans %}</span>
@@ -2366,6 +2374,11 @@ Optional context:
     <span data-string="download-no-region-select">{% trans "Select a region to download its basemap" %}</span>
     <span data-string="download-idle">{% blocktrans %}Download this region's basemap — up to %(mb)s
             MB{% endblocktrans %}</span>
+    {# SNOW-1072: the idle label on a device that includes terrain data —  #}
+    {# what it adds, as its own clause.                                   #}
+    <span
+        data-string="download-idle-terrain"
+    >{% blocktrans %}Download this region's basemap — up to %(mb)s MB, plus up to %(terrain)s MB of terrain data{% endblocktrans %}</span>
     {# No literal '%' in the msgid, mirroring "frame-readout-busy" above — #}
     {# the caller appends it to the interpolated pct value itself.        #}
     <span data-string="download-busy">{% blocktrans %}Downloading this region's basemap —

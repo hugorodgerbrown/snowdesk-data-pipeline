@@ -138,6 +138,10 @@
   const frameAreaEl = document.getElementById('map-frame-area');
   const frameRectEl = document.getElementById('map-frame-rect');
   const readoutEl = document.getElementById('map-frame-readout');
+  // SNOW-1072: the readout's second line — what terrain data adds, stated
+  // on its own so the reader sees the cost of the opt-in apart from the
+  // basemap's. Optional: a page without it states the total alone.
+  const terrainReadoutEl = document.getElementById('map-frame-terrain-readout');
   const confirmBtn = document.getElementById('map-frame-confirm');
   // SNOW-632: Cancel doubles as Close once a run has completed (see
   // paintRun's 'done' branch) — its own click still goes through the
@@ -158,6 +162,22 @@
   // the button to "Close" — see paintRun's 'done' branch and openFraming's
   // reset.
   const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
+
+  // SNOW-1072: a "Download here" for an account row carries that row's own
+  // terrain-data choice, which wins over this device's preference for the
+  // framing session it opens. Null means no override. Set by `openFraming`
+  // from its options, so a plain open always starts from the preference.
+  let terrainOverride = null;
+
+  /**
+   * SNOW-1072: whether a download from this framing session includes
+   * terrain data.
+   *
+   * @returns {boolean}
+   */
+  function _includesTerrain() {
+    return terrainOverride !== null ? terrainOverride : terrainDataPreferred();
+  }
 
   /**
    * SNOW-748: true when the app is actually using the network — the interface
@@ -723,7 +743,14 @@
     // the frame at 50 KB a tile while `_updateReadout` below charges it at
     // 96 leaves every frame over the ceiling, which latches Download
     // disabled — the two must move together.
-    const bytesPerTile = core.bytesPerTileForSources(activeBasemapTileSources(MAP));
+    // SNOW-1072: plus the terrain-class tile, when this session includes
+    // terrain data — the frame has to fit the ceiling with it, or a frame
+    // drawn up to the ceiling is over it the moment the readout adds it.
+    const bytesPerTile = core.terrainScaledBytesPerTile(
+      core.bytesPerTileForSources(activeBasemapTileSources(MAP)),
+      sourceCount,
+      _includesTerrain(),
+    );
     const scale = core.budgetScaleForBBox(
       naturalBbox,
       minZ,
@@ -795,7 +822,11 @@
       pendingBlob.count,
     );
     const ceilingMb = basemapDeviceCeilingMb();
-    const overCeiling = pendingBlob.over_ceiling || scaledMb > ceilingMb;
+    // SNOW-1072: what terrain data adds — part of what the run spends, so
+    // part of what the ceiling judges, and stated on its own line.
+    const terrainMb = _includesTerrain() ? terrainClassMbForBlob(pendingBlob) : 0;
+    const overCeiling = pendingBlob.over_ceiling || scaledMb + terrainMb > ceilingMb;
+    _paintTerrainReadout(overCeiling ? 0 : terrainMb);
     const text = overCeiling
       ? self.pwaStrings.interpolate(MAP_STRINGS['frame-over-ceiling'], {
           mb: ceilingMb,
@@ -810,6 +841,23 @@
     // run while offline, even if the roundel that opened framing read
     // idle at the time (a connectivity change mid-session).
     confirmBtn.disabled = overCeiling || !networkInUse();
+  }
+
+  /**
+   * SNOW-1072: paint (or hide) the readout's terrain-data line.
+   *
+   * @param {number} terrainMb What terrain data adds; 0 hides the line.
+   * @returns {void}
+   */
+  function _paintTerrainReadout(terrainMb) {
+    if (!terrainReadoutEl) return;
+    const show = terrainMb > 0 && !!MAP_STRINGS['frame-terrain-up-to'];
+    terrainReadoutEl.hidden = !show;
+    if (!show) return;
+    const text = self.pwaStrings.interpolate(MAP_STRINGS['frame-terrain-up-to'], {
+      mb: terrainMb,
+    });
+    if (terrainReadoutEl.textContent !== text) terrainReadoutEl.textContent = text;
   }
 
   /**
@@ -1036,8 +1084,13 @@
    *
    * @returns {void}
    */
-  function openFraming() {
+  function openFraming(options) {
     if (!MAP) return;
+    // SNOW-1072: see `terrainOverride`. Only a boolean overrides — the
+    // sheet's own add-trigger calls this with nothing, and a plain open
+    // reads the device preference.
+    terrainOverride =
+      options && typeof options.terrain === 'boolean' ? options.terrain : null;
     // What the device can hold bounds the frame — re-read on open, and
     // repaint once it lands (the previous answer stands until then).
     refreshBasemapDeviceCeiling().then(() => _updateReadout());
@@ -1230,10 +1283,14 @@
     // rest.
     const areaId = core ? core.generateCustomAreaId() : '';
     currentRunAreaId = areaId;
+    // SNOW-1072: decided at the tap, and recorded as decided.
+    const terrain = _includesTerrain();
 
     await runPinnedDownload({
       areaId: areaId,
       mb: blob.mb,
+      terrain: terrain,
+      terrainMb: terrain ? terrainClassMbForBlob(blob) : 0,
       // SNOW-868: the tile count the per-basemap price multiplies — see the
       // runner's own `count` note.
       count: blob.count,
@@ -1325,6 +1382,10 @@
             // the only representation of "nothing wrong", which is what
             // keeps every area framed before this ticket reading fine.
             ...(outcome.incomplete ? { contentIncomplete: true } : {}),
+            // SNOW-1072: the terrain-data opt-in this run carried — the
+            // flag, never the class-tile URLs it implies, which the
+            // probe derives again from `bbox` + `band`.
+            ...(terrain ? { terrain: true } : {}),
             savedAt: new Date().toISOString(),
           };
           await _appendCustomArea(area);
@@ -1430,6 +1491,17 @@
     if (pendingBbox && runState !== 'busy') _updateReadout();
   });
 
+  // SNOW-1072: the terrain-data preference changes the frame's ceiling and
+  // the readout's second line. Rare while framing (the checkbox is on the
+  // downloads sheet), but a second tab can change it.
+  document.addEventListener('snowdesk:terrain-data-changed', () => {
+    if (pendingBbox && runState !== 'busy') {
+      lockedSize = null;
+      lockedBbox = null;
+      _updateReadout();
+    }
+  });
+
   // SNOW-658: no boot probe. This was `renderControl()`, reading every
   // downloaded area out of IndexedDB to decide the roundel's idle/done
   // state; the roundel derives nothing from storage any more, so the read
@@ -1443,7 +1515,7 @@
     // SNOW-658 removed the second member, `refresh`, which let a delete in
     // the sheet settle the roundel's idle/done state immediately. There is
     // no such state now, and the sheet's own list is what reports a delete.
-    openFraming: openFraming,
+    openFraming: () => openFraming(),
 
     /**
      * SNOW-749: open framing over `bbox` — the "Download here" path for an
@@ -1461,9 +1533,12 @@
      *   order — the account row's own, in the order the server stores it.
      *   Anything else opens framing where the map already is, which is
      *   what `openFraming` does on its own.
+     * @param {{terrain?: boolean}} [options] SNOW-1072: the account row's
+     *   own terrain-data choice, which this session repeats in place of
+     *   the device's preference.
      * @returns {void}
      */
-    openFramingAt: function (bbox) {
+    openFramingAt: function (bbox, options) {
       if (MAP && Array.isArray(bbox) && bbox.length === 4) {
         MAP.fitBounds(
           [
@@ -1473,7 +1548,7 @@
           { animate: false },
         );
       }
-      openFraming();
+      openFraming(options);
     },
   });
 })();
