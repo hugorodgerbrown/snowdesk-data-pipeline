@@ -58,7 +58,10 @@
  * What the binding does, and only on a phone:
  *
  *   - opens the sheet at its ``initial`` detent and measures PEEK from the
- *     element the content marks ``data-sheet-peek``;
+ *     element the content marks ``data-sheet-peek``; HALF and FULL fit the
+ *     content too (SNOW-1099), HALF down to a ``data-sheet-half`` element
+ *     or the content's end, capped at half the screen, FULL to the
+ *     content's end, capped below the top inset;
  *   - lets the handle and any ``data-sheet-drag`` header drag it, and on
  *     release settles at the detent ``pwaSheetDetentsCore.settle`` picks
  *     from the release height and velocity — or closes it, for a drag below
@@ -73,7 +76,8 @@
  *     point already under the new padded centre), so a settle never jolts
  *     the ground the reader is looking at;
  *   - puts the handle back as the first child whenever a content swap
- *     removed it, and re-measures PEEK after one.
+ *     removed it, and re-fits the resting detent after one, or after any
+ *     child changes height in place (a ResizeObserver; never mid-drag).
  *
  * At ``sm`` and up the binding does nothing visible: every height rule is
  * inside a phone media query in static/css/map.css, and the padding and the
@@ -476,7 +480,7 @@
 
     // Every caller fills the sheet by replacing its children (innerHTML, an
     // HTMX swap), which takes the handle with them. Put it back, and re-fit
-    // PEEK to the new content.
+    // the resting detent to the new content.
     if (typeof MutationObserver === 'function') {
       new MutationObserver(function () {
         restoreHandle();

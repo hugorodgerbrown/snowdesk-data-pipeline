@@ -77,6 +77,18 @@
  * and its Save — `options.claim`, the control map.js builds — sits in the
  * identity block (`[data-route-rail-claim]`), where the recipient lands.
  *
+ * A BOTTOM SHEET ON A PHONE (SNOW-1099). Below 640px the rail is a sheet
+ * with detents (window.MapSheet.bindDetents, bound on the first open):
+ * PEEK shows the identity block (`data-sheet-peek`), HALF stops under the
+ * profile (`data-sheet-half`), and FULL — staff only, declared by the
+ * partial — is the point debug readout (`[data-route-rail-debug]`): the
+ * staff terrain table's figures for the segment under the point, fetched
+ * from /_route-terrain/<uuid>/?format=json the first time the sheet
+ * reaches FULL for a route, never before. A point placed while the sheet
+ * peeks raises it to HALF. The sheet is below the map's dot, so the leader
+ * line stops on its top edge (`isSheet`), and map.js pads the camera's
+ * foot rather than its head. At `sm` and above none of this applies.
+ *
  * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
  * `data-route-rail-open`, which static/css/map.css reads to withdraw the
  * controls a phone does not keep (SNOW-1067). Nothing on the map moves
@@ -91,8 +103,11 @@
  *                    `claim` is a pending share's Save control
  *   close()        — hide it and drop its cursor
  *   isOpen()       — whether it is showing
- *   cursorPoint()  — the panel's bottom edge below the cursor line,
- *                    viewport px, or null; the leader line's stop
+ *   cursorPoint()  — the panel's bottom edge below the cursor line (a
+ *                    phone sheet's top edge), viewport px, or null; the
+ *                    leader line's stop
+ *   isSheet()      — whether the rail is the phone's bottom sheet
+ *                    (SNOW-1099)
  *   cursor()       — the open route's cursor, or null; map.js follows it
  *                    to draw the index as a dot on the line, and writes
  *                    the index back from a tap on it (SNOW-1019)

@@ -80,6 +80,17 @@ only binds it to pointer events. Without the core on the page,
 - Nothing on the map is repositioned for a sheet. `data-map-sheet` on the
   root says a sheet is up; do not reintroduce a lift or a fold without
   reading the paragraph above.
+- HALF and FULL fit their content (Hugo, 16 Oct 2026, on the route
+  sheet): `bindDetents` measures it and writes `--sheet-half-height` and
+  `--sheet-full-height`, capped at half the screen and at the room below
+  the top inset. HALF stops under an element the content marks
+  `data-sheet-half`, else at the end of the content. A ResizeObserver
+  re-fits the resting detent when content changes height in place (the
+  route sheet's point header), but never mid-drag. Content that must count
+  toward FULL while hidden below it is hidden with `visibility`, not
+  `display: none`, which has no box to measure.
+- The route sheet's FULL is staff-only (SNOW-1099): it is the point debug
+  readout. The partial declares `peek,half` for everyone else.
 - A padding change is skipped while the camera is moving and applied on
   `moveend`, because a `jumpTo` mid-flight cancels the flight (a search
   pick frames its region just as the sheet's content re-fits PEEK).

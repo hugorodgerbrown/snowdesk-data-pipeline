@@ -90,6 +90,20 @@ describe('the leader line', () => {
     points.map = { x: 100, y: 50 };
   });
 
+  it('points the notch down onto a phone sheet\'s top edge (SNOW-1099)', () => {
+    // The sheet sits BELOW the map's dot, so the line runs down to it.
+    points.map = { x: 100, y: 200 };
+    window.pwaRouteRail.isSheet = () => true;
+    try {
+      openRail().setIndex(4);
+      window.pwaRouteLeader.redraw();
+      expect(stops()[0].getAttribute('d')).toBe('M116 295 L124 295 L120 300 Z');
+    } finally {
+      delete window.pwaRouteRail.isSheet;
+      points.map = { x: 100, y: 50 };
+    }
+  });
+
   it('is hidden when the map\'s dot is covered', () => {
     // map.js answers null for a dot behind the rail; a line with one end
     // points at nothing.
