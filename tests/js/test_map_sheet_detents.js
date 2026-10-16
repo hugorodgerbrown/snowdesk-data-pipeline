@@ -168,6 +168,21 @@ describe('dragging', () => {
     expect(sheet.getAttribute('data-detent')).toBe('half');
   });
 
+  it('leaves the handle live after a drag by a header', () => {
+    const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');
+    controller.open();
+    const header = document.createElement('div');
+    header.setAttribute('data-sheet-drag', '');
+    sheet.appendChild(header);
+    pointer(header, 'pointerdown', 500, 0);
+    pointer(header, 'pointermove', 480, 500);
+    pointer(header, 'pointerup', 480, 500);
+    pointer(handle, 'pointerdown', 300, 2000);
+    pointer(handle, 'pointerup', 300, 2000);
+    handle.click();
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+  });
+
   it('ignores a pointer that never moves past the slop', () => {
     const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');
     controller.open();
@@ -182,6 +197,7 @@ describe('dragging', () => {
 describe('the map around the sheet', () => {
   it('pads the camera and lifts the roundels by the sheet height, then clears both', () => {
     const jumpTo = vi.fn();
+    const listeners = { moveend: [] };
     let padding = { top: 0, bottom: 0, left: 0, right: 0 };
     globalThis.MAP = {
       getPadding: () => padding,
@@ -190,6 +206,7 @@ describe('the map around the sheet', () => {
       },
       getContainer: () => ({ clientWidth: 400, clientHeight: 768 }),
       unproject: ([x, y]) => ({ x, y }),
+      on: (name, fn) => listeners[name].push(fn),
       jumpTo: (options) => {
         jumpTo(options);
         padding = options.padding;
@@ -204,6 +221,11 @@ describe('the map around the sheet', () => {
       padding: { top: 0, left: 0, right: 0, bottom: 384 },
     });
     expect(document.documentElement.style.getPropertyValue('--map-sheet-lift')).toBe('384px');
+
+    // A fit that brings its own padding is undone when the camera rests.
+    padding = { top: 60, left: 40, right: 40, bottom: 40 };
+    listeners.moveend.forEach((fn) => fn());
+    expect(padding.bottom).toBe(384);
 
     controller.close();
     expect(padding.bottom).toBe(0);

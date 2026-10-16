@@ -258,9 +258,14 @@
 
     /** @type {string|null} */
     var current = null;
-    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, samples: Array<{t: number, h: number}> }|null} */
+    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, fromHandle: boolean, samples: Array<{t: number, h: number}> }|null} */
     var drag = null;
     var suppressClick = false;
+    // The bottom padding this sheet last gave the camera, or 0. A fit that
+    // passes its own padding (fitBounds) replaces it, so it is put back
+    // when the camera comes to rest.
+    var padded = 0;
+    var watchingCamera = false;
 
     function isOpen() {
       return !el.hasAttribute('hidden');
@@ -303,6 +308,7 @@
     function applySurroundings() {
       if (!isOpen() || !current || !isPhone()) {
         liftControls(0);
+        padded = 0;
         padMapBottom(0);
         return;
       }
@@ -312,7 +318,25 @@
       }
       var lift = Math.round(heights()[current] + bottomOffset());
       liftControls(controlsFitAbove(lift) ? lift : 0);
+      padded = lift;
+      watchCamera();
       padMapBottom(lift);
+    }
+
+    /**
+     * Put the sheet's padding back after a camera move that replaced it.
+     * fitBounds and friends take a padding of their own and leave it on the
+     * map, which would let every later centring land under the sheet.
+     * padMapBottom is a no-op when the padding already matches, so its own
+     * jumpTo ends here once and stops.
+     */
+    function watchCamera() {
+      var map = getMap();
+      if (watchingCamera || !map || typeof map.on !== 'function') return;
+      watchingCamera = true;
+      map.on('moveend', function () {
+        if (padded > 0 && isOpen() && isPhone()) padMapBottom(padded);
+      });
     }
 
     /**
@@ -352,6 +376,8 @@
     function reset() {
       current = null;
       drag = null;
+      padded = 0;
+      suppressClick = false;
       el.removeAttribute('data-detent');
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
@@ -385,6 +411,9 @@
     }
 
     el.addEventListener('pointerdown', function (event) {
+      // A new press starts a new gesture: a suppression left by a drag
+      // whose finger lifted off the handle (no click followed) ends here.
+      suppressClick = false;
       if (!current || !isPhone() || drag) return;
       if (!isDragSurface(event.target)) return;
       var now = event.timeStamp || Date.now();
@@ -394,6 +423,7 @@
         startY: event.clientY,
         startHeight: startHeight,
         moved: false,
+        fromHandle: !!(handle && handle.contains(/** @type {Node} */ (event.target))),
         samples: [{ t: now, h: startHeight }],
       };
     });
@@ -431,7 +461,10 @@
       var finished = drag;
       drag = null;
       if (!finished.moved) return;
-      suppressClick = true;
+      // Only the handle reads clicks, so only a drag that began on it can
+      // leave one to swallow; a header drag setting this would eat the
+      // reader's next real press of the handle instead.
+      suppressClick = finished.fromHandle;
       var first = finished.samples[0];
       var last = finished.samples[finished.samples.length - 1];
       var elapsed = last.t - first.t;
