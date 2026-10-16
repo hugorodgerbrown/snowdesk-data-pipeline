@@ -783,7 +783,7 @@
       debugEl.querySelectorAll('[data-route-rail-debug-field]'),
       function (cell) {
         var value = values[cell.getAttribute('data-route-rail-debug-field')];
-        cell.textContent = value || '–'; // i18n-allow: staff-only debug readout, English like /_route-terrain/
+        cell.textContent = value || '–';
         cell.title = value || '';
       },
     );

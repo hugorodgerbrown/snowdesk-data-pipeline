@@ -230,14 +230,29 @@ class TestRailTwoIsGone:
 
     @pytest.mark.parametrize("staff", [False, True])
     def test_no_rail_two_markup_for_anyone(self, client: Client, staff: bool) -> None:
-        """No row, no strings template, no debug fields — staff included."""
+        """No row, no strings template, no window — staff included."""
         client.force_login(UserFactory.create(is_staff=staff))
         rail = _rail(_home(client))
 
         assert "data-route-rail-two" not in rail
         assert "route-rail-two-strings-template" not in rail
-        assert "data-route-rail-debug" not in rail
         assert "data-route-rail-window" not in rail
+
+    @pytest.mark.parametrize("staff", [False, True])
+    def test_the_point_debug_readout_is_staff_only(
+        self, client: Client, staff: bool
+    ) -> None:
+        """SNOW-1099 brings the debug readout back as the phone sheet's FULL.
+
+        Staff only, with FULL among the detents; everyone else gets peek and
+        half and no readout.
+        """
+        client.force_login(UserFactory.create(is_staff=staff))
+        rail = _rail(_home(client))
+
+        assert ("data-route-rail-debug" in rail) is staff
+        expected = "peek,half,full" if staff else "peek,half"
+        assert f'data-detents="{expected}"' in rail
 
     def test_the_staff_terrain_json_stays(self, client: Client) -> None:
         """The server half of the debug rail is kept for later use."""
