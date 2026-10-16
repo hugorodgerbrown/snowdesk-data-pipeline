@@ -19,6 +19,15 @@ legend and the sheet carry the key and a link here.
             the chip opens it again.
         {% endblocktrans %}
     </p>
+    {# SNOW-1073: the sheet's second mode is the map's slope layer. #}
+    <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-modes">
+        {% blocktrans trimmed %}
+            The sheet has two ways to colour what matches. &ldquo;Highlight matches&rdquo; tints it blue; &ldquo;Colour
+            by slope&rdquo; colours it by how steep it is, in the same bands as the Swiss slope maps &mdash; that is the
+            map&rsquo;s slope layer, described under &ldquo;Slope angle&rdquo;. The aspects, slope range and elevation
+            band apply to both.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-zoom">
         {% blocktrans trimmed %}
             The filter shows from zoom level 12, roughly a valley across the screen; zoom out further and the sheet asks
