@@ -211,10 +211,11 @@
         visibility: hidden;
     }
 
-    /* The point debug readout is FULL's alone: below it the sheet only
-       clips, so the readout would show its first rows under the profile. */
+    /* The point debug readout is FULL's alone. Hidden rather than taken
+       out of the flow, so FULL can measure it before it shows; HALF stops
+       at the profile (`data-sheet-half`), which clips it. */
     .route-rail:not([data-detent='full']) [data-route-rail-debug] {
-        display: none;
+        visibility: hidden;
     }
 
     /* With a route open the column is trimmed to locate, layers and routes
@@ -4899,14 +4900,17 @@ body.map-framing #map-legend {
         height: var(--sheet-peek-height, 160px);
     }
 
+    /* HALF and FULL fit their content (Hugo, 16 Oct): map_sheet.js
+       measures it and writes the height, capped at half the screen and at
+       the room below the top inset. The fallbacks are the caps. */
     [data-detents][data-detent='half'] {
-        height: 50dvh;
+        height: var(--sheet-half-height, 50dvh);
     }
 
     /* The only detent at which the sheet itself scrolls: at peek and half
        a scroll gesture inside the sheet would fight the drag that grows it. */
     [data-detents][data-detent='full'] {
-        height: calc(100dvh - var(--map-edge-inset-top));
+        height: var(--sheet-full-height, calc(100dvh - var(--map-edge-inset-top)));
         overflow-y: auto;
     }
 

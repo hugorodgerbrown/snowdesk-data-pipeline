@@ -172,7 +172,8 @@ Context:
     </div>
     {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
     {# top line places the point; the readout shows the point's figures.  #}
-    <div class="min-w-0">
+    {# On a phone the sheet's HALF ends under it (data-sheet-half).       #}
+    <div data-sheet-half class="min-w-0">
         <div class="relative">
             <svg
                 data-route-rail-lane
