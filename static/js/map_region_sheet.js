@@ -17,6 +17,13 @@
  * behaviour; the chip's region panel, which keeps its summary at every
  * width, is the way in there.
  *
+ * WHILE IT IS OPEN THE RIBBON HEADER STEPS OUT. The region chip and its
+ * pin and download roundels sit at the top of the map and say the same
+ * things the sheet's header says, twice over and not always in step (the
+ * chip names the region it was last set to). While the sheet is open the
+ * root carries `data-region-sheet` and map.css hides that header; the
+ * proxies still press the hidden roundels, which keep owning the verbs.
+ *
  * WHILE IT IS OPEN it follows the map: another region selected (by any
  * route) repaints it for that region at the detent it is resting at, a date
  * change repaints it for the new day, and deselecting the region closes it.
@@ -52,6 +59,19 @@
   });
 
   const controller = window.MapSheet.attach(sheet);
+
+  // The sheet closes by several routes this module does not own (Escape,
+  // the ×, a drag below peek, another overlay opening), so the root's mark
+  // follows the sheet's own `hidden` rather than this module's calls.
+  const markRoot = () => {
+    document.documentElement.toggleAttribute('data-region-sheet', !sheet.hasAttribute('hidden'));
+  };
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(markRoot).observe(sheet, {
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+  }
 
   /** @type {?string} */
   let regionId = null;

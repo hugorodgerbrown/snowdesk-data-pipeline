@@ -162,6 +162,16 @@ describe('while open', () => {
     expect(sheet.hasAttribute('hidden')).toBe(true);
   });
 
+  it('marks the root while open, so the ribbon header steps out', async () => {
+    await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    expect(document.documentElement.hasAttribute('data-region-sheet')).toBe(true);
+    select(null);
+    await settle();
+    expect(document.documentElement.hasAttribute('data-region-sheet')).toBe(false);
+  });
+
   it('drops an answer for a region the reader has moved on from', async () => {
     let resolveFirst;
     fetchMock

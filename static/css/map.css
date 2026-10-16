@@ -4907,6 +4907,13 @@ body.map-framing #map-legend {
         display: none;
     }
 
+    /* The region sheet's header carries the region, its pin and its
+       download, so the ribbon header that says the same steps out while
+       the sheet is open (SNOW-1098; map_region_sheet.js marks the root). */
+    :root[data-region-sheet] .ribbon-header {
+        visibility: hidden;
+    }
+
     .map-controls-br {
         bottom: max(var(--map-bottom-row-offset), calc(var(--map-sheet-lift, 0px) + 8px));
         transition: bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
