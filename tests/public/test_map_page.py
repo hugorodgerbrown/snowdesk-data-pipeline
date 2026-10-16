@@ -1721,58 +1721,25 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     assert "Zoom to" in strings
 
 
-# SNOW-964: the five strings the no-fall passage line is built from —
-# the two count forms and one word per direction.
-_PASSAGE_STRING_KEYS = (
-    "route-terrain-passage-one",
-    "route-terrain-passages",
-    "route-terrain-passage-descending",
-    "route-terrain-passage-climbing",
-    "route-terrain-passage-crossing",
-)
-
 _MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
 
 
 @pytest.mark.django_db
-def test_the_no_fall_passage_strings_are_rendered_and_mirrored() -> None:
-    """The passage line's words exist in BOTH hand-maintained places.
+def test_the_route_terrain_strings_are_gone() -> None:
+    """No ``route-terrain-*`` key is rendered or mirrored (SNOW-1095).
 
-    ``makemessages`` never scans JavaScript, so every user-facing string
-    in ``static/js`` is rendered here and read back through
-    ``window.pwaStrings`` (``tox -e i18n-lint``). The fallbacks in
-    ``MAP_STRINGS`` are the second copy, and NOTHING enforces that the
-    two agree — a key that lands in one but not the other ships an
-    English literal to a translated page and nothing fails. This
-    assertion is the only guard there is.
+    They were the route detail sheet's terrain line — steepest angle,
+    length over 30°, unsurveyed length, no-fall passages — and went with
+    the sheet. Checked in BOTH hand-maintained places: the strings
+    template and the ``MAP_STRINGS`` fallbacks in ``map_state.js``.
     """
     content = Client().get(reverse("public:map")).content.decode()
     template = content.split('id="map-strings-template"', 1)[1]
     strings = template.split("</template>", 1)[0]
     fallbacks = _MAP_STATE_JS.read_text(encoding="utf-8")
 
-    for key in _PASSAGE_STRING_KEYS:
-        assert f'data-string="{key}"' in strings, key
-        assert f"'{key}':" in fallbacks, key
-
-
-@pytest.mark.django_db
-def test_the_route_terrain_strings_carry_passages_and_no_cruxes() -> None:
-    """The sheet's terrain line names no-fall passages, never cruxes.
-
-    SNOW-1066 removed route-level cruxes, so the "key passage" count and
-    its two string keys are gone; the no-fall passage wording stays.
-    """
-    content = Client().get(reverse("public:map")).content.decode()
-    template = content.split('id="map-strings-template"', 1)[1]
-    strings = template.split("</template>", 1)[0]
-
-    assert "no-fall passage" in strings
-    assert "key passage" not in strings
-    assert "route-terrain-crux" not in strings
-    assert "down the fall line" in strings
-    assert "up the fall line" in strings
-    assert "across the fall line" in strings
+    assert 'data-string="route-terrain-' not in strings
+    assert "'route-terrain-" not in fallbacks
 
 
 @pytest.mark.django_db

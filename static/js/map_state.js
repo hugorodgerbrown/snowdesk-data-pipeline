@@ -462,39 +462,6 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // a day nobody asked for, so the ribbon says which day is showing —
   // including when the honest answer is "none yet".
   'map-date-none': 'No date selected',
-  // SNOW-961: the route detail sheet's TERRAIN line — what the ground
-  // the track crosses amounts to. Six strings and not one: each is
-  // omitted entirely when there is nothing to say, and a length under a
-  // kilometre is written in metres rather than as "0.1km", a number the
-  // reader has to convert back.
-  //
-  // The threshold is INTERPOLATED rather than written into the copy. The
-  // metres were counted against it on the server
-  // (apps/routes/services/slope_summary.py), so a locale rewording this
-  // line cannot move the figure away from its own label.
-  'route-terrain-steepest': 'Steepest %(deg)s°',
-  'route-terrain-steep-km': '%(km)skm over %(deg)s°',
-  'route-terrain-steep-m': '%(m)sm over %(deg)s°',
-  // "Not surveyed" NEVER means "not steep". The terrain grid covers
-  // Switzerland, so a route beyond it was sampled and answered nothing —
-  // the one thing known about it, and the reason the whole-route case
-  // gets a line of its own rather than a zero in each band.
-  'route-terrain-unsurveyed-km': '%(km)skm not surveyed',
-  'route-terrain-unsurveyed-m': '%(m)sm not surveyed',
-  'route-terrain-unsurveyed-all': 'Terrain not surveyed',
-  // SNOW-964: the no-fall passages — where the TRACK is on ground over
-  // 50°. Two forms rather than one pluralised string, because a locale's
-  // plural rules are not English's and a "%(count)s no-fall passage(s)"
-  // would be a bracket in the product.
-  //
-  // The direction is a word, never a number: the fall line is measured
-  // from one 25 m chord of a recorded track, which supports "this
-  // descends the slope" and not "at 14° off the fall line".
-  'route-terrain-passage-one': '1 no-fall passage',
-  'route-terrain-passages': '%(count)s no-fall passages',
-  'route-terrain-passage-descending': 'down the fall line',
-  'route-terrain-passage-climbing': 'up the fall line',
-  'route-terrain-passage-crossing': 'across the fall line',
   // SNOW-764: the shared-route popup's Save control — its label and its
   // three outcomes. No 'route-shared-with-you' qualifier: both labels
   // below already say the route is somebody else's being offered, so the
