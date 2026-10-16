@@ -187,8 +187,8 @@
    heights and its slide up). The profile — the thing a thumb taps to place
    a point — sits at the thumb rather than as far from it as the screen
    allows. Peek is the identity block (name, meta line, menu, ×), half adds
-   the point header and the profile, and full — staff only — the route's
-   terrain table.
+   the point header and the profile, and full — staff only — the point
+   debug readout: every terrain figure behind the placed point.
 
    `fixed` rather than #map's absolute, so it sits on the viewport's foot
    like every other sheet, over the site footer rather than above it, and
@@ -211,9 +211,9 @@
         visibility: hidden;
     }
 
-    /* The terrain table is FULL's alone: below it the sheet only clips, so
-       a table already loaded would show its first rows under the profile. */
-    .route-rail:not([data-detent='full']) [data-route-rail-terrain] {
+    /* The point debug readout is FULL's alone: below it the sheet only
+       clips, so the readout would show its first rows under the profile. */
+    .route-rail:not([data-detent='full']) [data-route-rail-debug] {
         display: none;
     }
 

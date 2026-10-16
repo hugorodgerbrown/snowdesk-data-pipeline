@@ -229,11 +229,9 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     SNOW-1020. The rows come from
     ``apps.routes.services.terrain_detail.terrain_detail`` and nothing here
     derives a figure of its own. ``?format=csv`` returns the same rows as
-    a download, so the table and the file cannot disagree,
-    ``?format=fragment`` returns the table alone (the route sheet's FULL
-    detent on a phone, SNOW-1099), and ``?format=json`` returns them as
-    JSON — once for the map's staff debug rail, which went with rail two
-    (SNOW-1065), kept for scripts.
+    a download, so the table and the file cannot disagree, and
+    ``?format=json`` returns them as JSON — once for the map's staff debug
+    rail, which went with rail two (SNOW-1065), kept for scripts.
 
     Any route, not only the viewer's own: this is staff-only, and staff
     already read ``slope_samples`` in the Route admin, which links here.
@@ -244,9 +242,8 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
         route_uuid: The route's public ``uuid``.
 
     Returns:
-        The rendered page, the table fragment, the CSV or the JSON. 404 for
-        an unknown route. A route that has never been sampled renders an
-        empty table and says so.
+        The rendered table, or the CSV. 404 for an unknown route. A route
+        that has never been sampled renders an empty table and says so.
 
     """
     route = get_object_or_404(Route, uuid=route_uuid)
@@ -268,15 +265,13 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
         writer.writerows(rows)
         return response
 
-    context = {
-        "route": route,
-        "columns": COLUMNS,
-        "rows": [[row[column] for column in COLUMNS] for row in rows],
-        "sampled": route.slope_samples is not None,
-    }
-    if request.GET.get("format") == "fragment":
-        # SNOW-1099: the table alone, for the route sheet's FULL detent on a
-        # phone. The same partial the page includes, so the two agree.
-        return render(request, "_debug/_route_terrain_table.html", context)
-
-    return render(request, "_debug/route_terrain.html", context)
+    return render(
+        request,
+        "_debug/route_terrain.html",
+        {
+            "route": route,
+            "columns": COLUMNS,
+            "rows": [[row[column] for column in COLUMNS] for row in rows],
+            "sampled": route.slope_samples is not None,
+        },
+    )
